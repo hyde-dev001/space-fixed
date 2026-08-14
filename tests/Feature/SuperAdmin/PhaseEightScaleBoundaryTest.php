@@ -14,6 +14,7 @@ use App\Models\SuspensionAppeal;
 use App\Models\User;
 use Illuminate\Support\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Testing\TestResponse;
 use Tests\Concerns\AuthenticatesPrivilegedUsers;
 use Tests\Concerns\BuildsPhaseTwoWorkflowFixtures;
@@ -284,13 +285,11 @@ final class PhaseEightScaleBoundaryTest extends TestCase
             'name' => 'Older Customer',
             'first_name' => 'Older',
             'last_name' => 'Customer',
-            'role' => 'STAFF',
         ]);
         $newer = $this->activePhaseTwoUser([
             'name' => 'Newer Customer',
             'first_name' => 'Newer',
             'last_name' => 'Customer',
-            'role' => 'STAFF',
         ]);
         $this->activePhaseTwoUser(['status' => 'suspended', 'name' => 'Suspended Customer']);
         $archived = $this->activePhaseTwoUser(['name' => 'Archived Customer']);
@@ -300,7 +299,6 @@ final class PhaseEightScaleBoundaryTest extends TestCase
 
         $props = $this->inertiaProps($this->get(route('admin.users.index', [
             'q' => 'Customer',
-            'role' => 'STAFF',
             'status' => 'active',
             'lifecycle' => 'active',
             'per_page' => 1,
@@ -330,6 +328,47 @@ final class PhaseEightScaleBoundaryTest extends TestCase
         ]))
             ->assertStatus(422)
             ->assertJsonValidationErrors(['role', 'status', 'lifecycle', 'page', 'per_page']);
+    }
+
+    public function test_user_management_is_customer_only_and_does_not_leak_shop_employee_data(): void
+    {
+        Storage::fake('local');
+        $viewer = $this->phaseTwoSuperAdmin();
+        $shop = $this->approvedPhaseTwoShop();
+        $shopLinkedUser = $this->activePhaseTwoUser([
+            'email' => 'shop-employee-user@example.test',
+            'shop_owner_id' => $shop->id,
+            'valid_id_path' => 'valid_ids/shop-employee.png',
+            'valid_id_disk' => 'local',
+        ]);
+        Storage::disk('local')->put('valid_ids/shop-employee.png', 'shop employee document');
+        $customer = $this->activePhaseTwoUser([
+            'email' => 'customer-with-employee-email@example.test',
+            'name' => 'Platform Customer',
+        ]);
+        $this->linkedPhaseTwoEmployee($customer, $shop, [
+            'department' => 'HR',
+            'position' => 'Shop Manager',
+        ]);
+
+        $this->actingAsCompletedPrivileged($viewer);
+
+        $props = $this->inertiaProps($this->get(route('admin.users.index')));
+        $users = $props['users']['data'];
+        $customerRecord = collect($users)->firstWhere('id', $customer->id);
+
+        self::assertNotContains($shopLinkedUser->id, array_column($users, 'id'));
+        self::assertIsArray($customerRecord);
+        self::assertArrayNotHasKey('employee', $customerRecord);
+        self::assertArrayNotHasKey('createdBy', $customerRecord);
+        self::assertArrayNotHasKey('shop_owner_id', $customerRecord);
+
+        $this->get(route('admin.users.valid-id.show', ['user' => $shopLinkedUser->id]))
+            ->assertNotFound();
+
+        $this->getJson(route('admin.users.index', ['department' => 'HR']))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['department']);
     }
 
     public function test_account_search_treats_like_wildcards_as_literal_input(): void

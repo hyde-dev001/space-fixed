@@ -8,6 +8,7 @@ import Input from '../../../components/form/input/InputField';
 import DropzoneComponent from '../../../components/form/form-elements/DropZone';
 import { MailIcon, LockIcon, UserIcon } from '../../../icons';
 import { parsePhilippineAddress, type RegistrationAddress } from './registrationAddress';
+import { GPS_POSITION_OPTIONS } from '@/utils/geolocation';
 
 type FormErrors = Record<string, string>;
 
@@ -357,7 +358,7 @@ export default function Register() {
         }
         setGettingGPS(false);
       },
-      { enableHighAccuracy: true },
+      GPS_POSITION_OPTIONS,
     );
   };
 

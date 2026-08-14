@@ -7,13 +7,11 @@ namespace Tests\Feature\SuperAdmin;
 use App\Enums\PrivilegedDeliveryType;
 use App\Jobs\SendPrivilegedWorkflowMail;
 use App\Models\AccountSuspension;
-use App\Models\Employee;
 use App\Models\ShopOwner;
 use App\Models\SuspensionAppeal;
 use App\Models\User;
 use App\Services\PrivilegedAudit;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Route;
 use Mockery;
@@ -38,7 +36,6 @@ final class AccountLifecycleWorkflowTest extends TestCase
         $first = $this->postJson("/admin/users/{$user->id}/suspend", [
             'suspension_reason' => 'First verified reason',
         ]);
-        DB::commit();
         $second = $this->postJson("/admin/users/{$user->id}/suspend", [
             'suspension_reason' => 'First verified reason',
         ]);
@@ -115,128 +112,25 @@ final class AccountLifecycleWorkflowTest extends TestCase
         }
     }
 
-    public function test_linked_active_employee_is_suspended_with_exact_provenance_and_restored_on_reactivation(): void
+    public function test_shop_linked_users_are_not_customer_lifecycle_targets(): void
     {
         $admin = $this->phaseTwoSuperAdmin();
         $shop = $this->approvedPhaseTwoShop();
         $user = $this->activePhaseTwoUser([
-            'email' => 'linked-user@example.test',
+            'email' => 'shop-linked-lifecycle@example.test',
             'shop_owner_id' => $shop->id,
         ]);
         $employee = $this->linkedPhaseTwoEmployee($user, $shop);
         $this->actingAsCompletedPrivileged($admin);
 
         $this->postJson("/admin/users/{$user->id}/suspend", [
-            'suspension_reason' => 'Linked employee test',
-        ])->assertOk();
-
-        $suspension = AccountSuspension::query()->sole();
-        $employee->refresh();
-        $this->assertSame($employee->id, $suspension->linked_employee_id);
-        $this->assertSame('active', $suspension->linked_employee_prior_status);
-        $this->assertSame('suspended', $employee->getRawOriginal('status'));
-        $this->assertSame($suspension->id, $employee->privileged_suspension_id);
-
-        $this->postJson("/admin/users/{$user->id}/reactivate", [
-            'reactivation_reason' => 'Verified remediation',
-        ])->assertOk();
-
-        $employee->refresh();
-        $suspension->refresh();
-        $this->assertSame('active', $user->fresh()->getRawOriginal('status'));
-        $this->assertSame('active', $employee->getRawOriginal('status'));
-        $this->assertNull($employee->privileged_suspension_id);
-        $this->assertNotNull($suspension->ended_at);
-        $this->assertNull($user->fresh()->current_suspension_id);
-        $this->assertSame('superseded', SuspensionAppeal::query()->sole()->status);
-    }
-
-    public function test_ambiguous_linked_employees_roll_back_the_entire_user_suspension(): void
-    {
-        $admin = $this->phaseTwoSuperAdmin();
-        $shop = $this->approvedPhaseTwoShop();
-        $user = $this->activePhaseTwoUser([
-            'email' => 'ambiguous-user@example.test',
-            'shop_owner_id' => $shop->id,
-        ]);
-        $this->ambiguousPhaseTwoEmployees($user, $shop);
-        $this->actingAsCompletedPrivileged($admin);
-
-        $this->postJson("/admin/users/{$user->id}/suspend", [
-            'suspension_reason' => 'Ambiguous linkage test',
-        ])->assertStatus(409);
+            'suspension_reason' => 'This must remain shop-managed.',
+        ])->assertNotFound();
 
         $this->assertSame('active', $user->fresh()->getRawOriginal('status'));
-        $this->assertNull($user->fresh()->current_suspension_id);
+        $this->assertSame('active', $employee->fresh()->getRawOriginal('status'));
         $this->assertSame(0, AccountSuspension::query()->count());
         $this->assertSame(0, SuspensionAppeal::query()->count());
-        $this->assertSame(0, Activity::query()->where('event', 'user_suspended')->count());
-    }
-
-    public function test_missing_or_superseded_employee_provenance_blocks_reactivation(): void
-    {
-        $admin = $this->phaseTwoSuperAdmin();
-        $shop = $this->approvedPhaseTwoShop();
-        $user = $this->activePhaseTwoUser([
-            'email' => 'missing-employee@example.test',
-            'shop_owner_id' => $shop->id,
-        ]);
-        $employee = $this->linkedPhaseTwoEmployee($user, $shop);
-        $this->actingAsCompletedPrivileged($admin);
-
-        $this->postJson("/admin/users/{$user->id}/suspend", [
-            'suspension_reason' => 'Provenance test',
-        ])->assertOk();
-
-        $employee->delete();
-
-        $this->postJson("/admin/users/{$user->id}/reactivate", [
-            'reactivation_reason' => 'Attempted restore',
-        ])->assertStatus(409);
-
-        $this->assertSame('suspended', $user->fresh()->getRawOriginal('status'));
-        $this->assertNotNull($user->fresh()->current_suspension_id);
-        $this->assertNull(AccountSuspension::query()->sole()->ended_at);
-    }
-
-    public function test_inactive_or_terminated_linked_employees_are_not_rewritten_or_claimed(): void
-    {
-        $admin = $this->phaseTwoSuperAdmin();
-        $shop = $this->approvedPhaseTwoShop();
-        $user = $this->activePhaseTwoUser([
-            'email' => 'inactive-employee@example.test',
-            'shop_owner_id' => $shop->id,
-        ]);
-        $employee = $this->linkedPhaseTwoEmployee($user, $shop, ['status' => 'inactive']);
-        $this->actingAsCompletedPrivileged($admin);
-
-        $this->postJson("/admin/users/{$user->id}/suspend", [
-            'suspension_reason' => 'Inactive linkage test',
-        ])->assertOk();
-
-        $this->assertSame('inactive', $employee->fresh()->getRawOriginal('status'));
-        $this->assertNull($employee->fresh()->privileged_suspension_id);
-        $this->assertNull(AccountSuspension::query()->sole()->linked_employee_id);
-    }
-
-    public function test_already_suspended_unattributed_employee_blocks_user_suspension(): void
-    {
-        $admin = $this->phaseTwoSuperAdmin();
-        $shop = $this->approvedPhaseTwoShop();
-        $user = $this->activePhaseTwoUser([
-            'email' => 'already-suspended@example.test',
-            'shop_owner_id' => $shop->id,
-        ]);
-        $employee = $this->linkedPhaseTwoEmployee($user, $shop, ['status' => 'suspended']);
-        $this->actingAsCompletedPrivileged($admin);
-
-        $this->postJson("/admin/users/{$user->id}/suspend", [
-            'suspension_reason' => 'Existing employee suspension test',
-        ])->assertStatus(409);
-
-        $this->assertSame('active', $user->fresh()->getRawOriginal('status'));
-        $this->assertSame(0, AccountSuspension::query()->count());
-        $this->assertNull($employee->fresh()->privileged_suspension_id);
     }
 
     public function test_mandatory_audit_failure_rolls_back_the_account_suspension(): void
@@ -390,39 +284,6 @@ final class AccountLifecycleWorkflowTest extends TestCase
         ])->assertOk();
 
         $this->assertSame('suspended', User::query()->findOrFail($user->id)->getRawOriginal('status'));
-    }
-
-    public function test_mismatched_employee_provenance_blocks_reactivation(): void
-    {
-        $admin = $this->phaseTwoSuperAdmin();
-        $shop = $this->approvedPhaseTwoShop();
-        $user = $this->activePhaseTwoUser([
-            'email' => 'mismatched-employee@example.test',
-            'shop_owner_id' => $shop->id,
-        ]);
-        $employee = $this->linkedPhaseTwoEmployee($user, $shop);
-        $this->actingAsCompletedPrivileged($admin);
-
-        $this->postJson("/admin/users/{$user->id}/suspend", [
-            'suspension_reason' => 'Mismatched provenance test',
-        ])->assertOk();
-
-        $suspension = AccountSuspension::query()->sole();
-        $otherSuspension = AccountSuspension::query()->create([
-            'account_type' => AccountSuspension::ACCOUNT_TYPE_CUSTOMER,
-            'account_id' => $user->id,
-            'source' => AccountSuspension::SOURCE_LEGACY_RECONCILIATION,
-            'reason' => 'Unrelated provenance fixture',
-            'started_at' => now(),
-        ]);
-        $employee->forceFill(['privileged_suspension_id' => $otherSuspension->id])->save();
-
-        $this->postJson("/admin/users/{$user->id}/reactivate", [
-            'reactivation_reason' => 'Attempted mismatched restore',
-        ])->assertStatus(409);
-
-        $this->assertSame('suspended', $user->fresh()->getRawOriginal('status'));
-        $this->assertNull($suspension->fresh()->ended_at);
     }
 
     public function test_archive_and_restore_routes_require_recent_reauthentication_and_post(): void

@@ -67,6 +67,10 @@ final class PrivateSensitiveDocumentController extends Controller
             abort(401);
         }
 
+        if ($user->shop_owner_id !== null) {
+            abort(404);
+        }
+
         return $this->serve(
             path: (string) $user->valid_id_path,
             disk: (string) $user->valid_id_disk,

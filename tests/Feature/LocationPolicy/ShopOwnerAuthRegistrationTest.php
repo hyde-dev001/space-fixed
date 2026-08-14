@@ -2,8 +2,11 @@
 
 namespace Tests\Feature\LocationPolicy;
 
+use App\Enums\NotificationType;
+use App\Models\Notification;
 use App\Models\ShopDocument;
 use App\Models\ShopOwner;
+use App\Models\SuperAdmin;
 use App\Services\CaviteLocationPolicyService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -119,6 +122,7 @@ class ShopOwnerAuthRegistrationTest extends TestCase
     public function it_registers_successfully_with_cavite_coordinates(): void
     {
         Storage::fake('public');
+        $admin = SuperAdmin::factory()->superAdmin()->create();
         $this->markRegistrationEmailVerified('auth-register@solespaceph.com');
 
         $response = $this->postJson('/shop-owner/register', array_merge(
@@ -145,6 +149,34 @@ class ShopOwnerAuthRegistrationTest extends TestCase
             'is_current' => null,
             'status' => 'pending',
         ]);
+        $this->assertDatabaseHas('notifications', [
+            'super_admin_id' => $admin->id,
+            'type' => NotificationType::SHOP_REGISTRATION_PENDING->value,
+            'action_url' => '/admin/registrations?status=pending',
+            'is_read' => false,
+            'requires_action' => true,
+        ]);
+    }
+
+    public function test_rejected_resubmission_notifies_super_admins_once_when_it_returns_to_pending(): void
+    {
+        Storage::fake('local');
+        $admin = SuperAdmin::factory()->superAdmin()->create();
+        $owner = $this->rejectedOwnerWithDocuments();
+
+        $this->postResubmission($owner)->assertOk()->assertJsonPath('applied', true);
+
+        $this->assertSame(1, Notification::query()
+            ->where('super_admin_id', $admin->id)
+            ->where('type', NotificationType::SHOP_REGISTRATION_PENDING->value)
+            ->count());
+
+        $this->postResubmission($owner)->assertOk()->assertJsonPath('applied', false);
+
+        $this->assertSame(1, Notification::query()
+            ->where('super_admin_id', $admin->id)
+            ->where('type', NotificationType::SHOP_REGISTRATION_PENDING->value)
+            ->count());
     }
 
     public function test_registration_rejects_an_ambiguous_business_registration_contract(): void

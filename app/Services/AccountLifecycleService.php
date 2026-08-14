@@ -158,11 +158,13 @@ final class AccountLifecycleService
             default => throw new HttpException(404, 'Account not found.'),
         };
 
+        $accountQuery = $model::withTrashed()->whereKey($accountId);
+        if ($model === User::class) {
+            $accountQuery->whereNull('shop_owner_id');
+        }
+
         /** @var User|ShopOwner $account */
-        $account = $model::withTrashed()
-            ->whereKey($accountId)
-            ->lockForUpdate()
-            ->first();
+        $account = $accountQuery->lockForUpdate()->first();
 
         if (! $account) {
             throw new HttpException(404, 'Account not found.');

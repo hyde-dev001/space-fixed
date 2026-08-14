@@ -4,6 +4,7 @@ import {
   parsePhilippineAddress,
   type RegistrationAddress,
 } from '../../Pages/UserSide/Auth/registrationAddress';
+import { GPS_POSITION_OPTIONS } from '../../utils/geolocation';
 
 export type CoordinateValue = { latitude: number; longitude: number } | null;
 
@@ -330,7 +331,7 @@ export default function CustomerAddressMapPicker({
           setStatus('Could not get your location. Allow location access and try again.');
         }
       },
-      { enableHighAccuracy: true },
+      GPS_POSITION_OPTIONS,
     );
   };
 

@@ -37,13 +37,11 @@ const user = (overrides: Record<string, unknown> = {}) => ({
   address: '1 Main Street',
   phone: '555-0100',
   age: 30,
-  role: null,
   status: 'active',
   accountStatus: 'active',
   archived: false,
   createdAt: '2026-08-12 12:00:00',
   lastLogin: null,
-  employee: null,
   ...overrides,
 });
 

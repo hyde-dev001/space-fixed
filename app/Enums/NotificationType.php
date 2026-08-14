@@ -85,6 +85,7 @@ enum NotificationType: string
     case BUSINESS_UPGRADE_REQUEST_PENDING = 'business_upgrade_request_pending';
     case SHOP_REPORT_FILED = 'shop_report_filed';
     case REVIEW_REPORTED = 'review_reported';
+    case SUSPENSION_APPEAL_SUBMITTED = 'suspension_appeal_submitted';
 
     // ==================== CRM NOTIFICATIONS ====================
     case NEW_LEAD = 'new_lead';
@@ -191,6 +192,7 @@ enum NotificationType: string
             self::BUSINESS_UPGRADE_REQUEST_PENDING => 'Business Upgrade Request',
             self::SHOP_REPORT_FILED => 'Shop Report Filed',
             self::REVIEW_REPORTED => 'Review Reported',
+            self::SUSPENSION_APPEAL_SUBMITTED => 'Suspension Appeal Submitted',
 
             // CRM notifications
             self::NEW_LEAD => 'New Lead',
@@ -255,7 +257,7 @@ enum NotificationType: string
             self::LOGISTICS_DELIVERED, self::LOGISTICS_EXCEPTION => 'logistics',
 
             self::SHOP_REGISTRATION_PENDING, self::SHOP_DOCUMENT_RENEWAL_PENDING, self::SHOP_DOCUMENT_RENEWAL_REVIEWED, self::SHOP_DOCUMENT_EXPIRING, self::BUSINESS_UPGRADE_REQUEST_PENDING,
-            self::SHOP_REPORT_FILED, self::REVIEW_REPORTED => 'admin',
+            self::SHOP_REPORT_FILED, self::REVIEW_REPORTED, self::SUSPENSION_APPEAL_SUBMITTED => 'admin',
             
             default => 'general',
         };
@@ -338,6 +340,7 @@ enum NotificationType: string
             self::BUSINESS_UPGRADE_REQUEST_PENDING,
             self::SHOP_REPORT_FILED,
             self::REVIEW_REPORTED,
+            self::SUSPENSION_APPEAL_SUBMITTED,
         ]);
     }
 
@@ -352,6 +355,7 @@ enum NotificationType: string
             self::BUSINESS_UPGRADE_REQUEST_PENDING,
             self::SHOP_REPORT_FILED,
             self::REVIEW_REPORTED,
+            self::SUSPENSION_APPEAL_SUBMITTED,
         ]);
     }
 }
