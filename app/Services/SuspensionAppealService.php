@@ -3,7 +3,9 @@
 namespace App\Services;
 
 use App\Enums\PrivilegedDeliveryType;
+use App\Enums\NotificationType;
 use App\Models\AccountSuspension;
+use App\Models\Notification;
 use App\Models\ShopOwner;
 use App\Models\SuperAdmin;
 use App\Models\SuspensionAppeal;
@@ -666,9 +668,34 @@ class SuspensionAppealService
             ->active()
             ->get()
             ->filter(fn (SuperAdmin $recipient): bool => $recipient->hasCompletedMfaSetup()
-                && $recipient->hasCapability(SuperAdmin::CAP_VIEW_APPEALS)
-                && trim((string) $recipient->email) !== '')
+                && $recipient->hasCapability(SuperAdmin::CAP_VIEW_APPEALS))
             ->each(function (SuperAdmin $recipient) use ($appeal, $typeLabel, $reviewUrl, $submittedAtLabel): void {
+                Notification::firstOrCreate(
+                    [
+                        'super_admin_id' => (int) $recipient->getKey(),
+                        'type' => NotificationType::SUSPENSION_APPEAL_SUBMITTED->value,
+                        'group_key' => 'suspension-appeal:'.$appeal->getKey(),
+                    ],
+                    [
+                        'title' => 'Suspension appeal submitted',
+                        'message' => (string) ($appeal->account_name ?: 'A customer').' submitted a suspension appeal for review.',
+                        'action_url' => $reviewUrl,
+                        'data' => [
+                            'appeal_id' => (int) $appeal->getKey(),
+                            'account_type' => (string) $appeal->account_type,
+                            'account_id' => (int) $appeal->account_id,
+                        ],
+                        'is_read' => false,
+                        'requires_action' => true,
+                        'is_archived' => false,
+                        'priority' => 'high',
+                    ],
+                );
+
+                if (trim((string) $recipient->email) === '') {
+                    return;
+                }
+
                 $this->privilegedMailDispatcher->dispatch(
                     type: PrivilegedDeliveryType::SUSPENSION_APPEAL_SUBMITTED,
                     businessEventId: 'suspension-appeal-submitted:'.$appeal->getKey(),

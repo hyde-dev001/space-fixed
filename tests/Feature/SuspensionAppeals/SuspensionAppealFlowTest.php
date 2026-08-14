@@ -2,9 +2,11 @@
 
 namespace Tests\Feature\SuspensionAppeals;
 
+use App\Enums\NotificationType;
 use App\Mail\SuspensionAppealDecisionMail;
 use App\Mail\SuspensionAppealSubmittedMail;
 use App\Mail\SuspensionNoticeMail;
+use App\Models\Notification;
 use App\Models\ShopOwner;
 use App\Models\SuperAdmin;
 use App\Models\SuspensionAppeal;
@@ -147,6 +149,17 @@ class SuspensionAppealFlowTest extends TestCase
             'id' => $appeal->id,
             'status' => 'submitted',
         ]);
+        $this->assertDatabaseHas('notifications', [
+            'super_admin_id' => $superAdmin->id,
+            'type' => NotificationType::SUSPENSION_APPEAL_SUBMITTED->value,
+            'action_url' => route('admin.suspension-appeals'),
+            'is_read' => false,
+            'requires_action' => true,
+        ]);
+        $this->assertSame(1, Notification::query()
+            ->where('super_admin_id', $superAdmin->id)
+            ->where('type', NotificationType::SUSPENSION_APPEAL_SUBMITTED->value)
+            ->count());
 
         Mail::assertSent(SuspensionAppealSubmittedMail::class, function (SuspensionAppealSubmittedMail $mail) use ($superAdmin) {
             return $mail->hasTo($superAdmin->email);

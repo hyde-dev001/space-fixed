@@ -35,17 +35,7 @@ final class UserInterventionController extends Controller
     {
         $validated = $request->validate([
             'q' => ['sometimes', 'nullable', 'string', 'max:100'],
-            'role' => ['sometimes', 'nullable', 'string', Rule::in([
-                'MANAGER',
-                'FINANCE',
-                'HR',
-                'CRM',
-                'REPAIRER',
-                'INVENTORY',
-                'INVENTORY_MANAGER',
-                'STAFF',
-                'SUPER_ADMIN',
-            ])],
+            'role' => ['prohibited'],
             'status' => ['sometimes', 'nullable', 'string', Rule::in([
                 'active',
                 'suspended',
@@ -56,7 +46,7 @@ final class UserInterventionController extends Controller
                 'deactivated',
                 'archived',
             ])],
-            'department' => ['sometimes', 'nullable', 'string', 'max:100'],
+            'department' => ['prohibited'],
             'lifecycle' => ['sometimes', 'nullable', Rule::in(['active', 'archived', 'all'])],
             'page' => ['sometimes', 'integer', 'min:1'],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
@@ -76,16 +66,10 @@ final class UserInterventionController extends Controller
                 'age',
                 'address',
                 'valid_id_path',
-                'role',
                 'status',
-                'shop_owner_id',
                 'created_at',
                 'last_login_at',
                 'deleted_at',
-            ])
-            ->with([
-                'shopOwner:id,first_name,last_name,business_name',
-                'employee:id,email,name,phone,position,department,branch,functional_role,salary,hire_date,status',
             ]);
 
         if ($lifecycle === 'active') {
@@ -105,21 +89,10 @@ final class UserInterventionController extends Controller
             });
         }
 
-        if (($validated['role'] ?? null) !== null && $validated['role'] !== '') {
-            $query->where('role', $validated['role']);
-        }
-
         if (($validated['status'] ?? null) === 'archived') {
             $query->whereNotNull('deleted_at');
         } elseif (($validated['status'] ?? null) !== null && $validated['status'] !== '') {
             $query->where('status', $validated['status']);
-        }
-
-        if (($validated['department'] ?? null) !== null && $validated['department'] !== '') {
-            $department = (string) $validated['department'];
-            $query->whereHas('employee', function (Builder $employeeQuery) use ($department): void {
-                $this->whereContains($employeeQuery, 'department', $department);
-            });
         }
 
         $users = $query
@@ -128,37 +101,6 @@ final class UserInterventionController extends Controller
             ->paginate((int) ($validated['per_page'] ?? 15))
             ->withQueryString()
             ->through(function (User $user): array {
-            $roleLabel = $user->role ?: null;
-            switch (strtoupper($roleLabel ?? '')) {
-                case 'HR':
-                    $roleLabel = 'HR';
-                    break;
-                case 'FINANCE_STAFF':
-                    $roleLabel = 'Finance Staff';
-                    break;
-                case 'FINANCE_MANAGER':
-                    $roleLabel = 'Finance Manager';
-                    break;
-                case 'CRM':
-                    $roleLabel = 'CRM';
-                    break;
-                case 'MANAGER':
-                    $roleLabel = 'Manager';
-                    break;
-                case 'STAFF':
-                    $roleLabel = 'Staff';
-                    break;
-                default:
-                    $roleLabel = $roleLabel ?: null;
-            }
-
-            $createdBy = 'Direct Registration';
-            if ($user->shop_owner_id && $user->shopOwner) {
-                $shop = $user->shopOwner;
-                $createdBy = $shop->business_name ?? ($shop->first_name.' '.$shop->last_name) ?? 'Shop Owner';
-            }
-
-            $employee = $user->employee;
             $accountStatus = $user->status ?? 'active';
             $archived = $user->trashed();
 
@@ -177,22 +119,6 @@ final class UserInterventionController extends Controller
                 'validIdUrl' => $user->valid_id_path
                     ? route('admin.users.valid-id.show', ['user' => $user->id])
                     : null,
-                'role' => $roleLabel,
-                'createdBy' => $createdBy,
-                'employee' => $employee ? [
-                    'id' => $employee->id,
-                    'name' => $employee->name ?? null,
-                    'phone' => $employee->phone ?? null,
-                    'position' => $employee->position,
-                    'department' => $employee->department,
-                    'branch' => $employee->branch,
-                    'functionalRole' => $employee->functional_role,
-                    'salary' => $employee->salary,
-                    'hireDate' => $employee->hire_date
-                        ? Carbon::parse($employee->hire_date)->format('Y-m-d')
-                        : null,
-                    'status' => $employee->status,
-                ] : null,
                 'createdAt' => $user->created_at
                     ? Carbon::parse($user->created_at)->format('Y-m-d H:i:s')
                     : null,
@@ -215,9 +141,7 @@ final class UserInterventionController extends Controller
             'stats' => $stats,
             'filters' => [
                 'q' => $validated['q'] ?? null,
-                'role' => $validated['role'] ?? null,
                 'status' => $validated['status'] ?? null,
-                'department' => $validated['department'] ?? null,
                 'lifecycle' => $validated['lifecycle'] ?? 'all',
             ],
         ]);

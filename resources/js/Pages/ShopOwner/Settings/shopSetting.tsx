@@ -8,6 +8,7 @@ import BusinessScalingSettings, { type BusinessScalingPayload } from './componen
 import BusinessDocumentCompliance, { type ComplianceSlot } from './components/BusinessDocumentCompliance';
 import { requiredPolicySectionKeys } from '../../../utils/policySectionResolver';
 import type { PolicySectionKey, ShopPolicyEditorStateResponse, ShopPolicySections } from '../../../types/shopPolicy';
+import { GPS_POSITION_OPTIONS } from '../../../utils/geolocation';
 
 type ApprovalSetting = {
 	enabled: boolean;
@@ -1561,24 +1562,28 @@ const ShopSetting: React.FC = () => {
 		setGeoError(null);
 		navigator.geolocation.getCurrentPosition(
 			async (pos) => {
-				const lat = pos.coords.latitude.toFixed(8);
-				const lng = pos.coords.longitude.toFixed(8);
-				setGeoLat(lat);
-				setGeoLng(lng);
+				try {
+					const lat = pos.coords.latitude.toFixed(8);
+					const lng = pos.coords.longitude.toFixed(8);
+					setGeoLat(lat);
+					setGeoLng(lng);
 
-				const detectedAddress = await reverseGeocode(lat, lng);
-				if (detectedAddress) {
-					setGeoAddress(detectedAddress);
-					setAddressSearch(detectedAddress);
+					const detectedAddress = await reverseGeocode(lat, lng);
+					if (detectedAddress) {
+						setGeoAddress(detectedAddress);
+						setAddressSearch(detectedAddress);
+					}
+				} catch {
+					setGeoError('Could not identify your GPS address. Please try searching instead.');
+				} finally {
+					setGettingGPS(false);
 				}
-
-				setGettingGPS(false);
 			},
 			() => {
 				setGeoError('Could not get your location. Please allow location access.');
 				setGettingGPS(false);
 			},
-			{ enableHighAccuracy: true },
+			GPS_POSITION_OPTIONS,
 		);
 	};
 

@@ -345,7 +345,11 @@ describe('CustomerAddressMapPicker', () => {
       '/api/address/geocode?latitude=14.5995&longitude=120.9842',
       { signal: expect.any(AbortSignal) },
     );
-    expect(getCurrentPosition).toHaveBeenCalledWith(expect.any(Function), expect.any(Function), { enableHighAccuracy: true });
+    expect(getCurrentPosition).toHaveBeenCalledWith(expect.any(Function), expect.any(Function), {
+      enableHighAccuracy: true,
+      timeout: 15_000,
+      maximumAge: 0,
+    });
   });
 
   it('keeps the location action readable on the light address form', () => {

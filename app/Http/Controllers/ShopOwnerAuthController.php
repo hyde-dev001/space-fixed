@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\NotificationType;
 use App\Mail\ShopOwnerApplicationUnderReviewMail;
 use App\Services\CaviteLocationPolicyService;
+use App\Models\Notification;
 use App\Models\ShopOwner;
 use App\Enums\ShopOwnerStatus;
 use App\Models\ShopDocument;
@@ -331,6 +333,7 @@ class ShopOwnerAuthController extends Controller
                 'email' => $shopOwner->email,
             ]);
 
+            $this->notifySuperAdminsOfPendingRegistration($shopOwner);
             $this->sendApplicationUnderReviewEmail($shopOwner);
 
             if ($request->expectsJson()) {
@@ -736,6 +739,7 @@ class ShopOwnerAuthController extends Controller
                 'business_name' => $shopOwner->business_name,
             ]);
 
+            $this->notifySuperAdminsOfPendingRegistration($shopOwner);
             $this->sendApplicationUnderReviewEmail($shopOwner);
 
             // Auto-login the shop owner so they can access the pending approval page
@@ -1038,6 +1042,20 @@ class ShopOwnerAuthController extends Controller
                 'error' => $e->getMessage(),
             ]);
         }
+    }
+
+    private function notifySuperAdminsOfPendingRegistration(ShopOwner $shopOwner): void
+    {
+        Notification::notifyAllSuperAdmins(
+            type: NotificationType::SHOP_REGISTRATION_PENDING,
+            title: 'New shop registration',
+            message: (string) $shopOwner->business_name.' submitted a registration for review.',
+            actionUrl: '/admin/registrations?status=pending',
+            data: [
+                'shop_owner_id' => (int) $shopOwner->getKey(),
+                'business_name' => (string) $shopOwner->business_name,
+            ],
+        );
     }
 
     /**

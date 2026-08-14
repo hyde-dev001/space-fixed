@@ -5,6 +5,7 @@ import { useCart } from '../../../contexts/CartContext';
 import NotificationBell from "../../../components/common/NotificationBell";
 import StarRating from '../../../components/common/StarRating';
 import { useBadgeCounts } from '../../../hooks/useBadgeCounts';
+import { GPS_POSITION_OPTIONS } from '@/utils/geolocation';
 
 type Product = {
   id: number;
@@ -408,6 +409,7 @@ const Products: React.FC<Props> = () => {
         setLocError('Location access denied. Please allow location access and try again.');
         setLocating(false);
       },
+      GPS_POSITION_OPTIONS,
     );
   }, []);
 

@@ -82,25 +82,12 @@ interface User {
   address: string;
   phone: string;
   age: number;
-  role?: string | null;
   status: 'pending' | 'approved' | 'rejected' | 'active' | 'deactivated' | 'suspended' | 'archived';
   accountStatus?: 'pending' | 'approved' | 'rejected' | 'active' | 'deactivated' | 'suspended';
   archived?: boolean;
   createdAt: string;
   lastLogin?: string;
   validIdUrl?: string;
-  employee?: {
-    id?: number;
-    name?: string | null;
-    phone?: string | null;
-    position?: string | null;
-    department?: string | null;
-    branch?: string | null;
-    functionalRole?: string | null;
-    salary?: number | null;
-    hireDate?: string | null;
-    status?: string | null;
-  } | null;
 }
 
 interface MetricData {
@@ -195,9 +182,7 @@ interface PageProps {
   stats?: Record<string, number>;
   filters?: {
     q?: string | null;
-    role?: string | null;
     status?: User['status'] | 'all' | null;
-    department?: string | null;
     lifecycle?: 'active' | 'archived' | 'all' | null;
   };
 }
@@ -284,8 +269,6 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
   const [filterStatus, setFilterStatus] = useState<UserStatusFilter>(
     initialServerPaginated ? (filters.status || 'all') : 'active',
   );
-  const [filterRole, setFilterRole] = useState(filters.role || 'all');
-  const [filterDepartment, setFilterDepartment] = useState(filters.department || '');
   const [filterLifecycle, setFilterLifecycle] = useState(filters.lifecycle || 'all');
   const [searchTerm, setSearchTerm] = useState<string>(initialServerPaginated ? (filters.q || '') : '');
   const [suspendReason, setSuspendReason] = useState<string>('');
@@ -332,15 +315,11 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
     nextSearch = searchTerm,
     nextStatus = filterStatus,
     page = 1,
-    nextRole = filterRole,
-    nextDepartment = filterDepartment,
     nextLifecycle = filterLifecycle,
   ) => {
     const params: Record<string, string | number> = { page };
     if (nextSearch.trim()) params.q = nextSearch.trim();
     if (nextStatus !== 'all') params.status = nextStatus;
-    if (nextRole !== 'all') params.role = nextRole;
-    if (nextDepartment.trim()) params.department = nextDepartment.trim();
     if (nextLifecycle !== 'all') params.lifecycle = nextLifecycle;
 
     router.get('/admin/users', params, {
@@ -358,15 +337,12 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
       : filterStatus === 'archived'
       ? isArchived
       : !isArchived && user.status === filterStatus;
-    const roleMatch = filterRole === 'all' || user.role === filterRole;
     const lifecycleMatch = filterLifecycle === 'all'
       || (filterLifecycle === 'archived' ? isArchived : !isArchived);
-    const departmentMatch = !filterDepartment.trim()
-      || user.employee?.department?.toLowerCase().includes(filterDepartment.trim().toLowerCase());
     const searchMatch = searchTerm === '' ||
       user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       user.email.toLowerCase().includes(searchTerm.toLowerCase());
-    return statusMatch && roleMatch && lifecycleMatch && departmentMatch && searchMatch;
+    return statusMatch && lifecycleMatch && searchMatch;
   });
 
   const effectivePage = isServerPaginated ? pagination.current_page : currentPage;
@@ -436,7 +412,7 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
       ));
 
       if (isServerPaginated) {
-        visitUserPage(searchTerm, filterStatus, effectivePage, filterRole, filterDepartment, filterLifecycle);
+        visitUserPage(searchTerm, filterStatus, effectivePage, filterLifecycle);
       }
 
       Swal.fire({
@@ -659,7 +635,7 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
                 onChange={(e) => {
                   setSearchTerm(e.target.value);
                   if (searchTimer.current) clearTimeout(searchTimer.current);
-                  searchTimer.current = setTimeout(() => visitUserPage(e.target.value, filterStatus, 1, filterRole, filterDepartment, filterLifecycle), 250);
+                  searchTimer.current = setTimeout(() => visitUserPage(e.target.value, filterStatus, 1, filterLifecycle), 250);
                 }}
                 placeholder="Search by name or email..."
                 aria-label="Search Users"
@@ -676,7 +652,7 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
                 onChange={(e) => {
                   const value = e.target.value as UserStatusFilter;
                   setFilterStatus(value);
-                  visitUserPage(searchTerm, value, 1, filterRole, filterDepartment, filterLifecycle);
+                  visitUserPage(searchTerm, value, 1, filterLifecycle);
                 }}
                 aria-label="Filter by Status"
                 className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
@@ -693,29 +669,6 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2" htmlFor="filter-user-role">
-                Filter by Role
-              </label>
-              <select
-                id="filter-user-role"
-                value={filterRole}
-                onChange={(e) => {
-                  setFilterRole(e.target.value);
-                  visitUserPage(searchTerm, filterStatus, 1, e.target.value, filterDepartment, filterLifecycle);
-                }}
-                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
-              >
-                <option value="all">All Roles</option>
-                <option value="MANAGER">Manager</option>
-                <option value="STAFF">Staff</option>
-                <option value="HR">HR</option>
-                <option value="CRM">CRM</option>
-                <option value="FINANCE">Finance</option>
-                <option value="REPAIRER">Repairer</option>
-              </select>
-            </div>
-
-            <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2" htmlFor="filter-user-lifecycle">
                 Filter by Lifecycle
               </label>
@@ -724,7 +677,7 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
                 value={filterLifecycle}
                 onChange={(e) => {
                   setFilterLifecycle(e.target.value);
-                  visitUserPage(searchTerm, filterStatus, 1, filterRole, filterDepartment, e.target.value);
+                  visitUserPage(searchTerm, filterStatus, 1, e.target.value);
                 }}
                 className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
               >
@@ -734,22 +687,6 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
               </select>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2" htmlFor="filter-user-department">
-                Filter by Department
-              </label>
-              <input
-                id="filter-user-department"
-                type="search"
-                value={filterDepartment}
-                onChange={(e) => {
-                  setFilterDepartment(e.target.value);
-                  visitUserPage(searchTerm, filterStatus, 1, filterRole, e.target.value, filterLifecycle);
-                }}
-                placeholder="Department"
-                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
-              />
-            </div>
           </div>
         </div>
 
@@ -757,7 +694,7 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
           <div className="p-6 border-b border-gray-200 dark:border-gray-700">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-              New Register Users ({isServerPaginated ? pagination.total : filteredUsers.length})
+              Customer Accounts ({isServerPaginated ? pagination.total : filteredUsers.length})
             </h3>
           </div>
           <div className="overflow-auto">
@@ -767,8 +704,6 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">User</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Created</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Created By</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Employee</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Last Login</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Actions</th>
                 </tr>
@@ -811,16 +746,6 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                       {new Date(user.createdAt).toLocaleDateString()}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                      {(user as any).createdBy || 'Direct Registration'}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                      {user.employee ? (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">Linked</span>
-                      ) : (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300">No Link</span>
-                      )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                       {user.lastLogin ? new Date(user.lastLogin).toLocaleDateString() : 'Never'}
@@ -911,7 +836,7 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => isServerPaginated
-                      ? visitUserPage(searchTerm, filterStatus, effectivePage - 1, filterRole, filterDepartment, filterLifecycle)
+                      ? visitUserPage(searchTerm, filterStatus, effectivePage - 1, filterLifecycle)
                       : setCurrentPage((prev) => Math.max(prev - 1, 1))}
                     disabled={effectivePage === 1}
                     className="p-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
@@ -933,7 +858,7 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
                         <button
                           key={page}
                           onClick={() => isServerPaginated
-                            ? visitUserPage(searchTerm, filterStatus, page, filterRole, filterDepartment, filterLifecycle)
+                            ? visitUserPage(searchTerm, filterStatus, page, filterLifecycle)
                             : setCurrentPage(page)}
                           className={`min-w-[40px] h-10 px-3 rounded-lg font-medium transition-colors ${
                             effectivePage === page
@@ -956,7 +881,7 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
 
                   <button
                     onClick={() => isServerPaginated
-                      ? visitUserPage(searchTerm, filterStatus, effectivePage + 1, filterRole, filterDepartment, filterLifecycle)
+                      ? visitUserPage(searchTerm, filterStatus, effectivePage + 1, filterLifecycle)
                       : setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
                     disabled={effectivePage === totalPages}
                     className="p-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
@@ -1015,12 +940,6 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
                           Age
                         </label>
                         <p className="text-sm text-gray-900 dark:text-white">{selectedUser.age}</p>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                          Created By
-                        </label>
-                        <p className="text-sm text-gray-900 dark:text-white">{(selectedUser as any).createdBy || 'Direct Registration'}</p>
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -1177,7 +1096,7 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
                 <div className="p-8">
                   <div className="flex justify-between items-center mb-6">
                     <h3 className="text-3xl font-bold text-gray-900 dark:text-white">
-                      User Registration Details
+                      Customer Account Details
                     </h3>
                     <button
                       onClick={() => {
@@ -1202,13 +1121,13 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
                           <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
                             First Name
                           </label>
-                          <p className="text-base text-gray-900 dark:text-white font-medium">{selectedUser.firstName || (selectedUser.employee?.name ? (selectedUser.employee.name.split(' ')[0]) : '')}</p>
+                          <p className="text-base text-gray-900 dark:text-white font-medium">{selectedUser.firstName}</p>
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
                             Last Name
                           </label>
-                          <p className="text-base text-gray-900 dark:text-white font-medium">{selectedUser.lastName || (selectedUser.employee?.name ? (selectedUser.employee.name.split(' ').slice(1).join(' ')) : '')}</p>
+                          <p className="text-base text-gray-900 dark:text-white font-medium">{selectedUser.lastName}</p>
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
@@ -1220,7 +1139,7 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
                           <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
                             Phone Number
                           </label>
-                          <p className="text-base text-gray-900 dark:text-white">{selectedUser.phone || selectedUser.employee?.phone || 'Not provided'}</p>
+                          <p className="text-base text-gray-900 dark:text-white">{selectedUser.phone || 'Not provided'}</p>
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
@@ -1243,33 +1162,6 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
                         <p className="text-base text-gray-900 dark:text-white">{selectedUser.address || 'Not provided'}</p>
                       </div>
                     </div>
-
-                    {/* HR Information (fallback from employee record) */}
-                    {selectedUser.employee && (
-                      <div>
-                        <h4 className="text-xl font-bold text-gray-900 dark:text-white mb-4 pb-3 border-b-2 border-gray-200 dark:border-gray-700">
-                          HR Information
-                        </h4>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                          <div>
-                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">Position</label>
-                            <p className="text-base text-gray-900 dark:text-white">{selectedUser.employee.position || 'N/A'}</p>
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">Department</label>
-                            <p className="text-base text-gray-900 dark:text-white">{selectedUser.employee.department || 'N/A'}</p>
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">Functional Role</label>
-                            <p className="text-base text-gray-900 dark:text-white">{selectedUser.employee.functionalRole || 'N/A'}</p>
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">Branch</label>
-                            <p className="text-base text-gray-900 dark:text-white">{selectedUser.employee.branch || 'N/A'}</p>
-                          </div>
-                        </div>
-                      </div>
-                    )}
 
                     {/* Document Information */}
                     {selectedUser.validIdUrl && (

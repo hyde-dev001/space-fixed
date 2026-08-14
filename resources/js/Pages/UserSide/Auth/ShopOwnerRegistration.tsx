@@ -16,6 +16,7 @@ import {
   type RegistrationDocumentMetadata,
 } from './registrationDocumentPayload';
 import RegistrationDocumentMetadataFields from '@/components/form/RegistrationDocumentMetadataFields';
+import { GPS_POSITION_OPTIONS } from '@/utils/geolocation';
 
 const CAVITE_CENTER = {
   lat: '14.28140000',
@@ -616,7 +617,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
         setGeoError('Could not get your location. Please allow location access.');
         setGettingGPS(false);
       },
-      { enableHighAccuracy: true },
+      GPS_POSITION_OPTIONS,
     );
   };
 
