@@ -5,7 +5,7 @@ namespace App\Http\Controllers\superAdmin;
 use App\Actions\superAdmin\ReviewShopOwnerUpgradeRequest;
 use App\Exceptions\ShopOwnerUpgradeReviewConflict;
 use App\Http\Controllers\Controller;
-use App\Http\Requests\superAdmin\ReviewShopOwnerUpgradeRequest as ReviewRequest;
+use App\Http\Requests\SuperAdmin\ReviewShopOwnerUpgradeRequest as ReviewRequest;
 use App\Models\ShopOwnerUpgradeRequest;
 use App\Models\ShopOwnerUpgradeRequestDocument;
 use App\Support\PrivilegedFailureResponse;
