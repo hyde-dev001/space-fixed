@@ -396,7 +396,7 @@ Route::prefix('repairer/conversations')->middleware(['web', 'auth:user', 'permis
 
 /**
  * Customer Notifications API
- * Middleware: auth:user (for customers only)
+ * Middleware: web, auth:user (for customers only)
  */
 Route::prefix('notifications')->middleware(['web', 'auth:user'])->group(function () {
     Route::get('/', [\App\Http\Controllers\NotificationController::class, 'index'])->name('api.notifications.index');

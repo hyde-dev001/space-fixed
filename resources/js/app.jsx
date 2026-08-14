@@ -29,9 +29,11 @@ const syncPagePresentation = (componentName = '') => {
 const ApplicationProviders = ({ initialComponent, children }) => {
     const [component, setComponent] = useState(initialComponent);
 
-    useEffect(() => router.on('navigate', (event) => {
-        setComponent(event.detail?.page?.component ?? '');
-    }), []);
+    useEffect(() => {
+        return router.on('navigate', (event) => {
+            setComponent(event.detail?.page?.component ?? '');
+        });
+    }, []);
 
     const isUserSidePage = component.startsWith('UserSide/');
     const isUserAuthPage = component.startsWith('UserSide/Auth/');
@@ -39,15 +41,11 @@ const ApplicationProviders = ({ initialComponent, children }) => {
     return (
         <QueryProvider>
             <ThemeProvider>
-                {isUserSidePage ? (
-                    <CartProvider syncEnabled={!isUserAuthPage}>
+                <SidebarProvider>
+                    <CartProvider syncEnabled={isUserSidePage && !isUserAuthPage}>
                         {children}
                     </CartProvider>
-                ) : (
-                    <SidebarProvider>
-                        {children}
-                    </SidebarProvider>
-                )}
+                </SidebarProvider>
             </ThemeProvider>
         </QueryProvider>
     );
@@ -98,7 +96,7 @@ createInertiaApp({
     },
     setup({ el, App, props }) {
         const root = createRoot(el);
-        
+
         const component = props.initialPage.component ?? '';
         syncPagePresentation(component);
 
