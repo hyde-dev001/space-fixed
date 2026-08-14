@@ -369,7 +369,7 @@ class SourceModuleShipmentRequestTest extends TestCase
         $this->assertSame(120.98, $leg->destination_snapshot['longitude']);
     }
 
-    public function test_shop_owned_retail_delivery_is_scheduled_from_saved_address_coordinates(): void
+    public function test_shop_owned_retail_delivery_stays_unscheduled_until_dispatcher_selects_slot(): void
     {
         $shop = ShopOwner::factory()->create(['shop_latitude' => 14.5995, 'shop_longitude' => 120.9842]);
         LogisticsSetting::create(['shop_owner_id' => $shop->id, 'lead_time_days' => 0]);
@@ -389,12 +389,23 @@ class SourceModuleShipmentRequestTest extends TestCase
         $shipment = app(SourceShipmentService::class)->ensureRetailOrderShipment($order);
         $leg = $shipment->legs->first();
 
-        $this->assertSame('scheduled', $leg->schedule_status);
+        $this->assertSame('unscheduled', $leg->schedule_status);
+        $this->assertNull($leg->scheduled_delivery_date);
+        $this->assertNull($leg->delivery_window);
+        $this->assertNull($leg->estimated_at);
         $this->assertSame(14.5995, $leg->origin_snapshot['latitude']);
         $this->assertSame(120.9842, $leg->origin_snapshot['longitude']);
         $this->assertSame('Blue gate', $leg->destination_snapshot['delivery_instructions']);
         $this->assertSame(14.6, $leg->destination_snapshot['latitude']);
-        $this->assertDatabaseHas('delivery_events', ['shipment_id' => $shipment->id, 'event_type' => 'delivery_estimated', 'visibility' => 'customer']);
+        $this->assertDatabaseHas('delivery_events', [
+            'shipment_id' => $shipment->id,
+            'event_type' => 'delivery_schedule_attention',
+            'visibility' => 'internal',
+        ]);
+        $this->assertDatabaseMissing('delivery_events', [
+            'shipment_id' => $shipment->id,
+            'event_type' => 'delivery_estimated',
+        ]);
     }
 
     public function test_third_party_retail_delivery_is_not_scheduled(): void

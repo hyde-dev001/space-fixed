@@ -40,7 +40,7 @@ class RepairLogisticsIntakeTest extends TestCase
         $this->assertSame(1, $this->intakeShipments($paidFirst)->count());
     }
 
-    public function test_ready_intake_creation_is_idempotent_and_copies_the_accepted_snapshot_and_schedule(): void
+    public function test_ready_intake_creation_is_idempotent_and_copies_the_accepted_snapshot_for_dispatcher_scheduling(): void
     {
         [$repair] = $this->coveredRepair();
         $repair->update([
@@ -61,7 +61,10 @@ class RepairLogisticsIntakeTest extends TestCase
 
         $leg = $first->fresh('legs')->legs->first();
         $this->assertSame('inbound', $leg->leg_type);
-        $this->assertSame('scheduled', $leg->schedule_status);
+        $this->assertSame('unscheduled', $leg->schedule_status);
+        $this->assertNull($leg->scheduled_delivery_date);
+        $this->assertNull($leg->delivery_window);
+        $this->assertNull($leg->estimated_at);
         $this->assertSame($repair->intake_address['version'], data_get($leg->origin_snapshot, 'version'));
         $this->assertSame(14.6, data_get($leg->origin_snapshot, 'latitude'));
         $this->assertSame(120.98, data_get($leg->origin_snapshot, 'longitude'));
@@ -74,8 +77,12 @@ class RepairLogisticsIntakeTest extends TestCase
         $this->assertSame(12.0, (float) data_get($leg->origin_snapshot, 'coverage.coverage_radius_km'));
         $this->assertDatabaseHas('delivery_events', [
             'shipment_id' => $first->id,
+            'event_type' => 'delivery_schedule_attention',
+            'visibility' => 'internal',
+        ]);
+        $this->assertDatabaseMissing('delivery_events', [
+            'shipment_id' => $first->id,
             'event_type' => 'delivery_estimated',
-            'visibility' => 'customer',
         ]);
     }
 
@@ -188,7 +195,10 @@ class RepairLogisticsIntakeTest extends TestCase
         $this->assertSame('cancelled', $reactivated->legs->first()->status->value);
         $this->assertSame('pending', $reactivated->legs->last()->status->value);
         $this->assertSame(2, $reactivated->legs->last()->sequence);
+        $this->assertSame('unscheduled', $reactivated->legs->last()->schedule_status);
         $this->assertSame($originalSchedule, $reactivated->legs->last()->scheduled_delivery_date?->toDateString());
+        $this->assertNull($reactivated->legs->last()->delivery_window);
+        $this->assertNull($reactivated->legs->last()->estimated_at);
     }
 
     private function coveredRepair(): array
