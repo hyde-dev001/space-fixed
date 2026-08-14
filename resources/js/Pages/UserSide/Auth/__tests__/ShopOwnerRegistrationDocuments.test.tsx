@@ -33,8 +33,10 @@ describe('shop owner registration document payload', () => {
     expect(formData.get('business_registration')).toBe(businessRegistration);
     expect(formData.get('dti_registration')).toBeNull();
     expect(formData.get('business_registration_type')).toBe('dti_registration');
+    expect(formData.get('document_metadata[business_registration][issued_on]')).toBe('2026-01-01');
     expect(formData.get('document_metadata[business_registration][expiration_mode]')).toBe('none');
     expect(formData.get('document_metadata[mayors_permit][expiration_mode]')).toBe('dated');
+    expect(formData.get('document_metadata[mayors_permit][issued_on]')).toBe('2026-01-01');
     expect(formData.get('document_metadata[mayors_permit][expires_on]')).toBe('2027-01-01');
     expect(formData.get('submission_keys[business_registration]')).toBe('11111111-1111-4111-8111-111111111111');
   });
@@ -59,6 +61,7 @@ describe('shop owner registration document payload', () => {
     });
 
     expect(formData.get(`other_documents[${slotId}]`)).toBe(supportingFile);
+    expect(formData.get(`other_document_metadata[${slotId}][issued_on]`)).toBe('2026-01-01');
     expect(formData.get(`other_document_metadata[${slotId}][expiration_mode]`)).toBe('dated');
     expect(formData.get(`other_document_metadata[${slotId}][expires_on]`)).toBe('2028-01-01');
     expect(formData.get('business_registration_type')).toBe('sec_registration');
