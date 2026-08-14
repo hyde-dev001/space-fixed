@@ -5,7 +5,7 @@ import { useCart } from '../../../contexts/CartContext';
 import NotificationBell from "../../../components/common/NotificationBell";
 import StarRating from '../../../components/common/StarRating';
 import { useBadgeCounts } from '../../../hooks/useBadgeCounts';
-import { GPS_POSITION_OPTIONS } from '@/utils/geolocation';
+import { GPS_POSITION_OPTIONS, getCurrentPositionWithTimeout } from '@/utils/geolocation';
 
 type Product = {
   id: number;
@@ -400,17 +400,14 @@ const Products: React.FC<Props> = () => {
     }
     setLocating(true);
     setLocError(null);
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
+    void getCurrentPositionWithTimeout(GPS_POSITION_OPTIONS)
+      .then((position) => {
         setUserCoords({ lat: position.coords.latitude, lng: position.coords.longitude });
-        setLocating(false);
-      },
-      () => {
+      })
+      .catch(() => {
         setLocError('Location access denied. Please allow location access and try again.');
-        setLocating(false);
-      },
-      GPS_POSITION_OPTIONS,
-    );
+      })
+      .finally(() => setLocating(false));
   }, []);
 
   useEffect(() => {

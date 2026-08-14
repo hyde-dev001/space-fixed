@@ -14,13 +14,14 @@ export default function DeliveryCoverageMap({ latitude, longitude, radiusKm }: P
     if (!containerRef.current) return;
     let disposed = false;
     let map: import('leaflet').Map | undefined;
+    let resizeTimer: number | undefined;
 
     void import('leaflet').then((L) => {
       if (disposed || !containerRef.current) return;
 
       map = L.map(containerRef.current, { dragging: true, scrollWheelZoom: false })
         .setView([latitude, longitude], 13);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '&copy; OpenStreetMap contributors',
       }).addTo(map);
       L.circleMarker([latitude, longitude], {
@@ -36,10 +37,12 @@ export default function DeliveryCoverageMap({ latitude, longitude, radiusKm }: P
         fillOpacity: 0.18,
       }).addTo(map);
       map.fitBounds(circle.getBounds(), { padding: [20, 20] });
+      resizeTimer = window.setTimeout(() => map?.invalidateSize(), 0);
     });
 
     return () => {
       disposed = true;
+      if (resizeTimer !== undefined) window.clearTimeout(resizeTimer);
       map?.remove();
     };
   }, [latitude, longitude, radiusKm]);

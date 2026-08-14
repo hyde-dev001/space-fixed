@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
+import { GPS_POSITION_OPTIONS, getCurrentPositionWithTimeout } from '@/utils/geolocation';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 import { useCart } from '../../../contexts/CartContext';
@@ -126,18 +127,15 @@ const Repair: React.FC<Props> = ({ shops }) => {
     }
     setLocating(true);
     setLocError(null);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
+    void getCurrentPositionWithTimeout(GPS_POSITION_OPTIONS)
+      .then((pos) => {
         setUserCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
         setSortBy('near_me');
-        setLocating(false);
-      },
-      () => {
+      })
+      .catch(() => {
         setLocError('Location access denied. Please allow location in your browser.');
-        setLocating(false);
-      },
-      { enableHighAccuracy: true, timeout: 10000 },
-    );
+      })
+      .finally(() => setLocating(false));
   }, []);
 
   useEffect(() => {

@@ -4,7 +4,7 @@ import {
   parsePhilippineAddress,
   type RegistrationAddress,
 } from '../../Pages/UserSide/Auth/registrationAddress';
-import { GPS_POSITION_OPTIONS } from '../../utils/geolocation';
+import { GPS_POSITION_OPTIONS, getCurrentPositionWithTimeout } from '../../utils/geolocation';
 
 export type CoordinateValue = { latitude: number; longitude: number } | null;
 
@@ -319,20 +319,18 @@ export default function CustomerAddressMapPicker({
     setSearching(false);
     setLocating(true);
     setStatus('Getting your location…');
-    navigator.geolocation.getCurrentPosition(
-      ({ coords }) => {
-        if (mountedRef.current && requestId === requestRef.current) {
-          void reverseGeocode(coords.latitude, coords.longitude, requestId, 'gps');
-        }
-      },
-      () => {
+    void getCurrentPositionWithTimeout(GPS_POSITION_OPTIONS)
+      .then(({ coords }) => {
+        if (!mountedRef.current || requestId !== requestRef.current) return;
+        setLocating(false);
+        void reverseGeocode(coords.latitude, coords.longitude, requestId, 'gps');
+      })
+      .catch(() => {
         if (mountedRef.current && requestId === requestRef.current) {
           setLocating(false);
           setStatus('Could not get your location. Allow location access and try again.');
         }
-      },
-      GPS_POSITION_OPTIONS,
-    );
+      });
   };
 
   return (

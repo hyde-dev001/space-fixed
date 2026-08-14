@@ -8,6 +8,7 @@ import type {
   TrackingShipmentLeg,
 } from '@/types/logistics';
 import { workflowFeedback } from '@/utils/workflowFeedback';
+import { GPS_POSITION_OPTIONS, getCurrentPositionWithTimeout } from '@/utils/geolocation';
 import { Head, router, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import { FormEvent, useEffect, useRef, useState } from 'react';
@@ -80,17 +81,12 @@ const incidentTypes = [
   ['other', 'Other incident'],
 ] as const;
 
-const currentPosition = () => new Promise<GeolocationPosition>((resolve, reject) => {
+const currentPosition = () => {
   if (!navigator.geolocation) {
-    reject(new Error('Location is unavailable on this device.'));
-    return;
+    return Promise.reject(new Error('Location is unavailable on this device.'));
   }
-  navigator.geolocation.getCurrentPosition(resolve, reject, {
-    enableHighAccuracy: true,
-    timeout: 10_000,
-    maximumAge: 0,
-  });
-});
+  return getCurrentPositionWithTimeout({ ...GPS_POSITION_OPTIONS, timeout: 10_000 });
+};
 
 const needsArrivalReason = (error: unknown) => {
   const response = (error as {
@@ -100,7 +96,10 @@ const needsArrivalReason = (error: unknown) => {
   return Boolean(
     (response?.status === 422 && response.data?.errors?.exception_reason) ||
     (typeof error === 'object' && error !== null && 'code' in error) ||
-    (error instanceof Error && error.message === 'Location is unavailable on this device.'),
+    (error instanceof Error && [
+      'Location is unavailable on this device.',
+      'Location request timed out.',
+    ].includes(error.message)),
   );
 };
 

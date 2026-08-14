@@ -2,6 +2,7 @@ import { Head, usePage } from '@inertiajs/react';
 import AppLayoutERP from '../../../layout/AppLayout_ERP';
 import { useState, useEffect } from 'react';
 import Swal from 'sweetalert2';
+import { GPS_POSITION_OPTIONS, getCurrentPositionWithTimeout } from '../../../utils/geolocation';
 
 const ClockIcon = () => (
     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -650,9 +651,7 @@ export default function TimeIn() {
                 return;
             }
             try {
-                const position = await new Promise<GeolocationPosition>((resolve, reject) =>
-                    navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 15000 }),
-                );
+                const position = await getCurrentPositionWithTimeout(GPS_POSITION_OPTIONS);
                 locationPayload = { latitude: position.coords.latitude, longitude: position.coords.longitude };
             } catch {
                 await Swal.fire({
