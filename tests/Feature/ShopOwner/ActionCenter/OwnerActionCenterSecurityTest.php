@@ -6,7 +6,9 @@ namespace Tests\Feature\ShopOwner\ActionCenter;
 
 use App\Contracts\OwnerActionCenter\OwnerAttentionAdapter;
 use App\Models\PurchaseRequest;
+use App\Models\ShopDocument;
 use App\Models\ShopOwner;
+use App\Models\SuperAdmin;
 use App\Models\User;
 use App\Services\OwnerActionCenter\Adapters\ExpenseAttentionAdapter;
 use App\Services\OwnerActionCenter\OwnerActionCenterService;
@@ -17,6 +19,7 @@ use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Log;
+use RuntimeException;
 use Tests\TestCase;
 use Throwable;
 
@@ -36,6 +39,10 @@ final class OwnerActionCenterSecurityTest extends TestCase
             'owner_action_center.coverage.refunds' => false,
             'owner_action_center.coverage.expenses' => false,
             'owner_action_center.coverage.purchase_requests' => true,
+            'owner_action_center.buckets.urgent_exceptions.enabled' => false,
+            'owner_action_center.buckets.urgent_exceptions.coverage.compliance' => false,
+            'owner_action_center.buckets.urgent_exceptions.coverage.refunds' => false,
+            'owner_action_center.buckets.urgent_exceptions.coverage.logistics' => false,
         ]);
     }
 
@@ -223,6 +230,79 @@ final class OwnerActionCenterSecurityTest extends TestCase
         $this->assertStringNotContainsString('/action-center', (string) $response->headers->get('Location'));
     }
 
+    public function test_compliance_projection_is_tenant_scoped_and_excludes_sensitive_document_fields(): void
+    {
+        $owner = $this->phaseThreeOwner();
+        $otherOwner = ShopOwner::factory()->approved()->create();
+        $reviewer = SuperAdmin::factory()->admin()->create();
+        config([
+            'owner_action_center.buckets.urgent_exceptions.enabled' => true,
+            'owner_action_center.buckets.urgent_exceptions.coverage.compliance' => true,
+        ]);
+        $ownerDocument = $this->expiringDocument($owner, $reviewer, 'private/owner-secret.pdf');
+        $otherDocument = $this->expiringDocument($otherOwner, $reviewer, 'private/other-secret.pdf');
+
+        $response = $this->actingAs($owner, 'shop_owner')->get(route('shop-owner.shell.action-center', [
+            'bucket' => 'urgent_exceptions',
+            'source' => 'compliance',
+        ]))->assertOk();
+
+        $items = $response->inertiaProps('ownerActionCenter.items');
+        $this->assertSame([$ownerDocument->id], array_column($items, 'source_id'));
+        $this->assertNotContains($otherDocument->id, array_column($items, 'source_id'));
+        $serialized = json_encode($items, JSON_THROW_ON_ERROR);
+        $this->assertStringNotContainsString('owner-secret', $serialized);
+        $this->assertStringNotContainsString('other-secret', $serialized);
+        $this->assertStringNotContainsString('checksum_sha256', $serialized);
+    }
+
+    public function test_compliance_failure_keeps_decisions_healthy_and_marks_exceptions_unavailable(): void
+    {
+        $owner = $this->phaseThreeOwner();
+        $request = $this->createPurchaseRequest($owner);
+        config([
+            'owner_action_center.buckets.urgent_exceptions.enabled' => true,
+            'owner_action_center.buckets.urgent_exceptions.coverage.compliance' => true,
+        ]);
+        $this->bindAdapter(
+            'App\\Services\\OwnerActionCenter\\Adapters\\ComplianceDocumentAttentionAdapter',
+            'compliance_documents',
+            'compliance',
+            failure: new RuntimeException('compliance read failed'),
+            bucket: 'urgent_exceptions',
+        );
+
+        $response = $this->actingAs($owner, 'shop_owner')
+            ->get(route('shop-owner.shell.home'))
+            ->assertOk();
+
+        $this->assertSame([$request->id], array_column(
+            $response->inertiaProps('ownerActionCenter.items'),
+            'source_id',
+        ));
+        $this->assertSame('none', $response->inertiaProps('ownerActionCenter.degradation_status'));
+        $this->assertSame('unavailable', $response->inertiaProps('ownerUrgentExceptions.degradation_status'));
+        $this->assertSame(['compliance_documents'], $response->inertiaProps('ownerUrgentExceptions.health.failed_adapter_keys'));
+    }
+
+    public function test_blocked_exception_sources_are_not_resolved_or_reported_as_failures(): void
+    {
+        $owner = $this->phaseThreeOwner();
+        config([
+            'owner_action_center.buckets.urgent_exceptions.enabled' => true,
+            'owner_action_center.buckets.urgent_exceptions.coverage.compliance' => true,
+            'owner_action_center.buckets.urgent_exceptions.coverage.refunds' => false,
+            'owner_action_center.buckets.urgent_exceptions.coverage.logistics' => false,
+        ]);
+
+        $response = $this->actingAs($owner, 'shop_owner')->get(route('shop-owner.shell.action-center', [
+            'bucket' => 'urgent_exceptions',
+        ]))->assertOk();
+
+        $this->assertSame(['compliance_documents'], $response->inertiaProps('ownerActionCenter.health.enabled_adapter_keys'));
+        $this->assertSame([], $response->inertiaProps('ownerActionCenter.health.failed_adapter_keys'));
+    }
+
     private function phaseThreeOwner(): ShopOwner
     {
         $owner = ShopOwner::factory()->approved()->create([
@@ -261,14 +341,16 @@ final class OwnerActionCenterSecurityTest extends TestCase
         string $coverage,
         array $items = [],
         ?Throwable $failure = null,
+        string $bucket = 'needs_my_decision',
     ): void {
-        $adapter = new class($key, $coverage, $items, $failure) implements OwnerAttentionAdapter {
+        $adapter = new class($key, $coverage, $items, $failure, $bucket) implements OwnerAttentionAdapter {
             /** @param array<int, OwnerAttentionItem> $items */
             public function __construct(
                 private readonly string $key,
                 private readonly string $coverage,
                 private readonly array $items,
                 private readonly ?Throwable $failure,
+                private readonly string $bucket,
             ) {}
 
             public function adapterKey(): string
@@ -283,7 +365,7 @@ final class OwnerActionCenterSecurityTest extends TestCase
 
             public function primaryBucket(): string
             {
-                return 'needs_my_decision';
+                return $this->bucket;
             }
 
             public function read(ShopOwner $owner, OwnerAttentionQuery $query): OwnerAttentionAdapterResult
@@ -319,5 +401,24 @@ final class OwnerActionCenterSecurityTest extends TestCase
             coverageSource: 'expenses',
             destinationUrl: '/shop-owner/expense-approvals?expense=1',
         );
+    }
+
+    private function expiringDocument(ShopOwner $owner, SuperAdmin $reviewer, string $filePath): ShopDocument
+    {
+        return ShopDocument::query()->create([
+            'shop_owner_id' => $owner->id,
+            'document_type' => 'mayors_permit',
+            'logical_slot' => 'mayors_permit',
+            'version_number' => 1,
+            'file_path' => $filePath,
+            'disk' => 'local',
+            'status' => 'approved',
+            'is_current' => true,
+            'expiration_mode' => 'dated',
+            'expires_on' => now()->addDays(5)->toDateString(),
+            'reviewed_by_super_admin_id' => $reviewer->id,
+            'reviewed_at' => now()->subMonth(),
+            'checksum_sha256' => hash('sha256', $filePath),
+        ]);
     }
 }

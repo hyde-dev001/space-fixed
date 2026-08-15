@@ -82,6 +82,34 @@ final class OwnerActionCenterPerformanceTest extends TestCase
         $this->assertSame($oneRowReads, $manyRowReads);
     }
 
+    public function test_exception_home_and_queue_use_the_same_bounded_adapter_contract(): void
+    {
+        $owner = ShopOwner::factory()->approved()->create();
+        config([
+            'owner_action_center.buckets.urgent_exceptions.enabled' => true,
+            'owner_action_center.buckets.urgent_exceptions.coverage.compliance' => true,
+            'owner_action_center.buckets.urgent_exceptions.coverage.refunds' => false,
+            'owner_action_center.buckets.urgent_exceptions.coverage.logistics' => false,
+        ]);
+        $adapter = $this->bindComplianceAdapter(items: 40);
+        $service = app(OwnerActionCenterService::class);
+
+        $home = $service->summaryForHome($owner, 'urgent_exceptions');
+        $queue = $service->queueForActionCenter($owner, new OwnerAttentionQuery(
+            bucket: 'urgent_exceptions',
+            coverage: 'compliance',
+            page: 1,
+            perPage: 5,
+        ));
+
+        $this->assertSame([5, 5], $adapter->candidateLimits);
+        $this->assertSame($home->coverageCounts, $queue->coverageCounts);
+        $this->assertSame(
+            array_map(static fn (OwnerAttentionItem $item): string => $item->attentionKey, $home->items),
+            array_map(static fn (OwnerAttentionItem $item): string => $item->attentionKey, $queue->items),
+        );
+    }
+
     /**
      * @return array<int, object>
      */
@@ -161,5 +189,76 @@ final class OwnerActionCenterPerformanceTest extends TestCase
         }
 
         return $adapters;
+    }
+
+    private function bindComplianceAdapter(int $items): object
+    {
+        $projected = [];
+        for ($id = 1; $id <= $items; $id++) {
+            $projected[] = new OwnerAttentionItem(
+                sourceType: 'compliance_document',
+                sourceId: $id,
+                category: 'document_expiry',
+                primaryBucket: 'urgent_exceptions',
+                module: 'compliance',
+                title: 'Compliance document expiry',
+                conciseSummary: 'Renewal is required.',
+                priorityTier: 'high',
+                materialityTier: 'high',
+                comparableMonetaryExposure: null,
+                urgencyAt: '2026-08-20T00:00:00+08:00',
+                actionableSince: '2026-08-01T00:00:00+08:00',
+                waitingOn: 'none',
+                ownerActionRequired: false,
+                coverageSource: 'compliance',
+                destinationUrl: '/shop-owner/settings/policies-compliance',
+            );
+        }
+
+        $adapter = new class($projected) implements OwnerAttentionAdapter {
+            /** @var array<int, OwnerAttentionItem> */
+            private readonly array $items;
+
+            /** @var array<int, int> */
+            public array $candidateLimits = [];
+
+            /** @param array<int, OwnerAttentionItem> $items */
+            public function __construct(array $items)
+            {
+                $this->items = $items;
+            }
+
+            public function adapterKey(): string
+            {
+                return 'compliance_documents';
+            }
+
+            public function coverageSource(): string
+            {
+                return 'compliance';
+            }
+
+            public function primaryBucket(): string
+            {
+                return 'urgent_exceptions';
+            }
+
+            public function read(ShopOwner $owner, OwnerAttentionQuery $query): OwnerAttentionAdapterResult
+            {
+                $this->candidateLimits[] = $query->candidateLimit;
+
+                return new OwnerAttentionAdapterResult(
+                    array_slice($this->items, 0, $query->candidateLimit),
+                    count($this->items),
+                );
+            }
+        };
+
+        app()->instance(
+            'App\\Services\\OwnerActionCenter\\Adapters\\ComplianceDocumentAttentionAdapter',
+            $adapter,
+        );
+
+        return $adapter;
     }
 }
