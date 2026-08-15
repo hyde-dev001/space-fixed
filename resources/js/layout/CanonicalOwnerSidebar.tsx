@@ -145,6 +145,7 @@ const CanonicalOwnerSidebar: React.FC<CanonicalOwnerSidebarProps> = ({ metadata 
         <div data-testid="canonical-owner-compatibility" className="border-t border-gray-200 py-4 dark:border-gray-800">
           <Link
             href={metadata.compatibility.fallback_url}
+            aria-label="Open existing ERP Workspace"
             className="flex min-h-10 items-center rounded-lg px-3 py-2 text-sm font-medium text-gray-500 transition-colors motion-reduce:transition-none hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
             title={showLabels ? undefined : "Open existing ERP Workspace"}
           >

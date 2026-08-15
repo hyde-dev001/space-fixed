@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\OwnerShell;
 
 use App\Enums\OwnerShellPresentation;
+use App\Enums\OwnerShellFallbackReason;
 use App\Enums\OwnerShellSelectionReason;
 use App\Models\ShopOwner;
 use App\Services\ErpRouteCatalog;
@@ -21,6 +22,8 @@ use Throwable;
 
 final class CanonicalOwnerShellService
 {
+    private const FALLBACK_ROUTE = 'shop-owner.shell.erp-fallback';
+
     /**
      * @var array<string, array{group: string, module: string, route: string, label: string}>
      */
@@ -130,6 +133,20 @@ final class CanonicalOwnerShellService
             ]);
 
             return OwnerShellMetadata::existing(OwnerShellSelectionReason::ShellCompositionFailed);
+        }
+    }
+
+    public function ownerErpFallbackAllowed(ShopOwner $owner): bool
+    {
+        try {
+            $selection = $this->rollout->select($owner);
+
+            return $selection->presentation === OwnerShellPresentation::Canonical
+                && $this->workspaceEligible($owner);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return false;
         }
     }
 
@@ -427,8 +444,24 @@ final class CanonicalOwnerShellService
         return [
             'show_erp_fallback' => true,
             'erp_workspace_url' => $workspaceUrl,
-            'fallback_url' => $workspaceUrl,
+            'fallback_url' => $this->fallbackUrl(),
         ];
+    }
+
+    private function fallbackUrl(): string
+    {
+        if (! Route::has(self::FALLBACK_ROUTE)) {
+            throw new RuntimeException('Owner shell ERP fallback route is not registered.');
+        }
+
+        $url = route(self::FALLBACK_ROUTE, [
+            'reason' => OwnerShellFallbackReason::UserPreference->value,
+            'source' => 'home',
+        ]);
+        $path = $this->path($url);
+        $query = parse_url($url, PHP_URL_QUERY);
+
+        return is_string($query) && $query !== '' ? $path.'?'.$query : $path;
     }
 
     private function workspaceEligible(ShopOwner $owner): bool

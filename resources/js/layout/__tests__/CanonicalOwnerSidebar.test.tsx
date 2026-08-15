@@ -91,7 +91,7 @@ const metadata = (overrides: Partial<OwnerShellMetadata> = {}): OwnerShellMetada
   compatibility: {
     show_erp_fallback: true,
     erp_workspace_url: "/shop-owner/erp/workspace",
-    fallback_url: "/shop-owner/erp/fallback",
+    fallback_url: "/shop-owner/erp/fallback?reason=user_preference&source=home",
   },
   ...overrides,
 });
@@ -195,7 +195,7 @@ it("keeps the ERP fallback outside primary navigation", () => {
   expect(within(primary).queryByRole("link", { name: /open existing erp workspace/i })).not.toBeInTheDocument();
   expect(within(compatibility).getByRole("link", { name: /open existing erp workspace/i })).toHaveAttribute(
     "href",
-    "/shop-owner/erp/fallback",
+    "/shop-owner/erp/fallback?reason=user_preference&source=home",
   );
 });
 
