@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-15
 
-**Status:** Approved focused design; ready for implementation planning after specification review
+**Status:** Approved focused design; ready for implementation planning
 
 ## 1. Goal
 
@@ -241,7 +241,7 @@ The Action Center does not lock source records, optimistically resolve cards, or
 
 ## 10. Coordinator and Registry
 
-The application-controlled adapter registry initially contains:
+The application-controlled coverage configuration initially contains:
 
 ```text
 refunds
@@ -249,7 +249,14 @@ expenses
 purchase_requests
 ```
 
-The Refund registry entry may compose the distinct Order and Repair Refund adapters while preserving separate source types and health reporting where needed.
+The `refunds` coverage flag enables two distinct internal adapters:
+
+```text
+order_refunds
+repair_refunds
+```
+
+They retain separate source types, tenant queries, eligibility rules, failure isolation, timing, counts, and health reporting. Failure of one Refund adapter does not require the healthy Refund adapter to contribute zero data. The UI may group both under the `Refunds` product filter while degradation disclosure identifies the unavailable Refund source precisely enough to avoid implying complete coverage.
 
 The coordinator:
 
@@ -410,7 +417,7 @@ Eligibility requires:
 
 Rollout membership and adapter enablement are presentation concerns. They never grant a capability or make an underlying domain page accessible.
 
-Before initial production enablement, all three declared launch adapters must independently pass the readiness gate. Runtime failure isolation handles unexpected post-launch degradation; it is not a substitute for launch readiness.
+Before initial production enablement, all three declared coverage families must pass the readiness gate, including independent readiness for both the Order Refund and Repair Refund adapters. Runtime failure isolation handles unexpected post-launch degradation; it is not a substitute for launch readiness.
 
 ## 18. Route Contract
 
@@ -535,6 +542,7 @@ No domain mutation path is migrated into the Action Center during this sequence.
 - source filters before limits;
 - adversarial cross-source pagination;
 - partial, all-failed, and no-enabled behavior;
+- isolated Order Refund versus Repair Refund failure and health disclosure;
 - Home and full queue under the same fixed state;
 - valid page normalization after refresh.
 
@@ -581,7 +589,7 @@ Rollback does not require:
 
 Phase 3A is complete when:
 
-1. Refund, Expense, and Purchase Request adapters independently pass the readiness gate.
+1. Order Refund, Repair Refund, Expense, and Purchase Request adapters independently pass the readiness gate.
 2. Allowlisted canonical-shell owners see the bounded Owner Actions Home summary.
 3. `/shop-owner/action-center` provides the complete supported prioritized queue.
 4. Home and the full queue use identical contracts under fixed source state.
@@ -596,4 +604,4 @@ Phase 3A is complete when:
 13. Phase 3 failures preserve the Phase 2 canonical shell and do not alter domain behavior.
 14. No Action Center persistence, generic mutation surface, second authorization system, or workflow duplication is introduced.
 
-> **Completion invariant:** Phase 3A is complete when Refund, Expense, and Purchase Request adapters have independently passed their readiness gates and allowlisted canonical-shell owners can discover and systematically review their current owner-required decisions through the shared live-read model, while existing domain workflows remain the sole execution surfaces and unsupported or temporarily unavailable domains are represented accurately.
+> **Completion invariant:** Phase 3A is complete when Order Refund, Repair Refund, Expense, and Purchase Request adapters have independently passed their readiness gates and allowlisted canonical-shell owners can discover and systematically review their current owner-required decisions through the shared live-read model, while existing domain workflows remain the sole execution surfaces and unsupported or temporarily unavailable domains are represented accurately.

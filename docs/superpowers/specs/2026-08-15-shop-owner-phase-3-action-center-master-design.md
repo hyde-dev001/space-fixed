@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-15
 
-**Status:** Approved master design for Phase 3; Phase 3A is ready for a focused specification and implementation plan
+**Status:** Approved master design for Phase 3; Phase 3A focused design approved
 
 ## 1. Goal
 
@@ -458,4 +458,4 @@ Phase 3 master
 └── Phase 3C — Waiting on Others
 ```
 
-The first implementation plan covers Phase 3A only. Phase 3B and Phase 3C receive their own focused designs and plans before source onboarding begins.
+The first implementation plan covers [`2026-08-15-shop-owner-phase-3a-owner-decisions-design.md`](./2026-08-15-shop-owner-phase-3a-owner-decisions-design.md) only. Phase 3B and Phase 3C receive their own focused designs and plans before source onboarding begins.
