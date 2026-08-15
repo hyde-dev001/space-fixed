@@ -6,6 +6,9 @@ import type { OwnerShellMetadata } from "../../types/ownerShell";
 
 const state = vi.hoisted(() => ({
   url: "/shop-owner/home",
+  isExpanded: true,
+  isMobileOpen: false,
+  isHovered: false,
 }));
 
 vi.mock("@inertiajs/react", () => ({
@@ -17,9 +20,9 @@ vi.mock("@inertiajs/react", () => ({
 
 vi.mock("../../context/SidebarContext", () => ({
   useSidebar: () => ({
-    isExpanded: true,
-    isMobileOpen: false,
-    isHovered: false,
+    isExpanded: state.isExpanded,
+    isMobileOpen: state.isMobileOpen,
+    isHovered: state.isHovered,
     setIsHovered: vi.fn(),
   }),
 }));
@@ -98,12 +101,15 @@ const metadata = (overrides: Partial<OwnerShellMetadata> = {}): OwnerShellMetada
 
 beforeEach(() => {
   state.url = "/shop-owner/home";
+  state.isExpanded = true;
+  state.isMobileOpen = false;
+  state.isHovered = false;
 });
 
 it("orders and expands the primary group for an individual owner", () => {
   render(<CanonicalOwnerSidebar metadata={metadata()} />);
 
-  const groups = screen.getAllByTestId(/^canonical-owner-group-/);
+  const groups = screen.getAllByRole("button").filter((button) => button.hasAttribute("data-group-key"));
   expect(groups.map((group) => group.getAttribute("data-group-key"))).toEqual([
     "home",
     "operate",
@@ -129,7 +135,7 @@ it("puts Oversee first and expanded for a company owner", () => {
 
   render(<CanonicalOwnerSidebar metadata={companyMetadata} />);
 
-  const groups = screen.getAllByTestId(/^canonical-owner-group-/);
+  const groups = screen.getAllByRole("button").filter((button) => button.hasAttribute("data-group-key"));
   expect(groups.map((group) => group.getAttribute("data-group-key"))).toEqual([
     "home",
     "oversee",
@@ -171,6 +177,7 @@ it("omits empty groups and explains unavailable items with a management destinat
 it("uses canonical URLs for Home, Reports, Audit, and Settings", () => {
   render(<CanonicalOwnerSidebar metadata={metadata()} />);
 
+  expect(screen.getByRole("link", { name: "SoleSpace" })).toHaveAttribute("href", "/shop-owner/home");
   expect(screen.getByRole("link", { name: "Home" })).toHaveAttribute("href", "/shop-owner/home");
   expect(screen.getByRole("link", { name: "Reports" })).toHaveAttribute("href", "/shop-owner/reports");
   expect(screen.getByRole("link", { name: "Audit" })).toHaveAttribute("href", "/shop-owner/audit");
@@ -185,6 +192,18 @@ it("matches one canonical item when a compatibility URL is active", () => {
   expect(activeLinks).toHaveLength(1);
   expect(activeLinks[0]).toHaveTextContent("Retail");
   expect(activeLinks[0]).toHaveClass("menu-item-active");
+});
+
+it("keeps collapsed destinations visually identifiable with icons and labels", () => {
+  state.isExpanded = false;
+  render(<CanonicalOwnerSidebar metadata={metadata()} />);
+
+  const retailLink = screen.getByRole("link", { name: "Retail" });
+  expect(retailLink).toHaveAttribute("title", "Retail");
+  expect(within(retailLink).getByTestId("canonical-owner-item-icon-retail")).toBeVisible();
+  expect(screen.getByTestId("canonical-owner-group-operate")).toHaveAttribute("title", "Operate");
+  expect(within(screen.getByTestId("canonical-owner-group-operate")).getByTestId("canonical-owner-group-icon-operate")).toBeVisible();
+  expect(screen.getByTestId("canonical-owner-fallback-icon")).toBeVisible();
 });
 
 it("keeps the ERP fallback outside primary navigation", () => {

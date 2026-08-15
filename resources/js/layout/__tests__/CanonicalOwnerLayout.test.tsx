@@ -36,7 +36,13 @@ vi.mock("../../components/common/ThemeToggleButton", () => ({
 }));
 
 vi.mock("../../components/header/ShopOwnerDropdown", () => ({
-  default: () => <div data-testid="shop-owner-dropdown" />,
+  default: ({ urls }: { urls?: { profile?: string; settings?: string } }) => (
+    <div
+      data-testid="shop-owner-dropdown"
+      data-profile-url={urls?.profile}
+      data-settings-url={urls?.settings}
+    />
+  ),
 }));
 
 const metadata: OwnerShellMetadata = {
@@ -116,6 +122,24 @@ it("selects the canonical frame for a direct Shop Owner page", () => {
 
   expect(screen.getByTestId("canonical-owner-frame")).toContainElement(screen.getByText("owner page"));
   expect(screen.queryByTestId("existing-owner-sidebar")).not.toBeInTheDocument();
+});
+
+it("keeps canonical shell branding and profile links on canonical destinations", () => {
+  state.auth = { shop_owner: { id: 1 } };
+  render(<AppLayoutShopOwner><div>owner page</div></AppLayoutShopOwner>);
+
+  expect(screen.getAllByRole("link", { name: "SoleSpace" })).toHaveLength(1);
+  expect(screen.getAllByRole("link", { name: "SoleSpace" }).every((link) => (
+    link.getAttribute("href") === "/shop-owner/home"
+  ))).toBe(true);
+  expect(screen.getByTestId("shop-owner-dropdown")).toHaveAttribute(
+    "data-profile-url",
+    "/shop-owner/settings/profile",
+  );
+  expect(screen.getByTestId("shop-owner-dropdown")).toHaveAttribute(
+    "data-settings-url",
+    "/shop-owner/settings/profile",
+  );
 });
 
 it("keeps the existing Shop Owner frame when canonical metadata is absent", () => {

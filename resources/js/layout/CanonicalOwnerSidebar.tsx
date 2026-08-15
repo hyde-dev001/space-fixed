@@ -1,5 +1,22 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, usePage } from "@inertiajs/react";
+import {
+  BarChart3,
+  Boxes,
+  ChevronDown,
+  ClipboardList,
+  CreditCard,
+  ExternalLink,
+  FileText,
+  Home,
+  Settings2,
+  ShoppingBag,
+  ShoppingCart,
+  Truck,
+  Users,
+  Wrench,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { useSidebar } from "../context/SidebarContext";
 import type { OwnerShellGroup, OwnerShellItem, OwnerShellMetadata } from "../types/ownerShell";
 
@@ -23,6 +40,27 @@ const isItemActive = (path: string, item: OwnerShellItem): boolean => (
 );
 
 const visibleLabelClass = "transition-opacity duration-200 motion-reduce:transition-none";
+
+const ITEM_ICONS: Record<string, LucideIcon> = {
+  home: Home,
+  retail: ShoppingBag,
+  repair: Wrench,
+  customers: Users,
+  payments: CreditCard,
+  finance: BarChart3,
+  workforce: Users,
+  inventory: Boxes,
+  procurement: ShoppingCart,
+  logistics: Truck,
+  reports: FileText,
+  audit: ClipboardList,
+  "settings.profile": Settings2,
+  "settings.modules-team": Users,
+  "settings.payments-approvals": CreditCard,
+  "settings.operations": Settings2,
+  "settings.policies-compliance": ClipboardList,
+  "settings.subscription": CreditCard,
+};
 
 const CanonicalOwnerSidebar: React.FC<CanonicalOwnerSidebarProps> = ({ metadata }) => {
   const { isExpanded, isMobileOpen, isHovered, setIsHovered } = useSidebar();
@@ -55,6 +93,7 @@ const CanonicalOwnerSidebar: React.FC<CanonicalOwnerSidebarProps> = ({ metadata 
 
   const renderItem = (item: OwnerShellItem) => {
     const active = item.available && isItemActive(currentPath, item);
+    const Icon = ITEM_ICONS[item.key] ?? FileText;
     const itemClassName = `flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${active
       ? "menu-item-active bg-blue-50 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300"
       : "text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white"
@@ -85,6 +124,11 @@ const CanonicalOwnerSidebar: React.FC<CanonicalOwnerSidebarProps> = ({ metadata 
           aria-current={active ? "page" : undefined}
           title={showLabels ? undefined : item.label}
         >
+          <Icon
+            data-testid={`canonical-owner-item-icon-${item.key}`}
+            aria-hidden="true"
+            className="h-4 w-4 shrink-0"
+          />
           <span className={showLabels ? visibleLabelClass : "sr-only"}>{item.label}</span>
         </Link>
       </li>
@@ -101,7 +145,7 @@ const CanonicalOwnerSidebar: React.FC<CanonicalOwnerSidebarProps> = ({ metadata 
     >
       <div className={`flex py-8 ${showLabels ? "justify-start" : "justify-center"}`}>
         <Link
-          href="/"
+          href="/shop-owner/home"
           className="flex items-center gap-2 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
           title={showLabels ? undefined : "SoleSpace"}
         >
@@ -128,7 +172,11 @@ const CanonicalOwnerSidebar: React.FC<CanonicalOwnerSidebarProps> = ({ metadata 
                   onClick={() => toggleGroup(group.key)}
                 >
                   <span className={showLabels ? visibleLabelClass : "sr-only"}>{group.label}</span>
-                  <span aria-hidden="true" className={showLabels ? "text-gray-400" : "sr-only"}>{expanded ? "−" : "+"}</span>
+                  <ChevronDown
+                    data-testid={`canonical-owner-group-icon-${group.key}`}
+                    aria-hidden="true"
+                    className={`h-4 w-4 shrink-0 text-gray-400 transition-transform motion-reduce:transition-none ${expanded ? "rotate-180" : ""}`}
+                  />
                 </button>
                 {expanded && (
                   <ul id={itemsId} className="mt-1 space-y-1" aria-label={group.label}>
@@ -149,6 +197,11 @@ const CanonicalOwnerSidebar: React.FC<CanonicalOwnerSidebarProps> = ({ metadata 
             className="flex min-h-10 items-center rounded-lg px-3 py-2 text-sm font-medium text-gray-500 transition-colors motion-reduce:transition-none hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
             title={showLabels ? undefined : "Open existing ERP Workspace"}
           >
+            <ExternalLink
+              data-testid="canonical-owner-fallback-icon"
+              aria-hidden="true"
+              className="h-4 w-4 shrink-0"
+            />
             <span className={showLabels ? visibleLabelClass : "sr-only"}>Open existing ERP Workspace</span>
           </Link>
         </div>

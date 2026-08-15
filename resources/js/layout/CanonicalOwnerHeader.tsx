@@ -17,6 +17,11 @@ const CanonicalOwnerHeader: React.FC<CanonicalOwnerHeaderProps> = ({ menuButtonR
   const auth = (props.auth && typeof props.auth === "object" ? props.auth : {}) as Record<string, unknown>;
   const erpActor = auth.erpActor as ErpActor | undefined;
   const erpUrls = props.erpUrls as Partial<ErpUrls> | undefined;
+  const canonicalOwnerUrls: Partial<ErpUrls> = {
+    ...(erpUrls ?? {}),
+    profile: "/shop-owner/settings/profile",
+    settings: "/shop-owner/settings/profile",
+  };
   const [isApplicationMenuOpen, setApplicationMenuOpen] = useState(false);
   const { isExpanded, isMobileOpen, toggleSidebar, toggleMobileSidebar } = useSidebar();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -60,7 +65,7 @@ const CanonicalOwnerHeader: React.FC<CanonicalOwnerHeaderProps> = ({ menuButtonR
           >
             <span aria-hidden="true" className="text-xl leading-none">{isMobileOpen ? "×" : "☰"}</span>
           </button>
-          <Link href="/" className="truncate text-lg font-bold tracking-tight text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-white">
+          <Link href="/shop-owner/home" className="truncate text-lg font-bold tracking-tight text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-white">
             SoleSpace
           </Link>
           <div className="hidden lg:block">
@@ -88,7 +93,7 @@ const CanonicalOwnerHeader: React.FC<CanonicalOwnerHeaderProps> = ({ menuButtonR
         <div className={`${isApplicationMenuOpen ? "flex" : "hidden"} items-center gap-2 lg:flex`}>
           <NotificationBell basePath="/api/shop-owner/notifications" iconSize={24} />
           <ThemeToggleButton />
-          <ShopOwnerDropdown actor={erpActor} urls={erpUrls} />
+          <ShopOwnerDropdown actor={erpActor} urls={canonicalOwnerUrls} />
         </div>
       </div>
     </header>

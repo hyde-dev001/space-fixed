@@ -19,7 +19,7 @@ const CanonicalPaymentsLanding = ({ links }: CanonicalPaymentsLandingProps) => {
 
   return (
     <AppLayoutShopOwner>
-      <main className="mx-auto max-w-4xl space-y-8" aria-labelledby="canonical-payments-title">
+      <section className="mx-auto max-w-4xl space-y-8" aria-labelledby="canonical-payments-title">
         <header className="space-y-2">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600 dark:text-blue-300">Operate</p>
           <h1 id="canonical-payments-title" className="text-3xl font-semibold tracking-tight text-gray-900 dark:text-white">
@@ -47,7 +47,7 @@ const CanonicalPaymentsLanding = ({ links }: CanonicalPaymentsLandingProps) => {
             No authorized payment workspace is available for this shop.
           </p>
         )}
-      </main>
+      </section>
     </AppLayoutShopOwner>
   );
 };
