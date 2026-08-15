@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Reconciliation;
 
+use App\Enums\EmployeeStatus;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -150,9 +151,13 @@ final class PhaseOneStateInventory
     /** @return array{classification: string, reason: string|null} */
     private function classifyEmployeeStatus(string $status): array
     {
-        return match (strtolower(trim($status))) {
-            'active', 'inactive', 'suspended', 'terminated'
-                => ['classification' => 'canonical', 'reason' => null],
+        $normalized = strtolower(trim($status));
+
+        if (in_array($normalized, EmployeeStatus::values(), true)) {
+            return ['classification' => 'canonical', 'reason' => null];
+        }
+
+        return match ($normalized) {
             'on_leave', 'on-leave'
                 => ['classification' => 'normalizable', 'reason' => 'legacy_on_leave_status'],
             default

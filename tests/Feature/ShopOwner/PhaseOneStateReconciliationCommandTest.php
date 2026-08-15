@@ -96,6 +96,33 @@ final class PhaseOneStateReconciliationCommandTest extends TestCase
             ->value('status'));
     }
 
+    public function test_terminated_employee_is_canonical_and_is_not_normalized(): void
+    {
+        $shop = ShopOwner::factory()->approved()->create();
+        $employee = Employee::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'status' => 'terminated',
+        ]);
+
+        $output = $this->runInventoryCommand([
+            '--domain' => 'employees',
+            '--shop-owner-id' => $shop->id,
+        ]);
+
+        $this->assertStringContainsString(
+            "Shop owner {$shop->id} employees: examined 1, canonical 1, normalizable 0, unresolved 0.",
+            $output,
+        );
+
+        $this->runInventoryCommand([
+            '--domain' => 'employees',
+            '--shop-owner-id' => $shop->id,
+            '--apply' => true,
+        ]);
+
+        $this->assertSame('terminated', DB::table('employees')->where('id', $employee->id)->value('status'));
+    }
+
     /** @return array{ShopOwner, ShopOwner} */
     private function seedMixedStateRows(): array
     {
