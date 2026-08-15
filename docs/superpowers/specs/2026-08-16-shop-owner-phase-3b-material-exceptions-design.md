@@ -122,7 +122,7 @@ coverage_source
 
 Phase 3B validates and reserves the `waiting_on_others` contract but does not expose Phase 3C items. A condition with deterministic other-party responsibility is omitted from Phase 3B until the Phase 3C focused design enables that projection.
 
-Owner-facing coverage keys remain domain families within the selected bucket. Failed Refunds therefore reuse the `refunds` coverage key under `urgent_exceptions`, while their independently enabled and health-reported adapter key is `failed_refunds`. The future Logistics adapter uses `coverage_source = logistics` and `adapter_key = unowned_logistics_failures`. The initial Compliance adapter uses `coverage_source = compliance` and `adapter_key = compliance_documents`.
+Owner-facing coverage keys remain domain families within the selected bucket. Failed Refunds therefore reuse the `refunds` coverage key under `urgent_exceptions`, while Order and Repair failures retain separate source identities and independently health-reported adapter keys: `failed_order_refunds` and `failed_repair_refunds`. The future Logistics adapter uses `coverage_source = logistics` and `adapter_key = unowned_logistics_failures`. The initial Compliance adapter uses `coverage_source = compliance` and `adapter_key = compliance_documents`.
 
 Phase 3B also normalizes the highest shared priority label from the Phase 3A implementation's legacy `urgent` token to the approved `critical` token. This is one coordinated PHP/TypeScript/test migration: existing Phase 3A highest-priority items retain the same relative ordering and behavior, but adapters emit `critical` and the shared contract does not support `urgent` and `critical` as ambiguous synonyms. The shared materiality vocabulary similarly adds `critical` above `high`.
 
@@ -393,16 +393,17 @@ These conditions must be observable without exposing private document data.
 
 ### Failed Refunds
 
-Failed Refunds remain disabled and hidden until the Refund domain can prove:
+Failed Refunds include both Order Refunds and Repair/POS Refunds. Both source families remain disabled and hidden until their respective authoritative Refund domains can prove:
 
 - authoritative unresolved recovery state distinct from historical execution failure;
 - active legitimate Finance/payment recovery ownership;
 - explicit owner-decision precedence where applicable;
 - controlled and idempotent recovery resolution;
+- audited manual-resolution evidence sufficient to determine who resolved the failure, when, with what outcome, and for what reason;
 - retry/replacement linkage that preserves original failure evidence;
 - exhaustive entry, reclassification, and exit behavior.
 
-A terminal `failed` value or old failure notification is insufficient.
+A terminal `failed` value or old failure notification is insufficient. Recovery processing must preserve each source record's original `failed_at` and `failure_reason` evidence. Order and Repair adapters share the owner-facing `refunds` coverage family but do not collapse their identities, queries, or domain policies.
 
 ### Unowned Logistics Failures
 
@@ -568,7 +569,7 @@ urgent_exceptions
    └─ logistics = false until Logistics readiness
 ```
 
-The adapter registry resolves by explicit bucket plus coverage source so a `refunds` decision adapter cannot accidentally participate in `urgent_exceptions`, and the future `failed_refunds` adapter cannot participate in `needs_my_decision`.
+The adapter registry resolves by explicit bucket plus coverage source so a `refunds` decision adapter cannot accidentally participate in `urgent_exceptions`, and the future `failed_order_refunds` and `failed_repair_refunds` adapters cannot participate in `needs_my_decision`.
 
 Disabling Phase 3B removes the `Urgent Exceptions` surfaces and returns the owner to the unchanged Phase 3A experience. It does not disable Phase 3 as a whole, remove canonical routes, change domain behavior, or require data rollback.
 
@@ -762,10 +763,12 @@ Gate B — Compliance domain and adapter
    → first Phase 3B rollout stage releasable
 
 Gate C — Refund recovery domain prerequisite
-└─ implement and verify authoritative recovery/resolution state
+├─ implement and verify Order Refund recovery/resolution state
+└─ implement and verify Repair Refund recovery/resolution state
 
 Gate D — Failed Refund adapter
-└─ pass independent adapter readiness and rollout gates
+├─ pass Order Failed Refund adapter readiness
+└─ pass Repair Failed Refund adapter readiness
    → Failed Refund coverage releasable
 
 Gate E — Logistics responsibility prerequisite
@@ -801,7 +804,7 @@ Phase 3B is accepted when:
 13. Refund and Logistics remain hidden and are not reported as failed until their plan stages pass readiness.
 14. Disabling Phase 3B returns safely to the Phase 3A experience without data rollback.
 15. Tenant, authorization, privacy, accessibility, performance, and observability gates pass with recorded evidence.
-16. Refund recovery has authoritative unresolved, responsibility, retry/replacement, and controlled-resolution state before Failed Refunds are enabled.
+16. Order and Repair Refund recovery each have authoritative unresolved, responsibility, retry/replacement, and controlled-resolution state—including actor, timestamp, outcome, and reason evidence—before Failed Refunds are enabled.
 17. Logistics has authoritative current responsibility, active/exhausted recovery-path, materiality, and owner-action precedence before Unowned Logistics Failures are enabled.
 18. Compliance Documents, Failed Refunds, and Unowned Logistics Failures each pass their independent adapter readiness gates.
 19. All three enabled sources use the same bucket contract and produce deterministic cross-source ordering without duplicate concerns.

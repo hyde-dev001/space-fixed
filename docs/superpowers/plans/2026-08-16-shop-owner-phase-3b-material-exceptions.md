@@ -65,10 +65,14 @@ Repository policy requires sequential implementation unless the user separately 
 
 ### Refund recovery prerequisite and adapter
 
-- `database/migrations/2026_08_16_000001_add_recovery_lifecycle_to_order_refunds_table.php` — add current recovery/responsibility fields while preserving immutable failure evidence on the existing Refund record.
-- `app/Models/OrderRefund.php` — expose casts, bounded constants, and replacement linkage for recovery state.
-- `app/Services/OrderRefundRecoveryService.php` — controlled, idempotent recovery transitions and current responsibility, following the existing top-level Refund service convention.
-- `app/Services/OwnerActionCenter/Adapters/FailedRefundAttentionAdapter.php` — project only materially unresolved, legitimately unowned failed recoveries.
+- `database/migrations/2026_08_16_000001_add_recovery_lifecycle_to_order_refunds_table.php` — add Order Refund recovery/responsibility fields while preserving immutable failure evidence.
+- `database/migrations/2026_08_16_000002_add_recovery_lifecycle_to_pos_refunds_table.php` — add equivalent Repair/POS Refund recovery/responsibility fields.
+- `app/Models/OrderRefund.php` — expose casts, bounded constants, resolver evidence, and Order replacement linkage.
+- `app/Models/PosRefund.php` — expose the equivalent Repair recovery contract and replacement linkage.
+- `app/Services/OrderRefundRecoveryService.php` — controlled, idempotent Order Refund recovery transitions and responsibility.
+- `app/Services/RepairRefundRecoveryService.php` — controlled, idempotent Repair Refund recovery transitions and responsibility.
+- `app/Services/OwnerActionCenter/Adapters/FailedOrderRefundAttentionAdapter.php` — project only materially unresolved, legitimately unowned Order Refund failures.
+- `app/Services/OwnerActionCenter/Adapters/FailedRepairRefundAttentionAdapter.php` — project the equivalent Repair Refund failures under the shared `refunds` family.
 
 ### Logistics prerequisite and adapter
 
@@ -158,7 +162,7 @@ urgent_exceptions + none + false
 waiting_on_others + bounded actor/team + false  (reserved only)
 ```
 
-Reject bucket inference, invalid coverage/bucket combinations, and duplicate identity. Add `compliance_document` to source types, `compliance` and `logistics` to coverage vocabulary, and `compliance_documents`, `failed_refunds`, and `unowned_logistics_failures` to adapter-key vocabulary.
+Reject bucket inference, invalid coverage/bucket combinations, and duplicate identity. Add `compliance_document` to source types, `compliance` and `logistics` to coverage vocabulary, and `compliance_documents`, `failed_order_refunds`, `failed_repair_refunds`, and `unowned_logistics_failures` to adapter-key vocabulary.
 
 - [ ] **Step 2: Write the priority compatibility test**
 
@@ -454,64 +458,73 @@ Stage `docs/ai-learning-log.md` only if changed. Stop here for first-stage relea
 
 ## Gate C — Refund Recovery Domain Prerequisite
 
-### Task 8: Add authoritative Refund recovery lifecycle
+### Task 8: Add authoritative Order and Repair Refund recovery lifecycles
 
 **Files:**
 
 - Create: `database/migrations/2026_08_16_000001_add_recovery_lifecycle_to_order_refunds_table.php`
+- Create: `database/migrations/2026_08_16_000002_add_recovery_lifecycle_to_pos_refunds_table.php`
 - Modify: `app/Models/OrderRefund.php`
+- Modify: `app/Models/PosRefund.php`
 - Create: `app/Services/OrderRefundRecoveryService.php`
+- Create: `app/Services/RepairRefundRecoveryService.php`
 - Create: `tests/Feature/OrderRefundRecoveryLifecycleTest.php`
+- Create: `tests/Feature/RepairRefundRecoveryLifecycleTest.php`
 - Modify only at existing execution boundaries: `app/Services/OrderRefundService.php`
-- Modify only at existing execution boundaries: `app/Services/PaymongoRefundService.php`
+- Modify only at existing execution boundaries: `app/Services/RepairPosRefundService.php`
+- Modify only at existing execution boundaries: `app/Services/RepairOnlineRefundWorkflowService.php`
 
 - [ ] **Step 1: Write failing schema and lifecycle tests**
 
-Define current recovery state on the existing failed Refund record with bounded fields:
+Define equivalent current recovery state on each existing failed Refund source record with bounded fields:
 
 ```text
 status = unresolved | in_progress | resolved | superseded
 responsible_party = finance | payment_recovery | none
-attempt_count
-last_attempted_at
-resolved_at
-resolution
+recovery_attempt_count
+recovery_last_attempted_at
+recovery_resolved_at
+recovery_resolved_by_type
+recovery_resolved_by_id
+recovery_resolution_outcome
+recovery_resolution_reason
 replacement_refund_id
 ```
 
-Require an index on `(shop_owner_id, recovery_status, recovery_responsible_party)`, a self-link to an optional replacement refund, casts for recovery timestamps/counts, and model constants matching repository convention. Preserve the original refund's `failed_at` and `failure_reason` unchanged.
+Require an index on each source's tenant key plus `(recovery_status, recovery_responsible_party)`, a same-source self-link to an optional replacement refund, casts for recovery timestamps/counts, and model constants matching repository convention. The resolver type/ID, timestamp, outcome, and reason—or repository-native audited equivalents—must answer who resolved the recovery, when, how, and why. Preserve each source's original `failed_at` and `failure_reason` unchanged after the authoritative failure is first recorded.
 
 - [ ] **Step 2: Write failing transition tests**
 
-Cover idempotent creation on authoritative execution failure, controlled `claim`, `recordRetry`, `replace`, and `resolve` operations, invalid/stale transition rejection, retry evidence, replacement linkage, owner-decision precedence, and terminal exit.
+For both source families, cover idempotent initialization on authoritative execution failure, controlled `claim`, `recordRetry`, `replace`, and `resolve` operations, invalid/stale transition rejection, retry evidence, same-source replacement linkage, owner-decision precedence, and terminal exit. Manual resolution must require actor, timestamp, bounded outcome, and non-empty reason evidence.
 
 - [ ] **Step 3: Run to verify RED**
 
 ```powershell
-php artisan test tests/Feature/OrderRefundRecoveryLifecycleTest.php --compact
+php artisan test tests/Feature/OrderRefundRecoveryLifecycleTest.php tests/Feature/RepairRefundRecoveryLifecycleTest.php --compact
 ```
 
 - [ ] **Step 4: Generate the focused migration**
 
 ```powershell
 php artisan make:migration add_recovery_lifecycle_to_order_refunds_table --table=order_refunds
+php artisan make:migration add_recovery_lifecycle_to_pos_refunds_table --table=pos_refunds
 ```
 
-Expected: one timestamped migration. Use the generated timestamp in place of the planned `2026_08_16_000001` placeholder if Artisan selects a different available name. Keep schema changes reversible and separate from data reconciliation.
+Expected: two timestamped migrations. Use the generated timestamps in place of the planned placeholders if Artisan selects different available names. Keep schema changes reversible and separate from data reconciliation.
 
 - [ ] **Step 5: Implement the minimal domain service**
 
-All mutations occur in transactions with current-state validation and locking. The service answers current unresolved/material/responsibility state side-effect free for readers; Action Center code never writes recovery state.
+Each source-specific service follows its authoritative workflow and uses transactions, current-state validation, and locking. Both expose equivalent current unresolved/material/responsibility semantics for readers without collapsing Order and Repair models. Action Center code never writes recovery state.
 
 - [ ] **Step 6: Connect existing refund execution failure/success boundaries**
 
-Call the recovery service only where `OrderRefundService`/gateway execution already authoritatively records failure, retry, replacement, or success. Do not infer from notifications or historical `failed` rows. Existing authorization and payment safeguards remain unchanged.
+Call the matching recovery service only where `OrderRefundService`, `RepairPosRefundService`, or `RepairOnlineRefundWorkflowService` already authoritatively records failure, retry, replacement, or success. Do not infer from notifications or historical `failed` rows. Existing authorization, mixed-settlement, and payment safeguards remain unchanged. Recovery updates must never erase or rewrite original `failed_at` or `failure_reason` evidence.
 
 - [ ] **Step 7: Run refund regressions and commit Gate C**
 
 ```powershell
-php artisan test tests/Feature/OrderRefundRecoveryLifecycleTest.php tests/Unit/Refund tests/Feature/OrderRefundApprovalWorkflowTest.php tests/Feature/OrderRefundReturnInspectionTest.php tests/Feature/Logistics/FailedDeliveryRefundWorkflowTest.php --compact
-git add -- database/migrations/*_add_recovery_lifecycle_to_order_refunds_table.php app/Models/OrderRefund.php app/Services/OrderRefundRecoveryService.php app/Services/OrderRefundService.php app/Services/PaymongoRefundService.php tests/Feature/OrderRefundRecoveryLifecycleTest.php
+php artisan test tests/Feature/OrderRefundRecoveryLifecycleTest.php tests/Feature/RepairRefundRecoveryLifecycleTest.php tests/Unit/Refund tests/Feature/OrderRefundApprovalWorkflowTest.php tests/Feature/OrderRefundReturnInspectionTest.php tests/Feature/Logistics/FailedDeliveryRefundWorkflowTest.php tests/Feature/RepairOnlineRefundWorkflowTest.php tests/Feature/RepairMixedRefundSplitSettlementTest.php --compact
+git add -- database/migrations/*_add_recovery_lifecycle_to_order_refunds_table.php database/migrations/*_add_recovery_lifecycle_to_pos_refunds_table.php app/Models/OrderRefund.php app/Models/PosRefund.php app/Services/OrderRefundRecoveryService.php app/Services/RepairRefundRecoveryService.php app/Services/OrderRefundService.php app/Services/RepairPosRefundService.php app/Services/RepairOnlineRefundWorkflowService.php tests/Feature/OrderRefundRecoveryLifecycleTest.php tests/Feature/RepairRefundRecoveryLifecycleTest.php
 git commit -m "feat: add authoritative refund recovery lifecycle"
 ```
 
@@ -519,20 +532,22 @@ Stage optional services only if changed. Stop if current failure boundaries cann
 
 ## Gate D — Failed Refund Adapter
 
-### Task 9: Project materially unowned Failed Refunds
+### Task 9: Project materially unowned Order and Repair Failed Refunds
 
 **Files:**
 
-- Create: `app/Services/OwnerActionCenter/Adapters/FailedRefundAttentionAdapter.php`
+- Create: `app/Services/OwnerActionCenter/Adapters/FailedOrderRefundAttentionAdapter.php`
+- Create: `app/Services/OwnerActionCenter/Adapters/FailedRepairRefundAttentionAdapter.php`
 - Modify: `app/Services/OwnerActionCenter/OwnerAttentionAdapterRegistry.php`
-- Create: `tests/Feature/ShopOwner/ActionCenter/FailedRefundAttentionAdapterTest.php`
+- Create: `tests/Feature/ShopOwner/ActionCenter/FailedOrderRefundAttentionAdapterTest.php`
+- Create: `tests/Feature/ShopOwner/ActionCenter/FailedRepairRefundAttentionAdapterTest.php`
 - Modify: `tests/Feature/ShopOwner/ActionCenter/OwnerActionCenterPerformanceTest.php`
 - Modify: `tests/Feature/ShopOwner/ActionCenter/OwnerActionCenterSecurityTest.php`
 - Modify: `docs/shop-owner-phase-3b-rollout-guide.md`
 
 - [ ] **Step 1: Write failing classification tests**
 
-Prove:
+Prove the same classification independently for Order and Repair failures:
 
 ```text
 owner approval required                 -> Phase 3A only
@@ -544,23 +559,23 @@ ambiguous recovery state                -> domain health, no item
 
 - [ ] **Step 2: Write tenant, identity, exit, and bounded-query tests**
 
-Use `coverage_source=refunds`, `adapter_key=failed_refunds`, a distinct failure-recovery category, current failed refund ID identity, owner-safe Refund workflow link, and domain-owned materiality/recovery timestamps.
+Use shared `coverage_source=refunds` with `adapter_key=failed_order_refunds` or `failed_repair_refunds`, distinct source types and failure-recovery categories, current failed refund ID identity, the matching owner-safe workflow link, and source-owned materiality/recovery timestamps. A source failure affects only its adapter health; counts aggregate under `refunds` after distinct attention identity.
 
 - [ ] **Step 3: Run to verify RED**
 
 ```powershell
-php artisan test tests/Feature/ShopOwner/ActionCenter/FailedRefundAttentionAdapterTest.php --compact
+php artisan test tests/Feature/ShopOwner/ActionCenter/FailedOrderRefundAttentionAdapterTest.php tests/Feature/ShopOwner/ActionCenter/FailedRepairRefundAttentionAdapterTest.php --compact
 ```
 
 - [ ] **Step 4: Implement the read-only adapter and registry entry**
 
-Query only current authoritative recovery records, exclude owner decisions and legitimate recovery ownership in SQL where practical, and contribute no item on ambiguous state. Do not treat a historical `failed` status alone as active.
+Each adapter queries only its authoritative source's current recovery state, excludes owner decisions and legitimate recovery ownership in SQL where practical, and contributes no item on ambiguous state. Do not treat a historical `failed` status alone as active and do not combine Order and Repair tables in one adapter.
 
 - [ ] **Step 5: Run readiness and commit Gate D**
 
 ```powershell
-php artisan test tests/Feature/ShopOwner/ActionCenter/FailedRefundAttentionAdapterTest.php tests/Feature/ShopOwner/ActionCenter/OwnerActionCenterPerformanceTest.php tests/Feature/ShopOwner/ActionCenter/OwnerActionCenterSecurityTest.php tests/Feature/OrderRefundRecoveryLifecycleTest.php tests/Unit/Refund --compact
-git add -- app/Services/OwnerActionCenter/Adapters/FailedRefundAttentionAdapter.php app/Services/OwnerActionCenter/OwnerAttentionAdapterRegistry.php tests/Feature/ShopOwner/ActionCenter docs/shop-owner-phase-3b-rollout-guide.md
+php artisan test tests/Feature/ShopOwner/ActionCenter/FailedOrderRefundAttentionAdapterTest.php tests/Feature/ShopOwner/ActionCenter/FailedRepairRefundAttentionAdapterTest.php tests/Feature/ShopOwner/ActionCenter/OwnerActionCenterPerformanceTest.php tests/Feature/ShopOwner/ActionCenter/OwnerActionCenterSecurityTest.php tests/Feature/OrderRefundRecoveryLifecycleTest.php tests/Feature/RepairRefundRecoveryLifecycleTest.php tests/Unit/Refund --compact
+git add -- app/Services/OwnerActionCenter/Adapters/FailedOrderRefundAttentionAdapter.php app/Services/OwnerActionCenter/Adapters/FailedRepairRefundAttentionAdapter.php app/Services/OwnerActionCenter/OwnerAttentionAdapterRegistry.php tests/Feature/ShopOwner/ActionCenter docs/shop-owner-phase-3b-rollout-guide.md
 git commit -m "feat: surface unowned failed refund exceptions"
 ```
 
@@ -704,7 +719,7 @@ Confirm reuse of Phase 3A coordinator/contracts, Phase 2 shell/rollout, existing
 - [ ] **Step 5: Run final backend gates**
 
 ```powershell
-php artisan test tests/Feature/ShopOwner/ActionCenter tests/Unit/Services/OwnerActionCenter tests/Unit/Support/OwnerActionCenter tests/Unit/ShopDocumentValidityServiceTest.php tests/Feature/Console/SendShopDocumentExpiryRemindersTest.php tests/Feature/OrderRefundRecoveryLifecycleTest.php tests/Unit/Services/Logistics/LogisticsResponsibilityProjectionTest.php --compact
+php artisan test tests/Feature/ShopOwner/ActionCenter tests/Unit/Services/OwnerActionCenter tests/Unit/Support/OwnerActionCenter tests/Unit/ShopDocumentValidityServiceTest.php tests/Feature/Console/SendShopDocumentExpiryRemindersTest.php tests/Feature/OrderRefundRecoveryLifecycleTest.php tests/Feature/RepairRefundRecoveryLifecycleTest.php tests/Unit/Services/Logistics/LogisticsResponsibilityProjectionTest.php --compact
 composer test
 ```
 
@@ -756,7 +771,7 @@ Do not enable Compliance for production until Gates A and B prove:
 
 ### Failed Refund coverage releasable
 
-Do not enable Failed Refunds until Gates C and D prove authoritative unresolved recovery, current responsibility, idempotent retry/replacement/resolution, preserved failure evidence, tenant safety, materiality, exhaustive exits, and no duplication with Refund decisions.
+Do not enable Failed Refunds until Gates C and D prove these contracts independently for both Order and Repair sources: authoritative unresolved recovery, current responsibility, idempotent retry/replacement/resolution, actor/time/outcome/reason resolution evidence, preserved original failure evidence, tenant safety, materiality, exhaustive exits, and no duplication with Refund decisions.
 
 ### Logistics coverage releasable
 
