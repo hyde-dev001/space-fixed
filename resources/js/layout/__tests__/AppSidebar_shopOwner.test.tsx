@@ -129,6 +129,14 @@ it('renders individual owner operational pages with business and module access',
   expect(screen.getByRole('link', { name: 'Riders' })).toBeInTheDocument();
 });
 
+it('keeps the existing owner primary entries when no ownerShell metadata is provided', () => {
+  render(<AppSidebarShopOwner />);
+
+  expect(screen.getByRole('link', { name: /^Dashboard$/i })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: /Assist Center/i })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Approval Pages' })).toBeInTheDocument();
+});
+
 it('shows individual owners the supported refund approval page without company modules', () => {
   state.shopModules = accessible({
     finance: false,

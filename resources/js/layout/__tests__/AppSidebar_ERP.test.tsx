@@ -238,6 +238,18 @@ it('shows core-only navigation in the owner ERP picker', () => {
   expect(screen.queryByRole('link', { name: /employee profile/i })).not.toBeInTheDocument();
 });
 
+it('keeps the employee ERP primary entries when no ownerShell metadata is provided', () => {
+  state.erpActor = null;
+  state.role = 'Logistics Dispatcher';
+  state.roles = ['Logistics Dispatcher'];
+  state.permissions = ['access-logistics-dashboard', 'configure-logistics-settings'];
+
+  render(<AppSidebarERP />);
+
+  expect(screen.getByRole('link', { name: /Log Attendance/i })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: /settings/i })).toBeInTheDocument();
+});
+
 it('preserves the employee HR attendance and payroll groups', () => {
   state.url = '/erp/hr?section=attendance';
   state.role = 'HR';
