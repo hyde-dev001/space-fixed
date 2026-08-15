@@ -45,6 +45,7 @@ final class OwnerActionCenterController extends Controller
                 'coverage' => $query->coverage,
                 'page' => $query->page,
                 'per_page' => $query->perPage,
+                'correlation_id' => $this->correlationId($request),
             ]);
 
             return redirect()->route('shop-owner.shell.home');
@@ -123,5 +124,14 @@ final class OwnerActionCenterController extends Controller
         }
 
         return $integer;
+    }
+
+    private function correlationId(Request $request): ?string
+    {
+        $value = $request->header('X-Request-ID') ?? $request->header('X-Correlation-ID');
+
+        return is_string($value) && preg_match('/\A[a-zA-Z0-9._:-]{1,128}\z/', $value) === 1
+            ? $value
+            : null;
     }
 }

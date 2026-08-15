@@ -1,0 +1,156 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Tests\Feature\ShopOwner\ActionCenter;
+
+use App\Contracts\OwnerActionCenter\OwnerAttentionAdapter;
+use App\Models\ShopOwner;
+use App\Services\OwnerActionCenter\OwnerActionCenterService;
+use App\Support\OwnerActionCenter\OwnerAttentionAdapterResult;
+use App\Support\OwnerActionCenter\OwnerAttentionItem;
+use App\Support\OwnerActionCenter\OwnerAttentionQuery;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
+
+final class OwnerActionCenterPerformanceTest extends TestCase
+{
+    use RefreshDatabase;
+
+    private const ADAPTERS = [
+        ['class' => 'App\\Services\\OwnerActionCenter\\Adapters\\OrderRefundAttentionAdapter', 'key' => 'order_refunds', 'coverage' => 'refunds', 'source' => 'order_refund'],
+        ['class' => 'App\\Services\\OwnerActionCenter\\Adapters\\RepairRefundAttentionAdapter', 'key' => 'repair_refunds', 'coverage' => 'refunds', 'source' => 'repair_refund'],
+        ['class' => 'App\\Services\\OwnerActionCenter\\Adapters\\ExpenseAttentionAdapter', 'key' => 'expenses', 'coverage' => 'expenses', 'source' => 'expense'],
+        ['class' => 'App\\Services\\OwnerActionCenter\\Adapters\\PurchaseRequestAttentionAdapter', 'key' => 'purchase_requests', 'coverage' => 'purchase_requests', 'source' => 'purchase_request'],
+    ];
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        config([
+            'owner_action_center.coverage.refunds' => true,
+            'owner_action_center.coverage.expenses' => true,
+            'owner_action_center.coverage.purchase_requests' => true,
+            'owner_action_center.home_limit' => 5,
+        ]);
+    }
+
+    public function test_home_and_full_queue_pass_only_bounded_candidate_limits_to_each_adapter(): void
+    {
+        $owner = ShopOwner::factory()->approved()->create();
+        $adapters = $this->bindAdapters(itemsPerAdapter: 50);
+        $service = app(OwnerActionCenterService::class);
+
+        $home = $service->summaryForHome($owner);
+
+        $this->assertSame(5, $home->perPage);
+        $this->assertCount(5, $home->items);
+        foreach ($adapters as $adapter) {
+            $this->assertSame([5], $adapter->candidateLimits);
+        }
+
+        foreach ($adapters as $adapter) {
+            $adapter->candidateLimits = [];
+        }
+
+        $queue = $service->queueForActionCenter(
+            $owner,
+            new OwnerAttentionQuery(page: 4, perPage: 7),
+        );
+
+        $this->assertSame(7, $queue->perPage);
+        foreach ($adapters as $adapter) {
+            $this->assertSame([28], $adapter->candidateLimits);
+        }
+    }
+
+    public function test_coordinator_reads_each_adapter_once_regardless_of_returned_candidate_count(): void
+    {
+        $owner = ShopOwner::factory()->approved()->create();
+        $adapters = $this->bindAdapters(itemsPerAdapter: 1);
+        $service = app(OwnerActionCenterService::class);
+
+        $service->queueForActionCenter($owner, new OwnerAttentionQuery(perPage: 10));
+        $oneRowReads = array_map(static fn ($adapter): int => $adapter->readCalls, $adapters);
+
+        $adapters = $this->bindAdapters(itemsPerAdapter: 40);
+        $service->queueForActionCenter($owner, new OwnerAttentionQuery(perPage: 10));
+        $manyRowReads = array_map(static fn ($adapter): int => $adapter->readCalls, $adapters);
+
+        $this->assertSame([1, 1, 1, 1], $oneRowReads);
+        $this->assertSame($oneRowReads, $manyRowReads);
+    }
+
+    /**
+     * @return array<int, object>
+     */
+    private function bindAdapters(int $itemsPerAdapter): array
+    {
+        $adapters = [];
+        foreach (self::ADAPTERS as $definition) {
+            $items = [];
+            for ($id = 1; $id <= $itemsPerAdapter; $id++) {
+                $items[] = new OwnerAttentionItem(
+                    sourceType: $definition['source'],
+                    sourceId: $id,
+                    category: 'owner_approval',
+                    module: $definition['coverage'],
+                    title: ucfirst(str_replace('_', ' ', $definition['source'])),
+                    conciseSummary: 'Review this decision.',
+                    priorityTier: 'normal',
+                    materialityTier: 'low',
+                    comparableMonetaryExposure: 10.0,
+                    urgencyAt: null,
+                    actionableSince: '2026-08-15T09:00:00+08:00',
+                    destinationUrl: '/shop-owner/action-center?source='.$definition['coverage'],
+                );
+            }
+
+            $adapter = new class($definition['key'], $definition['coverage'], $items) implements OwnerAttentionAdapter {
+                /** @var array<int, OwnerAttentionItem> */
+                private readonly array $items;
+
+                public int $readCalls = 0;
+
+                /** @var array<int, int> */
+                public array $candidateLimits = [];
+
+                /** @param array<int, OwnerAttentionItem> $items */
+                public function __construct(
+                    private readonly string $key,
+                    private readonly string $coverage,
+                    array $items,
+                ) {
+                    $this->items = $items;
+                }
+
+                public function adapterKey(): string
+                {
+                    return $this->key;
+                }
+
+                public function coverageSource(): string
+                {
+                    return $this->coverage;
+                }
+
+                public function read(ShopOwner $owner, OwnerAttentionQuery $query): OwnerAttentionAdapterResult
+                {
+                    $this->readCalls++;
+                    $this->candidateLimits[] = $query->candidateLimit;
+
+                    return new OwnerAttentionAdapterResult(
+                        array_slice($this->items, 0, $query->candidateLimit),
+                        count($this->items),
+                    );
+                }
+            };
+
+            app()->instance($definition['class'], $adapter);
+            $adapters[] = $adapter;
+        }
+
+        return $adapters;
+    }
+}

@@ -11,6 +11,8 @@ use App\Support\OwnerActionCenter\OwnerAttentionAdapterResult;
 use App\Support\OwnerActionCenter\OwnerAttentionItem;
 use App\Support\OwnerActionCenter\OwnerAttentionQuery;
 use DateTimeImmutable;
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
 use Throwable;
@@ -45,6 +47,7 @@ final class OwnerActionCenterService
 
     private function read(ShopOwner $owner, OwnerAttentionQuery $query): OwnerActionCenterResult
     {
+        $startedAt = microtime(true);
         $adapters = $this->adapterRegistry->adaptersFor($query->coverage);
         $enabledAdapterKeys = array_map(
             static fn ($adapter): string => $adapter->adapterKey(),
@@ -52,7 +55,7 @@ final class OwnerActionCenterService
         );
 
         if ($adapters === []) {
-            return $this->result(
+            $result = $this->result(
                 items: [],
                 coverageCounts: ['refunds' => 0, 'expenses' => 0, 'purchase_requests' => 0],
                 enabledAdapterKeys: [],
@@ -61,6 +64,10 @@ final class OwnerActionCenterService
                 degradationStatus: OwnerActionCenterDegradationStatus::NoEnabledAdapters,
                 query: $query,
             );
+
+            $this->logRead($owner, $result, $startedAt);
+
+            return $result;
         }
 
         /** @var array<string, OwnerAttentionItem> $itemsByKey */
@@ -101,7 +108,11 @@ final class OwnerActionCenterService
                     'coverage_source' => $adapter->coverageSource(),
                     'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
                     'result_count' => count($adapterResult->items),
+                    'correlation_id' => $this->correlationId(),
                 ]);
+            } catch (AuthorizationException|ModelNotFoundException $exception) {
+                report($exception);
+                throw $exception;
             } catch (InvalidArgumentException|TypeError $exception) {
                 throw $exception;
             } catch (Throwable $exception) {
@@ -113,6 +124,7 @@ final class OwnerActionCenterService
                     'adapter_key' => $adapter->adapterKey(),
                     'coverage_source' => $adapter->coverageSource(),
                     'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
+                    'correlation_id' => $this->correlationId(),
                 ]);
             }
         }
@@ -135,7 +147,7 @@ final class OwnerActionCenterService
             default => OwnerActionCenterDegradationStatus::Partial,
         };
 
-        return $this->result(
+        $result = $this->result(
             items: $items,
             coverageCounts: $coverageCounts,
             enabledAdapterKeys: $enabledAdapterKeys,
@@ -144,6 +156,10 @@ final class OwnerActionCenterService
             degradationStatus: $degradationStatus,
             query: $query,
         );
+
+        $this->logRead($owner, $result, $startedAt);
+
+        return $result;
     }
 
     /**
@@ -263,5 +279,31 @@ final class OwnerActionCenterService
             'expense' => 'expenses',
             'purchase_request' => 'purchase_requests',
         };
+    }
+
+    private function correlationId(): ?string
+    {
+        $value = request()->header('X-Request-ID') ?? request()->header('X-Correlation-ID');
+
+        return is_string($value) && preg_match('/\A[a-zA-Z0-9._:-]{1,128}\z/', $value) === 1
+            ? $value
+            : null;
+    }
+
+    private function logRead(ShopOwner $owner, OwnerActionCenterResult $result, float $startedAt): void
+    {
+        Log::info('owner_action_center.read', [
+            'shop_id' => (int) $owner->getKey(),
+            'enabled_adapter_keys' => array_values($result->enabledAdapterKeys),
+            'healthy_adapter_keys' => array_values($result->healthyAdapterKeys),
+            'failed_adapter_keys' => array_values($result->failedAdapterKeys),
+            'degradation_status' => $result->degradationStatus->value,
+            'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
+            'result_count' => count($result->items),
+            'source' => $result->coverage,
+            'page' => $result->page,
+            'per_page' => $result->perPage,
+            'correlation_id' => $this->correlationId(),
+        ]);
     }
 }
