@@ -36,7 +36,7 @@ export default function OwnerAttentionList({ items }: OwnerAttentionListProps) {
   }
 
   return (
-    <ol aria-label="Owner decisions" className="divide-y divide-gray-200 dark:divide-gray-800">
+    <ol aria-label="Owner attention queue" className="divide-y divide-gray-200 dark:divide-gray-800">
       {items.map((item) => (
         <li key={item.attention_key} className="py-4 first:pt-0 last:pb-0">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
@@ -46,7 +46,9 @@ export default function OwnerAttentionList({ items }: OwnerAttentionListProps) {
                   {sourceLabels[item.source_type]}
                 </span>
                 <span>Priority: {titleCase(item.priority_tier)}</span>
-                <span>Exposure: {formatExposure(item.comparable_monetary_exposure)}</span>
+                {item.comparable_monetary_exposure !== null && (
+                  <span>Exposure: {formatExposure(item.comparable_monetary_exposure)}</span>
+                )}
               </div>
               <h3 className="text-sm font-semibold text-gray-800 dark:text-white/90">{item.title}</h3>
               <p className="text-sm text-gray-600 dark:text-gray-300">{item.concise_summary}</p>

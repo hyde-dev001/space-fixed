@@ -55,6 +55,38 @@ const result = (overrides: Partial<OwnerActionCenterResult> = {}): OwnerActionCe
   ...overrides,
 });
 
+const exceptionResult = (overrides: Partial<OwnerActionCenterResult> = {}): OwnerActionCenterResult => result({
+  items: [item({
+    attention_key: "compliance_document:9:document_expiry",
+    source_type: "compliance_document",
+    source_id: 9,
+    category: "document_expiry",
+    primary_bucket: "urgent_exceptions",
+    module: "compliance",
+    title: "Mayor's Permit expiry",
+    concise_summary: "This document is within its renewal window and has no pending renewal.",
+    priority_tier: "high",
+    materiality_tier: "high",
+    comparable_monetary_exposure: null,
+    urgency_at: "2026-08-21T00:00:00+08:00",
+    actionable_since: "2026-07-22T00:00:00+08:00",
+    waiting_on: "none",
+    owner_action_required: false,
+    coverage_source: "compliance",
+    destination_url: "/shop-owner/settings/policies-compliance",
+  })],
+  coverage_counts: { compliance: 1, refunds: 0, logistics: 0 },
+  health: {
+    enabled_adapter_keys: ["compliance_documents"],
+    healthy_adapter_keys: ["compliance_documents"],
+    failed_adapter_keys: [],
+  },
+  bucket: "urgent_exceptions",
+  coverage: "all",
+  pagination: { page: 1, per_page: 20, total: 1, last_page: 1 },
+  ...overrides,
+});
+
 describe("Shop Owner Action Center", () => {
   beforeEach(() => {
     mocks.reload.mockReset();
@@ -63,7 +95,36 @@ describe("Shop Owner Action Center", () => {
       source: "all",
       page: 1,
       per_page: 20,
+      bucket: "needs_my_decision",
+      bucketSummaries: {
+        needs_my_decision: result(),
+        urgent_exceptions: exceptionResult(),
+      },
     };
+  });
+
+  it("uses dominant bucket tabs and a compact exception queue without redundant filters", () => {
+    mocks.props = {
+      ...mocks.props,
+      bucket: "urgent_exceptions",
+      ownerActionCenter: exceptionResult(),
+    };
+
+    render(<ActionCenter />);
+
+    expect(screen.getByRole("link", { name: /Needs My Decision\s*1/i })).toHaveAttribute(
+      "href",
+      expect.stringMatching(/bucket=needs_my_decision.*page=1/),
+    );
+    expect(screen.getByRole("link", { name: /Urgent Exceptions\s*1/i })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByText("Mayor's Permit expiry")).toBeInTheDocument();
+    expect(screen.getByText(/Priority:\s*High/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Open workflow/i })).toHaveAttribute(
+      "href",
+      "/shop-owner/settings/policies-compliance",
+    );
+    expect(screen.queryByRole("navigation", { name: /Action Center source filters/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /dismiss|hide|acknowledge|snooze|resolve/i })).not.toBeInTheDocument();
   });
 
   it("renders grounded decisions with enabled filters and workflow links", () => {

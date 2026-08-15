@@ -37,7 +37,15 @@ final class ShopOwnerDashboardController extends Controller
                 $metadata = $this->shell->forOwner($owner);
 
                 if ($selection->selected && $metadata->presentation === OwnerShellPresentation::Canonical) {
-                    $props['ownerActionCenter'] = $this->actionCenter->summaryForHome($owner)->toArray();
+                    $props['ownerActionCenter'] = $this->actionCenter
+                        ->summaryForHome($owner, 'needs_my_decision')
+                        ->toArray();
+
+                    if ($this->exceptionsEnabled()) {
+                        $props['ownerUrgentExceptions'] = $this->actionCenter
+                            ->summaryForHome($owner, 'urgent_exceptions')
+                            ->toArray();
+                    }
                 }
             } catch (Throwable $exception) {
                 report($exception);
@@ -45,5 +53,14 @@ final class ShopOwnerDashboardController extends Controller
         }
 
         return Inertia::render('ShopOwner/Dashboard', $props);
+    }
+
+    private function exceptionsEnabled(): bool
+    {
+        $coverage = config('owner_action_center.buckets.urgent_exceptions.coverage', []);
+
+        return config('owner_action_center.buckets.urgent_exceptions.enabled', false) === true
+            && is_array($coverage)
+            && in_array(true, $coverage, true);
     }
 }

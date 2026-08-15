@@ -15,19 +15,20 @@ const adapterLabels: Record<OwnerAttentionAdapterKey, string> = {
   unowned_logistics_failures: "Logistics failures",
 };
 
-const actionCountLabel = (count: number): string => `${count} ${count === 1 ? "action" : "actions"}`;
-
 const failedSourceLabels = (keys: OwnerAttentionAdapterKey[]): string[] => {
   const labels = keys.map((key) => adapterLabels[key]);
   return Array.from(new Set(labels));
 };
 
 export default function OwnerActionCenterAvailability({ result }: OwnerActionCenterAvailabilityProps) {
+  const bucketLabel = result?.bucket === "urgent_exceptions" ? "Urgent Exceptions" : "Needs My Decision";
+  const itemLabel = result?.bucket === "urgent_exceptions" ? "exceptions" : "actions";
+
   if (result === null || result.degradation_status === "unavailable") {
     return (
       <div role="status" aria-live="polite" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-900/20 dark:text-amber-100">
-        <p className="font-semibold">Action Center currently unavailable</p>
-        <p className="mt-1">Decision counts are not available while the supported sources recover.</p>
+        <p className="font-semibold">{bucketLabel} currently unavailable</p>
+        <p className="mt-1">Counts are not available while the supported sources recover.</p>
       </div>
     );
   }
@@ -35,7 +36,7 @@ export default function OwnerActionCenterAvailability({ result }: OwnerActionCen
   if (result.degradation_status === "no_enabled_adapters") {
     return (
       <div role="status" aria-live="polite" className="rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-600 dark:border-gray-800 dark:bg-white/[0.03] dark:text-gray-300">
-        <p className="font-semibold text-gray-700 dark:text-white/80">Owner decision sources are not enabled</p>
+        <p className="font-semibold text-gray-700 dark:text-white/80">{bucketLabel} sources are not enabled</p>
         <p className="mt-1">The existing module and approval pages remain the current action surfaces.</p>
       </div>
     );
@@ -48,12 +49,12 @@ export default function OwnerActionCenterAvailability({ result }: OwnerActionCen
   return (
     <div role="status" aria-live="polite" className="space-y-1 text-sm text-gray-600 dark:text-gray-300">
       <p>
-        <span className="font-semibold text-gray-800 dark:text-white/90">Needs My Decision</span>{" "}
+        <span className="font-semibold text-gray-800 dark:text-white/90">{bucketLabel}</span>{" "}
         <span className="font-semibold">{total}</span>
       </p>
       {partial && (
         <>
-          <p>{actionCountLabel(total)} from currently available sources (partial coverage).</p>
+          <p>{total} {itemLabel} from currently available sources (partial coverage).</p>
           {failedSources.map((source) => (
             <p key={source} className="text-amber-700 dark:text-amber-300">
               {source} temporarily unavailable
@@ -61,7 +62,11 @@ export default function OwnerActionCenterAvailability({ result }: OwnerActionCen
           ))}
         </>
       )}
-      {!partial && total === 0 && <p>No decisions from currently supported sources require action.</p>}
+      {!partial && total === 0 && (
+        <p>{result.bucket === "urgent_exceptions"
+          ? "No urgent exceptions from currently supported sources."
+          : "No decisions from currently supported sources require action."}</p>
+      )}
     </div>
   );
 }

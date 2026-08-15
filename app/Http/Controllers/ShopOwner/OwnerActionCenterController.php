@@ -38,10 +38,12 @@ final class OwnerActionCenterController extends Controller
 
         try {
             $result = $this->actionCenter->queueForActionCenter($owner, $query);
+            $bucketSummaries = $this->bucketSummaries($owner);
         } catch (Throwable $exception) {
             report($exception);
             Log::warning('owner_action_center.route_failed', [
                 'shop_id' => (int) $owner->getKey(),
+                'bucket' => $query->bucket,
                 'coverage' => $query->coverage,
                 'page' => $query->page,
                 'per_page' => $query->perPage,
@@ -53,6 +55,8 @@ final class OwnerActionCenterController extends Controller
 
         return Inertia::render('ShopOwner/ActionCenter', [
             'ownerActionCenter' => $result->toArray(),
+            'bucketSummaries' => $bucketSummaries,
+            'bucket' => $result->bucket,
             'source' => $result->coverage,
             'page' => $result->page,
             'per_page' => $result->perPage,
@@ -67,8 +71,26 @@ final class OwnerActionCenterController extends Controller
 
     private function queryFrom(Request $request): OwnerAttentionQuery
     {
+        $bucket = $request->query('bucket', 'needs_my_decision');
+        if (! is_string($bucket)
+            || ! in_array($bucket, ['needs_my_decision', 'urgent_exceptions'], true)) {
+            throw ValidationException::withMessages([
+                'bucket' => 'The Action Center bucket is invalid.',
+            ]);
+        }
+
+        if ($bucket === 'urgent_exceptions' && ! $this->exceptionsEnabled()) {
+            return new OwnerAttentionQuery(
+                page: 1,
+                perPage: $this->configuredDefaultPerPage(
+                    $this->configuredBound('max_per_page', OwnerAttentionQuery::MAX_PER_PAGE),
+                ),
+            );
+        }
+
         $source = $request->query('source', 'all');
-        if (! is_string($source) || ! in_array($source, OwnerAttentionQuery::COVERAGES, true)) {
+        if (! is_string($source)
+            || ! in_array($source, OwnerAttentionQuery::COVERAGES_BY_BUCKET[$bucket], true)) {
             throw ValidationException::withMessages([
                 'source' => 'The Action Center source filter is invalid.',
             ]);
@@ -79,10 +101,38 @@ final class OwnerActionCenterController extends Controller
         $defaultPerPage = $this->configuredDefaultPerPage($maxPerPage);
 
         return new OwnerAttentionQuery(
+            bucket: $bucket,
             coverage: $source,
             page: $this->boundedInteger($request->query('page', 1), 'page', 1, $maxPage),
             perPage: $this->boundedInteger($request->query('per_page', $defaultPerPage), 'per_page', 1, $maxPerPage),
         );
+    }
+
+    /** @return array<string, array<string, mixed>> */
+    private function bucketSummaries(ShopOwner $owner): array
+    {
+        $summaries = [
+            'needs_my_decision' => $this->actionCenter
+                ->summaryForHome($owner, 'needs_my_decision')
+                ->toArray(),
+        ];
+
+        if ($this->exceptionsEnabled()) {
+            $summaries['urgent_exceptions'] = $this->actionCenter
+                ->summaryForHome($owner, 'urgent_exceptions')
+                ->toArray();
+        }
+
+        return $summaries;
+    }
+
+    private function exceptionsEnabled(): bool
+    {
+        $coverage = config('owner_action_center.buckets.urgent_exceptions.coverage', []);
+
+        return config('owner_action_center.buckets.urgent_exceptions.enabled', false) === true
+            && is_array($coverage)
+            && in_array(true, $coverage, true);
     }
 
     private function configuredBound(string $key, int $hardMaximum): int

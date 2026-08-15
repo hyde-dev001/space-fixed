@@ -82,6 +82,33 @@ const ownerActionCenter: OwnerActionCenterResult = {
   pagination: { page: 1, per_page: 5, total: 1, last_page: 1 },
 };
 
+const ownerUrgentExceptions: OwnerActionCenterResult = {
+  ...ownerActionCenter,
+  items: [{
+    ...ownerActionCenter.items[0],
+    attention_key: "compliance_document:9:document_expiry",
+    source_type: "compliance_document",
+    source_id: 9,
+    category: "document_expiry",
+    primary_bucket: "urgent_exceptions",
+    module: "compliance",
+    title: "Mayor's Permit expiry",
+    concise_summary: "No renewal is currently assigned.",
+    comparable_monetary_exposure: null,
+    waiting_on: "none",
+    owner_action_required: false,
+    coverage_source: "compliance",
+    destination_url: "/shop-owner/settings/policies-compliance",
+  }],
+  coverage_counts: { compliance: 1, refunds: 0, logistics: 0 },
+  health: {
+    enabled_adapter_keys: ["compliance_documents"],
+    healthy_adapter_keys: ["compliance_documents"],
+    failed_adapter_keys: [],
+  },
+  bucket: "urgent_exceptions",
+};
+
 describe("canonical shop owner home placeholders", () => {
   beforeEach(() => {
     mocks.props = {
@@ -148,5 +175,26 @@ describe("canonical shop owner home placeholders", () => {
     expect(screen.getByText(/^Exceptions/)).toBeInTheDocument();
     expect(screen.queryByText(/^Required Actions/)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /approve|reject/i })).not.toBeInTheDocument();
+  });
+
+  it("renders decisions and urgent exceptions as separate bounded summaries", async () => {
+    mocks.props = {
+      ...mocks.props,
+      ownerActionCenter,
+      ownerUrgentExceptions,
+    };
+
+    render(<Dashboard />);
+
+    expect(await screen.findByText("Owner Actions")).toBeInTheDocument();
+    expect(screen.getAllByText("Needs My Decision").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("Urgent Exceptions").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("Supplier expense")).toBeInTheDocument();
+    expect(screen.getByText("Mayor's Permit expiry")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /View all urgent exceptions/i })).toHaveAttribute(
+      "href",
+      expect.stringContaining("bucket=urgent_exceptions"),
+    );
+    expect(screen.queryByText(/^Exceptions \u2014 Coming in Phase 3$/)).not.toBeInTheDocument();
   });
 });

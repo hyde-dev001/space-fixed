@@ -36,6 +36,8 @@ final class OwnerActionCenterRouteTest extends TestCase
             'owner_action_center.coverage.refunds' => true,
             'owner_action_center.coverage.expenses' => true,
             'owner_action_center.coverage.purchase_requests' => true,
+            'owner_action_center.buckets.urgent_exceptions.enabled' => false,
+            'owner_action_center.buckets.urgent_exceptions.coverage.compliance' => false,
             'shop_modules.owner_erp_workspace_enabled' => false,
         ]);
     }
@@ -78,10 +80,57 @@ final class OwnerActionCenterRouteTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->component('ShopOwner/ActionCenter', false)
                 ->where('source', 'refunds')
+                ->where('bucket', 'needs_my_decision')
                 ->where('page', 1)
                 ->where('per_page', 3)
                 ->where('ownerActionCenter.coverage', 'refunds')
+                ->where('ownerActionCenter.bucket', 'needs_my_decision')
                 ->where('ownerActionCenter.pagination.per_page', 3));
+    }
+
+    public function test_exception_bucket_uses_bucket_scoped_source_and_independent_page_state(): void
+    {
+        $owner = $this->phaseThreeOwner();
+        config([
+            'owner_action_center.buckets.urgent_exceptions.enabled' => true,
+            'owner_action_center.buckets.urgent_exceptions.coverage.compliance' => true,
+        ]);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->get(route('shop-owner.shell.action-center', [
+                'bucket' => 'urgent_exceptions',
+                'source' => 'compliance',
+                'page' => 2,
+                'per_page' => 3,
+            ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('ShopOwner/ActionCenter', false)
+                ->where('bucket', 'urgent_exceptions')
+                ->where('source', 'compliance')
+                ->where('page', 1)
+                ->where('ownerActionCenter.bucket', 'urgent_exceptions')
+                ->where('ownerActionCenter.coverage', 'compliance')
+                ->has('bucketSummaries.needs_my_decision')
+                ->has('bucketSummaries.urgent_exceptions'));
+    }
+
+    public function test_disabled_exception_bucket_normalizes_to_the_default_decision_bucket(): void
+    {
+        $owner = $this->phaseThreeOwner();
+
+        $this->actingAs($owner, 'shop_owner')
+            ->get(route('shop-owner.shell.action-center', [
+                'bucket' => 'urgent_exceptions',
+                'source' => 'compliance',
+                'page' => 4,
+            ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('bucket', 'needs_my_decision')
+                ->where('source', 'all')
+                ->where('page', 1)
+                ->where('ownerActionCenter.bucket', 'needs_my_decision'));
     }
 
     public function test_selected_canonical_home_receives_a_bounded_summary(): void
@@ -96,6 +145,23 @@ final class OwnerActionCenterRouteTest extends TestCase
                 ->where('showPhaseThreePlaceholders', true)
                 ->where('ownerActionCenter.coverage', 'all')
                 ->where('ownerActionCenter.pagination.per_page', 5));
+    }
+
+    public function test_canonical_home_receives_separate_decision_and_exception_summaries(): void
+    {
+        $owner = $this->phaseThreeOwner();
+        config([
+            'owner_action_center.buckets.urgent_exceptions.enabled' => true,
+            'owner_action_center.buckets.urgent_exceptions.coverage.compliance' => true,
+        ]);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->get(route('shop-owner.shell.home'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('ownerActionCenter.bucket', 'needs_my_decision')
+                ->where('ownerUrgentExceptions.bucket', 'urgent_exceptions')
+                ->where('ownerUrgentExceptions.pagination.per_page', 5));
     }
 
     public function test_existing_dashboard_never_reads_phase_three_attention_sources(): void
