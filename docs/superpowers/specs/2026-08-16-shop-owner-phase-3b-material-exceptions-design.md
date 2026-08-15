@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-16
 
-**Status:** Approved focused design; ready for implementation planning after written-spec review
+**Status:** Approved and frozen; ready for implementation planning
 
 ## 1. Goal
 
@@ -119,6 +119,8 @@ coverage_source
 ├─ compliance
 └─ logistics               disabled until ready
 ```
+
+Phase 3B validates and reserves the `waiting_on_others` contract but does not expose Phase 3C items. A condition with deterministic other-party responsibility is omitted from Phase 3B until the Phase 3C focused design enables that projection.
 
 Owner-facing coverage keys remain domain families within the selected bucket. Failed Refunds therefore reuse the `refunds` coverage key under `urgent_exceptions`, while their independently enabled and health-reported adapter key is `failed_refunds`. The future Logistics adapter uses `coverage_source = logistics` and `adapter_key = unowned_logistics_failures`. The initial Compliance adapter uses `coverage_source = compliance` and `adapter_key = compliance_documents`.
 
@@ -264,7 +266,7 @@ negative days remaining
 
 The implementation should evolve `ShopDocumentValidityService` or a comparably small Compliance-domain policy using existing conventions. Its existing broad validity output may remain compatible for current settings consumers while a more precise side-effect-free expiry-window result serves Phase 3B.
 
-`ShopDocumentReminderService` and the Compliance adapter must consume the same policy/boundaries so `30 / 7 / 0` are not duplicated in Action Center configuration or adapter code. Sharing boundaries does not merge their behaviors:
+`ShopDocumentReminderService` and the Compliance adapter must consume one Compliance expiry-window policy so `30 / 7 / 0` are not duplicated in Action Center configuration or adapter code. This singular policy source is a hard implementation invariant. Sharing boundary definitions does not merge behaviors or make the Action Center depend on reminder-delivery logic:
 
 ```text
 Reminder delivery
@@ -327,6 +329,8 @@ Stable identity is:
 compliance_document + current ShopDocument ID + document_expiry
 ```
 
+Superseding a document does not preserve the old attention key. The newly current immutable `ShopDocument` version is a new authoritative source record and therefore receives a distinct identity if it later qualifies.
+
 The title and summary may expose the safe document type/slot label, expiration date, and current responsibility statement. They must not expose private storage paths, checksums, evidence contents, rejection evidence, or unrelated owner data.
 
 ### Priority and materiality mapping
@@ -364,11 +368,21 @@ If a future domain state explicitly requires an owner decision, `Needs My Decisi
 
 ### Invalid lifecycle data
 
+Expected lifecycle states that do not qualify are normal exclusions:
+
+- a non-current document;
+- an unapproved document;
+- an authoritatively non-expiring document;
+- a valid dated document outside the 30-day material window; or
+- a valid pending successor with known legitimate responsibility.
+
+These exclusions do not make the Compliance adapter unhealthy.
+
 The following are domain/read-health failures and contribute no exception item:
 
-- missing or malformed expiry metadata;
+- a current approved dated document with missing required reviewer identity or review timestamp;
+- malformed dated expiry metadata;
 - multiple conflicting current versions for one logical slot;
-- unverified current metadata;
 - broken or contradictory predecessor/successor relationships;
 - a pending successor whose legitimate responsibility cannot be determined;
 - an unreconciled legacy row that cannot satisfy the current approved/versioned contract.
@@ -623,6 +637,13 @@ Before enabling Phase 3B:
 - invalid DTO bucket/responsibility combinations fail validation;
 - the same authoritative concern cannot appear in multiple primary buckets.
 
+The `urgent` to `critical` priority migration is an atomic compatibility gate completed before the Compliance adapter is enabled. Verification must prove:
+
+- no serialized Phase 3 item emits the legacy `priority_tier = urgent` token;
+- the frontend priority union accepts `critical` and no longer accepts `urgent`;
+- existing Phase 3A items retain identical relative ordering; and
+- existing highest-priority presentation retains equivalent severity.
+
 ### Classification tests
 
 Classification must be tested as one mutually exclusive decision tree:
@@ -658,7 +679,8 @@ already expired    → critical / critical
 Tests must also prove:
 
 - non-expiring documents are excluded;
-- non-current, unapproved, or reviewer-unverified documents are excluded and/or health-reported appropriately;
+- expected non-current or unapproved lifecycle states are normally excluded;
+- structurally inconsistent current-approved records, including missing required reviewer verification or invalid lifecycle metadata, are reported as domain-health failures;
 - pending renewal responsibility removes the concern from Phase 3B;
 - renewal approval/current replacement removes the item;
 - contradictory lifecycle data is a domain-health failure, not an exception;
@@ -718,31 +740,47 @@ Verify:
 
 The first Phase 3B rollout stage is complete when the Compliance Document domain policy and adapter pass readiness, security, performance, classification, timezone, presentation, observability, and rollback gates and can be enabled without changing Phase 3A behavior.
 
-The single Phase 3B implementation plan is complete only after Failed Refunds and Unowned Logistics Failures independently satisfy their domain prerequisites, adapter contracts, and readiness gates. Runtime failure isolation after enablement is not a substitute for pre-launch readiness.
+The first rollout stage is independently releasable after its Compliance gate passes. The single Phase 3B implementation plan reaches full declared coverage only after Failed Refunds and Unowned Logistics Failures independently satisfy their domain prerequisites, adapter contracts, and readiness gates. Runtime failure isolation after enablement is not a substitute for pre-launch readiness, and a later stage does not begin automatically when its prerequisite or approval gate remains blocked.
 
 ## 15. Implementation Sequence
 
-The implementation plan should preserve this order:
+The implementation plan should preserve these explicit stop/release gates:
 
 ```text
-1. Characterize current Phase 3A and Compliance behavior.
-2. Make Phase 3A DTO metadata explicit without behavioral change.
-3. Centralize Compliance 30/7/0 expiry-window policy in the domain.
-4. Add Compliance policy boundary and reminder-parity tests.
-5. Evolve the shared coordinator for bucket-specific reads.
-6. Add the Compliance exception adapter behind disabled configuration.
-7. Add separate Home summaries and full-page bucket navigation.
-8. Apply the compact operational-queue presentation.
-9. Add rollout, failure-isolation, security, accessibility, and query evidence.
-10. Pass the Compliance readiness gate and enable its adapter for the first rollout stage.
-11. Implement and verify the authoritative Refund recovery/resolution lifecycle.
-12. Add the Failed Refund adapter, pass its readiness gate, and enable it independently.
-13. Implement and verify the authoritative Logistics responsibility projection.
-14. Add the Unowned Logistics Failure adapter, pass its readiness gate, and enable it independently.
-15. Verify complete three-source ordering, filtering, degradation, rollback, and coverage behavior.
+Gate A — Shared framework evolution
+├─ characterize current Phase 3A and Compliance behavior
+├─ make Phase 3A DTO metadata explicit without behavioral change
+├─ complete the atomic urgent-to-critical compatibility migration
+└─ evolve the shared coordinator for bucket-specific reads
+
+Gate B — Compliance domain and adapter
+├─ centralize the singular Compliance expiry-window policy
+├─ verify reminder milestones and Action Center continuous windows separately
+├─ add the Compliance adapter behind disabled configuration
+├─ add two-bucket Home/full-page interaction and compact queue presentation
+└─ pass rollout, failure, security, accessibility, query, and readiness gates
+   → first Phase 3B rollout stage releasable
+
+Gate C — Refund recovery domain prerequisite
+└─ implement and verify authoritative recovery/resolution state
+
+Gate D — Failed Refund adapter
+└─ pass independent adapter readiness and rollout gates
+   → Failed Refund coverage releasable
+
+Gate E — Logistics responsibility prerequisite
+└─ implement and verify the authoritative responsibility projection
+
+Gate F — Unowned Logistics Failure adapter
+└─ pass independent adapter readiness and rollout gates
+   → Logistics coverage releasable
+
+Gate G — Complete three-source verification
+└─ verify ordering, filtering, degradation, rollback, and coverage behavior
+   → full declared Phase 3B coverage complete
 ```
 
-The one Phase 3B implementation plan contains separate ordered task groups for the Compliance foundation, Refund recovery prerequisite and adapter, Logistics responsibility prerequisite and adapter, and final complete-coverage verification. A later task group may not be enabled before its readiness gate passes.
+The one Phase 3B implementation plan contains these ordered gate groups. A later gate must not be treated as approved merely because the preceding release is complete, and no adapter may be enabled before its own readiness gate passes. Reminder milestone delivery and Action Center continuous-window qualification must share boundary definitions without calling each other's delivery or presentation behavior.
 
 ## 16. Acceptance Criteria
 
