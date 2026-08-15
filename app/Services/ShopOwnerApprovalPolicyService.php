@@ -36,6 +36,57 @@ class ShopOwnerApprovalPolicyService
         return $this->requiresOwnerApproval($shopOwnerId, 'refund_approval', $amount);
     }
 
+    /**
+     * Read the refund approval rule without creating default settings.
+     *
+     * @return array{enabled: bool, limit: float|null}
+     */
+    public function refundApprovalRuleForRead(int $shopOwnerId): array
+    {
+        $settings = ProcurementSettings::query()
+            ->where('shop_owner_id', $shopOwnerId)
+            ->first();
+
+        if (! $settings) {
+            return [
+                'enabled' => false,
+                'limit' => null,
+            ];
+        }
+
+        $approvalPages = is_array($settings->settings_json['approval_pages'] ?? null)
+            ? $settings->settings_json['approval_pages']
+            : [];
+
+        if (! array_key_exists('refund_approval', $approvalPages)
+            || ! is_array($approvalPages['refund_approval'])) {
+            return [
+                'enabled' => true,
+                'limit' => null,
+            ];
+        }
+
+        $record = $approvalPages['refund_approval'];
+        $limit = $record['limit'] ?? null;
+
+        return [
+            'enabled' => (bool) ($record['enabled'] ?? false),
+            'limit' => $limit === null || $limit === '' ? null : (float) $limit,
+        ];
+    }
+
+    /**
+     * @param array{enabled: bool, limit: float|null} $rule
+     */
+    public function requiresOwnerApprovalForRefundRule(array $rule, float $amount): bool
+    {
+        if (! $rule['enabled']) {
+            return false;
+        }
+
+        return $rule['limit'] === null || $amount >= $rule['limit'];
+    }
+
     private function requiresOwnerApproval(int $shopOwnerId, string $key, float $amount): bool
     {
         $settings = ProcurementSettings::getForShopOwner($shopOwnerId);
