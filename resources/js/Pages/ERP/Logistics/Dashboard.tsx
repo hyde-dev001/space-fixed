@@ -6,19 +6,18 @@ import type { ErpCapabilities } from '@/types/erp';
 import { erpUrl } from '@/utils/erpCapabilities';
 
 export default function Dashboard() {
-  const { stats, auth, erpCapabilities } = usePage<{
+  const { stats, auth, erpCapabilities, canViewShipments = false, canManageRiders = false } = usePage<{
     stats: LogisticsStats;
     auth?: { permissions?: string[]; erpActor?: { ownerMode?: boolean } };
     erpCapabilities?: ErpCapabilities;
+    canViewShipments?: boolean;
+    canManageRiders?: boolean;
   }>().props;
   const ownerMode = auth?.erpActor?.ownerMode === true;
   const shipmentsUrl = erpUrl(erpCapabilities, 'GET:erp.logistics.shipments')
-    ?? (ownerMode ? null : '/erp/logistics/shipments');
+    ?? (!ownerMode && canViewShipments ? '/erp/logistics/shipments' : null);
   const ridersUrl = erpUrl(erpCapabilities, 'GET:erp.logistics.riders')
-    ?? (ownerMode ? null : '/erp/logistics/riders');
-  const canManageRiders = ownerMode
-    ? ridersUrl !== null
-    : auth?.permissions?.includes('manage-logistics-riders');
+    ?? (!ownerMode && canManageRiders ? '/erp/logistics/riders' : null);
 
   return (
     <AppLayoutERP>

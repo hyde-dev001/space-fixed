@@ -297,6 +297,26 @@ final class LogisticsActorPolicy
     }
 
     /**
+     * Resolve an actor-level capability for page projections. Source-state,
+     * proof, and assignment checks remain in decide()/decideCustody().
+     */
+    public function canPerform(
+        Authenticatable $actor,
+        ShopOwner $shop,
+        LogisticsAction $action,
+    ): bool {
+        if (! $this->actorBelongsToShop($actor, $shop)) {
+            return false;
+        }
+
+        if ($actor instanceof ShopOwner) {
+            return in_array($action->value, self::OWNER_ACTIONS, true);
+        }
+
+        return $actor instanceof User && $this->hasCapability($actor, $action);
+    }
+
+    /**
      * @return array{allowed: bool, action: string, reason_category: ?string}
      */
     private function custodyDecision(

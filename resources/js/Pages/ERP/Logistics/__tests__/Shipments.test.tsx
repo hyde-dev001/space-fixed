@@ -24,6 +24,7 @@ const defaultProps = () => ({
   }] }], links: [], from: 1, to: 1, total: 1, current_page: 1, last_page: 1 },
   filters: { status: 'all', purpose: 'all', window: 'all', module: 'all' }, assignableRiders: [],
   canAssign: false, canUpdateStatus: false, canRecordProof: true, canApproveProof: false, riderMode: true, batches: [],
+  canReportIssue: true, canViewShipments: true, canManageRiders: true,
   maxDeliveryAttempts: 2,
   today: '2026-07-21',
   availableModules: ['retail'],
@@ -269,6 +270,97 @@ it('does not navigate when an owner shipment capability is unavailable', () => {
   fireEvent.submit(screen.getByRole('search'));
 
   expect(mocks.get).not.toHaveBeenCalled();
+});
+
+it('keeps server-granted owner dispatch controls visible in owner mode', () => {
+  mocks.props = defaultProps();
+  mocks.props.auth = { erpActor: { ownerMode: true } };
+  mocks.props.riderMode = false;
+  mocks.props.canAssign = true;
+  mocks.props.canRecordProof = false;
+  mocks.props.canUpdateStatus = false;
+  mocks.props.canApproveProof = true;
+  mocks.props.assignableRiders = [{ id: 9, name: 'Rider Nine' }];
+  mocks.props.shipments.data[0].legs = [{
+    ...mocks.props.shipments.data[0].legs[0],
+    status: 'pending',
+    scheduled_delivery_date: '2026-07-29',
+    assignments: [],
+  }];
+
+  render(<Shipments />);
+  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+
+  expect(screen.getByLabelText('Choose rider for outbound leg')).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Assign' })).toBeVisible();
+});
+
+it('keeps server-granted owner rider custody controls visible only in trusted rider mode', () => {
+  mocks.props = defaultProps();
+  mocks.props.auth = { erpActor: { ownerMode: true } };
+  mocks.props.riderMode = true;
+  mocks.props.canAssign = false;
+  mocks.props.canUpdateStatus = true;
+  mocks.props.canRecordProof = true;
+  mocks.props.canApproveProof = false;
+  mocks.props.canReportIssue = true;
+  mocks.props.shipments.data[0].legs = [{
+    ...mocks.props.shipments.data[0].legs[0],
+    status: 'assigned',
+    assignments: [{ id: 3, status: 'accepted' }],
+  }];
+
+  render(<Shipments />);
+  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+
+  expect(screen.getByRole('button', { name: 'Picked up' })).toBeVisible();
+});
+
+it('preserves trusted owner rider mode when filters navigate the existing shipment surface', () => {
+  mocks.props = defaultProps();
+  mocks.props.auth = { erpActor: { ownerMode: true } };
+  mocks.props.riderMode = true;
+  mocks.props.canUpdateStatus = true;
+  mocks.props.canRecordProof = true;
+  mocks.props.canReportIssue = true;
+  mocks.props.erpCapabilities = {
+    'GET:erp.logistics.shipments': {
+      allowed: true,
+      url: '/shop-owner/erp/logistics/shipments',
+    },
+  };
+
+  render(<Shipments />);
+  fireEvent.change(screen.getByLabelText('Filter deliveries by time'), {
+    target: { value: 'week' },
+  });
+
+  expect(mocks.get).toHaveBeenCalledWith(
+    '/shop-owner/erp/logistics/shipments',
+    expect.objectContaining({ window: 'week', rider_mode: 1 }),
+    expect.any(Object),
+  );
+});
+
+it('does not manufacture owner custody controls when the server denies them', () => {
+  mocks.props = defaultProps();
+  mocks.props.auth = { erpActor: { ownerMode: true } };
+  mocks.props.riderMode = true;
+  mocks.props.canAssign = false;
+  mocks.props.canUpdateStatus = false;
+  mocks.props.canRecordProof = false;
+  mocks.props.canApproveProof = false;
+  mocks.props.canReportIssue = false;
+  mocks.props.shipments.data[0].legs = [{
+    ...mocks.props.shipments.data[0].legs[0],
+    status: 'assigned',
+    assignments: [{ id: 3, status: 'accepted' }],
+  }];
+
+  render(<Shipments />);
+
+  expect(screen.queryByRole('button', { name: 'Picked up' })).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Delivery proof photo')).not.toBeInTheDocument();
 });
 
 it('shows readable schedules and operational indicators', () => {

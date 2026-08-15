@@ -70,7 +70,7 @@ $modules = [
     ],
     'logistics' => [
         'label' => 'Logistics',
-        'registration_types' => ['company'],
+        'registration_types' => ['individual', 'company'],
         'business_types' => ['retail', 'repair', 'both'],
         'default_enabled' => true,
         'backfill_enabled' => true,

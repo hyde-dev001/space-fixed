@@ -81,17 +81,18 @@ function RiderCard({ rider }: { rider: LogisticsRider }) {
 }
 
 export default function Riders() {
-  const { riders, filters, auth, erpCapabilities } = usePage<{
+  const { riders, filters, auth, erpCapabilities, canManageRiders = false } = usePage<{
     riders: PaginatedResponse<LogisticsRider>;
     filters: RiderFilters;
     auth?: { erpActor?: { ownerMode?: boolean } };
     erpCapabilities?: ErpCapabilities;
+    canManageRiders?: boolean;
   }>().props;
   const ownerMode = auth?.erpActor?.ownerMode === true;
 
   const updateFilter = (key: keyof RiderFilters, value: string) => {
     const ridersUrl = erpUrl(erpCapabilities, 'GET:erp.logistics.riders')
-      ?? (ownerMode ? null : '/erp/logistics/riders');
+      ?? (!ownerMode && canManageRiders ? '/erp/logistics/riders' : null);
 
     if (!ridersUrl) return;
 

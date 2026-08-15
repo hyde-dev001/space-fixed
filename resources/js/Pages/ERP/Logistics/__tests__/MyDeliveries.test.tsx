@@ -23,6 +23,8 @@ const mocks = vi.hoisted(() => ({
       filters: { tab: 'upcoming', business: 'all', window: 'all', search: '' },
     } as any,
     canRecordProof: true,
+    canUpdateStatus: true,
+    canReportIssue: true,
     maxDeliveryAttempts: 2,
     today: '2026-07-29',
   },
@@ -140,6 +142,9 @@ const choosePickerOption = (label: string, option: string) => {
 };
 
 beforeEach(() => {
+  mocks.props.canRecordProof = true;
+  mocks.props.canUpdateStatus = true;
+  mocks.props.canReportIssue = true;
   mocks.props.deliveryData = {
     offers: [],
     current: null,
@@ -169,6 +174,19 @@ beforeEach(() => {
 });
 
 describe('MyDeliveries task-first hierarchy', () => {
+  it('uses explicit server custody capabilities instead of inferring them from the actor context', () => {
+    mocks.props.canUpdateStatus = false;
+    mocks.props.canRecordProof = false;
+    mocks.props.canReportIssue = false;
+    mocks.props.deliveryData.current = workItem('single', 'assigned', [leg(9, null, 'assigned')]);
+
+    render(<MyDeliveries />);
+
+    expect(screen.queryByRole('button', { name: 'Start delivery' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Submit delivery proof' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Report issue' })).not.toBeInTheDocument();
+  });
+
   it('shows the page heading, connection status, and one current-delivery card', () => {
     mocks.props.deliveryData.current = workItem('single', 'in_transit', [leg(9, null, 'in_transit')]);
 
