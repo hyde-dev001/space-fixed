@@ -6,6 +6,7 @@ use App\Http\Controllers\Erp\ReadPageController;
 use App\Http\Controllers\Erp\WorkspaceController;
 use App\Http\Controllers\ShopOwner\CanonicalOwnerPaymentsController;
 use App\Http\Controllers\ShopOwner\ShopOwnerDashboardController;
+use App\Http\Controllers\ShopOwner\ShopSettingsController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('shop-owner')
@@ -52,4 +53,23 @@ Route::prefix('shop-owner')
             Route::get('/audit', [ReadPageController::class, 'managerAuditLogs'])
                 ->name('audit');
         });
+
+        Route::get('/settings/profile', [ShopSettingsController::class, 'index'])
+            ->defaults('initial_section', 'profile')
+            ->name('settings.profile');
+        Route::get('/settings/modules-team', [ShopSettingsController::class, 'index'])
+            ->defaults('initial_section', 'modules-team')
+            ->name('settings.modules-team');
+        Route::get('/settings/payments-approvals', [ShopSettingsController::class, 'index'])
+            ->defaults('initial_section', 'payments-approvals')
+            ->name('settings.payments-approvals');
+        Route::get('/settings/operations', [ShopSettingsController::class, 'index'])
+            ->defaults('initial_section', 'operations')
+            ->name('settings.operations');
+        Route::get('/settings/policies-compliance', [ShopSettingsController::class, 'index'])
+            ->defaults('initial_section', 'policies-compliance')
+            ->name('settings.policies-compliance');
+        Route::get('/settings/subscription', [ShopSettingsController::class, 'index'])
+            ->defaults('initial_section', 'subscription')
+            ->name('settings.subscription');
     });

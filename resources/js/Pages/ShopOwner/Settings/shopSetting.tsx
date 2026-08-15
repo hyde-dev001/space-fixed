@@ -72,7 +72,27 @@ type ShopSettingsPayload = {
 
 type ShopSettingsPageProps = {
 	shop_settings: ShopSettingsPayload;
+	initialSection?: string;
 };
+
+const SETTINGS_SECTION_OPTIONS = [
+	{ key: 'profile', label: 'Profile' },
+	{ key: 'modules-team', label: 'Modules & Team' },
+	{ key: 'payments-approvals', label: 'Payments & Approvals' },
+	{ key: 'operations', label: 'Operations' },
+	{ key: 'policies-compliance', label: 'Policies & Compliance' },
+	{ key: 'subscription', label: 'Subscription' },
+] as const;
+
+type SettingsSectionKey = typeof SETTINGS_SECTION_OPTIONS[number]['key'];
+
+const isSettingsSectionKey = (value: unknown): value is SettingsSectionKey => (
+	SETTINGS_SECTION_OPTIONS.some((section) => section.key === value)
+);
+
+const normalizeInitialSection = (value: unknown): SettingsSectionKey => (
+	isSettingsSectionKey(value) ? value : 'profile'
+);
 
 type ApprovalItemConfig = {
 	key: keyof ApprovalPages;
@@ -338,7 +358,7 @@ const readRepairRequestLimit = (): number => {
 };
 
 const ShopSetting: React.FC = () => {
-	const { shop_settings } = usePage<ShopSettingsPageProps>().props;
+	const { shop_settings, initialSection } = usePage<ShopSettingsPageProps>().props;
 	const normalizedRegistrationType = String(shop_settings.registration_type ?? '')
 		.trim()
 		.toLowerCase()
@@ -351,6 +371,10 @@ const ShopSetting: React.FC = () => {
 		|| normalizedRegistrationType.startsWith('individual_')
 		|| normalizedRegistrationType.endsWith('_individual');
 	const LAST_SHOP_OWNER_PAGE_KEY = 'shop_owner_last_sidebar_page';
+	const [activeSettingsSection, setActiveSettingsSection] = useState<SettingsSectionKey>(
+		() => normalizeInitialSection(initialSection),
+	);
+	const settingsSectionRefs = useRef<Partial<Record<SettingsSectionKey, HTMLElement | null>>>({});
 	const [saveSuccess, setSaveSuccess] = useState(false);
 	const [processing, setProcessing] = useState(false);
 	const [errors, setErrors] = useState<Record<string, string>>({});
@@ -453,6 +477,23 @@ const ShopSetting: React.FC = () => {
 	const leafletMapRef = useRef<any>(null);
 	const markerRef = useRef<any>(null);
 	const circleRef = useRef<any>(null);
+
+	const setSettingsSectionRef = (section: SettingsSectionKey) => (element: HTMLElement | null): void => {
+		settingsSectionRefs.current[section] = element;
+	};
+
+	useEffect(() => {
+		const target = settingsSectionRefs.current[activeSettingsSection];
+		if (!target) return;
+
+		target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+		target.focus({ preventScroll: true });
+	}, [activeSettingsSection]);
+
+	const selectSettingsSection = (section: SettingsSectionKey, event: React.MouseEvent<HTMLAnchorElement>) => {
+		event.preventDefault();
+		setActiveSettingsSection(section);
+	};
 
 	const reverseGeocode = async (lat: string | number, lng: string | number): Promise<string | null> => {
 		const controller = new AbortController();
@@ -1977,9 +2018,34 @@ const ShopSetting: React.FC = () => {
 						<p className="text-sm text-gray-600">Manage payments, approvals, attendance geofence, compliance documents, and repair workflows from one place.</p>
 					</div>
 
+					<nav aria-label="Settings sections" className="mb-6 rounded-2xl border border-gray-200 bg-white p-2 shadow-sm">
+						<div className="flex flex-wrap gap-1">
+							{SETTINGS_SECTION_OPTIONS.map((section) => (
+								<a
+									key={section.key}
+									href={`#settings-section-${section.key}`}
+									onClick={(event) => selectSettingsSection(section.key, event)}
+									aria-current={activeSettingsSection === section.key ? 'page' : undefined}
+									className={`rounded-lg px-3 py-2 text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+										activeSettingsSection === section.key
+											? 'bg-slate-900 text-white'
+											: 'text-slate-700 hover:bg-slate-100'
+									}`}
+								>
+									{section.label}
+								</a>
+							))}
+						</div>
+					</nav>
+
 					<div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
 
-					<div className="relative overflow-hidden rounded-2xl border border-gray-300 bg-white p-5 shadow-sm lg:col-span-12 lg:order-1">
+					<div
+						id="settings-section-profile"
+						ref={setSettingsSectionRef('profile')}
+						tabIndex={-1}
+						className="relative scroll-mt-6 overflow-hidden rounded-2xl border border-gray-300 bg-white p-5 shadow-sm outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-4 lg:col-span-12 lg:order-1"
+					>
 						<div className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full bg-black/5 blur-3xl" />
 						<div className="pointer-events-none absolute -bottom-20 -left-16 h-56 w-56 rounded-full bg-gray-300/30 blur-3xl" />
 
@@ -2015,8 +2081,15 @@ const ShopSetting: React.FC = () => {
 								</div>
 								<p className="truncate text-sm text-gray-700">{shop_settings.business_name || 'Business'}</p>
 
-								{premiumIsEligible && (
-									<div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-3 text-sm text-gray-700">
+								<div
+									id="settings-section-subscription"
+									ref={setSettingsSectionRef('subscription')}
+									tabIndex={-1}
+									aria-label="Subscription settings"
+									className="scroll-mt-6 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-4"
+								>
+									{premiumIsEligible && (
+										<div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-3 text-sm text-gray-700">
 										<p className="font-semibold text-gray-900">
 											{shop_settings.premium.plan_name || 'No active premium plan'}
 										</p>
@@ -2047,8 +2120,9 @@ const ShopSetting: React.FC = () => {
 												<Check size={13} /> Auto renewal preference saved.
 											</p>
 										) : null}
-									</div>
-								)}
+										</div>
+									)}
+								</div>
 
 									<div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-3 text-sm text-gray-700">
 										<div className="flex items-start justify-between gap-3">
@@ -2099,7 +2173,12 @@ const ShopSetting: React.FC = () => {
 								</div>
 							</div>
 
-					<div className="lg:col-span-12 lg:order-3">
+					<div
+						id="settings-section-modules-team"
+						ref={setSettingsSectionRef('modules-team')}
+						tabIndex={-1}
+						className="scroll-mt-6 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-4 lg:col-span-12 lg:order-3"
+					>
 						<BusinessScalingSettings businessScaling={shop_settings.business_scaling} />
 					</div>
 
@@ -2107,7 +2186,12 @@ const ShopSetting: React.FC = () => {
 						<BusinessDocumentCompliance documents={shop_settings.document_compliance} />
 					</div>
 
-					<div className="rounded-2xl border border-gray-200 bg-white shadow-sm lg:col-span-12 lg:order-2">
+					<div
+						id="settings-section-policies-compliance"
+						ref={setSettingsSectionRef('policies-compliance')}
+						tabIndex={-1}
+						className="scroll-mt-6 rounded-2xl border border-gray-200 bg-white shadow-sm outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-4 lg:col-span-12 lg:order-2"
+					>
 						<div className="border-b border-gray-200 p-6">
 							<div className="flex flex-wrap items-start justify-between gap-3">
 								<div>
@@ -2856,7 +2940,12 @@ const ShopSetting: React.FC = () => {
 					</div>
 
 					{/* Shop Location / Attendance Geofence */}
-					<div className="rounded-2xl border border-gray-200 bg-white shadow-sm lg:col-span-12 lg:order-6">
+					<div
+						id="settings-section-operations"
+						ref={setSettingsSectionRef('operations')}
+						tabIndex={-1}
+						className="scroll-mt-6 rounded-2xl border border-gray-200 bg-white shadow-sm outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-4 lg:col-span-12 lg:order-6"
+					>
 						<div className="border-b border-gray-200 p-6">
 							<div className="flex items-start justify-between gap-4">
 								<div>
@@ -2995,7 +3084,12 @@ const ShopSetting: React.FC = () => {
 					</div>
 
 					{!isIndividual && (
-					<div className={`rounded-2xl border border-gray-200 bg-white shadow-sm lg:order-2 ${showWideApprovalLimits ? 'lg:col-span-12' : 'lg:col-span-7'}`}>
+					<div
+						id="settings-section-payments-approvals"
+						ref={setSettingsSectionRef('payments-approvals')}
+						tabIndex={-1}
+						className={`scroll-mt-6 rounded-2xl border border-gray-200 bg-white shadow-sm outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-4 lg:order-2 ${showWideApprovalLimits ? 'lg:col-span-12' : 'lg:col-span-7'}`}
+					>
 						<div className="border-b border-gray-200 p-6">
 							<h2 className="text-xl font-semibold text-gray-900">Approval Limits</h2>
 							<p className="mt-1 text-sm text-gray-600">Enable approvals per workflow and define the minimum amount that requires owner action.</p>

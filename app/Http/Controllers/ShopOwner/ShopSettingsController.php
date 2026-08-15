@@ -29,6 +29,15 @@ use Inertia\Response;
 
 class ShopSettingsController extends Controller
 {
+    private const INITIAL_SECTION_KEYS = [
+        'profile',
+        'modules-team',
+        'payments-approvals',
+        'operations',
+        'policies-compliance',
+        'subscription',
+    ];
+
     public function __construct(
         private readonly ShopOwnerDocumentRequirementService $documentRequirements,
         private readonly ShopDocumentValidityService $documentValidity,
@@ -38,7 +47,7 @@ class ShopSettingsController extends Controller
     /**
      * Display the shop settings page for the authenticated shop owner.
      */
-    public function index(): Response
+    public function index(Request $request): Response
     {
         $shopOwner = Auth::guard('shop_owner')->user();
         $rawRepairPaymentPolicy = (string) ($shopOwner->repair_payment_policy ?? 'deposit_50');
@@ -117,7 +126,17 @@ class ShopSettingsController extends Controller
                     'ends_at' => $latestPremiumSubscription?->ends_at?->toIso8601String(),
                 ],
             ],
+            'initialSection' => $this->initialSection($request),
         ]);
+    }
+
+    private function initialSection(Request $request): string
+    {
+        $section = $request->route('initial_section');
+
+        return is_string($section) && in_array($section, self::INITIAL_SECTION_KEYS, true)
+            ? $section
+            : 'profile';
     }
 
     /**
