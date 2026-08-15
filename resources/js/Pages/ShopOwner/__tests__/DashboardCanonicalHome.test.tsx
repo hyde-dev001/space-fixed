@@ -2,6 +2,7 @@ import React from "react";
 import { render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { OwnerActionCenterResult } from "../../../types/ownerActionCenter";
 
 const mocks = vi.hoisted(() => ({
   props: {} as Record<string, unknown>,
@@ -47,6 +48,38 @@ vi.mock("sweetalert2", () => ({
 
 import Dashboard from "../Dashboard";
 
+const ownerActionCenter: OwnerActionCenterResult = {
+  items: [
+    {
+      attention_key: "expense:12:owner_approval",
+      source_type: "expense",
+      source_id: 12,
+      category: "expense_approval",
+      primary_bucket: "needs_my_decision",
+      module: "finance",
+      title: "Supplier expense",
+      concise_summary: "Review the submitted supplier expense.",
+      priority_tier: "high",
+      materiality_tier: "high",
+      comparable_monetary_exposure: 450,
+      urgency_at: null,
+      actionable_since: "2026-08-14T09:00:00+08:00",
+      waiting_on: "shop_owner",
+      owner_action_required: true,
+      destination_url: "/shop-owner/expense-approvals?expense=12",
+    },
+  ],
+  coverage_counts: { refunds: 0, expenses: 1, purchase_requests: 0 },
+  health: {
+    enabled_adapter_keys: ["expenses"],
+    healthy_adapter_keys: ["expenses"],
+    failed_adapter_keys: [],
+  },
+  degradation_status: "none",
+  coverage: "all",
+  pagination: { page: 1, per_page: 5, total: 1, last_page: 1 },
+};
+
 describe("canonical shop owner home placeholders", () => {
   beforeEach(() => {
     mocks.props = {
@@ -74,8 +107,8 @@ describe("canonical shop owner home placeholders", () => {
   it("renders subordinate informational placeholders alongside existing dashboard metrics", async () => {
     render(<Dashboard />);
 
-    expect(await screen.findByText("Required Actions — Coming in Phase 3")).toBeInTheDocument();
-    expect(screen.getByText("Exceptions — Coming in Phase 3")).toBeInTheDocument();
+    expect(await screen.findByText("Required Actions \u2014 Coming in Phase 3")).toBeInTheDocument();
+    expect(screen.getByText("Exceptions \u2014 Coming in Phase 3")).toBeInTheDocument();
     expect(screen.getByText("Existing dashboard metrics")).toBeInTheDocument();
     expect(screen.getByText(/existing module and approval pages remain the current action surfaces/i)).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /approval/i })).not.toBeInTheDocument();
@@ -91,7 +124,27 @@ describe("canonical shop owner home placeholders", () => {
     render(<Dashboard />);
 
     expect(await screen.findByText("Existing dashboard metrics")).toBeInTheDocument();
-    expect(screen.queryByText("Required Actions — Coming in Phase 3")).not.toBeInTheDocument();
-    expect(screen.queryByText("Exceptions — Coming in Phase 3")).not.toBeInTheDocument();
+    expect(screen.queryByText("Required Actions \u2014 Coming in Phase 3")).not.toBeInTheDocument();
+    expect(screen.queryByText("Exceptions \u2014 Coming in Phase 3")).not.toBeInTheDocument();
+  });
+
+  it("replaces only Required Actions with the bounded decision summary", async () => {
+    mocks.props = {
+      ...mocks.props,
+      ownerActionCenter,
+    };
+
+    render(<Dashboard />);
+
+    expect(await screen.findByText("Owner Actions")).toBeInTheDocument();
+    expect(screen.getAllByText("Needs My Decision").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("Supplier expense")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /View all/i })).toHaveAttribute(
+      "href",
+      "/shop-owner/action-center",
+    );
+    expect(screen.getByText(/^Exceptions/)).toBeInTheDocument();
+    expect(screen.queryByText(/^Required Actions/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /approve|reject/i })).not.toBeInTheDocument();
   });
 });
