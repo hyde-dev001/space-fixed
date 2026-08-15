@@ -12,6 +12,7 @@ use App\Models\ShopOwner;
 use App\Models\User;
 use App\Models\HR\AuditLog;
 use App\Services\HR\PayrollService;
+use App\Services\HR\EmployeeOperationalPolicy;
 use App\Services\Finance\ExpenseSettlementService;
 use App\Services\NotificationService;
 use App\Support\Finance\FinanceErrorResponse;
@@ -42,12 +43,19 @@ class PayrollController extends Controller
     protected PayrollService $payrollService;
     protected NotificationService $notificationService;
     protected ExpenseSettlementService $expenseSettlementService;
+    protected EmployeeOperationalPolicy $employeePolicy;
 
-    public function __construct(PayrollService $payrollService, NotificationService $notificationService, ExpenseSettlementService $expenseSettlementService)
+    public function __construct(
+        PayrollService $payrollService,
+        NotificationService $notificationService,
+        ExpenseSettlementService $expenseSettlementService,
+        EmployeeOperationalPolicy $employeePolicy,
+    )
     {
         $this->payrollService = $payrollService;
         $this->notificationService = $notificationService;
         $this->expenseSettlementService = $expenseSettlementService;
+        $this->employeePolicy = $employeePolicy;
     }
 
     // ============================================================
@@ -232,8 +240,14 @@ class PayrollController extends Controller
         }
 
         $employee = Employee::forShopOwner($this->shopOwnerId($user))
-            ->where('status', 'active')
             ->findOrFail($request->employee_id);
+
+        if (! $this->employeePolicy->isEligibleForRoutinePayroll($employee)) {
+            return response()->json([
+                'error' => 'Employee is not eligible for routine payroll.',
+                'code' => 'EMPLOYEE_NOT_ELIGIBLE_FOR_ROUTINE_PAYROLL',
+            ], 422);
+        }
 
         $existingPayroll = Payroll::forEmployee($request->employee_id)
             ->forPeriod($request->payrollPeriod)

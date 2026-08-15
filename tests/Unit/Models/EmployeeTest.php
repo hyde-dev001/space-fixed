@@ -179,6 +179,20 @@ class EmployeeTest extends TestCase
     }
 
     #[Test]
+    public function test_legacy_employee_status_remains_hydratable_before_reconciliation(): void
+    {
+        $employee = Employee::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'status' => EmployeeStatus::ACTIVE,
+        ]);
+        DB::table('employees')->where('id', $employee->id)->update(['status' => 'on_leave']);
+
+        $freshEmployee = $employee->fresh();
+
+        $this->assertSame('on_leave', $freshEmployee->status);
+    }
+
+    #[Test]
     public function test_employee_has_shop_owner_relationship()
     {
         $this->assertInstanceOf(ShopOwner::class, $this->employee->shopOwner);

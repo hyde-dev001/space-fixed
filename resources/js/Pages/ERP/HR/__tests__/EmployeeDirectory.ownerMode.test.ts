@@ -6,6 +6,7 @@ const source = readFileSync(
   join(process.cwd(), 'resources/js/Pages/ERP/HR/EmployeeDirectory.tsx'),
   'utf8',
 );
+const typesSource = readFileSync(join(process.cwd(), 'resources/js/types/hr.ts'), 'utf8');
 
 describe('shop-owner HR employee directory routes', () => {
   it('selects owner-scoped employee, invitation, template, and permission endpoints', () => {
@@ -15,5 +16,16 @@ describe('shop-owner HR employee directory routes', () => {
     expect(source).toContain("ownerMode ? '/shop-owner/position-templates' : '/api/hr/position-templates'");
     expect(source).toContain("ownerMode ? '/shop-owner/permissions/available' : '/api/hr/permissions/available'");
     expect(source).toContain('if (ownerMode) return;');
+  });
+
+  it('uses canonical account states and keeps leave and probation separate', () => {
+    expect(source).toContain('type EmployeeStatus = "active" | "inactive" | "suspended" | "terminated";');
+    expect(source).not.toContain('"on_leave" | "probation"');
+    expect(source).not.toContain('setFilterStatus("on_leave")');
+    expect(source).not.toContain('setFilterStatus("probation")');
+    expect(source).toContain('onLeave?: boolean;');
+    expect(source).toContain('probation?: boolean;');
+    expect(typesSource).toContain("status: 'active' | 'inactive' | 'suspended' | 'terminated';");
+    expect(typesSource).not.toContain("'on-leave'");
   });
 });

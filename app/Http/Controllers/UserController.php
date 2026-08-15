@@ -2,13 +2,13 @@
 
 namespace App\Http\Controllers;
 
-use App\Enums\EmployeeStatus;
 use App\Enums\ShopOwnerStatus;
 use App\Models\Employee;
 use App\Models\ShopOwner;
 use App\Models\User;
 use App\Models\UserAddress;
 use App\Rules\NotDisposableEmail;
+use App\Services\HR\EmployeeOperationalPolicy;
 use App\Services\NominatimService;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\Request;
@@ -29,6 +29,10 @@ use Inertia\Inertia;
  */
 class UserController extends Controller
 {
+    public function __construct(private readonly EmployeeOperationalPolicy $employeePolicy)
+    {
+    }
+
     private const MAX_SHOP_OWNER_RESUBMISSION_ATTEMPTS = 3;
 
     private const SHOP_OWNER_LOGIN_2FA_TTL_MINUTES = 10;
@@ -440,12 +444,7 @@ class UserController extends Controller
                     }
 
                     if ($employees->count() === 1) {
-                        $employeeStatus = $employees->first()->status;
-                        $isEmployeeActive = $employeeStatus instanceof EmployeeStatus
-                            ? $employeeStatus === EmployeeStatus::ACTIVE
-                            : (string) $employeeStatus === EmployeeStatus::ACTIVE->value;
-
-                        if (! $isEmployeeActive) {
+                        if (! $this->employeePolicy->canAuthenticate($employees->first())) {
                             throw ValidationException::withMessages([
                                 'email' => ['Your account has been suspended. Please contact support.'],
                             ]);

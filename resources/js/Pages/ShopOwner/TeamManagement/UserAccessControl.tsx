@@ -50,7 +50,7 @@ interface Employee {
   name: string;
   email: string;
   role: string;
-  status: 'active' | 'inactive';
+  status: EmployeeStatus;
   createdAt: Date;
   salary?: number | string;
   hire_date?: string;
@@ -65,6 +65,27 @@ interface Employee {
   primaryRole?: string;
   additionalRoles?: string[];
 }
+
+type EmployeeStatus = 'active' | 'inactive' | 'suspended' | 'terminated';
+
+const canonicalEmployeeStatus = (value: unknown): EmployeeStatus => {
+  switch (String(value ?? '').trim().toLowerCase()) {
+    case 'active':
+      return 'active';
+    case 'inactive':
+      return 'inactive';
+    case 'suspended':
+      return 'suspended';
+    case 'terminated':
+      return 'terminated';
+    case 'on_leave':
+    case 'on-leave':
+    case 'probation':
+      return 'active';
+    default:
+      return 'inactive';
+  }
+};
 
 interface Role {
   id: number;
@@ -390,6 +411,7 @@ const UserAccessControl: React.FC = () => {
     return {
       ...emp,
       role: normalizeRoleName(emp.role ?? emp.roleName ?? emp.primaryRole ?? emp.department ?? 'Staff'),
+      status: canonicalEmployeeStatus(emp.status),
       roleName: emp.roleName ? normalizeRoleName(emp.roleName) : emp.roleName,
       primaryRole: normalizeRoleName(emp.primaryRole ?? emp.roleName ?? emp.role ?? emp.department ?? 'Staff'),
       additionalRoles: Array.isArray(emp.additionalRoles)

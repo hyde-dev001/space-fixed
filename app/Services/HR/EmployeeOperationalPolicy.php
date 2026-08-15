@@ -27,6 +27,20 @@ final class EmployeeOperationalPolicy
         return $this->accountState($employee) === EmployeeStatus::ACTIVE;
     }
 
+    public function canChangeAccountState(Employee $employee, EmployeeStatus|string $targetStatus): bool
+    {
+        $target = $targetStatus instanceof EmployeeStatus
+            ? $targetStatus
+            : EmployeeStatus::tryFrom(strtolower(trim($targetStatus)));
+
+        if ($target === null) {
+            return false;
+        }
+
+        return $this->accountState($employee) !== EmployeeStatus::TERMINATED
+            || $target === EmployeeStatus::TERMINATED;
+    }
+
     public function isOnLeave(Employee $employee, CarbonInterface $date): bool
     {
         $targetDate = CarbonImmutable::parse($date->toDateString());

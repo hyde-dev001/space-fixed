@@ -4,7 +4,7 @@ import { usePage } from "@inertiajs/react";
 import Swal from "sweetalert2";
 
 // ==================== Type Definitions ====================
-type EmployeeStatus = "active" | "inactive" | "on_leave";
+type EmployeeStatus = "active" | "inactive" | "suspended" | "terminated";
 type AttendanceStatus = "finalized" | "pending" | "not_started";
 type PayrollWorkflowStatus = "pending" | "awaiting_checker" | "awaiting_final_approval" | "ready_for_disbursement" | "paid" | "rejected";
 

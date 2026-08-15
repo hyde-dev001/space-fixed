@@ -199,6 +199,32 @@ final class OwnerErpApiContractTest extends TestCase
             ->assertJsonPath('employee.name', 'Updated Employee');
     }
 
+    public function test_owner_cannot_reactivate_a_terminated_employee(): void
+    {
+        $owner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
+            'business_type' => 'both',
+        ]);
+        $employee = Employee::factory()->create([
+            'shop_owner_id' => $owner->id,
+            'status' => 'terminated',
+        ]);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->putJson("/shop-owner/employees/{$employee->id}", [
+                'name' => 'Terminated Employee',
+                'email' => $employee->email,
+                'status' => 'active',
+            ])
+            ->assertStatus(422)
+            ->assertJsonPath('code', 'EMPLOYEE_TERMINATED');
+
+        $this->assertDatabaseHas('employees', [
+            'id' => $employee->id,
+            'status' => 'terminated',
+        ]);
+    }
+
     public function test_shop_owner_can_generate_a_payroll_without_a_user_guard_foreign_key(): void
     {
         $owner = ShopOwner::factory()->approved()->create([

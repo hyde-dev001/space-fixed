@@ -49,6 +49,17 @@ final class EmployeeOperationalPolicyTest extends TestCase
     }
 
     #[Test]
+    public function terminated_employees_cannot_be_moved_back_to_an_operational_state(): void
+    {
+        $employee = new Employee(['status' => EmployeeStatus::TERMINATED]);
+
+        $this->assertFalse($this->policy->canChangeAccountState($employee, EmployeeStatus::ACTIVE));
+        $this->assertFalse($this->policy->canChangeAccountState($employee, EmployeeStatus::INACTIVE));
+        $this->assertFalse($this->policy->canChangeAccountState($employee, EmployeeStatus::SUSPENDED));
+        $this->assertTrue($this->policy->canChangeAccountState($employee, EmployeeStatus::TERMINATED));
+    }
+
+    #[Test]
     public function approved_leave_is_derived_for_the_requested_date_without_changing_account_state(): void
     {
         $employee = new Employee(['status' => EmployeeStatus::ACTIVE]);

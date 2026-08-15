@@ -4,7 +4,7 @@ import Swal from "sweetalert2";
 import { Inertia } from "@inertiajs/inertia";
 import { router, usePage } from '@inertiajs/react';
 
-type EmployeeStatus = "active" | "on_leave" | "probation" | "inactive" | "suspended";
+type EmployeeStatus = "active" | "inactive" | "suspended" | "terminated";
 
 type Employee = {
   id: number;
@@ -15,6 +15,8 @@ type Employee = {
   department: string;
   position: string;
   status: EmployeeStatus;
+  onLeave?: boolean;
+  probation?: boolean;
   suspensionReason?: string;
   hiredAt: string;
   lastActiveAt?: string;
@@ -197,18 +199,15 @@ const MetricCard: React.FC<MetricCardProps> = ({
 
 const statusLabel: Record<EmployeeStatus, string> = {
   active: "Active",
-  on_leave: "On Leave",
-  probation: "Probation",
-  inactive: "Under Investigation",
+  inactive: "Inactive",
   suspended: "Suspended",
+  terminated: "Terminated",
 };
 
 const statusBadge = (status: EmployeeStatus) => {
   if (status === "active") return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200";
-  if (status === "on_leave") return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200";
-  if (status === "probation") return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200";
-  if (status === "inactive") return "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200";
-  if (status === "suspended") return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200";
+  if (status === "inactive") return "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200";
+  if (status === "suspended") return "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200";
   return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200";
 };
 
@@ -234,7 +233,8 @@ const seedEmployees: Employee[] = [
     phone: "+63 928 112 0034",
     department: "Sales",
     position: "Sales Specialist",
-    status: "on_leave",
+    status: "active",
+    onLeave: true,
     hiredAt: "2023-07-01",
     lastActiveAt: "2026-01-12",
     location: "Cebu",
@@ -247,7 +247,8 @@ const seedEmployees: Employee[] = [
     phone: "+63 915 222 9182",
     department: "HR",
     position: "HR Generalist",
-    status: "probation",
+    status: "active",
+    probation: true,
     hiredAt: "2025-11-20",
     lastActiveAt: "2026-01-19",
     location: "Quezon City",
@@ -303,6 +304,25 @@ const formatDate = (value?: string) => {
 
 const buildName = (employee: Employee) => `${employee.firstName} ${employee.lastName}`;
 
+const canonicalEmployeeStatus = (value: unknown): EmployeeStatus => {
+  switch (String(value ?? '').trim().toLowerCase()) {
+    case 'active':
+      return 'active';
+    case 'inactive':
+      return 'inactive';
+    case 'suspended':
+      return 'suspended';
+    case 'terminated':
+      return 'terminated';
+    case 'on_leave':
+    case 'on-leave':
+    case 'probation':
+      return 'active';
+    default:
+      return 'inactive';
+  }
+};
+
 const parseLinkedUserId = (linkedUser?: string | number) => {
   const numericValue = Number(linkedUser ?? 0);
   return Number.isFinite(numericValue) && numericValue > 0 ? numericValue : null;
@@ -328,6 +348,10 @@ const transformEmployeeFromApi = (apiEmployee: any): Employee => {
     }
   }
   
+  const projection = apiEmployee.owner_projection || apiEmployee.ownerProjection || {};
+  const rawStatus = String(apiEmployee.status ?? '').trim().toLowerCase();
+  const legacyOnLeave = rawStatus === 'on_leave' || rawStatus === 'on-leave';
+
   return {
     id: apiEmployee.id,
     firstName: firstName,
@@ -336,7 +360,9 @@ const transformEmployeeFromApi = (apiEmployee: any): Employee => {
     phone: apiEmployee.phone,
     department: apiEmployee.department,
     position: apiEmployee.position,
-    status: apiEmployee.status as EmployeeStatus,
+    status: canonicalEmployeeStatus(apiEmployee.status),
+    onLeave: Boolean(projection.on_leave ?? projection.onLeave ?? apiEmployee.on_leave ?? apiEmployee.onLeave ?? legacyOnLeave),
+    probation: Boolean(projection.probation ?? apiEmployee.probation ?? rawStatus === 'probation'),
     suspensionReason: apiEmployee.suspension_reason || apiEmployee.suspensionReason,
     hiredAt: apiEmployee.hire_date || apiEmployee.hiredAt || apiEmployee.created_at,
     lastActiveAt: apiEmployee.last_active_at || apiEmployee.lastActiveAt || apiEmployee.updated_at,
@@ -924,8 +950,8 @@ export const EmployeeManagement: React.FC<{
 
     const total = (isServerPaginated || meta) ? (meta?.total ?? rows.length) : rows.length;
     const active = rows.filter((r) => r.status === "active").length;
-    const onLeave = rows.filter((r) => r.status === "on_leave").length;
-    const probation = rows.filter((r) => r.status === "probation").length;
+    const onLeave = rows.filter((r) => r.onLeave).length;
+    const probation = rows.filter((r) => r.probation).length;
     return {
       total,
       active,
@@ -1111,7 +1137,7 @@ export const EmployeeManagement: React.FC<{
           row.id === targetEmployeeId
             ? {
                 ...row,
-                status: "inactive",
+                status: ownerMode ? "suspended" : row.status,
                 suspensionReason: investigationReason,
               }
             : row
@@ -1123,7 +1149,7 @@ export const EmployeeManagement: React.FC<{
           prev
             ? {
                 ...prev,
-                status: "inactive",
+                status: ownerMode ? "suspended" : prev.status,
                 suspensionReason: investigationReason,
               }
             : prev
@@ -2212,26 +2238,6 @@ export const EmployeeManagement: React.FC<{
                   Active
                 </button>
                 <button
-                  onClick={() => setFilterStatus("on_leave")}
-                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                    filterStatus === "on_leave"
-                      ? "bg-yellow-600 text-white"
-                      : "bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
-                  }`}
-                >
-                  On Leave
-                </button>
-                <button
-                  onClick={() => setFilterStatus("probation")}
-                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                    filterStatus === "probation"
-                      ? "bg-blue-600 text-white"
-                      : "bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
-                  }`}
-                >
-                  Probation
-                </button>
-                <button
                   onClick={() => setFilterStatus("inactive")}
                   className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                     filterStatus === "inactive"
@@ -2239,7 +2245,7 @@ export const EmployeeManagement: React.FC<{
                       : "bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
                   }`}
                 >
-                  Under Investigation
+                  Inactive
                 </button>
                 <button
                   onClick={() => setFilterStatus("suspended")}
@@ -2250,6 +2256,16 @@ export const EmployeeManagement: React.FC<{
                   }`}
                 >
                   Suspended
+                </button>
+                <button
+                  onClick={() => setFilterStatus("terminated")}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                    filterStatus === "terminated"
+                      ? "bg-red-800 text-white"
+                      : "bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
+                  }`}
+                >
+                  Terminated
                 </button>
               </div>
             </div>
@@ -2324,9 +2340,21 @@ export const EmployeeManagement: React.FC<{
                         <div className="text-xs text-gray-500 dark:text-gray-400">Hired {formatDate(employee.hiredAt)}</div>
                       </td>
                       <td className="px-3 py-3 align-top">
-                        <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${statusBadge(employee.status)}`}>
-                          {statusLabel[employee.status]}
-                        </span>
+                        <div className="flex flex-wrap gap-1">
+                          <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${statusBadge(employee.status)}`}>
+                            {statusLabel[employee.status]}
+                          </span>
+                          {employee.onLeave && (
+                            <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
+                              On Leave
+                            </span>
+                          )}
+                          {employee.probation && (
+                            <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                              Probation
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-3 py-3 align-top text-sm text-gray-500 dark:text-gray-400">
                         {formatDate(employee.lastActiveAt)}
@@ -2379,7 +2407,7 @@ export const EmployeeManagement: React.FC<{
                           >
                             <LockIcon className="h-5 w-5" />
                           </button>
-                          {!['inactive', 'suspended'].includes(employee.status) && (
+                          {!['inactive', 'suspended', 'terminated'].includes(employee.status) && (
                             <>
                               <button
                                 onClick={() => handleSuspendClick(employee)}

@@ -2,15 +2,20 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\EmployeeStatus;
 use App\Models\Employee;
 use App\Models\User;
 use App\Models\AuditLog;
 use App\Mail\EmployeeInvitation;
+use App\Services\HR\EmployeeLinkedUserSynchronizer;
+use App\Services\HR\EmployeeOwnerProjection;
+use App\Services\HR\EmployeeOperationalPolicy;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Validation\Rule;
 use Symfony\Component\HttpFoundation\Response;
 use Carbon\Carbon;
 
@@ -24,6 +29,14 @@ use Carbon\Carbon;
  */
 class EmployeeController extends Controller
 {
+    public function __construct(
+        private readonly EmployeeLinkedUserSynchronizer $linkedUserSynchronizer,
+        private readonly EmployeeOwnerProjection $employeeOwnerProjection,
+        private readonly EmployeeOperationalPolicy $employeePolicy,
+    )
+    {
+    }
+
     /**
      * Get all employees for the authenticated user's shop
      * 
@@ -84,7 +97,7 @@ class EmployeeController extends Controller
                 'functional_role' => 'nullable|string|in:HR Handler,Finance Handler,Inventory Handler,Attendance Manager,Performance Reviewer',
                 'salary' => 'required|numeric|min:0',
                 'hire_date' => 'required|date',
-                'status' => 'required|in:active,inactive,on_leave',
+                'status' => ['required', Rule::enum(EmployeeStatus::class)],
                 'role' => 'required|in:HR,FINANCE_STAFF,FINANCE_MANAGER,MANAGER,STAFF,CRM,SCM,MRP',
             ];
 
@@ -138,6 +151,7 @@ class EmployeeController extends Controller
                 'invited_at' => now(),
                 'invited_by' => $request->user()->id,
             ]);
+            $this->linkedUserSynchronizer->sync($employee);
 
             // Generate invitation URL
             $inviteUrl = url("/invite/{$inviteToken}");
@@ -243,7 +257,7 @@ class EmployeeController extends Controller
                 'salary_effective_date' => 'required_with:salary|date',
                 'salary_change_reason' => 'required_with:salary|string|max:500',
                 'salary_approved_by' => 'nullable|integer|exists:users,id',
-                'status' => 'sometimes|in:active,inactive,on_leave',
+                'status' => ['sometimes', Rule::enum(EmployeeStatus::class)],
             ]);
 
             $salaryAuditData = null;
@@ -297,10 +311,22 @@ class EmployeeController extends Controller
             );
 
             if (array_key_exists('status', $employeeUpdateData)) {
+                if (! $this->employeePolicy->canChangeAccountState($employee, $employeeUpdateData['status'])) {
+                    return response()->json([
+                        'message' => 'Terminated employees cannot be reactivated.',
+                        'error' => 'EMPLOYEE_TERMINATED',
+                        'code' => 'EMPLOYEE_TERMINATED',
+                    ], Response::HTTP_UNPROCESSABLE_ENTITY);
+                }
+
                 $employeeUpdateData['privileged_suspension_id'] = null;
             }
 
             $employee->update($employeeUpdateData);
+
+            if (array_key_exists('status', $employeeUpdateData)) {
+                $this->linkedUserSynchronizer->sync($employee);
+            }
 
             if ($salaryAuditData) {
                 AuditLog::create([
@@ -369,7 +395,7 @@ class EmployeeController extends Controller
     }
 
     /**
-     * Suspend an employee (temporary) - sets status to 'inactive' and records reason in AuditLog
+     * Suspend an employee (temporary) and record the reason in AuditLog.
      *
      * @param Request $request
      * @param Employee $employee
@@ -390,9 +416,10 @@ class EmployeeController extends Controller
             ]);
 
             $employee->update([
-                'status' => 'inactive',
+                'status' => EmployeeStatus::SUSPENDED,
                 'privileged_suspension_id' => null,
             ]);
+            $this->linkedUserSynchronizer->sync($employee);
 
             // Audit log the suspension
             try {
@@ -410,12 +437,13 @@ class EmployeeController extends Controller
                 // non-fatal
             }
 
-            // Also sync the User record (if any) so Super Admin sees suspension in user management
+            // Also audit the linked User record so Super Admin sees the suspension in user management.
             try {
-                $user = User::where('email', $employee->email)->first();
+                $user = User::query()
+                    ->where('shop_owner_id', $request->user_shop_id)
+                    ->whereRaw('LOWER(email) = ?', [strtolower((string) $employee->email)])
+                    ->first();
                 if ($user) {
-                    $user->update(['status' => 'suspended']);
-
                     // Audit log for user suspension caused by shop owner
                     try {
                         AuditLog::create([
@@ -476,10 +504,25 @@ class EmployeeController extends Controller
                 ], Response::HTTP_NOT_FOUND);
             }
 
+            if (! $this->employeePolicy->canChangeAccountState($employee, EmployeeStatus::ACTIVE)) {
+                if ($request->ajax() || $request->wantsJson()) {
+                    return response()->json([
+                        'message' => 'Terminated employees cannot be reactivated.',
+                        'error' => 'EMPLOYEE_TERMINATED',
+                        'code' => 'EMPLOYEE_TERMINATED',
+                    ], Response::HTTP_UNPROCESSABLE_ENTITY);
+                }
+
+                return redirect()->back()->withErrors([
+                    'error' => 'Terminated employees cannot be reactivated.',
+                ]);
+            }
+
             $employee->update([
                 'status' => 'active',
                 'privileged_suspension_id' => null,
             ]);
+            $this->linkedUserSynchronizer->sync($employee);
 
             try {
                 AuditLog::create([
@@ -494,12 +537,13 @@ class EmployeeController extends Controller
                 // non-fatal
             }
 
-            // Also sync the User record (if any) so Super Admin sees activation in user management
+            // Also audit the linked User record so Super Admin sees the activation in user management.
             try {
-                $user = User::where('email', $employee->email)->first();
+                $user = User::query()
+                    ->where('shop_owner_id', $request->user_shop_id)
+                    ->whereRaw('LOWER(email) = ?', [strtolower((string) $employee->email)])
+                    ->first();
                 if ($user) {
-                    $user->update(['status' => 'active']);
-
                     try {
                         AuditLog::create([
                             'shop_owner_id' => $request->user_shop_id,
@@ -551,16 +595,23 @@ class EmployeeController extends Controller
         try {
             $shopId = $request->user_shop_id;
 
+            $employees = Employee::query()
+                ->where('shop_owner_id', $shopId)
+                ->with('leaveRequests')
+                ->get();
+            $projections = $employees->map(
+                fn (Employee $employee): array => $this->employeeOwnerProjection->project($employee),
+            );
+
             $stats = [
-                'total_employees' => Employee::where('shop_owner_id', $shopId)->count(),
-                'active_employees' => Employee::where('shop_owner_id', $shopId)
-                    ->where('status', 'active')->count(),
-                'inactive_employees' => Employee::where('shop_owner_id', $shopId)
-                    ->where('status', 'inactive')->count(),
-                'on_leave' => Employee::where('shop_owner_id', $shopId)
-                    ->where('status', 'on_leave')->count(),
-                'total_payroll' => Employee::where('shop_owner_id', $shopId)
-                    ->sum('salary'),
+                'total_employees' => $projections->count(),
+                'active_employees' => $projections->where('account_state', EmployeeStatus::ACTIVE->value)->count(),
+                'inactive_employees' => $projections->whereIn('account_state', [
+                    EmployeeStatus::INACTIVE->value,
+                    EmployeeStatus::TERMINATED->value,
+                ])->count(),
+                'on_leave' => $projections->where('on_leave', true)->count(),
+                'total_payroll' => $employees->sum('salary'),
             ];
 
             return response()->json([

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\ShopOwner;
 
 use App\Http\Controllers\Controller;
+use App\Enums\EmployeeStatus;
 use App\Models\Employee;
 use App\Models\ShopOwner;
 use App\Models\User;
@@ -22,6 +23,8 @@ use Spatie\Permission\Models\Role;
 use App\Models\PositionTemplate;
 use App\Models\PositionTemplatePermission;
 use App\Services\BusinessAccessControlService;
+use App\Services\HR\EmployeeLinkedUserSynchronizer;
+use App\Services\HR\EmployeeOperationalPolicy;
 use App\Services\Logistics\RiderProfileSyncService;
 use Carbon\Carbon;
 
@@ -32,7 +35,11 @@ class UserAccessControlController extends Controller
      */
     protected BusinessAccessControlService $accessControl;
 
-    public function __construct(BusinessAccessControlService $accessControl)
+    public function __construct(
+        BusinessAccessControlService $accessControl,
+        private readonly EmployeeLinkedUserSynchronizer $linkedUserSynchronizer,
+        private readonly EmployeeOperationalPolicy $employeePolicy,
+    )
     {
         $this->accessControl = $accessControl;
     }
@@ -317,7 +324,7 @@ class UserAccessControlController extends Controller
                 'branch' => 'nullable|string|max:100',
                 'salary' => 'nullable|numeric|min:0',
                 'hire_date' => 'nullable|date',
-                'status' => 'nullable|in:active,inactive,on_leave',
+                'status' => ['nullable', Rule::enum(EmployeeStatus::class)],
                 'role' => ['required', Rule::in($allowedPrimaryRoles)],
             ], [
                 'name.required' => 'Employee name is required',
@@ -509,6 +516,8 @@ class UserAccessControlController extends Controller
                 return [$employee, $user];
             });
 
+            $this->linkedUserSynchronizer->sync($employee);
+
             // Generate invitation URL
             $inviteUrl = url("/invite/{$inviteToken}");
 
@@ -619,7 +628,7 @@ class UserAccessControlController extends Controller
                 'department' => 'nullable|string|max:100',
                 'salary' => 'nullable|numeric|min:0',
                 'hire_date' => 'nullable|date',
-                'status' => 'nullable|in:active,inactive,on_leave',
+                'status' => ['nullable', Rule::enum(EmployeeStatus::class)],
             ], [
                 'name.required' => 'Employee name is required',
                 'email.required' => 'Email is required',
@@ -627,6 +636,21 @@ class UserAccessControlController extends Controller
                 'phone.regex' => 'Phone number must be exactly 11 digits',
                 'salary.numeric' => 'Salary must be a valid number',
             ]);
+
+            if (array_key_exists('status', $validated)
+                && ! $this->employeePolicy->canChangeAccountState($employee, (string) $validated['status'])) {
+                if ($request->wantsJson()) {
+                    return response()->json([
+                        'message' => 'Terminated employees cannot be reactivated.',
+                        'error' => 'EMPLOYEE_TERMINATED',
+                        'code' => 'EMPLOYEE_TERMINATED',
+                    ], 422);
+                }
+
+                return back()->withErrors([
+                    'status' => 'Terminated employees cannot be reactivated.',
+                ]);
+            }
 
             $updatedEmployee = DB::transaction(function () use ($employee, $validated) {
                 $employeeData = [
@@ -668,6 +692,8 @@ class UserAccessControlController extends Controller
 
                 return $employee->fresh('user');
             });
+
+            $this->linkedUserSynchronizer->sync($updatedEmployee);
 
             try {
                 AuditLog::create([

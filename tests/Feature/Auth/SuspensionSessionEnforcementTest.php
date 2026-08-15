@@ -204,6 +204,30 @@ class SuspensionSessionEnforcementTest extends TestCase
         $this->assertGuest('user');
     }
 
+    public function test_employee_login_denies_terminated_employee_even_when_linked_user_is_stale_active(): void
+    {
+        $owner = ShopOwner::factory()->approved()->create();
+        $user = User::factory()->create([
+            'email' => 'terminated.employee@example.test',
+            'password' => Hash::make('Password123!'),
+            'status' => 'active',
+            'shop_owner_id' => $owner->id,
+            'email_verified_at' => now(),
+        ]);
+        Employee::factory()->create([
+            'shop_owner_id' => $owner->id,
+            'email' => $user->email,
+            'status' => 'terminated',
+        ]);
+
+        $this->postJson('/user/login', [
+            'email' => $user->email,
+            'password' => 'Password123!',
+        ])->assertUnprocessable()->assertJsonValidationErrors('email');
+
+        $this->assertGuest('user');
+    }
+
     public function test_suspended_shop_owner_is_forced_logged_out_on_next_request(): void
     {
         $shopOwner = ShopOwner::factory()->create([

@@ -193,6 +193,63 @@ class EmployeeControllerTest extends TestCase
     }
 
     #[Test]
+    public function test_canonical_employee_status_changes_sync_linked_user_state(): void
+    {
+        $linkedUser = User::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'email' => 'linked.employee@example.com',
+            'status' => 'active',
+        ]);
+        $employee = Employee::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'email' => $linkedUser->email,
+            'status' => 'active',
+        ]);
+
+        $this->actingAs($this->hrUser, 'user')
+            ->putJson("/api/hr/employees/{$employee->id}", ['status' => 'inactive'])
+            ->assertOk();
+
+        $this->assertSame('inactive', $linkedUser->fresh()->status);
+
+        $this->actingAs($this->hrUser, 'user')
+            ->putJson("/api/hr/employees/{$employee->id}", ['status' => 'suspended'])
+            ->assertOk();
+
+        $this->assertSame('suspended', $linkedUser->fresh()->status);
+
+        $this->actingAs($this->hrUser, 'user')
+            ->putJson("/api/hr/employees/{$employee->id}", ['status' => 'terminated'])
+            ->assertOk();
+
+        $this->assertSame('inactive', $linkedUser->fresh()->status);
+    }
+
+    #[Test]
+    public function terminated_employee_cannot_be_reactivated_through_hr_api(): void
+    {
+        $employee = Employee::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'status' => 'terminated',
+        ]);
+
+        $this->actingAs($this->hrUser, 'user')
+            ->putJson("/api/hr/employees/{$employee->id}", ['status' => 'active'])
+            ->assertStatus(422)
+            ->assertJsonPath('code', 'EMPLOYEE_TERMINATED');
+
+        $this->assertDatabaseHas('employees', [
+            'id' => $employee->id,
+            'status' => 'terminated',
+        ]);
+
+        $this->actingAs($this->hrUser, 'user')
+            ->postJson("/api/hr/employees/{$employee->id}/activate")
+            ->assertStatus(422)
+            ->assertJsonPath('code', 'EMPLOYEE_TERMINATED');
+    }
+
+    #[Test]
     public function test_can_delete_employee_as_shop_owner()
     {
         $shopOwnerUser = User::factory()->create([
