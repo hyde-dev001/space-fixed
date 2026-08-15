@@ -7,9 +7,11 @@ namespace Tests\Feature\ShopOwner;
 use App\Models\Employee;
 use App\Models\Order;
 use App\Models\ShopOwner;
+use App\Services\Reconciliation\PhaseOneStateInventory;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Log;
 use Tests\TestCase;
 
 final class PhaseOneStateReconciliationCommandTest extends TestCase
@@ -37,6 +39,8 @@ final class PhaseOneStateReconciliationCommandTest extends TestCase
             $firstOutput,
         );
         $this->assertStringContainsString('Reasons: legacy_on_leave_status=2, unknown_employee_status=1', $firstOutput);
+        $this->assertStringContainsString('Enforcement blocked 1.', $firstOutput);
+        $this->assertStringContainsString('Dispositions: rollout_blocker=1.', $firstOutput);
 
         $this->assertSame($before, $this->rawStateFor($shop->id));
         $this->assertDatabaseHas('leave_requests', [
@@ -121,6 +125,142 @@ final class PhaseOneStateReconciliationCommandTest extends TestCase
         ]);
 
         $this->assertSame('terminated', DB::table('employees')->where('id', $employee->id)->value('status'));
+    }
+
+    public function test_apply_is_idempotent_reports_dispositions_and_logs_scoped_counts_without_pii(): void
+    {
+        Log::spy();
+        [$shop] = $this->seedMixedStateRows();
+        $beforeOrders = DB::table('orders')
+            ->where('shop_owner_id', $shop->id)
+            ->orderBy('id')
+            ->pluck('status')
+            ->all();
+
+        $firstOutput = $this->runInventoryCommand([
+            '--domain' => 'all',
+            '--shop-owner-id' => $shop->id,
+            '--apply' => true,
+        ]);
+
+        $this->assertStringContainsString('Mode: apply', $firstOutput);
+        $this->assertStringContainsString(
+            "Shop owner {$shop->id} employees: examined 4, canonical 1, normalizable 2, unresolved 1.",
+            $firstOutput,
+        );
+        $this->assertStringContainsString('Updated 2.', $firstOutput);
+        $this->assertStringContainsString('Enforcement blocked 1.', $firstOutput);
+        $this->assertSame(
+            $beforeOrders,
+            DB::table('orders')
+                ->where('shop_owner_id', $shop->id)
+                ->orderBy('id')
+                ->pluck('status')
+                ->all(),
+        );
+
+        $secondOutput = $this->runInventoryCommand([
+            '--domain' => 'all',
+            '--shop-owner-id' => $shop->id,
+            '--apply' => true,
+        ]);
+
+        $this->assertStringContainsString(
+            "Shop owner {$shop->id} employees: examined 4, canonical 3, normalizable 0, unresolved 1.",
+            $secondOutput,
+        );
+        $this->assertStringNotContainsString('Updated 2.', $secondOutput);
+
+        Log::shouldHaveReceived('info')->atLeast()->withArgs(
+            static function (string $message, array $context) use ($shop): bool {
+                return $message === 'Shop Owner phase-one state reconciliation'
+                    && isset(
+                        $context['run_id'],
+                        $context['domain'],
+                        $context['shop_owner_id'],
+                        $context['counts'],
+                    )
+                    && $context['shop_owner_id'] === $shop->id
+                    && ! array_key_exists('email', $context)
+                    && ! array_key_exists('name', $context)
+                    && ! array_key_exists('phone', $context);
+            },
+        );
+    }
+
+    public function test_unresolved_rows_have_a_rollout_blocker_disposition_and_block_enforcement(): void
+    {
+        [$shop] = $this->seedMixedStateRows();
+
+        $result = app(PhaseOneStateInventory::class)->inspect(
+            $shop->id,
+            'orders',
+            1,
+            false,
+        );
+
+        $report = $result['reports'][0]['domains']['orders'];
+
+        $this->assertSame(2, $report['unresolved']);
+        $this->assertSame(2, $report['enforcement_blocked']);
+        $this->assertCount(2, $report['unresolved_rows']);
+        $this->assertSame(
+            ['rollout_blocker'],
+            array_values(array_unique(array_column($report['unresolved_rows'], 'disposition'))),
+        );
+        $this->assertTrue($report['unresolved_rows'][0]['enforcement_blocked']);
+    }
+
+    public function test_apply_rolls_back_the_failed_shop_chunk_without_reverting_prior_completed_chunks(): void
+    {
+        if (DB::connection()->getDriverName() !== 'sqlite') {
+            $this->markTestSkipped('The failure trigger is SQLite-specific.');
+        }
+
+        $shops = [];
+        foreach (range(1, 4) as $index) {
+            $shop = ShopOwner::factory()->approved()->create();
+            $employee = Employee::factory()->create([
+                'shop_owner_id' => $shop->id,
+                'status' => 'active',
+            ]);
+            DB::table('employees')->where('id', $employee->id)->update(['status' => 'on_leave']);
+            $shops[] = $shop;
+        }
+
+        $trigger = 'phase_one_reconciliation_failure';
+        DB::statement("CREATE TRIGGER {$trigger}
+            BEFORE UPDATE ON employees
+            WHEN OLD.shop_owner_id = {$shops[3]->id} AND NEW.status = 'active'
+            BEGIN
+                SELECT RAISE(ABORT, 'phase-one test failure');
+            END");
+
+        try {
+            $exception = null;
+
+            try {
+                $this->runInventoryCommand([
+                    '--domain' => 'employees',
+                    '--chunk' => 2,
+                    '--apply' => true,
+                ]);
+            } catch (\Throwable $caught) {
+                $exception = $caught;
+            }
+
+            $this->assertNotNull($exception);
+            $this->assertSame(
+                ['active', 'active', 'on_leave', 'on_leave'],
+                DB::table('employees')
+                    ->whereIn('shop_owner_id', array_map(static fn (ShopOwner $shop): int => $shop->id, $shops))
+                    ->orderBy('shop_owner_id')
+                    ->pluck('status')
+                    ->all(),
+            );
+        } finally {
+            DB::statement("DROP TRIGGER IF EXISTS {$trigger}");
+        }
     }
 
     /** @return array{ShopOwner, ShopOwner} */

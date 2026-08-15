@@ -12,6 +12,12 @@ final class PhaseOneStateInventory
 {
     private const DOMAINS = ['orders', 'employees'];
 
+    private const ROW_CHUNK_SIZE = 500;
+
+    public function __construct(private readonly PhaseOneStateReconciler $reconciler)
+    {
+    }
+
     /**
      * Inspect phase-one rows without mutating them unless apply is enabled.
      *
@@ -26,23 +32,16 @@ final class PhaseOneStateInventory
         $this->shopOwnerQuery($shopOwnerId, $domain)
             ->orderBy('id')
             ->chunkById($chunk, function ($owners) use (&$reports, &$totals, $domain, $apply): void {
-                foreach ($owners as $owner) {
-                    $ownerId = (int) $owner->id;
-                    $domains = [];
+                $chunkReports = $apply
+                    ? DB::transaction(fn (): array => $this->inspectOwnerChunk($owners, $domain, true))
+                    : $this->inspectOwnerChunk($owners, $domain, false);
 
-                    foreach ($this->domains($domain) as $currentDomain) {
-                        $report = $apply
-                            ? DB::transaction(fn (): array => $this->inspectDomain($ownerId, $currentDomain, true))
-                            : $this->inspectDomain($ownerId, $currentDomain, false);
+                foreach ($chunkReports as $ownerReport) {
+                    $reports[] = $ownerReport;
 
-                        $domains[$currentDomain] = $report;
+                    foreach ($ownerReport['domains'] as $currentDomain => $report) {
                         $this->addToTotals($totals, $currentDomain, $report);
                     }
-
-                    $reports[] = [
-                        'owner_id' => $ownerId,
-                        'domains' => $domains,
-                    ];
                 }
             });
 
@@ -57,6 +56,34 @@ final class PhaseOneStateInventory
     private function domains(string $domain): array
     {
         return $domain === 'all' ? self::DOMAINS : [$domain];
+    }
+
+    /**
+     * Inspect one bounded shop-owner batch. Apply mode calls this inside one
+     * transaction so a failed shop does not leave a partial batch behind.
+     *
+     * @param iterable<int, object> $owners
+     * @return array<int, array{owner_id: int, domains: array<string, array<string, mixed>>}>
+     */
+    private function inspectOwnerChunk(iterable $owners, string $domain, bool $apply): array
+    {
+        $reports = [];
+
+        foreach ($owners as $owner) {
+            $ownerId = (int) $owner->id;
+            $domains = [];
+
+            foreach ($this->domains($domain) as $currentDomain) {
+                $domains[$currentDomain] = $this->inspectDomain($ownerId, $currentDomain, $apply);
+            }
+
+            $reports[] = [
+                'owner_id' => $ownerId,
+                'domains' => $domains,
+            ];
+        }
+
+        return $reports;
     }
 
     private function shopOwnerQuery(?int $shopOwnerId, string $domain)
@@ -87,22 +114,25 @@ final class PhaseOneStateInventory
     private function inspectDomain(int $shopOwnerId, string $domain, bool $apply): array
     {
         return $domain === 'orders'
-            ? $this->inspectOrders($shopOwnerId)
+            ? $this->inspectOrders($shopOwnerId, $apply)
             : $this->inspectEmployees($shopOwnerId, $apply);
     }
 
     /** @return array<string, mixed> */
-    private function inspectOrders(int $shopOwnerId): array
+    private function inspectOrders(int $shopOwnerId, bool $apply): array
     {
         $report = $this->emptyReport();
-        $rows = DB::table('orders')
+        $query = DB::table('orders')
             ->where('shop_owner_id', $shopOwnerId)
-            ->orderBy('id')
-            ->get(['id', 'status']);
+            ->select(['id', 'status']);
+        $rows = $apply
+            ? $query->lazyById(self::ROW_CHUNK_SIZE)
+            : $query->orderBy('id')->get();
 
         foreach ($rows as $row) {
-            $classification = $this->classifyOrderStatus((string) ($row->status ?? ''));
-            $this->recordClassification($report, $classification, (int) $row->id);
+            $status = (string) ($row->status ?? '');
+            $classification = $this->classifyOrderStatus($status);
+            $this->recordClassification($report, $classification, (int) $row->id, $status);
         }
 
         return $report;
@@ -112,57 +142,72 @@ final class PhaseOneStateInventory
     private function inspectEmployees(int $shopOwnerId, bool $apply): array
     {
         $report = $this->emptyReport();
-        $rows = DB::table('employees')
+        $query = DB::table('employees')
             ->where('shop_owner_id', $shopOwnerId)
-            ->orderBy('id')
-            ->get(['id', 'status']);
+            ->select(['id', 'status']);
+        $rows = $apply
+            ? $query->lazyById(self::ROW_CHUNK_SIZE)
+            : $query->orderBy('id')->get();
 
         foreach ($rows as $row) {
-            $classification = $this->classifyEmployeeStatus((string) ($row->status ?? ''));
-            $this->recordClassification($report, $classification, (int) $row->id);
+            $status = (string) ($row->status ?? '');
+            $classification = $this->classifyEmployeeStatus($status);
+            $this->recordClassification($report, $classification, (int) $row->id, $status);
 
             if ($apply && $classification['classification'] === 'normalizable') {
-                $report['updated'] += DB::table('employees')
-                    ->where('id', $row->id)
-                    ->where('shop_owner_id', $shopOwnerId)
-                    ->update([
-                        'status' => 'active',
-                        'updated_at' => now(),
-                    ]);
+                $report['updated'] += (int) $this->reconciler->normalizeEmployee(
+                    $shopOwnerId,
+                    (int) $row->id,
+                );
             }
         }
 
         return $report;
     }
 
-    /** @return array{classification: string, reason: string|null} */
+    /** @return array{classification: string, reason: string|null, disposition: string|null} */
     private function classifyOrderStatus(string $status): array
     {
         return match ($status) {
             'pending', 'processing', 'shipped', 'delivered', 'completed', 'cancelled'
-                => ['classification' => 'canonical', 'reason' => null],
+                => ['classification' => 'canonical', 'reason' => null, 'disposition' => null],
             'refund'
-                => ['classification' => 'unresolved', 'reason' => 'legacy_refund_fulfillment_unknown'],
+                => [
+                    'classification' => 'unresolved',
+                    'reason' => 'legacy_refund_fulfillment_unknown',
+                    'disposition' => 'rollout_blocker',
+                ],
             default
-                => ['classification' => 'unresolved', 'reason' => 'unknown_order_status'],
+                => [
+                    'classification' => 'unresolved',
+                    'reason' => 'unknown_order_status',
+                    'disposition' => 'rollout_blocker',
+                ],
         };
     }
 
-    /** @return array{classification: string, reason: string|null} */
+    /** @return array{classification: string, reason: string|null, disposition: string|null} */
     private function classifyEmployeeStatus(string $status): array
     {
         $normalized = strtolower(trim($status));
 
         if (in_array($normalized, EmployeeStatus::values(), true)) {
-            return ['classification' => 'canonical', 'reason' => null];
+            return ['classification' => 'canonical', 'reason' => null, 'disposition' => null];
         }
 
-        return match ($normalized) {
-            'on_leave', 'on-leave'
-                => ['classification' => 'normalizable', 'reason' => 'legacy_on_leave_status'],
-            default
-                => ['classification' => 'unresolved', 'reason' => 'unknown_employee_status'],
-        };
+        if ($this->reconciler->isLegacyLeaveStatus($normalized)) {
+            return [
+                'classification' => 'normalizable',
+                'reason' => 'legacy_on_leave_status',
+                'disposition' => null,
+            ];
+        }
+
+        return [
+            'classification' => 'unresolved',
+            'reason' => 'unknown_employee_status',
+            'disposition' => 'rollout_blocker',
+        ];
     }
 
     /** @return array<string, mixed> */
@@ -174,13 +219,19 @@ final class PhaseOneStateInventory
             'normalizable' => 0,
             'unresolved' => 0,
             'updated' => 0,
+            'enforcement_blocked' => 0,
             'unresolved_ids' => [],
+            'unresolved_rows' => [],
+            'dispositions' => [],
             'reasons' => [],
         ];
     }
 
-    /** @param array<string, mixed> $report @param array{classification: string, reason: string|null} $classification */
-    private function recordClassification(array &$report, array $classification, int $rowId): void
+    /**
+     * @param array<string, mixed> $report
+     * @param array{classification: string, reason: string|null, disposition: string|null} $classification
+     */
+    private function recordClassification(array &$report, array $classification, int $rowId, string $status): void
     {
         $report['examined']++;
         $report[$classification['classification']]++;
@@ -191,6 +242,16 @@ final class PhaseOneStateInventory
 
         if ($classification['classification'] === 'unresolved') {
             $report['unresolved_ids'][] = $rowId;
+            $report['enforcement_blocked']++;
+            $disposition = (string) $classification['disposition'];
+            $report['dispositions'][$disposition] = ($report['dispositions'][$disposition] ?? 0) + 1;
+            $report['unresolved_rows'][] = [
+                'id' => $rowId,
+                'status' => $status,
+                'reason' => $classification['reason'],
+                'disposition' => $disposition,
+                'enforcement_blocked' => true,
+            ];
         }
     }
 
@@ -201,7 +262,7 @@ final class PhaseOneStateInventory
             $totals[$domain] = $this->emptyReport();
         }
 
-        foreach (['examined', 'canonical', 'normalizable', 'unresolved', 'updated'] as $key) {
+        foreach (['examined', 'canonical', 'normalizable', 'unresolved', 'updated', 'enforcement_blocked'] as $key) {
             $totals[$domain][$key] += $report[$key];
         }
 
@@ -213,5 +274,14 @@ final class PhaseOneStateInventory
             $totals[$domain]['unresolved_ids'],
             $report['unresolved_ids'],
         );
+        $totals[$domain]['unresolved_rows'] = array_merge(
+            $totals[$domain]['unresolved_rows'],
+            $report['unresolved_rows'],
+        );
+
+        foreach ($report['dispositions'] as $disposition => $count) {
+            $totals[$domain]['dispositions'][$disposition] =
+                ($totals[$domain]['dispositions'][$disposition] ?? 0) + $count;
+        }
     }
 }

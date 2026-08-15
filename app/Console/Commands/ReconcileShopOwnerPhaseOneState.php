@@ -6,6 +6,7 @@ namespace App\Console\Commands;
 
 use App\Services\Reconciliation\PhaseOneStateInventory;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Log;
 
 final class ReconcileShopOwnerPhaseOneState extends Command
 {
@@ -73,19 +74,44 @@ final class ReconcileShopOwnerPhaseOneState extends Command
                     $line .= " Updated {$report['updated']}.";
                 }
 
+                if ($report['enforcement_blocked'] > 0) {
+                    $line .= " Enforcement blocked {$report['enforcement_blocked']}.";
+                }
+
+                if ($report['dispositions'] !== []) {
+                    $dispositions = $report['dispositions'];
+                    ksort($dispositions);
+                    $line .= ' Dispositions: '.implode(', ', array_map(
+                        static fn (string $disposition, int $count): string => "{$disposition}={$count}",
+                        array_keys($dispositions),
+                        array_values($dispositions),
+                    )).'.';
+                }
+
                 $this->line($line);
+                $this->logReport($result['run_id'], $apply, (int) $ownerReport['owner_id'], $currentDomain, $report);
             }
         }
 
         foreach ($result['totals'] as $currentDomain => $report) {
-            $this->info(sprintf(
+            $line = sprintf(
                 'Totals %s: examined %d, canonical %d, normalizable %d, unresolved %d.',
                 $currentDomain,
                 $report['examined'],
                 $report['canonical'],
                 $report['normalizable'],
                 $report['unresolved'],
-            ));
+            );
+
+            if ($report['updated'] > 0) {
+                $line .= " Updated {$report['updated']}.";
+            }
+
+            if ($report['enforcement_blocked'] > 0) {
+                $line .= " Enforcement blocked {$report['enforcement_blocked']}.";
+            }
+
+            $this->info($line);
         }
 
         return self::SUCCESS;
@@ -101,5 +127,26 @@ final class ReconcileShopOwnerPhaseOneState extends Command
         $value = filter_var($raw, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 
         return $value === false ? null : (int) $value;
+    }
+
+    /** @param array<string, mixed> $report */
+    private function logReport(string $runId, bool $apply, int $shopOwnerId, string $domain, array $report): void
+    {
+        Log::info('Shop Owner phase-one state reconciliation', [
+            'run_id' => $runId,
+            'mode' => $apply ? 'apply' : 'dry-run',
+            'domain' => $domain,
+            'shop_owner_id' => $shopOwnerId,
+            'counts' => [
+                'examined' => $report['examined'],
+                'canonical' => $report['canonical'],
+                'normalizable' => $report['normalizable'],
+                'unresolved' => $report['unresolved'],
+                'updated' => $report['updated'],
+                'enforcement_blocked' => $report['enforcement_blocked'],
+            ],
+            'reasons' => $report['reasons'],
+            'dispositions' => $report['dispositions'],
+        ]);
     }
 }
