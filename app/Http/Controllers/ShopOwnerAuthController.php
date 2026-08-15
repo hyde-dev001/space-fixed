@@ -50,6 +50,7 @@ class ShopOwnerAuthController extends Controller
     private const LOGIN_EMAIL_OTP_TTL_MINUTES = 10;
     private const LOGIN_EMAIL_OTP_MAX_ATTEMPTS = 5;
     private const LOGIN_TWO_FACTOR_SESSION_KEY = 'shop_owner_2fa_entry';
+    private const DUMMY_PASSWORD_HASH = '$2y$10$5n3DruMVEXy/QDrfseoa.uJ3ed2F8YjGuWk8rbM.tE0uNTd85ew.C';
 
     /**
      * Show signed resubmission form for rejected applications.
@@ -1077,37 +1078,34 @@ class ShopOwnerAuthController extends Controller
             // Find shop owner by email
             $shopOwner = ShopOwner::where('email', $credentials['email'])->first();
 
-            // Check if shop owner exists
-            if (!$shopOwner) {
+            $passwordHash = $shopOwner?->getAuthPassword() ?: self::DUMMY_PASSWORD_HASH;
+            if (! $shopOwner || ! Hash::check((string) $credentials['password'], (string) $passwordHash)) {
                 throw ValidationException::withMessages([
                     'email' => ['Invalid email or password.'],
                 ]);
             }
 
-            // Check if account is approved
-            if ($shopOwner->status === 'pending') {
+            $statusValue = $shopOwner->status instanceof ShopOwnerStatus
+                ? $shopOwner->status->value
+                : (string) $shopOwner->status;
+
+            // Account status is revealed only after selected-context credentials verify.
+            if ($statusValue === ShopOwnerStatus::PENDING->value) {
                 throw ValidationException::withMessages([
                     'email' => ['Your application is still pending admin approval. Please wait for confirmation.'],
                 ]);
             }
 
-            if ($shopOwner->status === 'rejected') {
+            if ($statusValue === ShopOwnerStatus::REJECTED->value) {
                 $reason = $shopOwner->rejection_reason ? ': ' . $shopOwner->rejection_reason : '';
                 throw ValidationException::withMessages([
                     'email' => ['Your application was rejected' . $reason . '. Please contact support.'],
                 ]);
             }
 
-            if ($shopOwner->status !== ShopOwnerStatus::APPROVED) {
+            if ($statusValue !== ShopOwnerStatus::APPROVED->value) {
                 throw ValidationException::withMessages([
                     'email' => ['Your account is inactive. Please contact support.'],
-                ]);
-            }
-
-            // Verify password
-            if (!Hash::check($credentials['password'], $shopOwner->password)) {
-                throw ValidationException::withMessages([
-                    'email' => ['Invalid email or password.'],
                 ]);
             }
 

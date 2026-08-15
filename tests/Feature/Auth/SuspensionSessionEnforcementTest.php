@@ -228,6 +228,25 @@ class SuspensionSessionEnforcementTest extends TestCase
         $this->assertGuest('user');
     }
 
+    public function test_shop_owner_login_does_not_probe_user_account_status(): void
+    {
+        $user = User::factory()->create([
+            'email' => 'suspended-context@example.test',
+            'password' => Hash::make('Password123!'),
+            'status' => 'suspended',
+            'shop_owner_id' => null,
+        ]);
+
+        $this->postJson('/shop-owner/login', [
+            'email' => $user->email,
+            'password' => 'Password123!',
+        ])->assertUnprocessable()
+            ->assertJsonPath('errors.email.0', 'Invalid email or password.');
+
+        $this->assertGuest('user');
+        $this->assertGuest('shop_owner');
+    }
+
     public function test_suspended_shop_owner_is_forced_logged_out_on_next_request(): void
     {
         $shopOwner = ShopOwner::factory()->create([

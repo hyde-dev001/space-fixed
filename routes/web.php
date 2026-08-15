@@ -381,7 +381,9 @@ Route::get('/services/product-image-spin-tutorial', [LandingPageController::clas
 // Route::get('/contact', [LandingPageController::class, 'contact'])->name('contact');
 Route::get('/register', [LandingPageController::class, 'register'])->name('register');
 Route::get('/login', function () {
-    return Inertia::render('UserSide/Auth/UserLogin');
+    return Inertia::render('UserSide/Auth/UserLogin', [
+        'initialAuthContext' => 'user',
+    ]);
 })->name('login');
 Route::get('/forgot-password', function () {
     return Inertia::render('UserSide/Auth/Forgot');
@@ -600,19 +602,25 @@ Route::get('/api/my-orders', [CheckoutController::class, 'myOrders'])->middlewar
 
 // User Login Page
 Route::get('/user/login', function () {
-    return Inertia::render('UserSide/Auth/UserLogin');
+    return Inertia::render('UserSide/Auth/UserLogin', [
+        'initialAuthContext' => 'user',
+    ]);
 })->name('user.login.form');
 
-// Shop Owner Login Page (redirect to customer login)
+// Shop Owner Login Page
 Route::get('/shop-owner/login', function () {
-    return redirect()->route('user.login.form');
+    return Inertia::render('UserSide/Auth/UserLogin', [
+        'initialAuthContext' => 'shop_owner',
+    ]);
 })->name('shop-owner.login.form');
 
 // User Authentication Routes
 Route::get('/auth/check-email-availability', [UserController::class, 'checkEmailAvailability'])->name('auth.check-email-availability');
 Route::get('/auth/check-phone-availability', [UserController::class, 'checkPhoneAvailability'])->name('auth.check-phone-availability');
 Route::post('/user/register', [UserController::class, 'register'])->name('user.register');
-Route::post('/user/login', [UserController::class, 'login'])->name('user.login');
+Route::post('/user/login', [UserController::class, 'login'])
+    ->middleware('throttle:10,1')
+    ->name('user.login');
 Route::post('/user/logout', [UserController::class, 'logout'])->name('user.logout');
 Route::get('/api/user/me', [UserController::class, 'me'])->middleware('auth:user')->name('user.me');
 
@@ -624,7 +632,9 @@ Route::post('/shop-owner/email-verification/verify-code', [ShopOwnerAuthControll
     ->middleware('throttle:10,1')
     ->name('shop-owner.email-verification.verify-code');
 Route::post('/shop-owner/register', [ShopOwnerAuthController::class, 'register'])->name('shop-owner.register');
-Route::post('/shop-owner/login', [ShopOwnerAuthController::class, 'login'])->name('shop-owner.login');
+Route::post('/shop-owner/login', [ShopOwnerAuthController::class, 'login'])
+    ->middleware('throttle:10,1')
+    ->name('shop-owner.login');
 Route::post('/shop-owner/logout', [ShopOwnerAuthController::class, 'logout'])->name('shop-owner.logout');
 Route::get('/shop-owner/two-factor', [ShopOwnerAuthController::class, 'showTwoFactorChallenge'])->name('shop-owner.two-factor.challenge');
 Route::post('/shop-owner/two-factor/verify', [ShopOwnerAuthController::class, 'verifyLoginTwoFactorOtp'])
