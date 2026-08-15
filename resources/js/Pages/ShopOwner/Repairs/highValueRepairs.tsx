@@ -49,7 +49,7 @@ export default function HighValueRepairs() {
 		const isAuthenticated = auth?.shop_owner;
 		
 		if (!isAuthenticated) {
-			window.location.href = "/shop-owner/login";
+			window.location.href = "/login";
 			return;
 		}
 

@@ -9,7 +9,6 @@ import {
   ExternalLink,
   FileText,
   Home,
-  Settings2,
   ShoppingBag,
   ShoppingCart,
   Truck,
@@ -54,12 +53,6 @@ const ITEM_ICONS: Record<string, LucideIcon> = {
   logistics: Truck,
   reports: FileText,
   audit: ClipboardList,
-  "settings.profile": Settings2,
-  "settings.modules-team": Users,
-  "settings.payments-approvals": CreditCard,
-  "settings.operations": Settings2,
-  "settings.policies-compliance": ClipboardList,
-  "settings.subscription": CreditCard,
 };
 
 const CanonicalOwnerSidebar: React.FC<CanonicalOwnerSidebarProps> = ({ metadata }) => {
@@ -67,7 +60,9 @@ const CanonicalOwnerSidebar: React.FC<CanonicalOwnerSidebarProps> = ({ metadata 
   const page = usePage();
   const currentPath = normalizePath(String(page.url || "/"));
   const groups = useMemo<OwnerShellGroup[]>(
-    () => [...metadata.groups].sort((left, right) => left.order - right.order),
+    () => metadata.groups
+      .filter((group) => group.key !== "settings")
+      .sort((left, right) => left.order - right.order),
     [metadata.groups],
   );
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(

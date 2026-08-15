@@ -108,7 +108,7 @@ class InvitationController extends Controller
             'force_password_change' => false,
         ]);
 
-        return redirect('/user/login')->with('success', 'Your account has been activated! Please log in with your work email and new password.');
+        return redirect('/login')->with('success', 'Your account has been activated! Please log in with your work email and new password.');
     }
     
     /**

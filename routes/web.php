@@ -382,9 +382,7 @@ Route::get('/services/product-image-spin-tutorial', [LandingPageController::clas
 // Route::get('/contact', [LandingPageController::class, 'contact'])->name('contact');
 Route::get('/register', [LandingPageController::class, 'register'])->name('register');
 Route::get('/login', function () {
-    return Inertia::render('UserSide/Auth/UserLogin', [
-        'initialAuthContext' => 'user',
-    ]);
+    return Inertia::render('UserSide/Auth/UserLogin');
 })->name('login');
 Route::get('/forgot-password', function () {
     return Inertia::render('UserSide/Auth/Forgot');
@@ -603,16 +601,12 @@ Route::get('/api/my-orders', [CheckoutController::class, 'myOrders'])->middlewar
 
 // User Login Page
 Route::get('/user/login', function () {
-    return Inertia::render('UserSide/Auth/UserLogin', [
-        'initialAuthContext' => 'user',
-    ]);
+    return redirect()->route('login');
 })->name('user.login.form');
 
 // Shop Owner Login Page
 Route::get('/shop-owner/login', function () {
-    return Inertia::render('UserSide/Auth/UserLogin', [
-        'initialAuthContext' => 'shop_owner',
-    ]);
+    return redirect()->route('login');
 })->name('shop-owner.login.form');
 
 // User Authentication Routes

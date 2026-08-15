@@ -29,11 +29,8 @@ vi.mock('@/Pages/UserSide/Shared/UserModal', () => ({
 
 import UserLogin from '../UserLogin';
 
-type AuthContext = 'user' | 'shop_owner';
-
 const pageState = {
   props: {
-    initialAuthContext: 'user' as AuthContext,
     csrf_token: 'csrf-token',
     flash: {},
   },
@@ -45,7 +42,6 @@ beforeEach(() => {
   routerPostMock.mockReset();
   usePageMock.mockReset();
   pageState.props = {
-    initialAuthContext: 'user',
     csrf_token: 'csrf-token',
     flash: {},
   };
@@ -57,58 +53,26 @@ beforeEach(() => {
   })[name] ?? `/${name}`;
 });
 
-describe('shared sign-in account selector', () => {
-  it('uses the server-provided initial context and exposes selected state accessibly', () => {
-    pageState.props.initialAuthContext = 'shop_owner';
-
+describe('unified sign-in', () => {
+  it('renders one account-neutral sign-in form without an account selector', () => {
     render(<UserLogin />);
 
-    expect(screen.getByRole('tab', { name: 'Customer / Staff' })).toHaveAttribute('aria-selected', 'false');
-    expect(screen.getByRole('tab', { name: 'Shop Owner' })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByRole('tablist', { name: 'Sign-in account type' })).toBeInTheDocument();
+    expect(screen.queryByRole('tablist', { name: 'Sign-in account type' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Customer / Staff' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Shop Owner' })).not.toBeInTheDocument();
   });
 
-  it('preserves email, password, and remember state while changing context', () => {
+  it('submits every account credential to the unified user login endpoint', () => {
     render(<UserLogin />);
 
     fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'owner@example.test' } });
-    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'secret-password' } });
-    fireEvent.click(screen.getByLabelText('Remember me'));
-    fireEvent.click(screen.getByRole('tab', { name: 'Shop Owner' }));
-
-    expect(screen.getByLabelText('Email')).toHaveValue('owner@example.test');
-    expect(screen.getByLabelText('Password')).toHaveValue('secret-password');
-    expect(screen.getByLabelText('Remember me')).toBeChecked();
-  });
-
-  it('submits Customer / Staff credentials only to the user endpoint', () => {
-    render(<UserLogin />);
-
-    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'staff@example.test' } });
     fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'secret-password' } });
     submit();
 
     expect(routerPostMock).toHaveBeenCalledTimes(1);
     expect(routerPostMock).toHaveBeenCalledWith(
       '/user/login',
-      { email: 'staff@example.test', password: 'secret-password', remember: false },
-      expect.any(Object),
-    );
-  });
-
-  it('submits Shop Owner credentials only to the owner endpoint', () => {
-    render(<UserLogin />);
-
-    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'owner@example.test' } });
-    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'secret-password' } });
-    fireEvent.click(screen.getByLabelText('Remember me'));
-    fireEvent.click(screen.getByRole('tab', { name: 'Shop Owner' }));
-    submit();
-
-    expect(routerPostMock).toHaveBeenCalledTimes(1);
-    expect(routerPostMock).toHaveBeenCalledWith(
-      '/shop-owner/login',
-      { email: 'owner@example.test', password: 'secret-password', remember: true },
+      { email: 'owner@example.test', password: 'secret-password', remember: false },
       expect.any(Object),
     );
   });

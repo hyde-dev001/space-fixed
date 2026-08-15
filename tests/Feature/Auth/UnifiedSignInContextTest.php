@@ -16,21 +16,19 @@ class UnifiedSignInContextTest extends TestCase
     use RefreshDatabase;
 
     #[Test]
-    public function both_login_entry_routes_render_the_shared_page_with_a_trusted_context(): void
+    public function the_public_login_is_the_single_visible_entry_point(): void
     {
-        $this->get(route('user.login.form'))
+        $this->get(route('login'))
             ->assertInertia(fn (Assert $page) => $page
-                ->component('UserSide/Auth/UserLogin')
-                ->where('initialAuthContext', 'user'));
+                ->component('UserSide/Auth/UserLogin'))
+            ->assertSessionDoesntHaveErrors();
 
         $this->get(route('shop-owner.login.form'))
-            ->assertInertia(fn (Assert $page) => $page
-                ->component('UserSide/Auth/UserLogin')
-                ->where('initialAuthContext', 'shop_owner'));
+            ->assertRedirect(route('login'));
     }
 
     #[Test]
-    public function user_login_never_falls_back_to_the_shop_owner_guard(): void
+    public function unified_user_login_authenticates_an_approved_shop_owner(): void
     {
         $owner = ShopOwner::factory()->approved()->create([
             'email' => 'owner-only@example.test',
@@ -40,11 +38,12 @@ class UnifiedSignInContextTest extends TestCase
         $this->postJson('/user/login', [
             'email' => $owner->email,
             'password' => 'Password123!',
-        ])->assertUnprocessable()
-            ->assertJsonPath('errors.email.0', 'Invalid email or password.');
+        ])->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('shop_owner.id', $owner->id);
 
         $this->assertGuest('user');
-        $this->assertGuest('shop_owner');
+        $this->assertAuthenticatedAs($owner, 'shop_owner');
     }
 
     #[Test]
@@ -95,14 +94,14 @@ class UnifiedSignInContextTest extends TestCase
     }
 
     #[Test]
-    public function owner_status_is_revealed_only_after_the_selected_password_is_verified(): void
+    public function owner_status_is_revealed_only_after_the_unified_password_is_verified(): void
     {
         $pendingOwner = ShopOwner::factory()->pending()->create([
             'email' => 'pending-owner@example.test',
             'password' => Hash::make('Password123!'),
         ]);
 
-        $this->postJson('/shop-owner/login', [
+        $this->postJson('/user/login', [
             'email' => $pendingOwner->email,
             'password' => 'Password123!',
         ])->assertUnprocessable()
@@ -142,7 +141,7 @@ class UnifiedSignInContextTest extends TestCase
         ]);
         $before = session()->getId();
 
-        $response = $this->post('/shop-owner/login', [
+        $response = $this->post('/user/login', [
             'email' => $owner->email,
             'password' => 'Password123!',
             'remember' => true,

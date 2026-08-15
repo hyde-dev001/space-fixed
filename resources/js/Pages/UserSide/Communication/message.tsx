@@ -77,7 +77,7 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
   // Check if user is still authenticated
   useEffect(() => {
     if (!auth?.user) {
-      router.visit('/user/login');
+      router.visit('/login');
     }
   }, [auth?.user]);
 
@@ -150,7 +150,7 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
           console.error('Failed to fetch conversations:', response.status, response.statusText, errorText);
           if (response.status === 401) {
             console.log('Unauthorized - redirecting to login');
-            router.visit('/user/login');
+      router.visit('/login');
           }
           setIsLoading(false);
           return;
@@ -261,7 +261,7 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
           console.error('Failed to fetch messages:', response.status, response.statusText);
         }
         if (response.status === 401) {
-          router.visit('/user/login');
+      router.visit('/login');
         }
         return;
       }
@@ -419,7 +419,7 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
       if (!response.ok) {
         console.error('Failed to create conversation:', response.status, response.statusText);
         if (response.status === 401) {
-          router.visit('/user/login');
+      router.visit('/login');
         }
         return;
       }
@@ -480,7 +480,7 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
       if (!response.ok) {
         console.error('Failed to send message:', response.status, response.statusText);
         if (response.status === 401) {
-          router.visit('/user/login');
+      router.visit('/login');
         }
         return;
       }

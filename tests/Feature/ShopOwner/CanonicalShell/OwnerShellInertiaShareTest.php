@@ -92,6 +92,7 @@ final class OwnerShellInertiaShareTest extends TestCase
         $this->assertSame('shop_allowlisted', $ownerShell['selection_reason']);
         $this->assertSame('company', $ownerShell['context']);
         $this->assertNotEmpty($ownerShell['groups']);
+        $this->assertNotContains('settings', array_column($ownerShell['groups'], 'key'));
     }
 
     public function test_invalid_registration_context_returns_complete_existing_presentation(): void

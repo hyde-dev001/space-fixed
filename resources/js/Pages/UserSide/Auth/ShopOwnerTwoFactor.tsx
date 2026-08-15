@@ -219,7 +219,7 @@ export default function ShopOwnerTwoFactor() {
 
               <div className="mt-6 text-center">
                 <Link
-                  href="/shop-owner/login"
+                  href="/login"
                   className="text-black hover:text-black/80 font-semibold uppercase tracking-wider text-sm transition-colors"
                 >
                   Back to sign in

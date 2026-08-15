@@ -115,7 +115,6 @@ it("orders and expands the primary group for an individual owner", () => {
     "operate",
     "oversee",
     "reports",
-    "settings",
   ]);
   expect(screen.getByTestId("canonical-owner-group-operate")).toHaveAttribute("aria-expanded", "true");
   expect(screen.getByTestId("canonical-owner-group-oversee")).toHaveAttribute("aria-expanded", "false");
@@ -141,7 +140,6 @@ it("puts Oversee first and expanded for a company owner", () => {
     "oversee",
     "operate",
     "reports",
-    "settings",
   ]);
   expect(screen.getByTestId("canonical-owner-group-oversee")).toHaveAttribute("aria-expanded", "true");
   expect(screen.getByRole("link", { name: "Finance" })).toBeVisible();
@@ -181,7 +179,7 @@ it("uses canonical URLs for Home, Reports, Audit, and Settings", () => {
   expect(screen.getByRole("link", { name: "Home" })).toHaveAttribute("href", "/shop-owner/home");
   expect(screen.getByRole("link", { name: "Reports" })).toHaveAttribute("href", "/shop-owner/reports");
   expect(screen.getByRole("link", { name: "Audit" })).toHaveAttribute("href", "/shop-owner/audit");
-  expect(screen.getByRole("link", { name: "Profile" })).toHaveAttribute("href", "/shop-owner/settings/profile");
+  expect(screen.queryByRole("link", { name: "Profile" })).not.toBeInTheDocument();
 });
 
 it("matches one canonical item when a compatibility URL is active", () => {
@@ -216,6 +214,13 @@ it("keeps the ERP fallback outside primary navigation", () => {
     "href",
     "/shop-owner/erp/fallback?reason=user_preference&source=home",
   );
+});
+
+it("does not render Business Settings as a primary navigation group", () => {
+  render(<CanonicalOwnerSidebar metadata={metadata()} />);
+
+  expect(screen.queryByTestId("canonical-owner-group-settings")).not.toBeInTheDocument();
+  expect(screen.queryByRole("link", { name: "Profile" })).not.toBeInTheDocument();
 });
 
 it("reads presentation metadata directly without needing client authorization inputs", () => {

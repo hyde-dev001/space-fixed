@@ -8,6 +8,7 @@ use App\Models\ShopOwner;
 use App\Models\User;
 use App\Models\UserAddress;
 use App\Rules\NotDisposableEmail;
+use App\Services\Authentication\UnifiedLoginContextResolver;
 use App\Services\HR\EmployeeOperationalPolicy;
 use App\Services\NominatimService;
 use Illuminate\Auth\Events\Registered;
@@ -23,11 +24,15 @@ use Illuminate\Validation\ValidationException;
  * UserController
  *
  * Handles user registration, authentication, and profile management
- * for regular customers on the platform
+ * for customers, staff, and shop owners on the platform
  */
 class UserController extends Controller
 {
-    public function __construct(private readonly EmployeeOperationalPolicy $employeePolicy)
+    public function __construct(
+        private readonly EmployeeOperationalPolicy $employeePolicy,
+        private readonly UnifiedLoginContextResolver $loginContext,
+        private readonly ShopOwnerAuthController $shopOwnerAuth,
+    )
     {
     }
 
@@ -390,7 +395,21 @@ class UserController extends Controller
                 'email' => 'required|email',
                 'password' => 'required',
             ]);
-            // Authenticate only against the selected user context.
+            $context = $this->loginContext->resolve(
+                (string) $credentials['email'],
+                (string) $credentials['password'],
+            );
+
+            if ($context === 'shop_owner') {
+                return $this->shopOwnerAuth->login($request);
+            }
+
+            if ($context !== 'user') {
+                throw ValidationException::withMessages([
+                    'email' => ['Invalid email or password.'],
+                ]);
+            }
+
             $user = User::where('email', $credentials['email'])->first();
             $passwordHash = $user?->getAuthPassword() ?: self::DUMMY_PASSWORD_HASH;
 

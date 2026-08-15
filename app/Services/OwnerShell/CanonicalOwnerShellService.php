@@ -79,36 +79,6 @@ final class CanonicalOwnerShellService
         ],
     ];
 
-    /**
-     * @var array<string, array{label: string, route: string}>
-     */
-    private const SETTINGS_DESTINATIONS = [
-        'profile' => [
-            'label' => 'Profile',
-            'route' => 'shop-owner.shell.settings.profile',
-        ],
-        'modules-team' => [
-            'label' => 'Modules & Team',
-            'route' => 'shop-owner.shell.settings.modules-team',
-        ],
-        'payments-approvals' => [
-            'label' => 'Payments & Approvals',
-            'route' => 'shop-owner.shell.settings.payments-approvals',
-        ],
-        'operations' => [
-            'label' => 'Operations',
-            'route' => 'shop-owner.shell.settings.operations',
-        ],
-        'policies-compliance' => [
-            'label' => 'Policies & Compliance',
-            'route' => 'shop-owner.shell.settings.policies-compliance',
-        ],
-        'subscription' => [
-            'label' => 'Subscription',
-            'route' => 'shop-owner.shell.settings.subscription',
-        ],
-    ];
-
     public function __construct(
         private readonly OwnerShellRolloutPolicy $rollout,
         private readonly ShopModuleAccessService $moduleAccess,
@@ -198,7 +168,6 @@ final class CanonicalOwnerShellService
         }
 
         $groups[] = $this->reportsGroup();
-        $groups[] = $this->settingsGroup();
 
         return new OwnerShellMetadata(
             OwnerShellPresentation::Canonical,
@@ -388,32 +357,6 @@ final class CanonicalOwnerShellService
                 ),
             ],
         );
-    }
-
-    private function settingsGroup(): OwnerShellGroup
-    {
-        $items = [];
-
-        foreach (self::SETTINGS_DESTINATIONS as $key => $destination) {
-            $canonicalUrl = $this->canonicalUrl($destination['route']);
-            $activeMatching = [$canonicalUrl];
-
-            if ($key === 'profile') {
-                $activeMatching[] = $this->pathForRoute('shop-owner.settings');
-            }
-
-            $items[] = new OwnerShellItem(
-                $key,
-                $destination['label'],
-                $canonicalUrl,
-                true,
-                null,
-                null,
-                $activeMatching,
-            );
-        }
-
-        return new OwnerShellGroup('settings', 'Business Settings', 40, false, $items);
     }
 
     /**
