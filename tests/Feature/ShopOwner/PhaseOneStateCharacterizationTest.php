@@ -15,6 +15,7 @@ use App\Models\PosTransaction;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
 use App\Models\ShopOwner;
+use App\Models\ShopOwnerModule;
 use App\Models\Supplier;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -343,6 +344,11 @@ final class PhaseOneStateCharacterizationTest extends TestCase
             Permission::findOrCreate($permission, 'user');
         }
         $shop = ShopOwner::factory()->approved()->create(['registration_type' => 'company']);
+        ShopOwnerModule::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'module_key' => 'logistics',
+            'enabled' => true,
+        ]);
         $order = Order::factory()->create([
             'shop_owner_id' => $shop->id,
             'status' => 'shipped',

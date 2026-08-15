@@ -171,6 +171,81 @@ final class LogisticsActorPolicyTest extends TestCase
         self::assertSame('module_unavailable', $moduleDisabled['reason_category']);
     }
 
+    public function test_batch_management_has_an_explicit_owner_and_employee_boundary(): void
+    {
+        $shop = $this->shopWithLogistics();
+        $dispatcher = $this->user($shop);
+        $unprivileged = $this->user($shop);
+        $policy = app(LogisticsActorPolicy::class);
+
+        self::assertTrue($policy->decideBatchManagement($shop, $shop)['allowed']);
+
+        $denied = $policy->decideBatchManagement($unprivileged, $shop);
+        self::assertFalse($denied['allowed']);
+        self::assertSame('action_not_allowed', $denied['reason_category']);
+
+        $this->grant($dispatcher, 'manage-logistics-batches');
+        self::assertTrue($policy->decideBatchManagement($dispatcher, $shop)['allowed']);
+
+        $shop->modules()->updateOrCreate(['module_key' => 'logistics'], ['enabled' => false]);
+        $disabled = $policy->decideBatchManagement($shop, $shop);
+        self::assertFalse($disabled['allowed']);
+        self::assertSame('module_unavailable', $disabled['reason_category']);
+    }
+
+    public function test_dispatch_capability_can_resolve_a_failed_repair_pickup(): void
+    {
+        $shop = $this->shopWithLogistics();
+        $dispatcher = $this->user($shop);
+        $this->grant($dispatcher, 'assign-logistics-deliveries');
+        $shipment = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'repair_request',
+            'purpose' => 'repair_pickup',
+        ]);
+        $leg = ShipmentLeg::factory()->create([
+            'shipment_id' => $shipment->id,
+            'status' => 'needs_resolution',
+            'resolution_type' => 'pickup_failed',
+        ]);
+
+        $decision = app(LogisticsActorPolicy::class)->decide(
+            $dispatcher,
+            LogisticsAction::RESOLVE_EXCEPTION,
+            $shop,
+            $leg,
+        );
+
+        self::assertTrue($decision['allowed']);
+        self::assertNull($decision['reason_category']);
+    }
+
+    public function test_repair_pickup_cancellation_replay_requires_explicit_opt_in(): void
+    {
+        $shop = $this->shopWithLogistics();
+        $leg = $this->leg($shop, 'cancelled');
+        $leg->update(['resolution_type' => 'pickup_failed']);
+        $leg->shipment->update([
+            'source_type' => 'repair_request',
+            'purpose' => 'repair_pickup',
+        ]);
+        $policy = app(LogisticsActorPolicy::class);
+
+        $denied = $policy->decide($shop, LogisticsAction::RESOLVE_EXCEPTION, $shop, $leg);
+        self::assertFalse($denied['allowed']);
+        self::assertSame('source_state_invalid', $denied['reason_category']);
+
+        $replay = $policy->decide(
+            $shop,
+            LogisticsAction::RESOLVE_EXCEPTION,
+            $shop,
+            $leg,
+            null,
+            true,
+        );
+        self::assertTrue($replay['allowed']);
+    }
+
     public function test_cross_shop_records_fail_with_a_generic_category(): void
     {
         $shop = $this->shopWithLogistics();

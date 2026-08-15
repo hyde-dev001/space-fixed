@@ -25,3 +25,7 @@
 ## 2026-08-23 - Checkout voucher suggestion state
 
 - Keep voucher eligibility and claim state server-authoritative. Reuse checkout pricing and `ShippingVoucherService` so payment suggestions cannot advertise a logistics discount outside Shop-owned coverage.
+
+## 2026-08-15 - Shop module route catalog parity
+
+- A new named Shop Owner route is incomplete until its authoritative route bucket, method override, and module `supporting_routes` entry are updated together; `ShopModuleCatalogTest` detects drift between route registration and the capability catalog.

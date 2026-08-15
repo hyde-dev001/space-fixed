@@ -133,7 +133,7 @@ class NotificationCriticalFlowsTest extends TestCase
             'customer_id' => $customer->id,
             'order_number' => 'ORD-TEST-2001',
             'total_amount' => 1499.00,
-            'status' => 'pending',
+            'status' => 'processing',
             'payment_status' => 'pending',
         ]);
 

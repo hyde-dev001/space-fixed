@@ -110,7 +110,7 @@ export default function UserLogin() {
       password: formData.password,
       remember: formData.rememberMe,
     }, {
-      onSuccess: (page: any) => {
+      onSuccess: (page) => {
         const redirectUrl = String(page?.url || '');
         const isTwoFactorChallenge = redirectUrl.includes('/shop-owner/two-factor');
 

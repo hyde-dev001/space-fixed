@@ -426,7 +426,11 @@ class ShipmentController extends Controller
         RepairDeliveryService $repairDeliveries,
     ): JsonResponse
     {
-        $shop = $this->authorizeAction(LogisticsAction::RESOLVE_EXCEPTION, $leg);
+        $shop = $this->authorizeAction(
+            LogisticsAction::RESOLVE_EXCEPTION,
+            $leg,
+            allowIdempotentTerminalReplay: true,
+        );
         $leg->loadMissing('shipment');
         $this->abortUnlessTenant($leg->shipment->shop_owner_id, $shop);
 
@@ -679,13 +683,21 @@ class ShipmentController extends Controller
         ShipmentLeg $leg,
         ?HandoffProof $proof = null,
         bool $preferShopOwner = true,
+        bool $allowIdempotentTerminalReplay = false,
     ): ShopOwner
     {
         $actor = $this->authenticatedActor($preferShopOwner);
         $shop = $this->shopForActor($actor);
         abort_unless($shop, 403);
 
-        $decision = $this->policy->decide($actor, $action, $shop, $leg, $proof);
+        $decision = $this->policy->decide(
+            $actor,
+            $action,
+            $shop,
+            $leg,
+            $proof,
+            $allowIdempotentTerminalReplay,
+        );
         if (! $decision['allowed']) {
             $this->logDenial($actor, $shop, $decision['action'], $decision['reason_category']);
             abort(403);

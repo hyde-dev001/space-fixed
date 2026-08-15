@@ -150,15 +150,9 @@ class DeliveryBatchController extends Controller
                 : null);
         abort_unless($shop, 403);
 
-        if ($actor instanceof User) {
-            if (! $actor->can('manage-logistics-batches') && ! $actor->can('assign-logistics-deliveries')) {
-                $this->logDenial($actor, $shop, 'batch_manage', 'action_not_allowed');
-                abort(403);
-            }
-        }
-
-        if (! $this->modules->canAccess($shop, 'logistics')) {
-            $this->logDenial($actor, $shop, 'batch_manage', 'module_unavailable');
+        $decision = $this->policy->decideBatchManagement($actor, $shop);
+        if (! $decision['allowed']) {
+            $this->logDenial($actor, $shop, $decision['action'], $decision['reason_category']);
             abort(403);
         }
 

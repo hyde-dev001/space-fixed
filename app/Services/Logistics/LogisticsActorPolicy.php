@@ -17,6 +17,8 @@ use Illuminate\Contracts\Auth\Authenticatable;
 
 final class LogisticsActorPolicy
 {
+    private const BATCH_MANAGEMENT_ACTION = 'batch_manage';
+
     /** @var array<int, string> */
     private const OWNER_ACTIONS = [
         LogisticsAction::ASSIGN_RIDER->value,
@@ -132,6 +134,7 @@ final class LogisticsActorPolicy
         ShopOwner $shop,
         ?ShipmentLeg $leg = null,
         ?HandoffProof $proof = null,
+        bool $allowIdempotentTerminalReplay = false,
     ): array {
         if (! $this->actorBelongsToShop($actor, $shop)) {
             return $this->deny($action, 'cross_shop');
@@ -151,7 +154,8 @@ final class LogisticsActorPolicy
             return $this->deny($action, 'module_unavailable');
         }
 
-        if (! $this->hasValidSourceState($action, $leg)) {
+        if (! $this->hasValidSourceState($action, $leg)
+            && ! ($allowIdempotentTerminalReplay && $this->isRepairPickupCancellationReplay($leg))) {
             return $this->deny($action, 'source_state_invalid');
         }
 
@@ -187,7 +191,7 @@ final class LogisticsActorPolicy
                 : $this->deny($action, 'action_not_allowed');
         }
 
-        if (! $actor instanceof User || ! $this->hasCapability($actor, $action)) {
+        if (! $actor instanceof User || ! $this->hasCapability($actor, $action, $leg)) {
             return $this->deny($action, 'action_not_allowed');
         }
 
@@ -314,6 +318,34 @@ final class LogisticsActorPolicy
         }
 
         return $actor instanceof User && $this->hasCapability($actor, $action);
+    }
+
+    /**
+     * Decide the non-leg-specific responsibility boundary for batch planning
+     * and dispatch administration.
+     *
+     * @return array{allowed: bool, action: string, reason_category: ?string}
+     */
+    public function decideBatchManagement(
+        Authenticatable $actor,
+        ShopOwner $shop,
+    ): array {
+        if (! $this->actorBelongsToShop($actor, $shop)) {
+            return $this->deny(self::BATCH_MANAGEMENT_ACTION, 'cross_shop');
+        }
+
+        if (! $this->modules->canAccess($shop, 'logistics')) {
+            return $this->deny(self::BATCH_MANAGEMENT_ACTION, 'module_unavailable');
+        }
+
+        if ($actor instanceof ShopOwner) {
+            return $this->allow(self::BATCH_MANAGEMENT_ACTION);
+        }
+
+        return $actor instanceof User
+            && ($actor->can('manage-logistics-batches') || $actor->can('assign-logistics-deliveries'))
+            ? $this->allow(self::BATCH_MANAGEMENT_ACTION)
+            : $this->deny(self::BATCH_MANAGEMENT_ACTION, 'action_not_allowed');
     }
 
     /**
@@ -473,13 +505,22 @@ final class LogisticsActorPolicy
             ->first();
     }
 
-    private function hasCapability(Authenticatable $actor, LogisticsAction $action): bool
+    private function hasCapability(
+        Authenticatable $actor,
+        LogisticsAction $action,
+        ?ShipmentLeg $leg = null,
+    ): bool
     {
         if (! $actor instanceof User) {
             return false;
         }
 
-        foreach (self::EMPLOYEE_CAPABILITIES[$action->value] ?? [] as $permission) {
+        $capabilities = self::EMPLOYEE_CAPABILITIES[$action->value] ?? [];
+        if ($action === LogisticsAction::RESOLVE_EXCEPTION && $this->isRepairPickupFailure($leg)) {
+            $capabilities[] = 'assign-logistics-deliveries';
+        }
+
+        foreach ($capabilities as $permission) {
             if ($actor->can($permission)) {
                 return true;
             }
@@ -488,14 +529,34 @@ final class LogisticsActorPolicy
         return false;
     }
 
+    private function isRepairPickupFailure(?ShipmentLeg $leg): bool
+    {
+        $leg?->loadMissing('shipment');
+
+        return $leg?->shipment?->source_type === 'repair_request'
+            && $leg->shipment->purpose === 'repair_pickup'
+            && $leg->resolution_type === 'pickup_failed';
+    }
+
+    private function isRepairPickupCancellationReplay(ShipmentLeg $leg): bool
+    {
+        $status = $leg->status;
+        if (! $status instanceof ShipmentLegStatus) {
+            $status = ShipmentLegStatus::tryFrom((string) $status);
+        }
+
+        return $status === ShipmentLegStatus::CANCELLED
+            && $this->isRepairPickupFailure($leg);
+    }
+
     /**
      * @return array{allowed: bool, action: string, reason_category: ?string}
      */
-    private function allow(LogisticsAction $action): array
+    private function allow(LogisticsAction|string $action): array
     {
         return [
             'allowed' => true,
-            'action' => $action->value,
+            'action' => $action instanceof LogisticsAction ? $action->value : $action,
             'reason_category' => null,
         ];
     }
@@ -503,11 +564,11 @@ final class LogisticsActorPolicy
     /**
      * @return array{allowed: bool, action: string, reason_category: ?string}
      */
-    private function deny(LogisticsAction $action, string $reasonCategory): array
+    private function deny(LogisticsAction|string $action, string $reasonCategory): array
     {
         return [
             'allowed' => false,
-            'action' => $action->value,
+            'action' => $action instanceof LogisticsAction ? $action->value : $action,
             'reason_category' => $reasonCategory,
         ];
     }
