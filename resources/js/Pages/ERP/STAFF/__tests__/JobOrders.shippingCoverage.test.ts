@@ -30,6 +30,10 @@ const source = readFileSync(
   join(process.cwd(), 'resources/js/Pages/ERP/STAFF/JobOrders.tsx'),
   'utf8',
 );
+const presentationSource = readFileSync(
+  join(process.cwd(), 'resources/js/utils/orderStatusPresentation.ts'),
+  'utf8',
+);
 
 const makeOrder = (id: number) => ({
   id,
@@ -44,6 +48,7 @@ const makeOrder = (id: number) => ({
   payment_status: 'paid',
   payment_method: 'cod',
   status: 'processing',
+  available_actions: ['shipped'],
   created_at: '2026-07-22T00:00:00Z',
   items: [{ id, product_name: `Product ${id}`, quantity: 1, price: '100', subtotal: '100' }],
   shop_owned_coverage: {
@@ -225,7 +230,7 @@ describe('staff order shipping coverage integration', () => {
 
   it('only selects pending orders for bulk processing', async () => {
     mockPage.props.initialOrders = [
-      { ...makeOrder(1), status: 'pending' },
+      { ...makeOrder(1), status: 'pending', available_actions: ['processing'] },
       { ...makeOrder(2), status: 'delivered' },
     ];
     vi.stubGlobal('fetch', vi.fn((input: string) => {
@@ -251,7 +256,7 @@ describe('staff order shipping coverage integration', () => {
   });
 
   it('keeps an order pending when bulk processing is rejected', async () => {
-    mockPage.props.initialOrders = [{ ...makeOrder(1), status: 'pending' }];
+    mockPage.props.initialOrders = [{ ...makeOrder(1), status: 'pending', available_actions: ['processing'] }];
     const fetchMock = vi.fn((input: string, init?: RequestInit) => {
       if (input === '/api/csrf-token') return Promise.resolve(jsonResponse(200, { csrf_token: 'token' }));
       if (init?.method === 'PATCH') {
@@ -280,14 +285,15 @@ describe('staff order shipping coverage integration', () => {
 });
 
 describe('staff delivered order refresh', () => {
-  it('shows completed backend orders in the Delivered tab', async () => {
+  it('keeps completed backend orders in the Completed tab', async () => {
     const completedOrder = { ...makeOrder(19), status: 'completed' };
     mockPage.props.initialOrders = [completedOrder];
     vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(jsonResponse(200, [completedOrder]))));
 
     render(React.createElement(JobOrdersPage));
 
-    expect(await screen.findByRole('button', { name: 'Delivered (1)' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Completed (1)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Delivered (0)' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Shipped (0)' })).toBeInTheDocument();
   });
 
@@ -309,7 +315,8 @@ describe('staff delivered order refresh', () => {
     });
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    expect(screen.getByRole('button', { name: 'Delivered (1)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Completed (1)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Delivered (0)' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Shipped (0)' })).toBeInTheDocument();
   });
 
@@ -383,6 +390,27 @@ describe('staff delivered order refresh', () => {
       'https://example.test/legacy/52',
     );
     expect(screen.queryByRole('region', { name: 'Shipping & Tracking' })).not.toBeInTheDocument();
+  });
+});
+
+describe('staff order state contract', () => {
+  it('keeps canonical completed and shipped status presentation in the frontend contract', () => {
+    expect(presentationSource).toMatch(/"pending"[\s\S]*"processing"[\s\S]*"shipped"[\s\S]*"delivered"[\s\S]*"completed"/);
+    expect(source).toContain('ORDER_STATUS_PRESENTATION');
+    expect(presentationSource).toContain('completed:');
+    expect(presentationSource).toContain('shipped:');
+    expect(source).not.toContain("order.status === 'completed' ? 'delivered'");
+  });
+
+  it('does not infer fulfillment actions from the raw order status', async () => {
+    const pendingOrder = { ...makeOrder(73), status: 'pending', available_actions: [] };
+    mockPage.props.initialOrders = [pendingOrder];
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(jsonResponse(200, [pendingOrder]))));
+
+    render(React.createElement(JobOrdersPage));
+    fireEvent.click(await screen.findByRole('button', { name: 'All Orders (1)' }));
+
+    expect(screen.queryByRole('button', { name: 'Start processing' })).not.toBeInTheDocument();
   });
 });
 

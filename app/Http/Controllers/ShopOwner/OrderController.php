@@ -11,6 +11,7 @@ use App\Enums\NotificationType;
 use App\Services\NotificationService;
 use App\Services\OrderRefundService;
 use App\Services\Orders\OrderFulfillmentService;
+use App\Services\Orders\OrderOwnerProjection;
 use App\Services\RetailPosRefundSummaryService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -23,6 +24,7 @@ class OrderController extends Controller
     public function __construct(
         private readonly OrderRefundService $orderRefundService,
         private readonly OrderFulfillmentService $orderFulfillmentService,
+        private readonly OrderOwnerProjection $orderOwnerProjection,
         private readonly RetailPosRefundSummaryService $retailPosRefundSummaryService,
         private readonly NotificationService $notificationService,
     ) {
@@ -132,6 +134,8 @@ class OrderController extends Controller
                     'vat_rate' => $vatRate,
                     'grand_total' => $itemSubtotal + $shippingFee + ($vatAmount ?? 0.0),
                     'status' => $order->status,
+                    'owner_projection' => $this->orderOwnerProjection->project($order),
+                    'available_actions' => $this->orderOwnerProjection->availableActions($order),
                     'cancellation_reason' => $order->cancellation_reason,
                     'cancellation_note' => $order->cancellation_note,
                     'cancellation_other_reason_note' => $order->cancellation_other_reason_note,
@@ -279,6 +283,8 @@ class OrderController extends Controller
             'vat_rate' => $vatRate,
             'grand_total' => $itemSubtotal + $shippingFee + ($vatAmount ?? 0.0),
             'status' => $order->status,
+            'owner_projection' => $this->orderOwnerProjection->project($order),
+            'available_actions' => $this->orderOwnerProjection->availableActions($order),
             'cancellation_reason' => $order->cancellation_reason,
             'cancellation_note' => $order->cancellation_note,
             'cancellation_other_reason_note' => $order->cancellation_other_reason_note,

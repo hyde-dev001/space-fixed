@@ -109,6 +109,20 @@ final class OrderOwnerProjectionTest extends TestCase
         $this->assertSame([], $result['blockers']);
     }
 
+    #[Test]
+    public function available_actions_follow_the_transition_policy_and_pickup_evidence(): void
+    {
+        $projection = new OrderOwnerProjection();
+
+        $this->assertSame(['processing'], $projection->availableActions($this->order('pending')));
+        $this->assertSame(['shipped'], $projection->availableActions($this->order('processing')));
+        $this->assertSame([], $projection->availableActions($this->order('shipped')));
+        $this->assertSame(
+            ['processing', 'completed'],
+            $projection->availableActions($this->order('pending', ['pickup_enabled' => true])),
+        );
+    }
+
     private function order(string $status, array $attributes = [], array $refunds = []): Order
     {
         $order = Order::make(array_merge([

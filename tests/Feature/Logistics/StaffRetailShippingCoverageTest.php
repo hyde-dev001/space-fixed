@@ -79,11 +79,23 @@ class StaffRetailShippingCoverageTest extends TestCase
 
         $list = $this->actingAs($this->staff, 'user')->getJson('/api/staff/orders')->assertOk();
         $this->assertSame($coverage, $list->json('0.shop_owned_coverage'));
+        $this->assertSame(['shipped'], $list->json('0.available_actions'));
+        $this->assertSame([
+            'fulfillment_status' => 'processing',
+            'business_closed' => false,
+            'blockers' => ['fulfillment'],
+        ], $list->json('0.owner_projection'));
 
         $show = $this->actingAs($this->staff, 'user')
             ->getJson("/api/staff/orders/{$this->order->id}")
             ->assertOk();
         $this->assertSame($coverage, $show->json('shop_owned_coverage'));
+        $this->assertSame(['shipped'], $show->json('available_actions'));
+        $this->assertSame([
+            'fulfillment_status' => 'processing',
+            'business_closed' => false,
+            'blockers' => ['fulfillment'],
+        ], $show->json('owner_projection'));
     }
 
     public function test_outside_coverage_blocks_normalized_shop_owned_shipping_before_side_effects(): void

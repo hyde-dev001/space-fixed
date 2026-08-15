@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
@@ -15,6 +16,31 @@ use Spatie\Activitylog\LogOptions;
 class Order extends Model
 {
     use HasFactory, LogsActivity;
+
+    public const TERMINAL_FULFILLMENT_STATUSES = ['delivered', 'completed'];
+
+    public const TERMINAL_REFUND_STATUSES = [
+        'succeeded',
+        'successful',
+        'rejected',
+        'cancelled',
+        'canceled',
+    ];
+
+    public const TERMINAL_RETURN_STATUSES = [
+        'not_required',
+        'received',
+        'rejected',
+        'cancelled',
+        'canceled',
+    ];
+
+    public const OPEN_PAYMENT_STATUSES = [
+        'pending',
+        'partially_paid',
+        'failed',
+        'expired',
+    ];
 
     protected $table = 'orders';
 
@@ -169,6 +195,69 @@ class Order extends Model
         return $query->payable()
             ->whereNotNull('payment_expires_at')
             ->where('payment_expires_at', '<=', now());
+    }
+
+    public function scopeTerminalFulfillment(Builder $query): Builder
+    {
+        return $query->whereIn(
+            $query->getModel()->qualifyColumn('status'),
+            self::TERMINAL_FULFILLMENT_STATUSES,
+        );
+    }
+
+    public function scopeBusinessClosed(Builder $query): Builder
+    {
+        $paymentStatusColumn = $query->getModel()->qualifyColumn('payment_status');
+        $refundStatusColumn = (new OrderRefund())->qualifyColumn('status');
+        $returnStatusColumn = (new OrderRefund())->qualifyColumn('return_status');
+        $normalizedPaymentStatus = "LOWER(TRIM(COALESCE({$paymentStatusColumn}, '')))";
+        $normalizedRefundStatus = "LOWER(TRIM(COALESCE({$refundStatusColumn}, '')))";
+        $normalizedReturnStatus = "LOWER(TRIM(COALESCE({$returnStatusColumn}, '')))";
+        $terminalRefundPlaceholders = implode(',', array_fill(0, count(self::TERMINAL_REFUND_STATUSES), '?'));
+        $terminalReturnPlaceholders = implode(',', array_fill(0, count(self::TERMINAL_RETURN_STATUSES), '?'));
+        $openPaymentPlaceholders = implode(',', array_fill(0, count(self::OPEN_PAYMENT_STATUSES), '?'));
+
+        return $query
+            ->terminalFulfillment()
+            ->whereDoesntHave('refunds', function (Builder $refundQuery) use (
+                $normalizedRefundStatus,
+                $normalizedReturnStatus,
+                $terminalRefundPlaceholders,
+                $terminalReturnPlaceholders,
+            ): void {
+                $refundQuery->where(function (Builder $openQuery) use (
+                    $normalizedRefundStatus,
+                    $normalizedReturnStatus,
+                    $terminalRefundPlaceholders,
+                    $terminalReturnPlaceholders,
+                ): void {
+                    $openQuery->where(function (Builder $statusQuery) use (
+                        $normalizedRefundStatus,
+                        $terminalRefundPlaceholders,
+                    ): void {
+                        $statusQuery
+                            ->whereRaw("{$normalizedRefundStatus} = ''")
+                            ->orWhereRaw(
+                                "{$normalizedRefundStatus} NOT IN ({$terminalRefundPlaceholders})",
+                                self::TERMINAL_REFUND_STATUSES,
+                            );
+                    })->orWhere(function (Builder $statusQuery) use (
+                        $normalizedReturnStatus,
+                        $terminalReturnPlaceholders,
+                    ): void {
+                        $statusQuery
+                            ->whereRaw("{$normalizedReturnStatus} <> ''")
+                            ->whereRaw(
+                                "{$normalizedReturnStatus} NOT IN ({$terminalReturnPlaceholders})",
+                                self::TERMINAL_RETURN_STATUSES,
+                            );
+                    });
+                });
+            })
+            ->whereRaw(
+                "{$normalizedPaymentStatus} NOT IN ({$openPaymentPlaceholders})",
+                self::OPEN_PAYMENT_STATUSES,
+            );
     }
 
     /**

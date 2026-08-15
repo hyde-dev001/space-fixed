@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Services\Logistics\DeliveryScheduleService;
 use App\Services\OrderRefundService;
 use App\Services\Orders\OrderFulfillmentService;
+use App\Services\Orders\OrderOwnerProjection;
 use App\Services\RetailPosRefundSummaryService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -40,6 +41,7 @@ class StaffOrderController extends Controller
     public function __construct(
         private readonly OrderRefundService $orderRefundService,
         private readonly OrderFulfillmentService $orderFulfillmentService,
+        private readonly OrderOwnerProjection $orderOwnerProjection,
         private readonly RetailPosRefundSummaryService $retailPosRefundSummaryService,
         private readonly DeliveryScheduleService $deliveryScheduleService,
     ) {}
@@ -179,6 +181,8 @@ class StaffOrderController extends Controller
                     'notes' => $activeDispute->notes,
                     'reported_at' => optional($activeDispute->reported_at)->toISOString(),
                 ] : null,
+                'owner_projection' => $this->orderOwnerProjection->project($order),
+                'available_actions' => $this->orderOwnerProjection->availableActions($order),
                 'cancellation_reason' => $order->cancellation_reason,
                 'cancellation_note' => $order->cancellation_note,
                 'cancellation_other_reason_note' => $order->cancellation_other_reason_note,
@@ -352,6 +356,8 @@ class StaffOrderController extends Controller
                 'notes' => $activeDispute->notes,
                 'reported_at' => optional($activeDispute->reported_at)->toISOString(),
             ] : null,
+            'owner_projection' => $this->orderOwnerProjection->project($order),
+            'available_actions' => $this->orderOwnerProjection->availableActions($order),
             'cancellation_reason' => $order->cancellation_reason,
             'cancellation_note' => $order->cancellation_note,
             'cancellation_other_reason_note' => $order->cancellation_other_reason_note,

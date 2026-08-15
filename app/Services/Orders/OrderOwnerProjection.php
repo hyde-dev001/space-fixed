@@ -9,30 +9,32 @@ use App\Models\OrderRefund;
 
 final class OrderOwnerProjection
 {
-    private const TERMINAL_FULFILLMENT_STATUSES = ['delivered', 'completed'];
+    /**
+     * Return fulfillment actions that the current order state can expose to the owner UI.
+     *
+     * The mutation service remains authoritative and revalidates every action.
+     *
+     * @return list<string>
+     */
+    public function availableActions(Order $order): array
+    {
+        $policy = new OrderTransitionPolicy();
+        $actions = [];
 
-    private const TERMINAL_REFUND_STATUSES = [
-        'succeeded',
-        'successful',
-        'rejected',
-        'cancelled',
-        'canceled',
-    ];
+        if ($policy->canMarkProcessing($order)) {
+            $actions[] = 'processing';
+        }
 
-    private const TERMINAL_RETURN_STATUSES = [
-        'not_required',
-        'received',
-        'rejected',
-        'cancelled',
-        'canceled',
-    ];
+        if ($policy->canMarkShipped($order)) {
+            $actions[] = 'shipped';
+        }
 
-    private const OPEN_PAYMENT_STATUSES = [
-        'pending',
-        'partially_paid',
-        'failed',
-        'expired',
-    ];
+        if ($policy->canCompleteDirectly($order, (bool) $order->getAttribute('pickup_enabled'))) {
+            $actions[] = 'completed';
+        }
+
+        return $actions;
+    }
 
     /**
      * @return array{fulfillment_status: string, business_closed: bool, blockers: list<string>}
@@ -42,7 +44,7 @@ final class OrderOwnerProjection
         $fulfillmentStatus = $this->value($order->getAttribute('status'));
         $blockers = [];
 
-        if (! in_array($fulfillmentStatus, self::TERMINAL_FULFILLMENT_STATUSES, true)) {
+        if (! in_array($fulfillmentStatus, Order::TERMINAL_FULFILLMENT_STATUSES, true)) {
             $blockers[] = 'fulfillment';
         }
 
@@ -91,14 +93,14 @@ final class OrderOwnerProjection
             return true;
         }
 
-        return ! in_array($status, self::TERMINAL_REFUND_STATUSES, true);
+        return ! in_array($status, Order::TERMINAL_REFUND_STATUSES, true);
     }
 
     private function returnIsOpen(OrderRefund $refund): bool
     {
         $status = $this->value($refund->getAttribute('return_status'));
 
-        if ($status === '' || in_array($status, self::TERMINAL_RETURN_STATUSES, true)) {
+        if ($status === '' || in_array($status, Order::TERMINAL_RETURN_STATUSES, true)) {
             return false;
         }
 
@@ -107,7 +109,7 @@ final class OrderOwnerProjection
 
     private function paymentIsOpen(Order $order): bool
     {
-        return in_array($this->value($order->getAttribute('payment_status')), self::OPEN_PAYMENT_STATUSES, true);
+        return in_array($this->value($order->getAttribute('payment_status')), Order::OPEN_PAYMENT_STATUSES, true);
     }
 
     private function value(mixed $value): string
