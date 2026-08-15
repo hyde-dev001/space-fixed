@@ -274,24 +274,24 @@ Urgent Exceptions
 
 Each participating adapter must prove both source-specific materiality and the legitimate absence of deterministic responsibility. An exception adapter is not ready unless it can distinguish `no legitimate actor owns the next step` from `the system cannot determine responsibility`.
 
-Declared Phase 3B coverage is readiness-driven, not roadmap-driven. A selected source does not become visible merely because it is planned for the phase. Initial production launch enables Compliance Documents only:
+Declared Phase 3B coverage is readiness-driven, not roadmap-driven. A selected source does not become visible merely because it is planned for the phase. The single Phase 3B implementation plan uses readiness-gated stages:
 
 ```text
-Phase 3B.1
+Stage 1
 └─ Compliance Documents
 
-Phase 3B.2
+Stage 2
 └─ Failed Refunds
    enabled independently after the Refund recovery lifecycle passes readiness
 
-Phase 3B.3
+Stage 3
 └─ Unowned Logistics Failures
    enabled independently after the Logistics responsibility projection passes readiness
 ```
 
 Blocked sources do not appear as filters, zero counts, placeholders, degraded adapters, or temporarily unavailable sources. Their selected-but-blocked status remains in engineering documentation and readiness evidence. When only Compliance participates in `Urgent Exceptions`, the UI may omit the redundant source filter entirely.
 
-Initial Phase 3B production launch is complete when the Compliance adapter is production-ready and safely enabled. Full declared Phase 3B initial coverage is complete only when Compliance Documents, Failed Refunds, and Unowned Logistics Failures have each independently passed readiness and been enabled. Production coverage may therefore expand one adapter at a time without waiting for another blocked source.
+The first Phase 3B rollout stage is complete when the Compliance adapter is production-ready and safely enabled. The single Phase 3B implementation plan is complete only when Compliance Documents, Failed Refunds, and Unowned Logistics Failures have each independently passed readiness and been enabled. Production coverage may therefore expand one adapter at a time without waiting for another blocked source.
 
 Phase 3B must preserve these responsibility distinctions:
 
@@ -376,7 +376,7 @@ Refund execution fails
 
 Action Center classification derives from Refund recovery state; it never creates or owns that state. Acknowledgment, dismissal, hiding, or marking a card reviewed cannot substitute for domain resolution. An unresolved failure remains unresolved regardless of age, although age may increase its normalized urgency.
 
-The Refund domain must preserve original failure evidence while recording enough audited information to prove active legitimate recovery assignment, controlled resolution actor/time/outcome/reason, and retry or replacement linkage. Exact persistence names are deferred to the focused domain design and implementation plan. Assignment must be active and legitimate; a stale actor identifier does not establish deterministic responsibility.
+The Refund domain must preserve original failure evidence while recording enough audited information to prove active legitimate recovery assignment, controlled resolution actor/time/outcome/reason, and retry or replacement linkage. Exact persistence names are deferred to the single Phase 3B implementation plan. Assignment must be active and legitimate; a stale actor identifier does not establish deterministic responsibility.
 
 Failed Refund adapter readiness requires authoritative unresolved state, deterministic recovery ownership, controlled and idempotent resolution, retry/replacement traceability, tested 3A/3B/3C classification, and exhaustive exit behavior.
 
@@ -726,4 +726,4 @@ Phase 3 master
 └── Phase 3C — Waiting on Others
 ```
 
-The Phase 3A implementation plan covers [`2026-08-15-shop-owner-phase-3a-owner-decisions-design.md`](./2026-08-15-shop-owner-phase-3a-owner-decisions-design.md). Phase 3B implementation planning proceeds from [`2026-08-16-shop-owner-phase-3b-material-exceptions-design.md`](./2026-08-16-shop-owner-phase-3b-material-exceptions-design.md), beginning with Compliance Documents only. Phase 3C receives its own focused design and plan before source onboarding begins.
+The Phase 3A implementation plan covers [`2026-08-15-shop-owner-phase-3a-owner-decisions-design.md`](./2026-08-15-shop-owner-phase-3a-owner-decisions-design.md). One Phase 3B implementation plan proceeds from [`2026-08-16-shop-owner-phase-3b-material-exceptions-design.md`](./2026-08-16-shop-owner-phase-3b-material-exceptions-design.md) and contains readiness-gated stages for Compliance Documents, Failed Refunds, and Unowned Logistics Failures. Phase 3C receives its own focused design and plan before source onboarding begins.

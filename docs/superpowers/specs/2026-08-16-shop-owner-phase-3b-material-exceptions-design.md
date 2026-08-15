@@ -15,7 +15,7 @@ Phase 3B projects active material conditions that:
 - have no legitimate deterministic actor or team responsible for the next step; and
 - remain true in an authoritative domain source.
 
-Phase 3B.1 launches with Compliance Document expiry exceptions only. Failed Refunds and Unowned Logistics Failures remain selected but blocked until their owning domains can prove recovery and responsibility state.
+Phase 3B uses one specification and one implementation plan. Compliance Documents are the first rollout stage; Failed Refunds and Unowned Logistics Failures remain later readiness-gated stages until their owning domains can prove recovery and responsibility state.
 
 ## 2. Relationship to Existing Designs
 
@@ -44,7 +44,7 @@ Home summary / full Action Center
 
 ## 3. Scope and Staged Coverage
 
-### Phase 3B.1 — initial production launch
+### First rollout stage
 
 ```text
 Urgent Exceptions
@@ -227,7 +227,7 @@ The current Compliance lifecycle is grounded in:
 - pending renewal rows linked through `predecessor_document_id`;
 - the canonical owner destination `/shop-owner/settings/policies-compliance`.
 
-The current implementation has a broad `expiring_soon` validity state at 30 days and separately stores 30/7/0 reminder thresholds in `ShopDocumentReminderService`. Phase 3B.1 must canonicalize those existing rules in the Compliance domain before the adapter is enabled.
+The current implementation has a broad `expiring_soon` validity state at 30 days and separately stores 30/7/0 reminder thresholds in `ShopDocumentReminderService`. The first Phase 3B stage must canonicalize those existing rules in the Compliance domain before the adapter is enabled.
 
 ### Canonical expiry-window result
 
@@ -533,7 +533,7 @@ Phase 2 canonical shell selected
 + Phase 3 Action Center selected
 + Urgent Exceptions bucket enabled
 + Compliance adapter enabled
-→ Phase 3B.1 presentation
+→ Phase 3B presentation
 ```
 
 Bucket enablement and adapter enablement use bounded application-controlled configuration. They do not become owner settings, capabilities, or domain authorization.
@@ -549,7 +549,7 @@ existing Phase 3A coverage
 urgent_exceptions
 ├─ enabled
 └─ coverage
-   ├─ compliance = true at Phase 3B.1 launch
+   ├─ compliance = true at the first Phase 3B rollout stage
    ├─ refunds = false until Failed Refund readiness
    └─ logistics = false until Logistics readiness
 ```
@@ -716,9 +716,9 @@ Verify:
 
 ### Completion definitions
 
-Phase 3B.1 initial production launch is complete when the Compliance Document domain policy and adapter pass readiness, security, performance, classification, timezone, presentation, observability, and rollback gates and can be enabled without changing Phase 3A behavior.
+The first Phase 3B rollout stage is complete when the Compliance Document domain policy and adapter pass readiness, security, performance, classification, timezone, presentation, observability, and rollback gates and can be enabled without changing Phase 3A behavior.
 
-Full declared Phase 3B initial coverage is complete only after Failed Refunds and Unowned Logistics Failures independently satisfy their domain prerequisites, focused adapter contracts, and readiness gates. Runtime failure isolation after enablement is not a substitute for pre-launch readiness.
+The single Phase 3B implementation plan is complete only after Failed Refunds and Unowned Logistics Failures independently satisfy their domain prerequisites, adapter contracts, and readiness gates. Runtime failure isolation after enablement is not a substitute for pre-launch readiness.
 
 ## 15. Implementation Sequence
 
@@ -734,14 +734,19 @@ The implementation plan should preserve this order:
 7. Add separate Home summaries and full-page bucket navigation.
 8. Apply the compact operational-queue presentation.
 9. Add rollout, failure-isolation, security, accessibility, and query evidence.
-10. Enable Phase 3B.1 only after the Compliance readiness gate passes.
+10. Pass the Compliance readiness gate and enable its adapter for the first rollout stage.
+11. Implement and verify the authoritative Refund recovery/resolution lifecycle.
+12. Add the Failed Refund adapter, pass its readiness gate, and enable it independently.
+13. Implement and verify the authoritative Logistics responsibility projection.
+14. Add the Unowned Logistics Failure adapter, pass its readiness gate, and enable it independently.
+15. Verify complete three-source ordering, filtering, degradation, rollback, and coverage behavior.
 ```
 
-Failed Refund and Logistics domain prerequisites receive separate focused designs/plans before their adapters are implemented.
+The one Phase 3B implementation plan contains separate ordered task groups for the Compliance foundation, Refund recovery prerequisite and adapter, Logistics responsibility prerequisite and adapter, and final complete-coverage verification. A later task group may not be enabled before its readiness gate passes.
 
 ## 16. Acceptance Criteria
 
-Phase 3B.1 is accepted when:
+Phase 3B is accepted when:
 
 1. `Urgent Exceptions` uses the existing shared Action Center framework.
 2. Phase 3A remains behaviorally unchanged.
@@ -755,6 +760,11 @@ Phase 3B.1 is accepted when:
 10. The Action Center uses the approved compact operational-queue visual language.
 11. No Action Center-owned exception acknowledgement or resolution lifecycle exists.
 12. Compliance failure does not disable or corrupt Phase 3A.
-13. Blocked Refund and Logistics sources remain hidden and are not reported as failed.
+13. Refund and Logistics remain hidden and are not reported as failed until their plan stages pass readiness.
 14. Disabling Phase 3B returns safely to the Phase 3A experience without data rollback.
 15. Tenant, authorization, privacy, accessibility, performance, and observability gates pass with recorded evidence.
+16. Refund recovery has authoritative unresolved, responsibility, retry/replacement, and controlled-resolution state before Failed Refunds are enabled.
+17. Logistics has authoritative current responsibility, active/exhausted recovery-path, materiality, and owner-action precedence before Unowned Logistics Failures are enabled.
+18. Compliance Documents, Failed Refunds, and Unowned Logistics Failures each pass their independent adapter readiness gates.
+19. All three enabled sources use the same bucket contract and produce deterministic cross-source ordering without duplicate concerns.
+20. The one Phase 3B implementation plan records completion evidence for every staged task group.
