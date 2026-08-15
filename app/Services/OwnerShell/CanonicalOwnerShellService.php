@@ -8,6 +8,7 @@ use App\Enums\OwnerShellPresentation;
 use App\Enums\OwnerShellFallbackReason;
 use App\Enums\OwnerShellSelectionReason;
 use App\Models\ShopOwner;
+use App\Services\OwnerActionCenter\OwnerActionCenterRolloutPolicy;
 use App\Services\ErpRouteCatalog;
 use App\Services\ErpWorkspaceNavigationService;
 use App\Services\ShopModuleAccessService;
@@ -113,6 +114,7 @@ final class CanonicalOwnerShellService
         private readonly ShopModuleAccessService $moduleAccess,
         private readonly ErpRouteCatalog $catalog,
         private readonly ErpWorkspaceNavigationService $navigation,
+        private readonly OwnerActionCenterRolloutPolicy $ownerActionCenterRollout,
     ) {}
 
     public function forOwner(ShopOwner $owner): OwnerShellMetadata
@@ -159,7 +161,7 @@ final class CanonicalOwnerShellService
 
         $states = $this->moduleAccess->statesFor($owner);
         $groups = [
-            $this->homeGroup(),
+            $this->homeGroup($owner),
         ];
 
         $operate = $this->moduleGroup(
@@ -207,7 +209,7 @@ final class CanonicalOwnerShellService
         );
     }
 
-    private function homeGroup(): OwnerShellGroup
+    private function homeGroup(ShopOwner $owner): OwnerShellGroup
     {
         $homeUrl = $this->canonicalUrl('shop-owner.shell.home');
         $activeMatching = [
@@ -219,20 +221,35 @@ final class CanonicalOwnerShellService
             $activeMatching[] = $this->pathForRoute('shop-owner.erp.retail.dashboard').'*';
         }
 
+        $items = [new OwnerShellItem(
+            'home',
+            'Home',
+            $homeUrl,
+            true,
+            null,
+            null,
+            $activeMatching,
+        )];
+
+        if ($this->ownerActionCenterRollout->select($owner)->selected) {
+            $actionCenterUrl = $this->canonicalUrl('shop-owner.shell.action-center');
+            $items[] = new OwnerShellItem(
+                'action-center',
+                'Action Center',
+                $actionCenterUrl,
+                true,
+                null,
+                null,
+                [$actionCenterUrl],
+            );
+        }
+
         return new OwnerShellGroup(
             'home',
             'Home',
             0,
             true,
-            [new OwnerShellItem(
-                'home',
-                'Home',
-                $homeUrl,
-                true,
-                null,
-                null,
-                $activeMatching,
-            )],
+            $items,
         );
     }
 

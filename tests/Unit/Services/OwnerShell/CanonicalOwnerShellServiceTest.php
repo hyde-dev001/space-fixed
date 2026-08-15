@@ -150,6 +150,23 @@ final class CanonicalOwnerShellServiceTest extends TestCase
         $this->assertArrayNotHasKey('operate', $retailGroups->all());
     }
 
+    public function test_selected_phase_three_owner_gets_one_action_center_item_in_the_home_group(): void
+    {
+        $owner = $this->owner('company', 'both');
+        config([
+            'owner_shell.allowlisted_shop_ids' => [$owner->getKey()],
+            'owner_action_center.enabled' => true,
+            'owner_action_center.allowlisted_shop_ids' => [$owner->getKey()],
+        ]);
+
+        $home = collect(app(CanonicalOwnerShellService::class)->forOwner($owner)->toArray()['groups'])
+            ->firstWhere('key', 'home');
+
+        $this->assertSame(['home', 'action-center'], array_column($home['items'], 'key'));
+        $this->assertSame('/shop-owner/action-center', $home['items'][1]['canonical_url']);
+        $this->assertSame(['/shop-owner/action-center'], $home['items'][1]['active_matching']);
+    }
+
     public function test_canonical_destinations_do_not_change_when_erp_workspace_flag_changes(): void
     {
         $owner = $this->owner('company', 'both');
@@ -257,6 +274,7 @@ final class CanonicalOwnerShellServiceTest extends TestCase
     {
         return [
             'shop-owner.shell.home' => '/shop-owner/home',
+            'shop-owner.shell.action-center' => '/shop-owner/action-center',
             'shop-owner.shell.operate.retail' => '/shop-owner/operate/retail',
             'shop-owner.shell.operate.repair' => '/shop-owner/operate/repair',
             'shop-owner.shell.operate.customers' => '/shop-owner/operate/customers',

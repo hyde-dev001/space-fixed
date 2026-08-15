@@ -6,6 +6,7 @@ use App\Http\Controllers\Erp\ReadPageController;
 use App\Http\Controllers\Erp\WorkspaceController;
 use App\Http\Controllers\ShopOwner\CanonicalOwnerPaymentsController;
 use App\Http\Controllers\ShopOwner\OwnerErpFallbackController;
+use App\Http\Controllers\ShopOwner\OwnerActionCenterController;
 use App\Http\Controllers\ShopOwner\ShopOwnerDashboardController;
 use App\Http\Controllers\ShopOwner\ShopSettingsController;
 use Illuminate\Support\Facades\Route;
@@ -14,6 +15,9 @@ Route::prefix('shop-owner')
     ->name('shop-owner.shell.')
     ->middleware('auth:shop_owner')
     ->group(function (): void {
+        Route::get('/action-center', OwnerActionCenterController::class)
+            ->name('action-center');
+
         Route::get('/home', ShopOwnerDashboardController::class)
             ->defaults('canonical_home', true)
             ->name('home');

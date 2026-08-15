@@ -36,14 +36,16 @@ final class CanonicalOwnerHomeTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('ShopOwner/Dashboard', false)
-                ->where('showPhaseThreePlaceholders', false));
+                ->where('showPhaseThreePlaceholders', false)
+                ->missing('ownerActionCenter'));
 
         $this->actingAs($owner, 'shop_owner')
             ->get(route('shop-owner.shell.home'))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('ShopOwner/Dashboard', false)
-                ->where('showPhaseThreePlaceholders', true));
+                ->where('showPhaseThreePlaceholders', true)
+                ->missing('ownerActionCenter'));
     }
 
     public function test_canonical_home_is_registered_once_without_erp_workspace_gate_and_works_with_flags_off(): void
