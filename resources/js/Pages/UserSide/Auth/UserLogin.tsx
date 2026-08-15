@@ -12,9 +12,33 @@ interface FormErrors {
   password?: string;
 }
 
+type AuthContext = 'user' | 'shop_owner';
+
+type LoginPageProps = {
+  csrf_token?: string;
+  flash?: { success?: string };
+  initialAuthContext?: AuthContext;
+};
+
+const loginTargets = {
+  user: '/user/login',
+  shop_owner: '/shop-owner/login',
+} as const;
+
+const authContextOptions: Array<{ value: AuthContext; label: string }> = [
+  { value: 'user', label: 'Customer / Staff' },
+  { value: 'shop_owner', label: 'Shop Owner' },
+];
+
 export default function UserLogin() {
-  const { csrf_token } = usePage().props as any;
-  const flash = (usePage().props as any).flash || {};
+  const {
+    csrf_token,
+    flash = {},
+    initialAuthContext,
+  } = usePage<LoginPageProps>().props;
+  const [authContext, setAuthContext] = useState<AuthContext>(
+    initialAuthContext === 'shop_owner' ? 'shop_owner' : 'user',
+  );
 
   const [formData, setFormData] = useState({
     email: '',
@@ -81,9 +105,10 @@ export default function UserLogin() {
 
     setIsLoading(true);
 
-    router.post('/user/login', {
+    router.post(loginTargets[authContext], {
       email: formData.email.trim(),
       password: formData.password,
+      remember: formData.rememberMe,
     }, {
       onSuccess: (page: any) => {
         const redirectUrl = String(page?.url || '');
@@ -148,6 +173,24 @@ export default function UserLogin() {
 
         <div className="max-w-92.5 sm:max-w-lg mx-auto mt-5 sm:mt-0">
           <div className="userside-auth-card bg-white rounded-[20px] sm:rounded-2xl border border-gray-100 shadow-[0_14px_32px_-20px_rgba(15,23,42,0.35)] p-5 sm:p-8">
+            <div role="tablist" aria-label="Sign-in account type" className="mb-6 grid grid-cols-2 gap-1 rounded-xl bg-gray-100 p-1">
+              {authContextOptions.map(({ value, label }) => (
+                <button
+                  key={value}
+                  type="button"
+                  role="tab"
+                  aria-selected={authContext === value}
+                  onClick={() => setAuthContext(value)}
+                  className={`min-h-11 rounded-lg px-3 py-2 text-xs font-semibold transition-colors sm:text-sm ${
+                    authContext === value
+                      ? 'bg-white text-gray-900 shadow-sm'
+                      : 'text-gray-500 hover:text-gray-900'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
             <Form onSubmit={handleSubmit} className="space-y-5 sm:space-y-6">
               <div className="relative">
                 <Label htmlFor="email" className="text-[12px] font-medium text-gray-700 mb-1.5">Email</Label>
