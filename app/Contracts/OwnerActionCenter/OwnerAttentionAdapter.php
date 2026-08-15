@@ -14,5 +14,7 @@ interface OwnerAttentionAdapter
 
     public function coverageSource(): string;
 
+    public function primaryBucket(): string;
+
     public function read(ShopOwner $owner, OwnerAttentionQuery $query): OwnerAttentionAdapterResult;
 }

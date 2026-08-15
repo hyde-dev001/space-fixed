@@ -28,6 +28,11 @@ final class RepairRefundAttentionAdapter implements OwnerAttentionAdapter
         return 'refunds';
     }
 
+    public function primaryBucket(): string
+    {
+        return 'needs_my_decision';
+    }
+
     public function read(ShopOwner $owner, OwnerAttentionQuery $query): OwnerAttentionAdapterResult
     {
         $rule = $this->approvalPolicy->refundApprovalRuleForRead((int) $owner->getKey());
@@ -80,6 +85,7 @@ final class RepairRefundAttentionAdapter implements OwnerAttentionAdapter
                 sourceType: 'repair_refund',
                 sourceId: (int) $refund->getKey(),
                 category: 'refund_approval',
+                primaryBucket: $this->primaryBucket(),
                 module: 'finance',
                 title: 'Repair refund approval',
                 conciseSummary: 'Review the pending repair refund request.',
@@ -88,6 +94,9 @@ final class RepairRefundAttentionAdapter implements OwnerAttentionAdapter
                 comparableMonetaryExposure: round($amount, 2),
                 urgencyAt: null,
                 actionableSince: $actionableSince?->toISOString() ?? now()->toISOString(),
+                waitingOn: 'shop_owner',
+                ownerActionRequired: true,
+                coverageSource: $this->coverageSource(),
                 destinationUrl: route('shop-owner.refund-approvals', [], false)
                     .'?refund_type=repair&refund='.$refund->getKey(),
             );

@@ -35,6 +35,7 @@ const item = (overrides: Partial<OwnerAttentionItem> = {}): OwnerAttentionItem =
   actionable_since: "2026-08-14T09:00:00+08:00",
   waiting_on: "shop_owner",
   owner_action_required: true,
+  coverage_source: "expenses",
   destination_url: "/shop-owner/expense-approvals?expense=12",
   ...overrides,
 });

@@ -7,19 +7,26 @@ export type OwnerActionCenterCoverage =
 export type OwnerAttentionCoverageSource =
   | "refunds"
   | "expenses"
-  | "purchase_requests";
+  | "purchase_requests"
+  | "compliance"
+  | "logistics";
 
 export type OwnerAttentionAdapterKey =
   | "order_refunds"
   | "repair_refunds"
   | "expenses"
-  | "purchase_requests";
+  | "purchase_requests"
+  | "compliance_documents"
+  | "failed_order_refunds"
+  | "failed_repair_refunds"
+  | "unowned_logistics_failures";
 
 export type OwnerAttentionSourceType =
   | "order_refund"
   | "repair_refund"
   | "expense"
-  | "purchase_request";
+  | "purchase_request"
+  | "compliance_document";
 
 export type OwnerActionCenterDegradationStatus =
   | "not_selected"
@@ -33,17 +40,18 @@ export interface OwnerAttentionItem {
   source_type: OwnerAttentionSourceType;
   source_id: number;
   category: string;
-  primary_bucket: "needs_my_decision";
+  primary_bucket: "needs_my_decision" | "urgent_exceptions" | "waiting_on_others";
   module: string;
   title: string;
   concise_summary: string;
-  priority_tier: "urgent" | "high" | "normal" | "low";
-  materiality_tier: "high" | "medium" | "low" | "none";
+  priority_tier: "critical" | "high" | "normal" | "low";
+  materiality_tier: "critical" | "high" | "medium" | "low" | "none";
   comparable_monetary_exposure: number | null;
   urgency_at: string | null;
   actionable_since: string;
-  waiting_on: "shop_owner";
-  owner_action_required: true;
+  waiting_on: "shop_owner" | "none" | "finance" | "hr" | "procurement" | "logistics" | "compliance" | "staff" | "super_admin";
+  owner_action_required: boolean;
+  coverage_source: OwnerAttentionCoverageSource;
   destination_url: string;
 }
 

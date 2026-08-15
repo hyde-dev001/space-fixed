@@ -9,7 +9,16 @@ use InvalidArgumentException;
 
 final readonly class OwnerActionCenterResult
 {
-    private const ADAPTER_KEYS = ['order_refunds', 'repair_refunds', 'expenses', 'purchase_requests'];
+    private const ADAPTER_KEYS = [
+        'order_refunds',
+        'repair_refunds',
+        'expenses',
+        'purchase_requests',
+        'compliance_documents',
+        'failed_order_refunds',
+        'failed_repair_refunds',
+        'unowned_logistics_failures',
+    ];
 
     private const COVERAGES = ['all', 'refunds', 'expenses', 'purchase_requests'];
 

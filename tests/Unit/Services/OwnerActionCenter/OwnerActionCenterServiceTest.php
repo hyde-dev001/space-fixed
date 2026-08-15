@@ -145,7 +145,7 @@ final class OwnerActionCenterServiceTest extends TestCase
             'expenses',
             [
                 $this->item('expense', 1, 'normal', 'high', 500.0, null, '2026-08-10T09:00:00+08:00'),
-                $this->item('expense', 2, 'urgent', 'low', 1.0, '2026-08-16T09:00:00+08:00'),
+                $this->item('expense', 2, 'critical', 'low', 1.0, '2026-08-16T09:00:00+08:00'),
                 $this->item('expense', 3, 'high', 'high', 300.0, '2026-08-14T09:00:00+08:00'),
                 $this->item('expense', 4, 'high', 'high', 100.0, '2026-08-14T09:00:00+08:00'),
                 $this->item('expense', 5, 'normal', 'high', 800.0, '2026-08-14T09:00:00+08:00'),
@@ -178,7 +178,7 @@ final class OwnerActionCenterServiceTest extends TestCase
             'order_refunds',
             'refunds',
             [
-                $this->item('order_refund', 1, 'urgent'),
+                $this->item('order_refund', 1, 'critical'),
                 $this->item('order_refund', 2, 'normal'),
                 $this->item('order_refund', 3, 'low'),
             ],
@@ -344,6 +344,11 @@ final class OwnerActionCenterServiceTest extends TestCase
                 return $this->coverageValue;
             }
 
+            public function primaryBucket(): string
+            {
+                return 'needs_my_decision';
+            }
+
             public function read(ShopOwner $owner, OwnerAttentionQuery $query): OwnerAttentionAdapterResult
             {
                 $this->queries[] = $query;
@@ -378,6 +383,7 @@ final class OwnerActionCenterServiceTest extends TestCase
             sourceType: $sourceType,
             sourceId: $sourceId,
             category: $category,
+            primaryBucket: 'needs_my_decision',
             module: match ($sourceType) {
                 'order_refund', 'repair_refund' => 'refunds',
                 'expense' => 'finance',
@@ -390,6 +396,13 @@ final class OwnerActionCenterServiceTest extends TestCase
             comparableMonetaryExposure: $exposure,
             urgencyAt: $urgencyAt,
             actionableSince: $actionableSince,
+            waitingOn: 'shop_owner',
+            ownerActionRequired: true,
+            coverageSource: match ($sourceType) {
+                'order_refund', 'repair_refund' => 'refunds',
+                'expense' => 'expenses',
+                'purchase_request' => 'purchase_requests',
+            },
             destinationUrl: '/shop-owner/action-center?source='.$sourceType.'&id='.$sourceId,
         );
     }

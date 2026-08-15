@@ -11,16 +11,11 @@ final readonly class OwnerAttentionItem
 {
     public string $attentionKey;
 
-    public string $primaryBucket;
-
-    public string $waitingOn;
-
-    public bool $ownerActionRequired;
-
     public function __construct(
         public string $sourceType,
         public int $sourceId,
         public string $category,
+        public string $primaryBucket,
         public string $module,
         public string $title,
         public string $conciseSummary,
@@ -29,9 +24,12 @@ final readonly class OwnerAttentionItem
         public ?float $comparableMonetaryExposure,
         public ?string $urgencyAt,
         public string $actionableSince,
+        public string $waitingOn,
+        public bool $ownerActionRequired,
+        public string $coverageSource,
         public string $destinationUrl,
     ) {
-        if (! in_array($sourceType, ['order_refund', 'repair_refund', 'expense', 'purchase_request'], true)) {
+        if (! in_array($sourceType, ['order_refund', 'repair_refund', 'expense', 'purchase_request', 'compliance_document'], true)) {
             throw new InvalidArgumentException('Owner attention source type is not supported.');
         }
 
@@ -44,12 +42,37 @@ final readonly class OwnerAttentionItem
         self::validateText($title, 'title', 160);
         self::validateText($conciseSummary, 'concise summary', 500);
 
-        if (! in_array($priorityTier, ['urgent', 'high', 'normal', 'low'], true)) {
+        if (! in_array($priorityTier, ['critical', 'high', 'normal', 'low'], true)) {
             throw new InvalidArgumentException('Owner attention priority tier is invalid.');
         }
 
-        if (! in_array($materialityTier, ['high', 'medium', 'low', 'none'], true)) {
+        if (! in_array($materialityTier, ['critical', 'high', 'medium', 'low', 'none'], true)) {
             throw new InvalidArgumentException('Owner attention materiality tier is invalid.');
+        }
+
+        if (! in_array($coverageSource, ['refunds', 'expenses', 'purchase_requests', 'compliance', 'logistics'], true)) {
+            throw new InvalidArgumentException('Owner attention coverage source is invalid.');
+        }
+
+        $expectedCoverage = match ($sourceType) {
+            'order_refund', 'repair_refund' => 'refunds',
+            'expense' => 'expenses',
+            'purchase_request' => 'purchase_requests',
+            'compliance_document' => 'compliance',
+        };
+        if ($coverageSource !== $expectedCoverage) {
+            throw new InvalidArgumentException('Owner attention source and coverage do not match.');
+        }
+
+        $validResponsibility = match ($primaryBucket) {
+            'needs_my_decision' => $waitingOn === 'shop_owner' && $ownerActionRequired,
+            'urgent_exceptions' => $waitingOn === 'none' && ! $ownerActionRequired,
+            'waiting_on_others' => in_array($waitingOn, ['finance', 'hr', 'procurement', 'logistics', 'compliance', 'staff', 'super_admin'], true)
+                && ! $ownerActionRequired,
+            default => false,
+        };
+        if (! $validResponsibility) {
+            throw new InvalidArgumentException('Owner attention responsibility classification is invalid.');
         }
 
         if ($comparableMonetaryExposure !== null
@@ -62,9 +85,6 @@ final readonly class OwnerAttentionItem
         self::validateLocalPath($destinationUrl);
 
         $this->attentionKey = implode(':', [$sourceType, (string) $sourceId, $category]);
-        $this->primaryBucket = 'needs_my_decision';
-        $this->waitingOn = 'shop_owner';
-        $this->ownerActionRequired = true;
     }
 
     /**
@@ -88,6 +108,7 @@ final readonly class OwnerAttentionItem
             'actionable_since' => $this->actionableSince,
             'waiting_on' => $this->waitingOn,
             'owner_action_required' => $this->ownerActionRequired,
+            'coverage_source' => $this->coverageSource,
             'destination_url' => $this->destinationUrl,
         ];
     }

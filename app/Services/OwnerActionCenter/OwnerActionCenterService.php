@@ -200,13 +200,13 @@ final class OwnerActionCenterService
 
     private function compareItems(OwnerAttentionItem $left, OwnerAttentionItem $right): int
     {
-        $priority = ['urgent' => 4, 'high' => 3, 'normal' => 2, 'low' => 1];
+        $priority = ['critical' => 4, 'high' => 3, 'normal' => 2, 'low' => 1];
         $priorityComparison = $priority[$right->priorityTier] <=> $priority[$left->priorityTier];
         if ($priorityComparison !== 0) {
             return $priorityComparison;
         }
 
-        $materiality = ['high' => 3, 'medium' => 2, 'low' => 1, 'none' => 0];
+        $materiality = ['critical' => 4, 'high' => 3, 'medium' => 2, 'low' => 1, 'none' => 0];
         $materialityComparison = $materiality[$right->materialityTier] <=> $materiality[$left->materialityTier];
         if ($materialityComparison !== 0) {
             return $materialityComparison;
@@ -274,11 +274,7 @@ final class OwnerActionCenterService
 
     private function coverageFor(OwnerAttentionItem $item): string
     {
-        return match ($item->sourceType) {
-            'order_refund', 'repair_refund' => 'refunds',
-            'expense' => 'expenses',
-            'purchase_request' => 'purchase_requests',
-        };
+        return $item->coverageSource;
     }
 
     private function correlationId(): ?string

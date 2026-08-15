@@ -23,6 +23,11 @@ final class ExpenseAttentionAdapter implements OwnerAttentionAdapter
         return 'expenses';
     }
 
+    public function primaryBucket(): string
+    {
+        return 'needs_my_decision';
+    }
+
     public function read(ShopOwner $owner, OwnerAttentionQuery $query): OwnerAttentionAdapterResult
     {
         if (strtolower(trim((string) $owner->registration_type)) !== 'company') {
@@ -71,14 +76,18 @@ final class ExpenseAttentionAdapter implements OwnerAttentionAdapter
                 sourceType: 'expense',
                 sourceId: (int) $expense->getKey(),
                 category: 'expense_approval',
+                primaryBucket: $this->primaryBucket(),
                 module: 'finance',
                 title: 'Expense approval',
                 conciseSummary: 'Review the pending expense approval.',
-                priorityTier: $dueDate?->isPast() ? 'urgent' : 'high',
+                priorityTier: $dueDate?->isPast() ? 'critical' : 'high',
                 materialityTier: $this->materialityTier($amount),
                 comparableMonetaryExposure: round($amount, 2),
                 urgencyAt: $dueDate?->copy()->startOfDay()->toISOString(),
                 actionableSince: $expense->created_at?->toISOString() ?? now()->toISOString(),
+                waitingOn: 'shop_owner',
+                ownerActionRequired: true,
+                coverageSource: $this->coverageSource(),
                 destinationUrl: route('shop-owner.expense-approvals', [], false)
                     .'?expense='.$expense->getKey(),
             );

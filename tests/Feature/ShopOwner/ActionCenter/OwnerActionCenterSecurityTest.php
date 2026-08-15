@@ -279,6 +279,11 @@ final class OwnerActionCenterSecurityTest extends TestCase
                 return $this->coverage;
             }
 
+            public function primaryBucket(): string
+            {
+                return 'needs_my_decision';
+            }
+
             public function read(ShopOwner $owner, OwnerAttentionQuery $query): OwnerAttentionAdapterResult
             {
                 if ($this->failure !== null) {
@@ -298,6 +303,7 @@ final class OwnerActionCenterSecurityTest extends TestCase
             sourceType: 'expense',
             sourceId: 1,
             category: 'expense_approval',
+            primaryBucket: 'needs_my_decision',
             module: 'finance',
             title: $title,
             conciseSummary: $summary,
@@ -306,6 +312,9 @@ final class OwnerActionCenterSecurityTest extends TestCase
             comparableMonetaryExposure: 100.0,
             urgencyAt: null,
             actionableSince: '2026-08-15T09:00:00+08:00',
+            waitingOn: 'shop_owner',
+            ownerActionRequired: true,
+            coverageSource: 'expenses',
             destinationUrl: '/shop-owner/expense-approvals?expense=1',
         );
     }

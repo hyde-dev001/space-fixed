@@ -10,7 +10,7 @@ use InvalidArgumentException;
 final class OwnerAttentionAdapterRegistry
 {
     /**
-     * @var array<string, array<int, array{class: string, key: string, coverage: string}>>
+     * @var array<string, array<int, array{class: string, key: string, coverage: string, bucket: string}>>
      */
     private const ADAPTERS = [
         'refunds' => [
@@ -18,11 +18,13 @@ final class OwnerAttentionAdapterRegistry
                 'class' => 'App\\Services\\OwnerActionCenter\\Adapters\\OrderRefundAttentionAdapter',
                 'key' => 'order_refunds',
                 'coverage' => 'refunds',
+                'bucket' => 'needs_my_decision',
             ],
             [
                 'class' => 'App\\Services\\OwnerActionCenter\\Adapters\\RepairRefundAttentionAdapter',
                 'key' => 'repair_refunds',
                 'coverage' => 'refunds',
+                'bucket' => 'needs_my_decision',
             ],
         ],
         'expenses' => [
@@ -30,6 +32,7 @@ final class OwnerAttentionAdapterRegistry
                 'class' => 'App\\Services\\OwnerActionCenter\\Adapters\\ExpenseAttentionAdapter',
                 'key' => 'expenses',
                 'coverage' => 'expenses',
+                'bucket' => 'needs_my_decision',
             ],
         ],
         'purchase_requests' => [
@@ -37,6 +40,7 @@ final class OwnerAttentionAdapterRegistry
                 'class' => 'App\\Services\\OwnerActionCenter\\Adapters\\PurchaseRequestAttentionAdapter',
                 'key' => 'purchase_requests',
                 'coverage' => 'purchase_requests',
+                'bucket' => 'needs_my_decision',
             ],
         ],
     ];
@@ -76,7 +80,8 @@ final class OwnerAttentionAdapterRegistry
                 }
 
                 if ($adapter->adapterKey() !== $definition['key']
-                    || $adapter->coverageSource() !== $definition['coverage']) {
+                    || $adapter->coverageSource() !== $definition['coverage']
+                    || $adapter->primaryBucket() !== $definition['bucket']) {
                     throw new InvalidArgumentException('Configured owner attention adapter identity does not match its registry entry.');
                 }
 

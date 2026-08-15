@@ -28,6 +28,11 @@ final class OrderRefundAttentionAdapter implements OwnerAttentionAdapter
         return 'refunds';
     }
 
+    public function primaryBucket(): string
+    {
+        return 'needs_my_decision';
+    }
+
     public function read(ShopOwner $owner, OwnerAttentionQuery $query): OwnerAttentionAdapterResult
     {
         $rule = $this->approvalPolicy->refundApprovalRuleForRead((int) $owner->getKey());
@@ -85,6 +90,7 @@ final class OrderRefundAttentionAdapter implements OwnerAttentionAdapter
                 sourceType: 'order_refund',
                 sourceId: (int) $refund->getKey(),
                 category: 'refund_approval',
+                primaryBucket: $this->primaryBucket(),
                 module: 'finance',
                 title: 'Order refund approval',
                 conciseSummary: 'Review the pending order refund request.',
@@ -95,6 +101,9 @@ final class OrderRefundAttentionAdapter implements OwnerAttentionAdapter
                     : null,
                 urgencyAt: null,
                 actionableSince: $actionableSince?->toISOString() ?? now()->toISOString(),
+                waitingOn: 'shop_owner',
+                ownerActionRequired: true,
+                coverageSource: $this->coverageSource(),
                 destinationUrl: route('shop-owner.refund-approvals', [], false)
                     .'?refund_type=order&refund='.$refund->getKey(),
             );

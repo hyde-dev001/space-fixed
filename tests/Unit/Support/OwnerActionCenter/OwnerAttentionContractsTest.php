@@ -36,11 +36,85 @@ final class OwnerAttentionContractsTest extends TestCase
             'actionable_since' => '2026-08-15T09:00:00+08:00',
             'waiting_on' => 'shop_owner',
             'owner_action_required' => true,
+            'coverage_source' => 'refunds',
             'destination_url' => '/shop-owner/refund-approvals?refund=42',
         ], $item->toArray());
 
         $this->assertArrayNotHasKey('key', $item->toArray());
         $this->assertTrue((new ReflectionClass($item))->isReadOnly());
+    }
+
+    public function test_attention_item_requires_explicit_classification_and_coverage(): void
+    {
+        $item = new OwnerAttentionItem(
+            sourceType: 'order_refund',
+            sourceId: 42,
+            category: 'owner_approval',
+            primaryBucket: 'needs_my_decision',
+            module: 'retail',
+            title: 'Refund request',
+            conciseSummary: 'Review the requested refund.',
+            priorityTier: 'critical',
+            materialityTier: 'critical',
+            comparableMonetaryExposure: 125.5,
+            urgencyAt: null,
+            actionableSince: '2026-08-15T09:00:00+08:00',
+            waitingOn: 'shop_owner',
+            ownerActionRequired: true,
+            coverageSource: 'refunds',
+            destinationUrl: '/shop-owner/refund-approvals?refund=42',
+        );
+
+        $this->assertSame('needs_my_decision', $item->primaryBucket);
+        $this->assertSame('shop_owner', $item->waitingOn);
+        $this->assertTrue($item->ownerActionRequired);
+        $this->assertSame('refunds', $item->coverageSource);
+        $this->assertSame('critical', $item->priorityTier);
+        $this->assertSame('critical', $item->materialityTier);
+        $this->assertSame('refunds', $item->toArray()['coverage_source']);
+    }
+
+    public function test_legacy_urgent_priority_is_not_supported(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        new OwnerAttentionItem(
+            sourceType: 'expense',
+            sourceId: 1,
+            category: 'owner_approval',
+            primaryBucket: 'needs_my_decision',
+            module: 'finance',
+            title: 'Expense',
+            conciseSummary: 'Review expense.',
+            priorityTier: 'urgent',
+            materialityTier: 'high',
+            comparableMonetaryExposure: 1.0,
+            urgencyAt: null,
+            actionableSince: '2026-08-15T09:00:00+08:00',
+            waitingOn: 'shop_owner',
+            ownerActionRequired: true,
+            coverageSource: 'expenses',
+            destinationUrl: '/shop-owner/expense-approvals',
+        );
+    }
+
+    public function test_attention_item_rejects_inconsistent_classification_and_coverage(): void
+    {
+        $invalid = [
+            ['needs_my_decision', 'none', true, 'expenses'],
+            ['urgent_exceptions', 'shop_owner', false, 'expenses'],
+            ['waiting_on_others', 'finance', true, 'expenses'],
+            ['needs_my_decision', 'shop_owner', true, 'refunds'],
+        ];
+
+        foreach ($invalid as [$bucket, $waitingOn, $ownerActionRequired, $coverage]) {
+            try {
+                $this->classifiedExpense($bucket, $waitingOn, $ownerActionRequired, $coverage);
+                $this->fail('Invalid owner attention classification was accepted.');
+            } catch (InvalidArgumentException) {
+                $this->addToAssertionCount(1);
+            }
+        }
     }
 
     #[DataProvider('invalidAttentionItemProvider')]
@@ -61,6 +135,7 @@ final class OwnerAttentionContractsTest extends TestCase
                 sourceType: 'approval',
                 sourceId: 1,
                 category: 'owner_approval',
+                primaryBucket: 'needs_my_decision',
                 module: 'finance',
                 title: 'Expense',
                 conciseSummary: 'Review expense.',
@@ -69,12 +144,16 @@ final class OwnerAttentionContractsTest extends TestCase
                 comparableMonetaryExposure: 1.0,
                 urgencyAt: null,
                 actionableSince: '2026-08-15T09:00:00+08:00',
+                waitingOn: 'shop_owner',
+                ownerActionRequired: true,
+                coverageSource: 'expenses',
                 destinationUrl: '/shop-owner/expense-approvals',
             )],
             'external destination' => [static fn (): OwnerAttentionItem => new OwnerAttentionItem(
                 sourceType: 'expense',
                 sourceId: 1,
                 category: 'owner_approval',
+                primaryBucket: 'needs_my_decision',
                 module: 'finance',
                 title: 'Expense',
                 conciseSummary: 'Review expense.',
@@ -83,12 +162,16 @@ final class OwnerAttentionContractsTest extends TestCase
                 comparableMonetaryExposure: 1.0,
                 urgencyAt: null,
                 actionableSince: '2026-08-15T09:00:00+08:00',
+                waitingOn: 'shop_owner',
+                ownerActionRequired: true,
+                coverageSource: 'expenses',
                 destinationUrl: 'https://example.test/expense',
             )],
             'negative exposure' => [static fn (): OwnerAttentionItem => new OwnerAttentionItem(
                 sourceType: 'expense',
                 sourceId: 1,
                 category: 'owner_approval',
+                primaryBucket: 'needs_my_decision',
                 module: 'finance',
                 title: 'Expense',
                 conciseSummary: 'Review expense.',
@@ -97,12 +180,16 @@ final class OwnerAttentionContractsTest extends TestCase
                 comparableMonetaryExposure: -1.0,
                 urgencyAt: null,
                 actionableSince: '2026-08-15T09:00:00+08:00',
+                waitingOn: 'shop_owner',
+                ownerActionRequired: true,
+                coverageSource: 'expenses',
                 destinationUrl: '/shop-owner/expense-approvals',
             )],
             'invalid priority tier' => [static fn (): OwnerAttentionItem => new OwnerAttentionItem(
                 sourceType: 'expense',
                 sourceId: 1,
                 category: 'owner_approval',
+                primaryBucket: 'needs_my_decision',
                 module: 'finance',
                 title: 'Expense',
                 conciseSummary: 'Review expense.',
@@ -111,6 +198,9 @@ final class OwnerAttentionContractsTest extends TestCase
                 comparableMonetaryExposure: 1.0,
                 urgencyAt: null,
                 actionableSince: '2026-08-15T09:00:00+08:00',
+                waitingOn: 'shop_owner',
+                ownerActionRequired: true,
+                coverageSource: 'expenses',
                 destinationUrl: '/shop-owner/expense-approvals',
             )],
         ];
@@ -123,6 +213,7 @@ final class OwnerAttentionContractsTest extends TestCase
             sourceType: 'order_refund',
             sourceId: 42,
             category: 'verification',
+            primaryBucket: 'needs_my_decision',
             module: 'retail',
             title: 'Refund request',
             conciseSummary: 'Verify the requested refund.',
@@ -131,6 +222,9 @@ final class OwnerAttentionContractsTest extends TestCase
             comparableMonetaryExposure: 125.5,
             urgencyAt: null,
             actionableSince: '2026-08-15T09:00:00+08:00',
+            waitingOn: 'shop_owner',
+            ownerActionRequired: true,
+            coverageSource: 'refunds',
             destinationUrl: '/shop-owner/refund-approvals?refund=42',
         );
 
@@ -232,6 +326,7 @@ final class OwnerAttentionContractsTest extends TestCase
             sourceType: 'order_refund',
             sourceId: 42,
             category: 'owner_approval',
+            primaryBucket: 'needs_my_decision',
             module: 'retail',
             title: 'Refund request',
             conciseSummary: 'Review the requested refund.',
@@ -240,7 +335,36 @@ final class OwnerAttentionContractsTest extends TestCase
             comparableMonetaryExposure: 125.5,
             urgencyAt: null,
             actionableSince: '2026-08-15T09:00:00+08:00',
+            waitingOn: 'shop_owner',
+            ownerActionRequired: true,
+            coverageSource: 'refunds',
             destinationUrl: '/shop-owner/refund-approvals?refund=42',
+        );
+    }
+
+    private function classifiedExpense(
+        string $bucket,
+        string $waitingOn,
+        bool $ownerActionRequired,
+        string $coverage,
+    ): OwnerAttentionItem {
+        return new OwnerAttentionItem(
+            sourceType: 'expense',
+            sourceId: 1,
+            category: 'owner_approval',
+            primaryBucket: $bucket,
+            module: 'finance',
+            title: 'Expense',
+            conciseSummary: 'Review expense.',
+            priorityTier: 'high',
+            materialityTier: 'medium',
+            comparableMonetaryExposure: 1.0,
+            urgencyAt: null,
+            actionableSince: '2026-08-15T09:00:00+08:00',
+            waitingOn: $waitingOn,
+            ownerActionRequired: $ownerActionRequired,
+            coverageSource: $coverage,
+            destinationUrl: '/shop-owner/expense-approvals',
         );
     }
 }

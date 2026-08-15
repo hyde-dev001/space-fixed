@@ -244,6 +244,11 @@ final class OwnerActionCenterRouteTest extends TestCase
                 return $this->coverage;
             }
 
+            public function primaryBucket(): string
+            {
+                return 'needs_my_decision';
+            }
+
             public function read(ShopOwner $owner, OwnerAttentionQuery $query): OwnerAttentionAdapterResult
             {
                 if ($this->failure !== null) {

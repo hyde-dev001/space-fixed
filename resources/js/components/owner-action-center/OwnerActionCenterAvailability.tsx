@@ -9,6 +9,10 @@ const adapterLabels: Record<OwnerAttentionAdapterKey, string> = {
   repair_refunds: "Repair refunds",
   expenses: "Expenses",
   purchase_requests: "Purchase requests",
+  compliance_documents: "Compliance documents",
+  failed_order_refunds: "Order refund recovery",
+  failed_repair_refunds: "Repair refund recovery",
+  unowned_logistics_failures: "Logistics failures",
 };
 
 const actionCountLabel = (count: number): string => `${count} ${count === 1 ? "action" : "actions"}`;

@@ -23,6 +23,11 @@ final class PurchaseRequestAttentionAdapter implements OwnerAttentionAdapter
         return 'purchase_requests';
     }
 
+    public function primaryBucket(): string
+    {
+        return 'needs_my_decision';
+    }
+
     public function read(ShopOwner $owner, OwnerAttentionQuery $query): OwnerAttentionAdapterResult
     {
         if (strtolower(trim((string) $owner->registration_type)) !== 'company') {
@@ -63,6 +68,7 @@ final class PurchaseRequestAttentionAdapter implements OwnerAttentionAdapter
                 sourceType: 'purchase_request',
                 sourceId: (int) $request->getKey(),
                 category: 'purchase_request_approval',
+                primaryBucket: $this->primaryBucket(),
                 module: 'procurement',
                 title: 'Purchase request approval',
                 conciseSummary: 'Review the purchase request awaiting your decision.',
@@ -71,6 +77,9 @@ final class PurchaseRequestAttentionAdapter implements OwnerAttentionAdapter
                 comparableMonetaryExposure: $totalCost,
                 urgencyAt: null,
                 actionableSince: $actionableSince?->toISOString() ?? now()->toISOString(),
+                waitingOn: 'shop_owner',
+                ownerActionRequired: true,
+                coverageSource: $this->coverageSource(),
                 destinationUrl: route('shop-owner.purchase-request-approval', [], false)
                     .'?purchase_request='.$request->getKey(),
             );

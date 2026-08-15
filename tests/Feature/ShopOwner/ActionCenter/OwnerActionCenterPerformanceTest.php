@@ -95,6 +95,7 @@ final class OwnerActionCenterPerformanceTest extends TestCase
                     sourceType: $definition['source'],
                     sourceId: $id,
                     category: 'owner_approval',
+                    primaryBucket: 'needs_my_decision',
                     module: $definition['coverage'],
                     title: ucfirst(str_replace('_', ' ', $definition['source'])),
                     conciseSummary: 'Review this decision.',
@@ -103,6 +104,9 @@ final class OwnerActionCenterPerformanceTest extends TestCase
                     comparableMonetaryExposure: 10.0,
                     urgencyAt: null,
                     actionableSince: '2026-08-15T09:00:00+08:00',
+                    waitingOn: 'shop_owner',
+                    ownerActionRequired: true,
+                    coverageSource: $definition['coverage'],
                     destinationUrl: '/shop-owner/action-center?source='.$definition['coverage'],
                 );
             }
@@ -133,6 +137,11 @@ final class OwnerActionCenterPerformanceTest extends TestCase
                 public function coverageSource(): string
                 {
                     return $this->coverage;
+                }
+
+                public function primaryBucket(): string
+                {
+                    return 'needs_my_decision';
                 }
 
                 public function read(ShopOwner $owner, OwnerAttentionQuery $query): OwnerAttentionAdapterResult
