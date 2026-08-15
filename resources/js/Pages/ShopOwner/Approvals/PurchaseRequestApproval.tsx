@@ -1,6 +1,6 @@
 import { Head, usePage } from "@inertiajs/react";
 import type { ComponentType } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Swal from "sweetalert2";
 import axios from "axios";
 import AppLayout_shopOwner from "../../../layout/AppLayout_shopOwner";
@@ -29,6 +29,15 @@ interface PurchaseRequestApprovalItem {
 	requested_color?: string | null;
 	supplier?: { name?: string | null } | null;
 }
+
+const parsePositiveQueryId = (value: string | null): number | null => {
+	if (!value || !/^[1-9]\d*$/.test(value)) {
+		return null;
+	}
+
+	const id = Number(value);
+	return Number.isSafeInteger(id) ? id : null;
+};
 
 const priorityBadgeClass: Record<RequestPriority, string> = {
 	high: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
@@ -287,9 +296,28 @@ export default function PurchaseRequestApproval({ onModalStateChange }: Purchase
 	const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
 	const [currentPage, setCurrentPage] = useState(1);
 	const [viewingRequest, setViewingRequest] = useState<PurchaseRequestApprovalItem | null>(null);
+	const hasAppliedFocusPurchaseRequest = useRef(false);
 	useEffect(() => {
-		const id = Number(new URLSearchParams(window.location.search).get("purchase_request"));
-		if (id > 0) setViewingRequest(requests.find((request) => request.id === id) ?? null);
+		if (typeof window === "undefined" || hasAppliedFocusPurchaseRequest.current) {
+			return;
+		}
+
+		const params = new URLSearchParams(window.location.search);
+		const requestId = parsePositiveQueryId(params.get("purchase_request"));
+		if (requestId === null) {
+			return;
+		}
+
+		const matchedRequest = requests.find((request) => Number(request.id) === requestId);
+		if (!matchedRequest) {
+			return;
+		}
+
+		hasAppliedFocusPurchaseRequest.current = true;
+		setViewingRequest(matchedRequest);
+		params.delete("purchase_request");
+		const nextQuery = params.toString();
+		window.history.replaceState({}, "", `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}`);
 	}, [requests]);
 
 	const fetchPurchaseRequests = async () => {

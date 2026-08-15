@@ -306,6 +306,15 @@ interface RefundRequest {
 	};
 }
 
+const parsePositiveQueryId = (value: string | null): number | null => {
+	if (!value || !/^[1-9]\d*$/.test(value)) {
+		return null;
+	}
+
+	const id = Number(value);
+	return Number.isSafeInteger(id) ? id : null;
+};
+
 const isSameRefundRequest = (left: RefundRequest, right: RefundRequest): boolean => {
 	return left.id === right.id && (left.refundType || "order") === (right.refundType || "order");
 };
@@ -528,6 +537,7 @@ export default function RefundApproval() {
 	const [rejectError, setRejectError] = useState("");
 	const [hasCustomRejectMessage, setHasCustomRejectMessage] = useState(false);
 	const hasAppliedFocusOrder = useRef(false);
+	const hasAppliedFocusRefund = useRef(false);
 
 	useEffect(() => {
 		if (typeof window === "undefined") {
@@ -626,6 +636,29 @@ export default function RefundApproval() {
 		}
 
 		const params = new URLSearchParams(window.location.search);
+		const refundType = params.get("refund_type");
+		const refundId = parsePositiveQueryId(params.get("refund"));
+		if (
+			!hasAppliedFocusRefund.current &&
+			(refundType === "order" || refundType === "repair") &&
+			refundId !== null
+		) {
+			const matchedRefund = requests.find(
+				(request) => request.refundType === refundType && Number(request.id) === refundId,
+			);
+			if (matchedRefund) {
+				hasAppliedFocusRefund.current = true;
+				setSelectedRequest(matchedRefund);
+				setViewModalOpen(true);
+
+				params.delete("refund_type");
+				params.delete("refund");
+				const nextQuery = params.toString();
+				window.history.replaceState({}, "", `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}`);
+				return;
+			}
+		}
+
 		const focusOrder = String(params.get("focus_order") || "").trim().toLowerCase();
 		if (!focusOrder) {
 			return;

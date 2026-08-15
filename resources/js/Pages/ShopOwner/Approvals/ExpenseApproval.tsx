@@ -1,6 +1,6 @@
 import { Head, usePage } from "@inertiajs/react";
 import type { ComponentType } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Swal from "sweetalert2";
 import axios from "axios";
 import AppLayout_shopOwner from "../../../layout/AppLayout_shopOwner";
@@ -21,6 +21,15 @@ interface Expense {
 	receipt_path?: string | null;
 	receipt_original_name?: string | null;
 }
+
+const parsePositiveQueryId = (value: string | null): number | null => {
+	if (!value || !/^[1-9]\d*$/.test(value)) {
+		return null;
+	}
+
+	const id = Number(value);
+	return Number.isSafeInteger(id) ? id : null;
+};
 
 type MetricColor = "success" | "warning" | "info";
 
@@ -161,6 +170,7 @@ export default function ExpenseApproval({ onModalStateChange }: ExpenseApprovalP
 	const [currentPage, setCurrentPage] = useState(1);
 	const [viewing, setViewing] = useState<Expense | null>(null);
 	const [statusFilter, setStatusFilter] = useState<ExpenseStatus | 'all'>('all');
+	const hasAppliedFocusExpense = useRef(false);
 
 	const fetchExpenses = async () => {
 		try {
@@ -181,6 +191,29 @@ export default function ExpenseApproval({ onModalStateChange }: ExpenseApprovalP
 	useEffect(() => {
 		fetchExpenses();
 	}, []);
+
+	useEffect(() => {
+		if (typeof window === "undefined" || loading || hasAppliedFocusExpense.current) {
+			return;
+		}
+
+		const params = new URLSearchParams(window.location.search);
+		const expenseId = parsePositiveQueryId(params.get("expense"));
+		if (expenseId === null) {
+			return;
+		}
+
+		const matchedExpense = expenses.find((expense) => Number(expense.id) === expenseId);
+		if (!matchedExpense) {
+			return;
+		}
+
+		hasAppliedFocusExpense.current = true;
+		setViewing(matchedExpense);
+		params.delete("expense");
+		const nextQuery = params.toString();
+		window.history.replaceState({}, "", `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}`);
+	}, [expenses, loading]);
 
 	const filteredData = useMemo(() => {
 		const q = searchQuery.trim().toLowerCase();
