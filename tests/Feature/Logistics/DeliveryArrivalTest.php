@@ -9,6 +9,7 @@ use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
 use App\Models\ShopOwner;
+use App\Models\ShopOwnerModule;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Permission;
@@ -17,6 +18,22 @@ use Tests\TestCase;
 class DeliveryArrivalTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        ShopOwner::creating(function (ShopOwner $shop): void {
+            $shop->forceFill(['registration_type' => 'company']);
+        });
+        ShopOwner::created(function (ShopOwner $shop): void {
+            ShopOwnerModule::factory()->create([
+                'shop_owner_id' => $shop->id,
+                'module_key' => 'logistics',
+                'enabled' => true,
+            ]);
+        });
+    }
 
     public function test_assigned_rider_records_verified_pickup_without_changing_leg_status(): void
     {

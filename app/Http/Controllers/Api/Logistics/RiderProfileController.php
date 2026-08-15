@@ -7,15 +7,20 @@ use App\Models\Logistics\RiderProfile;
 use App\Models\ShopOwner;
 use App\Models\User;
 use App\Services\Logistics\RiderProfileSyncService;
+use App\Services\ShopModuleAccessService;
 use App\Support\Erp\ErpActorContext;
+use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 class RiderProfileController extends Controller
 {
+    public function __construct(private ShopModuleAccessService $modules) {}
+
     public function index(): JsonResponse
     {
         $shop = $this->authorizedShop('manage-logistics-riders');
@@ -119,15 +124,45 @@ class RiderProfileController extends Controller
 
     private function authorizedShop(string $permission): ShopOwner
     {
-        if ($shop = Auth::guard('shop_owner')->user()) {
-            return $shop;
-        }
+        $actor = Auth::guard('shop_owner')->user() ?? Auth::guard('user')->user();
+        abort_unless($actor instanceof Authenticatable, 403);
 
-        $user = Auth::guard('user')->user();
-        if (!$user instanceof User || !$user->shopOwner || !$user->can($permission)) {
+        $shop = $actor instanceof ShopOwner
+            ? $actor
+            : ($actor instanceof User && $actor->shop_owner_id
+                ? ShopOwner::find($actor->shop_owner_id)
+                : null);
+        abort_unless($shop, 403);
+
+        if ($actor instanceof User && ! $actor->can($permission)) {
+            $this->logDenial($actor, $shop, 'rider_admin', 'action_not_allowed');
             abort(403);
         }
 
-        return $user->shopOwner;
+        if (! $this->modules->canAccess($shop, 'logistics')) {
+            $this->logDenial($actor, $shop, 'rider_admin', 'module_unavailable');
+            abort(403);
+        }
+
+        return $shop;
+    }
+
+    private function logDenial(
+        Authenticatable $actor,
+        ShopOwner $shop,
+        string $action,
+        string $reasonCategory,
+    ): void {
+        Log::warning('Logistics action denied', [
+            'domain' => 'logistics',
+            'action' => $action,
+            'actor_guard' => $actor instanceof ShopOwner ? 'shop_owner' : 'user',
+            'actor_type' => $actor::class,
+            'shop_id' => (int) $shop->id,
+            'denial_category' => $reasonCategory,
+            'route_name' => (string) (request()->route()?->getName() ?? ''),
+            'correlation_id' => request()->header('X-Correlation-ID'),
+            'request_id' => request()->header('X-Request-ID'),
+        ]);
     }
 }

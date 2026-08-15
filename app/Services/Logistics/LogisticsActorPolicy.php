@@ -56,6 +56,9 @@ final class LogisticsActorPolicy
             ShipmentLegStatus::ASSIGNED,
         ],
         LogisticsAction::RESOLVE_EXCEPTION->value => [
+            ShipmentLegStatus::ASSIGNED,
+            ShipmentLegStatus::PICKED_UP,
+            ShipmentLegStatus::IN_TRANSIT,
             ShipmentLegStatus::DELIVERY_ATTEMPTED,
             ShipmentLegStatus::NEEDS_RESOLUTION,
         ],
@@ -66,14 +69,33 @@ final class LogisticsActorPolicy
             ShipmentLegStatus::PICKED_UP,
             ShipmentLegStatus::IN_TRANSIT,
             ShipmentLegStatus::DELIVERY_ATTEMPTED,
+            ShipmentLegStatus::AWAITING_PROOF_APPROVAL,
+            ShipmentLegStatus::PROOF_CORRECTION_REQUIRED,
         ],
-        LogisticsAction::REVIEW_PROOF->value => [ShipmentLegStatus::AWAITING_PROOF_APPROVAL],
+        LogisticsAction::REVIEW_PROOF->value => [
+            ShipmentLegStatus::AWAITING_PROOF_APPROVAL,
+            ShipmentLegStatus::DELIVERED,
+            ShipmentLegStatus::PROOF_CORRECTION_REQUIRED,
+        ],
         LogisticsAction::CONFIRM_RETURN_RECEIPT->value => [
             ShipmentLegStatus::PICKED_UP,
             ShipmentLegStatus::IN_TRANSIT,
             ShipmentLegStatus::DELIVERY_ATTEMPTED,
             ShipmentLegStatus::DELIVERED,
         ],
+    ];
+
+    /** @var array<int, ShipmentLegStatus> */
+    private const CUSTODY_STATES = [
+        ShipmentLegStatus::PENDING,
+        ShipmentLegStatus::ASSIGNED,
+        ShipmentLegStatus::PICKUP_SCHEDULED,
+        ShipmentLegStatus::PICKED_UP,
+        ShipmentLegStatus::IN_TRANSIT,
+        ShipmentLegStatus::DELIVERY_ATTEMPTED,
+        ShipmentLegStatus::AWAITING_PROOF_APPROVAL,
+        ShipmentLegStatus::PROOF_CORRECTION_REQUIRED,
+        ShipmentLegStatus::NEEDS_RESOLUTION,
     ];
 
     public function __construct(
@@ -173,6 +195,108 @@ final class LogisticsActorPolicy
     }
 
     /**
+     * Decide whether an authenticated actor may assert physical custody of a
+     * leg. The endpoint chooses its own existing capability requirement; the
+     * policy supplies the shared tenant, module, source-state, identity, and
+     * exact-assignment checks.
+     *
+     * @return array{allowed: bool, action: string, reason_category: ?string}
+     */
+    public function decideCustody(
+        Authenticatable $actor,
+        ShopOwner $shop,
+        ShipmentLeg $leg,
+        ?string $requiredCapability = null,
+    ): array {
+        $action = LogisticsAction::SUBMIT_PROOF;
+
+        $contextDecision = $this->custodyContextDecision($actor, $shop, $leg, $action);
+        if ($contextDecision !== null) {
+            return $contextDecision;
+        }
+
+        if (! $this->hasValidState($leg, self::CUSTODY_STATES)) {
+            return $this->deny($action, 'source_state_invalid');
+        }
+
+        if ($requiredCapability !== null
+            && $actor instanceof User
+            && ! $actor->can($requiredCapability)) {
+            return $this->deny($action, 'action_not_allowed');
+        }
+
+        return $this->custodyDecision($actor, $shop, $leg, $action);
+    }
+
+    /**
+     * Return-handoff confirmation has one terminal replay: the same assigned
+     * rider may repeat a handoff request after the shop has already received
+     * and approved the return proof. Other terminal custody requests remain
+     * denied by decideCustody().
+     *
+     * @return array{allowed: bool, action: string, reason_category: ?string}
+     */
+    public function decideReturnHandoff(
+        Authenticatable $actor,
+        ShopOwner $shop,
+        ShipmentLeg $leg,
+        HandoffProof $proof,
+    ): array {
+        $action = LogisticsAction::SUBMIT_PROOF;
+        $contextDecision = $this->custodyContextDecision($actor, $shop, $leg, $action);
+        if ($contextDecision !== null) {
+            return $contextDecision;
+        }
+
+        if ($leg->leg_type !== 'return_to_shop'
+            || (int) $proof->shipment_leg_id !== (int) $leg->id
+            || $proof->handoff_type !== 'receive') {
+            return $this->deny($action, 'source_state_invalid');
+        }
+
+        if ($leg->status->value === 'delivered') {
+            return $proof->review_status === 'approved'
+                ? $this->custodyDecision($actor, $shop, $leg, $action)
+                : $this->deny($action, 'source_state_invalid');
+        }
+
+        if (! $this->hasValidState($leg, self::CUSTODY_STATES)) {
+            return $this->deny($action, 'source_state_invalid');
+        }
+
+        if (! in_array($proof->review_status, ['pending', 'rider_confirmed'], true)) {
+            return $this->deny($action, 'source_state_invalid');
+        }
+
+        return $this->custodyDecision($actor, $shop, $leg, $action);
+    }
+
+    public function resolveAssignedRider(
+        Authenticatable $actor,
+        ShopOwner $shop,
+        ShipmentLeg $leg,
+    ): ?RiderProfile {
+        $profile = $this->custodyProfile($actor, $shop);
+        if (! $profile) {
+            return null;
+        }
+
+        return $profile->assignments()
+            ->where('shipment_leg_id', $leg->id)
+            ->whereIn('status', ['assigned', 'accepted'])
+            ->exists()
+            ? $profile
+            : null;
+    }
+
+    public function resolveRiderProfile(
+        Authenticatable $actor,
+        ShopOwner $shop,
+    ): ?RiderProfile {
+        return $this->custodyProfile($actor, $shop);
+    }
+
+    /**
      * @return array{allowed: bool, action: string, reason_category: ?string}
      */
     private function custodyDecision(
@@ -181,29 +305,40 @@ final class LogisticsActorPolicy
         ShipmentLeg $leg,
         LogisticsAction $action,
     ): array {
-        $profileType = $actor instanceof ShopOwner ? ShopOwner::class : User::class;
-        $riderType = $actor instanceof ShopOwner ? 'shop_owner' : 'employee';
-        $profile = RiderProfile::query()
-            ->where('shop_owner_id', $shop->id)
-            ->where('rider_type', $riderType)
-            ->where('linked_type', $profileType)
-            ->where('linked_id', $actor->getAuthIdentifier())
-            ->where('active', true)
-            ->where('availability_status', '!=', 'inactive')
-            ->first();
+        $profile = $this->custodyProfile($actor, $shop);
 
         if (! $profile) {
             return $this->deny($action, 'rider_identity_required');
         }
 
-        $hasAssignment = $profile->assignments()
-            ->where('shipment_leg_id', $leg->id)
-            ->whereIn('status', ['assigned', 'accepted'])
-            ->exists();
-
-        return $hasAssignment
+        return $this->resolveAssignedRider($actor, $shop, $leg)
             ? $this->allow($action)
             : $this->deny($action, 'active_assignment_required');
+    }
+
+    /**
+     * @return array{allowed: bool, action: string, reason_category: ?string}|null
+     */
+    private function custodyContextDecision(
+        Authenticatable $actor,
+        ShopOwner $shop,
+        ShipmentLeg $leg,
+        LogisticsAction $action,
+    ): ?array {
+        if (! $this->actorBelongsToShop($actor, $shop)) {
+            return $this->deny($action, 'cross_shop');
+        }
+
+        $leg->loadMissing('shipment');
+        if (! $leg->shipment || (int) $leg->shipment->shop_owner_id !== (int) $shop->id) {
+            return $this->deny($action, 'cross_shop');
+        }
+
+        if (! $this->modules->canAccess($shop, 'logistics')) {
+            return $this->deny($action, 'module_unavailable');
+        }
+
+        return null;
     }
 
     private function reviewProofDecision(
@@ -214,6 +349,16 @@ final class LogisticsActorPolicy
     ): ?array {
         if (! $proof) {
             return $this->deny($action, 'source_record_required');
+        }
+
+        if ($proof->review_status === 'approved'
+            && $leg->status === ShipmentLegStatus::DELIVERED) {
+            return null;
+        }
+
+        if ($proof->review_status === 'rejected'
+            && $leg->status === ShipmentLegStatus::PROOF_CORRECTION_REQUIRED) {
+            return null;
         }
 
         if ($proof->handoff_type !== 'delivery' || $proof->review_status !== 'pending') {
@@ -239,8 +384,15 @@ final class LogisticsActorPolicy
     ): ?array {
         if ($leg->leg_type !== 'return_to_shop'
             || ! $proof
-            || $proof->handoff_type !== 'receive'
-            || $proof->review_status !== 'rider_confirmed') {
+            || $proof->handoff_type !== 'receive') {
+            return $this->deny($action, 'source_state_invalid');
+        }
+
+        if ($leg->status->value === 'delivered' && $proof->review_status === 'approved') {
+            return null;
+        }
+
+        if ($proof->review_status !== 'rider_confirmed') {
             return $this->deny($action, 'source_state_invalid');
         }
 
@@ -270,13 +422,35 @@ final class LogisticsActorPolicy
 
     private function hasValidSourceState(LogisticsAction $action, ShipmentLeg $leg): bool
     {
+        return $this->hasValidState($leg, self::SOURCE_STATES[$action->value]);
+    }
+
+    /**
+     * @param  array<int, ShipmentLegStatus>  $allowedStates
+     */
+    private function hasValidState(ShipmentLeg $leg, array $allowedStates): bool
+    {
         $status = $leg->status;
         if (! $status instanceof ShipmentLegStatus) {
             $status = ShipmentLegStatus::tryFrom((string) $status);
         }
 
-        return $status instanceof ShipmentLegStatus
-            && in_array($status, self::SOURCE_STATES[$action->value], true);
+        return $status instanceof ShipmentLegStatus && in_array($status, $allowedStates, true);
+    }
+
+    private function custodyProfile(Authenticatable $actor, ShopOwner $shop): ?RiderProfile
+    {
+        $profileType = $actor instanceof ShopOwner ? ShopOwner::class : User::class;
+        $riderType = $actor instanceof ShopOwner ? 'shop_owner' : 'employee';
+
+        return RiderProfile::query()
+            ->where('shop_owner_id', $shop->id)
+            ->where('rider_type', $riderType)
+            ->where('linked_type', $profileType)
+            ->where('linked_id', $actor->getAuthIdentifier())
+            ->where('active', true)
+            ->where('availability_status', '!=', 'inactive')
+            ->first();
     }
 
     private function hasCapability(Authenticatable $actor, LogisticsAction $action): bool

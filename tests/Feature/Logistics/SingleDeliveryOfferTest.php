@@ -7,6 +7,7 @@ use App\Models\Logistics\DeliveryEvent;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
 use App\Models\ShopOwner;
+use App\Models\ShopOwnerModule;
 use App\Models\User;
 use App\Services\Logistics\ShipmentLegService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -16,6 +17,19 @@ use Tests\TestCase;
 class SingleDeliveryOfferTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        ShopOwner::created(function (ShopOwner $shop): void {
+            ShopOwnerModule::factory()->create([
+                'shop_owner_id' => $shop->id,
+                'module_key' => 'logistics',
+                'enabled' => true,
+            ]);
+        });
+    }
 
     public function test_rider_can_accept_or_reject_a_single_delivery_offer(): void
     {

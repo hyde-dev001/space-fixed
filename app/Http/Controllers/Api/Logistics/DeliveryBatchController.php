@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Logistics;
 
 use App\Http\Controllers\Controller;
+use App\Enums\Logistics\LogisticsAction;
 use App\Models\Logistics\DeliveryBatch;
 use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
@@ -11,12 +12,21 @@ use App\Models\ShopOwner;
 use App\Models\User;
 use App\Services\Logistics\BatchDispatchService;
 use App\Services\Logistics\BatchSuggestionService;
+use App\Services\Logistics\LogisticsActorPolicy;
+use App\Services\ShopModuleAccessService;
+use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 
 class DeliveryBatchController extends Controller
 {
+    public function __construct(
+        private LogisticsActorPolicy $policy,
+        private ShopModuleAccessService $modules,
+    ) {}
+
     public function index(Request $request): JsonResponse
     {
         $shop = $this->dispatcherShop();
@@ -58,6 +68,13 @@ class DeliveryBatchController extends Controller
             'delivery_window' => ['required', 'in:morning,afternoon'],
             'leg_ids' => ['required', 'array', 'min:1'], 'leg_ids.*' => ['integer', 'distinct'],
         ]);
+        $legs = ShipmentLeg::query()
+            ->with('shipment')
+            ->whereIn('id', $data['leg_ids'])
+            ->get();
+        foreach ($legs as $leg) {
+            $this->authorizeAction(LogisticsAction::SCHEDULE_DELIVERY, $leg, $shop);
+        }
         $service->schedule($shop, $data['delivery_date'], $data['delivery_window'], $data['leg_ids']);
         return response()->json(['message' => 'Deliveries scheduled.']);
     }
@@ -125,26 +142,119 @@ class DeliveryBatchController extends Controller
 
     private function dispatcherShop(?DeliveryBatch $batch = null): ShopOwner
     {
-        $shop = Auth::guard('shop_owner')->user();
-        if (!$shop) {
-            $user = Auth::guard('user')->user();
-            abort_unless($user?->shop_owner_id && ($user->can('manage-logistics-batches') || $user->can('assign-logistics-deliveries')), 403);
-            $shop = ShopOwner::findOrFail($user->shop_owner_id);
+        $actor = $this->authenticatedActor();
+        $shop = $actor instanceof ShopOwner
+            ? $actor
+            : ($actor instanceof User && $actor->shop_owner_id
+                ? ShopOwner::find($actor->shop_owner_id)
+                : null);
+        abort_unless($shop, 403);
+
+        if ($actor instanceof User) {
+            if (! $actor->can('manage-logistics-batches') && ! $actor->can('assign-logistics-deliveries')) {
+                $this->logDenial($actor, $shop, 'batch_manage', 'action_not_allowed');
+                abort(403);
+            }
         }
-        abort_if($batch && $batch->shop_owner_id !== $shop->id, 403);
+
+        if (! $this->modules->canAccess($shop, 'logistics')) {
+            $this->logDenial($actor, $shop, 'batch_manage', 'module_unavailable');
+            abort(403);
+        }
+
+        if ($batch && (int) $batch->shop_owner_id !== (int) $shop->id) {
+            $this->logDenial($actor, $shop, 'batch_manage', 'cross_shop');
+            abort(403);
+        }
+
         return $shop;
     }
 
     private function assignedRider(DeliveryBatch $batch): RiderProfile
     {
-        $user = Auth::guard('user')->user();
-        abort_unless($user instanceof User && (int) $user->shop_owner_id === (int) $batch->shop_owner_id, 403);
+        $actor = $this->authenticatedActor(false);
+        $shop = $actor instanceof ShopOwner
+            ? $actor
+            : ($actor instanceof User && $actor->shop_owner_id
+                ? ShopOwner::find($actor->shop_owner_id)
+                : null);
+        if (! $shop) {
+            abort(403);
+        }
+        if ((int) $shop->id !== (int) $batch->shop_owner_id) {
+            $this->logDenial($actor, $shop, 'batch_accept', 'cross_shop');
+            abort(403);
+        }
+        if (! $this->modules->canAccess($shop, 'logistics')) {
+            $this->logDenial($actor, $shop, 'batch_accept', 'module_unavailable');
+            abort(403);
+        }
+        $linkedType = $actor instanceof ShopOwner ? ShopOwner::class : User::class;
+        $riderType = $actor instanceof ShopOwner ? 'shop_owner' : 'employee';
         $rider = RiderProfile::query()
             ->where('shop_owner_id', $batch->shop_owner_id)
             ->whereKey($batch->rider_profile_id)
-            ->where('linked_type', User::class)->where('linked_id', $user->id)->first();
-        abort_unless($rider, 403);
+            ->where('rider_type', $riderType)
+            ->where('linked_type', $linkedType)
+            ->where('linked_id', $actor->getAuthIdentifier())
+            ->where('active', true)
+            ->where('availability_status', '!=', 'inactive')
+            ->first();
+        if (! $rider) {
+            $this->logDenial($actor, $shop, 'batch_accept', 'rider_identity_required');
+            abort(403);
+        }
+
+        if (! $batch->legs()
+            ->whereHas('assignments', fn ($query) => $query
+                ->where('rider_profile_id', $rider->id)
+                ->whereIn('status', ['assigned', 'accepted']))
+            ->exists()) {
+            $this->logDenial($actor, $shop, 'batch_accept', 'active_assignment_required');
+            abort(403);
+        }
+
         return $rider;
+    }
+
+    private function authorizeAction(LogisticsAction $action, ShipmentLeg $leg, ShopOwner $shop): void
+    {
+        $actor = $this->authenticatedActor();
+        $decision = $this->policy->decide($actor, $action, $shop, $leg);
+        if (! $decision['allowed']) {
+            $this->logDenial($actor, $shop, $decision['action'], $decision['reason_category']);
+            abort(403);
+        }
+    }
+
+    private function authenticatedActor(bool $preferShopOwner = true): Authenticatable
+    {
+        $guards = $preferShopOwner ? ['shop_owner', 'user'] : ['user', 'shop_owner'];
+        $actor = collect($guards)
+            ->map(fn (string $guard) => Auth::guard($guard)->user())
+            ->first(fn ($candidate) => $candidate instanceof Authenticatable);
+        abort_unless($actor instanceof Authenticatable, 403);
+
+        return $actor;
+    }
+
+    private function logDenial(
+        Authenticatable $actor,
+        ShopOwner $shop,
+        string $action,
+        ?string $reasonCategory,
+    ): void {
+        Log::warning('Logistics action denied', [
+            'domain' => 'logistics',
+            'action' => $action,
+            'actor_guard' => $actor instanceof ShopOwner ? 'shop_owner' : 'user',
+            'actor_type' => $actor::class,
+            'shop_id' => (int) $shop->id,
+            'denial_category' => $reasonCategory,
+            'route_name' => (string) (request()->route()?->getName() ?? ''),
+            'correlation_id' => request()->header('X-Correlation-ID'),
+            'request_id' => request()->header('X-Request-ID'),
+        ]);
     }
 
     private function module(ShopOwner $shop, string $requested): string

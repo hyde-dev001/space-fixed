@@ -12,6 +12,14 @@ use Illuminate\Validation\ValidationException;
 
 class ProofService
 {
+    /** @var array<int, string> */
+    private const NON_CUSTODY_PROOF_TYPES = [
+        'staff_confirmation',
+        'customer_confirmation',
+        'courier_receipt',
+        'tracking_confirmation',
+    ];
+
     public function __construct(
         private DeliveryEventService $events,
         private RiderActiveWorkGuard $activeWork,
@@ -100,6 +108,11 @@ class ProofService
                 }
 
                 $this->assertCanRecord($leg, $data['handoff_type']);
+                if (! $rider && ! in_array($data['proof_type'], self::NON_CUSTODY_PROOF_TYPES, true)) {
+                    throw ValidationException::withMessages([
+                        'rider' => 'A linked assigned rider is required for custody proof.',
+                    ]);
+                }
             }
 
             $proof = $leg->proofs()->create([

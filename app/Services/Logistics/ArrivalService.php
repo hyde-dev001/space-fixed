@@ -6,7 +6,7 @@ use App\Models\Logistics\DeliveryAssignment;
 use App\Models\Logistics\DeliveryBatch;
 use App\Models\Logistics\DeliveryEvent;
 use App\Models\Logistics\ShipmentLeg;
-use App\Models\User;
+use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -27,7 +27,7 @@ class ArrivalService
         private RiderActiveWorkGuard $activeWork,
     ) {}
 
-    public function record(ShipmentLeg $leg, User $actor, array $payload): DeliveryEvent
+    public function record(ShipmentLeg $leg, Authenticatable $actor, array $payload): DeliveryEvent
     {
         return DB::transaction(function () use ($leg, $actor, $payload) {
             $leg = ShipmentLeg::query()
@@ -40,8 +40,8 @@ class ArrivalService
             $assignment = $leg->assignments()
                 ->whereIn('status', ['assigned', 'accepted'])
                 ->whereHas('riderProfile', fn ($query) => $query
-                    ->where('linked_type', User::class)
-                    ->where('linked_id', $actor->id))
+                    ->where('linked_type', $actor::class)
+                    ->where('linked_id', $actor->getAuthIdentifier()))
                 ->latest('id')
                 ->lockForUpdate()
                 ->first();
@@ -97,8 +97,8 @@ class ArrivalService
                     'exception_notes' => $payload['exception_notes'] ?? null,
                     'delivery_assignment_id' => $assignment->id,
                 ],
-                'created_by_type' => User::class,
-                'created_by_id' => $actor->id,
+                'created_by_type' => $actor::class,
+                'created_by_id' => $actor->getAuthIdentifier(),
             ]);
         });
     }
