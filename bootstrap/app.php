@@ -52,6 +52,9 @@ return Application::configure(basePath: dirname(__DIR__))
                 ->group(base_path('routes/shop-owner-erp.php'));
 
             Route::middleware('web')
+                ->group(base_path('routes/shop-owner-shell.php'));
+
+            Route::middleware('web')
                 ->group(base_path('routes/shop-owner-erp-api.php'));
 
             $isErpRoute = static function (string $routeName): bool {

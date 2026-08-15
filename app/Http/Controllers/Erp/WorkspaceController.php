@@ -32,8 +32,13 @@ final class WorkspaceController extends Controller
         return response()->json($this->payload($request));
     }
 
-    public function module(Request $request, string $module): InertiaResponse|\Symfony\Component\HttpFoundation\Response
+    public function module(Request $request, ?string $module = null): InertiaResponse|\Symfony\Component\HttpFoundation\Response
     {
+        $module ??= $request->route('module');
+        if (! is_string($module) || $module === '') {
+            abort(404);
+        }
+
         $context = $request->attributes->get('erp.actor_context');
         if (! $context instanceof ErpActorContext) {
             abort(500);

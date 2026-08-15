@@ -43,6 +43,7 @@ final class ErpAccessResponder
         $routeName = (string) ($request->route()?->getName() ?? '');
 
         return str_starts_with($routeName, 'shop-owner.erp.')
+            || str_starts_with($routeName, 'shop-owner.shell.')
             || str_starts_with($routeName, 'shop_owner.erp.');
     }
 

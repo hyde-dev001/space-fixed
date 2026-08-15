@@ -1925,6 +1925,94 @@ foreach ($ownerOperationalApiRouteGroups as $group) {
     }
 }
 
+$canonicalShellModuleRoutes = [
+    'shop-owner.shell.operate.retail' => [
+        'module_keys' => ['retail_operations'],
+        'mode' => 'single',
+        'supporting_routes' => ['shop-owner.erp.module'],
+    ],
+    'shop-owner.shell.operate.repair' => [
+        'module_keys' => ['repair_operations'],
+        'mode' => 'single',
+        'supporting_routes' => ['shop-owner.erp.module'],
+    ],
+    'shop-owner.shell.operate.customers' => [
+        'module_keys' => ['crm'],
+        'mode' => 'single',
+        'supporting_routes' => ['shop-owner.erp.module'],
+    ],
+    'shop-owner.shell.operate.payments' => [
+        'module_keys' => ['retail_operations', 'repair_operations'],
+        'mode' => 'any_of',
+        'supporting_routes' => ['shop-owner.point-of-sale', 'shop-owner.erp.repair.point-of-sale'],
+    ],
+    'shop-owner.shell.oversee.finance' => [
+        'module_keys' => ['finance'],
+        'mode' => 'single',
+        'supporting_routes' => ['shop-owner.erp.module'],
+    ],
+    'shop-owner.shell.oversee.workforce' => [
+        'module_keys' => ['hr_employees'],
+        'mode' => 'single',
+        'supporting_routes' => ['shop-owner.erp.module'],
+    ],
+    'shop-owner.shell.oversee.inventory' => [
+        'module_keys' => ['inventory'],
+        'mode' => 'single',
+        'supporting_routes' => ['shop-owner.erp.module'],
+    ],
+    'shop-owner.shell.oversee.procurement' => [
+        'module_keys' => ['procurement'],
+        'mode' => 'single',
+        'supporting_routes' => ['shop-owner.erp.module'],
+    ],
+    'shop-owner.shell.oversee.logistics' => [
+        'module_keys' => ['logistics'],
+        'mode' => 'single',
+        'supporting_routes' => ['shop-owner.erp.module'],
+    ],
+];
+
+foreach ($canonicalShellModuleRoutes as $routeName => $definition) {
+    $route = $routeEntry(
+        modules: $modules,
+        classification: 'module',
+        mode: $definition['mode'],
+        moduleKeys: $definition['module_keys'],
+        methods: ['GET'],
+        audience: 'shop_owner',
+        actorGuard: 'shop_owner',
+        action: 'view',
+        ownerDenialReason: 'owner_operation_not_reviewed',
+        navigationGroup: null,
+        selfService: false,
+    );
+    $route['owner_access'] = 'allowed';
+    $route['owner_denial_reason'] = null;
+    $route['paired_route'] = null;
+    $route['navigation_visible'] = false;
+    $route['supporting_routes'] = $definition['supporting_routes'];
+    $routes[$routeName] = $route;
+}
+
+foreach ([
+    'shop-owner.shell.reports' => 'shop-owner.erp.manager.reports',
+    'shop-owner.shell.audit' => 'shop-owner.erp.manager.audit-logs',
+] as $routeName => $sourceRouteName) {
+    if (! isset($routes[$sourceRouteName])) {
+        continue;
+    }
+
+    $route = $routes[$sourceRouteName];
+    $route['paired_route'] = null;
+    $route['navigation_visible'] = false;
+    $route['navigation_group'] = null;
+    $route['navigation_label'] = null;
+    $route['navigation_order'] = null;
+    $route['supporting_routes'] = [$sourceRouteName];
+    $routes[$routeName] = $route;
+}
+
 return [
     'enforcement_enabled' => (bool) env('SHOP_MODULE_ENFORCEMENT_ENABLED', false),
     'owner_erp_workspace_enabled' => (bool) env('SHOP_OWNER_ERP_WORKSPACE_ENABLED', false),
