@@ -1,0 +1,172 @@
+import React from "react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import type { OwnerShellMetadata } from "../../types/ownerShell";
+import CanonicalOwnerLayout from "../CanonicalOwnerLayout";
+import AppLayoutShopOwner from "../AppLayout_shopOwner";
+import AppLayoutERP from "../AppLayout_ERP";
+
+const state = vi.hoisted(() => ({
+  ownerShell: null as OwnerShellMetadata | null,
+  auth: {} as Record<string, unknown>,
+}));
+
+vi.mock("@inertiajs/react", () => ({
+  usePage: () => ({ url: "/shop-owner/home", props: { auth: state.auth, ownerShell: state.ownerShell } }),
+  Link: ({ href, children, ...props }: React.PropsWithChildren<{ href: string }>) => (
+    <a href={href} {...props}>{children}</a>
+  ),
+}));
+
+vi.mock("../CanonicalOwnerSidebar", () => ({
+  default: () => <aside data-testid="canonical-owner-sidebar" />,
+}));
+
+vi.mock("../AppSidebar_shopOwner", () => ({ default: () => <aside data-testid="existing-owner-sidebar" /> }));
+vi.mock("../AppHeader_shopOwner", () => ({ default: () => <header data-testid="existing-owner-header" /> }));
+vi.mock("../AppSidebar_ERP", () => ({ default: () => <aside data-testid="existing-erp-sidebar" /> }));
+vi.mock("../AppHeader_ERP", () => ({ default: () => <header data-testid="existing-erp-header" /> }));
+
+vi.mock("../../components/common/NotificationBell", () => ({
+  default: () => <button type="button" aria-label="Notifications">Notifications</button>,
+}));
+
+vi.mock("../../components/common/ThemeToggleButton", () => ({
+  ThemeToggleButton: () => <button type="button" aria-label="Toggle theme">Theme</button>,
+}));
+
+vi.mock("../../components/header/ShopOwnerDropdown", () => ({
+  default: () => <div data-testid="shop-owner-dropdown" />,
+}));
+
+const metadata: OwnerShellMetadata = {
+  presentation: "canonical",
+  selection_reason: "shop_allowlisted",
+  context: "individual",
+  groups: [{
+    key: "home",
+    label: "Home",
+    order: 0,
+    default_expanded: true,
+    items: [{
+      key: "home",
+      label: "Home",
+      canonical_url: "/shop-owner/home",
+      available: true,
+      unavailable_reason: null,
+      management_url: null,
+      active_matching: ["/shop-owner/home"],
+    }],
+  }],
+  compatibility: {
+    show_erp_fallback: false,
+    erp_workspace_url: null,
+    fallback_url: null,
+  },
+};
+
+beforeEach(() => {
+  state.ownerShell = metadata;
+  state.auth = {};
+  Object.defineProperty(window, "innerWidth", {
+    configurable: true,
+    writable: true,
+    value: 500,
+  });
+  window.route = (name: string) => name === "landing" ? "/" : `/${name}`;
+});
+
+afterEach(() => {
+  state.ownerShell = null;
+  state.auth = {};
+});
+
+it("restores focus to the mobile menu trigger after the canonical drawer closes", async () => {
+  render(
+    <CanonicalOwnerLayout metadata={metadata}>
+      <div>canonical content</div>
+    </CanonicalOwnerLayout>,
+  );
+
+  const trigger = screen.getByRole("button", { name: "Toggle Sidebar" });
+  fireEvent.click(trigger);
+
+  const backdrop = await screen.findByTestId("sidebar-backdrop");
+  expect(backdrop).toHaveClass("motion-reduce:transition-none");
+  fireEvent.click(backdrop);
+
+  await waitFor(() => expect(trigger).toHaveFocus());
+});
+
+it("keeps the canonical frame and reduced-motion transition hooks present", () => {
+  render(
+    <CanonicalOwnerLayout metadata={metadata}>
+      <div>canonical content</div>
+    </CanonicalOwnerLayout>,
+  );
+
+  expect(screen.getByTestId("canonical-owner-frame")).toHaveClass("motion-reduce:transition-none");
+  expect(screen.getByTestId("canonical-owner-sidebar")).toBeInTheDocument();
+  expect(screen.getByText("canonical content")).toBeInTheDocument();
+});
+
+it("selects the canonical frame for a direct Shop Owner page", () => {
+  state.auth = { shop_owner: { id: 1 } };
+  render(<AppLayoutShopOwner><div>owner page</div></AppLayoutShopOwner>);
+
+  expect(screen.getByTestId("canonical-owner-frame")).toContainElement(screen.getByText("owner page"));
+  expect(screen.queryByTestId("existing-owner-sidebar")).not.toBeInTheDocument();
+});
+
+it("keeps the existing Shop Owner frame when canonical metadata is absent", () => {
+  state.ownerShell = null;
+  state.auth = { shop_owner: { id: 1 } };
+  render(<AppLayoutShopOwner><div>owner page</div></AppLayoutShopOwner>);
+
+  expect(screen.getByTestId("existing-owner-sidebar")).toBeInTheDocument();
+  expect(screen.queryByTestId("canonical-owner-frame")).not.toBeInTheDocument();
+});
+
+it("selects the canonical frame for owner-mode ERP pages", () => {
+  state.auth = { erpActor: { type: "shop_owner", ownerMode: true } };
+  render(<AppLayoutERP><div>owner ERP page</div></AppLayoutERP>);
+
+  expect(screen.getByTestId("canonical-owner-frame")).toContainElement(screen.getByText("owner ERP page"));
+  expect(screen.queryByTestId("existing-erp-sidebar")).not.toBeInTheDocument();
+});
+
+it("keeps the existing ERP frame for owner-mode pages on existing presentation", () => {
+  state.ownerShell = null;
+  state.auth = { erpActor: { type: "shop_owner", ownerMode: true } };
+  render(<AppLayoutERP><div>owner ERP page</div></AppLayoutERP>);
+
+  expect(screen.getByTestId("existing-erp-sidebar")).toBeInTheDocument();
+  expect(screen.queryByTestId("canonical-owner-frame")).not.toBeInTheDocument();
+});
+
+it("never selects the owner frame for employee ERP pages", () => {
+  state.auth = { erpActor: { type: "employee", ownerMode: false } };
+  render(<AppLayoutERP><div>employee ERP page</div></AppLayoutERP>);
+
+  expect(screen.getByTestId("existing-erp-sidebar")).toBeInTheDocument();
+  expect(screen.queryByTestId("canonical-owner-frame")).not.toBeInTheDocument();
+});
+
+it("keeps the existing frame when canonical metadata is incomplete", () => {
+  state.ownerShell = {
+    presentation: "canonical",
+    selection_reason: "shop_allowlisted",
+    context: "company",
+    groups: [],
+    compatibility: {
+      show_erp_fallback: false,
+      erp_workspace_url: null,
+      fallback_url: null,
+    },
+  };
+  state.auth = { shop_owner: { id: 1 } };
+  render(<AppLayoutShopOwner><div>owner page</div></AppLayoutShopOwner>);
+
+  expect(screen.getByTestId("existing-owner-sidebar")).toBeInTheDocument();
+  expect(screen.queryByTestId("canonical-owner-frame")).not.toBeInTheDocument();
+});

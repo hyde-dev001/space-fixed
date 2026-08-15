@@ -14,6 +14,7 @@ const state = vi.hoisted(() => ({
   erpActor: null as null | { type: string; ownerMode: boolean },
   erpCapabilities: {} as Record<string, unknown>,
   erpUrls: { portal: null as string | null | undefined, workspace: null as string | null },
+  ownerShell: null as Record<string, unknown> | null,
   activeModule: null as null | {
     key: string;
     slug: string;
@@ -44,6 +45,7 @@ vi.mock('@inertiajs/react', () => ({
       moduleStates: state.moduleStates,
       shopModuleEnforcementEnabled: state.moduleEnforcementEnabled,
       erpUrls: state.erpUrls,
+      ownerShell: state.ownerShell,
       activeModule: state.activeModule,
     },
   }),
@@ -95,6 +97,7 @@ beforeEach(() => {
   state.erpActor = null;
   state.erpCapabilities = {};
   state.erpUrls = { portal: null, workspace: null };
+  state.ownerShell = null;
   state.activeModule = null;
   state.shopOwner = {
     registration_type: 'company',
@@ -248,6 +251,24 @@ it('keeps the employee ERP primary entries when no ownerShell metadata is provid
 
   expect(screen.getByRole('link', { name: /Log Attendance/i })).toBeInTheDocument();
   expect(screen.getByRole('link', { name: /settings/i })).toBeInTheDocument();
+});
+
+it('keeps employee ERP navigation when canonical owner metadata is shared', () => {
+  state.erpActor = null;
+  state.ownerShell = {
+    presentation: 'canonical',
+    context: 'company',
+    groups: [],
+  };
+  state.role = 'Logistics Dispatcher';
+  state.roles = ['Logistics Dispatcher'];
+  state.permissions = ['access-logistics-dashboard', 'configure-logistics-settings'];
+
+  render(<AppSidebarERP />);
+
+  expect(screen.getByRole('link', { name: /Log Attendance/i })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: /settings/i })).toBeInTheDocument();
+  expect(screen.queryByTestId('canonical-owner-sidebar')).not.toBeInTheDocument();
 });
 
 it('preserves the employee HR attendance and payroll groups', () => {

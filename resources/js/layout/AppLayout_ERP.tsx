@@ -2,6 +2,9 @@ import { SidebarProvider, useSidebar } from "../context/SidebarContext";
 import AppHeader_ERP from "./AppHeader_ERP";
 import Backdrop from "./Backdrop";
 import AppSidebar_ERP from "./AppSidebar_ERP";
+import CanonicalOwnerLayout from "./CanonicalOwnerLayout";
+import { isOwnerModeErpContext, readCanonicalOwnerShell } from "./ownerShellMetadata";
+import { usePage } from "@inertiajs/react";
 import { ReactNode } from "react";
 
 interface AppLayoutERPProps {
@@ -34,6 +37,18 @@ const LayoutContent: React.FC<{ children: ReactNode; hideHeader?: boolean; fullB
 };
 
 const AppLayoutERP: React.FC<AppLayoutERPProps> = ({ children, hideHeader, fullBleed }) => {
+  const page = usePage();
+  const pageProps = page.props as Record<string, unknown>;
+  const ownerShell = readCanonicalOwnerShell(pageProps.ownerShell);
+
+  if (ownerShell && isOwnerModeErpContext(pageProps)) {
+    return (
+      <CanonicalOwnerLayout metadata={ownerShell} fullBleed={fullBleed} hideHeader={hideHeader}>
+        {children}
+      </CanonicalOwnerLayout>
+    );
+  }
+
   return (
     <SidebarProvider>
       <LayoutContent hideHeader={hideHeader} fullBleed={fullBleed}>
