@@ -13,6 +13,7 @@ use App\Http\Controllers\PrivilegedSecurityController;
 use App\Http\Controllers\PrivilegedSetupController;
 use App\Http\Controllers\ShopOwner\EcommerceController;
 use App\Http\Controllers\ShopOwner\ShopOwnerDocumentRenewalController;
+use App\Http\Controllers\ShopOwner\ShopOwnerDashboardController;
 use App\Http\Controllers\ShopOwner\ShopOwnerModuleController;
 use App\Http\Controllers\ShopOwner\ShopOwnerUpgradeRequestController;
 use App\Http\Controllers\ShopOwner\ShopSettingsController;
@@ -803,11 +804,7 @@ Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')-
         ->name('compliance-documents.renewals.store');
 
     // Dashboard - Available to ALL shop owners
-    Route::get('/dashboard', function () {
-        $shopOwner = Auth::guard('shop_owner')->user();
-
-        return Inertia::render('ShopOwner/Dashboard', ['shop_owner' => $shopOwner]);
-    })->name('dashboard');
+    Route::get('/dashboard', ShopOwnerDashboardController::class)->name('dashboard');
 
     Route::prefix('logistics')->name('logistics.')->group(function () {
         Route::get('/', [\App\Http\Controllers\Logistics\ShopOwnerLogisticsController::class, 'dashboard'])->name('dashboard');

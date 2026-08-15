@@ -69,8 +69,19 @@ interface DashboardStats {
   }>;
 }
 
+interface DashboardPageProps {
+  auth?: {
+    shop_owner?: {
+      business_type?: string | null;
+      registration_type?: string | null;
+    };
+  };
+  erpMode?: boolean;
+  showPhaseThreePlaceholders?: boolean;
+}
+
 export default function Ecommerce() {
-  const { auth, erpMode } = usePage().props as any;
+  const { auth, erpMode, showPhaseThreePlaceholders = false } = usePage().props as DashboardPageProps;
   const Layout = erpMode === true ? AppLayoutERP : AppLayoutShopOwner;
   const businessType = String(auth?.shop_owner?.business_type ?? "").toLowerCase();
   const registrationType = String(auth?.shop_owner?.registration_type ?? "").toLowerCase();
@@ -140,6 +151,35 @@ export default function Ecommerce() {
               : "Overview of your shop's ecommerce performance"}
           </p>
         </div>
+
+        {showPhaseThreePlaceholders && (
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2" aria-label="Phase 3 dashboard areas">
+            <section
+              aria-labelledby="required-actions-phase-three"
+              className="rounded-2xl border border-gray-200 bg-gray-50 p-5 dark:border-gray-800 dark:bg-white/[0.03]"
+            >
+              <h4 id="required-actions-phase-three" className="text-base font-semibold text-gray-700 dark:text-white/80">
+                Required Actions — Coming in Phase 3
+              </h4>
+              <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                Existing module and approval pages remain the current action surfaces.
+              </p>
+            </section>
+
+            <section
+              aria-labelledby="exceptions-phase-three"
+              className="rounded-2xl border border-gray-200 bg-gray-50 p-5 dark:border-gray-800 dark:bg-white/[0.03]"
+            >
+              <h4 id="exceptions-phase-three" className="text-base font-semibold text-gray-700 dark:text-white/80">
+                Exceptions — Coming in Phase 3
+              </h4>
+              <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                Exception review continues in the existing module and approval pages until Phase 3.
+              </p>
+            </section>
+          </div>
+        )}
+
       <EcommerceMetrics
         stats={stats}
         showOrdersMetric={!hideOrderMetrics}

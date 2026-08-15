@@ -5,12 +5,17 @@ declare(strict_types=1);
 use App\Http\Controllers\Erp\ReadPageController;
 use App\Http\Controllers\Erp\WorkspaceController;
 use App\Http\Controllers\ShopOwner\CanonicalOwnerPaymentsController;
+use App\Http\Controllers\ShopOwner\ShopOwnerDashboardController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('shop-owner')
     ->name('shop-owner.shell.')
     ->middleware('auth:shop_owner')
     ->group(function (): void {
+        Route::get('/home', ShopOwnerDashboardController::class)
+            ->defaults('canonical_home', true)
+            ->name('home');
+
         Route::middleware(['erp.audience', 'erp.actor', 'shop.module'])->group(function (): void {
             Route::get('/operate/retail', [WorkspaceController::class, 'module'])
                 ->defaults('module', 'retail')
