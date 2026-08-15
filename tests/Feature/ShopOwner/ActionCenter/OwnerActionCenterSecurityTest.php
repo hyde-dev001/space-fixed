@@ -139,6 +139,7 @@ final class OwnerActionCenterSecurityTest extends TestCase
                         'healthy_adapter_keys',
                         'failed_adapter_keys',
                         'degradation_status',
+                        'bucket',
                         'duration_ms',
                         'result_count',
                         'source',
@@ -146,6 +147,7 @@ final class OwnerActionCenterSecurityTest extends TestCase
                         'per_page',
                         'correlation_id',
                     ]
+                    && $context['bucket'] === 'needs_my_decision'
                     && $context['source'] === 'expenses'
                     && $context['page'] === 1
                     && $context['per_page'] === 20

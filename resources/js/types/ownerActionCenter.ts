@@ -2,7 +2,14 @@ export type OwnerActionCenterCoverage =
   | "all"
   | "refunds"
   | "expenses"
-  | "purchase_requests";
+  | "purchase_requests"
+  | "compliance"
+  | "logistics";
+
+export type OwnerAttentionBucket =
+  | "needs_my_decision"
+  | "urgent_exceptions"
+  | "waiting_on_others";
 
 export type OwnerAttentionCoverageSource =
   | "refunds"
@@ -73,6 +80,7 @@ export interface OwnerActionCenterResult {
   coverage_counts: Partial<Record<OwnerAttentionCoverageSource, number>>;
   health: OwnerAttentionAdapterHealth;
   degradation_status: OwnerActionCenterDegradationStatus;
+  bucket: OwnerAttentionBucket;
   coverage: OwnerActionCenterCoverage;
   pagination: OwnerActionCenterPagination;
 }

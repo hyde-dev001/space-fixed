@@ -49,6 +49,7 @@ const result = (overrides: Partial<OwnerActionCenterResult> = {}): OwnerActionCe
     failed_adapter_keys: [],
   },
   degradation_status: "none",
+  bucket: "needs_my_decision",
   coverage: "all",
   pagination: { page: 1, per_page: 20, total: 1, last_page: 1 },
   ...overrides,

@@ -20,8 +20,6 @@ final readonly class OwnerActionCenterResult
         'unowned_logistics_failures',
     ];
 
-    private const COVERAGES = ['all', 'refunds', 'expenses', 'purchase_requests'];
-
     /**
      * @param array<int, OwnerAttentionItem> $items
      * @param array<string, int> $coverageCounts
@@ -36,13 +34,15 @@ final readonly class OwnerActionCenterResult
         public array $healthyAdapterKeys,
         public array $failedAdapterKeys,
         public OwnerActionCenterDegradationStatus $degradationStatus,
+        public string $bucket,
         public string $coverage,
         public int $page,
         public int $perPage,
         public int $total,
         public int $lastPage,
     ) {
-        if (! in_array($coverage, self::COVERAGES, true)) {
+        if (! in_array($bucket, OwnerAttentionQuery::BUCKETS, true)
+            || ! in_array($coverage, OwnerAttentionQuery::COVERAGES_BY_BUCKET[$bucket], true)) {
             throw new InvalidArgumentException('Owner Action Center result coverage is invalid.');
         }
 
@@ -65,7 +65,7 @@ final readonly class OwnerActionCenterResult
         }
 
         foreach ($coverageCounts as $source => $count) {
-            if (! in_array($source, ['refunds', 'expenses', 'purchase_requests'], true)
+            if (! in_array($source, array_diff(OwnerAttentionQuery::COVERAGES_BY_BUCKET[$bucket], ['all']), true)
                 || ! is_int($count)
                 || $count < 0) {
                 throw new InvalidArgumentException('Owner Action Center coverage counts are invalid.');
@@ -98,6 +98,7 @@ final readonly class OwnerActionCenterResult
                 'failed_adapter_keys' => array_values($this->failedAdapterKeys),
             ],
             'degradation_status' => $this->degradationStatus->value,
+            'bucket' => $this->bucket,
             'coverage' => $this->coverage,
             'pagination' => [
                 'page' => $this->page,

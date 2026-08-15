@@ -8,7 +8,15 @@ use InvalidArgumentException;
 
 final readonly class OwnerAttentionQuery
 {
-    public const COVERAGES = ['all', 'refunds', 'expenses', 'purchase_requests'];
+    public const BUCKETS = ['needs_my_decision', 'urgent_exceptions', 'waiting_on_others'];
+
+    public const COVERAGES = ['all', 'refunds', 'expenses', 'purchase_requests', 'compliance', 'logistics'];
+
+    public const COVERAGES_BY_BUCKET = [
+        'needs_my_decision' => ['all', 'refunds', 'expenses', 'purchase_requests'],
+        'urgent_exceptions' => ['all', 'compliance', 'refunds', 'logistics'],
+        'waiting_on_others' => ['all', 'compliance', 'refunds', 'expenses', 'purchase_requests', 'logistics'],
+    ];
 
     public const MAX_PAGE = 100;
 
@@ -19,12 +27,17 @@ final readonly class OwnerAttentionQuery
     public int $candidateLimit;
 
     public function __construct(
+        public string $bucket = 'needs_my_decision',
         public string $coverage = 'all',
         public int $page = 1,
         public int $perPage = 20,
         ?int $candidateLimit = null,
     ) {
-        if (! in_array($coverage, self::COVERAGES, true)) {
+        if (! in_array($bucket, self::BUCKETS, true)) {
+            throw new InvalidArgumentException('Owner Action Center bucket is not supported.');
+        }
+
+        if (! in_array($coverage, self::COVERAGES_BY_BUCKET[$bucket], true)) {
             throw new InvalidArgumentException('Owner Action Center coverage is not supported.');
         }
 
@@ -47,6 +60,7 @@ final readonly class OwnerAttentionQuery
     public function withCandidateLimit(int $candidateLimit): self
     {
         return new self(
+            bucket: $this->bucket,
             coverage: $this->coverage,
             page: $this->page,
             perPage: $this->perPage,

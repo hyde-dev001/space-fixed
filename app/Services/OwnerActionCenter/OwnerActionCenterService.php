@@ -24,7 +24,7 @@ final class OwnerActionCenterService
         private readonly OwnerAttentionAdapterRegistry $adapterRegistry,
     ) {}
 
-    public function summaryForHome(ShopOwner $owner): OwnerActionCenterResult
+    public function summaryForHome(ShopOwner $owner, string $bucket = 'needs_my_decision'): OwnerActionCenterResult
     {
         $homeLimit = config('owner_action_center.home_limit', 5);
         if (! is_int($homeLimit) || $homeLimit < 1 || $homeLimit > OwnerAttentionQuery::MAX_PER_PAGE) {
@@ -34,6 +34,7 @@ final class OwnerActionCenterService
         return $this->read(
             $owner,
             new OwnerAttentionQuery(
+                bucket: $bucket,
                 perPage: $homeLimit,
                 candidateLimit: $homeLimit,
             ),
@@ -48,7 +49,8 @@ final class OwnerActionCenterService
     private function read(ShopOwner $owner, OwnerAttentionQuery $query): OwnerActionCenterResult
     {
         $startedAt = microtime(true);
-        $adapters = $this->adapterRegistry->adaptersFor($query->coverage);
+        $adapters = $this->adapterRegistry->adaptersFor($query->bucket, $query->coverage);
+        $emptyCoverageCounts = $this->emptyCoverageCounts($query->bucket);
         $enabledAdapterKeys = array_map(
             static fn ($adapter): string => $adapter->adapterKey(),
             $adapters,
@@ -57,7 +59,7 @@ final class OwnerActionCenterService
         if ($adapters === []) {
             $result = $this->result(
                 items: [],
-                coverageCounts: ['refunds' => 0, 'expenses' => 0, 'purchase_requests' => 0],
+                coverageCounts: $emptyCoverageCounts,
                 enabledAdapterKeys: [],
                 healthyAdapterKeys: [],
                 failedAdapterKeys: [],
@@ -73,7 +75,7 @@ final class OwnerActionCenterService
         /** @var array<string, OwnerAttentionItem> $itemsByKey */
         $itemsByKey = [];
         /** @var array<string, int> $reportedRemainders */
-        $reportedRemainders = ['refunds' => 0, 'expenses' => 0, 'purchase_requests' => 0];
+        $reportedRemainders = $emptyCoverageCounts;
         $healthyAdapterKeys = [];
         $failedAdapterKeys = [];
 
@@ -89,6 +91,11 @@ final class OwnerActionCenterService
                 $healthyAdapterKeys[] = $adapter->adapterKey();
                 $seenByAdapter = [];
                 foreach ($adapterResult->items as $item) {
+                    if ($item->primaryBucket !== $adapter->primaryBucket()
+                        || $item->coverageSource !== $adapter->coverageSource()) {
+                        throw new InvalidArgumentException('Owner attention adapter item classification does not match its adapter.');
+                    }
+
                     if (isset($seenByAdapter[$item->attentionKey])) {
                         continue;
                     }
@@ -132,7 +139,7 @@ final class OwnerActionCenterService
         $items = array_values($itemsByKey);
         usort($items, [$this, 'compareItems']);
 
-        $coverageCounts = ['refunds' => 0, 'expenses' => 0, 'purchase_requests' => 0];
+        $coverageCounts = $emptyCoverageCounts;
         foreach ($items as $item) {
             $coverageCounts[$this->coverageFor($item)]++;
         }
@@ -190,6 +197,7 @@ final class OwnerActionCenterService
             healthyAdapterKeys: $healthyAdapterKeys,
             failedAdapterKeys: $failedAdapterKeys,
             degradationStatus: $degradationStatus,
+            bucket: $query->bucket,
             coverage: $query->coverage,
             page: $page,
             perPage: $query->perPage,
@@ -277,6 +285,15 @@ final class OwnerActionCenterService
         return $item->coverageSource;
     }
 
+    /** @return array<string, int> */
+    private function emptyCoverageCounts(string $bucket): array
+    {
+        return array_fill_keys(
+            array_values(array_diff(OwnerAttentionQuery::COVERAGES_BY_BUCKET[$bucket] ?? [], ['all'])),
+            0,
+        );
+    }
+
     private function correlationId(): ?string
     {
         $value = request()->header('X-Request-ID') ?? request()->header('X-Correlation-ID');
@@ -294,6 +311,7 @@ final class OwnerActionCenterService
             'healthy_adapter_keys' => array_values($result->healthyAdapterKeys),
             'failed_adapter_keys' => array_values($result->failedAdapterKeys),
             'degradation_status' => $result->degradationStatus->value,
+            'bucket' => $result->bucket,
             'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
             'result_count' => count($result->items),
             'source' => $result->coverage,

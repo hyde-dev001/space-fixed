@@ -5,42 +5,77 @@ declare(strict_types=1);
 namespace App\Services\OwnerActionCenter;
 
 use App\Contracts\OwnerActionCenter\OwnerAttentionAdapter;
+use App\Support\OwnerActionCenter\OwnerAttentionQuery;
 use InvalidArgumentException;
 
 final class OwnerAttentionAdapterRegistry
 {
     /**
-     * @var array<string, array<int, array{class: string, key: string, coverage: string, bucket: string}>>
+     * @var array<string, array<string, array<int, array{class: string, key: string, coverage: string, bucket: string}>>>
      */
     private const ADAPTERS = [
-        'refunds' => [
-            [
-                'class' => 'App\\Services\\OwnerActionCenter\\Adapters\\OrderRefundAttentionAdapter',
-                'key' => 'order_refunds',
-                'coverage' => 'refunds',
-                'bucket' => 'needs_my_decision',
+        'needs_my_decision' => [
+            'refunds' => [
+                [
+                    'class' => 'App\\Services\\OwnerActionCenter\\Adapters\\OrderRefundAttentionAdapter',
+                    'key' => 'order_refunds',
+                    'coverage' => 'refunds',
+                    'bucket' => 'needs_my_decision',
+                ],
+                [
+                    'class' => 'App\\Services\\OwnerActionCenter\\Adapters\\RepairRefundAttentionAdapter',
+                    'key' => 'repair_refunds',
+                    'coverage' => 'refunds',
+                    'bucket' => 'needs_my_decision',
+                ],
             ],
-            [
-                'class' => 'App\\Services\\OwnerActionCenter\\Adapters\\RepairRefundAttentionAdapter',
-                'key' => 'repair_refunds',
-                'coverage' => 'refunds',
-                'bucket' => 'needs_my_decision',
+            'expenses' => [
+                [
+                    'class' => 'App\\Services\\OwnerActionCenter\\Adapters\\ExpenseAttentionAdapter',
+                    'key' => 'expenses',
+                    'coverage' => 'expenses',
+                    'bucket' => 'needs_my_decision',
+                ],
+            ],
+            'purchase_requests' => [
+                [
+                    'class' => 'App\\Services\\OwnerActionCenter\\Adapters\\PurchaseRequestAttentionAdapter',
+                    'key' => 'purchase_requests',
+                    'coverage' => 'purchase_requests',
+                    'bucket' => 'needs_my_decision',
+                ],
             ],
         ],
-        'expenses' => [
-            [
-                'class' => 'App\\Services\\OwnerActionCenter\\Adapters\\ExpenseAttentionAdapter',
-                'key' => 'expenses',
-                'coverage' => 'expenses',
-                'bucket' => 'needs_my_decision',
+        'urgent_exceptions' => [
+            'compliance' => [
+                [
+                    'class' => 'App\\Services\\OwnerActionCenter\\Adapters\\ComplianceDocumentAttentionAdapter',
+                    'key' => 'compliance_documents',
+                    'coverage' => 'compliance',
+                    'bucket' => 'urgent_exceptions',
+                ],
             ],
-        ],
-        'purchase_requests' => [
-            [
-                'class' => 'App\\Services\\OwnerActionCenter\\Adapters\\PurchaseRequestAttentionAdapter',
-                'key' => 'purchase_requests',
-                'coverage' => 'purchase_requests',
-                'bucket' => 'needs_my_decision',
+            'refunds' => [
+                [
+                    'class' => 'App\\Services\\OwnerActionCenter\\Adapters\\FailedOrderRefundAttentionAdapter',
+                    'key' => 'failed_order_refunds',
+                    'coverage' => 'refunds',
+                    'bucket' => 'urgent_exceptions',
+                ],
+                [
+                    'class' => 'App\\Services\\OwnerActionCenter\\Adapters\\FailedRepairRefundAttentionAdapter',
+                    'key' => 'failed_repair_refunds',
+                    'coverage' => 'refunds',
+                    'bucket' => 'urgent_exceptions',
+                ],
+            ],
+            'logistics' => [
+                [
+                    'class' => 'App\\Services\\OwnerActionCenter\\Adapters\\UnownedLogisticsFailureAttentionAdapter',
+                    'key' => 'unowned_logistics_failures',
+                    'coverage' => 'logistics',
+                    'bucket' => 'urgent_exceptions',
+                ],
             ],
         ],
     ];
@@ -48,19 +83,31 @@ final class OwnerAttentionAdapterRegistry
     /**
      * @return array<int, OwnerAttentionAdapter>
      */
-    public function adaptersFor(string $coverage): array
+    public function adaptersFor(string $bucket, string $coverage = 'all'): array
     {
-        if (! in_array($coverage, ['all', 'refunds', 'expenses', 'purchase_requests'], true)) {
+        if (! in_array($bucket, OwnerAttentionQuery::BUCKETS, true)
+            || ! in_array($coverage, OwnerAttentionQuery::COVERAGES_BY_BUCKET[$bucket], true)) {
             throw new InvalidArgumentException('Owner Action Center coverage is not supported.');
         }
 
-        $configuredCoverage = config('owner_action_center.coverage', []);
+        if ($bucket === 'waiting_on_others') {
+            return [];
+        }
+
+        if ($bucket === 'urgent_exceptions'
+            && config('owner_action_center.buckets.urgent_exceptions.enabled', false) !== true) {
+            return [];
+        }
+
+        $configuredCoverage = $bucket === 'needs_my_decision'
+            ? config('owner_action_center.coverage', [])
+            : config('owner_action_center.buckets.urgent_exceptions.coverage', []);
         if (! is_array($configuredCoverage)) {
             throw new InvalidArgumentException('Owner Action Center coverage configuration must be an array.');
         }
 
         $adapters = [];
-        foreach (self::ADAPTERS as $family => $definitions) {
+        foreach (self::ADAPTERS[$bucket] ?? [] as $family => $definitions) {
             if ($coverage !== 'all' && $coverage !== $family) {
                 continue;
             }

@@ -13,6 +13,16 @@ return [
         'expenses' => (bool) env('SHOP_OWNER_ACTION_CENTER_EXPENSES_ENABLED', true),
         'purchase_requests' => (bool) env('SHOP_OWNER_ACTION_CENTER_PURCHASE_REQUESTS_ENABLED', true),
     ],
+    'buckets' => [
+        'urgent_exceptions' => [
+            'enabled' => (bool) env('SHOP_OWNER_ACTION_CENTER_URGENT_EXCEPTIONS_ENABLED', false),
+            'coverage' => [
+                'compliance' => (bool) env('SHOP_OWNER_ACTION_CENTER_COMPLIANCE_ENABLED', false),
+                'refunds' => (bool) env('SHOP_OWNER_ACTION_CENTER_FAILED_REFUNDS_ENABLED', false),
+                'logistics' => (bool) env('SHOP_OWNER_ACTION_CENTER_LOGISTICS_EXCEPTIONS_ENABLED', false),
+            ],
+        ],
+    ],
     'per_page' => 20,
     'max_per_page' => 50,
     'max_page' => 100,

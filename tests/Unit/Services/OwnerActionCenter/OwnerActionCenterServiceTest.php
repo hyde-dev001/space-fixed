@@ -30,6 +30,110 @@ final class OwnerActionCenterServiceTest extends TestCase
 
     private const PURCHASE_REQUEST_ADAPTER = 'App\\Services\\OwnerActionCenter\\Adapters\\PurchaseRequestAttentionAdapter';
 
+    private const COMPLIANCE_ADAPTER = 'App\\Services\\OwnerActionCenter\\Adapters\\ComplianceDocumentAttentionAdapter';
+
+    public function test_registry_resolves_adapters_by_bucket_and_coverage(): void
+    {
+        config([
+            'owner_action_center.buckets.urgent_exceptions.enabled' => true,
+            'owner_action_center.buckets.urgent_exceptions.coverage.compliance' => true,
+            'owner_action_center.buckets.urgent_exceptions.coverage.refunds' => false,
+            'owner_action_center.buckets.urgent_exceptions.coverage.logistics' => false,
+        ]);
+        $compliance = $this->bindFake(
+            self::COMPLIANCE_ADAPTER,
+            'compliance_documents',
+            'compliance',
+            bucket: 'urgent_exceptions',
+        );
+
+        $adapters = app(OwnerAttentionAdapterRegistry::class)->adaptersFor('urgent_exceptions', 'compliance');
+
+        $this->assertSame([$compliance], $adapters);
+    }
+
+    public function test_decisions_and_exceptions_have_independent_counts_and_pages(): void
+    {
+        $owner = ShopOwner::factory()->approved()->create();
+        $this->enableOnly('expenses');
+        config([
+            'owner_action_center.buckets.urgent_exceptions.enabled' => true,
+            'owner_action_center.buckets.urgent_exceptions.coverage.compliance' => true,
+        ]);
+        $this->bindFake(
+            self::EXPENSE_ADAPTER,
+            'expenses',
+            'expenses',
+            [$this->item('expense', 1), $this->item('expense', 2)],
+        );
+        $this->bindFake(
+            self::COMPLIANCE_ADAPTER,
+            'compliance_documents',
+            'compliance',
+            [$this->exceptionItem(10), $this->exceptionItem(11), $this->exceptionItem(12)],
+            bucket: 'urgent_exceptions',
+        );
+
+        $decisions = app(OwnerActionCenterService::class)->queueForActionCenter(
+            $owner,
+            new OwnerAttentionQuery(bucket: 'needs_my_decision', coverage: 'expenses', perPage: 1),
+        );
+        $exceptions = app(OwnerActionCenterService::class)->queueForActionCenter(
+            $owner,
+            new OwnerAttentionQuery(bucket: 'urgent_exceptions', coverage: 'compliance', page: 2, perPage: 2),
+        );
+
+        $this->assertSame('needs_my_decision', $decisions->bucket);
+        $this->assertSame(2, $decisions->total);
+        $this->assertSame(1, $decisions->page);
+        $this->assertSame(['refunds' => 0, 'expenses' => 2, 'purchase_requests' => 0], $decisions->coverageCounts);
+        $this->assertSame('urgent_exceptions', $exceptions->bucket);
+        $this->assertSame(3, $exceptions->total);
+        $this->assertSame(2, $exceptions->page);
+        $this->assertSame(['compliance' => 3, 'refunds' => 0, 'logistics' => 0], $exceptions->coverageCounts);
+        $this->assertSame(['compliance_document:12:compliance_expiry'], array_map(
+            static fn (OwnerAttentionItem $item): string => $item->attentionKey,
+            $exceptions->items,
+        ));
+    }
+
+    public function test_exception_adapter_failure_does_not_degrade_decisions(): void
+    {
+        $owner = ShopOwner::factory()->approved()->create();
+        $this->enableOnly('expenses');
+        config([
+            'owner_action_center.buckets.urgent_exceptions.enabled' => true,
+            'owner_action_center.buckets.urgent_exceptions.coverage.compliance' => true,
+        ]);
+        $this->bindFake(
+            self::EXPENSE_ADAPTER,
+            'expenses',
+            'expenses',
+            [$this->item('expense', 1)],
+        );
+        $this->bindFake(
+            self::COMPLIANCE_ADAPTER,
+            'compliance_documents',
+            'compliance',
+            failure: new RuntimeException('compliance unavailable'),
+            bucket: 'urgent_exceptions',
+        );
+
+        $decisions = app(OwnerActionCenterService::class)->queueForActionCenter(
+            $owner,
+            new OwnerAttentionQuery(bucket: 'needs_my_decision', coverage: 'expenses'),
+        );
+        $exceptions = app(OwnerActionCenterService::class)->queueForActionCenter(
+            $owner,
+            new OwnerAttentionQuery(bucket: 'urgent_exceptions', coverage: 'compliance'),
+        );
+
+        $this->assertSame(OwnerActionCenterDegradationStatus::None, $decisions->degradationStatus);
+        $this->assertSame(1, $decisions->total);
+        $this->assertSame(OwnerActionCenterDegradationStatus::Unavailable, $exceptions->degradationStatus);
+        $this->assertSame(['compliance_documents'], $exceptions->failedAdapterKeys);
+    }
+
     public function test_refunds_coverage_resolves_both_refund_adapters(): void
     {
         config([
@@ -40,7 +144,7 @@ final class OwnerActionCenterServiceTest extends TestCase
         $order = $this->bindFake(self::ORDER_ADAPTER, 'order_refunds', 'refunds');
         $repair = $this->bindFake(self::REPAIR_ADAPTER, 'repair_refunds', 'refunds');
 
-        $adapters = app(OwnerAttentionAdapterRegistry::class)->adaptersFor('refunds');
+        $adapters = app(OwnerAttentionAdapterRegistry::class)->adaptersFor('needs_my_decision', 'refunds');
 
         $this->assertSame([$order, $repair], $adapters);
     }
@@ -55,7 +159,7 @@ final class OwnerActionCenterServiceTest extends TestCase
         $this->bindFake(self::ORDER_ADAPTER, 'expenses', 'expenses');
         $this->expectException(InvalidArgumentException::class);
 
-        app(OwnerAttentionAdapterRegistry::class)->adaptersFor('refunds');
+        app(OwnerAttentionAdapterRegistry::class)->adaptersFor('needs_my_decision', 'refunds');
     }
 
     public function test_source_filter_is_applied_before_candidate_limits(): void
@@ -320,8 +424,9 @@ final class OwnerActionCenterServiceTest extends TestCase
         array $items = [],
         ?int $qualifyingCount = null,
         ?Throwable $failure = null,
+        string $bucket = 'needs_my_decision',
     ): object {
-        $adapter = new class($adapterKey, $coverage, $items, $qualifyingCount, $failure) implements OwnerAttentionAdapter {
+        $adapter = new class($adapterKey, $coverage, $items, $qualifyingCount, $failure, $bucket) implements OwnerAttentionAdapter {
             /** @var array<int, OwnerAttentionQuery> */
             public array $queries = [];
 
@@ -332,6 +437,7 @@ final class OwnerActionCenterServiceTest extends TestCase
                 private readonly array $items,
                 private readonly ?int $qualifyingCount,
                 private readonly ?Throwable $failure,
+                private readonly string $bucketValue,
             ) {}
 
             public function adapterKey(): string
@@ -346,7 +452,7 @@ final class OwnerActionCenterServiceTest extends TestCase
 
             public function primaryBucket(): string
             {
-                return 'needs_my_decision';
+                return $this->bucketValue;
             }
 
             public function read(ShopOwner $owner, OwnerAttentionQuery $query): OwnerAttentionAdapterResult
@@ -404,6 +510,28 @@ final class OwnerActionCenterServiceTest extends TestCase
                 'purchase_request' => 'purchase_requests',
             },
             destinationUrl: '/shop-owner/action-center?source='.$sourceType.'&id='.$sourceId,
+        );
+    }
+
+    private function exceptionItem(int $sourceId): OwnerAttentionItem
+    {
+        return new OwnerAttentionItem(
+            sourceType: 'compliance_document',
+            sourceId: $sourceId,
+            category: 'compliance_expiry',
+            primaryBucket: 'urgent_exceptions',
+            module: 'compliance',
+            title: 'Compliance document expiring',
+            conciseSummary: 'Review the current document lifecycle.',
+            priorityTier: 'high',
+            materialityTier: 'high',
+            comparableMonetaryExposure: null,
+            urgencyAt: '2026-08-20T00:00:00+08:00',
+            actionableSince: '2026-08-01T00:00:00+08:00',
+            waitingOn: 'none',
+            ownerActionRequired: false,
+            coverageSource: 'compliance',
+            destinationUrl: '/shop-owner/settings/policies-compliance',
         );
     }
 }

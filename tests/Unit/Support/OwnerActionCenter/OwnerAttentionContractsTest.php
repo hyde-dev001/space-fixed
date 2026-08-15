@@ -236,13 +236,15 @@ final class OwnerAttentionContractsTest extends TestCase
     public function test_query_accepts_only_bounded_coverage_and_pagination(): void
     {
         $query = new OwnerAttentionQuery(
-            coverage: 'refunds',
+            bucket: 'urgent_exceptions',
+            coverage: 'compliance',
             page: 2,
             perPage: 10,
             candidateLimit: 20,
         );
 
-        $this->assertSame('refunds', $query->coverage);
+        $this->assertSame('urgent_exceptions', $query->bucket);
+        $this->assertSame('compliance', $query->coverage);
         $this->assertSame(2, $query->page);
         $this->assertSame(10, $query->perPage);
         $this->assertSame(20, $query->candidateLimit);
@@ -263,6 +265,15 @@ final class OwnerAttentionContractsTest extends TestCase
     {
         return [
             'unsupported coverage' => [static fn (): OwnerAttentionQuery => new OwnerAttentionQuery(coverage: 'audit')],
+            'unsupported bucket' => [static fn (): OwnerAttentionQuery => new OwnerAttentionQuery(bucket: 'notifications')],
+            'decision source in exception bucket' => [static fn (): OwnerAttentionQuery => new OwnerAttentionQuery(
+                bucket: 'urgent_exceptions',
+                coverage: 'expenses',
+            )],
+            'exception source in decision bucket' => [static fn (): OwnerAttentionQuery => new OwnerAttentionQuery(
+                bucket: 'needs_my_decision',
+                coverage: 'compliance',
+            )],
             'page below one' => [static fn (): OwnerAttentionQuery => new OwnerAttentionQuery(page: 0)],
             'page beyond bound' => [static fn (): OwnerAttentionQuery => new OwnerAttentionQuery(page: 101)],
             'per page below one' => [static fn (): OwnerAttentionQuery => new OwnerAttentionQuery(perPage: 0)],
@@ -286,6 +297,7 @@ final class OwnerAttentionContractsTest extends TestCase
             healthyAdapterKeys: ['order_refunds'],
             failedAdapterKeys: [],
             degradationStatus: OwnerActionCenterDegradationStatus::None,
+            bucket: 'needs_my_decision',
             coverage: 'all',
             page: 1,
             perPage: 20,
@@ -312,6 +324,7 @@ final class OwnerAttentionContractsTest extends TestCase
             healthyAdapterKeys: [],
             failedAdapterKeys: [],
             degradationStatus: OwnerActionCenterDegradationStatus::None,
+            bucket: 'needs_my_decision',
             coverage: 'all',
             page: 2,
             perPage: 20,
