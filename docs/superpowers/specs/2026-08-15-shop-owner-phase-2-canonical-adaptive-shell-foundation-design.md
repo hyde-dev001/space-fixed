@@ -10,7 +10,7 @@
 
 ## 1. Purpose
 
-Establish one canonical Shop Owner shell and permanent owner-facing URL topology without rewriting mature domain pages, changing authorization, or prematurely implementing the Phase 3 Home and Action Center.
+Establish one canonical Shop Owner shell and permanent shell-destination URL topology without rewriting mature domain pages, changing authorization, or prematurely implementing the Phase 3 Home and Action Center.
 
 Phase 2 replaces competing navigation logic for an approved rollout cohort. It does not remove the existing Shop Owner presentation or Shop Owner ERP workspace. Existing controllers, components, APIs, domain services, and compatibility routes remain reusable and authoritative throughout the rollout.
 
@@ -66,6 +66,7 @@ This specification supersedes the current Shop Owner sidebar as the navigation a
 - approval-policy simplification;
 - owner-facing ERP workspace retirement;
 - legacy route retirement or broad compatibility redirects;
+- wholesale canonicalization of domain detail, record-specific, workflow-step, or mutation URLs;
 - domain controller, service, table, or state-machine rewrites;
 - changes to module eligibility, capabilities, tenant authorization, or domain policy;
 - a generic navigation, feature-flag, workflow, or authorization engine;
@@ -150,6 +151,8 @@ It does not:
 - perform domain mutations;
 - become a generic navigation system for other actor types.
 
+The service may reuse module, route, audience, and capability decisions exposed by ERP services, but it must not treat the Shop Owner ERP workspace feature flag as capability eligibility. That flag controls only the transitional ERP workspace and fallback presentation. Disabling the ERP workspace must not independently remove canonical Finance, Workforce, Inventory, Procurement, Logistics, or other eligible shell destinations.
+
 ### 5.3 Existing authoritative layers
 
 Existing middleware, policies, module services, route-audience checks, tenant checks, controllers, requests, and domain services remain authoritative for access and behavior.
@@ -185,7 +188,7 @@ Rollout policy evaluates global flag and stable shop allowlist
           Existing controller/component/service handles the capability
 ```
 
-If composition fails after canonical rollout selection, the entire request receives the existing presentation. The application must not mix canonical Home with the existing sidebar or canonical navigation with an ERP workspace frame.
+Canonical metadata is composed and contract-validated on the server before the Inertia response is committed. If composition or validation fails after canonical rollout selection, the server selects the entire existing presentation. The application must not mix canonical Home with the existing sidebar or canonical navigation with an ERP workspace frame.
 
 ## 7. Presentation Metadata Contract
 
@@ -220,8 +223,9 @@ Rules:
 4. Canonical matching is authoritative. A compatibility URL may highlight its canonical destination through the same item metadata but cannot create an equal active-navigation map.
 5. React renders the supplied structure and does not reproduce company-only route lists, business-type rules, module decisions, or permissions.
 6. `context` is null only when the existing presentation is selected; canonical presentation always has `individual` or `company` context.
-7. Unknown or malformed metadata causes complete fallback to the existing presentation.
-8. Metadata contains stable keys and bounded values suitable for typing and testing.
+7. Unknown or malformed metadata causes the server to select the complete existing presentation before committing the Inertia response.
+8. React receives one already-selected valid presentation. It does not inspect malformed canonical metadata and independently decide whether fallback is necessary.
+9. Metadata contains stable keys and bounded values suitable for typing and testing.
 
 ## 8. Controlled Rollout
 
@@ -332,7 +336,26 @@ This is a maximum, not a promise that every owner sees every item.
 - Company-only areas such as Workforce do not appear for an ineligible individual owner.
 - If a group has no eligible destinations, the entire group is omitted.
 - The shell does not show irrelevant items merely to preserve visual symmetry.
-- Unavailable items are shown only where an unavailable reason and management destination are useful; otherwise ineligible items are omitted.
+
+Visibility follows this deterministic contract:
+
+```text
+Ineligible
+-> omit the item
+
+Eligible and enabled
+-> show a normal destination
+
+Eligible, disabled, and owner-manageable
+-> may show unavailable
+   + stable reason
+   + canonical management destination
+
+Eligible but unavailable with no useful owner action
+-> omit the item rather than clutter navigation
+```
+
+An unavailable item is never a substitute for authorization. Its reason and management destination are presentation derived from existing authoritative module decisions.
 
 > **Eligibility determines whether an item exists; operating context determines prominence and ordering.**
 
@@ -401,7 +424,9 @@ Phase 2 establishes stable URLs based on business capability rather than impleme
 /shop-owner/settings/subscription
 ```
 
-Final route names follow repository conventions, but each owner-facing capability has exactly one canonical URL.
+Final route names follow repository conventions, but each Phase 2 shell destination has exactly one canonical URL.
+
+Domain detail, record-specific, workflow-step, and action routes remain authoritative compatibility routes unless a route is explicitly included in the Phase 2 canonical-route inventory. Phase 2 does not need to replace every Product, Order, Refund, Purchase Order, Repair, Shipment, employee, or approval record URL.
 
 > **Canonical routes represent capabilities, not implementation history.**
 
@@ -439,6 +464,8 @@ Existing `/shop-owner/*` and `/shop-owner/erp/*` routes remain functional during
 
 Phase 2 does not broadly redirect or retire compatibility routes. Notification, bookmark, test, and internal-link consolidation belongs to later phases except where a new Phase 2 shell link is introduced.
 
+All new shell-level navigation links use canonical shell destinations. Existing domain-level links may continue using authoritative detail, record, workflow, and action routes until a later phase explicitly migrates them.
+
 Compatibility and canonical routes enforce equivalent:
 
 - tenant decisions;
@@ -468,7 +495,9 @@ Rules:
 - Required Actions and Exceptions perform no approval, exception, notification, or domain queue queries.
 - Placeholders show no misleading zero count.
 - Placeholders are visually subordinate and clearly intentional, not styled as failed widgets.
-- Placeholder copy directs owners to existing domain or approval surfaces where appropriate.
+- Placeholder copy states that existing approval workflows and relevant operational modules remain the current action surfaces.
+- Placeholders do not add new links directly to legacy approval pages.
+- A placeholder may link only to an already-defined canonical shell destination, such as Procurement or Finance, when that general module destination is genuinely useful.
 - Existing deep links and domain pages remain the way to act until Phase 3.
 
 ## 15. ERP Workspace Fallback
@@ -488,6 +517,8 @@ The fallback:
 - preserves current ERP authorization;
 - does not serve as permission evidence;
 - is removed only after Phase 5 proves capability coverage and workspace retirement readiness.
+
+The Shop Owner ERP workspace feature flag controls this transitional workspace and fallback only. It does not independently gate canonical-shell destination eligibility.
 
 ### 15.1 Fallback telemetry
 
@@ -552,8 +583,10 @@ Rules:
 
 ### Shell composition
 
-- Unknown or malformed metadata abandons the entire canonical shell for that request/session.
+- The server constructs and validates canonical metadata before committing the Inertia response.
+- Unknown or malformed metadata causes the server to abandon the entire canonical shell for that request/session.
 - Partial canonical navigation is never displayed.
+- React renders the selected presentation and does not own fallback safety decisions.
 - No domain data changes when composition fails.
 - User-facing fallback does not expose internal exceptions.
 
@@ -668,7 +701,8 @@ Test at least:
 
 Test:
 
-- one canonical route per owner-facing capability;
+- one canonical route per Phase 2 shell destination;
+- an explicit Phase 2 canonical-route inventory that excludes unselected domain detail and action routes;
 - identical middleware and binding behavior;
 - canonical and compatibility authorization parity;
 - canonical and compatibility domain behavior parity;
@@ -678,7 +712,7 @@ Test:
 - simultaneous owner and employee sessions where relevant;
 - canonical routes never enter an employee-only audience;
 - old URLs remain functional;
-- all new shell links use canonical URLs.
+- all new shell-level links use canonical URLs while existing domain-level links remain authoritative until explicitly migrated.
 
 ### 23.4 Home
 
@@ -764,11 +798,11 @@ Phase 2 is accepted when:
 11. Canonical labels describe business capabilities rather than permission levels.
 12. Reports and Audit are distinct capabilities and Audit remains non-operational evidence.
 13. Business Settings is one primary area with canonical section destinations.
-14. Every owner-facing capability has one stable canonical URL.
+14. Every Phase 2 shell destination has exactly one stable canonical URL; nested domain routes remain authoritative unless explicitly included in the Phase 2 route inventory.
 15. Canonical URLs do not expose ERP or legacy implementation topology.
 16. Canonical routes preserve existing middleware, binding, tenancy, capability, and audience behavior.
 17. Existing pages are reused without duplicating domain implementations.
-18. New Phase 2 navigation and internal owner links use canonical destinations.
+18. New Phase 2 shell-level navigation links use canonical destinations without forcing migration of every nested domain link.
 19. Existing routes remain compatibility entry points throughout Phase 2.
 20. Authorized de-emphasized tools remain reachable through canonical deep links.
 21. `/shop-owner/home` reuses the existing dashboard and remains available regardless of rollout state.
@@ -793,7 +827,7 @@ This document is a focused design specification, not an implementation plan.
 After user review and approval of the written specification, a separate TDD implementation plan must identify:
 
 - exact rollout policy, shell service, metadata type, route, controller, middleware, layout, sidebar, page-frame, configuration, and test files;
-- the canonical destination-to-existing-action mapping;
+- the Phase 2 shell-destination inventory and its mapping to existing authoritative actions;
 - characterization tests for existing sidebar, workspace, routes, and page behavior;
 - controlled rollout and rollback steps;
 - route middleware and binding parity checks;
