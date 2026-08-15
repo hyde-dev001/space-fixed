@@ -8,7 +8,9 @@ use App\Models\ShopOwner;
 use App\Models\Supplier;
 use App\Models\PurchaseRequest;
 use App\Models\PurchaseOrder;
+use App\Models\PurchaseOrderItem;
 use App\Models\PurchaseOrderReceipt;
+use App\Models\PurchaseOrderReceiptItem;
 use App\Models\InventoryItem;
 use App\Events\PurchaseOrderSent;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -30,10 +32,10 @@ class PurchaseOrderWorkflowTest extends TestCase
         config(['auth.defaults.guard' => 'user']);
         $this->shopOwner = ShopOwner::factory()->create();
         $this->user = User::factory()->for($this->shopOwner)->create();
-        foreach (['procurement.view', 'procurement.create_purchase_orders', 'procurement.manage_purchase_orders', 'procurement.receive_purchase_orders', 'procurement.cancel_purchase_orders', 'view-inventory'] as $permission) {
+        foreach (['procurement.view', 'procurement.create_purchase_orders', 'procurement.manage_purchase_orders', 'procurement.receive_purchase_orders', 'procurement.complete_purchase_orders', 'procurement.cancel_purchase_orders', 'view-inventory'] as $permission) {
             Permission::findOrCreate($permission, 'user');
         }
-        $this->user->givePermissionTo(['procurement.view', 'procurement.create_purchase_orders', 'procurement.manage_purchase_orders', 'procurement.receive_purchase_orders', 'procurement.cancel_purchase_orders', 'view-inventory']);
+        $this->user->givePermissionTo(['procurement.view', 'procurement.create_purchase_orders', 'procurement.manage_purchase_orders', 'procurement.receive_purchase_orders', 'procurement.complete_purchase_orders', 'procurement.cancel_purchase_orders', 'view-inventory']);
         $this->supplier = Supplier::factory()->create(['shop_owner_id' => $this->shopOwner->id]);
         
         $this->pr = PurchaseRequest::factory()->create([
@@ -249,6 +251,14 @@ class PurchaseOrderWorkflowTest extends TestCase
             'status' => 'completed',
         ]);
 
+        foreach (['partially_received', 'delivered', 'cancelled'] as $status) {
+            PurchaseOrder::factory()->create([
+                'shop_owner_id' => $this->shopOwner->id,
+                'supplier_id' => $this->supplier->id,
+                'status' => $status,
+            ]);
+        }
+
         $response = $this->actingAs($this->user)
             ->getJson('/api/erp/procurement/purchase-orders/metrics');
 
@@ -256,8 +266,64 @@ class PurchaseOrderWorkflowTest extends TestCase
             ->assertJsonStructure([
                 'total_purchase_orders',
                 'active_orders',
+                'awaiting_closure_orders',
                 'completed_orders',
-            ]);
+                'cancelled_orders',
+            ])
+            ->assertJsonPath('active_orders', 2)
+            ->assertJsonPath('awaiting_closure_orders', 1)
+            ->assertJsonPath('completed_orders', 1)
+            ->assertJsonPath('cancelled_orders', 1);
+    }
+
+    public function test_only_explicit_closure_moves_a_delivered_po_to_completed(): void
+    {
+        $this->user->givePermissionTo('procurement.complete_purchase_orders');
+        $po = PurchaseOrder::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'supplier_id' => $this->supplier->id,
+            'status' => 'delivered',
+        ]);
+        $item = PurchaseOrderItem::factory()->create([
+            'purchase_order_id' => $po->id,
+            'ordered_quantity' => 1,
+        ]);
+        $receipt = PurchaseOrderReceipt::factory()->create([
+            'purchase_order_id' => $po->id,
+            'shop_owner_id' => $this->shopOwner->id,
+            'received_by' => $this->user->id,
+            'status' => 'posted',
+        ]);
+        PurchaseOrderReceiptItem::factory()->create([
+            'purchase_order_receipt_id' => $receipt->id,
+            'purchase_order_item_id' => $item->id,
+            'received_quantity' => 1,
+            'accepted_quantity' => 1,
+        ]);
+
+        $this->assertSame('delivered', $po->fresh()->status);
+
+        $this->actingAs($this->user)
+            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/update-status", [
+                'status' => 'completed',
+            ])
+            ->assertOk();
+
+        $this->assertSame('completed', $po->fresh()->status);
+
+        $inTransit = PurchaseOrder::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'supplier_id' => $this->supplier->id,
+            'status' => 'in_transit',
+        ]);
+
+        $this->actingAs($this->user)
+            ->postJson("/api/erp/procurement/purchase-orders/{$inTransit->id}/update-status", [
+                'status' => 'completed',
+            ])
+            ->assertForbidden();
+
+        $this->assertSame('in_transit', $inTransit->fresh()->status);
     }
 
     /** @test */

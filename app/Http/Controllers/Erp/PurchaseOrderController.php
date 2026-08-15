@@ -229,7 +229,7 @@ class PurchaseOrderController extends Controller
         }
 
         try {
-            $purchaseOrder->sendToSupplier();
+            $purchaseOrder = $this->purchaseOrderService->sendToSupplier($purchaseOrder->id);
             event(new PurchaseOrderSent($purchaseOrder));
 
             return response()->json([
@@ -275,17 +275,7 @@ class PurchaseOrderController extends Controller
 
         $shopOwnerId = Auth::user()->shop_owner_id;
 
-        $metrics = [
-            'total_purchase_orders' => PurchaseOrder::where('shop_owner_id', $shopOwnerId)->count(),
-            'active_orders' => PurchaseOrder::where('shop_owner_id', $shopOwnerId)->active()->count(),
-            'completed_orders' => PurchaseOrder::where('shop_owner_id', $shopOwnerId)->completed()->count(),
-            'cancelled_orders' => PurchaseOrder::where('shop_owner_id', $shopOwnerId)->cancelled()->count(),
-            'overdue_orders' => PurchaseOrder::where('shop_owner_id', $shopOwnerId)->overdue()->count(),
-            'total_value' => PurchaseOrder::where('shop_owner_id', $shopOwnerId)->sum('total_cost'),
-            'completed_value' => PurchaseOrder::where('shop_owner_id', $shopOwnerId)->completed()->sum('total_cost'),
-        ];
-
-        return response()->json($metrics);
+        return response()->json($this->purchaseOrderService->getMetrics((int) $shopOwnerId));
     }
 
 }

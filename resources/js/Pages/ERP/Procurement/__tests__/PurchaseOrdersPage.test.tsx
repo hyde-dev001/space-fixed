@@ -66,6 +66,22 @@ describe("Purchase Orders lifecycle actions", () => {
 		expect(screen.getByRole("button", { name: "Mark as Completed" })).toBeInTheDocument();
 	});
 
+	it("shows delivered orders in the awaiting-closure category", () => {
+		render(<PurchaseOrders />);
+
+		expect(screen.getByText("Awaiting Closure")).toBeInTheDocument();
+		expect(screen.getByText("Delivered orders awaiting explicit administrative closure")).toBeInTheDocument();
+	});
+
+	it("counts partially received orders as active receiving work", () => {
+		mocks.order.status = "partially_received";
+
+		render(<PurchaseOrders />);
+
+		expect(screen.getByText("Active Receiving")).toBeInTheDocument();
+		expect(screen.getByText("Sent, confirmed, in-transit, or partially received orders")).toBeInTheDocument();
+	});
+
 	it("hides create when the user lacks create permission", async () => {
 		render(<PurchaseOrders />);
 		await screen.findByTitle("View details");

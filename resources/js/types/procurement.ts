@@ -220,11 +220,16 @@ export interface PurchaseRequestMetrics {
 }
 
 export interface PurchaseOrderMetrics {
-    total: number;
-    active: number;
-    completed: number;
-    cancelled: number;
-    overdue: number;
+    total_purchase_orders: number;
+    active_orders: number;
+    awaiting_closure_orders: number;
+    completed_orders: number;
+    cancelled_orders: number;
+    overdue_orders: number;
+    draft_orders: number;
+    total_value: number;
+    completed_value: number;
+    average_order_value: number;
 }
 
 export interface StockRequestMetrics {

@@ -14,6 +14,10 @@ class PurchaseOrder extends Model
 {
     use HasFactory, SoftDeletes;
 
+    private const ACTIVE_RECEIVING_STATUSES = ['sent', 'confirmed', 'in_transit', 'partially_received'];
+    private const RECEIVING_STATUSES = ['in_transit', 'partially_received'];
+    private const CANCELLABLE_STATUSES = ['draft', 'sent', 'confirmed'];
+
     protected $fillable = [
         'po_number',
         'pr_id',
@@ -162,7 +166,17 @@ class PurchaseOrder extends Model
 
     public function scopeActive(Builder $query): Builder
     {
-        return $query->whereIn('status', ['sent', 'confirmed', 'in_transit', 'partially_received']);
+        return $query->whereIn('status', self::ACTIVE_RECEIVING_STATUSES);
+    }
+
+    public function scopeAwaitingClosure(Builder $query): Builder
+    {
+        return $query->where('status', 'delivered');
+    }
+
+    public function scopeCancellable(Builder $query): Builder
+    {
+        return $query->whereIn('status', self::CANCELLABLE_STATUSES);
     }
 
     public function scopeOverdue(Builder $query): Builder
@@ -249,7 +263,7 @@ class PurchaseOrder extends Model
 
     public function markAsDeliveredFromReceipts(int $userId, ?string $actualDate = null): bool
     {
-        if (!in_array($this->status, ['in_transit', 'partially_received'], true)) {
+        if (! $this->isReceiving()) {
             throw ValidationException::withMessages(['status' => 'Only an in-transit purchase order can become delivered.']);
         }
         if ($this->items()->get()->contains(fn (PurchaseOrderItem $item) => $item->remainingQuantity() > 0)) {
@@ -293,7 +307,22 @@ class PurchaseOrder extends Model
 
     public function isCancellableState(): bool
     {
-        return in_array($this->status, ['draft', 'sent', 'confirmed'], true);
+        return in_array($this->status, self::CANCELLABLE_STATUSES, true);
+    }
+
+    public function isReceiving(): bool
+    {
+        return in_array($this->status, self::RECEIVING_STATUSES, true);
+    }
+
+    public function isAwaitingClosure(): bool
+    {
+        return $this->status === 'delivered';
+    }
+
+    public function isCompleted(): bool
+    {
+        return $this->status === 'completed';
     }
 
     public function canProgressStatus(): bool

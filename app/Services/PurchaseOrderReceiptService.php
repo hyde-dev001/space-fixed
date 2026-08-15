@@ -53,8 +53,7 @@ class PurchaseOrderReceiptService
                 return $existing;
             }
 
-            if ($purchaseOrder->is_historical
-                || !in_array($purchaseOrder->status, ['in_transit', 'partially_received'], true)) {
+            if ($purchaseOrder->is_historical || ! $purchaseOrder->isReceiving()) {
                 throw ValidationException::withMessages(['status' => 'Only a current in-transit purchase order can receive items.']);
             }
 
@@ -197,7 +196,7 @@ class PurchaseOrderReceiptService
             if ($receipt->source !== 'manual' || $purchaseOrder->is_historical) {
                 throw ValidationException::withMessages(['receipt' => 'Migration and historical receipts cannot be voided.']);
             }
-            if ($purchaseOrder->status === 'completed') {
+            if ($purchaseOrder->isCompleted()) {
                 throw ValidationException::withMessages(['receipt' => 'A receipt on a completed purchase order cannot be voided.']);
             }
 
