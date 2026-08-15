@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-15
 
-**Status:** Approved and frozen master design for Phase 3; Phase 3A focused design approved and frozen
+**Status:** Approved and frozen master design for Phase 3; Phase 3A and Phase 3B focused designs approved and frozen
 
 ## 1. Goal
 
@@ -139,6 +139,7 @@ OwnerAttentionItem
 - attention_key
 - source_type
 - source_id
+- coverage_source
 - category
 - primary_bucket
 - module
@@ -154,6 +155,24 @@ OwnerAttentionItem
 - destination_url
 ```
 
+Bucket and responsibility metadata is explicit and validated:
+
+```text
+needs_my_decision
+├─ owner_action_required = true
+└─ waiting_on = shop_owner
+
+urgent_exceptions
+├─ owner_action_required = false
+└─ waiting_on = none
+
+waiting_on_others
+├─ owner_action_required = false
+└─ waiting_on = legitimate actor/team key
+```
+
+Invalid combinations fail DTO construction. The coordinator never infers or corrects classification from source type, category, title, or other presentation data.
+
 Stable identity is:
 
 ```text
@@ -167,14 +186,19 @@ Phase 3 uses two different source concepts:
 ```text
 Coverage source
 = owner-facing group, filter, and configuration family
-= refunds | expenses | purchase_requests
+= refunds | expenses | purchase_requests | compliance | logistics
 
 Adapter key
 = independently queried and health-reported implementation source
 = order_refunds | repair_refunds | expenses | purchase_requests
+  | compliance_documents | failed_refunds | unowned_logistics_failures
 ```
 
+Coverage sources are bucket-scoped. For example, `refunds` can participate in `needs_my_decision` through approval adapters and later in `urgent_exceptions` through the independently enabled `failed_refunds` adapter without creating two owner-facing Refund source families.
+
 Owner-facing counts aggregate by coverage source after distinct `attention_key` normalization. Adapter-level counts and health remain operational metadata and do not create separate owner-facing filters.
+
+`coverage_source` is supplied explicitly by the adapter/DTO so the coordinator does not maintain source-type-to-product-family switches. `adapter_key`, `source_type`, `coverage_source`, and `category` remain distinct bounded identities.
 
 Owner-safe authoritative domain links are acceptable when Phase 2 did not establish a canonical nested record route. Phase 3 does not become a broad deep-route migration project.
 
@@ -195,13 +219,27 @@ The coordinator owns:
 
 It does not authorize mutations, infer domain transitions, or persist attention state.
 
+Phase 3B evolves this shared DTO and coordinator rather than introducing a parallel exception model. Before any Phase 3B adapter is enabled, every Phase 3A adapter must explicitly provide its existing `needs_my_decision`, `shop_owner`, `owner_action_required = true`, and coverage metadata. Hidden Phase 3A constructor defaults are removed, and characterization must prove that existing Phase 3A inclusion, ordering, counts, links, and behavior remain unchanged.
+
 ## 9. Primary Buckets and Staging
 
-An item belongs to exactly one primary attention bucket at a time:
+An item belongs to exactly one primary attention bucket at a time. Classification follows this canonical responsibility-first order:
 
-1. `Needs My Decision` when owner action is required;
-2. otherwise `Urgent Exceptions` when a material condition requires owner awareness;
-3. otherwise `Waiting on Others` when another deterministic actor owns the next step.
+```text
+Does the Shop Owner currently need to decide?
+├─ Yes → Needs My Decision
+└─ No
+   ↓
+Is there a deterministic named actor or team responsible for the next step?
+├─ Yes → Waiting on Others
+└─ No
+   ↓
+Is the active condition materially important enough to require owner awareness?
+├─ Yes → Urgent Exceptions
+└─ No → not an Action Center item
+```
+
+A single authoritative condition may produce at most one primary Action Center item for the same attention concern. Owner decision takes precedence; otherwise deterministic next-party responsibility maps to `Waiting on Others`; only owner-awareness conditions without a deterministic next actor map to `Urgent Exceptions`.
 
 ### Phase 3A — Owner Decisions
 
@@ -221,7 +259,163 @@ Subsequent Phase 3A adapters are independently onboarded after their readiness g
 
 ### Phase 3B — Material Exceptions
 
-Phase 3B introduces exceptions that may not require an owner decision but have sufficient urgency, customer impact, financial exposure, compliance impact, or operational age to require owner awareness.
+Phase 3B introduces active material conditions that require owner awareness, do not currently require an owner decision, and have no legitimate deterministic named actor or team responsible for the next step. Materiality may arise from urgency, customer impact, financial exposure, compliance impact, or operational age.
+
+`Urgent Exceptions` is not a fallback for missing or broken responsibility data. An adapter must prove that the material condition is active, owner awareness is justified, and no legitimate deterministic next actor exists. If responsibility should exist but cannot be derived because the domain workflow is ambiguous, that ambiguity is a domain/design gap and does not independently qualify the record as an Action Center exception.
+
+Selected Phase 3B coverage is:
+
+```text
+Urgent Exceptions
+├─ Compliance Documents
+├─ Failed Refunds
+└─ Unowned Logistics Failures
+```
+
+Each participating adapter must prove both source-specific materiality and the legitimate absence of deterministic responsibility. An exception adapter is not ready unless it can distinguish `no legitimate actor owns the next step` from `the system cannot determine responsibility`.
+
+Declared Phase 3B coverage is readiness-driven, not roadmap-driven. A selected source does not become visible merely because it is planned for the phase. Initial production launch enables Compliance Documents only:
+
+```text
+Phase 3B.1
+└─ Compliance Documents
+
+Phase 3B.2
+└─ Failed Refunds
+   enabled independently after the Refund recovery lifecycle passes readiness
+
+Phase 3B.3
+└─ Unowned Logistics Failures
+   enabled independently after the Logistics responsibility projection passes readiness
+```
+
+Blocked sources do not appear as filters, zero counts, placeholders, degraded adapters, or temporarily unavailable sources. Their selected-but-blocked status remains in engineering documentation and readiness evidence. When only Compliance participates in `Urgent Exceptions`, the UI may omit the redundant source filter entirely.
+
+Initial Phase 3B production launch is complete when the Compliance adapter is production-ready and safely enabled. Full declared Phase 3B initial coverage is complete only when Compliance Documents, Failed Refunds, and Unowned Logistics Failures have each independently passed readiness and been enabled. Production coverage may therefore expand one adapter at a time without waiting for another blocked source.
+
+Phase 3B must preserve these responsibility distinctions:
+
+```text
+Refund waiting for owner approval
+→ Needs My Decision
+
+Refund recovery owned by Finance or another deterministic actor
+→ Waiting on Others
+
+Materially failed Refund recovery with no legitimate recovery owner
+→ Urgent Exceptions
+```
+
+Compliance expiry thresholds use authoritative document reminder or escalation windows. Failed Refunds and Logistics failures use their own authoritative failure, recovery, and escalation rules. Phase 3B does not invent one universal materiality threshold across domains.
+
+Phase 3B materiality is source-owned:
+
+```text
+Domain policy
+├─ qualification threshold
+├─ escalation condition
+├─ retry or failure exhaustion
+└─ relevant deadline or age rules
+        ↓
+Adapter
+├─ inclusion predicate
+├─ priority_tier
+├─ materiality_tier
+├─ urgency_at
+└─ actionable_since
+        ↓
+OwnerActionCenterService
+└─ deterministic cross-source ordering
+```
+
+Qualification and ranking are separate. A domain first determines whether an active condition is sufficiently material to qualify. Only then may its adapter map the authoritative severity into the shared bounded priority and materiality vocabulary. The coordinator never promotes a non-qualifying record merely because its date is old or its amount is large.
+
+The Action Center configuration must not duplicate document expiry windows, Refund recovery limits, Logistics retry limits, or other source-owned thresholds. If an authoritative materiality boundary does not exist, the owning domain must define and test it before the adapter can pass readiness. Because Phase 3B remains request-time live-read, an authoritative domain-policy change is reflected on the next request without Action Center migration or synchronization.
+
+The Compliance Document adapter uses the authoritative compliance lifecycle classification in the configured shop/business timezone:
+
+```text
+outside authoritative material window
+→ no Action Center item
+
+renewal window (currently 8–30 days)
+→ Urgent Exceptions
+→ normal priority / medium materiality
+
+urgent window (currently 1–7 days)
+→ Urgent Exceptions
+→ high priority / high materiality
+
+expires today or expired
+→ Urgent Exceptions
+→ critical priority / critical materiality
+```
+
+The adapter consumes domain policy results rather than independently encoding the current `30 / 7 / 0` boundaries. `urgency_at` is the authoritative expiry date and `actionable_since` is when the document entered the authoritative material window. A pending renewal with deterministic reviewer responsibility belongs to `Waiting on Others`; an explicit owner-decision state takes precedence as `Needs My Decision`; only a qualifying current document without either responsibility belongs to `Urgent Exceptions`. The owner-safe destination is `/shop-owner/settings/policies-compliance`.
+
+Replacement, supersession, conversion to non-expiring metadata, corrected expiry outside the material window, or establishment of deterministic responsibility removes the exception on the next read. Missing expiry metadata, conflicting current versions, unverified metadata, invalid renewal chains, and equivalent lifecycle ambiguity are adapter/domain-health failures and never exception items.
+
+Failed Refunds are selected Phase 3B coverage but remain blocked until the Refund domain supplies an authoritative recovery lifecycle. A terminal `failed` execution alone cannot prove that a failure remains unresolved, identify current recovery responsibility, or explain how it was eventually resolved.
+
+The minimum domain capability is:
+
+```text
+Refund execution fails
+→ historical failure remains preserved
+→ recovery unresolved
+   ├─ active legitimate Finance/payment recovery owner
+   │  → Waiting on Others
+   ├─ explicit owner decision required
+   │  → Needs My Decision
+   ├─ no legitimate recovery owner
+   │  → Urgent Exceptions
+   └─ successful retry/replacement or controlled manual recovery
+      → recovery resolved
+      → no Action Center item
+```
+
+Action Center classification derives from Refund recovery state; it never creates or owns that state. Acknowledgment, dismissal, hiding, or marking a card reviewed cannot substitute for domain resolution. An unresolved failure remains unresolved regardless of age, although age may increase its normalized urgency.
+
+The Refund domain must preserve original failure evidence while recording enough audited information to prove active legitimate recovery assignment, controlled resolution actor/time/outcome/reason, and retry or replacement linkage. Exact persistence names are deferred to the focused domain design and implementation plan. Assignment must be active and legitimate; a stale actor identifier does not establish deterministic responsibility.
+
+Failed Refund adapter readiness requires authoritative unresolved state, deterministic recovery ownership, controlled and idempotent resolution, retry/replacement traceability, tested 3A/3B/3C classification, and exhaustive exit behavior.
+
+Unowned Logistics Failures are selected Phase 3B coverage but remain blocked until Logistics supplies an authoritative, side-effect-free, bulk-safe responsibility projection. Existing overdue events are historical notification evidence and cannot independently establish a current exception.
+
+The projection must provide the domain equivalents of:
+
+```text
+owner_action_required
+deterministic_responsible_party
+recovery_path_active
+recovery_path_exhausted
+material_exception_active
+```
+
+Classification is:
+
+```text
+owner_action_required
+→ Needs My Decision
+
+active legitimate responsible rider, dispatcher, or recovery team
+→ Waiting on Others
+
+no owner action
++ no deterministic responsible party
++ authoritative recovery path exhausted
++ current material exception active
+→ Urgent Exceptions
+
+stale, contradictory, or indeterminate responsibility
+→ adapter/domain-health failure
+```
+
+Responsibility must reflect current legitimate ownership rather than an old assignment record. Exhaustion and materiality derive from authoritative Logistics retry, return, resolution, and escalation policy; adapters never invent attempt limits or age thresholds. Reassignment, retry, return completion, cancellation, delivery, owner-action escalation, or another terminal resolution reclassifies or removes the item on the next read.
+
+Logistics adapter readiness requires deterministic current responsibility, recovery-path state, exhaustion, materiality, and owner-action precedence; detectable ambiguous states; and tested reassignment, retry, return, cancellation, delivery, and terminal exits.
+
+Inventory and procurement aging, repair aging or parts delays, and payroll rejection remain deferred until Phase 3C responsibility mapping or a source-specific legitimate unowned escalation state is proven.
 
 Its focused design must define materiality and exit rules per source. Phase 3A does not pre-empt those decisions.
 
@@ -267,25 +461,51 @@ The algorithm must be tested with globally interleaved sources, deterministic ti
 
 ### Home
 
-`/shop-owner/home` retains the existing Business Summary and adds a bounded Owner Actions section:
+`/shop-owner/home` retains the existing Business Summary and adds separate bounded summaries for each active supported attention bucket:
 
-- `Needs My Decision` with a separate count badge;
-- top 3–5 items using the shared ordering contract;
-- `View all` to `/shop-owner/action-center`;
-- secondary supported-source disclosure;
-- partial or unavailable state when applicable.
+- `Needs My Decision` has its own count and top 3–5 decisions;
+- `Urgent Exceptions` has its own count and top 3–5 exceptions once Phase 3B is enabled;
+- each summary uses the shared inclusion and bucket-specific ordering contract;
+- each summary links to `/shop-owner/action-center` with its bucket selected;
+- secondary supported-source disclosure and partial or unavailable states remain bucket-aware.
+
+Home never merges decisions and exceptions into one generic attention list.
 
 ### Full queue
 
 `/shop-owner/action-center` is the single canonical full-queue destination:
 
-- active supported bucket navigation;
-- validated source filters;
-- deterministic ordering;
-- accessible pagination;
+- bucket tabs show active supported buckets and their bucket-specific counts;
+- `Needs My Decision` is the default healthy bucket, even when its current count is zero;
+- automatic fallback to another bucket is permitted only when the default bucket is unsupported or unavailable, not merely empty;
+- the selected bucket determines its eligible sources, validated source filters, deterministic ordering, count, and pagination;
+- changing buckets resets pagination to the selected bucket's deterministic valid starting state, normally page 1;
+- decisions and exceptions are never combined into one paginated queue;
+- accessible pagination is independent per bucket;
 - manual refresh;
 - coverage and source-health disclosure;
 - owner-safe domain links.
+
+Conceptual bounded URLs are:
+
+```text
+/shop-owner/action-center?bucket=needs_my_decision&page=2
+/shop-owner/action-center?bucket=urgent_exceptions&source=compliance&page=2
+```
+
+Source filters appear only when the source participates in the selected bucket's enabled supported coverage. For the initial staged coverage:
+
+```text
+Needs My Decision
+├─ Refunds
+├─ Expenses
+└─ Purchase Requests
+
+Urgent Exceptions
+├─ Compliance Documents
+├─ Failed Refunds       once adapter-ready
+└─ Logistics Failures  once adapter-ready
+```
 
 Home and the Action Center use identical inclusion, identity, counting, filtering, and ordering contracts. Under the same fixed source state they produce consistent results. Runtime values need not remain identical across separate requests when authoritative state changes between requests.
 
@@ -302,18 +522,50 @@ Phase 3 reuses the completed canonical shell and existing Shop Owner dashboard d
 
 The Action Center must not look like a separate generic administration product.
 
-Every attention row follows one hierarchy:
+The standard Phase 3 visual language is a compact operational queue. It is optimized for mixed-domain scanning at low or moderate SME volumes without becoming either an oversized card gallery or a dense ERP table.
+
+The full-page hierarchy is:
 
 ```text
-decision title
-source badge + amount/exposure
-priority indicator + aging/due context
+compact page header + last-refreshed status + utility Refresh
+bucket tabs with count badges
+selected bucket title and concise purpose
+bucket-specific source filters
+one light queue container
+structured attention rows separated by dividers
+conventional pagination
+secondary coverage disclosure
+```
+
+Bucket tabs are the dominant page control. Source filters are visually secondary and appear only for participating sources in the selected bucket. Selected controls use the existing SoleSpace blue; priority colors are restrained semantic accents rather than the page's dominant color.
+
+Every attention row follows one consistent hierarchy:
+
+```text
+source badge
+dominant title
+amount/exposure + urgency/age context
+textual priority or materiality indicator
 owner-safe Open workflow link
 ```
 
-Priority is never communicated by color alone. Workflow navigation uses native anchor or Inertia `Link` semantics. The whole row may be linked only when it contains no competing interactive controls.
+Rows use dividers and restrained hover/focus treatment rather than individual oversized floating cards or repeated shadows. Priority is never communicated by color alone. Workflow navigation uses native anchor or Inertia `Link` semantics. `Open workflow` remains an explicit control; the whole row may be linked only when it is one semantic link with no competing interactive controls.
+
+Refresh is utility-level UI rather than a primary call to action. Pagination remains conventional and exposes a stable queue position; infinite scroll is not used. A healthy empty `Needs My Decision` bucket remains selected and usable even when `Urgent Exceptions` contains items.
+
+Partial-source failures use a calm inline notice above the queue, identify affected sources, and mark counts as partial. They do not replace the queue with an oversized alarming panel when healthy sources can still render.
+
+On small screens, bucket controls remain fully usable, metadata stacks vertically, links and buttons retain at least 44-pixel touch targets, and the page introduces no horizontal scrolling or compressed desktop table. Keyboard order follows visual order, focus indicators remain visible, dynamic count/status changes use appropriate live-region semantics, and reduced-motion preferences are respected.
+
+Phase 3 deliberately avoids decorative gradients, glass effects, excessive shadows, decorative metrics, duplicated mutation controls, and unsupported-source zero states. This compact operational-queue contract carries forward to Phase 3C so all attention buckets feel like one coherent product.
 
 Home discovers, the Action Center reviews, and domain pages execute. Initial cards contain no generic Approve or Reject buttons.
+
+Urgent Exceptions have no Action Center-owned dismiss, acknowledge, hide, snooze, or resolve state. An exception remains visible while its authoritative domain predicate remains true and disappears or changes buckets only when authoritative domain state changes. Opening a workflow, viewing details, returning to the Action Center, or marking a related notification as read does not affect inclusion.
+
+Notification acknowledgement and Action Center inclusion are separate concerns: notifications represent event awareness, while the Action Center projects current authoritative state. If an exception becomes too noisy, the owning domain's qualification or escalation policy must be corrected rather than adding a per-owner Action Center suppression mechanism.
+
+The Action Center has no independent exception-resolution lifecycle. Only authoritative domain transitions, current responsibility changes, or authoritative resolution may remove or reclassify an Urgent Exception.
 
 ## 14. Freshness and Concurrency
 
@@ -474,4 +726,4 @@ Phase 3 master
 └── Phase 3C — Waiting on Others
 ```
 
-The first implementation plan covers [`2026-08-15-shop-owner-phase-3a-owner-decisions-design.md`](./2026-08-15-shop-owner-phase-3a-owner-decisions-design.md) only. Phase 3B and Phase 3C receive their own focused designs and plans before source onboarding begins.
+The Phase 3A implementation plan covers [`2026-08-15-shop-owner-phase-3a-owner-decisions-design.md`](./2026-08-15-shop-owner-phase-3a-owner-decisions-design.md). Phase 3B implementation planning proceeds from [`2026-08-16-shop-owner-phase-3b-material-exceptions-design.md`](./2026-08-16-shop-owner-phase-3b-material-exceptions-design.md), beginning with Compliance Documents only. Phase 3C receives its own focused design and plan before source onboarding begins.
