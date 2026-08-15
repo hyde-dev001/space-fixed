@@ -27,6 +27,7 @@ use App\Services\PaymentSettlementService;
 use App\Services\ShopOwnerApprovalPolicyService;
 use App\Services\Logistics\SourceShipmentService;
 use App\Services\RepairDeliveryService;
+use App\Services\Repairs\RepairOwnerProjection;
 
 class RepairWorkflowController extends Controller
 {
@@ -48,7 +49,8 @@ class RepairWorkflowController extends Controller
         private ShopOwnerApprovalPolicyService $shopOwnerApprovalPolicyService,
         private PaymentSettlementService $paymentSettlementService,
         private SourceShipmentService $sourceShipmentService,
-        private RepairDeliveryService $repairDeliveryService
+        private RepairDeliveryService $repairDeliveryService,
+        private RepairOwnerProjection $repairOwnerProjection,
     )
     {
         $this->notificationService = $notificationService;
@@ -205,6 +207,7 @@ class RepairWorkflowController extends Controller
                         'reviewed_by' => $repairRequest->ownerReviewedBy ? $repairRequest->ownerReviewedBy->business_name : null,
                     ] : null,
                     'conversation_id' => $repairRequest->conversation_id,
+                    'owner_projection' => $this->repairOwnerProjection->project($repairRequest),
                 ]
             ]);
             

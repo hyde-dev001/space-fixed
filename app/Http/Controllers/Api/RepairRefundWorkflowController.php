@@ -9,6 +9,7 @@ use App\Services\PaymentSettlementService;
 use App\Services\ShopOwnerApprovalPolicyService;
 use App\Services\RepairOnlineRefundWorkflowService;
 use App\Services\RepairPosRefundService;
+use App\Services\Orders\OrderRefundOwnerProjection;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
@@ -16,6 +17,10 @@ use Illuminate\Validation\ValidationException;
 
 class RepairRefundWorkflowController extends Controller
 {
+    public function __construct(
+        private readonly OrderRefundOwnerProjection $orderRefundOwnerProjection,
+    ) {}
+
     public function financeDeliveryReconciliations(Request $request, PaymentSettlementService $payments)
     {
         $actor = Auth::guard('user')->user();
@@ -611,6 +616,7 @@ class RepairRefundWorkflowController extends Controller
                 'execution_amount' => (float) ($refund->execution_amount ?? 0),
                 'execution_proof_urls' => is_array($refund->execution_proof_urls) ? $refund->execution_proof_urls : [],
             ],
+            'owner_projection' => $this->orderRefundOwnerProjection->project($refund),
         ];
     }
 

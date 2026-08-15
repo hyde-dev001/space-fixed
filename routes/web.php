@@ -1145,6 +1145,7 @@ Route::middleware('auth:shop_owner')->prefix('api/shop-owner')->group(function (
     Route::get('orders', [\App\Http\Controllers\ShopOwner\OrderController::class, 'index'])->middleware('check.business.type:retail,both');
     Route::get('orders/{id}', [\App\Http\Controllers\ShopOwner\OrderController::class, 'show'])->middleware('check.business.type:retail,both');
     Route::patch('orders/{id}/status', [\App\Http\Controllers\ShopOwner\OrderController::class, 'updateStatus'])->middleware('check.business.type:retail,both');
+    Route::post('orders/{id}/correct-terminal-outcome', [\App\Http\Controllers\ShopOwner\OrderController::class, 'correctTerminalOutcome'])->middleware('check.business.type:retail,both');
 
     // Profile
     Route::post('upload-profile-photo', [\App\Http\Controllers\ShopOwner\ShopProfileController::class, 'uploadPhoto']);

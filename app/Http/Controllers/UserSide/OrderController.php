@@ -40,6 +40,7 @@ class OrderController extends Controller
 {
     protected NotificationService $notificationService;
     protected OrderRefundService $orderRefundService;
+    protected OrderFulfillmentService $orderFulfillmentService;
     protected PaymongoRefundService $paymongoRefundService;
     protected PaymentSettlementService $paymentSettlementService;
     protected RefundLineCalculatorService $refundLineCalculatorService;
@@ -52,6 +53,7 @@ class OrderController extends Controller
     public function __construct(
         NotificationService $notificationService,
         OrderRefundService $orderRefundService,
+        OrderFulfillmentService $orderFulfillmentService,
         PaymongoRefundService $paymongoRefundService,
         PaymentSettlementService $paymentSettlementService,
         RefundLineCalculatorService $refundLineCalculatorService,
@@ -62,6 +64,7 @@ class OrderController extends Controller
     {
         $this->notificationService = $notificationService;
         $this->orderRefundService = $orderRefundService;
+        $this->orderFulfillmentService = $orderFulfillmentService;
         $this->paymongoRefundService = $paymongoRefundService;
         $this->paymentSettlementService = $paymentSettlementService;
         $this->refundLineCalculatorService = $refundLineCalculatorService;
@@ -599,7 +602,6 @@ class OrderController extends Controller
                 ]);
             }
         }
-
         return response()->json([
             'success' => true,
             'message' => $result['message'],

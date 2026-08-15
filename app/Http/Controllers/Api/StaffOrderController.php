@@ -10,6 +10,7 @@ use App\Models\OrderRefund;
 use App\Models\User;
 use App\Services\Logistics\DeliveryScheduleService;
 use App\Services\OrderRefundService;
+use App\Services\Orders\OrderFulfillmentService;
 use App\Services\RetailPosRefundSummaryService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -17,6 +18,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 
 class StaffOrderController extends Controller
 {
@@ -37,6 +39,7 @@ class StaffOrderController extends Controller
 
     public function __construct(
         private readonly OrderRefundService $orderRefundService,
+        private readonly OrderFulfillmentService $orderFulfillmentService,
         private readonly RetailPosRefundSummaryService $retailPosRefundSummaryService,
         private readonly DeliveryScheduleService $deliveryScheduleService,
     ) {}
@@ -568,7 +571,7 @@ class StaffOrderController extends Controller
     {
         try {
             $validated = $request->validate([
-                'status' => 'required|in:pending,processing,shipped,completed,cancelled',
+                'status' => 'required|string',
                 'tracking_number' => 'nullable|string|max:255',
                 'carrier_company' => 'nullable|string|max:255',
                 'carrier_name' => 'nullable|string|max:255',
@@ -612,16 +615,6 @@ class StaffOrderController extends Controller
             return response()->json(['error' => 'Order not found'], 404);
         }
 
-        if ($order->status->isFinal() && $order->status->value !== $validated['status']) {
-            $currentStatus = ucfirst($order->status->value);
-            $requestedStatus = ucfirst($validated['status']);
-
-            return response()->json([
-                'success' => false,
-                'message' => "The order is already {$currentStatus} and cannot be moved back to {$requestedStatus}.",
-            ], 409);
-        }
-
         $carrierCompany = $validated['carrier_company'] ?? $order->carrier_company;
         $isShopOwned = strtolower(trim((string) $carrierCompany)) === 'shop-owned logistics';
         if ($isShopOwned) {
@@ -645,79 +638,54 @@ class StaffOrderController extends Controller
             }
         }
 
-        // Store the old status for comparison (convert enum to string value)
-        $oldStatus = $order->status->value;
-
-        // Update order status and shipping info
-        $order->status = $validated['status'];
-
-        if (isset($validated['tracking_number'])) {
-            $order->tracking_number = $validated['tracking_number'];
-        }
-
-        if (isset($validated['carrier_company'])) {
-            $order->carrier_company = $validated['carrier_company'];
-        }
-
-        if (isset($validated['carrier_name'])) {
-            $order->carrier_name = $validated['carrier_name'];
-        }
-
-        if (isset($validated['carrier_phone'])) {
-            $order->carrier_phone = $validated['carrier_phone'];
-        }
-
-        if (isset($validated['tracking_link'])) {
-            $order->tracking_link = $validated['tracking_link'];
-        }
-
-        if (isset($validated['eta'])) {
-            $order->eta = $validated['eta'];
-        }
-
-        $order->save();
-
-        // Log the status change with business context
-        activity()
-            ->causedBy($user)
-            ->performedOn($order)
-            ->withProperties([
-                'order_number' => $order->order_number,
-                'customer_name' => $order->customer_name ?? 'N/A',
-                'old_status' => $oldStatus,
-                'new_status' => $validated['status'],
-                'total_amount' => $order->total_amount,
-                'updated_by_name' => $user->name,
-                'updated_by_role' => $user->role,
-                'tracking_number' => $validated['tracking_number'] ?? null,
-                'carrier_company' => $validated['carrier_company'] ?? null,
-            ])
-            ->log("Order status updated from {$oldStatus} to {$validated['status']}");
-
-        Log::info('Order status updated', [
-            'order_id' => $id,
-            'order_number' => $order->order_number,
-            'old_status' => $oldStatus,
-            'new_status' => $validated['status'],
-            'user_id' => $user->id,
-            'user_role' => $user->role,
-        ]);
-
-        if ($oldStatus !== 'shipped' && $validated['status'] === 'shipped') {
-            app(\App\Services\Logistics\SourceShipmentService::class)->ensureRetailOrderShipment($order->fresh());
+        try {
+            $updatedOrder = match ($validated['status']) {
+                'processing' => $this->orderFulfillmentService->markProcessing($order, $user),
+                'shipped' => $this->orderFulfillmentService->markShipped(
+                    $order,
+                    $user,
+                    array_intersect_key($validated, array_flip([
+                        'tracking_number',
+                        'carrier_company',
+                        'carrier_name',
+                        'carrier_phone',
+                        'tracking_link',
+                        'eta',
+                    ])),
+                ),
+                'completed' => $this->orderFulfillmentService->completeDirectly($order, $user),
+                default => throw ValidationException::withMessages([
+                    'status' => ['Use a named processing, shipping, or direct-completion action for Order fulfillment.'],
+                ]),
+            };
+        } catch (ValidationException $exception) {
+            return $this->transitionErrorResponse($exception);
         }
 
         return response()->json([
             'success' => true,
             'message' => 'Order status updated successfully',
             'order' => [
-                'id' => $order->id,
-                'order_number' => $order->order_number,
-                'status' => $order->status,
-                'tracking_number' => $order->tracking_number,
-                'updated_at' => $order->updated_at->toISOString(),
+                'id' => $updatedOrder->id,
+                'order_number' => $updatedOrder->order_number,
+                'status' => $updatedOrder->status,
+                'tracking_number' => $updatedOrder->tracking_number,
+                'updated_at' => $updatedOrder->updated_at->toISOString(),
             ],
         ]);
+    }
+
+    private function transitionErrorResponse(ValidationException $exception)
+    {
+        $errors = $exception->errors();
+        $message = collect($errors)->flatten()->first() ?? 'Order transition is not allowed.';
+        $status = str_starts_with($message, 'The order is already') ? 409 : 422;
+
+        return response()->json([
+            'success' => false,
+            'message' => $message,
+            'errors' => $errors,
+        ], $status);
     }
 
     private function shopOwnedCoverage(Order $order): array
@@ -959,9 +927,11 @@ class StaffOrderController extends Controller
             return response()->json(['error' => 'Order not found'], 404);
         }
 
-        // Update order status to completed
-        $order->status = 'completed';
-        $order->save();
+        try {
+            $order = $this->orderFulfillmentService->completeDirectly($order, $user);
+        } catch (ValidationException $exception) {
+            return $this->transitionErrorResponse($exception);
+        }
 
         Log::info('Order completed', [
             'order_id' => $id,
@@ -983,7 +953,7 @@ class StaffOrderController extends Controller
                 'customer_name' => $order->customer_name ?? $order->customer?->name ?? 'Guest',
                 'customer_email' => $order->customer_email ?? $order->customer?->email ?? '',
                 'total_amount' => $order->total_amount,
-                'status' => 'completed',
+                'status' => $order->status,
             ],
         ]);
     }
