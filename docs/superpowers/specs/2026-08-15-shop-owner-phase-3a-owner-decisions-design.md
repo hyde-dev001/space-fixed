@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-15
 
-**Status:** Approved focused design; ready for implementation planning
+**Status:** Approved and frozen focused design; ready for Phase 3A implementation planning
 
 ## 1. Goal
 
@@ -102,7 +102,7 @@ waiting_on = shop_owner
 Required fields are:
 
 ```text
-key
+attention_key
 source_type
 source_id
 category
@@ -122,7 +122,21 @@ destination_url
 
 The DTO is immutable request data. It has no persistence, lifecycle, read/unread state, or independent resolution state.
 
-Identity is `source_type + source_id + category`. Counts use distinct qualifying keys.
+Identity is `source_type + source_id + category` and is exposed as `attention_key`. Counts use distinct qualifying attention keys.
+
+Phase 3A distinguishes owner-facing coverage from internal adapter execution:
+
+```text
+Coverage source
+= owner-facing group, filter, and configuration family
+= refunds | expenses | purchase_requests
+
+Adapter key
+= independently queried and health-reported implementation source
+= order_refunds | repair_refunds | expenses | purchase_requests
+```
+
+Owner-facing counts aggregate by coverage source after distinct `attention_key` normalization. Adapter-level counts remain operational health data and do not create separate Refund filters.
 
 ## 6. Refund Adapter Family
 
@@ -145,7 +159,7 @@ They must not be collapsed into one source identity because Order Refund and Rep
 
 ### Order Refund inclusion
 
-The adapter follows the same owner eligibility contract as the current Shop Owner Refund approval workflow. A record qualifies only when all current authoritative conditions are satisfied, including:
+The adapter follows the same owner eligibility contract as the current Shop Owner Refund approval workflow. A record qualifies only when all current authoritative conditions are satisfied, including the following currently identified rules or their authoritative equivalents:
 
 - the Refund belongs to an order belonging to the current shop through the established tenant relationship;
 - the Refund uses the owner-approval request flow;
@@ -158,7 +172,7 @@ The adapter must reuse or extract a side-effect-free eligibility boundary rather
 
 ### Repair Refund inclusion
 
-The Repair/POS Refund adapter uses the authoritative repair-refund tenant relationship and requires:
+The Repair/POS Refund adapter uses the authoritative repair-refund tenant relationship and requires the following currently identified rules or their authoritative equivalents:
 
 - repair module/source classification;
 - active requested state;
@@ -170,7 +184,7 @@ The linked rider, order, or repair presentation must not broaden eligibility. Th
 
 ### Refund exit
 
-An item exits when any authoritative condition required for owner action becomes false, including approval, rejection, cancellation, supersession, changed responsibility, terminal failure handling, or source invalidation.
+An item exists if and only if all current inclusion and owner-responsibility predicates remain true. It exits as soon as any required predicate becomes false. Known examples include approval, rejection, cancellation, supersession, changed responsibility, terminal failure handling, and source invalidation; characterization tests must enumerate the transitions supported by the current domain.
 
 Refund fulfillment and payout remain separate domain concerns. Phase 3A does not infer a Refund decision from Order fulfillment status.
 
@@ -180,7 +194,7 @@ The item links to the existing authorized owner Refund detail or approval page. 
 
 ## 7. Expense Adapter
 
-An Expense qualifies only when the current authoritative owner-approval conditions are satisfied:
+An Expense qualifies only when the current authoritative owner-approval conditions are satisfied. The following fields and relationships are currently identified and must be verified during characterization, using their authoritative equivalents where the implementation differs:
 
 - `Expense.shop_id` matches the current shop identity through the existing tenant relationship;
 - the Expense is a manual owner-reviewable expense rather than a procurement-receipt-generated expense;
@@ -200,7 +214,7 @@ Any extracted `canApprove`, eligibility scope, or equivalent policy must be:
 
 ### Expense exit
 
-The item exits when the owner Approval is approved, rejected, cancelled, superseded, no longer pending, assigned to another role, or the Expense leaves an actionable submitted state.
+The item exists if and only if all current Expense inclusion and owner-responsibility predicates remain true. It exits as soon as any required predicate becomes false. Known examples include an Approval being approved, rejected, cancelled, superseded, no longer pending, assigned to another role, or the Expense leaving an actionable submitted state; characterization tests must enumerate the transitions supported by the current domain.
 
 ### Expense destination
 
@@ -208,7 +222,7 @@ The item links to the existing authorized Shop Owner Expense approval/detail wor
 
 ## 8. Purchase Request Adapter
 
-A Purchase Request qualifies only when:
+A Purchase Request qualifies only when the authoritative owner-decision predicates remain true. The following field and state names are currently identified and must be verified during characterization, using their authoritative equivalents where the implementation differs:
 
 - its authoritative `shop_owner_id` tenant relationship matches the current shop;
 - its state is `pending_shop_owner`;
@@ -219,7 +233,7 @@ A Purchase Request qualifies only when:
 
 ### Purchase Request exit
 
-Approval normally moves the request to its Finance stage. Rejection, cancellation, supersession, or another authoritative responsibility change also removes it from Phase 3A.
+The item exists if and only if all current Purchase Request inclusion and owner-responsibility predicates remain true. Approval normally moves the request to its Finance stage. Rejection, cancellation, supersession, or another authoritative responsibility change also removes it from Phase 3A. Characterization tests must enumerate the transitions supported by the current domain.
 
 ### Purchase Request destination
 
@@ -263,7 +277,7 @@ The coordinator:
 - invokes enabled adapters with current shop context and validated filters;
 - validates every returned DTO;
 - records healthy and failed source keys;
-- defensively deduplicates stable keys;
+- defensively deduplicates stable attention keys;
 - globally orders candidates;
 - calculates distinct counts;
 - slices the requested page;
@@ -363,7 +377,7 @@ There are no inline Approve or Reject buttons in Phase 3A.
 
 ## 16. Availability and Count Semantics
 
-Counts represent qualifying distinct items from currently available enabled sources.
+Counts represent qualifying distinct items from currently available enabled coverage sources after normalization by `attention_key`. Adapter-level counts remain operational health metadata and do not create separate owner-facing totals or filters.
 
 ### Healthy sources, no items
 
@@ -432,7 +446,7 @@ Existing approval URLs remain compatibility and execution entry points. Phase 3A
 
 ## 19. Security Contract
 
-Every adapter query is tenant-scoped through its exact authoritative relationship. Generic `shop_id` wording must not replace source-specific foreign-key and relationship semantics.
+Every adapter query is tenant-scoped through its authoritative relationship. Names referenced in this design describe the currently identified implementation and remain provisional until Phase 3A characterization locks the exact model, column, relationship, policy, and route details. Generic `shop_id` wording must not replace source-specific tenant semantics.
 
 The Action Center:
 
@@ -528,7 +542,7 @@ No domain mutation path is migrated into the Action Center during this sequence.
 - exact tenant scoping;
 - deterministic inclusion and exclusion;
 - distinct identity and counts;
-- exhaustive approval, rejection, cancellation, supersession, responsibility-change, and terminal exits;
+- predicate-based exit behavior, with known approval, rejection, cancellation, supersession, responsibility-change, and terminal transitions enumerated;
 - safe summaries and destinations;
 - bounded, bulk-safe queries;
 - security-sensitive failure contributes no data.
@@ -603,5 +617,7 @@ Phase 3A is complete when:
 12. Existing approval pages and mutation behavior remain authoritative and functional.
 13. Phase 3 failures preserve the Phase 2 canonical shell and do not alter domain behavior.
 14. No Action Center persistence, generic mutation surface, second authorization system, or workflow duplication is introduced.
+
+Completing these criteria completes Phase 3A only. The Phase 3 program remains open until Phase 3B and Phase 3C have approved focused designs and their accepted scope is implemented and verified.
 
 > **Completion invariant:** Phase 3A is complete when Order Refund, Repair Refund, Expense, and Purchase Request adapters have independently passed their readiness gates and allowlisted canonical-shell owners can discover and systematically review their current owner-required decisions through the shared live-read model, while existing domain workflows remain the sole execution surfaces and unsupported or temporarily unavailable domains are represented accurately.

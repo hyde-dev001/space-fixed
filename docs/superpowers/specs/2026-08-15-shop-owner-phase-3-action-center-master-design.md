@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-15
 
-**Status:** Approved master design for Phase 3; Phase 3A focused design approved
+**Status:** Approved and frozen master design for Phase 3; Phase 3A focused design approved and frozen
 
 ## 1. Goal
 
@@ -122,7 +122,7 @@ deterministic entry
 + bounded tenant-scoped query
 + owner-safe destination
 + destination authorization recheck
-+ exhaustive exit states
++ predicate-based exit contract
 + defined cancellation/supersession behavior
 + deterministic duplicate suppression
 = adapter ready
@@ -136,7 +136,7 @@ The shared contract contains only presentation-safe normalized data:
 
 ```text
 OwnerAttentionItem
-- key
+- attention_key
 - source_type
 - source_id
 - category
@@ -160,7 +160,21 @@ Stable identity is:
 source_type + source_id + category
 ```
 
-Each adapter must emit unique keys and distinct counts. The coordinator performs defensive duplicate suppression but does not compensate for an adapter that intentionally conflates different source records.
+This value is exposed as `attention_key`. Each adapter must emit unique attention keys and distinct counts. The coordinator performs defensive duplicate suppression but does not compensate for an adapter that intentionally conflates different source records.
+
+Phase 3 uses two different source concepts:
+
+```text
+Coverage source
+= owner-facing group, filter, and configuration family
+= refunds | expenses | purchase_requests
+
+Adapter key
+= independently queried and health-reported implementation source
+= order_refunds | repair_refunds | expenses | purchase_requests
+```
+
+Owner-facing counts aggregate by coverage source after distinct `attention_key` normalization. Adapter-level counts and health remain operational metadata and do not create separate owner-facing filters.
 
 Owner-safe authoritative domain links are acceptable when Phase 2 did not establish a canonical nested record route. Phase 3 does not become a broad deep-route migration project.
 
@@ -416,7 +430,7 @@ Shared framework verification covers:
 
 - DTO validation and stable identity;
 - tenant isolation;
-- source entry and exhaustive exit states;
+- source entry predicates and known transition examples;
 - owner-responsibility boundaries;
 - duplicate suppression;
 - ordering, currency, urgency, and tie-breaker behavior;
@@ -432,6 +446,8 @@ Shared framework verification covers:
 Each future adapter must independently pass the readiness gate before production enablement.
 
 ## 20. Program Acceptance Criteria
+
+The shared Phase 3 program is complete only after Phase 3A, Phase 3B, and Phase 3C have each received an approved focused design and their accepted scope has been implemented and verified. Completing the first implementation plan completes Phase 3A only; it does not complete the full Phase 3 program.
 
 Phase 3 is complete when:
 
