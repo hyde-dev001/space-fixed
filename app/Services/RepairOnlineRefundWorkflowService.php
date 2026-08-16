@@ -30,8 +30,6 @@ class RepairOnlineRefundWorkflowService
             'repairer_reviewed_at' => now(),
             'approved_amount' => round($approvedAmount, 2),
             'status' => 'requested',
-            'failure_reason' => null,
-            'failed_at' => null,
         ]);
 
         if ($this->isIndividualShopOwner((int) $refund->shop_owner_id)) {
@@ -83,8 +81,10 @@ class RepairOnlineRefundWorkflowService
             'repairer_reviewed_by' => $actorId,
             'repairer_reviewed_at' => now(),
             'status' => 'rejected',
-            'failure_reason' => Str::limit(trim($reason), 255, ''),
-            'failed_at' => now(),
+            'failure_reason' => trim((string) ($refund->failure_reason ?? '')) !== ''
+                ? $refund->failure_reason
+                : Str::limit(trim($reason), 255, ''),
+            'failed_at' => $refund->failed_at ?? now(),
         ]);
 
         $customerId = $this->resolveCustomerUserId($refund);

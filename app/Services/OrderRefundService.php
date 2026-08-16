@@ -36,6 +36,7 @@ class OrderRefundService
         private readonly PaymentSettlementService $paymentSettlementService,
         private readonly ShopOwnerApprovalPolicyService $shopOwnerApprovalPolicyService,
         private readonly NotificationService $notificationService,
+        private readonly ?OrderRefundRecoveryService $orderRefundRecoveryService = null,
     ) {
     }
 
@@ -339,11 +340,10 @@ class OrderRefundService
         );
 
         if (!($gatewayResult['success'] ?? false)) {
-            $refund->update([
-                'status' => 'failed',
-                'failure_reason' => (string) ($gatewayResult['message'] ?? 'Refund request failed'),
-                'failed_at' => now(),
-            ]);
+            $this->recoveryService()->recordFailure(
+                refund: $refund,
+                reason: (string) ($gatewayResult['message'] ?? 'Refund request failed'),
+            );
 
             $this->paymentSettlementService->recordOrderRefundFailure($order, (string) ($gatewayResult['message'] ?? 'refund_failed'));
 
@@ -363,12 +363,14 @@ class OrderRefundService
             'status' => $refundStatus,
             'paymongo_refund_id' => $gatewayResult['refund_id'] ?? null,
             'refunded_at' => $refundStatus === 'succeeded' ? now() : null,
-            'failure_reason' => null,
-            'failed_at' => null,
             'reason_code' => $resolvedReasonCode,
             'reason_note' => $mergedReasonNote !== '' ? $mergedReasonNote : null,
             'other_reason_note' => $otherReasonText !== '' ? $otherReasonText : null,
         ]);
+
+        if ($refundStatus === 'succeeded' && $refund->exists && $refund->getKey()) {
+            $this->recoveryService()->recordSuccessfulExecution($refund, $refund->processed_by);
+        }
 
         if ($refundStatus === 'succeeded') {
             $this->paymentSettlementService->settleOrderRefunded(
@@ -791,8 +793,6 @@ class OrderRefundService
             'rejection_reason' => $rejectionReason,
             'approved_at' => now(),
             'processed_by' => $processedBy,
-            'failed_at' => null,
-            'failure_reason' => null,
         ];
 
         if (in_array($stageNormalized, ['staff', 'shop_owner'], true)) {
@@ -1291,12 +1291,11 @@ class OrderRefundService
     {
         $secretKey = (string) ($order->shopOwner?->paymongo_secret_key ?? '');
         if ($secretKey === '') {
-            $refund->update([
-                'status' => 'failed',
-                'failure_reason' => 'Payment gateway is not configured for this shop.',
-                'failed_at' => now(),
-                'processed_by' => $processedBy,
-            ]);
+            $this->recoveryService()->recordFailure(
+                refund: $refund,
+                reason: 'Payment gateway is not configured for this shop.',
+                processedBy: $processedBy,
+            );
 
             return [
                 'result' => 'failed',
@@ -1307,12 +1306,11 @@ class OrderRefundService
 
         $paymentId = $this->resolvePaymentId($order, $secretKey);
         if (!$paymentId) {
-            $refund->update([
-                'status' => 'failed',
-                'failure_reason' => 'Unable to resolve payment reference for refund.',
-                'failed_at' => now(),
-                'processed_by' => $processedBy,
-            ]);
+            $this->recoveryService()->recordFailure(
+                refund: $refund,
+                reason: 'Unable to resolve payment reference for refund.',
+                processedBy: $processedBy,
+            );
 
             return [
                 'result' => 'failed',
@@ -1327,12 +1325,11 @@ class OrderRefundService
         }
 
         if ($amount <= 0) {
-            $refund->update([
-                'status' => 'failed',
-                'failure_reason' => 'Refund amount is invalid.',
-                'failed_at' => now(),
-                'processed_by' => $processedBy,
-            ]);
+            $this->recoveryService()->recordFailure(
+                refund: $refund,
+                reason: 'Refund amount is invalid.',
+                processedBy: $processedBy,
+            );
 
             return [
                 'result' => 'failed',
@@ -1396,11 +1393,10 @@ class OrderRefundService
         );
 
         if (!($gatewayResult['success'] ?? false)) {
-            $refund->update([
-                'status' => 'failed',
-                'failure_reason' => (string) ($gatewayResult['message'] ?? 'Refund request failed'),
-                'failed_at' => now(),
-            ]);
+            $this->recoveryService()->recordFailure(
+                refund: $refund,
+                reason: (string) ($gatewayResult['message'] ?? 'Refund request failed'),
+            );
 
             $this->paymentSettlementService->recordOrderRefundFailure($order, (string) ($gatewayResult['message'] ?? 'refund_failed'));
 
@@ -1420,9 +1416,11 @@ class OrderRefundService
             'status' => $refundStatus,
             'paymongo_refund_id' => $gatewayResult['refund_id'] ?? null,
             'refunded_at' => $refundStatus === 'succeeded' ? now() : null,
-            'failure_reason' => null,
-            'failed_at' => null,
         ]);
+
+        if ($refundStatus === 'succeeded' && $refund->exists && $refund->getKey()) {
+            $this->recoveryService()->recordSuccessfulExecution($refund, $refund->processed_by);
+        }
 
         if ($refundStatus === 'succeeded') {
             if (Schema::hasTable('order_refund_items')) {
@@ -2018,5 +2016,10 @@ class OrderRefundService
         } catch (\Throwable) {
             return null;
         }
+    }
+
+    private function recoveryService(): OrderRefundRecoveryService
+    {
+        return $this->orderRefundRecoveryService ?? app(OrderRefundRecoveryService::class);
     }
 }

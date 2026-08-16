@@ -23,6 +23,7 @@ class RepairPosRefundService
 
     public function __construct(
         private readonly NotificationService $notificationService,
+        private readonly ?RepairRefundRecoveryService $repairRefundRecoveryService = null,
     ) {}
 
     public function computeRepairRefundableAmount(int $repairId): float
@@ -552,8 +553,6 @@ class RepairPosRefundService
                 'finance_status' => $requiresOwnerApproval ? 'approved_initial' : 'approved',
                 'shop_owner_status' => $requiresOwnerApproval ? 'pending' : 'skipped',
                 'reason_notes' => $notes !== '' ? Str::limit($notes, 2000, '') : null,
-                'failure_reason' => null,
-                'failed_at' => null,
             ]);
 
             $this->notifyRefundParties(
@@ -593,8 +592,6 @@ class RepairPosRefundService
             'finance_status' => 'approved',
             'shop_owner_status' => 'approved',
             'reason_notes' => $notes !== '' ? Str::limit($notes, 2000, '') : null,
-            'failure_reason' => null,
-            'failed_at' => null,
         ]);
 
         $this->notifyRefundParties(
@@ -636,8 +633,10 @@ class RepairPosRefundService
             'status' => 'rejected',
             'approved_by' => $actorId > 0 ? $actorId : null,
             'approved_at' => now(),
-            'failure_reason' => Str::limit(trim($rejectionReason), 255, ''),
-            'failed_at' => now(),
+            'failure_reason' => trim((string) ($refund->failure_reason ?? '')) !== ''
+                ? $refund->failure_reason
+                : Str::limit(trim($rejectionReason), 255, ''),
+            'failed_at' => $refund->failed_at ?? now(),
         ];
 
         if ($stage === 'finance') {
@@ -1052,8 +1051,6 @@ class RepairPosRefundService
             'paymongo_refund_ids' => null,
             'executed_by' => $actorId > 0 ? $actorId : null,
             'executed_at' => now(),
-            'failure_reason' => null,
-            'failed_at' => null,
         ]);
 
         $submittedRefundIds = [];
@@ -1114,8 +1111,6 @@ class RepairPosRefundService
                 'execution_notes' => $effectiveExecutionNote ? Str::limit(trim($effectiveExecutionNote), 1000, '') : null,
                 'executed_by' => $actorId,
                 'executed_at' => now(),
-                'failure_reason' => null,
-                'failed_at' => null,
             ]);
 
             return $refund->fresh();
@@ -1165,9 +1160,11 @@ class RepairPosRefundService
             'paymongo_refund_id' => $paymongoRefundId ?? $refund->paymongo_refund_id,
             'executed_by' => $actorId > 0 ? $actorId : ($refund->executed_by ?? null),
             'executed_at' => $refund->executed_at ?? now(),
-            'failure_reason' => null,
-            'failed_at' => null,
         ]);
+
+        if ($refund->exists && $refund->getKey()) {
+            $refund = $this->recoveryService()->recordSuccessfulExecution($refund, $actorId);
+        }
 
         $totalRefundedForTransaction = (float) PosRefund::query()
             ->where('source_transaction_id', $source->id)
@@ -1216,17 +1213,7 @@ class RepairPosRefundService
 
     private function markRefundFailed(PosRefund $refund, int $actorId, string $reason, ?string $executionNote): PosRefund
     {
-        $refund->update([
-            'status' => 'failed',
-            'execution_mode' => 'gateway',
-            'execution_notes' => $executionNote
-                ? Str::limit(trim($executionNote), 1000, '')
-                : ($refund->execution_notes ? Str::limit(trim((string) $refund->execution_notes), 1000, '') : null),
-            'executed_by' => $actorId > 0 ? $actorId : ($refund->executed_by ?? null),
-            'executed_at' => $refund->executed_at ?? now(),
-            'failure_reason' => Str::limit(trim($reason), 255, ''),
-            'failed_at' => now(),
-        ]);
+        $refund = $this->recoveryService()->recordFailure($refund, $actorId, $reason, $executionNote);
 
         $source = $refund->sourceTransaction()->first();
         if ($source) {
@@ -1242,6 +1229,11 @@ class RepairPosRefundService
         }
 
         return $refund->fresh();
+    }
+
+    private function recoveryService(): RepairRefundRecoveryService
+    {
+        return $this->repairRefundRecoveryService ?? app(RepairRefundRecoveryService::class);
     }
 
     private function notifyRefundParties(
