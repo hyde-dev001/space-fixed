@@ -29,7 +29,7 @@ final readonly class OwnerAttentionItem
         public string $coverageSource,
         public string $destinationUrl,
     ) {
-        if (! in_array($sourceType, ['order_refund', 'repair_refund', 'expense', 'purchase_request', 'compliance_document'], true)) {
+        if (! in_array($sourceType, ['order_refund', 'repair_refund', 'expense', 'purchase_request', 'compliance_document', 'logistics_failure'], true)) {
             throw new InvalidArgumentException('Owner attention source type is not supported.');
         }
 
@@ -59,6 +59,7 @@ final readonly class OwnerAttentionItem
             'expense' => 'expenses',
             'purchase_request' => 'purchase_requests',
             'compliance_document' => 'compliance',
+            'logistics_failure' => 'logistics',
         };
         if ($coverageSource !== $expectedCoverage) {
             throw new InvalidArgumentException('Owner attention source and coverage do not match.');
