@@ -197,4 +197,41 @@ describe("canonical shop owner home placeholders", () => {
     );
     expect(screen.queryByText(/^Exceptions \u2014 Coming in Phase 3$/)).not.toBeInTheDocument();
   });
+
+  it("renders a Logistics exception in the urgent summary without adding an owner action", async () => {
+    mocks.props = {
+      ...mocks.props,
+      ownerActionCenter,
+      ownerUrgentExceptions: {
+        ...ownerUrgentExceptions,
+        items: [{
+          ...ownerUrgentExceptions.items[0],
+          attention_key: "logistics_failure:17:unowned_delivery_failure",
+          source_type: "logistics_failure",
+          source_id: 17,
+          category: "unowned_delivery_failure",
+          module: "logistics",
+          title: "Failed delivery needs escalation",
+          concise_summary: "Delivery recovery is exhausted and has no active responsible party.",
+          coverage_source: "logistics",
+          destination_url: "/shop-owner/logistics/shipments?shipment=8&leg=17",
+        }],
+        coverage_counts: { compliance: 0, refunds: 0, logistics: 1 },
+        health: {
+          enabled_adapter_keys: ["unowned_logistics_failures"],
+          healthy_adapter_keys: ["unowned_logistics_failures"],
+          failed_adapter_keys: [],
+        },
+      },
+    };
+
+    render(<Dashboard />);
+
+    expect(await screen.findByText("Failed delivery needs escalation")).toBeInTheDocument();
+    expect(screen.getByText("Logistics Failure")).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: /Open workflow/i }).some((link) => (
+      link.getAttribute("href") === "/shop-owner/logistics/shipments?shipment=8&leg=17"
+    ))).toBe(true);
+    expect(screen.queryByRole("button", { name: /dismiss|hide|acknowledge|snooze|resolve/i })).not.toBeInTheDocument();
+  });
 });

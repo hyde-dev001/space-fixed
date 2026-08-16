@@ -182,7 +182,9 @@ export default function ActionCenter() {
 
           {result !== null && result.degradation_status !== "unavailable" && result.degradation_status !== "no_enabled_adapters" && result.items.length === 0 && (
             <p className="mt-5 rounded-xl border border-dashed border-gray-300 p-5 text-center text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
-              No decisions are listed on this page.
+              {bucket === "urgent_exceptions"
+                ? "No urgent exceptions are listed on this page."
+                : "No decisions are listed on this page."}
             </p>
           )}
 

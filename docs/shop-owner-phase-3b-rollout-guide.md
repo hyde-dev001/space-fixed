@@ -11,8 +11,8 @@ Current source status:
 | Source | Status | User-facing behavior |
 | --- | --- | --- |
 | Compliance Documents | Releasable after Gate B verification | Appears under `Urgent Exceptions` |
-| Failed Order and Repair Refunds | Gate D implementation and focused verification complete; final coverage verification pending | Hidden until enabled |
-| Unowned Logistics Failures | Gate E/F implementation and focused verification complete; full Logistics regression and final coverage verification pending | Hidden until enabled |
+| Failed Order and Repair Refunds | Gate D implementation and Gate G readiness verification complete | Hidden until enabled |
+| Unowned Logistics Failures | Gate E/F implementation and Gate G readiness verification complete | Hidden until enabled |
 
 Blocked sources must not be presented as unavailable. They are not enabled production coverage yet.
 
@@ -95,6 +95,21 @@ Interpret health states carefully:
 
 A Compliance adapter failure is isolated from the Phase 3A decision bucket. A common Action Center composition failure follows the established Phase 3 degradation behavior.
 
+## Gate G verification evidence
+
+The complete declared Phase 3B implementation has passed the focused readiness gates for all three source families:
+
+- Action Center and owner-attention contract suites: **157 tests / 821 assertions passed**.
+- Logistics readiness and regression suite: **341 passed / 1 skipped / 1,813 assertions**. The skipped test requires the optional GD extension and is unrelated to the Phase 3B projection contract.
+- Frontend Action Center and Home tests: **12 tests passed**.
+- Full frontend Vitest suite: **passed** with exit code 0.
+- Vite production build: **passed**, transforming 3,708 modules.
+- `git diff --check`: **passed**.
+
+The full repository Composer suite was attempted with extended timeout and memory settings but could not complete because the existing route-loading path exhausted PHP memory at `routes/web.php:1335`. This is an environment/repository-wide verification limitation, not a failure in the focused Phase 3B suites.
+
+All Phase 3B source flags remain disabled. These results authorize controlled rollout review; they do not enable the bucket or change domain authorization.
+
 ## Verification after enablement
 
 Confirm:
@@ -130,7 +145,7 @@ Gate B is the first-stage Phase 3B release checkpoint: Compliance Documents can 
 
 Gate D covers both Order and Repair failed-refund recovery projections. Gate E defines the Logistics responsibility projection, and Gate F covers the unowned Logistics adapter.
 
-Full declared Phase 3B coverage is not complete until all three sources independently pass the final coverage verification and enablement gate:
+Full declared Phase 3B implementation and readiness verification is complete after all three sources independently pass the final coverage verification gate:
 
 - Failed Order and Repair Refund recovery lifecycles and adapters;
 - Unowned Logistics responsibility projection and adapter.

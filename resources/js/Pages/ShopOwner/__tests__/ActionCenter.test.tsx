@@ -127,6 +127,48 @@ describe("Shop Owner Action Center", () => {
     expect(screen.queryByRole("button", { name: /dismiss|hide|acknowledge|snooze|resolve/i })).not.toBeInTheDocument();
   });
 
+  it("renders Logistics exceptions with a source label and workflow link", () => {
+    mocks.props = {
+      ...mocks.props,
+      bucket: "urgent_exceptions",
+      ownerActionCenter: exceptionResult({
+        items: [item({
+          attention_key: "logistics_failure:17:unowned_delivery_failure",
+          source_type: "logistics_failure",
+          source_id: 17,
+          category: "unowned_delivery_failure",
+          module: "logistics",
+          title: "Failed delivery needs escalation",
+          concise_summary: "Delivery recovery is exhausted and has no active responsible party.",
+          priority_tier: "high",
+          materiality_tier: "high",
+          comparable_monetary_exposure: null,
+          urgency_at: "2026-08-16T09:00:00+08:00",
+          actionable_since: "2026-08-15T09:00:00+08:00",
+          waiting_on: "none",
+          owner_action_required: false,
+          coverage_source: "logistics",
+          destination_url: "/shop-owner/logistics/shipments?shipment=8&leg=17",
+        })],
+        coverage_counts: { compliance: 0, refunds: 0, logistics: 1 },
+        health: {
+          enabled_adapter_keys: ["unowned_logistics_failures"],
+          healthy_adapter_keys: ["unowned_logistics_failures"],
+          failed_adapter_keys: [],
+        },
+      }),
+    };
+
+    render(<ActionCenter />);
+
+    expect(screen.getByText("Logistics Failure")).toBeInTheDocument();
+    expect(screen.getByText("Failed delivery needs escalation")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Open workflow/i })).toHaveAttribute(
+      "href",
+      "/shop-owner/logistics/shipments?shipment=8&leg=17",
+    );
+  });
+
   it("renders grounded decisions with enabled filters and workflow links", () => {
     render(<ActionCenter />);
 
@@ -214,6 +256,24 @@ describe("Shop Owner Action Center", () => {
     render(<ActionCenter />);
 
     expect(screen.getByText(/No decisions from currently supported sources require action/i)).toBeInTheDocument();
+  });
+
+  it("uses exception-specific empty-state language", () => {
+    mocks.props = {
+      ...mocks.props,
+      bucket: "urgent_exceptions",
+      ownerActionCenter: exceptionResult({
+        items: [],
+        coverage_counts: { compliance: 0, refunds: 0, logistics: 0 },
+        pagination: { page: 1, per_page: 20, total: 0, last_page: 1 },
+      }),
+    };
+
+    render(<ActionCenter />);
+
+    expect(screen.getByText(/No urgent exceptions from currently supported sources/i)).toBeInTheDocument();
+    expect(screen.getByText(/No urgent exceptions are listed on this page/i)).toBeInTheDocument();
+    expect(screen.queryByText(/No decisions are listed on this page/i)).not.toBeInTheDocument();
   });
 
   it("refreshes and preserves bounded filter and pagination state", () => {

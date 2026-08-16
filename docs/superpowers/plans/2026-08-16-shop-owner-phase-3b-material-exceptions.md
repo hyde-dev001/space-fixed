@@ -17,6 +17,10 @@
 - `docs/superpowers/specs/2026-08-15-shop-owner-phase-3a-owner-decisions-design.md`
 - `docs/superpowers/plans/2026-08-15-shop-owner-phase-3a-owner-decisions.md`
 
+## Execution status
+
+> **Updated 2026-08-16:** Gates A–G implementation is complete in this worktree. Compliance, Failed Order/Repair Refund, and Unowned Logistics adapters have explicit bucket contracts, tenant-scoped live reads, isolated failure behavior, and focused readiness evidence. Frontend tests and the production build pass. Production rollout flags remain disabled pending controlled rollout approval. The full repository Composer suite was attempted but could not complete because the existing route-loading path exhausted PHP memory at `routes/web.php:1335`; focused Phase 3B verification remains green.
+
 The Phase 3B focused specification is authoritative. This is the one implementation plan for all declared Phase 3B coverage. A gate becoming releasable does not authorize starting or enabling later blocked gates.
 
 ## Required implementation skills

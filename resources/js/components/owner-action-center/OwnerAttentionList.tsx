@@ -10,6 +10,7 @@ const sourceLabels: Record<OwnerAttentionSourceType, string> = {
   expense: "Expense",
   purchase_request: "Purchase Request",
   compliance_document: "Compliance Document",
+  logistics_failure: "Logistics Failure",
 };
 
 const currencyFormatter = new Intl.NumberFormat("en-PH", {

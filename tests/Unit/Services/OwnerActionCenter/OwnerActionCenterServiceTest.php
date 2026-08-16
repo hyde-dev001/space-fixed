@@ -32,6 +32,12 @@ final class OwnerActionCenterServiceTest extends TestCase
 
     private const COMPLIANCE_ADAPTER = 'App\\Services\\OwnerActionCenter\\Adapters\\ComplianceDocumentAttentionAdapter';
 
+    private const FAILED_ORDER_ADAPTER = 'App\\Services\\OwnerActionCenter\\Adapters\\FailedOrderRefundAttentionAdapter';
+
+    private const FAILED_REPAIR_ADAPTER = 'App\\Services\\OwnerActionCenter\\Adapters\\FailedRepairRefundAttentionAdapter';
+
+    private const LOGISTICS_ADAPTER = 'App\\Services\\OwnerActionCenter\\Adapters\\UnownedLogisticsFailureAttentionAdapter';
+
     public function test_registry_resolves_adapters_by_bucket_and_coverage(): void
     {
         config([
@@ -314,6 +320,92 @@ final class OwnerActionCenterServiceTest extends TestCase
         ));
     }
 
+    public function test_cross_source_exception_ordering_and_page_boundaries_are_deterministic(): void
+    {
+        $owner = ShopOwner::factory()->approved()->create();
+        config([
+            'owner_action_center.buckets.urgent_exceptions.enabled' => true,
+            'owner_action_center.buckets.urgent_exceptions.coverage.compliance' => true,
+            'owner_action_center.buckets.urgent_exceptions.coverage.refunds' => true,
+            'owner_action_center.buckets.urgent_exceptions.coverage.logistics' => true,
+        ]);
+
+        $this->bindFake(
+            self::COMPLIANCE_ADAPTER,
+            'compliance_documents',
+            'compliance',
+            [
+                $this->exceptionItem(1, 'compliance_document', 'critical', 'critical', '2026-08-17T00:00:00+08:00', '2026-08-10T09:00:00+08:00'),
+                $this->exceptionItem(4, 'compliance_document', 'normal', 'medium', '2026-08-20T00:00:00+08:00', '2026-08-06T09:00:00+08:00'),
+            ],
+            bucket: 'urgent_exceptions',
+        );
+        $this->bindFake(
+            self::FAILED_ORDER_ADAPTER,
+            'failed_order_refunds',
+            'refunds',
+            [$this->exceptionItem(2, 'order_refund', 'high', 'high', '2026-08-18T00:00:00+08:00', '2026-08-08T09:00:00+08:00', 'failed_refund_recovery')],
+            bucket: 'urgent_exceptions',
+        );
+        $this->bindFake(
+            self::FAILED_REPAIR_ADAPTER,
+            'failed_repair_refunds',
+            'refunds',
+            [],
+            bucket: 'urgent_exceptions',
+        );
+        $this->bindFake(
+            self::LOGISTICS_ADAPTER,
+            'unowned_logistics_failures',
+            'logistics',
+            [$this->exceptionItem(3, 'logistics_failure', 'high', 'high', '2026-08-19T00:00:00+08:00', '2026-08-07T09:00:00+08:00', 'unowned_delivery_failure')],
+            bucket: 'urgent_exceptions',
+        );
+
+        $pageOne = app(OwnerActionCenterService::class)->queueForActionCenter(
+            $owner,
+            new OwnerAttentionQuery(bucket: 'urgent_exceptions', page: 1, perPage: 2),
+        );
+        $pageTwo = app(OwnerActionCenterService::class)->queueForActionCenter(
+            $owner,
+            new OwnerAttentionQuery(bucket: 'urgent_exceptions', page: 2, perPage: 2),
+        );
+        $logisticsOnly = app(OwnerActionCenterService::class)->queueForActionCenter(
+            $owner,
+            new OwnerAttentionQuery(bucket: 'urgent_exceptions', coverage: 'logistics', perPage: 10),
+        );
+
+        $this->assertSame([
+            'compliance_document:1:compliance_expiry',
+            'order_refund:2:failed_refund_recovery',
+        ], array_map(static fn (OwnerAttentionItem $item): string => $item->attentionKey, $pageOne->items));
+        $this->assertSame([
+            'logistics_failure:3:unowned_delivery_failure',
+            'compliance_document:4:compliance_expiry',
+        ], array_map(static fn (OwnerAttentionItem $item): string => $item->attentionKey, $pageTwo->items));
+        $this->assertSame(4, $pageOne->total);
+        $this->assertSame(2, $pageTwo->page);
+        $this->assertSame(['compliance' => 2, 'refunds' => 1, 'logistics' => 1], $pageOne->coverageCounts);
+        $this->assertSame(['logistics_failure:3:unowned_delivery_failure'], array_map(
+            static fn (OwnerAttentionItem $item): string => $item->attentionKey,
+            $logisticsOnly->items,
+        ));
+    }
+
+    public function test_phase_three_does_not_emit_waiting_on_others_rows(): void
+    {
+        $owner = ShopOwner::factory()->approved()->create();
+
+        $result = app(OwnerActionCenterService::class)->queueForActionCenter(
+            $owner,
+            new OwnerAttentionQuery(bucket: 'waiting_on_others'),
+        );
+
+        $this->assertSame([], $result->items);
+        $this->assertSame([], $result->enabledAdapterKeys);
+        $this->assertSame(OwnerActionCenterDegradationStatus::NoEnabledAdapters, $result->degradationStatus);
+    }
+
     public function test_refreshing_a_page_that_is_now_past_the_last_page_normalizes_to_the_last_page(): void
     {
         $owner = ShopOwner::factory()->approved()->create();
@@ -513,25 +605,58 @@ final class OwnerActionCenterServiceTest extends TestCase
         );
     }
 
-    private function exceptionItem(int $sourceId): OwnerAttentionItem
+    private function exceptionItem(
+        int $sourceId,
+        string $sourceType = 'compliance_document',
+        string $priority = 'high',
+        string $materiality = 'high',
+        string $urgencyAt = '2026-08-20T00:00:00+08:00',
+        string $actionableSince = '2026-08-01T00:00:00+08:00',
+        string $category = 'compliance_expiry',
+    ): OwnerAttentionItem
     {
+        [$module, $coverage, $title, $summary, $destination] = match ($sourceType) {
+            'compliance_document' => [
+                'compliance',
+                'compliance',
+                'Compliance document expiring',
+                'Review the current document lifecycle.',
+                '/shop-owner/settings/policies-compliance',
+            ],
+            'order_refund' => [
+                'refunds',
+                'refunds',
+                'Failed refund needs recovery',
+                'Review the current refund recovery state.',
+                '/shop-owner/refund-approvals?refund='.$sourceId,
+            ],
+            'logistics_failure' => [
+                'logistics',
+                'logistics',
+                'Failed delivery needs escalation',
+                'Review the current delivery recovery state.',
+                '/shop-owner/logistics/shipments?shipment=8&leg='.$sourceId,
+            ],
+            default => throw new InvalidArgumentException('Unsupported exception test source.'),
+        };
+
         return new OwnerAttentionItem(
-            sourceType: 'compliance_document',
+            sourceType: $sourceType,
             sourceId: $sourceId,
-            category: 'compliance_expiry',
+            category: $category,
             primaryBucket: 'urgent_exceptions',
-            module: 'compliance',
-            title: 'Compliance document expiring',
-            conciseSummary: 'Review the current document lifecycle.',
-            priorityTier: 'high',
-            materialityTier: 'high',
+            module: $module,
+            title: $title,
+            conciseSummary: $summary,
+            priorityTier: $priority,
+            materialityTier: $materiality,
             comparableMonetaryExposure: null,
-            urgencyAt: '2026-08-20T00:00:00+08:00',
-            actionableSince: '2026-08-01T00:00:00+08:00',
+            urgencyAt: $urgencyAt,
+            actionableSince: $actionableSince,
             waitingOn: 'none',
             ownerActionRequired: false,
-            coverageSource: 'compliance',
-            destinationUrl: '/shop-owner/settings/policies-compliance',
+            coverageSource: $coverage,
+            destinationUrl: $destination,
         );
     }
 }

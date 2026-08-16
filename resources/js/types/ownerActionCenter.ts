@@ -33,7 +33,8 @@ export type OwnerAttentionSourceType =
   | "repair_refund"
   | "expense"
   | "purchase_request"
-  | "compliance_document";
+  | "compliance_document"
+  | "logistics_failure";
 
 export type OwnerActionCenterDegradationStatus =
   | "not_selected"
