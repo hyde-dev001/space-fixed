@@ -1,6 +1,6 @@
 # Logistics Batches Mobile and Tablet Layout Design
 
-**Date:** 2026-08-20  
+**Date:** 2026-08-20
 **Status:** Approved for implementation
 
 ## Goal
