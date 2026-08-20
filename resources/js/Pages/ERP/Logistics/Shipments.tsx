@@ -637,7 +637,8 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                   aria-hidden={selectedProofUrl !== null}
                   aria-labelledby={`shipment-${shipment.id}-details-title`}
                   onKeyDown={trapDialogFocus}
-                  className={selectedProofUrl ? 'hidden' : 'flex max-h-[min(92dvh,60rem)] flex-col overflow-hidden'}
+                  data-testid="shipment-detail-surface"
+                  className={selectedProofUrl ? 'hidden' : 'flex h-[100dvh] max-h-[100dvh] min-h-0 flex-col overflow-hidden sm:h-[calc(100dvh-2rem)] sm:max-h-[calc(100dvh-2rem)] xl:h-auto xl:max-h-[min(92dvh,60rem)]'}
                 >
                   <header className="flex shrink-0 items-start justify-between gap-4 border-b border-gray-200 bg-white px-5 py-4 dark:border-gray-700 dark:bg-gray-800 sm:px-6">
                     <div className="min-w-0">

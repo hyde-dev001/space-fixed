@@ -78,6 +78,13 @@ it('opens shipment details in an accessible modal and restores trigger focus', (
   fireEvent.click(open);
 
   expect(screen.getByRole('dialog', { name: 'Shipment 1 delivery details' })).toBeInTheDocument();
+  expect(screen.getByTestId('shipment-detail-surface')).toHaveClass(
+    'h-[100dvh]',
+    'max-h-[100dvh]',
+    'min-h-0',
+    'sm:h-[calc(100dvh-2rem)]',
+    'xl:h-auto',
+  );
   expect(screen.getByText('Delivery details')).toBeInTheDocument();
   expect(screen.queryByRole('region', { name: 'Shipment 1 details' })).not.toBeInTheDocument();
 
@@ -104,7 +111,8 @@ it('uses the shared Batches delivery date picker when scheduling a shipment leg'
 
   fireEvent.click(datePicker);
 
-  expect(screen.getByRole('dialog', { name: 'Delivery date calendar' })).toBeInTheDocument();
+  const calendar = screen.getByRole('dialog', { name: 'Delivery date calendar' });
+  expect(calendar).toHaveClass('left-1/2', '-translate-x-1/2', 'xl:left-0', 'xl:translate-x-0');
   fireEvent.click(screen.getByRole('button', { name: 'Select July 22, 2026' }));
 
   expect(screen.getByRole('button', { name: 'Open delivery date picker' })).toHaveTextContent('07/22/2026');

@@ -2,6 +2,8 @@ import { useState } from "react";
 import { Link, usePage, router } from "@inertiajs/react";
 import { Dropdown } from "../ui/dropdown/Dropdown";
 import Swal from "sweetalert2";
+import { LogOut, ShieldCheck, UserRound } from "lucide-react";
+import InlineAccountMenu from "./InlineAccountMenu";
 
 type PrivilegedIdentity = {
   name: string;
@@ -9,7 +11,11 @@ type PrivilegedIdentity = {
   role: 'admin' | 'super_admin';
 };
 
-export default function SuperAdminDropdown() {
+type SuperAdminDropdownProps = {
+  inline?: boolean;
+};
+
+export default function SuperAdminDropdown({ inline = false }: SuperAdminDropdownProps = {}) {
   const { auth } = usePage<{ auth?: { super_admin?: PrivilegedIdentity | null } }>().props;
   const [isOpen, setIsOpen] = useState(false);
   const [logoutError, setLogoutError] = useState<string | null>(null);
@@ -54,6 +60,36 @@ export default function SuperAdminDropdown() {
         }
       });
     }
+  }
+
+  if (inline) {
+    return (
+      <InlineAccountMenu
+        name={userName}
+        email={userEmail}
+        role={roleLabel}
+        tone="red"
+        error={logoutError}
+        actions={[
+          {
+            label: "Profile",
+            onClick: () => router.visit('/admin/profile'),
+            icon: <UserRound className="h-5 w-5" aria-hidden="true" />,
+          },
+          {
+            label: "Security",
+            onClick: () => router.visit('/admin/security'),
+            icon: <ShieldCheck className="h-5 w-5" aria-hidden="true" />,
+          },
+          {
+            label: "Sign Out",
+            onClick: handleLogout,
+            icon: <LogOut className="h-5 w-5" aria-hidden="true" />,
+            destructive: true,
+          },
+        ]}
+      />
+    );
   }
 
   return (

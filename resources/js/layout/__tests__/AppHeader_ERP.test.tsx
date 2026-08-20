@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import AppHeaderERP from '../AppHeader_ERP';
 
@@ -34,21 +34,29 @@ vi.mock('../../components/common/ThemeToggleButton', () => ({
 }));
 
 vi.mock('../../components/header/UserDropdown', () => ({
-  default: () => <div data-testid="user-dropdown" />,
+  default: ({ inline }: { inline?: boolean }) => (
+    <div data-testid={inline ? 'inline-user-dropdown' : 'user-dropdown'}>
+      {inline && <><span>Profile &amp; Password</span><span>Sign Out</span></>}
+    </div>
+  ),
 }));
 
 vi.mock('../../components/header/SuperAdminDropdown', () => ({
-  default: () => <div data-testid="super-admin-dropdown" />,
+  default: ({ inline }: { inline?: boolean }) => (
+    <div data-testid={inline ? 'inline-super-admin-dropdown' : 'super-admin-dropdown'} />
+  ),
 }));
 
 vi.mock('../../components/header/ShopOwnerDropdown', () => ({
-  default: ({ actor, urls }: { actor?: { name?: string }; urls?: Record<string, string | null> }) => (
+  default: ({ actor, urls, inline }: { actor?: { name?: string }; urls?: Record<string, string | null>; inline?: boolean }) => (
     <div
-      data-testid="shop-owner-dropdown"
+      data-testid={inline ? 'inline-shop-owner-dropdown' : 'shop-owner-dropdown'}
       data-actor-name={actor?.name ?? ''}
       data-profile-url={urls?.profile ?? ''}
       data-logout-url={urls?.logout ?? ''}
-    />
+    >
+      {inline && <><span>Shop Profile</span><span>Sign Out</span></>}
+    </div>
   ),
 }));
 
@@ -147,7 +155,9 @@ it('opens the compact application menu as a non-modal dropdown and keeps notific
   expect(trigger).toHaveAttribute('aria-haspopup', 'true');
   expect(screen.getByText('Alerts & notifications').parentElement).toHaveClass('xl:hidden');
   expect(screen.getByText('Appearance')).toBeInTheDocument();
-  expect(screen.getByText('Account')).toBeInTheDocument();
+  expect(screen.getByTestId('inline-shop-owner-dropdown')).toBeInTheDocument();
+  expect(screen.getByText('Shop Profile')).toBeInTheDocument();
+  expect(screen.getByText('Sign Out')).toBeInTheDocument();
   expect(document.body.style.overflow).toBe('');
 
   fireEvent.keyDown(document, { key: 'Escape' });
@@ -166,4 +176,25 @@ it('closes the compact application menu when clicking outside the dropdown', () 
   fireEvent.pointerDown(document.body);
 
   expect(screen.queryByRole('region', { name: 'Application menu' })).not.toBeInTheDocument();
+});
+
+it('renders regular account actions directly inside the compact menu', () => {
+  state.url = '/erp/staff/dashboard';
+  state.props = {
+    auth: {
+      erpActor: { type: 'employee', id: 11, name: 'Staff User', guard: 'user', ownerMode: false, tenantOwnerId: 7 },
+      user: { name: 'Daniel Cruz', email: 'logistics.dispatcher.2@solespace.com', role: 'STAFF', roles: ['Logistics Dispatcher'] },
+      shop_owner: null,
+    },
+    erpUrls: { profile: '/erp/profile' },
+  };
+
+  render(<AppHeaderERP />);
+  fireEvent.click(screen.getByRole('button', { name: 'Toggle Application Menu' }));
+
+  const menu = screen.getByRole('region', { name: 'Application menu' });
+  expect(within(menu).getByTestId('inline-user-dropdown')).toBeInTheDocument();
+  expect(within(menu).getByText('Profile & Password')).toBeInTheDocument();
+  expect(within(menu).getByText('Sign Out')).toBeInTheDocument();
+  expect(screen.getAllByTestId('user-dropdown')).toHaveLength(1);
 });

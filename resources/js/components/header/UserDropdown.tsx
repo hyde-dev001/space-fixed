@@ -1,11 +1,16 @@
 import { useState } from "react";
 import { usePage, router } from "@inertiajs/react";
 import { route } from "ziggy-js";
-import { DropdownItem } from "../ui/dropdown/DropdownItem";
 import { Dropdown } from "../ui/dropdown/Dropdown";
 import Swal from "sweetalert2";
+import { LogOut, UserRound } from "lucide-react";
+import InlineAccountMenu from "./InlineAccountMenu";
 
-export default function UserDropdown() {
+type UserDropdownProps = {
+  inline?: boolean;
+};
+
+export default function UserDropdown({ inline = false }: UserDropdownProps = {}) {
   const { auth } = usePage().props as any;
   const [isOpen, setIsOpen] = useState(false);
 
@@ -75,6 +80,36 @@ export default function UserDropdown() {
       });
     }
   }
+
+  if (inline) {
+    return (
+      <InlineAccountMenu
+        name={userName}
+        email={userEmail}
+        role={userRole}
+        tone="blue"
+        actions={[
+          {
+            label: "Profile & Password",
+            onClick: goToProfile,
+            icon: <UserRound className="h-5 w-5" aria-hidden="true" />,
+            meta: forcePasswordChange ? (
+              <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800 dark:bg-amber-900 dark:text-amber-200">
+                Required
+              </span>
+            ) : undefined,
+          },
+          {
+            label: "Sign Out",
+            onClick: handleLogout,
+            icon: <LogOut className="h-5 w-5" aria-hidden="true" />,
+            destructive: true,
+          },
+        ]}
+      />
+    );
+  }
+
   return (
     <div className="relative">
       <button
