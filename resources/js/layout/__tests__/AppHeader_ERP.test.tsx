@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import AppHeaderERP from '../AppHeader_ERP';
 
@@ -130,4 +130,35 @@ it('keeps employee identity and notification selection in employee mode', () => 
   expect(screen.queryByText('Owner mode')).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: /back to shop owner portal/i })).not.toBeInTheDocument();
   expect(screen.getByTestId('notification-bell')).toHaveAttribute('data-base-path', '/api/staff/notifications');
+});
+
+it('opens the compact application menu as a modal and restores focus on Escape', async () => {
+  render(<AppHeaderERP />);
+
+  const trigger = screen.getByRole('button', { name: 'Toggle Application Menu' });
+  expect(screen.queryByRole('dialog', { name: 'Application menu' })).not.toBeInTheDocument();
+
+  fireEvent.click(trigger);
+
+  expect(screen.getByRole('dialog', { name: 'Application menu' })).toBeInTheDocument();
+  expect(trigger).toHaveAttribute('aria-expanded', 'true');
+  expect(trigger).toHaveAttribute('aria-haspopup', 'dialog');
+  expect(screen.getByTestId('notification-bell')).toBeInTheDocument();
+
+  fireEvent.keyDown(document, { key: 'Escape' });
+
+  await waitFor(() => {
+    expect(screen.queryByRole('dialog', { name: 'Application menu' })).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(trigger);
+  });
+  expect(trigger).toHaveAttribute('aria-expanded', 'false');
+});
+
+it('closes the compact application menu from its close button', () => {
+  render(<AppHeaderERP />);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Toggle Application Menu' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Close application menu' }));
+
+  expect(screen.queryByRole('dialog', { name: 'Application menu' })).not.toBeInTheDocument();
 });

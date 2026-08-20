@@ -15,6 +15,9 @@ const AppHeader_ERP: React.FC = () => {
   const erpUrls = (page.props as any).erpUrls as Partial<ErpUrls> | undefined;
   const ownerMode = erpActor?.type === "shop_owner" && erpActor.ownerMode === true;
   const [isApplicationMenuOpen, setApplicationMenuOpen] = useState(false);
+  const applicationMenuRef = useRef<HTMLDivElement>(null);
+  const applicationMenuTriggerRef = useRef<HTMLButtonElement>(null);
+  const applicationMenuCloseButtonRef = useRef<HTMLButtonElement>(null);
 
   const { isMobileOpen, toggleSidebar, toggleMobileSidebar } = useSidebar();
 
@@ -41,9 +44,62 @@ const AppHeader_ERP: React.FC = () => {
     }
   };
 
-  const toggleApplicationMenu = () => {
-    setApplicationMenuOpen(!isApplicationMenuOpen);
+  const closeApplicationMenu = () => {
+    setApplicationMenuOpen(false);
+    window.requestAnimationFrame(() => applicationMenuTriggerRef.current?.focus());
   };
+
+  const toggleApplicationMenu = () => {
+    if (isApplicationMenuOpen) {
+      closeApplicationMenu();
+      return;
+    }
+
+    setApplicationMenuOpen(true);
+  };
+
+  const trapApplicationMenuFocus = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "Tab") return;
+
+    const focusableElements = Array.from(
+      applicationMenuRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ) ?? [],
+    );
+    if (focusableElements.length === 0) return;
+
+    const first = focusableElements[0];
+    const last = focusableElements[focusableElements.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
+  useEffect(() => {
+    if (!isApplicationMenuOpen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeApplicationMenu();
+      }
+    };
+
+    document.body.style.overflow = "hidden";
+    document.addEventListener("keydown", handleEscape);
+    const frame = window.requestAnimationFrame(() => applicationMenuCloseButtonRef.current?.focus());
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", handleEscape);
+      window.cancelAnimationFrame(frame);
+    };
+  }, [isApplicationMenuOpen]);
 
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -109,9 +165,13 @@ const AppHeader_ERP: React.FC = () => {
           </Link>
 
           <button
+            ref={applicationMenuTriggerRef}
             onClick={toggleApplicationMenu}
             className="flex items-center justify-center w-10 h-10 text-gray-700 rounded-lg z-99999 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800 xl:hidden"
             aria-label="Toggle Application Menu"
+            aria-expanded={isApplicationMenuOpen}
+            aria-controls="application-menu-dialog"
+            aria-haspopup="dialog"
           >
             <svg
               width="24"
@@ -165,11 +225,45 @@ const AppHeader_ERP: React.FC = () => {
           </div>
         </div>
 
+        {isApplicationMenuOpen && (
+          <div
+            aria-hidden="true"
+            className="fixed inset-0 z-[99998] bg-gray-950/50 backdrop-blur-[2px] xl:hidden"
+            onClick={closeApplicationMenu}
+          />
+        )}
         <div
-          className={`${isApplicationMenuOpen ? "flex" : "hidden"} items-center justify-between w-full gap-4 px-5 py-4 xl:flex xl:justify-end xl:px-0 xl:shadow-none`}
+          ref={applicationMenuRef}
+          id="application-menu-dialog"
+          role={isApplicationMenuOpen ? "dialog" : undefined}
+          aria-modal={isApplicationMenuOpen ? "true" : undefined}
+          aria-labelledby={isApplicationMenuOpen ? "application-menu-title" : undefined}
+          onKeyDown={trapApplicationMenuFocus}
+          className={`${isApplicationMenuOpen
+            ? "fixed inset-x-3 top-[4.75rem] z-[99999] flex max-h-[calc(100dvh-6rem)] w-[calc(100%-1.5rem)] max-w-md flex-col overflow-y-auto rounded-2xl border border-gray-200 bg-white p-4 shadow-2xl ring-1 ring-black/5 dark:border-gray-700 dark:bg-gray-900 dark:ring-white/10 xl:static xl:max-h-none xl:w-auto xl:max-w-none xl:overflow-visible xl:rounded-none xl:border-0 xl:bg-transparent xl:p-0 xl:shadow-none xl:ring-0"
+            : "hidden"} items-center justify-between w-full gap-4 px-5 py-4 xl:flex xl:justify-end xl:px-0 xl:shadow-none`}
         >
+          {isApplicationMenuOpen && (
+            <div className="flex w-full items-start justify-between gap-4 border-b border-gray-200 pb-4 dark:border-gray-800 xl:hidden">
+              <div>
+                <h2 id="application-menu-title" className="text-base font-semibold text-gray-900 dark:text-white">Application menu</h2>
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Notifications, theme, and account</p>
+              </div>
+              <button
+                ref={applicationMenuCloseButtonRef}
+                type="button"
+                onClick={closeApplicationMenu}
+                aria-label="Close application menu"
+                className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-xl border border-gray-200 text-gray-600 transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+              >
+                <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none">
+                  <path d="M6 6L18 18M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                </svg>
+              </button>
+            </div>
+          )}
           {/* Right Side Actions */}
-          <div className="flex items-center gap-2 2xsm:gap-3">
+          <div className="flex w-full flex-wrap items-center justify-between gap-2 pt-1 2xsm:gap-3 xl:w-auto xl:flex-nowrap xl:justify-normal xl:pt-0">
             <NotificationBell 
               basePath={notificationBasePath}
               iconSize={24}
