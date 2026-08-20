@@ -101,6 +101,15 @@ function BatchSummary({ batch }: { batch: DeliveryBatch }) {
   </>;
 }
 
+function BatchActions({ batch, onOpen, onDetails, onReview, onCancel, onRestore }: Pick<Props, 'onOpen' | 'onDetails' | 'onReview' | 'onCancel' | 'onRestore'> & { batch: DeliveryBatch }) {
+  return <>
+    {batch.status === 'draft' && onOpen && <button type="button" aria-label={`Edit batch ${batch.id}`} title="Edit batch" onClick={() => onOpen(batch.id)} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-gray-500 hover:text-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500"><Pencil aria-hidden="true" size={18} /></button>}
+    {primaryActions[batch.status as keyof typeof primaryActions] && onOpen && <button type="button" aria-label={`${primaryActions[batch.status as keyof typeof primaryActions].label} ${batch.id}`} title={primaryActions[batch.status as keyof typeof primaryActions].label} onClick={() => onOpen(batch.id)} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-gray-500 hover:text-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500">{React.createElement(primaryActions[batch.status as keyof typeof primaryActions].Icon, { 'aria-hidden': true, size: 18 })}</button>}
+    <button type="button" aria-label={`View details for batch ${batch.id}`} title="View details" onClick={(event) => onDetails(batch.id, event.currentTarget)} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-gray-500 hover:text-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500"><Eye aria-hidden="true" size={18} /></button>
+    <SecondaryActions batch={batch} onReview={onReview} onCancel={onCancel} onRestore={onRestore} />
+  </>;
+}
+
 export default function BatchTable({ batches, variant = 'active', onOpen, onDetails, onReview, onCancel, onRestore }: Props) {
   const history = variant === 'history';
   const legsFor = (batch: DeliveryBatch) => ['completed', 'cancelled'].includes(batch.status)
@@ -108,7 +117,36 @@ export default function BatchTable({ batches, variant = 'active', onOpen, onDeta
     : batch.legs;
 
   return <div>
-    <div className="overflow-x-auto rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
+    <div data-testid="compact-batch-list" className="space-y-3 xl:hidden">
+      {batches.map((batch) => {
+        const stops = legsFor(batch);
+        const stopCount = ['completed', 'cancelled'].includes(batch.status) ? stops.length : batch.assigned_stop_count;
+        const urgentCount = stops.filter((leg) => leg.urgent_at).length;
+
+        return <article key={batch.id} className="min-w-0 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800 sm:p-5">
+          <div className="flex min-w-0 items-start justify-between gap-3">
+            <div className="min-w-0 flex-1"><BatchSummary batch={batch} /></div>
+            <span className="shrink-0 rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-700 dark:bg-gray-700 dark:text-gray-200">{stopCount}/{batch.capacity} stops</span>
+          </div>
+          <dl className="mt-4 grid min-w-0 grid-cols-1 gap-3 border-t border-gray-100 pt-3 text-sm dark:border-gray-700 sm:grid-cols-2">
+            <div className="min-w-0">
+              <dt className="text-xs font-semibold uppercase tracking-wide text-gray-500">Schedule</dt>
+              <dd className="mt-1 break-words text-gray-700 dark:text-gray-200">{formatDate(batch.delivery_date)} Â· {label(batch.delivery_window)}</dd>
+            </div>
+            <div className="min-w-0">
+              <dt className="text-xs font-semibold uppercase tracking-wide text-gray-500">Rider</dt>
+              <dd className="mt-1 break-words text-gray-700 dark:text-gray-200">{batch.rider_profile?.name || 'Not assigned'}</dd>
+            </div>
+          </dl>
+          <div className="mt-4 flex min-w-0 flex-col gap-3 border-t border-gray-100 pt-3 dark:border-gray-700 sm:flex-row sm:items-center sm:justify-between">
+            <span className="text-xs font-medium text-gray-500">{urgentCount} urgent stop{urgentCount === 1 ? '' : 's'}</span>
+            <div className="flex flex-wrap justify-end gap-2 sm:shrink-0"><BatchActions batch={batch} onOpen={onOpen} onDetails={onDetails} onReview={onReview} onCancel={onCancel} onRestore={onRestore} /></div>
+          </div>
+        </article>;
+      })}
+    </div>
+    <div data-testid="desktop-batch-table" className="hidden xl:block">
+      <div className="overflow-x-auto rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
       <table aria-label={history ? 'Batch history' : 'Active batches'} className="w-full min-w-[760px] text-left text-sm">
         <caption className="sr-only">{history ? 'Completed and cancelled delivery batches' : 'Current delivery batches'}</caption>
         <thead className="border-b border-gray-200 bg-gray-50 text-xs uppercase tracking-wide text-gray-500 dark:border-gray-700 dark:bg-gray-900/40">
@@ -120,15 +158,11 @@ export default function BatchTable({ batches, variant = 'active', onOpen, onDeta
             <td className="px-4 py-4 align-top text-gray-600 dark:text-gray-300"><span>{formatDate(batch.delivery_date)} · {label(batch.delivery_window)}</span></td>
             <td className="px-4 py-4 align-top text-gray-700 dark:text-gray-200">{batch.rider_profile?.name || 'Not assigned'}</td>
             <td className="px-4 py-4 align-top text-gray-600 dark:text-gray-300">{['completed', 'cancelled'].includes(batch.status) ? legsFor(batch).length : batch.assigned_stop_count}/{batch.capacity}<span className="block text-xs text-gray-500">{legsFor(batch).filter((leg) => leg.urgent_at).length} urgent</span></td>
-            <td className="px-4 py-4 align-top"><div className="flex flex-wrap justify-end gap-2">
-              {batch.status === 'draft' && onOpen && <button type="button" aria-label={`Edit batch ${batch.id}`} title="Edit batch" onClick={() => onOpen(batch.id)} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-gray-500 hover:text-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500"><Pencil aria-hidden="true" size={18} /></button>}
-              {primaryActions[batch.status as keyof typeof primaryActions] && onOpen && <button type="button" aria-label={`${primaryActions[batch.status as keyof typeof primaryActions].label} ${batch.id}`} title={primaryActions[batch.status as keyof typeof primaryActions].label} onClick={() => onOpen(batch.id)} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-gray-500 hover:text-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500">{React.createElement(primaryActions[batch.status as keyof typeof primaryActions].Icon, { 'aria-hidden': true, size: 18 })}</button>}
-              <button type="button" aria-label={`View details for batch ${batch.id}`} title="View details" onClick={(event) => onDetails(batch.id, event.currentTarget)} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-gray-500 hover:text-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500"><Eye aria-hidden="true" size={18} /></button>
-              <SecondaryActions batch={batch} onReview={onReview} onCancel={onCancel} onRestore={onRestore} />
-            </div></td>
+            <td className="px-4 py-4 align-top"><div className="flex flex-wrap justify-end gap-2"><BatchActions batch={batch} onOpen={onOpen} onDetails={onDetails} onReview={onReview} onCancel={onCancel} onRestore={onRestore} /></div></td>
           </tr>)}
         </tbody>
       </table>
+    </div>
     </div>
   </div>;
 }
