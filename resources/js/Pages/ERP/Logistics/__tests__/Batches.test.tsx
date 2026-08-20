@@ -124,6 +124,7 @@ function getCompactBatchButton(name: string, container: HTMLElement = document.b
 it('opens a responsive new-batch workspace without compact overflow', () => {
   render(<Batches />);
   expect(screen.getByText('Choose New Batch or open an existing batch to begin.')).toBeInTheDocument();
+  expect(screen.getByTestId('batch-page-header-controls')).toHaveClass('w-full', 'xl:w-auto');
 
   openBuilder();
 
@@ -700,6 +701,7 @@ it('filters active batches by status and keeps history collapsed separately', ()
   mocks.props.batches = [batchForStatus(1, 'draft'), batchForStatus(2, 'offered'), batchForStatus(3, 'completed')];
   render(<Batches />);
   const active = screen.getByRole('region', { name: 'Active batches' });
+  expect(within(active).getByTestId('active-batch-filters')).toHaveClass('w-full', 'overflow-x-auto', 'xl:overflow-visible');
   const activeCards = within(active).getByTestId('compact-batch-list');
   expect(within(activeCards).getByText('Batch #1')).toBeInTheDocument();
   expect(within(activeCards).getByText('Batch #2')).toBeInTheDocument();

@@ -373,17 +373,17 @@ export default function Batches() {
   return <AppLayoutERP><Head title="Delivery Batches" /><main data-testid="batch-page-main" className="min-w-0 overflow-x-clip space-y-6 p-4 sm:p-6 xl:overflow-x-visible">
     <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
       <div className="min-w-0"><h1 className="text-2xl font-bold text-gray-950 dark:text-white">Delivery Batches</h1><p className="mt-1 text-sm text-gray-500">Build, organize, and offer efficient delivery routes.</p></div>
-      <div className="flex min-w-0 flex-wrap items-center gap-2">
+      <div data-testid="batch-page-header-controls" className="flex w-full min-w-0 flex-wrap items-center gap-2 xl:w-auto">
         {showModuleFilter && <select
           aria-label="Filter batches by module"
           value={module}
           onChange={(event) => changeModule(event.target.value as 'all' | LogisticsModule)}
-          className="min-h-11 rounded-xl border border-gray-300 bg-white px-3 text-sm font-semibold"
+          className="min-h-11 min-w-0 flex-1 rounded-xl border border-gray-300 bg-white px-3 text-sm font-semibold xl:flex-none"
         >
           <option value="all">All modules</option>
           {availableModules.map((available) => <option key={available} value={available}>{logisticsModuleLabel(available)}</option>)}
         </select>}
-        <button type="button" onClick={startNewBatch} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-blue-600 px-4 font-semibold text-white hover:bg-blue-700"><Plus size={18} />New Batch</button>
+        <button type="button" onClick={startNewBatch} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 font-semibold text-white hover:bg-blue-700 xl:flex-none"><Plus size={18} />New Batch</button>
       </div>
     </div>
     {error && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-red-700">{error}</p>}
@@ -404,11 +404,11 @@ export default function Batches() {
       /> : <section className="grid min-h-72 place-items-center rounded-2xl border border-dashed border-gray-300 bg-white p-8 text-center text-sm text-gray-500">Choose New Batch or open an existing batch to begin.</section>}
     </div>
     <section aria-label="Active batches" className="min-w-0 space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-bold text-gray-950 dark:text-white">Active batches</h2><div className="flex flex-wrap gap-1">{(['all', 'draft', 'offered', 'accepted', 'in_progress'] as const).map((tab) => {
+      <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-bold text-gray-950 dark:text-white">Active batches</h2><div data-testid="active-batch-filters" className="w-full min-w-0 overflow-x-auto pb-1 xl:w-auto xl:overflow-visible xl:pb-0"><div className="flex w-max min-w-full gap-2 xl:w-auto xl:min-w-0 xl:flex-wrap xl:gap-1">{(['all', 'draft', 'offered', 'accepted', 'in_progress'] as const).map((tab) => {
         const count = tab === 'all' ? activeBatches.length : activeBatches.filter((batch) => batch.status === tab).length;
         const tabLabel = tab === 'all' ? 'All' : tab.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
-        return <button key={tab} type="button" aria-pressed={activeStatus === tab} onClick={() => setActiveStatus(tab)} className={`min-h-10 rounded-lg px-3 text-sm font-semibold ${activeStatus === tab ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'}`}>{tabLabel} ({count})</button>;
-      })}<button type="button" onClick={(event) => openHistory(event.currentTarget)} className="min-h-10 rounded-lg border border-gray-200 bg-white px-3 text-sm font-semibold text-gray-700 hover:bg-gray-50">History ({historyBatches.length})</button></div></div>
+        return <button key={tab} type="button" aria-pressed={activeStatus === tab} onClick={() => setActiveStatus(tab)} className={`min-h-11 shrink-0 rounded-lg px-3 text-sm font-semibold xl:min-h-10 ${activeStatus === tab ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'}`}>{tabLabel} ({count})</button>;
+      })}<button type="button" onClick={(event) => openHistory(event.currentTarget)} className="min-h-11 shrink-0 rounded-lg border border-gray-200 bg-white px-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 xl:min-h-10">History ({historyBatches.length})</button></div></div></div>
       <BatchTable batches={visibleActiveBatches} onOpen={openBatch} onDetails={openDetails} onReview={openReview} onCancel={cancelBatch} />
       {!visibleActiveBatches.length && <p className="rounded-xl border border-dashed p-6 text-center text-sm text-gray-500">No active batches in this status.</p>}
     </section>
