@@ -468,18 +468,18 @@ export default function Shipments({ children }: React.PropsWithChildren) {
   return (
     <AppLayoutERP>
       <Head title={riderMode ? "My Deliveries" : "ERP Logistics Shipments"} />
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-950 dark:text-white">{riderMode ? 'My Deliveries' : 'Shipments'}</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400">{riderMode ? 'Process your assigned deliveries.' : 'Assign riders and approve delivery proof.'}</p>
+      <div data-testid="shipments-page" className="min-w-0 space-y-6 overflow-x-hidden">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-bold leading-tight text-gray-950 dark:text-white sm:text-3xl xl:text-2xl">{riderMode ? 'My Deliveries' : 'Shipments'}</h1>
+          <p className="mt-1 max-w-2xl text-sm leading-6 text-gray-500 dark:text-gray-400 xl:mt-0">{riderMode ? 'Process your assigned deliveries.' : 'Assign riders and approve delivery proof.'}</p>
         </div>
         {children}
 
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <form role="search" onSubmit={(event) => {
             event.preventDefault();
             updateFilter('search', search.trim());
-          }} className="flex w-full max-w-md gap-2">
+          }} className="flex w-full min-w-0 gap-2 xl:max-w-md">
             <label className="relative min-w-0 flex-1">
               <span className="sr-only">Search shipments</span>
               <Search className="absolute left-3 top-2.5 text-gray-400" size={18} />
@@ -488,16 +488,16 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Shipment, order, customer, or product"
-                className="w-full rounded-lg border border-gray-300 py-2 pl-10 pr-3 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                className="min-h-11 w-full rounded-xl border border-gray-300 py-2 pl-10 pr-3 text-sm text-gray-900 outline-none transition-colors placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder:text-gray-400 xl:rounded-lg"
               />
             </label>
-            <button type="submit" className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white">Search</button>
+            <button type="submit" className="min-h-11 shrink-0 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 xl:rounded-lg">Search</button>
           </form>
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="grid w-full min-w-0 grid-cols-2 gap-2 sm:gap-3 xl:flex xl:w-auto xl:flex-wrap xl:items-center xl:gap-3">
             <select
               value={filters.status}
               onChange={(event) => updateFilter('status', event.target.value)}
-              className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-transparent focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+              className="min-h-11 min-w-0 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white xl:w-auto xl:rounded-lg"
               aria-label="Filter shipments by status"
             >
               {(riderMode ? riderStatusOptions : statusOptions).map(([value, text]) => <option key={value} value={value}>{text}</option>)}
@@ -505,7 +505,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
             {!riderMode && <select
               value={filters.purpose ?? 'all'}
               onChange={(event) => updateFilter('purpose', event.target.value)}
-              className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-transparent focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+              className="min-h-11 min-w-0 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white xl:w-auto xl:rounded-lg"
               aria-label="Filter shipments by type"
             >
               {visiblePurposeOptions.map(([value, text]) => <option key={value} value={value}>{text}</option>)}
@@ -513,7 +513,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
             {!riderMode && showModuleFilter && <select
               value={selectedModule}
               onChange={(event) => updateFilter('module', event.target.value)}
-              className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-transparent focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+              className="min-h-11 min-w-0 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white xl:w-auto xl:rounded-lg"
               aria-label="Filter shipments by module"
             >
               <option value="all">All modules</option>
@@ -522,7 +522,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
             {!riderMode && <select
               value={filters.window ?? 'all'}
               onChange={(event) => updateFilter('window', event.target.value)}
-              className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-transparent focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+              className="min-h-11 min-w-0 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white xl:w-auto xl:rounded-lg"
               aria-label="Filter shipments by delivery window"
             >
               <option value="all">All windows</option>
@@ -532,7 +532,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
             {riderMode && <select
               value={filters.window}
               onChange={(event) => updateFilter('window', event.target.value)}
-              className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-transparent focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+              className="min-h-11 min-w-0 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white xl:w-auto xl:rounded-lg"
               aria-label="Filter deliveries by time"
             >
               <option value="all">All time</option>
@@ -570,8 +570,8 @@ export default function Shipments({ children }: React.PropsWithChildren) {
               && !['delivered', 'cancelled'].includes(leg.status));
             const selected = selectedShipmentId === shipment.id;
 
-            return <article key={shipment.id} className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
-              <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto] lg:items-center">
+            return <article key={shipment.id} className="min-w-0 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
+              <div className="grid min-w-0 gap-4 p-4 sm:p-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto] xl:items-center xl:p-4">
                 <div className="min-w-0 space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
                     <strong className="text-gray-950 dark:text-white">Shipment #{shipment.id}</strong>
@@ -580,7 +580,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                     <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">
                       {logisticsModuleLabel(logisticsModuleForSourceType(shipment.source_type))}
                     </span>
-                    <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
+                    <span className="min-w-0 break-words text-sm font-medium text-gray-600 dark:text-gray-300">
                       {shipment.source_type === 'order' && shipment.order_summary?.order_number
                         ? `Order ${shipment.order_summary.order_number}`
                         : logisticsSourceLabel(shipment)}
@@ -589,17 +589,17 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                   {shipment.source_summary && <p className="text-sm text-gray-600 dark:text-gray-300">{shipment.source_summary.customer_name} · {shipment.source_summary.shoe_summary}</p>}
                   <RetailOrderSummary summary={shipment.order_summary} />
                 </div>
-                <div className="grid gap-2 text-sm text-gray-600 dark:text-gray-300">
-                  <span className="inline-flex items-center gap-2"><UserRound size={16} />{recipient.name || 'Customer not provided'}</span>
-                  <span title={recipient.address || undefined} className="inline-flex items-start gap-2">
+                <div className="grid min-w-0 gap-2 text-sm leading-6 text-gray-600 dark:text-gray-300 xl:leading-5">
+                  <span className="inline-flex min-w-0 items-center gap-2 break-words"><UserRound className="shrink-0" size={16} />{recipient.name || 'Customer not provided'}</span>
+                  <span title={recipient.address || undefined} className="inline-flex min-w-0 items-start gap-2 break-words">
                     <MapPin className="mt-0.5 shrink-0" size={16} />
                     {recipient.address ? shortAddress(recipient.address) : 'Address not provided'}
                   </span>
-                  <span className="inline-flex items-center gap-2">
+                  <span className="inline-flex min-w-0 items-center gap-2 break-words">
                     <CalendarDays size={16} />
                     {formatDate(firstLeg?.scheduled_delivery_date)}{firstLeg?.delivery_window ? ` · ${label(firstLeg.delivery_window)}` : ''}
                   </span>
-                  <span>Rider: {rider}</span>
+                  <span className="break-words">Rider: {rider}</span>
                   <div className="flex flex-wrap gap-2">
                     {urgent && <span className="rounded-full bg-red-100 px-2 py-1 text-xs font-semibold text-red-700">Urgent</span>}
                     {overdue && <span className="rounded-full bg-orange-100 px-2 py-1 text-xs font-semibold text-orange-700">Overdue</span>}
@@ -616,7 +616,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                   aria-label={shipments.data.length > 1 ? `Open delivery for Shipment ${shipment.id}` : undefined}
                   aria-haspopup="dialog"
                   onClick={(event) => openShipment(shipment.id, event.currentTarget)}
-                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 transition-colors hover:bg-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-300 dark:hover:bg-blue-950/50"
+                  className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 transition-colors hover:bg-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-300 dark:hover:bg-blue-950/50 xl:w-auto xl:shrink-0 xl:rounded-lg"
                 >
                   Open delivery
                   <ExternalLink aria-hidden="true" size={16} />
@@ -990,12 +990,12 @@ export default function Shipments({ children }: React.PropsWithChildren) {
         </div>
 
         {shipments.total > 0 && (
-            <div className="flex items-center justify-between rounded-xl border border-gray-200 bg-white px-6 py-4 dark:border-gray-700 dark:bg-gray-800">
-              <div className="text-sm text-gray-700 dark:text-gray-300">
+            <div className="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white px-4 py-4 dark:border-gray-700 dark:bg-gray-800 sm:flex-row sm:items-center sm:justify-between sm:px-6 xl:flex-row xl:items-center xl:justify-between xl:gap-0">
+              <div className="text-center text-sm text-gray-700 dark:text-gray-300 sm:text-left">
                 Showing <span className="font-medium">{shipments.from}</span> to <span className="font-medium">{shipments.to}</span> of{' '}
                 <span className="font-medium">{shipments.total}</span>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-end">
                 {shipments.links.map((link, index) => (
                   link.url ? (
                     <Link
@@ -1003,7 +1003,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                       href={link.url}
                       preserveScroll
                       preserveState
-                      className={`min-w-[40px] rounded-lg px-3 py-2 text-center text-sm font-medium transition-colors ${
+                      className={`min-h-11 min-w-[40px] rounded-lg px-3 py-2 text-center text-sm font-medium transition-colors xl:min-h-0 ${
                         link.active
                           ? 'bg-blue-600 text-white'
                           : 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800'
@@ -1013,7 +1013,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                   ) : (
                     <span
                       key={`${link.label}-${index}`}
-                      className="min-w-[40px] rounded-lg border border-gray-200 px-3 py-2 text-center text-sm text-gray-400 dark:border-gray-700"
+                      className="min-h-11 min-w-[40px] rounded-lg border border-gray-200 px-3 py-2 text-center text-sm text-gray-400 dark:border-gray-700 xl:min-h-0"
                       dangerouslySetInnerHTML={{ __html: link.label }}
                     />
                   )
