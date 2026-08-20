@@ -117,13 +117,16 @@ function selectOrder55() {
   fireEvent.click(screen.getByRole('checkbox', { name: /order #55/i }));
 }
 
-it('opens a responsive two-column new-batch workspace', () => {
+it('opens a responsive new-batch workspace without compact overflow', () => {
   render(<Batches />);
   expect(screen.getByText('Choose New Batch or open an existing batch to begin.')).toBeInTheDocument();
 
   openBuilder();
 
-  expect(screen.getByTestId('batch-workspace')).toHaveClass('lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]');
+  expect(screen.getByTestId('batch-page-main')).toHaveClass('overflow-x-clip');
+  expect(screen.getByTestId('batch-workspace')).toHaveClass('xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]');
+  expect(screen.getByTestId('batch-workspace')).not.toHaveClass('lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]');
+  expect(screen.getByTestId('batch-filter-grid')).toHaveClass('grid-cols-1');
   expect(screen.getByRole('heading', { name: 'Available deliveries' })).toBeInTheDocument();
   expect(screen.getByRole('heading', { name: 'New batch' })).toBeInTheDocument();
 });
@@ -618,7 +621,7 @@ it('collapses available deliveries while editing and reopens it for a new batch'
   render(<Batches />);
 
   fireEvent.click(screen.getByRole('button', { name: 'Edit batch 1' }));
-  expect(screen.getByTestId('batch-workspace')).toHaveClass('lg:grid-cols-1');
+  expect(screen.getByTestId('batch-workspace')).toHaveClass('xl:grid-cols-1');
   expect(screen.getByRole('heading', { name: 'Batch #1' })).toBeInTheDocument();
   expect(screen.getByLabelText('Search deliveries')).not.toBeVisible();
   expect(screen.getByRole('button', { name: 'Show available deliveries' })).toBeInTheDocument();
@@ -630,7 +633,7 @@ it('collapses available deliveries while editing and reopens it for a new batch'
   fireEvent.click(screen.getByRole('button', { name: 'New Batch' }));
   expect(screen.getByRole('heading', { name: 'New batch' })).toBeInTheDocument();
   expect(screen.getByLabelText('Search deliveries')).toBeInTheDocument();
-  expect(screen.getByTestId('batch-workspace')).toHaveClass('lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]');
+  expect(screen.getByTestId('batch-workspace')).toHaveClass('xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]');
 });
 
 const historicalStops = [
