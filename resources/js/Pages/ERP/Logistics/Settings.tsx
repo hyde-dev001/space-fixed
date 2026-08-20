@@ -99,7 +99,7 @@ export default function LogisticsSettings() {
 
   return <AppLayoutERP>
     <Head title="Logistics Settings" />
-    <form onSubmit={submit} className="mx-auto max-w-3xl space-y-5 p-6">
+    <form onSubmit={submit} className="mx-auto w-full max-w-3xl space-y-5 p-4 sm:p-5 md:p-6">
       <h1 className="text-2xl font-bold">Logistics Settings</h1>
       <fieldset><legend className="font-semibold">Operating days</legend><div className="flex flex-wrap gap-3">{['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((day, index) => <label key={day}><input type="checkbox" checked={form.operating_days.includes(index + 1)} onChange={(e) => set('operating_days', e.target.checked ? [...form.operating_days, index + 1].sort() : form.operating_days.filter((value) => value !== index + 1))} /> {day}</label>)}</div></fieldset>
       <div className="grid gap-4 sm:grid-cols-2">
@@ -127,20 +127,20 @@ export default function LogisticsSettings() {
           <p id="arrival-radius-help" className="text-sm text-gray-500">Used when riders tap I've arrived at pickup or customer locations.</p>
         </div>
       </section>
-      <fieldset>
+      <fieldset className="space-y-3 rounded-2xl border border-gray-200 p-4 dark:border-gray-700">
         <legend className="font-semibold">Blackout dates</legend>
-        <div className="flex gap-2">
-          <input aria-label="Blackout date" className="rounded border p-2" type="date" min={today} value={blackout} onChange={(e) => setBlackout(e.target.value)} />
-          <button type="button" disabled={!blackout || blackout < today} className="rounded border px-3 disabled:opacity-50" onClick={() => {
+        <div className="flex w-full items-center gap-2">
+          <input aria-label="Blackout date" className="min-h-11 min-w-0 flex-1 rounded-xl border border-gray-300 bg-white px-3 text-sm text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100" type="date" min={today} value={blackout} onChange={(e) => setBlackout(e.target.value)} />
+          <button type="button" disabled={!blackout || blackout < today} className="min-h-11 shrink-0 rounded-xl border border-gray-300 px-4 font-semibold text-gray-700 transition-colors hover:border-gray-500 hover:text-gray-950 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:border-gray-500 dark:hover:text-white" onClick={() => {
             if (blackout && !form.blackout_dates.includes(blackout)) set('blackout_dates', [...form.blackout_dates, blackout].sort());
             setBlackout('');
           }}>Add</button>
         </div>
-        <ul>{form.blackout_dates.map((date) => <li key={date} className="mt-2 flex gap-2">{date}<button type="button" onClick={() => set('blackout_dates', form.blackout_dates.filter((value) => value !== date))}>Remove</button></li>)}</ul>
+        <ul className="space-y-2">{form.blackout_dates.map((date) => <li key={date} className="flex items-center justify-between gap-3 rounded-xl bg-gray-50 px-3 py-2 text-sm dark:bg-gray-800"><span className="font-medium">{date}</span><button type="button" className="min-h-11 shrink-0 px-2 font-semibold text-gray-600 underline-offset-2 hover:underline dark:text-gray-300" onClick={() => set('blackout_dates', form.blackout_dates.filter((value) => value !== date))}>Remove</button></li>)}</ul>
       </fieldset>
-      <div className="flex gap-2">
-        <button disabled={saving} className="rounded bg-blue-600 px-4 py-2 font-semibold text-white disabled:opacity-50">{saving ? 'Saving...' : 'Save'}</button>
-        <button type="button" disabled={!changed || saving} onClick={discard} className="rounded border px-4 py-2 font-semibold disabled:opacity-50">Discard changes</button>
+      <div className="flex flex-col gap-3 sm:flex-row">
+        <button disabled={saving} className="min-h-11 w-full rounded-xl bg-blue-600 px-4 py-2 font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto">{saving ? 'Saving...' : 'Save'}</button>
+        <button type="button" disabled={!changed || saving} onClick={discard} className="min-h-11 w-full rounded-xl border border-gray-300 px-4 py-2 font-semibold text-gray-700 transition-colors hover:border-gray-500 hover:text-gray-950 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto dark:border-gray-700 dark:text-gray-300 dark:hover:border-gray-500 dark:hover:text-white">Discard changes</button>
       </div>
     </form>
     {timePickerKey && (
