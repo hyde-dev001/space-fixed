@@ -156,6 +156,10 @@ it('opens the compact application menu as a non-modal dropdown and keeps notific
   expect(screen.getByText('Alerts & notifications').parentElement).toHaveClass('xl:hidden');
   expect(screen.getByText('Appearance')).toBeInTheDocument();
   expect(screen.getByTestId('inline-shop-owner-dropdown')).toBeInTheDocument();
+  expect(
+    screen.getByText('Appearance').compareDocumentPosition(screen.getByTestId('inline-shop-owner-dropdown')) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
   expect(screen.getByText('Shop Profile')).toBeInTheDocument();
   expect(screen.getByText('Sign Out')).toBeInTheDocument();
   expect(document.body.style.overflow).toBe('');
