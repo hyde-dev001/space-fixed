@@ -44,7 +44,7 @@ export default function BatchWorkspace({
   const canSave = !batch && Boolean(date) && legs.length >= 2 && !submitting && (!overCapacity || Boolean(overrideReason.trim()));
 
   return <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
-    <div className="border-b border-gray-100 p-4 dark:border-gray-700">
+    <div className="border-b border-gray-100 p-4 dark:border-gray-700 sm:p-5 xl:p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="font-bold text-gray-950 dark:text-white">{batch ? `Batch #${batch.id}` : 'New batch'}</h2>
@@ -72,16 +72,16 @@ export default function BatchWorkspace({
       </div>}
     </div>
     <DndProvider backend={HTML5Backend}>
-      <div className="min-h-48 space-y-3 bg-gray-50 p-4 dark:bg-gray-900/40">
+      <div className="min-h-48 space-y-3 bg-gray-50 p-4 dark:bg-gray-900/40 sm:p-5 xl:p-4">
         {legs.map((leg, index) => <BatchStopRow key={leg.id} leg={leg} index={index} total={legs.length} editable={!batch || batch.status === 'draft'} busy={submitting || busyLegId === leg.id} onMove={onMove} onRemove={onRemove} />)}
         {!legs.length && <p className="grid min-h-40 place-items-center text-center text-sm text-gray-500">{history ? 'Historical stop details unavailable' : 'Select deliveries from the left to build the route.'}</p>}
       </div>
     </DndProvider>
-    <div className="sticky bottom-0 flex min-h-16 flex-wrap items-center justify-end gap-2 border-t bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-      {batch?.status === 'draft' && <button type="button" onClick={onReview} className="min-h-11 rounded-xl border border-blue-600 px-4 text-sm font-semibold text-blue-700">Review &amp; Offer</button>}
+    <div className="sticky bottom-0 flex min-h-16 flex-col items-stretch justify-end gap-3 border-t bg-white p-4 dark:border-gray-700 dark:bg-gray-800 sm:flex-row sm:items-center sm:gap-2 xl:flex-wrap">
+      {batch?.status === 'draft' && <button type="button" onClick={onReview} className="min-h-11 w-full rounded-xl border border-blue-600 px-4 text-sm font-semibold text-blue-700 sm:w-auto">Review &amp; Offer</button>}
       {batch && batch.status !== 'draft' && <span className="mr-auto text-sm font-medium text-gray-500">This route is read-only at the {batch.status.replaceAll('_', ' ')} stage.</span>}
       {!batch && legs.length < 2 && <span className="mr-auto text-sm font-semibold text-amber-700">Select at least 2 deliveries</span>}
-      {!batch && <button type="button" disabled={!canSave} onClick={onSave} className="min-h-11 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-40">{submitting ? 'Saving Draft...' : 'Save Draft'}</button>}
+      {!batch && <button type="button" disabled={!canSave} onClick={onSave} className="min-h-11 w-full rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-40 sm:w-auto">{submitting ? 'Saving Draft...' : 'Save Draft'}</button>}
     </div>
   </section>;
 }

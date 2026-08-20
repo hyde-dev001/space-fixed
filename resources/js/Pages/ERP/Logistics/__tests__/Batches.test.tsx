@@ -133,6 +133,7 @@ it('opens a responsive new-batch workspace without compact overflow', () => {
   expect(screen.getByTestId('batch-filter-grid')).toHaveClass('grid-cols-1');
   expect(screen.getByRole('heading', { name: 'Available deliveries' })).toBeInTheDocument();
   expect(screen.getByRole('heading', { name: 'New batch' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Save Draft' })).toHaveClass('w-full', 'sm:w-auto');
 });
 
 it('disables past dates in the delivery date calendar', () => {
@@ -502,6 +503,7 @@ it('reviews an ordered draft and requires a rider before offering', async () => 
 
   const dialog = screen.getByRole('dialog', { name: 'Review & Offer Batch #1' });
   expect(dialog).toBeInTheDocument();
+  expect(dialog).toHaveClass('max-h-[100dvh]');
   expect(screen.getByText('2 ordered stops')).toBeInTheDocument();
   expect(dialog).toHaveTextContent('1 urgent');
   expect(screen.getByRole('button', { name: 'Offer Batch to Rider' })).toBeDisabled();
@@ -669,6 +671,7 @@ it('renders active batches as a table and opens stop details in a modal', async 
 
   const details = screen.getByRole('dialog', { name: 'Batch 2 details' });
   expect(details).toBeInTheDocument();
+  expect(details).toHaveClass('max-h-[100dvh]');
   expect(details).toHaveTextContent('Order #55');
   expect(screen.getByRole('button', { name: 'Close batch details' })).toBeInTheDocument();
   await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close batch details' })));
@@ -687,6 +690,7 @@ it('opens batch history from the active filter row', () => {
 
   const history = screen.getByRole('dialog', { name: 'Batch history' });
   expect(history).toBeInTheDocument();
+  expect(history).toHaveClass('max-h-[100dvh]');
   expect(history).toHaveTextContent('Batch #6');
   expect(within(history).queryByTitle('View summary')).not.toBeInTheDocument();
   expect(within(within(history).getByTestId('compact-batch-list')).getByTitle('View details')).toBeInTheDocument();

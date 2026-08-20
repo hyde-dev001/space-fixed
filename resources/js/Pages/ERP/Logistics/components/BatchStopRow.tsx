@@ -39,9 +39,9 @@ export default function BatchStopRow({ leg, index, total, editable = false, busy
   }), [index, onMove]);
   drag(drop(ref));
 
-  return <article ref={ref} aria-label={`Stop ${index + 1}: ${destination?.name || source}`} className={`rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition dark:border-gray-700 dark:bg-gray-800 ${isDragging ? 'opacity-50' : ''}`}>
-    <div className="flex items-start gap-3">
-      {editable && <button type="button" aria-label={`Drag stop ${index + 1}`} title="Drag to reorder" className="mt-1 cursor-grab text-gray-400"><GripVertical size={18} /></button>}
+  return <article ref={ref} aria-label={`Stop ${index + 1}: ${destination?.name || source}`} className={`rounded-2xl border border-gray-200 bg-white p-4 shadow-sm transition dark:border-gray-700 dark:bg-gray-800 sm:p-5 xl:rounded-xl xl:p-4 ${isDragging ? 'opacity-50' : ''}`}>
+    <div className="flex min-w-0 flex-wrap items-start gap-3 xl:flex-nowrap">
+      {editable && <button type="button" aria-label={`Drag stop ${index + 1}`} title="Drag to reorder" className="mt-1 min-h-11 min-w-11 cursor-grab text-gray-400 xl:min-h-0 xl:min-w-0"><GripVertical size={18} /></button>}
       <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-600 text-sm font-bold text-white">{index + 1}</span>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
@@ -63,11 +63,11 @@ export default function BatchStopRow({ leg, index, total, editable = false, busy
           <RetailOrderSummary summary={leg.shipment?.order_summary} instructions={destination?.delivery_instructions} />
         </div>
       </div>
-      <div className="flex flex-wrap justify-end gap-1">
+      <div className="flex w-full flex-wrap justify-end gap-1 sm:w-auto xl:w-auto">
         {editable && <>
-          <button type="button" aria-label={`Move stop ${index + 1} up`} title="Move up" disabled={busy || index === 0} onClick={() => onMove?.(index, index - 1)} className="rounded-lg border p-2 text-gray-600 hover:bg-gray-50 disabled:opacity-30"><ArrowUp size={16} /></button>
-          <button type="button" aria-label={`Move stop ${index + 1} down`} title="Move down" disabled={busy || index === total - 1} onClick={() => onMove?.(index, index + 1)} className="rounded-lg border p-2 text-gray-600 hover:bg-gray-50 disabled:opacity-30"><ArrowDown size={16} /></button>
-          <button type="button" aria-label={`Remove stop ${index + 1}`} title="Remove stop" disabled={busy} onClick={() => onRemove?.(leg, index)} className="rounded-lg border border-red-200 p-2 text-red-600 hover:bg-red-50 disabled:opacity-30"><Trash2 size={16} /></button>
+          <button type="button" aria-label={`Move stop ${index + 1} up`} title="Move up" disabled={busy || index === 0} onClick={() => onMove?.(index, index - 1)} className="min-h-11 min-w-11 rounded-lg border p-2 text-gray-600 hover:bg-gray-50 disabled:opacity-30 xl:min-h-0 xl:min-w-0"><ArrowUp size={16} /></button>
+          <button type="button" aria-label={`Move stop ${index + 1} down`} title="Move down" disabled={busy || index === total - 1} onClick={() => onMove?.(index, index + 1)} className="min-h-11 min-w-11 rounded-lg border p-2 text-gray-600 hover:bg-gray-50 disabled:opacity-30 xl:min-h-0 xl:min-w-0"><ArrowDown size={16} /></button>
+          <button type="button" aria-label={`Remove stop ${index + 1}`} title="Remove stop" disabled={busy} onClick={() => onRemove?.(leg, index)} className="min-h-11 min-w-11 rounded-lg border border-red-200 p-2 text-red-600 hover:bg-red-50 disabled:opacity-30 xl:min-h-0 xl:min-w-0"><Trash2 size={16} /></button>
         </>}
       </div>
     </div>
