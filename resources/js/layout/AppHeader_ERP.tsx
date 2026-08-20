@@ -242,7 +242,7 @@ const AppHeader_ERP: React.FC = () => {
           )}
           <div className="flex min-h-0 w-full flex-1 flex-col gap-4 overflow-y-auto bg-gray-50/70 p-4 dark:bg-gray-950/30 sm:gap-3 sm:p-5 xl:w-auto xl:flex-none xl:flex-row xl:items-center xl:gap-4 xl:overflow-visible xl:bg-transparent xl:p-0">
             {/* Right Side Actions */}
-            <div className="grid w-full gap-3 sm:grid-cols-2 xl:flex xl:w-auto xl:items-center xl:gap-4">
+            <div className="grid w-full grid-cols-1 gap-3 xl:flex xl:w-auto xl:items-center xl:gap-4">
               <div className="hidden items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:shadow-none xl:contents">
                 <div className="min-w-0 xl:hidden">
                   <p className="text-sm font-semibold text-gray-900 dark:text-white">Alerts &amp; notifications</p>
