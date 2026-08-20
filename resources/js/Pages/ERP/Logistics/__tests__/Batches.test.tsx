@@ -434,7 +434,11 @@ it('identifies the products and quantity in a live route stop', () => {
   openDraft([{ ...scheduledLeg, stop_sequence: 1 }]);
 
   const stop = screen.getByRole('article', { name: 'Stop 1: Ben Cruz' });
+  expect(within(stop).getByTestId('batch-stop-layout')).toHaveClass('grid-cols-[auto_minmax(0,1fr)]', 'gap-y-4', 'xl:flex', 'xl:gap-3');
+  expect(within(stop).getByTestId('batch-stop-details')).toHaveClass('contents', 'xl:block');
+  expect(within(stop).getByTestId('batch-stop-actions')).toHaveClass('col-span-2', 'gap-2', 'xl:gap-1');
   expect(within(stop).getByText('Adidas Ultraboost')).toBeInTheDocument();
+  expect(within(stop).getByText('Adidas Ultraboost')).toHaveClass('break-words', 'xl:truncate');
   expect(within(stop).getByText(/5 pairs.*2 variants.*\+1 more/)).toBeInTheDocument();
   expect(within(stop).getByText('Delivery instructions')).toBeInTheDocument();
 });

@@ -6,6 +6,7 @@ type Props = {
   summary?: LogisticsOrderSummary | null;
   expanded?: boolean;
   instructions?: string | null;
+  allowModelWrap?: boolean;
 };
 
 const imageUrl = (path?: string | null) => {
@@ -21,7 +22,7 @@ const ProductImage = ({ path, alt }: { path?: string | null; alt: string }) => {
     : <span aria-label="No product image" className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-gray-400"><Package size={20} /></span>;
 };
 
-export default function RetailOrderSummary({ summary, expanded = false, instructions }: Props) {
+export default function RetailOrderSummary({ summary, expanded = false, instructions, allowModelWrap = false }: Props) {
   if (!summary) return null;
   if (!summary.available) return <p className="text-sm font-medium text-amber-700">Order details unavailable</p>;
 
@@ -59,7 +60,7 @@ export default function RetailOrderSummary({ summary, expanded = false, instruct
   return <div className="flex min-w-0 items-center gap-3">
     <ProductImage path={first.image} alt={first.model} />
     <div className="min-w-0">
-      <p className="truncate text-sm font-semibold text-gray-950 dark:text-white">{[first.brand, first.model].filter(Boolean).join(' ')}</p>
+      <p className={`${allowModelWrap ? 'break-words xl:truncate' : 'truncate'} text-sm font-semibold text-gray-950 dark:text-white`}>{[first.brand, first.model].filter(Boolean).join(' ')}</p>
       <p className="text-xs text-gray-500">
         {summary.total_quantity} {summary.total_quantity === 1 ? 'pair' : 'pairs'} · {summary.variant_count} {summary.variant_count === 1 ? 'variant' : 'variants'}
         {more > 0 ? ` · +${more} more` : ''}
