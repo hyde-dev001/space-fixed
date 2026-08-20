@@ -40,8 +40,8 @@ export default function BatchStopRow({ leg, index, total, editable = false, busy
   drag(drop(ref));
 
   return <article ref={ref} aria-label={`Stop ${index + 1}: ${destination?.name || source}`} className={`rounded-2xl border border-gray-200 bg-white p-4 shadow-sm transition dark:border-gray-700 dark:bg-gray-800 sm:p-5 xl:rounded-xl xl:p-4 ${isDragging ? 'opacity-50' : ''}`}>
-    <div data-testid="batch-stop-layout" className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-4 xl:flex xl:flex-nowrap xl:items-start xl:gap-3">
-      <div className="flex items-start gap-3 xl:contents">
+    <div data-testid="batch-stop-layout" className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-4 xl:flex xl:flex-nowrap xl:items-start xl:gap-3">
+      <div data-testid="batch-stop-identity" className="flex items-start gap-2 xl:contents">
         {editable && <button type="button" aria-label={`Drag stop ${index + 1}`} title="Drag to reorder" className="mt-1 min-h-11 min-w-11 cursor-grab text-gray-400 xl:min-h-0 xl:min-w-0"><GripVertical size={18} /></button>}
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-600 text-sm font-bold text-white">{index + 1}</span>
       </div>
@@ -67,11 +67,11 @@ export default function BatchStopRow({ leg, index, total, editable = false, busy
           <RetailOrderSummary summary={leg.shipment?.order_summary} instructions={destination?.delivery_instructions} allowModelWrap />
         </div>
       </div>
-      <div data-testid="batch-stop-actions" className="col-span-2 flex w-full flex-wrap justify-end gap-2 border-t border-gray-100 pt-3 dark:border-gray-700 sm:w-auto xl:gap-1 xl:border-0 xl:pt-0">
+      <div data-testid="batch-stop-actions" className="col-span-2 flex w-full flex-wrap justify-center gap-2 border-t border-gray-100 pt-3 dark:border-gray-700 sm:w-auto xl:justify-end xl:gap-1 xl:border-0 xl:pt-0">
         {editable && <>
-          <button type="button" aria-label={`Move stop ${index + 1} up`} title="Move up" disabled={busy || index === 0} onClick={() => onMove?.(index, index - 1)} className="min-h-11 min-w-11 rounded-lg border p-2 text-gray-600 hover:bg-gray-50 disabled:opacity-30 xl:min-h-0 xl:min-w-0"><ArrowUp size={16} /></button>
-          <button type="button" aria-label={`Move stop ${index + 1} down`} title="Move down" disabled={busy || index === total - 1} onClick={() => onMove?.(index, index + 1)} className="min-h-11 min-w-11 rounded-lg border p-2 text-gray-600 hover:bg-gray-50 disabled:opacity-30 xl:min-h-0 xl:min-w-0"><ArrowDown size={16} /></button>
-          <button type="button" aria-label={`Remove stop ${index + 1}`} title="Remove stop" disabled={busy} onClick={() => onRemove?.(leg, index)} className="min-h-11 min-w-11 rounded-lg border border-red-200 p-2 text-red-600 hover:bg-red-50 disabled:opacity-30 xl:min-h-0 xl:min-w-0"><Trash2 size={16} /></button>
+          <button type="button" aria-label={`Move stop ${index + 1} up`} title="Move up" disabled={busy || index === 0} onClick={() => onMove?.(index, index - 1)} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border p-2 text-gray-600 hover:bg-gray-50 disabled:opacity-30 xl:min-h-0 xl:min-w-0"><ArrowUp size={16} /></button>
+          <button type="button" aria-label={`Move stop ${index + 1} down`} title="Move down" disabled={busy || index === total - 1} onClick={() => onMove?.(index, index + 1)} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border p-2 text-gray-600 hover:bg-gray-50 disabled:opacity-30 xl:min-h-0 xl:min-w-0"><ArrowDown size={16} /></button>
+          <button type="button" aria-label={`Remove stop ${index + 1}`} title="Remove stop" disabled={busy} onClick={() => onRemove?.(leg, index)} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-red-200 p-2 text-red-600 hover:bg-red-50 disabled:opacity-30 xl:min-h-0 xl:min-w-0"><Trash2 size={16} /></button>
         </>}
       </div>
     </div>
