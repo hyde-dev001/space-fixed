@@ -122,6 +122,20 @@ it('supports dragging a wheel column to the next time value', () => {
   expect(within(hourWheel).getByRole('option', { name: '04', exact: true })).toHaveAttribute('aria-selected', 'true');
 });
 
+it('centers and clearly marks the active value in every wheel column', () => {
+  render(<LogisticsSettings />);
+  fireEvent.click(screen.getByRole('button', { name: 'Morning start, 08:00 AM' }));
+
+  const hourWheel = screen.getByTestId('time-picker-hour');
+  const minuteWheel = screen.getByTestId('time-picker-minute');
+  const periodWheel = screen.getByTestId('time-picker-period');
+
+  expect(within(hourWheel).getByRole('option', { name: '08', exact: true })).toHaveClass('text-gray-950');
+  expect(within(minuteWheel).getByRole('option', { name: '00', exact: true })).toHaveClass('text-gray-950');
+  expect(within(periodWheel).getByRole('option', { name: 'AM', exact: true })).toHaveClass('text-gray-950');
+  expect(hourWheel).toHaveProperty('scrollTop', 7 * 48);
+});
+
 it('shows a success alert after saving', async () => {
   render(<LogisticsSettings />);
   fireEvent.click(screen.getByRole('button', { name: 'Save' }));

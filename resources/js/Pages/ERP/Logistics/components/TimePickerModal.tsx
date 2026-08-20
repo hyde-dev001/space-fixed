@@ -68,14 +68,14 @@ function WheelColumn({ label, options, selectedIndex, testId, onChange }: WheelC
   const suppressClickRef = useRef(false);
 
   const indexFromScroll = (scrollTop: number) => clamp(
-    Math.round((scrollTop - SPACER_ROWS * ROW_HEIGHT) / ROW_HEIGHT),
+    Math.round(scrollTop / ROW_HEIGHT),
     0,
     options.length - 1,
   );
 
   const scrollToIndex = (index: number) => {
     if (!scrollRef.current) return;
-    scrollRef.current.scrollTop = (SPACER_ROWS + clamp(index, 0, options.length - 1)) * ROW_HEIGHT;
+    scrollRef.current.scrollTop = clamp(index, 0, options.length - 1) * ROW_HEIGHT;
   };
 
   useEffect(() => {
@@ -168,7 +168,7 @@ function WheelColumn({ label, options, selectedIndex, testId, onChange }: WheelC
             role="option"
             aria-selected={index === selectedIndex}
             tabIndex={index === selectedIndex ? 0 : -1}
-            className="relative z-10 flex h-12 min-h-12 w-full shrink-0 snap-center items-center justify-center rounded-xl px-2 text-base font-semibold text-gray-500 transition-colors duration-150 hover:text-gray-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-gray-400 dark:hover:text-white"
+            className={`relative z-10 flex h-12 min-h-12 w-full shrink-0 snap-center items-center justify-center rounded-xl px-2 text-base transition-colors duration-150 hover:text-gray-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${index === selectedIndex ? 'font-bold text-gray-950 dark:text-white' : 'font-semibold text-gray-500 dark:text-gray-400 dark:hover:text-white'}`}
             onClick={() => {
               if (suppressClickRef.current) {
                 suppressClickRef.current = false;
@@ -184,6 +184,8 @@ function WheelColumn({ label, options, selectedIndex, testId, onChange }: WheelC
         ))}
         <div aria-hidden="true" className="shrink-0" style={{ height: ROW_HEIGHT * SPACER_ROWS }} />
         <div aria-hidden="true" className="pointer-events-none absolute inset-x-1 top-1/2 z-0 h-12 -translate-y-1/2 rounded-xl border border-blue-200 bg-blue-50/70 dark:border-blue-400/30 dark:bg-blue-950/40" />
+        <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 z-20 h-16 rounded-t-2xl bg-gradient-to-b from-gray-50 via-gray-50/80 to-transparent dark:from-gray-800 dark:via-gray-800/80" />
+        <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 z-20 h-16 rounded-b-2xl bg-gradient-to-t from-gray-50 via-gray-50/80 to-transparent dark:from-gray-800 dark:via-gray-800/80" />
       </div>
     </div>
   );
@@ -208,7 +210,7 @@ export function TimePickerModal({ isOpen, label, value, onCancel, onConfirm }: T
       onClose={onCancel}
       showCloseButton={false}
       size="md"
-      className="!max-w-[calc(100vw-2rem)] overflow-hidden border border-gray-200 shadow-2xl dark:border-gray-700"
+      className="!w-[calc(100vw-2rem)] !max-w-[30rem] overflow-hidden border border-gray-200 shadow-2xl dark:border-gray-700"
     >
       <div
         role="dialog"
@@ -234,28 +236,37 @@ export function TimePickerModal({ isOpen, label, value, onCancel, onConfirm }: T
           </button>
         </div>
 
-        <div className="mt-5 flex gap-2 sm:gap-3">
-          <WheelColumn
-            label="Hour"
-            options={HOURS}
-            selectedIndex={hourIndex}
-            testId="time-picker-hour"
-            onChange={(index) => setDraft((current) => ({ ...current, hour: HOURS[index] }))}
-          />
-          <WheelColumn
-            label="Minute"
-            options={MINUTES}
-            selectedIndex={minuteIndex}
-            testId="time-picker-minute"
-            onChange={(index) => setDraft((current) => ({ ...current, minute: MINUTES[index] }))}
-          />
-          <WheelColumn
-            label="AM or PM"
-            options={PERIODS}
-            selectedIndex={periodIndex}
-            testId="time-picker-period"
-            onChange={(index) => setDraft((current) => ({ ...current, period: PERIODS[index] }))}
-          />
+        <div className="mt-5 grid grid-cols-3 gap-2 sm:gap-3">
+          <div className="min-w-0">
+            <p className="mb-2 px-1 text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">Hour</p>
+            <WheelColumn
+              label="Hour"
+              options={HOURS}
+              selectedIndex={hourIndex}
+              testId="time-picker-hour"
+              onChange={(index) => setDraft((current) => ({ ...current, hour: HOURS[index] }))}
+            />
+          </div>
+          <div className="min-w-0">
+            <p className="mb-2 px-1 text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">Minute</p>
+            <WheelColumn
+              label="Minute"
+              options={MINUTES}
+              selectedIndex={minuteIndex}
+              testId="time-picker-minute"
+              onChange={(index) => setDraft((current) => ({ ...current, minute: MINUTES[index] }))}
+            />
+          </div>
+          <div className="min-w-0">
+            <p className="mb-2 px-1 text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">Period</p>
+            <WheelColumn
+              label="AM or PM"
+              options={PERIODS}
+              selectedIndex={periodIndex}
+              testId="time-picker-period"
+              onChange={(index) => setDraft((current) => ({ ...current, period: PERIODS[index] }))}
+            />
+          </div>
         </div>
 
         <p className="mt-4 text-center text-sm font-medium text-gray-500 dark:text-gray-400" aria-live="polite">
