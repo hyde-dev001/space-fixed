@@ -160,6 +160,10 @@ it('opens the compact application menu as a non-modal dropdown and keeps notific
     screen.getByText('Appearance').compareDocumentPosition(screen.getByTestId('inline-shop-owner-dropdown')) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
+  const compactActions = screen.getByRole('region', { name: 'Application menu' }).querySelector<HTMLElement>('.grid');
+  expect(compactActions).not.toBeNull();
+  expect(compactActions).toHaveClass('grid-cols-1');
+  expect(compactActions).not.toHaveClass('sm:grid-cols-2');
   expect(screen.getByText('Shop Profile')).toBeInTheDocument();
   expect(screen.getByText('Sign Out')).toBeInTheDocument();
   expect(document.body.style.overflow).toBe('');

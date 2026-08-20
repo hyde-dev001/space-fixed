@@ -46,6 +46,7 @@ Use the repository's `DESIGN.md` principles that fit the ERP surface: neutral wh
 - Clicking it opens a compact anchored dropdown below the header, without a backdrop, dialog semantics, or body scroll locking.
 - The notification bell stays visible in the compact header beside the hamburger; the dropdown contains the theme toggle and role-specific account actions directly, without a nested account trigger and without changing their routes.
 - On compact widths, the Appearance/dark-mode control appears before the account actions so it is immediately available at the top of the menu; the desktop action order remains unchanged.
+- Below `xl`, the Appearance and account surfaces stay in one vertical column so tablet keeps the same reading flow and card proportions as mobile; the desktop action row remains flex-based.
 - Close the dropdown with the hamburger toggle, Escape, or an outside pointer interaction; restore focus to the trigger for keyboard-driven close paths.
 - The desktop action row remains rendered inline at `xl` and above; no mobile modal markup is shown there.
 
