@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import LogisticsSettings from '../Settings';
 
@@ -78,6 +78,48 @@ it('submits untouched time settings without seconds', async () => {
     afternoon_start: '13:00',
     afternoon_end: '18:00',
   }))); 
+});
+
+it('commits a selected time only after confirming the picker', async () => {
+  render(<LogisticsSettings />);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Cutoff, 03:00 PM' }));
+  expect(screen.getByRole('dialog', { name: 'Set cutoff time' })).toBeInTheDocument();
+
+  fireEvent.click(within(screen.getByTestId('time-picker-hour')).getByRole('option', { name: '04', exact: true }));
+  fireEvent.click(within(screen.getByTestId('time-picker-minute')).getByRole('option', { name: '30', exact: true }));
+  fireEvent.click(within(screen.getByTestId('time-picker-period')).getByRole('option', { name: 'PM', exact: true }));
+  fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+
+  expect(screen.getByRole('button', { name: 'Cutoff, 04:30 PM' })).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+  await waitFor(() => expect(mocks.put).toHaveBeenCalledWith('/api/logistics/settings', expect.objectContaining({
+    cutoff_time: '16:30',
+  })));
+});
+
+it('discards a time picker draft when canceled', () => {
+  render(<LogisticsSettings />);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Cutoff, 03:00 PM' }));
+  fireEvent.click(within(screen.getByTestId('time-picker-hour')).getByRole('option', { name: '07', exact: true }));
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+  expect(screen.getByRole('button', { name: 'Cutoff, 03:00 PM' })).toBeInTheDocument();
+  expect(screen.queryByRole('dialog', { name: 'Set cutoff time' })).not.toBeInTheDocument();
+});
+
+it('supports dragging a wheel column to the next time value', () => {
+  render(<LogisticsSettings />);
+  fireEvent.click(screen.getByRole('button', { name: 'Cutoff, 03:00 PM' }));
+
+  const hourWheel = screen.getByTestId('time-picker-hour');
+  fireEvent.pointerDown(hourWheel, { pointerId: 1, clientY: 200, button: 0 });
+  fireEvent.pointerMove(hourWheel, { pointerId: 1, clientY: 152 });
+  fireEvent.pointerUp(hourWheel, { pointerId: 1, clientY: 152 });
+
+  expect(within(hourWheel).getByRole('option', { name: '04', exact: true })).toHaveAttribute('aria-selected', 'true');
 });
 
 it('shows a success alert after saving', async () => {

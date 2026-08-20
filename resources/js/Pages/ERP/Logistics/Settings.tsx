@@ -4,6 +4,7 @@ import axios from 'axios';
 import AppLayoutERP from '@/layout/AppLayout_ERP';
 import { workflowFeedback } from '@/utils/workflowFeedback';
 import DeliveryCoverageMap from './DeliveryCoverageMap';
+import { formatTimeDisplay, TimePickerModal } from './components/TimePickerModal';
 
 type Settings = {
   operating_days: number[]; cutoff_time: string; blackout_dates: string[];
@@ -16,6 +17,17 @@ type ShopLocation = {
   latitude: number | null;
   longitude: number | null;
   address: string | null;
+};
+
+const TIME_KEYS = ['cutoff_time', 'morning_start', 'morning_end', 'afternoon_start', 'afternoon_end'] as const;
+type TimeKey = (typeof TIME_KEYS)[number];
+
+const TIME_LABELS: Record<TimeKey, string> = {
+  cutoff_time: 'Cutoff',
+  morning_start: 'Morning start',
+  morning_end: 'Morning end',
+  afternoon_start: 'Afternoon start',
+  afternoon_end: 'Afternoon end',
 };
 
 const normalizeTimes = (settings: Settings): Settings => ({
@@ -36,6 +48,7 @@ export default function LogisticsSettings() {
   const [baseline, setBaseline] = useState<Settings>(() => normalizeTimes(initial));
   const [saving, setSaving] = useState(false);
   const [blackout, setBlackout] = useState('');
+  const [timePickerKey, setTimePickerKey] = useState<TimeKey | null>(null);
   const changed = blackout !== '' || JSON.stringify(form) !== JSON.stringify(baseline);
   const set = (key: keyof Settings, value: Settings[keyof Settings]) => setForm({ ...form, [key]: value });
   const submit = async (event: FormEvent) => {
@@ -64,15 +77,35 @@ export default function LogisticsSettings() {
     setBlackout('');
   };
 
+  const renderTimeField = (key: TimeKey) => (
+    <label key={key} className="block">
+      <span className="mb-1 block">{TIME_LABELS[key]}</span>
+      <button
+        type="button"
+        aria-haspopup="dialog"
+        aria-expanded={timePickerKey === key}
+        aria-label={`${TIME_LABELS[key]}, ${formatTimeDisplay(form[key])}`}
+        className="flex min-h-11 w-full items-center justify-between rounded-xl border border-gray-300 bg-white px-3 text-left font-medium text-gray-800 transition-colors duration-150 hover:border-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+        onClick={() => setTimePickerKey(key)}
+      >
+        <span>{formatTimeDisplay(form[key])}</span>
+        <svg aria-hidden="true" className="h-5 w-5 text-gray-500 dark:text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+          <circle cx="12" cy="12" r="8.5" />
+          <path d="M12 7v5l3 2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+    </label>
+  );
+
   return <AppLayoutERP>
     <Head title="Logistics Settings" />
     <form onSubmit={submit} className="mx-auto max-w-3xl space-y-5 p-6">
       <h1 className="text-2xl font-bold">Logistics Settings</h1>
       <fieldset><legend className="font-semibold">Operating days</legend><div className="flex flex-wrap gap-3">{['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((day, index) => <label key={day}><input type="checkbox" checked={form.operating_days.includes(index + 1)} onChange={(e) => set('operating_days', e.target.checked ? [...form.operating_days, index + 1].sort() : form.operating_days.filter((value) => value !== index + 1))} /> {day}</label>)}</div></fieldset>
       <div className="grid gap-4 sm:grid-cols-2">
-        <label>Cutoff<input className="block w-full rounded border p-2" type="time" value={form.cutoff_time.slice(0, 5)} onChange={(e) => set('cutoff_time', e.target.value)} /></label>
+        {renderTimeField('cutoff_time')}
         <label>Lead days<input className="block w-full rounded border p-2" type="number" min="0" value={form.lead_time_days} onChange={(e) => set('lead_time_days', Number(e.target.value))} /></label>
-        {(['morning_start','morning_end','afternoon_start','afternoon_end'] as const).map((key) => <label key={key}>{key.replace('_', ' ')}<input className="block w-full rounded border p-2" type="time" value={form[key].slice(0, 5)} onChange={(e) => set(key, e.target.value)} /></label>)}
+        {(['morning_start', 'morning_end', 'afternoon_start', 'afternoon_end'] as const).map(renderTimeField)}
         <div>
           <label>Daily delivery stops per rider<input aria-describedby="daily-rider-capacity-help" className="block w-full rounded border p-2" type="number" min="1" value={form.daily_rider_capacity} onChange={(e) => set('daily_rider_capacity', Number(e.target.value))} /></label>
           <p id="daily-rider-capacity-help" className="text-sm text-gray-500">One delivery address counts as one stop, regardless of item quantity.</p>
@@ -110,5 +143,17 @@ export default function LogisticsSettings() {
         <button type="button" disabled={!changed || saving} onClick={discard} className="rounded border px-4 py-2 font-semibold disabled:opacity-50">Discard changes</button>
       </div>
     </form>
+    {timePickerKey && (
+      <TimePickerModal
+        isOpen
+        label={TIME_LABELS[timePickerKey]}
+        value={form[timePickerKey]}
+        onCancel={() => setTimePickerKey(null)}
+        onConfirm={(value) => {
+          set(timePickerKey, value);
+          setTimePickerKey(null);
+        }}
+      />
+    )}
   </AppLayoutERP>;
 }
