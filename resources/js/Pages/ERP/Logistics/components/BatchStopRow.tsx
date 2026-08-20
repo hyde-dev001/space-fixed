@@ -40,30 +40,34 @@ export default function BatchStopRow({ leg, index, total, editable = false, busy
   drag(drop(ref));
 
   return <article ref={ref} aria-label={`Stop ${index + 1}: ${destination?.name || source}`} className={`rounded-2xl border border-gray-200 bg-white p-4 shadow-sm transition dark:border-gray-700 dark:bg-gray-800 sm:p-5 xl:rounded-xl xl:p-4 ${isDragging ? 'opacity-50' : ''}`}>
-    <div className="flex min-w-0 flex-wrap items-start gap-3 xl:flex-nowrap">
-      {editable && <button type="button" aria-label={`Drag stop ${index + 1}`} title="Drag to reorder" className="mt-1 min-h-11 min-w-11 cursor-grab text-gray-400 xl:min-h-0 xl:min-w-0"><GripVertical size={18} /></button>}
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-600 text-sm font-bold text-white">{index + 1}</span>
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <p className="font-semibold text-gray-950 dark:text-white">{destination?.name || source}</p>
+    <div data-testid="batch-stop-layout" className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-4 xl:flex xl:flex-nowrap xl:items-start xl:gap-3">
+      <div className="flex items-start gap-3 xl:contents">
+        {editable && <button type="button" aria-label={`Drag stop ${index + 1}`} title="Drag to reorder" className="mt-1 min-h-11 min-w-11 cursor-grab text-gray-400 xl:min-h-0 xl:min-w-0"><GripVertical size={18} /></button>}
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-600 text-sm font-bold text-white">{index + 1}</span>
+      </div>
+      <div data-testid="batch-stop-details" className="min-w-0 contents xl:block xl:flex-1">
+        <div className="col-start-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 xl:gap-2">
+          <p className="min-w-0 break-words font-semibold text-gray-950 dark:text-white">{destination?.name || source}</p>
           <span className="rounded-full bg-gray-100 px-2 py-1 text-xs font-medium text-gray-600 dark:bg-gray-700 dark:text-gray-200">{source}</span>
           <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">{logisticsModuleLabel(logisticsModuleForSourceType(leg.shipment?.source_type))}</span>
           {leg.urgent_at && <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-1 text-xs font-bold text-red-700"><Flame size={12} />Urgent</span>}
           {failedAttempt?.status === 'failed' && <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-bold text-amber-800">Failed attempt - {failedAttemptCount}/{maxDeliveryAttempts}</span>}
         </div>
-        <div className="mt-2 grid gap-1 text-sm text-gray-600 dark:text-gray-300">
-          <span className="inline-flex items-center gap-2"><Phone size={14} />{text(destination?.phone)}</span>
-          <span className="inline-flex items-start gap-2"><MapPin className="mt-0.5 shrink-0" size={14} />{text(destination?.address)}</span>
+        <div className="col-span-2 mt-3 grid gap-2 text-sm leading-5 text-gray-600 dark:text-gray-300 xl:mt-2 xl:gap-1">
+          <span className="inline-flex min-w-0 items-center gap-2"><Phone size={14} />{text(destination?.phone)}</span>
+          <span className="inline-flex min-w-0 items-start gap-2 break-words"><MapPin className="mt-0.5 shrink-0" size={14} />{text(destination?.address)}</span>
           {leg.shipment?.source_summary?.shoe_summary && <span>{leg.shipment.source_summary.shoe_summary}</span>}
           {failedAttempt?.reason_code && <span>{label(failedAttempt.reason_code)}</span>}
           <span>{leg.scheduled_delivery_date ? formatDate(leg.scheduled_delivery_date) : 'Not scheduled'}{leg.delivery_window ? ` · ${label(leg.delivery_window)}` : ''} · {label(leg.status)}</span>
         </div>
-        <ArrivalSummary arrivals={leg.arrivals} />
-        <div className="mt-3">
-          <RetailOrderSummary summary={leg.shipment?.order_summary} instructions={destination?.delivery_instructions} />
+        {(leg.arrivals?.pickup || leg.arrivals?.dropoff) && <div className="col-span-2">
+          <ArrivalSummary arrivals={leg.arrivals} />
+        </div>}
+        <div className="col-span-2 mt-4 min-w-0 xl:mt-3">
+          <RetailOrderSummary summary={leg.shipment?.order_summary} instructions={destination?.delivery_instructions} allowModelWrap />
         </div>
       </div>
-      <div className="flex w-full flex-wrap justify-end gap-1 sm:w-auto xl:w-auto">
+      <div data-testid="batch-stop-actions" className="col-span-2 flex w-full flex-wrap justify-end gap-2 border-t border-gray-100 pt-3 dark:border-gray-700 sm:w-auto xl:gap-1 xl:border-0 xl:pt-0">
         {editable && <>
           <button type="button" aria-label={`Move stop ${index + 1} up`} title="Move up" disabled={busy || index === 0} onClick={() => onMove?.(index, index - 1)} className="min-h-11 min-w-11 rounded-lg border p-2 text-gray-600 hover:bg-gray-50 disabled:opacity-30 xl:min-h-0 xl:min-w-0"><ArrowUp size={16} /></button>
           <button type="button" aria-label={`Move stop ${index + 1} down`} title="Move down" disabled={busy || index === total - 1} onClick={() => onMove?.(index, index + 1)} className="min-h-11 min-w-11 rounded-lg border p-2 text-gray-600 hover:bg-gray-50 disabled:opacity-30 xl:min-h-0 xl:min-w-0"><ArrowDown size={16} /></button>

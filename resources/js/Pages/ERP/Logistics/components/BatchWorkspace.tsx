@@ -72,7 +72,7 @@ export default function BatchWorkspace({
       </div>}
     </div>
     <DndProvider backend={HTML5Backend}>
-      <div className="min-h-48 space-y-3 bg-gray-50 p-4 dark:bg-gray-900/40 sm:p-5 xl:p-4">
+      <div className="min-h-48 space-y-4 bg-gray-50 p-4 dark:bg-gray-900/40 sm:p-5 xl:space-y-3 xl:p-4">
         {legs.map((leg, index) => <BatchStopRow key={leg.id} leg={leg} index={index} total={legs.length} editable={!batch || batch.status === 'draft'} busy={submitting || busyLegId === leg.id} onMove={onMove} onRemove={onRemove} />)}
         {!legs.length && <p className="grid min-h-40 place-items-center text-center text-sm text-gray-500">{history ? 'Historical stop details unavailable' : 'Select deliveries from the left to build the route.'}</p>}
       </div>
