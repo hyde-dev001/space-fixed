@@ -35,6 +35,14 @@ const AppHeader_ERP: React.FC = () => {
       ? '/api/staff/notifications'
       : '/api/hr/notifications';
 
+  const renderAccountMenu = (inline = false) => ownerMode ? (
+    <ShopOwnerDropdown actor={erpActor} urls={erpUrls} inline={inline} />
+  ) : auth?.super_admin ? (
+    <SuperAdminDropdown inline={inline} />
+  ) : auth?.user ? (
+    <UserDropdown inline={inline} />
+  ) : null;
+
   const handleToggle = () => {
     if (window.innerWidth >= 1280) {
       toggleSidebar();
@@ -246,6 +254,9 @@ const AppHeader_ERP: React.FC = () => {
                   className="rounded-xl border border-gray-200 bg-gray-50 text-gray-900 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700 xl:border-0 xl:bg-transparent xl:text-black xl:hover:bg-transparent xl:hover:opacity-70"
                 />
               </div>
+              <div className="w-full overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:shadow-none xl:hidden">
+                {renderAccountMenu(true)}
+              </div>
               <div className="flex items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:shadow-none xl:contents">
                 <div className="min-w-0 xl:hidden">
                   <p className="text-sm font-semibold text-gray-900 dark:text-white">Appearance</p>
@@ -253,18 +264,8 @@ const AppHeader_ERP: React.FC = () => {
                 </div>
                 <ThemeToggleButton />
               </div>
-              <div className="flex items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm sm:col-span-2 dark:border-gray-800 dark:bg-gray-900 dark:shadow-none xl:contents">
-                <div className="min-w-0 xl:hidden">
-                  <p className="text-sm font-semibold text-gray-900 dark:text-white">Account</p>
-                  <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">Profile and sign out</p>
-                </div>
-                {ownerMode ? (
-                  <ShopOwnerDropdown actor={erpActor} urls={erpUrls} />
-                ) : auth?.super_admin ? (
-                  <SuperAdminDropdown />
-                ) : auth?.user ? (
-                  <UserDropdown />
-                ) : null}
+              <div className="hidden items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm sm:col-span-2 dark:border-gray-800 dark:bg-gray-900 dark:shadow-none xl:contents">
+                {renderAccountMenu()}
               </div>
             </div>
           </div>

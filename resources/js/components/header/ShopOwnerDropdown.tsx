@@ -2,15 +2,17 @@ import { useState } from "react";
 import { usePage, router } from "@inertiajs/react";
 import { Dropdown } from "../ui/dropdown/Dropdown";
 import Swal from "sweetalert2";
-import { Building2, User, Store, Wrench } from "lucide-react";
+import { Building2, LogOut, Settings2, User, Store, Wrench } from "lucide-react";
 import type { ErpActor, ErpUrls } from "../../types/erp";
+import InlineAccountMenu from "./InlineAccountMenu";
 
 type ShopOwnerDropdownProps = {
   actor?: ErpActor;
   urls?: Partial<ErpUrls>;
+  inline?: boolean;
 };
 
-export default function ShopOwnerDropdown({ actor, urls }: ShopOwnerDropdownProps = {}) {
+export default function ShopOwnerDropdown({ actor, urls, inline = false }: ShopOwnerDropdownProps = {}) {
   const { auth } = usePage().props as any;
   const [isOpen, setIsOpen] = useState(false);
 
@@ -61,6 +63,41 @@ export default function ShopOwnerDropdown({ actor, urls }: ShopOwnerDropdownProp
         preserveState: false,
       });
     }
+  }
+
+  if (inline) {
+    return (
+      <InlineAccountMenu
+        name={userName}
+        email={userEmail}
+        role="Shop Owner"
+        tone="purple"
+        actions={[
+          {
+            label: "Shop Profile",
+            onClick: () => {
+              closeDropdown();
+              router.visit(urls?.profile || '/shop-owner/shop-profile');
+            },
+            icon: <User className="h-5 w-5" aria-hidden="true" />,
+          },
+          {
+            label: "Settings",
+            onClick: () => {
+              closeDropdown();
+              router.visit(urls?.settings || '/shop-owner/settings');
+            },
+            icon: <Settings2 className="h-5 w-5" aria-hidden="true" />,
+          },
+          {
+            label: "Sign Out",
+            onClick: handleLogout,
+            icon: <LogOut className="h-5 w-5" aria-hidden="true" />,
+            destructive: true,
+          },
+        ]}
+      />
+    );
   }
 
   return (

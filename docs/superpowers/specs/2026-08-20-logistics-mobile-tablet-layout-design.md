@@ -12,7 +12,7 @@ Improve the ERP Logistics Shipments page for phone and tablet users while preser
 - Target `resources/js/Pages/ERP/Logistics/Shipments.tsx`, represented by the supplied Shipments screenshot.
 - Treat widths below Tailwind `xl` as the compact ERP experience, matching the attendance page's responsive shell.
 - Refresh only the responsive presentation: page heading, search and filters, shipment cards, and pagination.
-- Convert the existing right-side mobile/tablet application-menu hamburger into an accessible anchored dropdown containing theme and account actions, while keeping notifications visible beside the hamburger.
+- Convert the existing right-side mobile/tablet application-menu hamburger into an accessible anchored dropdown containing theme and direct account actions, while keeping notifications visible beside the hamburger.
 - Keep shipment state, Inertia navigation, API calls, delivery modal behavior, permissions, and all desktop classes/behavior intact.
 
 ## Visual direction
@@ -44,7 +44,7 @@ Use the repository's `DESIGN.md` principles that fit the ERP surface: neutral wh
 
 - The right-side hamburger remains visible only below `xl`.
 - Clicking it opens a compact anchored dropdown below the header, without a backdrop, dialog semantics, or body scroll locking.
-- The notification bell stays visible in the compact header beside the hamburger; the dropdown contains the theme toggle and role-specific account dropdown without changing their props or routes.
+- The notification bell stays visible in the compact header beside the hamburger; the dropdown contains the theme toggle and role-specific account actions directly, without a nested account trigger and without changing their routes.
 - Close the dropdown with the hamburger toggle, Escape, or an outside pointer interaction; restore focus to the trigger for keyboard-driven close paths.
 - The desktop action row remains rendered inline at `xl` and above; no mobile modal markup is shown there.
 
@@ -61,7 +61,7 @@ Use the repository's `DESIGN.md` principles that fit the ERP surface: neutral wh
 1. The Shipments page is comfortable and readable at phone and tablet widths, with no accidental page-level horizontal overflow.
 2. Phone/tablet search, filters, cards, shipment actions, and pagination remain usable with touch-friendly controls.
 3. The right hamburger opens a real accessible non-modal dropdown on phone/tablet, keeps the notification bell visible beside it, and closes through the toggle, outside click, or Escape while restoring focus for keyboard close paths.
-4. Desktop at `xl` and above retains the current header action row and shipment presentation.
+4. Desktop at `xl` and above retains the current header action row and shipment presentation, including the desktop account dropdown triggers.
 5. Existing shipment tests and behavior contracts remain passing; no API or navigation behavior changes.
 
 ## Follow-up detail UX pass
@@ -69,6 +69,9 @@ Use the repository's `DESIGN.md` principles that fit the ERP surface: neutral wh
 The second supplied set of screenshots extends the same compact experience to the shipment detail dialog:
 
 - The mobile/tablet application-menu dropdown uses labelled action cards for appearance and account actions, while the notification bell remains in the compact header and the existing desktop action row is retained.
+- Account actions are rendered directly inside the compact menu for regular users, shop owners, and administrators; the desktop dropdown variants remain unchanged.
 - The shipment detail dialog becomes a full-height phone surface and a spacious tablet surface, with order items, delivery metadata, and assignment controls grouped into readable cards.
 - Shipment scheduling reuses the Batches `DeliveryDatePicker`, including its calendar dialog, minimum-date handling, clear action, and touch-sized controls. Each shipment leg receives a unique calendar id.
+- Below `xl`, the delivery calendar is centered against its field so its outer spacing stays balanced; at `xl` it returns to the existing left-aligned placement.
+- Below `xl`, the shipment detail surface fills the phone viewport or tablet modal height so no blank strip remains beneath the assignment card; the desktop max-height behavior remains unchanged.
 - The native browser date input is removed from the shipment detail scheduling form; no API payload or scheduling behavior changes.

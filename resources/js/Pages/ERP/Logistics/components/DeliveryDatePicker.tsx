@@ -101,7 +101,7 @@ export default function DeliveryDatePicker({ value, minDate, onChange, disabled 
       <span className={value ? 'text-gray-900 dark:text-white' : 'text-gray-500'}>{displayDate(value)}</span>
       <CalendarDays aria-hidden="true" size={17} className="shrink-0 text-gray-500" />
     </button>
-    {open && <div id={calendarId} role="dialog" aria-label="Delivery date calendar" className="absolute left-0 top-full z-30 mt-2 w-[min(28rem,calc(100vw-2rem))] rounded-2xl border border-gray-200 bg-white p-4 shadow-xl dark:border-gray-700 dark:bg-gray-800">
+    {open && <div id={calendarId} role="dialog" aria-label="Delivery date calendar" className="absolute left-1/2 top-full z-30 mt-2 w-[min(28rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-2xl border border-gray-200 bg-white p-4 shadow-xl dark:border-gray-700 dark:bg-gray-800 xl:left-0 xl:translate-x-0">
       <div className="flex items-center justify-between gap-3">
         <button type="button" aria-label="Previous month" disabled={previousMonthDisabled} onClick={() => setVisibleMonth(new Date(Date.UTC(visibleMonth.getUTCFullYear(), visibleMonth.getUTCMonth() - 1, 1)))} className="inline-flex min-h-9 min-w-9 items-center justify-center rounded-lg border border-gray-300 text-gray-600 transition hover:border-blue-400 hover:text-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-600 dark:text-gray-300">
           <ChevronLeft aria-hidden="true" size={17} />
