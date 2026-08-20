@@ -66,6 +66,7 @@ function WheelColumn({ label, options, selectedIndex, testId, onChange }: WheelC
   const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const draggingRef = useRef<{ pointerId: number; startY: number; startScrollTop: number; moved: boolean } | null>(null);
   const suppressClickRef = useRef(false);
+  const [activeIndex, setActiveIndex] = useState(selectedIndex);
 
   const indexFromScroll = (scrollTop: number) => clamp(
     Math.round(scrollTop / ROW_HEIGHT),
@@ -79,16 +80,19 @@ function WheelColumn({ label, options, selectedIndex, testId, onChange }: WheelC
   };
 
   useEffect(() => {
+    setActiveIndex(selectedIndex);
     scrollToIndex(selectedIndex);
   }, [selectedIndex]);
 
   const handleScroll = () => {
     const nextIndex = indexFromScroll(scrollRef.current?.scrollTop ?? 0);
+    setActiveIndex(nextIndex);
     if (nextIndex !== selectedIndex) onChange(nextIndex);
   };
 
   const snapToNearest = () => {
     const nextIndex = indexFromScroll(scrollRef.current?.scrollTop ?? 0);
+    setActiveIndex(nextIndex);
     onChange(nextIndex);
     scrollToIndex(nextIndex);
   };
@@ -139,6 +143,7 @@ function WheelColumn({ label, options, selectedIndex, testId, onChange }: WheelC
 
     event.preventDefault();
     nextIndex = clamp(nextIndex, 0, options.length - 1);
+    setActiveIndex(nextIndex);
     onChange(nextIndex);
     scrollToIndex(nextIndex);
     optionRefs.current[nextIndex]?.focus();
@@ -166,14 +171,15 @@ function WheelColumn({ label, options, selectedIndex, testId, onChange }: WheelC
             ref={(element) => { optionRefs.current[index] = element; }}
             type="button"
             role="option"
-            aria-selected={index === selectedIndex}
-            tabIndex={index === selectedIndex ? 0 : -1}
-            className={`relative z-10 flex h-12 min-h-12 w-full shrink-0 snap-center items-center justify-center rounded-xl px-2 text-base transition-colors duration-150 hover:text-gray-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${index === selectedIndex ? 'font-bold text-gray-950 dark:text-white' : 'font-semibold text-gray-500 dark:text-gray-400 dark:hover:text-white'}`}
+            aria-selected={index === activeIndex}
+            tabIndex={index === activeIndex ? 0 : -1}
+            className={`relative z-10 flex h-12 min-h-12 w-full shrink-0 snap-center items-center justify-center rounded-xl border px-2 text-base transition-colors duration-150 hover:text-gray-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${index === activeIndex ? 'border-blue-200 bg-blue-50/70 font-bold text-gray-950 dark:border-blue-400/30 dark:bg-blue-950/40 dark:text-white' : 'border-transparent font-semibold text-gray-500 dark:text-gray-400 dark:hover:text-white'}`}
             onClick={() => {
               if (suppressClickRef.current) {
                 suppressClickRef.current = false;
                 return;
               }
+              setActiveIndex(index);
               onChange(index);
               scrollToIndex(index);
             }}
@@ -183,7 +189,6 @@ function WheelColumn({ label, options, selectedIndex, testId, onChange }: WheelC
           </button>
         ))}
         <div aria-hidden="true" className="shrink-0" style={{ height: ROW_HEIGHT * SPACER_ROWS }} />
-        <div aria-hidden="true" className="pointer-events-none absolute inset-x-1 top-1/2 z-0 h-12 -translate-y-1/2 rounded-xl border border-blue-200 bg-blue-50/70 dark:border-blue-400/30 dark:bg-blue-950/40" />
         <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 z-20 h-16 rounded-t-2xl bg-gradient-to-b from-gray-50 via-gray-50/80 to-transparent dark:from-gray-800 dark:via-gray-800/80" />
         <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 z-20 h-16 rounded-b-2xl bg-gradient-to-t from-gray-50 via-gray-50/80 to-transparent dark:from-gray-800 dark:via-gray-800/80" />
       </div>

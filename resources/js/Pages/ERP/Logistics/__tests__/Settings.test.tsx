@@ -122,6 +122,21 @@ it('supports dragging a wheel column to the next time value', () => {
   expect(within(hourWheel).getByRole('option', { name: '04', exact: true })).toHaveAttribute('aria-selected', 'true');
 });
 
+it('updates the active wheel option while the column is scrolled', () => {
+  render(<LogisticsSettings />);
+  fireEvent.click(screen.getByRole('button', { name: 'Cutoff, 03:00 PM' }));
+
+  const periodWheel = screen.getByTestId('time-picker-period');
+  Object.defineProperty(periodWheel, 'scrollTop', { configurable: true, writable: true, value: 48 });
+  fireEvent.scroll(periodWheel);
+
+  expect(within(periodWheel).getByRole('option', { name: 'PM', exact: true }))
+    .toHaveClass('border-blue-200', 'bg-blue-50/70');
+  expect(within(periodWheel).getByRole('option', { name: 'AM', exact: true }))
+    .not.toHaveClass('border-blue-200', 'bg-blue-50/70');
+  expect(screen.getByText('Selected 03:00 PM')).toBeInTheDocument();
+});
+
 it('centers and clearly marks the active value in every wheel column', () => {
   render(<LogisticsSettings />);
   fireEvent.click(screen.getByRole('button', { name: 'Morning start, 08:00 AM' }));
@@ -178,6 +193,15 @@ it('prevents adding a past blackout date', () => {
   fireEvent.change(screen.getByLabelText('Blackout date'), { target: { value: '2001-04-04' } });
 
   expect(screen.getByRole('button', { name: 'Add' })).toBeDisabled();
+});
+
+it('keeps blackout controls and actions balanced on narrow screens', () => {
+  render(<LogisticsSettings />);
+
+  expect(screen.getByLabelText('Blackout date')).toHaveClass('min-w-0', 'flex-1');
+  expect(screen.getByRole('button', { name: 'Add' })).toHaveClass('min-h-11', 'shrink-0');
+  expect(screen.getByRole('button', { name: 'Save' })).toHaveClass('w-full');
+  expect(screen.getByRole('button', { name: 'Discard changes' })).toHaveClass('w-full');
 });
 
 it('shows the saved service area and arrival check radius', () => {
