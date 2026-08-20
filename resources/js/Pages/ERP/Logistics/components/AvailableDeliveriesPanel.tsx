@@ -40,10 +40,10 @@ export default function AvailableDeliveriesPanel({
 }: Props) {
   const allSelected = rows.length > 0 && rows.every((leg) => selectedIds.includes(leg.id));
 
-  return <section className="rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
-    <div className="border-b border-gray-100 p-4 dark:border-gray-700">
+  return <section className="min-w-0 rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
+    <div className="border-b border-gray-100 p-4 dark:border-gray-700 sm:p-5 xl:p-4">
       <div className="flex items-center justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <h2 className="font-bold text-gray-950 dark:text-white">Available deliveries</h2>
           <p className="mt-1 text-sm text-gray-500">{collapsed ? `${totalRows} deliveries available` : 'Choose the stops to include in this route.'}</p>
         </div>
@@ -60,13 +60,13 @@ export default function AvailableDeliveriesPanel({
         </button>
       </div>
     </div>
-    <div id="available-deliveries-content" hidden={collapsed} className="p-4">
-      <label className="relative mt-4 block">
+    <div id="available-deliveries-content" hidden={collapsed} className="p-4 sm:p-5 xl:p-4">
+      <label className="relative mt-4 block min-w-0">
         <span className="sr-only">Search deliveries</span>
         <Search className="absolute left-3 top-3 text-gray-400" size={18} />
         <input aria-label="Search deliveries" value={search} onChange={(event) => onSearchChange(event.target.value)} placeholder="Order, customer, phone, address, or product" className="min-h-11 w-full rounded-xl border border-gray-300 py-2 pl-10 pr-3 text-sm" />
       </label>
-      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+      <div data-testid="batch-filter-grid" className="mt-3 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <DeliveryDatePicker value={date} minDate={today} onChange={onDateChange} />
         <select aria-label="Delivery window" value={window} onChange={(event) => onWindowChange(event.target.value)} className="min-h-11 rounded-xl border border-gray-300 px-3 text-sm">
           <option value="morning">Morning</option>
@@ -88,14 +88,14 @@ export default function AvailableDeliveriesPanel({
         </div>
         <button type="button" onClick={onClearFilters} className="inline-flex min-h-10 items-center gap-1 rounded-lg px-2 text-gray-600 hover:bg-gray-50"><X size={15} />Clear filters</button>
       </div>
-      <div className="max-h-[36rem] space-y-2 overflow-y-auto p-3">
+      <div className="max-h-[36rem] min-w-0 space-y-2 overflow-y-auto p-1 sm:p-2 xl:p-3">
       {loading && Array.from({ length: 3 }, (_, index) => <div key={index} data-testid="delivery-skeleton" className="h-20 animate-pulse rounded-xl bg-gray-100 dark:bg-gray-700" />)}
       {!loading && rows.map((leg) => {
         const destination = leg.destination_snapshot;
         const scheduled = Boolean(leg.scheduled_delivery_date);
         const module = logisticsModuleForSourceType(leg.shipment?.source_type);
         const incompatible = Boolean(selectedModule && module !== selectedModule);
-        return <label key={leg.id} className={`flex min-h-20 items-start gap-3 rounded-xl border border-gray-200 p-3 dark:border-gray-700 ${incompatible ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:border-blue-300 hover:bg-blue-50/40'}`}>
+        return <label key={leg.id} className={`flex min-h-20 min-w-0 items-start gap-3 rounded-2xl border border-gray-200 p-3 shadow-sm dark:border-gray-700 sm:p-4 xl:rounded-xl xl:p-3 xl:shadow-none ${incompatible ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:border-blue-300 hover:bg-blue-50/40'}`}>
           <input type="checkbox" disabled={incompatible} checked={selectedIds.includes(leg.id)} onChange={(event) => onToggle(leg.id, event.target.checked)} className="mt-1" />
           <span className="min-w-0 flex-1">
             <span className="flex flex-wrap items-center gap-2">

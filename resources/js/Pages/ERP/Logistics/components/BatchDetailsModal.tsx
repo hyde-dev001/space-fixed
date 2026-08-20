@@ -44,7 +44,7 @@ export default function BatchDetailsModal({ batch, isOpen, onClose }: Props) {
   if (!batch) return null;
 
   return <Modal isOpen={isOpen} onClose={onClose} size="5xl" showCloseButton={false}>
-    <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={`Batch ${batch.id} details`} onKeyDown={handleKeys} className="max-h-[90vh] overflow-y-auto p-5 sm:p-7">
+    <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={`Batch ${batch.id} details`} onKeyDown={handleKeys} className="max-h-[100dvh] overflow-y-auto p-4 sm:max-h-[90vh] sm:p-7">
       <div className="flex items-start justify-between gap-4">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.16em] text-blue-700">Batch #{batch.id}</p>
@@ -54,9 +54,9 @@ export default function BatchDetailsModal({ batch, isOpen, onClose }: Props) {
           </div>
           <p className="mt-1 text-sm text-gray-500">Review the stops and delivery context for this batch.</p>
         </div>
-        <button ref={closeRef} type="button" onClick={onClose} aria-label="Close batch details" className="min-h-10 rounded-lg border px-3 text-sm font-semibold text-gray-700 hover:bg-gray-50">Close</button>
+        <button ref={closeRef} type="button" onClick={onClose} aria-label="Close batch details" className="min-h-11 rounded-lg border px-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 xl:min-h-10">Close</button>
       </div>
-      <div className="mt-5 grid gap-3 sm:grid-cols-3">
+      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <div className="rounded-xl bg-gray-50 p-3"><CalendarDays size={18} className="text-blue-600" /><p className="mt-2 text-xs text-gray-500">Schedule</p><p className="text-sm font-semibold">{formatDate(batch.delivery_date)} · {label(batch.delivery_window)}</p></div>
         <div className="rounded-xl bg-gray-50 p-3"><UserRound size={18} className="text-blue-600" /><p className="mt-2 text-xs text-gray-500">Rider</p><p className="text-sm font-semibold">{batch.rider_profile?.name || 'Not assigned'}</p></div>
         <div className="rounded-xl bg-gray-50 p-3"><Route size={18} className="text-blue-600" /><p className="mt-2 text-xs text-gray-500">Route</p><p className="text-sm font-semibold">{legs.length}/{batch.capacity} stops</p></div>

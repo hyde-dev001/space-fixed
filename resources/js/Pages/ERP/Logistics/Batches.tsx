@@ -370,10 +370,10 @@ export default function Batches() {
     }
   };
 
-  return <AppLayoutERP><Head title="Delivery Batches" /><main className="space-y-6 p-4 sm:p-6">
-    <div className="flex flex-wrap items-start justify-between gap-3">
-      <div><h1 className="text-2xl font-bold text-gray-950 dark:text-white">Delivery Batches</h1><p className="mt-1 text-sm text-gray-500">Build, organize, and offer efficient delivery routes.</p></div>
-      <div className="flex flex-wrap items-center gap-2">
+  return <AppLayoutERP><Head title="Delivery Batches" /><main data-testid="batch-page-main" className="min-w-0 overflow-x-clip space-y-6 p-4 sm:p-6 xl:overflow-x-visible">
+    <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+      <div className="min-w-0"><h1 className="text-2xl font-bold text-gray-950 dark:text-white">Delivery Batches</h1><p className="mt-1 text-sm text-gray-500">Build, organize, and offer efficient delivery routes.</p></div>
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
         {showModuleFilter && <select
           aria-label="Filter batches by module"
           value={module}
@@ -387,7 +387,7 @@ export default function Batches() {
       </div>
     </div>
     {error && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-red-700">{error}</p>}
-    <div id="batch-workspace" data-testid="batch-workspace" className={`grid scroll-mt-28 gap-5 ${deliveriesCollapsed ? 'lg:grid-cols-1' : 'lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]'}`}>
+    <div id="batch-workspace" data-testid="batch-workspace" className={`grid min-w-0 scroll-mt-28 gap-5 ${deliveriesCollapsed ? 'xl:grid-cols-1' : 'xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]'}`}>
       <AvailableDeliveriesPanel
         rows={filteredDeliveries} totalRows={allDeliveries.length} selectedIds={selectedIds} loading={refreshing}
         selectedModule={selectedModule}
@@ -403,7 +403,7 @@ export default function Batches() {
         onSave={saveDraft} onReview={() => selectedBatch && openReview(selectedBatch.id)}
       /> : <section className="grid min-h-72 place-items-center rounded-2xl border border-dashed border-gray-300 bg-white p-8 text-center text-sm text-gray-500">Choose New Batch or open an existing batch to begin.</section>}
     </div>
-    <section aria-label="Active batches" className="space-y-3">
+    <section aria-label="Active batches" className="min-w-0 space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-bold text-gray-950 dark:text-white">Active batches</h2><div className="flex flex-wrap gap-1">{(['all', 'draft', 'offered', 'accepted', 'in_progress'] as const).map((tab) => {
         const count = tab === 'all' ? activeBatches.length : activeBatches.filter((batch) => batch.status === tab).length;
         const tabLabel = tab === 'all' ? 'All' : tab.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
