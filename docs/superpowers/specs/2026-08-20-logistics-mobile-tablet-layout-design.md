@@ -63,3 +63,12 @@ Use the repository's `DESIGN.md` principles that fit the ERP surface: neutral wh
 3. The right hamburger opens a real accessible modal overlay on phone/tablet and closes through the close button, backdrop, or Escape while restoring focus.
 4. Desktop at `xl` and above retains the current header action row and shipment presentation.
 5. Existing shipment tests and behavior contracts remain passing; no API or navigation behavior changes.
+
+## Follow-up detail UX pass
+
+The second supplied set of screenshots extends the same compact experience to the shipment detail dialog:
+
+- The mobile/tablet application-menu modal uses labelled action cards for alerts, appearance, and account actions, while retaining the existing role-specific components and desktop action row.
+- The shipment detail dialog becomes a full-height phone surface and a spacious tablet surface, with order items, delivery metadata, and assignment controls grouped into readable cards.
+- Shipment scheduling reuses the Batches `DeliveryDatePicker`, including its calendar dialog, minimum-date handling, clear action, and touch-sized controls. Each shipment leg receives a unique calendar id.
+- The native browser date input is removed from the shipment detail scheduling form; no API payload or scheduling behavior changes.

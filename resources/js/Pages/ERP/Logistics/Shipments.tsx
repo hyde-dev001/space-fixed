@@ -7,6 +7,7 @@ import AppLayoutERP from '@/layout/AppLayout_ERP';
 import { Modal } from '@/components/ui/modal';
 import ArrivalSummary from './components/ArrivalSummary';
 import RetailOrderSummary from './components/RetailOrderSummary';
+import DeliveryDatePicker from './components/DeliveryDatePicker';
 import { riderResolutionInstruction } from './riderDeliveryPresentation';
 import { logisticsApi } from '@/services/logisticsApi';
 import { erpUrl } from '@/utils/erpCapabilities';
@@ -627,7 +628,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                 onClose={selectedProofUrl ? closeProof : closeShipment}
                 size="6xl"
                 showCloseButton={false}
-                className="m-4 max-h-[calc(100dvh-2rem)] overflow-hidden !bg-transparent"
+                className="m-0 h-[100dvh] max-h-[100dvh] w-full overflow-hidden !rounded-none !bg-transparent sm:m-4 sm:h-auto sm:max-h-[calc(100dvh-2rem)] sm:w-full sm:!rounded-3xl xl:m-4 xl:max-h-[calc(100dvh-2rem)]"
               >
                 <>
                 <div
@@ -661,9 +662,9 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                       <X aria-hidden="true" size={20} />
                     </button>
                   </header>
-                  <div className="min-h-0 flex-1 overflow-y-auto border-t border-gray-100 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-900/40 sm:p-6">
+                  <div className="min-h-0 flex-1 overflow-y-auto border-t border-gray-100 bg-gray-50 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] dark:border-gray-700 dark:bg-gray-900/40 sm:p-6 sm:pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
                   {shipment.source_type === 'order' && <RetailOrderSummary summary={shipment.order_summary} expanded />}
-                  <div className="space-y-3">
+                  <div className="mt-4 space-y-4 sm:mt-5">
                     {(shipment.legs ?? []).map((leg) => {
                             const recipient = contact(leg);
                             const activeAssignment = leg.assignments?.find((assignment) => ['assigned', 'accepted'].includes(assignment.status));
@@ -701,17 +702,19 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                             const incidents = leg.incidents ?? [];
 
                             return (
-                              <div key={leg.id} className="grid gap-4 rounded-lg border border-gray-200 bg-white p-4 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] dark:border-gray-700 dark:bg-gray-800">
+                              <div key={leg.id} className="grid min-w-0 gap-5 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:shadow-none sm:p-5 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] lg:rounded-lg lg:p-4 lg:shadow-none">
                                 <div>
-                                  <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Delivery details · {label(leg.leg_type)} leg</h3>
-                                  <p className="text-xs text-gray-500 dark:text-gray-400">{label(leg.status)}</p>
-                                  <div className="mt-2 space-y-1 text-sm text-gray-700 dark:text-gray-200">
-                                    <p><strong>Receiver:</strong> {recipient.name || 'Not provided'}</p>
-                                    <p><strong>Phone:</strong> {recipient.phone || 'Not provided'}</p>
-                                    <p><strong>Address:</strong> {recipient.address || 'Not provided'}</p>
-                                    {recipient.instructions && <p><strong>Instructions:</strong> {recipient.instructions}</p>}
-                                    <p><strong>Schedule:</strong> {formatDate(leg.scheduled_delivery_date)}{leg.delivery_window ? ` · ${label(leg.delivery_window)}` : ''}</p>
-                                    {leg.stop_sequence && <p><strong>Stop:</strong> {leg.stop_sequence}</p>}
+                                  <div className="flex flex-wrap items-start justify-between gap-2">
+                                    <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Delivery details · {label(leg.leg_type)} leg</h3>
+                                    <span className="inline-flex rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-600 dark:bg-gray-700 dark:text-gray-200 lg:rounded-none lg:bg-transparent lg:px-0 lg:py-0 lg:font-normal lg:text-gray-500">{label(leg.status)}</span>
+                                  </div>
+                                  <div className="mt-4 grid gap-2 text-sm text-gray-700 dark:text-gray-200 sm:grid-cols-2 lg:mt-2 lg:block lg:space-y-1">
+                                    <p className="break-words rounded-xl bg-gray-50 px-3 py-2 dark:bg-gray-900/50 sm:col-span-2 lg:rounded-none lg:bg-transparent lg:px-0 lg:py-0"><strong>Receiver:</strong> {recipient.name || 'Not provided'}</p>
+                                    <p className="break-words rounded-xl bg-gray-50 px-3 py-2 dark:bg-gray-900/50 lg:rounded-none lg:bg-transparent lg:px-0 lg:py-0"><strong>Phone:</strong> {recipient.phone || 'Not provided'}</p>
+                                    <p className="break-words rounded-xl bg-gray-50 px-3 py-2 dark:bg-gray-900/50 sm:col-span-2 lg:rounded-none lg:bg-transparent lg:px-0 lg:py-0"><strong>Address:</strong> {recipient.address || 'Not provided'}</p>
+                                    {recipient.instructions && <p className="break-words rounded-xl bg-gray-50 px-3 py-2 dark:bg-gray-900/50 sm:col-span-2 lg:rounded-none lg:bg-transparent lg:px-0 lg:py-0"><strong>Instructions:</strong> {recipient.instructions}</p>}
+                                    <p className="break-words rounded-xl bg-gray-50 px-3 py-2 dark:bg-gray-900/50 lg:rounded-none lg:bg-transparent lg:px-0 lg:py-0"><strong>Schedule:</strong> {formatDate(leg.scheduled_delivery_date)}{leg.delivery_window ? ` · ${label(leg.delivery_window)}` : ''}</p>
+                                    {leg.stop_sequence && <p className="break-words rounded-xl bg-gray-50 px-3 py-2 dark:bg-gray-900/50 lg:rounded-none lg:bg-transparent lg:px-0 lg:py-0"><strong>Stop:</strong> {leg.stop_sequence}</p>}
                                   </div>
                                   {!riderMode && <ArrivalSummary arrivals={leg.arrivals} />}
                                   {resolutionInstruction && (
@@ -798,7 +801,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                         </div>
                                   )}
                                 </div>
-                                <div className="flex min-w-0 flex-col gap-3">
+                                <div className="flex min-w-0 flex-col gap-3 rounded-2xl border border-gray-200 bg-gray-50/70 p-4 dark:border-gray-700 dark:bg-gray-900/40 lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0">
                                   <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Assignment and progress</h3>
                                   {canAssign && !riderMode && isFailedPickup && (
                                     <div className="grid gap-2 sm:grid-cols-2">
@@ -906,25 +909,35 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                   {!riderMode && leg.status === 'delivery_attempted' && <button type="button" onClick={() => void confirmAct(`/api/logistics/legs/${leg.id}/cancel`, 'Cancel delivery?', 'This is the final cancellation action.')} className="rounded-lg border border-red-600 px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50">Cancel delivery</button>}
                                 </div>
                                 {canScheduleLeg && (
-                                  <div className="flex flex-col gap-2">
-                                    <div className="flex flex-col gap-2 sm:flex-row">
-                                      <label className="text-xs font-semibold text-gray-700 dark:text-gray-200">Delivery date<input type="date" aria-label="Delivery date" value={schedule.date} onChange={(event) => setDeliverySchedules({ ...deliverySchedules, [leg.id]: { ...schedule, date: event.target.value } })} className="mt-1 block rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white" /></label>
-                                      <label className="text-xs font-semibold text-gray-700 dark:text-gray-200">Delivery window<select aria-label="Delivery window" value={schedule.window} onChange={(event) => setDeliverySchedules({ ...deliverySchedules, [leg.id]: { ...schedule, window: event.target.value } })} className="mt-1 block rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"><option value="">Choose a window</option><option value="morning">Morning</option><option value="afternoon">Afternoon</option></select></label>
+                                  <div className="flex flex-col gap-3 border-t border-gray-200 pt-3 dark:border-gray-700">
+                                    <div className="grid gap-3 sm:grid-cols-2">
+                                      <label className="block text-xs font-semibold text-gray-700 dark:text-gray-200">Delivery date
+                                        <DeliveryDatePicker
+                                          value={schedule.date}
+                                          minDate={today}
+                                          calendarId={`delivery-date-calendar-${leg.id}`}
+                                          onChange={(value) => setDeliverySchedules({ ...deliverySchedules, [leg.id]: { ...schedule, date: value } })}
+                                          disabled={assigningLegId === leg.id}
+                                        />
+                                      </label>
+                                      <label className="block text-xs font-semibold text-gray-700 dark:text-gray-200">Delivery window<select aria-label="Delivery window" value={schedule.window} onChange={(event) => setDeliverySchedules({ ...deliverySchedules, [leg.id]: { ...schedule, window: event.target.value } })} className="mt-1 min-h-11 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-white lg:rounded-lg"><option value="">Choose a window</option><option value="morning">Morning</option><option value="afternoon">Afternoon</option></select></label>
                                     </div>
                                     {activeAssignment ? (
-                                      <><p className="text-sm font-medium text-gray-700 dark:text-gray-200">Assigned to {activeAssignment.rider_profile?.name ?? 'rider'}</p><button type="button" disabled={!schedule.date || !schedule.window || assigningLegId === leg.id} onClick={() => void scheduleLeg(leg.id, false)} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">Save schedule</button></>
+                                      <><p className="rounded-xl bg-white px-3 py-2 text-sm font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-200">Assigned to {activeAssignment.rider_profile?.name ?? 'rider'}</p><button type="button" disabled={!schedule.date || !schedule.window || assigningLegId === leg.id} onClick={() => void scheduleLeg(leg.id, false)} className="min-h-11 w-full rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 lg:w-auto lg:rounded-lg">Save schedule</button></>
                                     ) : (
-                                      <div className="flex flex-col gap-2 sm:flex-row">
-                                        <select
-                                          value={selectedRiders[leg.id] ?? ''}
-                                          onChange={(event) => setSelectedRiders({ ...selectedRiders, [leg.id]: event.target.value })}
-                                          className="rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-                                          aria-label={`Choose rider for ${leg.leg_type} leg`}
-                                        >
-                                          <option value="">Choose available rider</option>
-                                          {assignableRiders.map((rider) => <option key={rider.id} value={rider.id}>{rider.name}{rider.phone ? ` (${rider.phone})` : ''}</option>)}
-                                        </select>
-                                        <button type="button" disabled={!schedule.date || !schedule.window || !selectedRiders[leg.id] || assigningLegId === leg.id} onClick={() => void scheduleLeg(leg.id, true)} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">{assigningLegId === leg.id ? 'Scheduling...' : 'Schedule & assign rider'}</button>
+                                      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                                        <label className="block min-w-0 flex-1 text-xs font-semibold text-gray-700 dark:text-gray-200">Available rider
+                                          <select
+                                            value={selectedRiders[leg.id] ?? ''}
+                                            onChange={(event) => setSelectedRiders({ ...selectedRiders, [leg.id]: event.target.value })}
+                                            className="mt-1 min-h-11 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-white lg:rounded-lg"
+                                            aria-label={`Choose rider for ${leg.leg_type} leg`}
+                                          >
+                                            <option value="">Choose available rider</option>
+                                            {assignableRiders.map((rider) => <option key={rider.id} value={rider.id}>{rider.name}{rider.phone ? ` (${rider.phone})` : ''}</option>)}
+                                          </select>
+                                        </label>
+                                        <button type="button" disabled={!schedule.date || !schedule.window || !selectedRiders[leg.id] || assigningLegId === leg.id} onClick={() => void scheduleLeg(leg.id, true)} className="min-h-11 w-full rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto lg:rounded-lg">{assigningLegId === leg.id ? 'Scheduling...' : 'Schedule & assign rider'}</button>
                                       </div>
                                     )}
                                   </div>
