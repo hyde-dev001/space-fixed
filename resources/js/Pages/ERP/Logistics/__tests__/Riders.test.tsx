@@ -51,8 +51,11 @@ it('renders compact rider cards and keeps the desktop table behind xl', () => {
   expect(screen.getByTestId('rider-card-1')).toHaveTextContent('10 stops');
   expect(screen.getByTestId('rider-card-1')).toHaveTextContent('Available');
   expect(screen.getByTestId('rider-card-1')).toHaveTextContent('Active');
-  expect(screen.getByTestId('riders-filter-bar')).toHaveClass('grid-cols-1', 'sm:grid-cols-2', 'xl:flex');
-  expect(screen.getByTestId('riders-pagination')).toHaveClass('flex-col', 'sm:flex-row');
+  expect(screen.getByTestId('riders-page-intro')).toHaveClass('text-center', 'xl:text-left');
+  expect(screen.getByTestId('riders-filter-bar')).toHaveClass('mx-auto', 'max-w-md', 'grid-cols-1', 'sm:grid-cols-2', 'xl:flex', 'xl:mx-0');
+  expect(screen.getByTestId('rider-card-1')).toHaveClass('mx-auto', 'max-w-2xl');
+  expect(screen.getByTestId('riders-pagination')).toHaveClass('flex-col', 'items-center', 'xl:flex-row', 'xl:justify-between');
+  expect(screen.getByTestId('riders-pagination-links')).toHaveClass('justify-center', 'xl:justify-end');
 });
 
 it('keeps rider filters wired to the existing Inertia request', () => {
