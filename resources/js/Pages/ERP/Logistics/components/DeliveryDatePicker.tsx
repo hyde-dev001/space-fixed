@@ -6,6 +6,7 @@ type Props = {
   minDate: string;
   onChange: (value: string) => void;
   disabled?: boolean;
+  calendarId?: string;
 };
 
 const monthFormatter = new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
@@ -34,7 +35,7 @@ const todayFallback = () => {
   return `${value('year')}-${value('month')}-${value('day')}`;
 };
 
-export default function DeliveryDatePicker({ value, minDate, onChange, disabled = false }: Props) {
+export default function DeliveryDatePicker({ value, minDate, onChange, disabled = false, calendarId = 'delivery-date-calendar' }: Props) {
   const minimum = minDate || todayFallback();
   const minimumDate = parseDate(minimum) ?? firstOfMonth(new Date());
   const initialMonth = firstOfMonth(parseDate(value) ?? minimumDate);
@@ -92,7 +93,7 @@ export default function DeliveryDatePicker({ value, minDate, onChange, disabled 
       aria-label="Open delivery date picker"
       aria-haspopup="dialog"
       aria-expanded={open}
-      aria-controls="delivery-date-calendar"
+      aria-controls={calendarId}
       disabled={disabled}
       onClick={() => setOpen((isOpen) => !isOpen)}
       className="flex min-h-11 w-full items-center justify-between gap-3 rounded-xl border border-gray-300 bg-white px-3 text-left text-sm text-gray-700 shadow-sm transition hover:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"
@@ -100,7 +101,7 @@ export default function DeliveryDatePicker({ value, minDate, onChange, disabled 
       <span className={value ? 'text-gray-900 dark:text-white' : 'text-gray-500'}>{displayDate(value)}</span>
       <CalendarDays aria-hidden="true" size={17} className="shrink-0 text-gray-500" />
     </button>
-    {open && <div id="delivery-date-calendar" role="dialog" aria-label="Delivery date calendar" className="absolute left-0 top-full z-30 mt-2 w-[min(28rem,calc(100vw-2rem))] rounded-2xl border border-gray-200 bg-white p-4 shadow-xl dark:border-gray-700 dark:bg-gray-800">
+    {open && <div id={calendarId} role="dialog" aria-label="Delivery date calendar" className="absolute left-0 top-full z-30 mt-2 w-[min(28rem,calc(100vw-2rem))] rounded-2xl border border-gray-200 bg-white p-4 shadow-xl dark:border-gray-700 dark:bg-gray-800">
       <div className="flex items-center justify-between gap-3">
         <button type="button" aria-label="Previous month" disabled={previousMonthDisabled} onClick={() => setVisibleMonth(new Date(Date.UTC(visibleMonth.getUTCFullYear(), visibleMonth.getUTCMonth() - 1, 1)))} className="inline-flex min-h-9 min-w-9 items-center justify-center rounded-lg border border-gray-300 text-gray-600 transition hover:border-blue-400 hover:text-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-600 dark:text-gray-300">
           <ChevronLeft aria-hidden="true" size={17} />

@@ -238,16 +238,17 @@ const AppHeader_ERP: React.FC = () => {
           role={isApplicationMenuOpen ? "dialog" : undefined}
           aria-modal={isApplicationMenuOpen ? "true" : undefined}
           aria-labelledby={isApplicationMenuOpen ? "application-menu-title" : undefined}
+          aria-describedby={isApplicationMenuOpen ? "application-menu-description" : undefined}
           onKeyDown={trapApplicationMenuFocus}
           className={`${isApplicationMenuOpen
-            ? "fixed inset-x-3 top-[4.75rem] z-[99999] flex max-h-[calc(100dvh-6rem)] w-[calc(100%-1.5rem)] max-w-md flex-col overflow-y-auto rounded-2xl border border-gray-200 bg-white p-4 shadow-2xl ring-1 ring-black/5 dark:border-gray-700 dark:bg-gray-900 dark:ring-white/10 xl:static xl:max-h-none xl:w-auto xl:max-w-none xl:overflow-visible xl:rounded-none xl:border-0 xl:bg-transparent xl:p-0 xl:shadow-none xl:ring-0"
-            : "hidden"} items-center justify-between w-full gap-4 px-5 py-4 xl:flex xl:justify-end xl:px-0 xl:shadow-none`}
+            ? "fixed inset-x-3 top-20 z-[99999] mx-auto flex max-h-[calc(100dvh-6rem)] w-[calc(100%-1.5rem)] max-w-xl flex-col overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-2xl ring-1 ring-black/5 dark:border-gray-700 dark:bg-gray-900 dark:ring-white/10 sm:inset-x-6 sm:top-24 sm:max-h-[calc(100dvh-7.5rem)] sm:w-[calc(100%-3rem)] sm:max-w-2xl"
+            : "hidden"} items-center justify-between gap-4 xl:static xl:flex xl:max-h-none xl:w-auto xl:max-w-none xl:flex-row xl:overflow-visible xl:rounded-none xl:border-0 xl:bg-transparent xl:p-0 xl:shadow-none xl:ring-0`}
         >
           {isApplicationMenuOpen && (
-            <div className="flex w-full items-start justify-between gap-4 border-b border-gray-200 pb-4 dark:border-gray-800 xl:hidden">
+            <div className="flex w-full shrink-0 items-start justify-between gap-4 border-b border-gray-200 bg-white px-4 py-4 dark:border-gray-800 dark:bg-gray-900 sm:px-5 sm:py-5 xl:hidden">
               <div>
                 <h2 id="application-menu-title" className="text-base font-semibold text-gray-900 dark:text-white">Application menu</h2>
-                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Notifications, theme, and account</p>
+                <p id="application-menu-description" className="mt-1 text-sm leading-5 text-gray-500 dark:text-gray-400">Quick access to alerts, appearance, and account settings.</p>
               </div>
               <button
                 ref={applicationMenuCloseButtonRef}
@@ -262,21 +263,42 @@ const AppHeader_ERP: React.FC = () => {
               </button>
             </div>
           )}
-          {/* Right Side Actions */}
-          <div className="flex w-full flex-wrap items-center justify-between gap-2 pt-1 2xsm:gap-3 xl:w-auto xl:flex-nowrap xl:justify-normal xl:pt-0">
-            <NotificationBell 
-              basePath={notificationBasePath}
-              iconSize={24}
-            />
-            <ThemeToggleButton />
+          <div className="flex min-h-0 w-full flex-1 flex-col gap-4 overflow-y-auto bg-gray-50/70 p-4 dark:bg-gray-950/30 sm:gap-3 sm:p-5 xl:w-auto xl:flex-none xl:flex-row xl:items-center xl:gap-4 xl:overflow-visible xl:bg-transparent xl:p-0">
+            {/* Right Side Actions */}
+            <div className="grid w-full gap-3 sm:grid-cols-2 xl:flex xl:w-auto xl:items-center xl:gap-4">
+              <div className="flex items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:shadow-none xl:contents">
+                <div className="min-w-0 xl:hidden">
+                  <p className="text-sm font-semibold text-gray-900 dark:text-white">Alerts &amp; notifications</p>
+                  <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">Review recent activity</p>
+                </div>
+                <NotificationBell
+                  basePath={notificationBasePath}
+                  iconSize={24}
+                  className="rounded-xl border border-gray-200 bg-gray-50 text-gray-900 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700 xl:border-0 xl:bg-transparent xl:text-black xl:hover:bg-transparent xl:hover:opacity-70"
+                />
+              </div>
+              <div className="flex items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:shadow-none xl:contents">
+                <div className="min-w-0 xl:hidden">
+                  <p className="text-sm font-semibold text-gray-900 dark:text-white">Appearance</p>
+                  <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">Switch light or dark mode</p>
+                </div>
+                <ThemeToggleButton />
+              </div>
+              <div className="flex items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm sm:col-span-2 dark:border-gray-800 dark:bg-gray-900 dark:shadow-none xl:contents">
+                <div className="min-w-0 xl:hidden">
+                  <p className="text-sm font-semibold text-gray-900 dark:text-white">Account</p>
+                  <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">Profile and sign out</p>
+                </div>
+                {ownerMode ? (
+                  <ShopOwnerDropdown actor={erpActor} urls={erpUrls} />
+                ) : auth?.super_admin ? (
+                  <SuperAdminDropdown />
+                ) : auth?.user ? (
+                  <UserDropdown />
+                ) : null}
+              </div>
+            </div>
           </div>
-          {ownerMode ? (
-            <ShopOwnerDropdown actor={erpActor} urls={erpUrls} />
-          ) : auth?.super_admin ? (
-            <SuperAdminDropdown />
-          ) : auth?.user ? (
-            <UserDropdown />
-          ) : null}
         </div>
       </div>
     </header>

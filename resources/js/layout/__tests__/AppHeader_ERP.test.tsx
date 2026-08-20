@@ -144,6 +144,9 @@ it('opens the compact application menu as a modal and restores focus on Escape',
   expect(trigger).toHaveAttribute('aria-expanded', 'true');
   expect(trigger).toHaveAttribute('aria-haspopup', 'dialog');
   expect(screen.getByTestId('notification-bell')).toBeInTheDocument();
+  expect(screen.getByText('Alerts & notifications')).toBeInTheDocument();
+  expect(screen.getByText('Appearance')).toBeInTheDocument();
+  expect(screen.getByText('Account')).toBeInTheDocument();
 
   fireEvent.keyDown(document, { key: 'Escape' });
 

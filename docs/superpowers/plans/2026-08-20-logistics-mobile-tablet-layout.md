@@ -16,6 +16,7 @@
 - Use existing components and dependencies; add no package.
 - Keep interactive controls at least 44px high and prevent page-level horizontal overflow below `xl`.
 - Use `DESIGN.md`'s neutral surfaces, strong type, 8px rhythm, and restrained elevation where compatible with the existing attendance/ERP visual language.
+- Reuse the existing `DeliveryDatePicker` from the Batches workflow for shipment scheduling; do not add a second date-picker implementation.
 
 ---
 
@@ -174,3 +175,31 @@ Use the local browser test workflow at 390px, 768px, 1024px, and 1280px. Confirm
 - [ ] **Step 5: Record the implementation summary**
 
 Report exact files changed, commands run, and any browser-verification limitation. Do not claim type-checking or linting passed because the repository has no committed TypeScript compiler configuration or frontend lint script.
+
+### Task 4: Refine shipment detail UX and shared scheduling controls
+
+**Files:**
+- Modify: `resources/js/Pages/ERP/Logistics/Shipments.tsx`
+- Modify: `resources/js/Pages/ERP/Logistics/components/RetailOrderSummary.tsx`
+- Modify: `resources/js/Pages/ERP/Logistics/components/DeliveryDatePicker.tsx`
+- Test: `resources/js/Pages/ERP/Logistics/__tests__/Shipments.test.tsx`
+
+**Interfaces:**
+- Consumes: existing shipment legs, `today`, scheduling state, and the Batches `DeliveryDatePicker`.
+- Produces: a compact full-height phone dialog, readable tablet detail cards, and one unique calendar id per leg.
+
+- [ ] **Step 1: Add the regression test for the shared date-picker behavior**
+
+Open a pending dispatcher shipment leg and assert that the scheduling form exposes `Open delivery date picker`, opens `Delivery date calendar`, and updates the displayed date after selecting a future date.
+
+- [ ] **Step 2: Implement the detail presentation changes**
+
+Use mobile-first surface grouping, safe-area bottom padding, 44px controls, wrapping metadata, and `xl` overrides for the existing desktop modal proportions. Replace the native date input with `DeliveryDatePicker` and pass `today` as its minimum date.
+
+- [ ] **Step 3: Run focused tests**
+
+```powershell
+& '.\node_modules\.bin\vitest.CMD' run resources/js/layout/__tests__/AppHeader_ERP.test.tsx resources/js/Pages/ERP/Logistics/__tests__/Shipments.test.tsx --reporter=dot
+```
+
+Expected: both files pass, including application-menu accessibility and shipment scheduling behavior.

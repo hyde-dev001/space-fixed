@@ -87,6 +87,29 @@ it('opens shipment details in an accessible modal and restores trigger focus', (
   expect(document.activeElement).toBe(open);
 });
 
+it('uses the shared Batches delivery date picker when scheduling a shipment leg', () => {
+  setDispatcherLeg({
+    ...defaultProps().shipments.data[0].legs[0],
+    status: 'pending',
+    scheduled_delivery_date: null,
+    delivery_batch_id: null,
+    assignments: [],
+  });
+  render(<Shipments />);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+
+  const datePicker = screen.getByRole('button', { name: 'Open delivery date picker' });
+  expect(datePicker).toHaveTextContent('mm/dd/yyyy');
+
+  fireEvent.click(datePicker);
+
+  expect(screen.getByRole('dialog', { name: 'Delivery date calendar' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Select July 22, 2026' }));
+
+  expect(screen.getByRole('button', { name: 'Open delivery date picker' })).toHaveTextContent('07/22/2026');
+});
+
 it('closes the selected shipment modal with Escape without changing the shipment list', () => {
   render(<Shipments />);
   const open = screen.getByRole('button', { name: 'Open delivery' });
