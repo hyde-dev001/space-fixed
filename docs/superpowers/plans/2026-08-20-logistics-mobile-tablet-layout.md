@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make ERP Logistics Shipments professional and usable on phones/tablets and make the compact ERP application menu a true modal, without changing desktop behavior or shipment logic.
+**Goal:** Make ERP Logistics Shipments professional and usable on phones/tablets and make the compact ERP application menu an anchored non-modal dropdown, without changing desktop behavior or shipment logic.
 
-**Architecture:** Keep the existing route components and data flow. Apply mobile-first Tailwind classes only to the Shipments page's presentation blocks, and keep `xl` classes as the desktop boundary. Add the modal interaction locally to `AppHeader_ERP` using existing React state/effects and preserve the existing inline desktop action row.
+**Architecture:** Keep the existing route components and data flow. Apply mobile-first Tailwind classes only to the Shipments page's presentation blocks, and keep `xl` classes as the desktop boundary. Add the compact dropdown interaction locally to `AppHeader_ERP` using existing React state/effects and preserve the existing inline desktop action row.
 
 **Tech Stack:** Laravel/Inertia, React 18, TypeScript, Tailwind CSS 4, Vitest, Testing Library, pnpm.
 
@@ -20,7 +20,7 @@
 
 ---
 
-### Task 1: Lock the compact app-menu modal contract
+### Task 1: Lock the compact app-menu dropdown contract
 
 **Files:**
 - Modify: `resources/js/layout/AppHeader_ERP.tsx`
@@ -28,24 +28,25 @@
 
 **Interfaces:**
 - Consumes: existing `useSidebar`, role-specific dropdown components, `NotificationBell`, and `ThemeToggleButton` props.
-- Produces: a below-`xl` dialog labelled `Application menu`, with a trigger labelled `Toggle Application Menu` and a close control labelled `Close application menu`.
+- Produces: a below-`xl` anchored region labelled `Application menu`, with a trigger labelled `Toggle Application Menu` and the notification bell visible beside that trigger.
 
 - [ ] **Step 1: Write the failing interaction tests**
 
 Extend `AppHeader_ERP.test.tsx` to click the existing right-side trigger and assert:
 
 ```tsx
-expect(screen.queryByRole('dialog', { name: 'Application menu' })).not.toBeInTheDocument();
+expect(screen.queryByRole('region', { name: 'Application menu' })).not.toBeInTheDocument();
 const trigger = screen.getByRole('button', { name: 'Toggle Application Menu' });
 fireEvent.click(trigger);
-expect(screen.getByRole('dialog', { name: 'Application menu' })).toBeInTheDocument();
-expect(screen.getByTestId('notification-bell')).toBeInTheDocument();
+expect(screen.getByRole('region', { name: 'Application menu' })).toBeInTheDocument();
+expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+expect(screen.getAllByTestId('notification-bell')).toHaveLength(2);
 fireEvent.keyDown(document, { key: 'Escape' });
-expect(screen.queryByRole('dialog', { name: 'Application menu' })).not.toBeInTheDocument();
+expect(screen.queryByRole('region', { name: 'Application menu' })).not.toBeInTheDocument();
 expect(document.activeElement).toBe(trigger);
 ```
 
-Also click `Close application menu` and assert that the dialog closes. Add `fireEvent` to the test imports if needed.
+Also click outside the dropdown and assert that it closes without changing `document.body.style.overflow`. Add `fireEvent` to the test imports if needed.
 
 - [ ] **Step 2: Run the focused header test and confirm it fails**
 
@@ -55,19 +56,19 @@ Run:
 pnpm exec vitest run resources/js/layout/__tests__/AppHeader_ERP.test.tsx
 ```
 
-Expected: FAIL because the current implementation renders the action row inline and has no dialog or focus restoration.
+Expected: FAIL because the current implementation still renders the compact menu as a modal.
 
 - [ ] **Step 3: Implement the compact modal behavior**
 
 In `AppHeader_ERP.tsx`:
 
 - Add a `useRef<HTMLButtonElement | null>` for the application-menu trigger.
-- Add an effect that, while the compact menu is open, listens for `Escape`, locks `document.body.style.overflow`, and restores the previous overflow on cleanup.
-- Add `closeApplicationMenu` that closes the menu and returns focus to the trigger on the next animation frame.
+- Add an effect that, while the compact menu is open, listens for `Escape` and outside pointer interactions without locking `document.body.style.overflow`.
+- Add `closeApplicationMenu` that closes the dropdown and returns focus to the trigger for keyboard close paths.
 - Keep the existing `xl:flex` desktop action row unchanged.
-- For below `xl`, render a fixed backdrop and a `role="dialog" aria-modal="true" aria-labelledby="application-menu-title"` panel with `Close application menu`; place the same existing action components inside it.
-- Close on backdrop click and stop propagation on the panel.
-- Add `aria-expanded` and `aria-controls="application-menu-dialog"` to the compact trigger.
+- For below `xl`, render an anchored `role="region" aria-labelledby="application-menu-title"` panel without a backdrop; keep the notification bell beside the hamburger and place the theme/account controls inside the panel.
+- Close on outside pointer interaction.
+- Add `aria-expanded`, `aria-controls="application-menu"`, and `aria-haspopup="true"` to the compact trigger.
 - Do not alter role-specific notification paths, account dropdown selection, or desktop behavior.
 
 - [ ] **Step 4: Run the focused header test and confirm it passes**
@@ -170,7 +171,7 @@ Expected: no whitespace errors; every new hook has a real source/test reference.
 
 - [ ] **Step 4: Browser-verify compact and desktop breakpoints**
 
-Use the local browser test workflow at 390px, 768px, 1024px, and 1280px. Confirm search, filters, cards, pagination, modal open/close paths, focus restoration, and no page-level horizontal overflow. At 1280px confirm the desktop header actions and shipment card arrangement remain available.
+Use the local browser test workflow at 390px, 768px, 1024px, and 1280px. Confirm search, filters, cards, pagination, dropdown open/close paths, focus restoration, and no page-level horizontal overflow. At 1280px confirm the desktop header actions and shipment card arrangement remain available.
 
 - [ ] **Step 5: Record the implementation summary**
 

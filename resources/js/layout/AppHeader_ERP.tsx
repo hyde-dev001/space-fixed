@@ -17,7 +17,6 @@ const AppHeader_ERP: React.FC = () => {
   const [isApplicationMenuOpen, setApplicationMenuOpen] = useState(false);
   const applicationMenuRef = useRef<HTMLDivElement>(null);
   const applicationMenuTriggerRef = useRef<HTMLButtonElement>(null);
-  const applicationMenuCloseButtonRef = useRef<HTMLButtonElement>(null);
 
   const { isMobileOpen, toggleSidebar, toggleMobileSidebar } = useSidebar();
 
@@ -44,60 +43,43 @@ const AppHeader_ERP: React.FC = () => {
     }
   };
 
-  const closeApplicationMenu = () => {
+  const closeApplicationMenu = (restoreFocus = false) => {
     setApplicationMenuOpen(false);
-    window.requestAnimationFrame(() => applicationMenuTriggerRef.current?.focus());
+    if (restoreFocus) {
+      window.requestAnimationFrame(() => applicationMenuTriggerRef.current?.focus());
+    }
   };
 
   const toggleApplicationMenu = () => {
     if (isApplicationMenuOpen) {
-      closeApplicationMenu();
+      closeApplicationMenu(true);
       return;
     }
 
     setApplicationMenuOpen(true);
   };
 
-  const trapApplicationMenuFocus = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    if (event.key !== "Tab") return;
-
-    const focusableElements = Array.from(
-      applicationMenuRef.current?.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      ) ?? [],
-    );
-    if (focusableElements.length === 0) return;
-
-    const first = focusableElements[0];
-    const last = focusableElements[focusableElements.length - 1];
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
-  };
-
   useEffect(() => {
     if (!isApplicationMenuOpen) return;
 
-    const previousOverflow = document.body.style.overflow;
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
-        closeApplicationMenu();
+        closeApplicationMenu(true);
       }
     };
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!(event.target instanceof Node)) return;
+      if (applicationMenuRef.current?.contains(event.target) || applicationMenuTriggerRef.current?.contains(event.target)) return;
+      closeApplicationMenu();
+    };
 
-    document.body.style.overflow = "hidden";
     document.addEventListener("keydown", handleEscape);
-    const frame = window.requestAnimationFrame(() => applicationMenuCloseButtonRef.current?.focus());
+    document.addEventListener("pointerdown", handlePointerDown);
 
     return () => {
-      document.body.style.overflow = previousOverflow;
       document.removeEventListener("keydown", handleEscape);
-      window.cancelAnimationFrame(frame);
+      document.removeEventListener("pointerdown", handlePointerDown);
     };
   }, [isApplicationMenuOpen]);
 
@@ -119,7 +101,7 @@ const AppHeader_ERP: React.FC = () => {
   }, []);
 
   return (
-    <header className="sticky top-0 flex w-full bg-white/80 dark:bg-gray-900/80 backdrop-blur-md border-gray-200 z-99999 dark:border-gray-800 xl:border-b">
+    <header className="relative sticky top-0 z-99999 flex w-full bg-white/80 backdrop-blur-md dark:bg-gray-900/80 xl:border-b xl:border-gray-200 xl:dark:border-gray-800">
       <div className="flex flex-col items-center justify-between grow xl:flex-row xl:px-6">
         <div className="flex items-center justify-between w-full gap-2 px-3 py-3 border-b border-gray-200 dark:border-gray-800 sm:gap-4 xl:justify-normal xl:border-b-0 xl:px-0 xl:py-4">
           <button
@@ -164,30 +146,37 @@ const AppHeader_ERP: React.FC = () => {
             <span className="text-xl font-bold tracking-tight text-gray-900 dark:text-white">SoleSpace</span>
           </Link>
 
-          <button
-            ref={applicationMenuTriggerRef}
-            onClick={toggleApplicationMenu}
-            className="flex items-center justify-center w-10 h-10 text-gray-700 rounded-lg z-99999 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800 xl:hidden"
-            aria-label="Toggle Application Menu"
-            aria-expanded={isApplicationMenuOpen}
-            aria-controls="application-menu-dialog"
-            aria-haspopup="dialog"
-          >
-            <svg
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
+          <div className="flex items-center gap-1 xl:hidden">
+            <NotificationBell
+              basePath={notificationBasePath}
+              iconSize={24}
+              className="rounded-xl border border-gray-200 bg-gray-50 text-gray-900 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700"
+            />
+            <button
+              ref={applicationMenuTriggerRef}
+              onClick={toggleApplicationMenu}
+              className="flex h-10 w-10 items-center justify-center rounded-xl text-gray-700 transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-gray-400 dark:hover:bg-gray-800"
+              aria-label="Toggle Application Menu"
+              aria-expanded={isApplicationMenuOpen}
+              aria-controls="application-menu"
+              aria-haspopup="true"
             >
-              <path
-                d="M8 12H16M8 6H16M8 18H16"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-              />
-            </svg>
-          </button>
+              <svg
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  d="M8 12H16M8 6H16M8 18H16"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </button>
+          </div>
 
           <div className="hidden xl:block">
             <form>
@@ -225,48 +214,28 @@ const AppHeader_ERP: React.FC = () => {
           </div>
         </div>
 
-        {isApplicationMenuOpen && (
-          <div
-            aria-hidden="true"
-            className="fixed inset-0 z-[99998] bg-gray-950/50 backdrop-blur-[2px] xl:hidden"
-            onClick={closeApplicationMenu}
-          />
-        )}
         <div
           ref={applicationMenuRef}
-          id="application-menu-dialog"
-          role={isApplicationMenuOpen ? "dialog" : undefined}
-          aria-modal={isApplicationMenuOpen ? "true" : undefined}
+          id="application-menu"
+          role={isApplicationMenuOpen ? "region" : undefined}
           aria-labelledby={isApplicationMenuOpen ? "application-menu-title" : undefined}
           aria-describedby={isApplicationMenuOpen ? "application-menu-description" : undefined}
-          onKeyDown={trapApplicationMenuFocus}
           className={`${isApplicationMenuOpen
-            ? "fixed inset-x-3 top-20 z-[99999] mx-auto flex max-h-[calc(100dvh-6rem)] w-[calc(100%-1.5rem)] max-w-xl flex-col overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-2xl ring-1 ring-black/5 dark:border-gray-700 dark:bg-gray-900 dark:ring-white/10 sm:inset-x-6 sm:top-24 sm:max-h-[calc(100dvh-7.5rem)] sm:w-[calc(100%-3rem)] sm:max-w-2xl"
+            ? "absolute right-3 top-[calc(100%+0.5rem)] z-[99999] flex max-h-[calc(100dvh-5.5rem)] w-[min(22rem,calc(100vw-1.5rem))] flex-col overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-xl ring-1 ring-black/5 dark:border-gray-700 dark:bg-gray-900 dark:ring-white/10 sm:right-4 sm:w-[min(24rem,calc(100vw-2rem))] sm:max-h-[calc(100dvh-6.5rem)]"
             : "hidden"} items-center justify-between gap-4 xl:static xl:flex xl:max-h-none xl:w-auto xl:max-w-none xl:flex-row xl:overflow-visible xl:rounded-none xl:border-0 xl:bg-transparent xl:p-0 xl:shadow-none xl:ring-0`}
         >
           {isApplicationMenuOpen && (
-            <div className="flex w-full shrink-0 items-start justify-between gap-4 border-b border-gray-200 bg-white px-4 py-4 dark:border-gray-800 dark:bg-gray-900 sm:px-5 sm:py-5 xl:hidden">
+            <div className="w-full shrink-0 border-b border-gray-200 bg-white px-4 py-4 dark:border-gray-800 dark:bg-gray-900 sm:px-5 sm:py-4 xl:hidden">
               <div>
                 <h2 id="application-menu-title" className="text-base font-semibold text-gray-900 dark:text-white">Application menu</h2>
-                <p id="application-menu-description" className="mt-1 text-sm leading-5 text-gray-500 dark:text-gray-400">Quick access to alerts, appearance, and account settings.</p>
+                <p id="application-menu-description" className="mt-1 text-sm leading-5 text-gray-500 dark:text-gray-400">Appearance and account settings.</p>
               </div>
-              <button
-                ref={applicationMenuCloseButtonRef}
-                type="button"
-                onClick={closeApplicationMenu}
-                aria-label="Close application menu"
-                className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-xl border border-gray-200 text-gray-600 transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-              >
-                <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none">
-                  <path d="M6 6L18 18M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                </svg>
-              </button>
             </div>
           )}
           <div className="flex min-h-0 w-full flex-1 flex-col gap-4 overflow-y-auto bg-gray-50/70 p-4 dark:bg-gray-950/30 sm:gap-3 sm:p-5 xl:w-auto xl:flex-none xl:flex-row xl:items-center xl:gap-4 xl:overflow-visible xl:bg-transparent xl:p-0">
             {/* Right Side Actions */}
             <div className="grid w-full gap-3 sm:grid-cols-2 xl:flex xl:w-auto xl:items-center xl:gap-4">
-              <div className="flex items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:shadow-none xl:contents">
+              <div className="hidden items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:shadow-none xl:contents">
                 <div className="min-w-0 xl:hidden">
                   <p className="text-sm font-semibold text-gray-900 dark:text-white">Alerts &amp; notifications</p>
                   <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">Review recent activity</p>

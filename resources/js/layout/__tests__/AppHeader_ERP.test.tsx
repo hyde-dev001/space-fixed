@@ -91,7 +91,7 @@ it('hides the center owner identity pill while keeping the account dropdown', ()
   expect(screen.queryByText('North Star Shoes')).not.toBeInTheDocument();
   expect(screen.queryByText('Owner mode')).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: /back to shop owner portal/i })).not.toBeInTheDocument();
-  expect(screen.getByTestId('notification-bell')).toHaveAttribute('data-base-path', '/api/shop-owner/notifications');
+  expect(screen.getAllByTestId('notification-bell')[0]).toHaveAttribute('data-base-path', '/api/shop-owner/notifications');
   expect(screen.getByTestId('shop-owner-dropdown')).toBeInTheDocument();
   expect(screen.getByTestId('shop-owner-dropdown')).toHaveAttribute('data-profile-url', '/shop-owner/shop-profile');
   expect(screen.getByTestId('shop-owner-dropdown')).toHaveAttribute('data-logout-url', '/shop-owner/logout');
@@ -129,39 +129,41 @@ it('keeps employee identity and notification selection in employee mode', () => 
   expect(screen.queryByTestId('shop-owner-dropdown')).not.toBeInTheDocument();
   expect(screen.queryByText('Owner mode')).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: /back to shop owner portal/i })).not.toBeInTheDocument();
-  expect(screen.getByTestId('notification-bell')).toHaveAttribute('data-base-path', '/api/staff/notifications');
+  expect(screen.getAllByTestId('notification-bell')[0]).toHaveAttribute('data-base-path', '/api/staff/notifications');
 });
 
-it('opens the compact application menu as a modal and restores focus on Escape', async () => {
+it('opens the compact application menu as a non-modal dropdown and keeps notifications outside it', async () => {
   render(<AppHeaderERP />);
 
   const trigger = screen.getByRole('button', { name: 'Toggle Application Menu' });
-  expect(screen.queryByRole('dialog', { name: 'Application menu' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('region', { name: 'Application menu' })).not.toBeInTheDocument();
+  expect(screen.getAllByTestId('notification-bell')).toHaveLength(2);
 
   fireEvent.click(trigger);
 
-  expect(screen.getByRole('dialog', { name: 'Application menu' })).toBeInTheDocument();
+  expect(screen.getByRole('region', { name: 'Application menu' })).toBeInTheDocument();
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   expect(trigger).toHaveAttribute('aria-expanded', 'true');
-  expect(trigger).toHaveAttribute('aria-haspopup', 'dialog');
-  expect(screen.getByTestId('notification-bell')).toBeInTheDocument();
-  expect(screen.getByText('Alerts & notifications')).toBeInTheDocument();
+  expect(trigger).toHaveAttribute('aria-haspopup', 'true');
+  expect(screen.getByText('Alerts & notifications').parentElement).toHaveClass('xl:hidden');
   expect(screen.getByText('Appearance')).toBeInTheDocument();
   expect(screen.getByText('Account')).toBeInTheDocument();
+  expect(document.body.style.overflow).toBe('');
 
   fireEvent.keyDown(document, { key: 'Escape' });
 
   await waitFor(() => {
-    expect(screen.queryByRole('dialog', { name: 'Application menu' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Application menu' })).not.toBeInTheDocument();
     expect(document.activeElement).toBe(trigger);
   });
   expect(trigger).toHaveAttribute('aria-expanded', 'false');
 });
 
-it('closes the compact application menu from its close button', () => {
+it('closes the compact application menu when clicking outside the dropdown', () => {
   render(<AppHeaderERP />);
 
   fireEvent.click(screen.getByRole('button', { name: 'Toggle Application Menu' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Close application menu' }));
+  fireEvent.pointerDown(document.body);
 
-  expect(screen.queryByRole('dialog', { name: 'Application menu' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('region', { name: 'Application menu' })).not.toBeInTheDocument();
 });
