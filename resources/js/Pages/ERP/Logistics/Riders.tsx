@@ -46,7 +46,7 @@ function RiderCard({ rider }: { rider: LogisticsRider }) {
     : `${rider.daily_capacity} ${rider.daily_capacity === 1 ? 'stop' : 'stops'}`;
 
   return (
-    <article data-testid={`rider-card-${rider.id}`} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800 sm:p-5">
+    <article data-testid={`rider-card-${rider.id}`} className="mx-auto w-full max-w-2xl rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800 sm:p-5">
       <div className="flex items-start gap-3">
         <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-purple-600 font-semibold text-white">
           {rider.name.charAt(0).toUpperCase()}
@@ -105,13 +105,13 @@ export default function Riders() {
     <AppLayoutERP>
       <Head title="ERP Logistics Riders" />
       <div className="space-y-5 sm:space-y-6">
-        <div>
+        <div data-testid="riders-page-intro" className="text-center xl:text-left">
           <h1 className="text-2xl font-bold text-gray-950 dark:text-white">Riders</h1>
           <p className="text-sm text-gray-500 dark:text-gray-400">View rider availability and delivery capacity.</p>
         </div>
 
         <div className="flex flex-col gap-3 sm:gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div data-testid="riders-filter-bar" className="grid grid-cols-1 gap-3 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-800 sm:grid-cols-2 sm:p-4 xl:flex xl:flex-wrap xl:items-center xl:gap-3 xl:rounded-none xl:border-0 xl:bg-transparent xl:p-0 xl:shadow-none">
+          <div data-testid="riders-filter-bar" className="mx-auto grid w-full max-w-md grid-cols-1 gap-3 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-800 sm:grid-cols-2 sm:p-4 xl:mx-0 xl:w-auto xl:max-w-none xl:flex xl:flex-wrap xl:items-center xl:gap-3 xl:rounded-none xl:border-0 xl:bg-transparent xl:p-0 xl:shadow-none">
             <select
               value={filters.availability}
               onChange={(event) => updateFilter('availability', event.target.value)}
@@ -182,19 +182,19 @@ export default function Riders() {
 
           <div data-testid="riders-mobile-list" className="space-y-3 bg-gray-50 p-3 dark:bg-gray-900/40 sm:space-y-4 sm:p-4 xl:hidden">
             {riders.data.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-gray-300 bg-white px-4 py-10 text-center text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400">
+              <div className="mx-auto w-full max-w-2xl rounded-2xl border border-dashed border-gray-300 bg-white px-4 py-10 text-center text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400">
                 No riders found.
               </div>
             ) : riders.data.map((rider) => <RiderCard key={rider.id} rider={rider} />)}
           </div>
 
           {riders.total > 0 && (
-            <div data-testid="riders-pagination" className="flex flex-col gap-3 border-t border-gray-200 px-4 py-4 dark:border-gray-700 sm:flex-row sm:items-center sm:justify-between sm:px-5 xl:gap-0 xl:px-6">
-              <div className="text-sm text-gray-700 dark:text-gray-300">
+            <div data-testid="riders-pagination" className="flex flex-col items-center gap-3 border-t border-gray-200 px-4 py-4 dark:border-gray-700 sm:px-5 xl:flex-row xl:justify-between xl:gap-0 xl:px-6">
+              <div className="text-center text-sm text-gray-700 dark:text-gray-300 xl:text-left">
                 Showing <span className="font-medium">{riders.from}</span> to <span className="font-medium">{riders.to}</span> of{' '}
                 <span className="font-medium">{riders.total}</span>
               </div>
-              <div className="flex w-full flex-wrap items-center justify-start gap-2 sm:w-auto sm:justify-end xl:flex-nowrap">
+              <div data-testid="riders-pagination-links" className="flex w-full flex-wrap items-center justify-center gap-2 xl:w-auto xl:justify-end xl:flex-nowrap">
                 {riders.links.map((link, index) => (
                   link.url ? (
                     <Link
