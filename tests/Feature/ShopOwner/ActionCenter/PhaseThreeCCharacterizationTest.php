@@ -6,6 +6,7 @@ namespace Tests\Feature\ShopOwner\ActionCenter;
 
 use App\Enums\OwnerActionCenterDegradationStatus;
 use App\Models\Logistics\LogisticsSetting;
+use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
 use App\Models\ShopOwner;
@@ -86,13 +87,44 @@ final class PhaseThreeCCharacterizationTest extends TestCase
                 ->component('ShopOwner/ActionCenter', false)
                 ->has('bucketSummaries.needs_my_decision')
                 ->has('bucketSummaries.urgent_exceptions')
-                ->missing('bucketSummaries.waiting_on_others'));
+            ->missing('bucketSummaries.waiting_on_others'));
+    }
+
+    public function test_waiting_defaults_register_the_three_phase_three_c_source_families(): void
+    {
+        config([
+            'owner_action_center.buckets.waiting_on_others.enabled' => true,
+            'owner_action_center.buckets.waiting_on_others.coverage' => [
+                'compliance' => true,
+                'refunds' => true,
+                'logistics' => true,
+            ],
+        ]);
+
+        $this->assertSame([
+            'pending_compliance_renewals',
+            'waiting_order_refund_recovery',
+            'waiting_repair_refund_recovery',
+            'active_logistics_recovery',
+        ], array_map(
+            static fn ($adapter): string => $adapter->adapterKey(),
+            app(OwnerAttentionAdapterRegistry::class)->adaptersFor('waiting_on_others'),
+        ));
     }
 
     public function test_unowned_logistics_exception_does_not_overlap_with_waiting_in_the_baseline(): void
     {
         $shop = $this->shop(['max_delivery_attempts' => 1]);
         $leg = $this->failedLeg($shop);
+        $assignedLeg = $this->failedLeg($shop);
+        $rider = RiderProfile::factory()->create(['shop_owner_id' => $shop->id]);
+        $assignedLeg->assignments()->create([
+            'assignment_type' => 'internal_rider',
+            'rider_profile_id' => $rider->id,
+            'status' => 'accepted',
+            'assigned_at' => now()->subHours(6),
+            'accepted_at' => now()->subHours(5),
+        ]);
 
         $exception = app(UnownedLogisticsFailureAttentionAdapter::class)->read(
             $shop,
@@ -105,7 +137,14 @@ final class PhaseThreeCCharacterizationTest extends TestCase
 
         $this->assertCount(1, $exception->items);
         $this->assertSame('logistics_failure:'.$leg->id.':unowned_delivery_failure', $exception->items[0]->attentionKey);
-        $this->assertSame([], $waiting->items);
+        $this->assertSame(['logistics_failure:'.$assignedLeg->id.':logistics_recovery_waiting'], array_map(
+            static fn ($item): string => $item->attentionKey,
+            $waiting->items,
+        ));
+        $this->assertSame([], array_filter(
+            $waiting->items,
+            static fn ($item): bool => $item->sourceId === $leg->id,
+        ));
     }
 
     /** @param array<string, mixed> $settings */

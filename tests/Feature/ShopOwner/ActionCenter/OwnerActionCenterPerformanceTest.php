@@ -24,6 +24,8 @@ final class OwnerActionCenterPerformanceTest extends TestCase
         ['class' => 'App\\Services\\OwnerActionCenter\\Adapters\\PurchaseRequestAttentionAdapter', 'key' => 'purchase_requests', 'coverage' => 'purchase_requests', 'source' => 'purchase_request'],
     ];
 
+    private const WAITING_COMPLIANCE_ADAPTER = 'App\\Services\\OwnerActionCenter\\Adapters\\PendingComplianceRenewalAttentionAdapter';
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -32,7 +34,7 @@ final class OwnerActionCenterPerformanceTest extends TestCase
             'owner_action_center.coverage.refunds' => true,
             'owner_action_center.coverage.expenses' => true,
             'owner_action_center.coverage.purchase_requests' => true,
-            'owner_action_center.home_limit' => 5,
+            'owner_action_center.home_limit' => 3,
         ]);
     }
 
@@ -44,10 +46,10 @@ final class OwnerActionCenterPerformanceTest extends TestCase
 
         $home = $service->summaryForHome($owner);
 
-        $this->assertSame(5, $home->perPage);
-        $this->assertCount(5, $home->items);
+        $this->assertSame(3, $home->perPage);
+        $this->assertCount(3, $home->items);
         foreach ($adapters as $adapter) {
-            $this->assertSame([5], $adapter->candidateLimits);
+            $this->assertSame([3], $adapter->candidateLimits);
         }
 
         foreach ($adapters as $adapter) {
@@ -99,15 +101,43 @@ final class OwnerActionCenterPerformanceTest extends TestCase
             bucket: 'urgent_exceptions',
             coverage: 'compliance',
             page: 1,
-            perPage: 5,
+            perPage: 3,
         ));
 
-        $this->assertSame([5, 5], $adapter->candidateLimits);
+        $this->assertSame([3, 3], $adapter->candidateLimits);
         $this->assertSame($home->coverageCounts, $queue->coverageCounts);
         $this->assertSame(
             array_map(static fn (OwnerAttentionItem $item): string => $item->attentionKey, $home->items),
             array_map(static fn (OwnerAttentionItem $item): string => $item->attentionKey, $queue->items),
         );
+    }
+
+    public function test_waiting_home_and_queue_use_the_same_bounded_adapter_contract(): void
+    {
+        $owner = ShopOwner::factory()->approved()->create();
+        config([
+            'owner_action_center.buckets.waiting_on_others.enabled' => true,
+            'owner_action_center.buckets.waiting_on_others.coverage' => [
+                'compliance' => true,
+                'refunds' => false,
+                'logistics' => false,
+            ],
+        ]);
+        $adapter = $this->bindWaitingComplianceAdapter(items: 40);
+        $service = app(OwnerActionCenterService::class);
+
+        $home = $service->summaryForHome($owner, 'waiting_on_others');
+        $queue = $service->queueForActionCenter($owner, new OwnerAttentionQuery(
+            bucket: 'waiting_on_others',
+            coverage: 'compliance',
+            page: 2,
+            perPage: 4,
+        ));
+
+        $this->assertSame([3, 8], $adapter->candidateLimits);
+        $this->assertSame($home->coverageCounts, $queue->coverageCounts);
+        $this->assertSame(40, $home->total);
+        $this->assertSame(2, $queue->page);
     }
 
     /**
@@ -258,6 +288,74 @@ final class OwnerActionCenterPerformanceTest extends TestCase
             'App\\Services\\OwnerActionCenter\\Adapters\\ComplianceDocumentAttentionAdapter',
             $adapter,
         );
+
+        return $adapter;
+    }
+
+    private function bindWaitingComplianceAdapter(int $items): object
+    {
+        $projected = [];
+        for ($id = 1; $id <= $items; $id++) {
+            $projected[] = new OwnerAttentionItem(
+                sourceType: 'compliance_document',
+                sourceId: $id,
+                category: 'renewal_review_waiting',
+                primaryBucket: 'waiting_on_others',
+                module: 'compliance',
+                title: 'Pending renewal review',
+                conciseSummary: 'A compliance reviewer owns the next step.',
+                priorityTier: 'normal',
+                materialityTier: 'medium',
+                comparableMonetaryExposure: null,
+                urgencyAt: '2026-08-20T00:00:00+08:00',
+                actionableSince: '2026-08-15T09:00:00+08:00',
+                waitingOn: 'super_admin',
+                ownerActionRequired: false,
+                coverageSource: 'compliance',
+                destinationUrl: '/shop-owner/settings/policies-compliance',
+            );
+        }
+
+        $adapter = new class($projected) implements OwnerAttentionAdapter {
+            /** @var array<int, OwnerAttentionItem> */
+            private readonly array $items;
+
+            /** @var array<int, int> */
+            public array $candidateLimits = [];
+
+            /** @param array<int, OwnerAttentionItem> $items */
+            public function __construct(array $items)
+            {
+                $this->items = $items;
+            }
+
+            public function adapterKey(): string
+            {
+                return 'pending_compliance_renewals';
+            }
+
+            public function coverageSource(): string
+            {
+                return 'compliance';
+            }
+
+            public function primaryBucket(): string
+            {
+                return 'waiting_on_others';
+            }
+
+            public function read(ShopOwner $owner, OwnerAttentionQuery $query): OwnerAttentionAdapterResult
+            {
+                $this->candidateLimits[] = $query->candidateLimit;
+
+                return new OwnerAttentionAdapterResult(
+                    array_slice($this->items, 0, $query->candidateLimit),
+                    count($this->items),
+                );
+            }
+        };
+
+        app()->instance(self::WAITING_COMPLIANCE_ADAPTER, $adapter);
 
         return $adapter;
     }

@@ -81,6 +81,7 @@ final class OwnerActionCenterSecurityTest extends TestCase
 
         foreach ([
             ['source' => 'other'],
+            ['bucket' => 'waiting_on_others', 'source' => 'expenses'],
             ['page' => '0'],
             ['page' => '101'],
             ['page' => '1.5'],
@@ -94,6 +95,89 @@ final class OwnerActionCenterSecurityTest extends TestCase
 
             $this->assertContains($status, [302, 422]);
         }
+    }
+
+    public function test_waiting_results_keep_local_destinations_and_logs_exclude_row_content(): void
+    {
+        $owner = $this->phaseThreeOwner();
+        config([
+            'owner_action_center.buckets.waiting_on_others.enabled' => true,
+            'owner_action_center.buckets.waiting_on_others.coverage' => [
+                'compliance' => true,
+                'refunds' => false,
+                'logistics' => false,
+            ],
+        ]);
+        $this->bindAdapter(
+            'App\\Services\\OwnerActionCenter\\Adapters\\PendingComplianceRenewalAttentionAdapter',
+            'pending_compliance_renewals',
+            'compliance',
+            items: [$this->waitingAttentionItem('Private shop document path', 'Private reviewer note')],
+            bucket: 'waiting_on_others',
+        );
+        Log::spy();
+
+        $result = app(OwnerActionCenterService::class)->queueForActionCenter(
+            $owner,
+            new OwnerAttentionQuery(bucket: 'waiting_on_others', coverage: 'compliance'),
+        );
+
+        $this->assertCount(1, $result->items);
+        $this->assertStringStartsWith('/shop-owner/', $result->items[0]->destinationUrl);
+        $this->assertSame('super_admin', $result->items[0]->waitingOn);
+        Log::shouldHaveReceived('info')
+            ->withArgs(function (string $message, array $context): bool {
+                $encodedContext = json_encode($context);
+
+                return $message === 'owner_action_center.adapter_read'
+                    && ! str_contains((string) $encodedContext, 'Private shop document path')
+                    && ! str_contains((string) $encodedContext, 'Private reviewer note')
+                    && ! array_key_exists('title', $context)
+                    && ! array_key_exists('description', $context);
+            })
+            ->once();
+    }
+
+    public function test_waiting_failure_is_unavailable_without_degrading_decision_data(): void
+    {
+        $owner = $this->phaseThreeOwner();
+        $request = $this->createPurchaseRequest($owner);
+        config([
+            'owner_action_center.coverage.expenses' => false,
+            'owner_action_center.coverage.refunds' => false,
+            'owner_action_center.coverage.purchase_requests' => true,
+            'owner_action_center.buckets.waiting_on_others.enabled' => true,
+            'owner_action_center.buckets.waiting_on_others.coverage' => [
+                'compliance' => true,
+                'refunds' => false,
+                'logistics' => false,
+            ],
+        ]);
+        $this->bindAdapter(
+            'App\\Services\\OwnerActionCenter\\Adapters\\PendingComplianceRenewalAttentionAdapter',
+            'pending_compliance_renewals',
+            'compliance',
+            failure: new RuntimeException('waiting source unavailable'),
+            bucket: 'waiting_on_others',
+        );
+
+        $decision = app(OwnerActionCenterService::class)->queueForActionCenter(
+            $owner,
+            new OwnerAttentionQuery(bucket: 'needs_my_decision', coverage: 'purchase_requests'),
+        );
+        $waiting = app(OwnerActionCenterService::class)->queueForActionCenter(
+            $owner,
+            new OwnerAttentionQuery(bucket: 'waiting_on_others', coverage: 'compliance'),
+        );
+
+        $this->assertSame([$request->id], array_map(
+            static fn (OwnerAttentionItem $item): int => $item->sourceId,
+            $decision->items,
+        ));
+        $this->assertSame('none', $decision->degradationStatus->value);
+        $this->assertSame('unavailable', $waiting->degradationStatus->value);
+        $this->assertSame(['pending_compliance_renewals'], $waiting->failedAdapterKeys);
+        $this->assertSame([], $waiting->items);
     }
 
     public function test_operational_logs_are_bounded_and_exclude_business_record_content(): void
@@ -400,6 +484,28 @@ final class OwnerActionCenterSecurityTest extends TestCase
             ownerActionRequired: true,
             coverageSource: 'expenses',
             destinationUrl: '/shop-owner/expense-approvals?expense=1',
+        );
+    }
+
+    private function waitingAttentionItem(string $title, string $summary): OwnerAttentionItem
+    {
+        return new OwnerAttentionItem(
+            sourceType: 'compliance_document',
+            sourceId: 1,
+            category: 'renewal_review_waiting',
+            primaryBucket: 'waiting_on_others',
+            module: 'compliance',
+            title: $title,
+            conciseSummary: $summary,
+            priorityTier: 'normal',
+            materialityTier: 'medium',
+            comparableMonetaryExposure: null,
+            urgencyAt: '2026-08-20T00:00:00+08:00',
+            actionableSince: '2026-08-15T09:00:00+08:00',
+            waitingOn: 'super_admin',
+            ownerActionRequired: false,
+            coverageSource: 'compliance',
+            destinationUrl: '/shop-owner/settings/policies-compliance',
         );
     }
 

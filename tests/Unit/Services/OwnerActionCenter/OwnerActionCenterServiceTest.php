@@ -38,6 +38,14 @@ final class OwnerActionCenterServiceTest extends TestCase
 
     private const LOGISTICS_ADAPTER = 'App\\Services\\OwnerActionCenter\\Adapters\\UnownedLogisticsFailureAttentionAdapter';
 
+    private const WAITING_COMPLIANCE_ADAPTER = 'App\\Services\\OwnerActionCenter\\Adapters\\PendingComplianceRenewalAttentionAdapter';
+
+    private const WAITING_ORDER_ADAPTER = 'App\\Services\\OwnerActionCenter\\Adapters\\WaitingOrderRefundRecoveryAttentionAdapter';
+
+    private const WAITING_REPAIR_ADAPTER = 'App\\Services\\OwnerActionCenter\\Adapters\\WaitingRepairRefundRecoveryAttentionAdapter';
+
+    private const WAITING_LOGISTICS_ADAPTER = 'App\\Services\\OwnerActionCenter\\Adapters\\ActiveLogisticsRecoveryAttentionAdapter';
+
     public function test_registry_resolves_adapters_by_bucket_and_coverage(): void
     {
         config([
@@ -392,9 +400,159 @@ final class OwnerActionCenterServiceTest extends TestCase
         ));
     }
 
-    public function test_phase_three_does_not_emit_waiting_on_others_rows(): void
+    public function test_waiting_bucket_has_independent_pages_and_interleaves_phase_three_c_sources(): void
     {
         $owner = ShopOwner::factory()->approved()->create();
+        config([
+            'owner_action_center.buckets.waiting_on_others.enabled' => true,
+            'owner_action_center.buckets.waiting_on_others.coverage' => [
+                'compliance' => true,
+                'refunds' => true,
+                'logistics' => true,
+            ],
+        ]);
+
+        $this->bindFake(
+            self::WAITING_COMPLIANCE_ADAPTER,
+            'pending_compliance_renewals',
+            'compliance',
+            [$this->waitingItem('compliance_document', 1, 'super_admin', 'high')],
+            bucket: 'waiting_on_others',
+        );
+        $this->bindFake(
+            self::WAITING_ORDER_ADAPTER,
+            'waiting_order_refund_recovery',
+            'refunds',
+            [$this->waitingItem('order_refund', 2, 'finance', 'high')],
+            bucket: 'waiting_on_others',
+        );
+        $this->bindFake(
+            self::WAITING_REPAIR_ADAPTER,
+            'waiting_repair_refund_recovery',
+            'refunds',
+            [$this->waitingItem('repair_refund', 3, 'payment_recovery', 'normal')],
+            bucket: 'waiting_on_others',
+        );
+        $this->bindFake(
+            self::WAITING_LOGISTICS_ADAPTER,
+            'active_logistics_recovery',
+            'logistics',
+            [$this->waitingItem('logistics_failure', 4, 'dispatcher', 'low')],
+            bucket: 'waiting_on_others',
+        );
+
+        $service = app(OwnerActionCenterService::class);
+        $pageOne = $service->queueForActionCenter($owner, new OwnerAttentionQuery(
+            bucket: 'waiting_on_others',
+            page: 1,
+            perPage: 2,
+        ));
+        $pageTwo = $service->queueForActionCenter($owner, new OwnerAttentionQuery(
+            bucket: 'waiting_on_others',
+            page: 2,
+            perPage: 2,
+        ));
+        $complianceOnly = $service->queueForActionCenter($owner, new OwnerAttentionQuery(
+            bucket: 'waiting_on_others',
+            coverage: 'compliance',
+            page: 4,
+            perPage: 1,
+        ));
+
+        $this->assertSame(4, $pageOne->total);
+        $this->assertSame([
+            'compliance_document:1:renewal_review_waiting',
+            'order_refund:2:refund_recovery_waiting',
+        ], array_map(static fn (OwnerAttentionItem $item): string => $item->attentionKey, $pageOne->items));
+        $this->assertSame([
+            'repair_refund:3:refund_recovery_waiting',
+            'logistics_failure:4:logistics_recovery_waiting',
+        ], array_map(static fn (OwnerAttentionItem $item): string => $item->attentionKey, $pageTwo->items));
+        $this->assertSame(1, $complianceOnly->page);
+        $this->assertSame(['compliance_document:1:renewal_review_waiting'], array_map(
+            static fn (OwnerAttentionItem $item): string => $item->attentionKey,
+            $complianceOnly->items,
+        ));
+        $this->assertSame(['compliance' => 1, 'refunds' => 2, 'logistics' => 1], $pageOne->coverageCounts);
+    }
+
+    public function test_waiting_adapter_failures_are_partial_or_unavailable_without_zero_success(): void
+    {
+        $owner = ShopOwner::factory()->approved()->create();
+        config([
+            'owner_action_center.buckets.waiting_on_others.enabled' => true,
+            'owner_action_center.buckets.waiting_on_others.coverage' => [
+                'compliance' => true,
+                'refunds' => true,
+                'logistics' => true,
+            ],
+        ]);
+
+        $healthy = $this->bindFake(
+            self::WAITING_COMPLIANCE_ADAPTER,
+            'pending_compliance_renewals',
+            'compliance',
+            [$this->waitingItem('compliance_document', 1, 'super_admin')],
+            bucket: 'waiting_on_others',
+        );
+        $this->bindFake(
+            self::WAITING_ORDER_ADAPTER,
+            'waiting_order_refund_recovery',
+            'refunds',
+            failure: new RuntimeException('order waiting unavailable'),
+            bucket: 'waiting_on_others',
+        );
+        $this->bindFake(
+            self::WAITING_REPAIR_ADAPTER,
+            'waiting_repair_refund_recovery',
+            'refunds',
+            failure: new RuntimeException('repair waiting unavailable'),
+            bucket: 'waiting_on_others',
+        );
+        $this->bindFake(
+            self::WAITING_LOGISTICS_ADAPTER,
+            'active_logistics_recovery',
+            'logistics',
+            failure: new RuntimeException('logistics waiting unavailable'),
+            bucket: 'waiting_on_others',
+        );
+
+        $partial = app(OwnerActionCenterService::class)->queueForActionCenter($owner, new OwnerAttentionQuery(
+            bucket: 'waiting_on_others',
+        ));
+
+        $this->assertSame(OwnerActionCenterDegradationStatus::Partial, $partial->degradationStatus);
+        $this->assertSame(['pending_compliance_renewals'], $partial->healthyAdapterKeys);
+        $this->assertSame([
+            'waiting_order_refund_recovery',
+            'waiting_repair_refund_recovery',
+            'active_logistics_recovery',
+        ], $partial->failedAdapterKeys);
+        $this->assertSame(1, $partial->total);
+        $this->assertCount(1, $partial->items);
+        $this->assertNotNull($healthy);
+
+        $this->bindFake(
+            self::WAITING_COMPLIANCE_ADAPTER,
+            'pending_compliance_renewals',
+            'compliance',
+            failure: new RuntimeException('compliance waiting unavailable'),
+            bucket: 'waiting_on_others',
+        );
+
+        $unavailable = app(OwnerActionCenterService::class)->queueForActionCenter($owner, new OwnerAttentionQuery(
+            bucket: 'waiting_on_others',
+        ));
+
+        $this->assertSame(OwnerActionCenterDegradationStatus::Unavailable, $unavailable->degradationStatus);
+        $this->assertSame(0, $unavailable->total);
+        $this->assertSame([], $unavailable->items);
+    }
+
+    public function test_disabling_waiting_keeps_the_bucket_as_an_explicit_no_enabled_state(): void
+    {
+        $owner = ShopOwner::factory()->approved()->create();
+        config(['owner_action_center.buckets.waiting_on_others.enabled' => false]);
 
         $result = app(OwnerActionCenterService::class)->queueForActionCenter(
             $owner,
@@ -602,6 +760,43 @@ final class OwnerActionCenterServiceTest extends TestCase
                 'purchase_request' => 'purchase_requests',
             },
             destinationUrl: '/shop-owner/action-center?source='.$sourceType.'&id='.$sourceId,
+        );
+    }
+
+    private function waitingItem(
+        string $sourceType,
+        int $sourceId,
+        string $waitingOn,
+        string $priority = 'normal',
+    ): OwnerAttentionItem {
+        [$module, $coverage, $destination] = match ($sourceType) {
+            'compliance_document' => ['compliance', 'compliance', '/shop-owner/settings/policies-compliance'],
+            'order_refund' => ['refunds', 'refunds', '/shop-owner/refund-approvals?refund='.$sourceId],
+            'repair_refund' => ['refunds', 'refunds', '/shop-owner/refund-approvals?refund_type=repair&refund='.$sourceId],
+            'logistics_failure' => ['logistics', 'logistics', '/shop-owner/logistics/shipments?shipment=8&leg='.$sourceId],
+        };
+
+        return new OwnerAttentionItem(
+            sourceType: $sourceType,
+            sourceId: $sourceId,
+            category: match ($sourceType) {
+                'compliance_document' => 'renewal_review_waiting',
+                'order_refund', 'repair_refund' => 'refund_recovery_waiting',
+                'logistics_failure' => 'logistics_recovery_waiting',
+            },
+            primaryBucket: 'waiting_on_others',
+            module: $module,
+            title: 'Waiting item',
+            conciseSummary: 'Another legitimate party owns the next step.',
+            priorityTier: $priority,
+            materialityTier: $priority === 'low' ? 'low' : 'high',
+            comparableMonetaryExposure: null,
+            urgencyAt: '2026-08-20T00:00:00+08:00',
+            actionableSince: '2026-08-15T09:00:00+08:00',
+            waitingOn: $waitingOn,
+            ownerActionRequired: false,
+            coverageSource: $coverage,
+            destinationUrl: $destination,
         );
     }
 
