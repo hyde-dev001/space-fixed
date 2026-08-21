@@ -268,6 +268,20 @@ describe('MyDeliveries task-first hierarchy', () => {
     expect(screen.getByLabelText('Business type')).toHaveValue('all');
   });
 
+  it('keeps mobile and tablet delivery content centered with stacked filters', () => {
+    render(<MyDeliveries />);
+
+    const page = screen.getByRole('heading', { name: 'My Deliveries' }).parentElement?.parentElement;
+    const tabs = screen.getByRole('button', { name: 'Upcoming' }).parentElement;
+    const filters = screen.getByLabelText('Business type').parentElement?.parentElement;
+
+    expect(page).toHaveClass('max-w-xl', 'space-y-8', 'lg:max-w-3xl', 'lg:space-y-6');
+    expect(tabs).toHaveClass('gap-2');
+    expect(filters).toHaveClass('lg:grid-cols-3');
+    expect(filters).not.toHaveClass('sm:grid-cols-3');
+    expect(screen.getByLabelText('Business type')).toHaveClass('min-h-12', 'text-base', 'lg:min-h-11', 'lg:text-sm');
+  });
+
   it('distinguishes batch and standalone work without bulk controls', () => {
     mocks.props.deliveryData.list.data = [
       workItem('batch', 'completed', [leg(1, 1)], { group: 'history' }),
