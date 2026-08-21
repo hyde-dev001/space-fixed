@@ -286,7 +286,7 @@ describe('MyDeliveries task-first hierarchy', () => {
     expect(screen.getByLabelText('Business type')).toHaveClass('min-h-12', 'text-base', 'xl:min-h-11', 'xl:text-sm');
   });
 
-  it('keeps the arrival reason picker contained on compact viewports', async () => {
+  it('opens the arrival reason picker in an accessible modal on compact viewports', async () => {
     mocks.arrive.mockRejectedValueOnce({
       response: { status: 422, data: { errors: { exception_reason: ['Reason required.'] } } },
     });
@@ -298,10 +298,29 @@ describe('MyDeliveries task-first hierarchy', () => {
 
     fireEvent.pointerDown(screen.getByLabelText('Arrival reason'));
 
-    const picker = screen.getByRole('listbox', { name: 'Arrival reason options' });
+    const picker = screen.getByRole('dialog', { name: 'Arrival reason' });
     expect(picker).toBeVisible();
     fireEvent.click(within(picker).getByRole('option', { name: 'GPS location is inaccurate' }));
     expect(screen.getByLabelText('Arrival reason')).toHaveValue('gps_inaccurate');
+  });
+
+  it('keeps the incident picker native on desktop viewports', () => {
+    const previousWidth = window.innerWidth;
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1440 });
+    mocks.props.deliveryData.current = workItem('single', 'in_transit', [leg(10, null, 'in_transit')]);
+
+    try {
+      render(<MyDeliveries />);
+      fireEvent.click(screen.getByRole('button', { name: 'Report incident' }));
+
+      const incidentType = screen.getByLabelText('Incident type');
+      fireEvent.pointerDown(incidentType);
+      expect(screen.queryByRole('dialog', { name: 'Incident type' })).not.toBeInTheDocument();
+      fireEvent.change(incidentType, { target: { value: 'vehicle_problem' } });
+      expect(incidentType).toHaveValue('vehicle_problem');
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: previousWidth });
+    }
   });
 
   it('distinguishes batch and standalone work without bulk controls', () => {
@@ -764,6 +783,8 @@ describe('MyDeliveries rider interactions', () => {
     render(<MyDeliveries />);
     fireEvent.click(screen.getByRole('button', { name: 'Report issue' }));
 
+    expect(screen.getByLabelText('Delivery issue details')).toHaveClass('bg-white', 'border-slate-200', 'xl:border-amber-300');
+
     for (const option of [
       'Recipient unavailable',
       'Wrong or incomplete address',
@@ -779,7 +800,10 @@ describe('MyDeliveries rider interactions', () => {
     const reason = screen.getByLabelText('Issue reason');
     const photo = screen.getByLabelText('Issue photo');
     const notes = screen.getByLabelText('Issue notes');
-    fireEvent.change(reason, { target: { value: 'recipient_unavailable' } });
+    fireEvent.pointerDown(reason);
+    const reasonPicker = screen.getByRole('dialog', { name: 'Issue reason' });
+    fireEvent.click(within(reasonPicker).getByRole('option', { name: 'Recipient unavailable' }));
+    expect(reason).toHaveValue('recipient_unavailable');
     expect(photo).toBeRequired();
     expect(notes).not.toBeRequired();
 
@@ -1085,7 +1109,11 @@ describe('MyDeliveries rider interactions', () => {
     render(<MyDeliveries />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Report incident' }));
-    fireEvent.change(screen.getByLabelText('Incident type'), { target: { value: 'vehicle_problem' } });
+    const incidentType = screen.getByLabelText('Incident type');
+    fireEvent.pointerDown(incidentType);
+    const incidentPicker = screen.getByRole('dialog', { name: 'Incident type' });
+    fireEvent.click(within(incidentPicker).getByRole('option', { name: 'Vehicle or route problem' }));
+    expect(incidentType).toHaveValue('vehicle_problem');
     fireEvent.change(screen.getByLabelText('Incident notes'), { target: { value: 'Motorcycle puncture on route.' } });
     const photo = new File(['incident'], 'incident.jpg', { type: 'image/jpeg' });
     fireEvent.change(screen.getByLabelText('Incident evidence photo'), { target: { files: [photo] } });
