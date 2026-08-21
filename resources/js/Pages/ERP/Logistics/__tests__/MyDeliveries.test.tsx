@@ -300,6 +300,7 @@ describe('MyDeliveries task-first hierarchy', () => {
 
     const picker = screen.getByRole('dialog', { name: 'Arrival reason' });
     expect(picker).toBeVisible();
+    expect(picker.parentElement).toHaveClass('z-[100001]');
     fireEvent.click(within(picker).getByRole('option', { name: 'GPS location is inaccurate' }));
     expect(screen.getByLabelText('Arrival reason')).toHaveValue('gps_inaccurate');
   });
@@ -313,7 +314,9 @@ describe('MyDeliveries task-first hierarchy', () => {
       render(<MyDeliveries />);
       fireEvent.click(screen.getByRole('button', { name: 'Report incident' }));
 
-      expect(screen.getByRole('dialog', { name: 'Report incident' })).toBeVisible();
+      const incidentDialog = screen.getByRole('dialog', { name: 'Report incident' });
+      expect(incidentDialog).toBeVisible();
+      expect(incidentDialog.parentElement).toHaveClass('z-[100000]');
       const incidentType = screen.getByLabelText('Incident type');
       fireEvent.pointerDown(incidentType);
       expect(screen.queryByRole('dialog', { name: 'Incident type' })).not.toBeInTheDocument();
