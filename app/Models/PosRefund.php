@@ -78,6 +78,7 @@ class PosRefund extends Model
         'failure_reason',
         'recovery_status',
         'recovery_responsible_party',
+        'recovery_assigned_at',
         'recovery_attempt_count',
         'recovery_last_attempted_at',
         'recovery_resolved_at',
@@ -103,6 +104,7 @@ class PosRefund extends Model
         'paymongo_payment_ids' => 'array',
         'paymongo_refund_ids' => 'array',
         'recovery_attempt_count' => 'integer',
+        'recovery_assigned_at' => 'datetime',
         'recovery_last_attempted_at' => 'datetime',
         'recovery_resolved_at' => 'datetime',
     ];

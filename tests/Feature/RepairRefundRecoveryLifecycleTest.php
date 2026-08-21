@@ -19,6 +19,13 @@ class RepairRefundRecoveryLifecycleTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function tearDown(): void
+    {
+        CarbonImmutable::setTestNow();
+
+        parent::tearDown();
+    }
+
     #[Test]
     public function recovery_schema_exposes_the_authoritative_repair_lifecycle(): void
     {
@@ -33,6 +40,7 @@ class RepairRefundRecoveryLifecycleTest extends TestCase
             'recovery_resolution_outcome',
             'recovery_resolution_reason',
             'replacement_refund_id',
+            'recovery_assigned_at',
         ]));
     }
 
@@ -112,15 +120,38 @@ class RepairRefundRecoveryLifecycleTest extends TestCase
     {
         $service = app(RepairRefundRecoveryService::class);
         $refund = $service->initializeFailure($this->failedRefund());
+        $assignedAt = CarbonImmutable::parse('2026-08-16 10:00:00');
         $attemptedAt = CarbonImmutable::parse('2026-08-16 10:20:00');
 
+        CarbonImmutable::setTestNow($assignedAt);
         $claimed = $service->claim($refund, PosRefund::RECOVERY_RESPONSIBLE_PAYMENT_RECOVERY);
+        $sameParty = $service->claim($claimed, PosRefund::RECOVERY_RESPONSIBLE_PAYMENT_RECOVERY);
         $retried = $service->recordRetry($claimed, $attemptedAt);
 
         $this->assertSame(PosRefund::RECOVERY_STATUS_IN_PROGRESS, $retried->recovery_status);
         $this->assertSame(PosRefund::RECOVERY_RESPONSIBLE_PAYMENT_RECOVERY, $retried->recovery_responsible_party);
+        $this->assertTrue($claimed->recovery_assigned_at->equalTo($assignedAt));
+        $this->assertTrue($sameParty->recovery_assigned_at->equalTo($assignedAt));
+        $this->assertTrue($retried->recovery_assigned_at->equalTo($assignedAt));
         $this->assertSame(1, $retried->recovery_attempt_count);
         $this->assertTrue($retried->recovery_last_attempted_at->equalTo($attemptedAt));
+    }
+
+    #[Test]
+    public function changing_recovery_party_records_a_new_assignment_boundary(): void
+    {
+        $service = app(RepairRefundRecoveryService::class);
+        $refund = $service->initializeFailure($this->failedRefund());
+        $firstAssignedAt = CarbonImmutable::parse('2026-08-16 10:00:00');
+        $secondAssignedAt = CarbonImmutable::parse('2026-08-16 10:30:00');
+
+        CarbonImmutable::setTestNow($firstAssignedAt);
+        $claimed = $service->claim($refund, PosRefund::RECOVERY_RESPONSIBLE_FINANCE);
+        CarbonImmutable::setTestNow($secondAssignedAt);
+        $reassigned = $service->claim($claimed, PosRefund::RECOVERY_RESPONSIBLE_PAYMENT_RECOVERY);
+
+        $this->assertSame(PosRefund::RECOVERY_RESPONSIBLE_PAYMENT_RECOVERY, $reassigned->recovery_responsible_party);
+        $this->assertTrue($reassigned->recovery_assigned_at->equalTo($secondAssignedAt));
     }
 
     #[Test]
@@ -142,6 +173,9 @@ class RepairRefundRecoveryLifecycleTest extends TestCase
     {
         $service = app(RepairRefundRecoveryService::class);
         $refund = $service->initializeFailure($this->failedRefund());
+        $assignedAt = CarbonImmutable::parse('2026-08-16 10:00:00');
+        CarbonImmutable::setTestNow($assignedAt);
+        $refund = $service->claim($refund, PosRefund::RECOVERY_RESPONSIBLE_FINANCE);
         $replacement = $this->failedRefund([
             'shop_owner_id' => $refund->shop_owner_id,
             'source_transaction_id' => $refund->source_transaction_id,
@@ -154,6 +188,7 @@ class RepairRefundRecoveryLifecycleTest extends TestCase
 
         $this->assertSame(PosRefund::RECOVERY_STATUS_SUPERSEDED, $superseded->recovery_status);
         $this->assertSame($replacement->id, $superseded->replacement_refund_id);
+        $this->assertTrue($superseded->recovery_assigned_at->equalTo($assignedAt));
         $this->assertTrue($superseded->failed_at->equalTo($refund->failed_at));
         $this->assertSame($refund->failure_reason, $superseded->failure_reason);
     }
@@ -162,7 +197,10 @@ class RepairRefundRecoveryLifecycleTest extends TestCase
     public function manual_resolution_requires_actor_timestamp_bounded_outcome_and_reason(): void
     {
         $service = app(RepairRefundRecoveryService::class);
+        $assignedAt = CarbonImmutable::parse('2026-08-16 10:00:00');
+        CarbonImmutable::setTestNow($assignedAt);
         $refund = $service->initializeFailure($this->failedRefund());
+        $refund = $service->claim($refund, PosRefund::RECOVERY_RESPONSIBLE_FINANCE);
         $actor = User::factory()->create();
         $resolvedAt = CarbonImmutable::parse('2026-08-16 11:15:00');
 
@@ -176,6 +214,7 @@ class RepairRefundRecoveryLifecycleTest extends TestCase
         );
 
         $this->assertSame(PosRefund::RECOVERY_STATUS_RESOLVED, $resolved->recovery_status);
+        $this->assertTrue($resolved->recovery_assigned_at->equalTo($assignedAt));
         $this->assertSame('user', $resolved->recovery_resolved_by_type);
         $this->assertSame($actor->id, $resolved->recovery_resolved_by_id);
         $this->assertTrue($resolved->recovery_resolved_at->equalTo($resolvedAt));

@@ -85,6 +85,7 @@ class OrderRefund extends Model
         'processed_by',
         'recovery_status',
         'recovery_responsible_party',
+        'recovery_assigned_at',
         'recovery_attempt_count',
         'recovery_last_attempted_at',
         'recovery_resolved_at',
@@ -110,6 +111,7 @@ class OrderRefund extends Model
         'refunded_at' => 'datetime',
         'failed_at' => 'datetime',
         'recovery_attempt_count' => 'integer',
+        'recovery_assigned_at' => 'datetime',
         'recovery_last_attempted_at' => 'datetime',
         'recovery_resolved_at' => 'datetime',
     ];

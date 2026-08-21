@@ -89,15 +89,16 @@ class RepairRefundRecoveryService
                 throw $this->invalidState('Owner decision must be handled before recovery ownership.');
             }
 
-            if ((string) $locked->recovery_status === PosRefund::RECOVERY_STATUS_IN_PROGRESS
-                && (string) $locked->recovery_responsible_party !== $responsibleParty) {
-                throw $this->invalidState('This recovery is already owned by another party.');
-            }
+            $samePartyInProgress = (string) $locked->recovery_status === PosRefund::RECOVERY_STATUS_IN_PROGRESS
+                && (string) $locked->recovery_responsible_party === $responsibleParty;
 
-            $locked->update([
-                'recovery_status' => PosRefund::RECOVERY_STATUS_IN_PROGRESS,
-                'recovery_responsible_party' => $responsibleParty,
-            ]);
+            if (! $samePartyInProgress) {
+                $locked->update([
+                    'recovery_status' => PosRefund::RECOVERY_STATUS_IN_PROGRESS,
+                    'recovery_responsible_party' => $responsibleParty,
+                    'recovery_assigned_at' => now(),
+                ]);
+            }
 
             return $locked->fresh();
         });

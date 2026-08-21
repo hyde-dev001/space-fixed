@@ -18,6 +18,13 @@ class OrderRefundRecoveryLifecycleTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function tearDown(): void
+    {
+        CarbonImmutable::setTestNow();
+
+        parent::tearDown();
+    }
+
     #[Test]
     public function recovery_schema_exposes_the_authoritative_order_lifecycle(): void
     {
@@ -32,6 +39,7 @@ class OrderRefundRecoveryLifecycleTest extends TestCase
             'recovery_resolution_outcome',
             'recovery_resolution_reason',
             'replacement_refund_id',
+            'recovery_assigned_at',
         ]));
     }
 
@@ -87,15 +95,38 @@ class OrderRefundRecoveryLifecycleTest extends TestCase
     {
         $refund = app(OrderRefundRecoveryService::class)->initializeFailure($this->failedRefund());
         $service = app(OrderRefundRecoveryService::class);
+        $assignedAt = CarbonImmutable::parse('2026-08-16 10:00:00');
         $attemptedAt = CarbonImmutable::parse('2026-08-16 10:15:00');
 
+        CarbonImmutable::setTestNow($assignedAt);
         $claimed = $service->claim($refund, OrderRefund::RECOVERY_RESPONSIBLE_FINANCE);
+        $sameParty = $service->claim($claimed, OrderRefund::RECOVERY_RESPONSIBLE_FINANCE);
         $retried = $service->recordRetry($claimed, $attemptedAt);
 
         $this->assertSame(OrderRefund::RECOVERY_STATUS_IN_PROGRESS, $retried->recovery_status);
         $this->assertSame(OrderRefund::RECOVERY_RESPONSIBLE_FINANCE, $retried->recovery_responsible_party);
+        $this->assertTrue($claimed->recovery_assigned_at->equalTo($assignedAt));
+        $this->assertTrue($sameParty->recovery_assigned_at->equalTo($assignedAt));
+        $this->assertTrue($retried->recovery_assigned_at->equalTo($assignedAt));
         $this->assertSame(1, $retried->recovery_attempt_count);
         $this->assertTrue($retried->recovery_last_attempted_at->equalTo($attemptedAt));
+    }
+
+    #[Test]
+    public function changing_recovery_party_records_a_new_assignment_boundary(): void
+    {
+        $service = app(OrderRefundRecoveryService::class);
+        $refund = $service->initializeFailure($this->failedRefund());
+        $firstAssignedAt = CarbonImmutable::parse('2026-08-16 10:00:00');
+        $secondAssignedAt = CarbonImmutable::parse('2026-08-16 10:30:00');
+
+        CarbonImmutable::setTestNow($firstAssignedAt);
+        $claimed = $service->claim($refund, OrderRefund::RECOVERY_RESPONSIBLE_FINANCE);
+        CarbonImmutable::setTestNow($secondAssignedAt);
+        $reassigned = $service->claim($claimed, OrderRefund::RECOVERY_RESPONSIBLE_PAYMENT_RECOVERY);
+
+        $this->assertSame(OrderRefund::RECOVERY_RESPONSIBLE_PAYMENT_RECOVERY, $reassigned->recovery_responsible_party);
+        $this->assertTrue($reassigned->recovery_assigned_at->equalTo($secondAssignedAt));
     }
 
     #[Test]
@@ -117,6 +148,9 @@ class OrderRefundRecoveryLifecycleTest extends TestCase
     {
         $service = app(OrderRefundRecoveryService::class);
         $refund = $service->initializeFailure($this->failedRefund());
+        $assignedAt = CarbonImmutable::parse('2026-08-16 10:00:00');
+        CarbonImmutable::setTestNow($assignedAt);
+        $refund = $service->claim($refund, OrderRefund::RECOVERY_RESPONSIBLE_FINANCE);
         $replacement = OrderRefund::factory()->create([
             'order_id' => $refund->order_id,
             'shop_owner_id' => $refund->shop_owner_id,
@@ -128,6 +162,7 @@ class OrderRefundRecoveryLifecycleTest extends TestCase
 
         $this->assertSame(OrderRefund::RECOVERY_STATUS_SUPERSEDED, $superseded->recovery_status);
         $this->assertSame($replacement->id, $superseded->replacement_refund_id);
+        $this->assertTrue($superseded->recovery_assigned_at->equalTo($assignedAt));
         $this->assertTrue($superseded->failed_at->equalTo($refund->failed_at));
         $this->assertSame($refund->failure_reason, $superseded->failure_reason);
     }
@@ -136,7 +171,10 @@ class OrderRefundRecoveryLifecycleTest extends TestCase
     public function manual_resolution_requires_actor_timestamp_bounded_outcome_and_reason(): void
     {
         $service = app(OrderRefundRecoveryService::class);
+        $assignedAt = CarbonImmutable::parse('2026-08-16 10:00:00');
+        CarbonImmutable::setTestNow($assignedAt);
         $refund = $service->initializeFailure($this->failedRefund());
+        $refund = $service->claim($refund, OrderRefund::RECOVERY_RESPONSIBLE_FINANCE);
         $actor = ShopOwner::factory()->approved()->create();
         $resolvedAt = CarbonImmutable::parse('2026-08-16 11:00:00');
 
@@ -150,6 +188,7 @@ class OrderRefundRecoveryLifecycleTest extends TestCase
         );
 
         $this->assertSame(OrderRefund::RECOVERY_STATUS_RESOLVED, $resolved->recovery_status);
+        $this->assertTrue($resolved->recovery_assigned_at->equalTo($assignedAt));
         $this->assertSame('shop_owner', $resolved->recovery_resolved_by_type);
         $this->assertSame($actor->id, $resolved->recovery_resolved_by_id);
         $this->assertTrue($resolved->recovery_resolved_at->equalTo($resolvedAt));
