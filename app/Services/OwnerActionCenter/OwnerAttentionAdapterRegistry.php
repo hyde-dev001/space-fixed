@@ -87,6 +87,14 @@ final class OwnerAttentionAdapterRegistry
                     'bucket' => 'waiting_on_others',
                 ],
             ],
+            'refunds' => [
+                [
+                    'class' => 'App\\Services\\OwnerActionCenter\\Adapters\\WaitingOrderRefundRecoveryAttentionAdapter',
+                    'key' => 'waiting_order_refund_recovery',
+                    'coverage' => 'refunds',
+                    'bucket' => 'waiting_on_others',
+                ],
+            ],
         ],
     ];
 
