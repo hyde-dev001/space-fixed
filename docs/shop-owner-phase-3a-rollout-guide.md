@@ -11,17 +11,17 @@ The Action Center is discovery only. Existing approval pages remain the authoriz
 
 ## Configuration
 
-The bounded configuration lives in `config/owner_action_center.php`:
+The thesis build uses the committed defaults in `config/owner_action_center.php`:
 
-| Setting | Environment variable | Default | Meaning |
-| --- | --- | ---: | --- |
-| Global rollout | `SHOP_OWNER_ACTION_CENTER_ENABLED` | `false` | Enables Phase 3A evaluation after Phase 2 canonical selection. |
-| Shop allowlist | `SHOP_OWNER_ACTION_CENTER_SHOP_IDS` | empty | Comma-separated positive Shop Owner primary keys. |
-| Refund coverage | `SHOP_OWNER_ACTION_CENTER_REFUNDS_ENABLED` | `true` | Enables both Order and Repair Refund adapters. |
-| Expense coverage | `SHOP_OWNER_ACTION_CENTER_EXPENSES_ENABLED` | `true` | Enables Expense coverage for company owners. |
-| Purchase Request coverage | `SHOP_OWNER_ACTION_CENTER_PURCHASE_REQUESTS_ENABLED` | `true` | Enables Purchase Request coverage for company owners. |
+| Setting | Thesis default | Meaning |
+| --- | ---: | --- |
+| `owner_action_center.enabled` | `true` | Action Center evaluation is available for every valid canonical-shell owner. |
+| `owner_action_center.allowlisted_shop_ids` | `[]` | Empty means all valid Shop Owners; a non-empty list remains available for focused test overrides. |
+| `owner_action_center.coverage.refunds` | `true` | Enables both Order and Repair Refund adapters. |
+| `owner_action_center.coverage.expenses` | `true` | Enables Expense coverage for company owners. |
+| `owner_action_center.coverage.purchase_requests` | `true` | Enables Purchase Request coverage for company owners. |
 
-The Phase 2 canonical shell remains a prerequisite. Phase 3A uses the same stable `shop_owner.id` allowlist identity as Phase 2; it does not use email, business name, registration changes, or module state as cohort identity.
+Phase 3A no longer reads the `SHOP_OWNER_ACTION_CENTER_ENABLED`, `SHOP_OWNER_ACTION_CENTER_SHOP_IDS`, or source-coverage environment variables. No `.env` change is required for local, thesis, or deployed environments. The Phase 2 canonical shell remains a prerequisite, while existing owner authorization, tenant scope, and domain workflow checks remain authoritative.
 
 Bounds are fixed in configuration and validated at the route boundary:
 
@@ -31,19 +31,9 @@ Bounds are fixed in configuration and validated at the route boundary:
 - Maximum page depth: 100.
 - Each adapter receives at most `page × per_page` candidates, subject to the shared contract maximum.
 
-No `.env` values are committed by this change.
+After deploying a config change, clear and rebuild Laravel's configuration cache using the normal deployment procedure. Then verify company and individual owner contexts, healthy and degraded source states, deep links, and the existing approval workflows.
 
-## Safe rollout order
-
-1. Deploy with the Phase 2 canonical-shell flag off and the Phase 3A flag off.
-2. Verify the canonical routes and existing approval destinations remain available under the existing presentation.
-3. Enable the Phase 2 canonical shell for internal/test Shop Owner IDs only.
-4. Enable Phase 3A with an empty Phase 3A allowlist. Behavior must remain Phase 2 placeholders.
-5. Add one internal/test Shop Owner primary key to the Phase 3A allowlist.
-6. Verify company and individual owner contexts, healthy and degraded source states, deep links, and rollback.
-7. Expand the allowlist only after every adapter readiness row below is green and the browser scenarios are recorded.
-
-Removing a Shop Owner ID from `SHOP_OWNER_ACTION_CENTER_SHOP_IDS`, or disabling `SHOP_OWNER_ACTION_CENTER_ENABLED`, removes only the Phase 3A enhancement. It does not remove `/shop-owner/action-center`, existing approval URLs, the canonical shell, or any domain data.
+The selection policy still supports explicit programmatic `false` values and non-empty allowlists for automated rollback/security tests. Those are not required deployment settings and are not read from `.env`.
 
 ## Coverage and readiness evidence
 
@@ -116,14 +106,14 @@ Absolute latency and a persisted before/after query-count baseline were not meas
 
 At desktop and representative mobile widths, verify with test Shop Owner fixtures:
 
-1. Phase 3A off, owner not allowlisted, and owner allowlisted.
+1. Valid individual and company owners, plus invalid registration context.
 2. Company and individual owners with eligible and ineligible coverage.
 3. Healthy mixed queue, healthy empty queue, partial Refund failure, all-enabled failure, and no-enabled configuration.
 4. Home count/top items agree with the full queue under fixed source state.
 5. Source filters, Refresh, page normalization, semantic `Open workflow` links, visible focus, dark/light contrast, reduced motion, and no horizontal overflow.
 6. Order Refund, Repair Refund, Expense, and Purchase Request focused links open only records returned by the existing scoped APIs.
 7. Stale focused links remain usable and do not manufacture a modal or consume the query.
-8. Disabling Phase 3A returns Home to Phase 2 placeholders without changing the canonical shell, approval URLs, authorization, or domain data.
+8. A programmatic Phase 3A disable returns Home to Phase 2 placeholders without changing the canonical shell, approval URLs, authorization, or domain data.
 
 ## Verification and review record
 
@@ -150,14 +140,7 @@ Sequential review record:
 
 ## Rollback
 
-Use the following order:
-
-1. Remove the affected Shop Owner primary key from `SHOP_OWNER_ACTION_CENTER_SHOP_IDS`.
-2. Confirm the owner receives the Phase 2 Home placeholders and no Action Center item in canonical navigation.
-3. If required, set `SHOP_OWNER_ACTION_CENTER_ENABLED=false` as the global kill switch.
-4. Keep existing approval pages and compatibility URLs unchanged.
-
-Rollback requires no data migration, route removal, authorization change, or domain-state reversal.
+The normal thesis deployment does not require an environment rollback switch. If a code-level rollback is necessary, deploy the previous verified revision and refresh Laravel's configuration cache. Automated tests retain explicit policy overrides to verify that Phase 3A can degrade to Phase 2 placeholders without changing approval URLs, authorization, or domain data.
 
 ## Scope boundary
 

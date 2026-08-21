@@ -55,18 +55,15 @@ final class OwnerActionCenterRolloutPolicyTest extends TestCase
         );
     }
 
-    public function test_owner_absent_from_phase_three_allowlist_is_not_selected(): void
+    public function test_empty_phase_three_allowlist_selects_any_valid_owner_for_the_thesis_build(): void
     {
         $owner = $this->allowlistedCanonicalOwner();
         config(['owner_action_center.allowlisted_shop_ids' => []]);
 
         $selection = app(OwnerActionCenterRolloutPolicy::class)->select($owner);
 
-        $this->assertFalse($selection->selected);
-        $this->assertSame(
-            OwnerActionCenterRolloutReason::ShopNotAllowlisted,
-            $selection->reason,
-        );
+        $this->assertTrue($selection->selected);
+        $this->assertSame('always_on', $selection->reason->value);
     }
 
     public function test_same_stable_shop_id_selects_the_owner_regardless_of_profile_or_module_state(): void

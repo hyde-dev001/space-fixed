@@ -37,6 +37,8 @@ Hidden or de-emphasized navigation does not imply disabled capability. An author
 
 During migration, canonical shell destinations may resolve to existing legacy or ERP-backed pages. Canonicalization of navigation does not require immediate canonicalization of underlying controllers, components, APIs, or domain services.
 
+For the current thesis deployment, the canonical shell is enabled by committed application defaults rather than environment-controlled cohort rollout. This deployment choice changes presentation availability only; it does not change the authorization, tenant, module, source-state, or domain-service boundaries defined by this design.
+
 ## 4. Design Principles
 
 1. Domain state machines remain authoritative.

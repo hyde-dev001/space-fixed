@@ -31,6 +31,8 @@ It preserves:
 
 Phase 3 changes owner discovery and review presentation. It does not change who may perform a domain action or how the action executes.
 
+For the current thesis deployment, the Phase 2 shell and Phase 3 Action Center use committed always-on application defaults rather than environment-controlled shop allowlists. The rollout architecture and explicit policy overrides remain documented for testing and defensive failure behavior, but no `.env` edit is required for local or deployed thesis environments. This does not broaden domain authorization or tenant access.
+
 ## 3. Problem Statement
 
 The platform already has many owner approval and exception pages, but the owner must know which module to inspect before discovering that attention is required. Existing notifications are event-oriented and audit records are evidentiary; neither is a reliable live inventory of current owner attention.

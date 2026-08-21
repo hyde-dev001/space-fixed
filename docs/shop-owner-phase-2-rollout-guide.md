@@ -1,6 +1,6 @@
 # Shop Owner Phase 2 rollout guide
 
-This guide covers the controlled rollout of the canonical Shop Owner shell. The shell changes presentation and stable entry URLs only; existing controllers, module decisions, authorization middleware, APIs, and domain routes remain authoritative.
+This guide covers the always-on thesis deployment of the canonical Shop Owner shell. The shell changes presentation and stable entry URLs only; existing controllers, module decisions, authorization middleware, APIs, and domain routes remain authoritative.
 
 ## Baseline verification evidence
 
@@ -17,21 +17,26 @@ The repository environment does not expose `pnpm`, so the equivalent local Vites
 
 ## Configuration
 
-| Variable | Meaning | Safe initial value |
-| --- | --- | --- |
-| `SHOP_OWNER_CANONICAL_SHELL_ENABLED` | Global presentation kill switch | `false` |
-| `SHOP_OWNER_CANONICAL_SHELL_SHOP_IDS` | Comma-separated Shop Owner primary keys allowed into the canonical presentation | empty |
-| `SHOP_OWNER_ERP_WORKSPACE_ENABLED` | Existing ERP workspace and compatibility fallback gate only | preserve current value |
+Phase 2 is configured for the thesis build in `config/owner_shell.php`:
 
-The allowlist uses the Shop Owner primary key. It never uses email, registration text, or mutable profile data. No `.env` change is required to deploy the routes or code.
+| Setting | Thesis default | Meaning |
+| --- | ---: | --- |
+| `owner_shell.enabled` | `true` | Canonical presentation is selected for valid Shop Owners. |
+| `owner_shell.allowlisted_shop_ids` | `[]` | An empty list means all valid Shop Owners; a non-empty list remains available for focused test overrides. |
+| `SHOP_OWNER_ERP_WORKSPACE_ENABLED` | preserve current value | Existing ERP workspace and compatibility fallback gate only. |
 
-## Deployment and rollback order
+The canonical shell no longer reads the `SHOP_OWNER_CANONICAL_SHELL_ENABLED` or `SHOP_OWNER_CANONICAL_SHELL_SHOP_IDS` environment variables. No `.env` change is required for local, thesis, or deployed environments. Registration context, module eligibility, tenant scope, and server authorization still determine what each owner can see and do.
 
-1. Deploy with the canonical shell flag off. Verify that canonical URLs are registered, bookmarked capability pages render, and existing Shop Owner and employee ERP presentations remain intact.
-2. Enable the global flag with an empty allowlist. The selected presentation must remain `existing` for every shop.
-3. Add internal/test Shop Owner IDs one at a time. Verify individual and company contexts, module eligibility, tenant isolation, canonical URL stability, and both owner page families.
-4. Expand the allowlist only after the capability evidence table below has no unresolved authorization, behavior, or browser parity finding for the intended capability.
-5. To roll back, remove the affected Shop Owner ID or set `SHOP_OWNER_CANONICAL_SHELL_ENABLED=false`. Canonical URLs remain registered and continue to render their underlying capability in the existing frame.
+After deploying a config change, clear and rebuild Laravel's configuration cache using the normal deployment procedure so the committed thesis defaults are loaded.
+
+## Deployment behavior
+
+1. Deploy the code and use the normal Laravel configuration-cache procedure; do not add Shop Owner IDs or rollout values to `.env`.
+2. A valid individual or company Shop Owner receives the canonical shell automatically.
+3. Verify Operate/Oversee ordering, module eligibility, tenant isolation, canonical URL stability, and both owner page families.
+4. Keep the ERP workspace fallback available while capability coverage and compatibility verification require it.
+
+The existing presentation can still be selected by invalid registration context, policy/configuration failure, or an explicit programmatic test override. Those paths are retained for defensive behavior and automated rollback tests; they are not normal deployment steps.
 
 Rollback does not disable or rewrite domain routes, module rows, authorization decisions, or the existing ERP workspace. The ERP workspace fallback remains available only when its existing eligibility rules pass.
 
@@ -42,6 +47,7 @@ The server selects one complete presentation before the Inertia response is comm
 - `global_disabled`
 - `shop_not_allowlisted`
 - `shop_allowlisted`
+- `always_on`
 - `invalid_registration_context`
 - `cohort_evaluation_failed`
 - `shell_composition_failed`
@@ -95,4 +101,4 @@ There is no checked-in `scripts/browser-smoke.mjs` in this worktree. Use the rep
 
 ## Scope guardrails
 
-Do not expand the allowlist or mark a capability complete if doing so requires a new permission system, client-side authorization computation, approval/exception aggregation, a legacy-route retirement, or an unresolved fallback action. Keep the existing ERP fallback until the later retirement criteria are met.
+Do not treat always-on presentation as authorization. A capability still requires its existing server-side module, tenant, source-state, and policy checks. Do not mark a capability complete if it requires a new permission system, client-side authorization computation, approval/exception aggregation, a legacy-route retirement, or an unresolved fallback action. Keep the existing ERP fallback until the later retirement criteria are met.

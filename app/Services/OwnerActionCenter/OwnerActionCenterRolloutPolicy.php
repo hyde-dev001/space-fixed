@@ -43,7 +43,7 @@ final class OwnerActionCenterRolloutPolicy
                 throw new UnexpectedValueException('Owner Action Center allowlist must be an array.');
             }
 
-            if (! in_array($owner->getKey(), $allowlistedShopIds, true)) {
+            if ($allowlistedShopIds !== [] && ! in_array($owner->getKey(), $allowlistedShopIds, true)) {
                 return $this->notSelected(
                     OwnerActionCenterRolloutReason::ShopNotAllowlisted,
                     $shellSelection->context,
@@ -52,7 +52,9 @@ final class OwnerActionCenterRolloutPolicy
 
             return new OwnerActionCenterSelection(
                 selected: true,
-                reason: OwnerActionCenterRolloutReason::ShopAllowlisted,
+                reason: $allowlistedShopIds === []
+                    ? OwnerActionCenterRolloutReason::AlwaysOn
+                    : OwnerActionCenterRolloutReason::ShopAllowlisted,
                 degradationStatus: $this->degradationStatus(),
                 context: $shellSelection->context,
             );

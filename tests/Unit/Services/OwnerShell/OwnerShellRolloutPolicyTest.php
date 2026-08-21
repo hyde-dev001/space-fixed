@@ -32,7 +32,7 @@ final class OwnerShellRolloutPolicyTest extends TestCase
         $this->assertSame('individual', $selection->context);
     }
 
-    public function test_enabled_flag_without_owner_id_in_allowlist_selects_existing_presentation(): void
+    public function test_enabled_flag_with_empty_allowlist_selects_any_valid_owner_for_the_thesis_build(): void
     {
         $owner = ShopOwner::factory()->approved()->create([
             'registration_type' => 'company',
@@ -44,8 +44,8 @@ final class OwnerShellRolloutPolicyTest extends TestCase
 
         $selection = app(OwnerShellRolloutPolicy::class)->select($owner);
 
-        $this->assertSame(OwnerShellPresentation::Existing, $selection->presentation);
-        $this->assertSame(OwnerShellSelectionReason::ShopNotAllowlisted, $selection->reason);
+        $this->assertSame(OwnerShellPresentation::Canonical, $selection->presentation);
+        $this->assertSame('always_on', $selection->reason->value);
         $this->assertSame('company', $selection->context);
     }
 

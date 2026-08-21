@@ -50,7 +50,7 @@ final class CanonicalOwnerShellServiceTest extends TestCase
 
         $this->assertSame('canonical', $metadata['presentation']);
         $this->assertSame('individual', $metadata['context']);
-        $this->assertSame(['home', 'operate', 'oversee', 'reports', 'settings'], array_column($metadata['groups'], 'key'));
+        $this->assertSame(['home', 'operate', 'oversee', 'reports'], array_column($metadata['groups'], 'key'));
         $this->assertTrue($groups['operate']['default_expanded']);
         $this->assertFalse($groups['oversee']['default_expanded']);
         $this->assertSame(['retail', 'payments'], array_column($groups['operate']['items'], 'key'));
@@ -77,7 +77,7 @@ final class CanonicalOwnerShellServiceTest extends TestCase
         $metadata = app(CanonicalOwnerShellService::class)->forOwner($owner)->toArray();
         $groups = collect($metadata['groups'])->keyBy('key');
 
-        $this->assertSame(['home', 'oversee', 'operate', 'reports', 'settings'], array_column($metadata['groups'], 'key'));
+        $this->assertSame(['home', 'oversee', 'operate', 'reports'], array_column($metadata['groups'], 'key'));
         $this->assertTrue($groups['oversee']['default_expanded']);
         $this->assertFalse($groups['operate']['default_expanded']);
         $this->assertSame(
@@ -116,10 +116,10 @@ final class CanonicalOwnerShellServiceTest extends TestCase
 
         $metadata = app(CanonicalOwnerShellService::class)->forOwner($owner)->toArray();
 
-        $this->assertSame(['home', 'reports', 'settings'], array_column($metadata['groups'], 'key'));
+        $this->assertSame(['home', 'reports'], array_column($metadata['groups'], 'key'));
     }
 
-    public function test_reports_and_audit_are_distinct_and_settings_has_six_sections(): void
+    public function test_reports_and_audit_are_distinct_and_business_settings_is_not_in_the_sidebar(): void
     {
         $owner = $this->owner('company', 'both');
         config(['owner_shell.allowlisted_shop_ids' => [$owner->getKey()]]);
@@ -127,10 +127,7 @@ final class CanonicalOwnerShellServiceTest extends TestCase
         $groups = collect(app(CanonicalOwnerShellService::class)->forOwner($owner)->toArray()['groups'])->keyBy('key');
 
         $this->assertSame(['reports', 'audit'], array_column($groups['reports']['items'], 'key'));
-        $this->assertSame(
-            ['profile', 'modules-team', 'payments-approvals', 'operations', 'policies-compliance', 'subscription'],
-            array_column($groups['settings']['items'], 'key'),
-        );
+        $this->assertArrayNotHasKey('settings', $groups->all());
     }
 
     public function test_payments_appears_only_when_a_retail_or_repair_path_is_accessible(): void

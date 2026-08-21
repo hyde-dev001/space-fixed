@@ -4,6 +4,7 @@ export type OwnerShellSelectionReason =
   | "global_disabled"
   | "shop_not_allowlisted"
   | "shop_allowlisted"
+  | "always_on"
   | "invalid_registration_context"
   | "cohort_evaluation_failed"
   | "shell_composition_failed";

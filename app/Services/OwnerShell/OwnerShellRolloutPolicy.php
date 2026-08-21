@@ -31,13 +31,15 @@ final class OwnerShellRolloutPolicy
                 throw new UnexpectedValueException('Owner shell allowlist must be an array.');
             }
 
-            if (! in_array($owner->getKey(), $allowlistedShopIds, true)) {
+            if ($allowlistedShopIds !== [] && ! in_array($owner->getKey(), $allowlistedShopIds, true)) {
                 return $this->existing(OwnerShellSelectionReason::ShopNotAllowlisted, $context);
             }
 
             return new OwnerShellSelection(
                 OwnerShellPresentation::Canonical,
-                OwnerShellSelectionReason::ShopAllowlisted,
+                $allowlistedShopIds === []
+                    ? OwnerShellSelectionReason::AlwaysOn
+                    : OwnerShellSelectionReason::ShopAllowlisted,
                 $context,
             );
         } catch (Throwable $exception) {

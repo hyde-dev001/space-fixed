@@ -2,7 +2,7 @@
 
 ## Release boundary
 
-This release adds the `Urgent Exceptions` bucket to the existing Phase 3 Action Center. Compliance Documents are the first production source; Failed Refunds and Unowned Logistics Failures are implemented as independently controlled sources and remain hidden until the final verification and enablement gates pass.
+This release adds the `Urgent Exceptions` bucket to the existing Phase 3 Action Center. Compliance Documents, Failed Order and Repair Refunds, and Unowned Logistics Failures are enabled by default in the thesis build after the completed readiness gates.
 
 The rollout is presentation-only. It does not change Shop Owner authorization, Compliance workflows, document state, or the existing Phase 3A decision queue.
 
@@ -11,56 +11,38 @@ Current source status:
 | Source | Status | User-facing behavior |
 | --- | --- | --- |
 | Compliance Documents | Releasable after Gate B verification | Appears under `Urgent Exceptions` |
-| Failed Order and Repair Refunds | Gate D implementation and Gate G readiness verification complete | Hidden until enabled |
-| Unowned Logistics Failures | Gate E/F implementation and Gate G readiness verification complete | Hidden until enabled |
+| Failed Order and Repair Refunds | Gate D implementation and Gate G readiness verification complete | Appears when an authoritative failed-recovery predicate qualifies |
+| Unowned Logistics Failures | Gate E/F implementation and Gate G readiness verification complete | Appears when an authoritative unowned-failure predicate qualifies |
 
-Blocked sources must not be presented as unavailable. They are not enabled production coverage yet.
+The source adapters remain independently failure-isolated. A runtime adapter failure is presented as unavailable source coverage; it is never represented as zero work.
 
 ## Eligibility hierarchy
 
-A Shop Owner receives Phase 3B only when every parent rollout gate succeeds:
+A Shop Owner receives Phase 3B when the canonical shell and Action Center are selected:
 
 ```text
-Phase 2 canonical shell selected for the shop
-  -> Phase 3 Action Center selected for the same shop_id
+Phase 2 canonical shell selected
+  -> Phase 3 Action Center selected
      -> Urgent Exceptions bucket enabled
-        -> Compliance adapter enabled
+        -> enabled, readiness-approved adapters
 ```
 
-The Phase 2 and Phase 3 allowlists must use the same stable `shop_id`. Do not use an owner email, account ID, browser identifier, or another mutable value.
+The thesis build does not require Phase 2 or Phase 3 shop allowlists. Existing tenant, module, source-state, and authorization checks remain authoritative.
 
 ## Configuration
 
-Use these application-controlled environment values:
+The thesis build uses the committed defaults in `config/owner_action_center.php`:
 
-```dotenv
-# Existing Phase 3 selection
-SHOP_OWNER_ACTION_CENTER_ENABLED=true
-SHOP_OWNER_ACTION_CENTER_SHOP_IDS=42
-
-# Phase 3B bucket and source controls
-SHOP_OWNER_ACTION_CENTER_URGENT_EXCEPTIONS_ENABLED=true
-SHOP_OWNER_ACTION_CENTER_COMPLIANCE_ENABLED=true
-
-# Blocked until their independent readiness gates pass
-SHOP_OWNER_ACTION_CENTER_FAILED_REFUNDS_ENABLED=false
-SHOP_OWNER_ACTION_CENTER_LOGISTICS_EXCEPTIONS_ENABLED=false
+```text
+owner_action_center.enabled = true
+owner_action_center.allowlisted_shop_ids = []
+owner_action_center.buckets.urgent_exceptions.enabled = true
+owner_action_center.buckets.urgent_exceptions.coverage.compliance = true
+owner_action_center.buckets.urgent_exceptions.coverage.refunds = true
+owner_action_center.buckets.urgent_exceptions.coverage.logistics = true
 ```
 
-The shop must already be eligible for the Phase 2 canonical shell. Preserve the existing Phase 3A source settings for Refund decisions, Expenses, and Purchase Requests.
-
-## Safe enablement order
-
-1. Deploy the verified code with `SHOP_OWNER_ACTION_CENTER_URGENT_EXCEPTIONS_ENABLED=false`.
-2. Confirm the existing Phase 3A Action Center remains healthy for the intended shop cohort.
-3. Confirm the Phase 3 allowlist contains only approved stable shop IDs.
-4. Set `SHOP_OWNER_ACTION_CENTER_COMPLIANCE_ENABLED=true` while keeping the bucket disabled. This does not expose the source by itself.
-5. Set `SHOP_OWNER_ACTION_CENTER_URGENT_EXCEPTIONS_ENABLED=true`.
-6. Clear or refresh configuration using the deployment platform's normal Laravel procedure.
-7. Verify one allowlisted company owner and one allowlisted individual owner where applicable.
-8. Expand the Phase 3 shop allowlist only after telemetry and workflow deep links are healthy.
-
-Do not enable Failed Refunds or Logistics merely to test their filters. Their classes are registered and covered by focused tests, but production enablement remains blocked until Gate G confirms the complete three-source contract.
+The Action Center rollout and source environment variables are no longer read. No `.env` change is required for local, thesis, or deployed environments. After a config code change, clear and rebuild Laravel's configuration cache using the normal deployment procedure.
 
 ## Expected behavior
 
@@ -108,7 +90,7 @@ The complete declared Phase 3B implementation has passed the focused readiness g
 
 The full repository Composer suite was attempted with extended timeout and memory settings but could not complete because the existing route-loading path exhausted PHP memory at `routes/web.php:1335`. This is an environment/repository-wide verification limitation, not a failure in the focused Phase 3B suites.
 
-All Phase 3B source flags remain disabled. These results authorize controlled rollout review; they do not enable the bucket or change domain authorization.
+The completed readiness results authorize the always-on thesis defaults; they do not change domain authorization.
 
 ## Verification after enablement
 
@@ -128,14 +110,7 @@ Confirm:
 
 ## Rollback
 
-For a Phase 3B-specific regression:
-
-1. Set `SHOP_OWNER_ACTION_CENTER_URGENT_EXCEPTIONS_ENABLED=false`.
-2. Refresh Laravel configuration using the normal deployment procedure.
-3. Confirm `Urgent Exceptions` disappears from Home and the Action Center.
-4. Confirm Phase 3A `Needs My Decision` remains operational.
-
-If only Compliance is unhealthy, `SHOP_OWNER_ACTION_CENTER_COMPLIANCE_ENABLED=false` also removes that source. Because Compliance is the sole first-stage exception source, disabling it should normally be paired with disabling the bucket to return cleanly to Phase 3A.
+For a Phase 3B-specific regression, deploy the previous verified revision or make a reviewed code/config change, then refresh Laravel configuration. Confirm `Urgent Exceptions` degrades without affecting Phase 3A `Needs My Decision`. Automated tests retain explicit configuration overrides for source-specific failure and rollback behavior.
 
 Rollback changes presentation/read participation only. It does not require a database rollback and must not alter document state or domain authorization.
 
@@ -150,4 +125,4 @@ Full declared Phase 3B implementation and readiness verification is complete aft
 - Failed Order and Repair Refund recovery lifecycles and adapters;
 - Unowned Logistics responsibility projection and adapter.
 
-The implementation keeps all three source flags disabled until the controlled rollout is explicitly approved. Phase 3C `Waiting on Others` remains outside this release.
+The thesis implementation enables the three readiness-approved source families by default. Phase 3C `Waiting on Others` remains outside this release.
