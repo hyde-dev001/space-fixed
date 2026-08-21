@@ -179,16 +179,16 @@ function DeliveryContact({ delivery }: { delivery: TrackingShipmentLeg }) {
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-2 gap-3 lg:gap-2">
         {contact.phone ? (
           <a
             href={`tel:${contact.phone}`}
-            className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-800 dark:border-slate-600 dark:text-slate-100"
+            className="inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-800 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:border-slate-600 dark:text-slate-100 lg:min-h-11"
           >
             Call
           </a>
         ) : (
-          <span className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-200 px-3 text-sm text-slate-400">
+          <span className="inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-200 px-3 text-sm text-slate-400 lg:min-h-11">
             No phone
           </span>
         )}
@@ -197,12 +197,12 @@ function DeliveryContact({ delivery }: { delivery: TrackingShipmentLeg }) {
             href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(contact.address)}`}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex min-h-11 items-center justify-center rounded-xl border border-blue-300 px-3 text-sm font-semibold text-blue-700 dark:border-blue-700 dark:text-blue-300"
+            className="inline-flex min-h-12 items-center justify-center rounded-xl border border-blue-300 px-3 text-sm font-semibold text-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:border-blue-700 dark:text-blue-300 lg:min-h-11"
           >
             Directions
           </a>
         ) : (
-          <span className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-200 px-3 text-sm text-slate-400">
+          <span className="inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-200 px-3 text-sm text-slate-400 lg:min-h-11">
             No address
           </span>
         )}
@@ -280,7 +280,7 @@ function DeliveryActions({
   const issuePanelRef = useRef<HTMLDivElement>(null);
   const mutationDisabled = locked || !online || pendingAction !== null;
   const buttonClass =
-    'min-h-11 w-full rounded-xl bg-blue-600 px-4 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50';
+    'min-h-12 w-full touch-manipulation rounded-xl bg-blue-600 px-4 text-sm font-bold text-white transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 lg:min-h-11';
 
   useEffect(() => {
     if (showIssue) issuePanelRef.current?.focus();
@@ -919,7 +919,7 @@ function CurrentDeliveryCard({
   if (!item) {
     return (
       <section aria-labelledby="current-delivery-heading">
-        <h2 id="current-delivery-heading" className="mb-3 text-lg font-bold text-slate-950 dark:text-white">
+        <h2 id="current-delivery-heading" className="mb-4 text-lg font-bold text-slate-950 dark:text-white lg:mb-3">
           Current delivery
         </h2>
         <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-5 text-center dark:border-slate-700 dark:bg-slate-900">
@@ -936,12 +936,12 @@ function CurrentDeliveryCard({
 
   return (
     <section aria-labelledby="current-delivery-heading">
-      <h2 id="current-delivery-heading" className="mb-3 text-lg font-bold text-slate-950 dark:text-white">
+      <h2 id="current-delivery-heading" className="mb-4 text-lg font-bold text-slate-950 dark:text-white lg:mb-3">
         Current delivery
       </h2>
       <article className="overflow-hidden rounded-2xl border-2 border-blue-400 bg-white shadow-sm dark:bg-slate-900">
-        <header className="space-y-4 border-b border-blue-100 p-4 dark:border-blue-900">
-          <div className="flex flex-wrap items-start justify-between gap-3">
+        <header className="space-y-4 border-b border-blue-100 p-5 dark:border-blue-900 lg:p-4">
+          <div className="flex flex-col items-start gap-3 lg:flex-row lg:justify-between">
             <div>
               <p className="text-xs font-bold uppercase tracking-wide text-blue-700 dark:text-blue-300">
                 {item.business_label}
@@ -973,7 +973,7 @@ function CurrentDeliveryCard({
           </div>
         </header>
 
-        <div className="p-4">
+        <div className="p-5 lg:p-4">
           {actionable ? (
             <>
               <p className="mb-3 text-sm font-bold text-blue-700 dark:text-blue-300">
@@ -1013,7 +1013,7 @@ function CurrentDeliveryCard({
               <button
                 type="button"
                 onClick={onToggleSequence}
-                className="mt-4 min-h-11 w-full rounded-xl border border-slate-300 px-4 text-sm font-bold text-slate-800 dark:border-slate-600 dark:text-slate-100"
+                className="mt-5 min-h-12 w-full touch-manipulation rounded-xl border border-slate-300 px-4 text-sm font-bold text-slate-800 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:border-slate-600 dark:text-slate-100 lg:mt-4 lg:min-h-11"
               >
                 {showSequence ? 'Hide delivery sequence' : `View all ${item.deliveries.length} deliveries`}
               </button>
@@ -1049,9 +1049,9 @@ function UpNextCard({
 
   return (
     <section aria-label="Up next">
-      <h2 className="mb-3 text-lg font-bold text-slate-950 dark:text-white">Up next</h2>
-      <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-        <div className="flex items-start justify-between gap-3">
+      <h2 className="mb-4 text-lg font-bold text-slate-950 dark:text-white lg:mb-3">Up next</h2>
+      <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900 lg:p-4">
+        <div className="flex flex-col items-start gap-3 lg:flex-row lg:justify-between">
           <div>
             <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{item.business_label}</p>
             <h3 className="mt-1 font-bold text-slate-950 dark:text-white">{itemTitle(item)}</h3>
@@ -1061,7 +1061,7 @@ function UpNextCard({
           </div>
           <StatusChip status={item.status} />
         </div>
-        <div className="mt-4">
+        <div className="mt-5 lg:mt-4">
           <DeliveryActions
             key={`${item.key}:${actionable?.id ?? 'none'}`}
             item={item}
@@ -1077,7 +1077,7 @@ function UpNextCard({
         <button
           type="button"
           onClick={() => setShowDetails((current) => !current)}
-          className="mt-4 min-h-11 w-full rounded-xl border border-blue-300 px-4 text-sm font-bold text-blue-700 dark:border-blue-700 dark:text-blue-300"
+          className="mt-5 min-h-12 w-full touch-manipulation rounded-xl border border-blue-300 px-4 text-sm font-bold text-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:border-blue-700 dark:text-blue-300 lg:mt-4 lg:min-h-11"
         >
           {showDetails ? 'Hide details' : 'View details'}
         </button>
@@ -1110,8 +1110,8 @@ function OfferCard({
   const declineKey = `offer-decline:${item.key}`;
 
   return (
-    <article className="rounded-2xl border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/30">
-      <div className="flex items-start justify-between gap-3">
+    <article className="rounded-2xl border border-amber-300 bg-amber-50 p-5 dark:border-amber-800 dark:bg-amber-950/30 lg:p-4">
+      <div className="flex flex-col items-start gap-3 lg:flex-row lg:justify-between">
         <div>
           <p className="text-xs font-bold uppercase tracking-wide text-amber-800 dark:text-amber-200">New assignment</p>
           <h3 className="mt-1 font-bold text-slate-950 dark:text-white">{itemTitle(item)}</h3>
@@ -1121,7 +1121,7 @@ function OfferCard({
         </div>
         <StatusChip status={item.status} label={`New ${offerLabel} offer`} />
       </div>
-      <div className="mt-4 grid grid-cols-2 gap-2">
+      <div className="mt-5 grid gap-3 lg:mt-4 lg:grid-cols-2 lg:gap-2">
         <button
           type="button"
           disabled={!online || pendingAction !== null}
@@ -1134,7 +1134,7 @@ function OfferCard({
               confirmButtonText: `Accept ${offerLabel}`,
             })
           }
-          className="min-h-11 rounded-xl bg-blue-600 px-4 text-sm font-bold text-white disabled:opacity-50"
+          className="min-h-12 touch-manipulation rounded-xl bg-blue-600 px-4 text-sm font-bold text-white transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 lg:min-h-11"
         >
           Accept {offerLabel}
         </button>
@@ -1142,7 +1142,7 @@ function OfferCard({
           type="button"
           disabled={!online}
           onClick={() => setDeclining((current) => !current)}
-          className="min-h-11 rounded-xl border border-amber-500 px-4 text-sm font-bold text-amber-900 disabled:opacity-50 dark:text-amber-100"
+          className="min-h-12 touch-manipulation rounded-xl border border-amber-500 px-4 text-sm font-bold text-amber-900 transition-colors focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 disabled:opacity-50 dark:text-amber-100 lg:min-h-11"
         >
           Decline {offerLabel}
         </button>
@@ -1191,10 +1191,10 @@ function OfferRegion({
   if (!offers.length) return null;
 
   return (
-    <section aria-label="New assignment offers" className="space-y-3">
+    <section aria-label="New assignment offers" className="space-y-4 lg:space-y-3">
       <OfferCard item={offers[0]} online={online} pendingAction={pendingAction} runAction={runAction} />
       {offers.length > 1 && (
-        <details className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
+        <details className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900 lg:p-3">
           <summary className="min-h-11 cursor-pointer py-2 text-sm font-bold text-slate-800 dark:text-slate-100">
             {offers.length - 1} more {offers.length === 2 ? 'offer' : 'offers'}
           </summary>
@@ -1218,8 +1218,8 @@ function OfferRegion({
 function CompactListItem({ item }: { item: RiderDeliveryWorkItem | RiderDeliveryIssue }) {
   if (item.item_type === 'issue') {
     return (
-      <article className="rounded-xl border border-amber-300 bg-white p-4 dark:border-amber-800 dark:bg-slate-900">
-        <div className="flex items-start justify-between gap-3">
+      <article className="rounded-xl border border-amber-300 bg-white p-5 dark:border-amber-800 dark:bg-slate-900 lg:p-4">
+        <div className="flex flex-col items-start gap-3 lg:flex-row lg:justify-between">
           <div>
             <p className="font-bold text-slate-950 dark:text-white">Issue · Delivery #{item.delivery_id}</p>
             <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{item.parent_key.replace(':', ' #')}</p>
@@ -1231,9 +1231,9 @@ function CompactListItem({ item }: { item: RiderDeliveryWorkItem | RiderDelivery
   }
 
   return (
-    <details className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
-      <summary className="min-h-11 cursor-pointer list-none">
-        <div className="flex items-start justify-between gap-3">
+    <details className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-900 lg:p-4">
+      <summary className="min-h-12 cursor-pointer list-none lg:min-h-11">
+        <div className="flex flex-col items-start gap-3 lg:flex-row lg:justify-between">
           <div>
             <p className="font-bold text-slate-950 dark:text-white">{itemTitle(item)}</p>
             <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
@@ -1268,18 +1268,18 @@ function DeliveryLists({
   }[deliveryData.filters.tab];
 
   return (
-    <section aria-labelledby="delivery-list-heading" className="space-y-4">
+    <section aria-labelledby="delivery-list-heading" className="space-y-5 lg:space-y-4">
       <h2 id="delivery-list-heading" className="text-lg font-bold text-slate-950 dark:text-white">
         Deliveries
       </h2>
-      <div className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1" aria-label="Delivery lists">
+      <div className="-mx-1 flex touch-pan-x gap-2 overflow-x-auto px-1 pb-2 lg:gap-1 lg:pb-1" aria-label="Delivery lists">
         {(Object.keys(tabLabels) as RiderDeliveryTab[]).map((tab) => (
           <button
             key={tab}
             type="button"
             aria-current={deliveryData.filters.tab === tab ? 'page' : undefined}
             onClick={() => navigate({ tab })}
-            className={`min-h-11 shrink-0 rounded-xl px-4 text-sm font-bold ${
+            className={`min-h-12 shrink-0 touch-manipulation rounded-full px-4 text-sm font-bold transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 lg:min-h-11 lg:rounded-xl ${
               deliveryData.filters.tab === tab
                 ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
                 : 'bg-white text-slate-600 ring-1 ring-slate-200 dark:bg-slate-900 dark:text-slate-300 dark:ring-slate-700'
@@ -1290,7 +1290,7 @@ function DeliveryLists({
         ))}
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-4 lg:grid-cols-3 lg:gap-3">
         <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
           Business type
           <select
@@ -1301,7 +1301,7 @@ function DeliveryLists({
                 business: event.target.value as RiderDeliveryPageData['filters']['business'],
               })
             }
-            className="mt-1 min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-900"
+            className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-base transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:border-slate-700 dark:bg-slate-900 lg:mt-1 lg:min-h-11 lg:px-3 lg:text-sm"
           >
             <option value="all">All businesses</option>
             <option value="retail">Retail</option>
@@ -1318,7 +1318,7 @@ function DeliveryLists({
                 window: event.target.value as RiderDeliveryPageData['filters']['window'],
               })
             }
-            className="mt-1 min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-900"
+            className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-base transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:border-slate-700 dark:bg-slate-900 lg:mt-1 lg:min-h-11 lg:px-3 lg:text-sm"
           >
             <option value="all">All time</option>
             <option value="today">Today</option>
@@ -1341,7 +1341,7 @@ function DeliveryLists({
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Delivery, customer, address"
-              className="mt-1 min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-900"
+              className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-base transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:border-slate-700 dark:bg-slate-900 lg:mt-1 lg:min-h-11 lg:px-3 lg:text-sm"
             />
           </label>
           <button type="submit" className="sr-only">Search deliveries</button>
@@ -1353,12 +1353,12 @@ function DeliveryLists({
         onClick={() =>
           navigate({ tab: 'upcoming', business: 'all', window: 'all', search: '' })
         }
-        className="min-h-11 rounded-xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:text-slate-200"
+        className="min-h-12 w-full touch-manipulation rounded-xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:border-slate-700 dark:text-slate-200 lg:min-h-11 lg:w-auto"
       >
         Clear filters
       </button>
 
-      <div className="space-y-3">
+      <div className="space-y-4 lg:space-y-3">
         {deliveryData.list.data.length ? (
           deliveryData.list.data.map((item) => <CompactListItem key={item.key} item={item} />)
         ) : (
@@ -1369,7 +1369,7 @@ function DeliveryLists({
       </div>
 
       {deliveryData.list.links.some(({ url }) => url) && (
-        <nav aria-label="Delivery pages" className="flex flex-wrap justify-center gap-2">
+        <nav aria-label="Delivery pages" className="flex flex-wrap justify-center gap-3 lg:gap-2">
           {deliveryData.list.links.map((link) => {
             if (!link.url) return null;
             const label = link.label.replace(/&laquo;|&raquo;/g, '').trim();
@@ -1382,7 +1382,7 @@ function DeliveryLists({
                 aria-label={`Page ${label}`}
                 aria-current={link.active ? 'page' : undefined}
                 onClick={() => navigate({}, page)}
-                className="min-h-11 min-w-11 rounded-xl border border-slate-300 px-3 text-sm font-semibold dark:border-slate-700"
+                className="min-h-12 min-w-12 touch-manipulation rounded-full border border-slate-300 px-3 text-sm font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:border-slate-700 lg:min-h-11 lg:min-w-11 lg:rounded-xl"
               >
                 {label}
               </button>
@@ -1495,13 +1495,13 @@ export default function MyDeliveries() {
   return (
     <AppLayoutERP>
       <Head title="My Deliveries" />
-      <div className="mx-auto max-w-3xl space-y-6 pb-10">
+      <div className="mx-auto w-full max-w-xl space-y-8 pb-[calc(2rem+env(safe-area-inset-bottom))] lg:max-w-3xl lg:space-y-6 lg:pb-10">
         <header>
           <h1 className="text-2xl font-extrabold text-slate-950 dark:text-white">My Deliveries</h1>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
             See what needs your attention now.
           </p>
-          <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+          <div className="mt-4 flex flex-col items-stretch gap-3 lg:mt-2 lg:flex-row lg:items-center lg:justify-between lg:gap-2">
             <p
               role="status"
               aria-live="polite"
@@ -1516,7 +1516,7 @@ export default function MyDeliveries() {
               type="button"
               disabled={!online || pendingAction !== null}
               onClick={refreshDeliveries}
-              className="min-h-11 rounded-xl border border-slate-300 px-3 text-xs font-bold text-slate-700 disabled:opacity-50 dark:border-slate-700 dark:text-slate-200"
+              className="min-h-12 w-full touch-manipulation rounded-xl border border-slate-300 px-3 text-xs font-bold text-slate-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 lg:min-h-11 lg:w-auto"
             >
               Refresh deliveries
             </button>
@@ -1524,7 +1524,7 @@ export default function MyDeliveries() {
         </header>
 
         {deliveryData.has_active_conflict && (
-          <div role="alert" className="rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-900 dark:border-red-800 dark:bg-red-950/40 dark:text-red-100">
+          <div role="alert" className="rounded-xl border border-red-300 bg-red-50 p-5 text-sm text-red-900 dark:border-red-800 dark:bg-red-950/40 dark:text-red-100 lg:p-4">
             <strong>More than one active delivery was found.</strong>{' '}
             Continue only the Current delivery shown below. Conflicting assignments are blocked until dispatch resolves them.
           </div>
