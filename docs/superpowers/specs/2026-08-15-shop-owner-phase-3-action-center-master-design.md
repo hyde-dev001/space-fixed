@@ -427,6 +427,14 @@ Phase 3C introduces records where another actor owns the next step. An adapter m
 
 `waiting_on` is presentation metadata, not another domain status or persisted delegation permission.
 
+The implemented Phase 3C launch coverage is bounded to:
+
+- pending compliance renewal review owned by `super_admin`;
+- failed order and repair refund recovery owned by `finance` or `payment_recovery`;
+- active logistics recovery owned by `rider` or `dispatcher`.
+
+Waiting is independently filtered by `compliance`, `refunds`, and `logistics`. Its Home summary and full queue reuse the shared Phase 3 coordinator and ordering contract, while owner decisions and unowned material exceptions remain in their existing buckets. Remaining approval families and final ERP/navigation retirement are later phase work.
+
 ## 10. Ordering Contract
 
 Cross-source ordering uses normalized inputs in this sequence:
@@ -467,6 +475,7 @@ The algorithm must be tested with globally interleaved sources, deterministic ti
 
 - `Needs My Decision` has its own count and top 3–5 decisions;
 - `Urgent Exceptions` has its own count and top 3–5 exceptions once Phase 3B is enabled;
+- `Waiting on Others` has its own count and top three responsibility items once Phase 3C is enabled;
 - each summary uses the shared inclusion and bucket-specific ordering contract;
 - each summary links to `/shop-owner/action-center` with its bucket selected;
 - secondary supported-source disclosure and partial or unavailable states remain bucket-aware.
@@ -493,6 +502,7 @@ Conceptual bounded URLs are:
 ```text
 /shop-owner/action-center?bucket=needs_my_decision&page=2
 /shop-owner/action-center?bucket=urgent_exceptions&source=compliance&page=2
+/shop-owner/action-center?bucket=waiting_on_others&source=refunds&page=2
 ```
 
 Source filters appear only when the source participates in the selected bucket's enabled supported coverage. For the initial staged coverage:
@@ -507,6 +517,11 @@ Urgent Exceptions
 ├─ Compliance Documents
 ├─ Failed Refunds       once adapter-ready
 └─ Logistics Failures  once adapter-ready
+
+Waiting on Others
+├─ Compliance
+├─ Refunds
+└─ Logistics
 ```
 
 Home and the Action Center use identical inclusion, identity, counting, filtering, and ordering contracts. Under the same fixed source state they produce consistent results. Runtime values need not remain identical across separate requests when authoritative state changes between requests.
@@ -728,4 +743,4 @@ Phase 3 master
 └── Phase 3C — Waiting on Others
 ```
 
-The Phase 3A implementation plan covers [`2026-08-15-shop-owner-phase-3a-owner-decisions-design.md`](./2026-08-15-shop-owner-phase-3a-owner-decisions-design.md). One Phase 3B implementation plan proceeds from [`2026-08-16-shop-owner-phase-3b-material-exceptions-design.md`](./2026-08-16-shop-owner-phase-3b-material-exceptions-design.md) and contains readiness-gated stages for Compliance Documents, Failed Refunds, and Unowned Logistics Failures. Phase 3C receives its own focused design and plan before source onboarding begins.
+The Phase 3A implementation plan covers [`2026-08-15-shop-owner-phase-3a-owner-decisions-design.md`](./2026-08-15-shop-owner-phase-3a-owner-decisions-design.md). One Phase 3B implementation plan proceeds from [`2026-08-16-shop-owner-phase-3b-material-exceptions-design.md`](./2026-08-16-shop-owner-phase-3b-material-exceptions-design.md) and contains readiness-gated stages for Compliance Documents, Failed Refunds, and Unowned Logistics Failures. Phase 3C proceeds from [`2026-08-22-shop-owner-phase-3c-waiting-on-others-design.md`](./2026-08-22-shop-owner-phase-3c-waiting-on-others-design.md) and its implementation plan; the initial Compliance, Order Refund, Repair Refund, and Logistics responsibility adapters are now readiness-tested in the bounded scope documented by the rollout guide.
