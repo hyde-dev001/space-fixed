@@ -94,6 +94,12 @@ final class OwnerAttentionAdapterRegistry
                     'coverage' => 'refunds',
                     'bucket' => 'waiting_on_others',
                 ],
+                [
+                    'class' => 'App\\Services\\OwnerActionCenter\\Adapters\\WaitingRepairRefundRecoveryAttentionAdapter',
+                    'key' => 'waiting_repair_refund_recovery',
+                    'coverage' => 'refunds',
+                    'bucket' => 'waiting_on_others',
+                ],
             ],
         ],
     ];
