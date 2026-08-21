@@ -13,6 +13,10 @@ const adapterLabels: Record<OwnerAttentionAdapterKey, string> = {
   failed_order_refunds: "Order refund recovery",
   failed_repair_refunds: "Repair refund recovery",
   unowned_logistics_failures: "Logistics failures",
+  pending_compliance_renewals: "Compliance renewals",
+  waiting_order_refund_recovery: "Order refund recovery",
+  waiting_repair_refund_recovery: "Repair refund recovery",
+  active_logistics_recovery: "Logistics recovery",
 };
 
 const failedSourceLabels = (keys: OwnerAttentionAdapterKey[]): string[] => {
@@ -21,8 +25,16 @@ const failedSourceLabels = (keys: OwnerAttentionAdapterKey[]): string[] => {
 };
 
 export default function OwnerActionCenterAvailability({ result }: OwnerActionCenterAvailabilityProps) {
-  const bucketLabel = result?.bucket === "urgent_exceptions" ? "Urgent Exceptions" : "Needs My Decision";
-  const itemLabel = result?.bucket === "urgent_exceptions" ? "exceptions" : "actions";
+  const bucketLabel = result?.bucket === "urgent_exceptions"
+    ? "Urgent Exceptions"
+    : result?.bucket === "waiting_on_others"
+      ? "Waiting on Others"
+      : "Needs My Decision";
+  const itemLabel = result?.bucket === "urgent_exceptions"
+    ? "exceptions"
+    : result?.bucket === "waiting_on_others"
+      ? "waiting items"
+      : "actions";
 
   if (result === null || result.degradation_status === "unavailable") {
     return (
@@ -37,7 +49,9 @@ export default function OwnerActionCenterAvailability({ result }: OwnerActionCen
     return (
       <div role="status" aria-live="polite" className="rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-600 dark:border-gray-800 dark:bg-white/[0.03] dark:text-gray-300">
         <p className="font-semibold text-gray-700 dark:text-white/80">{bucketLabel} sources are not enabled</p>
-        <p className="mt-1">The existing module and approval pages remain the current action surfaces.</p>
+        <p className="mt-1">{result?.bucket === "waiting_on_others"
+          ? "The existing module and workflow pages remain the current action surfaces."
+          : "The existing module and approval pages remain the current action surfaces."}</p>
       </div>
     );
   }
@@ -65,7 +79,9 @@ export default function OwnerActionCenterAvailability({ result }: OwnerActionCen
       {!partial && total === 0 && (
         <p>{result.bucket === "urgent_exceptions"
           ? "No urgent exceptions from currently supported sources."
-          : "No decisions from currently supported sources require action."}</p>
+          : result.bucket === "waiting_on_others"
+            ? "No waiting items from currently supported sources."
+            : "No decisions from currently supported sources require action."}</p>
       )}
     </div>
   );

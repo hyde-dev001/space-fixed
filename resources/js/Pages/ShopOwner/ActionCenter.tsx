@@ -5,6 +5,7 @@ import OwnerAttentionList from "../../components/owner-action-center/OwnerAttent
 import type {
   OwnerActionCenterCoverage,
   OwnerActionCenterResult,
+  OwnerAttentionAdapterKey,
   OwnerAttentionBucket,
   OwnerAttentionCoverageSource,
 } from "../../types/ownerActionCenter";
@@ -26,19 +27,28 @@ const filterLabels: Array<{ key: OwnerAttentionCoverageSource; label: string }> 
   { key: "logistics", label: "Logistics" },
 ];
 
-const adapterCoverage = (key: string): OwnerAttentionCoverageSource | null => {
+const adapterCoverage = (key: OwnerAttentionAdapterKey): OwnerAttentionCoverageSource | null => {
   if (["order_refunds", "repair_refunds", "failed_order_refunds", "failed_repair_refunds"].includes(key)) return "refunds";
+  if (["waiting_order_refund_recovery", "waiting_repair_refund_recovery"].includes(key)) return "refunds";
   if (key === "expenses") return "expenses";
   if (key === "purchase_requests") return "purchase_requests";
-  if (key === "compliance_documents") return "compliance";
-  if (key === "unowned_logistics_failures") return "logistics";
+  if (["compliance_documents", "pending_compliance_renewals"].includes(key)) return "compliance";
+  if (["unowned_logistics_failures", "active_logistics_recovery"].includes(key)) return "logistics";
   return null;
 };
 
+const bucketCoverages: Record<OwnerAttentionBucket, OwnerAttentionCoverageSource[]> = {
+  needs_my_decision: ["refunds", "expenses", "purchase_requests"],
+  urgent_exceptions: ["compliance", "refunds", "logistics"],
+  waiting_on_others: ["compliance", "refunds", "logistics"],
+};
+
 const availableFilters = (result: OwnerActionCenterResult): Array<{ key: OwnerActionCenterCoverage; label: string }> => {
+  const allowedCoverages = bucketCoverages[result.bucket];
   const coverages = Array.from(new Set(result.health.enabled_adapter_keys
     .map(adapterCoverage)
-    .filter((coverage): coverage is OwnerAttentionCoverageSource => coverage !== null)));
+    .filter((coverage): coverage is OwnerAttentionCoverageSource => coverage !== null)
+    .filter((coverage) => allowedCoverages.includes(coverage))));
 
   if (coverages.length <= 1) return [];
 
@@ -86,8 +96,15 @@ export default function ActionCenter() {
     ...(summaries.urgent_exceptions
       ? [{ key: "urgent_exceptions" as const, label: "Urgent Exceptions" }]
       : []),
+    ...(summaries.waiting_on_others || bucket === "waiting_on_others"
+      ? [{ key: "waiting_on_others" as const, label: "Waiting on Others" }]
+      : []),
   ];
-  const selectedLabel = bucket === "urgent_exceptions" ? "Urgent Exceptions" : "Needs My Decision";
+  const selectedLabel = bucket === "urgent_exceptions"
+    ? "Urgent Exceptions"
+    : bucket === "waiting_on_others"
+      ? "Waiting on Others"
+      : "Needs My Decision";
 
   return (
     <AppLayoutShopOwner>
@@ -138,7 +155,9 @@ export default function ActionCenter() {
               <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                 {bucket === "urgent_exceptions"
                   ? "Material conditions that need your awareness and currently have no assigned next owner."
-                  : "Decisions that currently require your approval or review."}
+                  : bucket === "waiting_on_others"
+                    ? "Material work where another legitimate party owns the next step."
+                    : "Decisions that currently require your approval or review."}
               </p>
             </div>
             <button
@@ -184,7 +203,9 @@ export default function ActionCenter() {
             <p className="mt-5 rounded-xl border border-dashed border-gray-300 p-5 text-center text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
               {bucket === "urgent_exceptions"
                 ? "No urgent exceptions are listed on this page."
-                : "No decisions are listed on this page."}
+                : bucket === "waiting_on_others"
+                  ? "No waiting items are listed on this page."
+                  : "No decisions are listed on this page."}
             </p>
           )}
 

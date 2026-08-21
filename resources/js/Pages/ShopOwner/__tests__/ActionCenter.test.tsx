@@ -87,6 +87,48 @@ const exceptionResult = (overrides: Partial<OwnerActionCenterResult> = {}): Owne
   ...overrides,
 });
 
+const waitingResult = (overrides: Partial<OwnerActionCenterResult> = {}): OwnerActionCenterResult => result({
+  items: [item({
+    attention_key: "order_refund:21:refund_recovery_waiting",
+    source_type: "order_refund",
+    source_id: 21,
+    category: "refund_recovery_waiting",
+    primary_bucket: "waiting_on_others",
+    module: "retail",
+    title: "Refund recovery in progress",
+    concise_summary: "Payment recovery owns the next step for this failed refund.",
+    priority_tier: "high",
+    materiality_tier: "high",
+    comparable_monetary_exposure: 725,
+    urgency_at: null,
+    actionable_since: "2026-08-14T09:00:00+08:00",
+    waiting_on: "payment_recovery",
+    owner_action_required: false,
+    coverage_source: "refunds",
+    destination_url: "/shop-owner/refund-approvals?refund=21",
+  })],
+  coverage_counts: { compliance: 0, refunds: 1, logistics: 0 },
+  health: {
+    enabled_adapter_keys: [
+      "pending_compliance_renewals",
+      "waiting_order_refund_recovery",
+      "waiting_repair_refund_recovery",
+      "active_logistics_recovery",
+    ],
+    healthy_adapter_keys: [
+      "pending_compliance_renewals",
+      "waiting_order_refund_recovery",
+      "waiting_repair_refund_recovery",
+      "active_logistics_recovery",
+    ],
+    failed_adapter_keys: [],
+  },
+  bucket: "waiting_on_others",
+  coverage: "all",
+  pagination: { page: 1, per_page: 20, total: 1, last_page: 1 },
+  ...overrides,
+});
+
 describe("Shop Owner Action Center", () => {
   beforeEach(() => {
     mocks.reload.mockReset();
@@ -99,8 +141,107 @@ describe("Shop Owner Action Center", () => {
       bucketSummaries: {
         needs_my_decision: result(),
         urgent_exceptions: exceptionResult(),
+        waiting_on_others: waitingResult(),
       },
     };
+  });
+
+  it("renders Waiting on Others with bounded filters, responsibility labels, and no mutation controls", () => {
+    mocks.props = {
+      ...mocks.props,
+      bucket: "waiting_on_others",
+      source: "all",
+      page: 4,
+      ownerActionCenter: waitingResult(),
+    };
+
+    render(<ActionCenter />);
+
+    expect(screen.getByRole("link", { name: /Waiting on Others\s*1/i })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: /Waiting on Others\s*1/i })).toHaveAttribute(
+      "href",
+      expect.stringMatching(/bucket=waiting_on_others.*page=1/),
+    );
+    expect(screen.getByRole("link", { name: /^All$/i })).toHaveAttribute(
+      "href",
+      expect.stringMatching(/bucket=waiting_on_others.*source=all.*page=1/),
+    );
+    expect(screen.getByRole("link", { name: /^Compliance$/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /^Refunds$/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /^Logistics$/i })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /^Expenses$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /^Purchase Requests$/i })).not.toBeInTheDocument();
+    expect(screen.getByText("Waiting on: Payment Recovery")).toBeInTheDocument();
+    expect(screen.getByText("Refund recovery in progress")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /approve|reject|dismiss|resolve|snooze/i })).not.toBeInTheDocument();
+  });
+
+  it("uses distinct Waiting on Others empty, partial, unavailable, and disabled copy", () => {
+    const { rerender } = render(<ActionCenter />);
+
+    mocks.props = {
+      ...mocks.props,
+      bucket: "waiting_on_others",
+      ownerActionCenter: waitingResult({
+        items: [],
+        health: {
+          enabled_adapter_keys: ["waiting_order_refund_recovery"],
+          healthy_adapter_keys: ["waiting_order_refund_recovery"],
+          failed_adapter_keys: [],
+        },
+        coverage_counts: { compliance: 0, refunds: 0, logistics: 0 },
+        pagination: { page: 1, per_page: 20, total: 0, last_page: 1 },
+      }),
+    };
+    rerender(<ActionCenter />);
+    expect(screen.getByText(/No waiting items from currently supported sources/i)).toBeInTheDocument();
+
+    mocks.props = {
+      ...mocks.props,
+      ownerActionCenter: waitingResult({
+        health: {
+          enabled_adapter_keys: ["waiting_order_refund_recovery", "active_logistics_recovery"],
+          healthy_adapter_keys: ["waiting_order_refund_recovery"],
+          failed_adapter_keys: ["active_logistics_recovery"],
+        },
+        degradation_status: "partial",
+        coverage_counts: { compliance: 0, refunds: 1, logistics: 0 },
+        pagination: { page: 1, per_page: 20, total: 1, last_page: 1 },
+      }),
+    };
+    rerender(<ActionCenter />);
+    expect(screen.getByText(/waiting items from currently available sources/i)).toBeInTheDocument();
+    expect(screen.getByText(/Logistics recovery temporarily unavailable/i)).toBeInTheDocument();
+
+    mocks.props = {
+      ...mocks.props,
+      ownerActionCenter: waitingResult({
+        items: [],
+        health: {
+          enabled_adapter_keys: ["active_logistics_recovery"],
+          healthy_adapter_keys: [],
+          failed_adapter_keys: ["active_logistics_recovery"],
+        },
+        degradation_status: "unavailable",
+        coverage_counts: { compliance: 0, refunds: 0, logistics: 0 },
+        pagination: { page: 1, per_page: 20, total: 0, last_page: 1 },
+      }),
+    };
+    rerender(<ActionCenter />);
+    expect(screen.getByText(/Waiting on Others currently unavailable/i)).toBeInTheDocument();
+
+    mocks.props = {
+      ...mocks.props,
+      ownerActionCenter: waitingResult({
+        items: [],
+        health: { enabled_adapter_keys: [], healthy_adapter_keys: [], failed_adapter_keys: [] },
+        degradation_status: "no_enabled_adapters",
+        coverage_counts: { compliance: 0, refunds: 0, logistics: 0 },
+        pagination: { page: 1, per_page: 20, total: 0, last_page: 1 },
+      }),
+    };
+    rerender(<ActionCenter />);
+    expect(screen.getByText(/Waiting on Others sources are not enabled/i)).toBeInTheDocument();
   });
 
   it("uses dominant bucket tabs and a compact exception queue without redundant filters", () => {

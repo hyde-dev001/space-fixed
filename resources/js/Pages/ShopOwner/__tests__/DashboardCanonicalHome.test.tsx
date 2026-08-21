@@ -109,6 +109,32 @@ const ownerUrgentExceptions: OwnerActionCenterResult = {
   bucket: "urgent_exceptions",
 };
 
+const ownerWaitingOnOthers: OwnerActionCenterResult = {
+  ...ownerActionCenter,
+  items: [1, 2, 3, 4].map((id) => ({
+    ...ownerActionCenter.items[0],
+    attention_key: `order_refund:${id}:refund_recovery_waiting`,
+    source_type: "order_refund" as const,
+    source_id: id,
+    category: "refund_recovery_waiting",
+    primary_bucket: "waiting_on_others" as const,
+    title: `Refund recovery ${id}`,
+    concise_summary: "Payment recovery owns the next step.",
+    waiting_on: "payment_recovery" as const,
+    owner_action_required: false,
+    coverage_source: "refunds" as const,
+    destination_url: `/shop-owner/refund-approvals?refund=${id}`,
+  })),
+  coverage_counts: { compliance: 0, refunds: 4, logistics: 0 },
+  health: {
+    enabled_adapter_keys: ["waiting_order_refund_recovery"],
+    healthy_adapter_keys: ["waiting_order_refund_recovery"],
+    failed_adapter_keys: [],
+  },
+  bucket: "waiting_on_others",
+  pagination: { page: 1, per_page: 3, total: 4, last_page: 2 },
+};
+
 describe("canonical shop owner home placeholders", () => {
   beforeEach(() => {
     mocks.props = {
@@ -196,6 +222,27 @@ describe("canonical shop owner home placeholders", () => {
       expect.stringContaining("bucket=urgent_exceptions"),
     );
     expect(screen.queryByText(/^Exceptions \u2014 Coming in Phase 3$/)).not.toBeInTheDocument();
+  });
+
+  it("renders three independent summaries with no more than three rows per bucket", async () => {
+    mocks.props = {
+      ...mocks.props,
+      ownerActionCenter,
+      ownerUrgentExceptions,
+      ownerWaitingOnOthers,
+    };
+
+    render(<Dashboard />);
+
+    expect((await screen.findAllByText("Waiting on Others")).length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText("Refund recovery 1")).toBeInTheDocument();
+    expect(screen.getByText("Refund recovery 2")).toBeInTheDocument();
+    expect(screen.getByText("Refund recovery 3")).toBeInTheDocument();
+    expect(screen.queryByText("Refund recovery 4")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /View all waiting items/i })).toHaveAttribute(
+      "href",
+      expect.stringContaining("bucket=waiting_on_others"),
+    );
   });
 
   it("renders a Logistics exception in the urgent summary without adding an owner action", async () => {

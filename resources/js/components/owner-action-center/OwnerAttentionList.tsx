@@ -13,6 +13,14 @@ const sourceLabels: Record<OwnerAttentionSourceType, string> = {
   logistics_failure: "Logistics Failure",
 };
 
+const waitingOnLabels: Partial<Record<OwnerAttentionItem["waiting_on"], string>> = {
+  super_admin: "Compliance Review",
+  finance: "Finance",
+  payment_recovery: "Payment Recovery",
+  rider: "Rider",
+  dispatcher: "Dispatcher",
+};
+
 const currencyFormatter = new Intl.NumberFormat("en-PH", {
   style: "currency",
   currency: "PHP",
@@ -53,6 +61,11 @@ export default function OwnerAttentionList({ items }: OwnerAttentionListProps) {
               </div>
               <h3 className="text-sm font-semibold text-gray-800 dark:text-white/90">{item.title}</h3>
               <p className="text-sm text-gray-600 dark:text-gray-300">{item.concise_summary}</p>
+              {item.primary_bucket === "waiting_on_others" && waitingOnLabels[item.waiting_on] && (
+                <p className="text-xs font-medium text-gray-600 dark:text-gray-300">
+                  Waiting on: {waitingOnLabels[item.waiting_on]}
+                </p>
+              )}
               <p className="text-xs text-gray-500 dark:text-gray-400">
                 {item.urgency_at ? "Due" : "Actionable since"}{" "}
                 <time dateTime={item.urgency_at ?? item.actionable_since}>

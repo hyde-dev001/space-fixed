@@ -83,6 +83,7 @@ interface DashboardPageProps {
   showPhaseThreePlaceholders?: boolean;
   ownerActionCenter?: OwnerActionCenterResult;
   ownerUrgentExceptions?: OwnerActionCenterResult;
+  ownerWaitingOnOthers?: OwnerActionCenterResult;
 }
 
 export default function Ecommerce() {
@@ -92,6 +93,7 @@ export default function Ecommerce() {
     showPhaseThreePlaceholders = false,
     ownerActionCenter,
     ownerUrgentExceptions,
+    ownerWaitingOnOthers,
   } = usePage().props as DashboardPageProps;
   const Layout = erpMode === true ? AppLayoutERP : AppLayoutShopOwner;
   const businessType = String(auth?.shop_owner?.business_type ?? "").toLowerCase();
@@ -164,7 +166,7 @@ export default function Ecommerce() {
         </div>
 
         {showPhaseThreePlaceholders && (
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2" aria-label="Phase 3 dashboard areas">
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-3" aria-label="Phase 3 dashboard areas">
             {(!ownerActionCenter || ownerActionCenter.degradation_status === "no_enabled_adapters") && (
             <section
               aria-labelledby="required-actions-phase-three"
@@ -203,7 +205,7 @@ export default function Ecommerce() {
                   <OwnerActionCenterAvailability result={ownerActionCenter} />
                 </div>
                 <div className="mt-4">
-                  <OwnerAttentionList items={ownerActionCenter.items.slice(0, 5)} />
+                  <OwnerAttentionList items={ownerActionCenter.items.slice(0, 3)} />
                 </div>
               </section>
             )}
@@ -243,7 +245,35 @@ export default function Ecommerce() {
                   <OwnerActionCenterAvailability result={ownerUrgentExceptions} />
                 </div>
                 <div className="mt-4">
-                  <OwnerAttentionList items={ownerUrgentExceptions.items.slice(0, 5)} />
+                  <OwnerAttentionList items={ownerUrgentExceptions.items.slice(0, 3)} />
+                </div>
+              </section>
+            )}
+
+            {ownerWaitingOnOthers && (
+              <section
+                aria-labelledby="waiting-on-others-title"
+                className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]"
+              >
+                <div className="flex flex-col gap-3 border-b border-gray-200 pb-4 dark:border-gray-800 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h4 id="waiting-on-others-title" className="text-base font-semibold text-gray-800 dark:text-white/90">
+                      Waiting on Others
+                    </h4>
+                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Material work assigned to another legitimate party</p>
+                  </div>
+                  <a
+                    href="/shop-owner/action-center?bucket=waiting_on_others&source=all&page=1"
+                    className="text-sm font-semibold text-blue-600 underline-offset-4 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:text-blue-400 dark:focus-visible:ring-offset-gray-900"
+                  >
+                    View all waiting items
+                  </a>
+                </div>
+                <div className="mt-4">
+                  <OwnerActionCenterAvailability result={ownerWaitingOnOthers} />
+                </div>
+                <div className="mt-4">
+                  <OwnerAttentionList items={ownerWaitingOnOthers.items.slice(0, 3)} />
                 </div>
               </section>
             )}
