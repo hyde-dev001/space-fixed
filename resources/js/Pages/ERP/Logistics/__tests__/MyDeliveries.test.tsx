@@ -304,7 +304,7 @@ describe('MyDeliveries task-first hierarchy', () => {
     expect(screen.getByLabelText('Arrival reason')).toHaveValue('gps_inaccurate');
   });
 
-  it('keeps the incident picker native on desktop viewports', () => {
+  it('opens the incident form in a modal while keeping its picker native on desktop viewports', () => {
     const previousWidth = window.innerWidth;
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1440 });
     mocks.props.deliveryData.current = workItem('single', 'in_transit', [leg(10, null, 'in_transit')]);
@@ -313,6 +313,7 @@ describe('MyDeliveries task-first hierarchy', () => {
       render(<MyDeliveries />);
       fireEvent.click(screen.getByRole('button', { name: 'Report incident' }));
 
+      expect(screen.getByRole('dialog', { name: 'Report incident' })).toBeVisible();
       const incidentType = screen.getByLabelText('Incident type');
       fireEvent.pointerDown(incidentType);
       expect(screen.queryByRole('dialog', { name: 'Incident type' })).not.toBeInTheDocument();
@@ -783,7 +784,12 @@ describe('MyDeliveries rider interactions', () => {
     render(<MyDeliveries />);
     fireEvent.click(screen.getByRole('button', { name: 'Report issue' }));
 
-    expect(screen.getByLabelText('Delivery issue details')).toHaveClass('bg-white', 'border-slate-200', 'xl:border-amber-300');
+    expect(screen.getByRole('dialog', { name: 'Report issue' })).toBeVisible();
+    expect(screen.getByLabelText('Delivery issue details')).toHaveClass('bg-white', 'border-slate-200');
+    expect(screen.getByRole('button', { name: 'Report issue' })).toHaveClass('bg-white', 'text-slate-950');
+    expect(screen.getByRole('button', { name: 'Report incident' })).toHaveClass('bg-white', 'text-slate-950');
+    expect(screen.getByRole('article')).toHaveClass('border', 'border-slate-200');
+    expect(screen.getByRole('article')).not.toHaveClass('border-2', 'border-blue-400');
 
     for (const option of [
       'Recipient unavailable',

@@ -11,7 +11,7 @@ import { workflowFeedback } from '@/utils/workflowFeedback';
 import { GPS_POSITION_OPTIONS, getCurrentPositionWithTimeout } from '@/utils/geolocation';
 import { Head, router, usePage } from '@inertiajs/react';
 import axios from 'axios';
-import { FormEvent, useEffect, useRef, useState } from 'react';
+import { FormEvent, type ReactNode, useEffect, useRef, useState } from 'react';
 import {
   arrivalStatusText,
   completedProgress,
@@ -149,7 +149,7 @@ function CompactModalPicker({
       </svg>
       {modalIsOpen && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-[2px]"
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-[2px]"
           onPointerDown={() => setIsOpen(false)}
         >
           <div
@@ -219,6 +219,93 @@ function CompactModalPicker({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function DeliveryActionModal({
+  modalId,
+  open,
+  title,
+  description,
+  onClose,
+  children,
+}: {
+  modalId: string;
+  open: boolean;
+  title: string;
+  description: string;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  useEffect(() => {
+    if (!open) return;
+
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onCloseRef.current();
+    };
+
+    document.addEventListener('keydown', closeOnEscape);
+    document.body.style.overflow = 'hidden';
+    closeButtonRef.current?.focus();
+
+    return () => {
+      document.removeEventListener('keydown', closeOnEscape);
+      document.body.style.overflow = previousOverflow;
+      if (previouslyFocused && document.contains(previouslyFocused)) previouslyFocused.focus();
+    };
+  }, [open]);
+
+  if (!open) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-[2px] sm:p-6"
+      onPointerDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={`${modalId}-title`}
+        aria-describedby={`${modalId}-description`}
+        className="flex max-h-[calc(100dvh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white text-slate-950 shadow-2xl dark:border-slate-700 dark:bg-slate-950 dark:text-white sm:max-h-[calc(100dvh-3rem)]"
+      >
+        <header className="flex items-start justify-between gap-4 border-b border-slate-200 p-5 dark:border-slate-700 sm:p-6">
+          <div className="min-w-0">
+            <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+              Delivery action
+            </p>
+            <h2 id={`${modalId}-title`} className="mt-1 text-xl font-extrabold tracking-tight sm:text-2xl">
+              {title}
+            </h2>
+            <p id={`${modalId}-description`} className="mt-1 text-sm leading-5 text-slate-600 dark:text-slate-300">
+              {description}
+            </p>
+          </div>
+          <button
+            ref={closeButtonRef}
+            type="button"
+            aria-label={`Close ${title}`}
+            onClick={onClose}
+            className="inline-flex min-h-11 min-w-11 shrink-0 touch-manipulation items-center justify-center rounded-2xl border border-slate-300 text-slate-950 transition-colors hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-slate-700 dark:text-white dark:hover:bg-slate-900"
+          >
+            <svg aria-hidden="true" className="h-5 w-5" viewBox="0 0 20 20" fill="none">
+              <path d="m5 5 10 10M15 5 5 15" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+            </svg>
+          </button>
+        </header>
+        <div className="min-h-0 overflow-y-auto p-4 sm:p-6">
+          {children}
+        </div>
+      </div>
     </div>
   );
 }
@@ -461,18 +548,13 @@ function DeliveryActions({
   const arrivalEvidence = useRef<Record<string, unknown> | null>(null);
   const issueKeys = useRef<Record<string, string>>({});
   const proofKeys = useRef<Record<string, string>>({});
-  const issuePanelRef = useRef<HTMLDivElement>(null);
   const mutationDisabled = locked || !online || pendingAction !== null;
   const buttonClass =
     'min-h-12 w-full touch-manipulation rounded-xl bg-blue-600 px-4 text-sm font-bold text-white transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 xl:min-h-11';
   const compactPrimaryButtonClass =
-    'min-h-12 w-full touch-manipulation rounded-2xl bg-slate-950 px-4 text-sm font-bold text-white transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-slate-950 xl:min-h-11 xl:rounded-xl xl:bg-blue-600 xl:text-white xl:focus:ring-blue-500';
+    'min-h-12 w-full touch-manipulation rounded-2xl bg-slate-950 px-4 text-sm font-bold text-white transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-slate-950 xl:min-h-11 xl:rounded-xl';
   const compactSecondaryButtonClass =
-    'min-h-12 w-full touch-manipulation rounded-2xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-950 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-white xl:min-h-11 xl:rounded-xl xl:bg-transparent xl:dark:bg-transparent xl:focus:ring-0 xl:focus:ring-offset-0';
-
-  useEffect(() => {
-    if (showIssue) issuePanelRef.current?.focus();
-  }, [showIssue]);
+    'min-h-12 w-full touch-manipulation rounded-2xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-950 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-white xl:min-h-11 xl:rounded-xl';
 
   if (item.kind === 'batch' && item.status === 'accepted') {
     const key = `batch-start:${item.id}`;
@@ -613,117 +695,130 @@ function DeliveryActions({
       },
     );
   };
-  const issuePanel = showIssue ? (
-    <div
-      ref={issuePanelRef}
-      tabIndex={-1}
-      aria-label={isRepairPickup ? 'Failed pickup details' : 'Delivery issue details'}
-      className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 text-slate-950 shadow-sm outline-none focus:ring-2 focus:ring-slate-950 dark:border-slate-700 dark:bg-slate-950 dark:text-white xl:space-y-3 xl:rounded-xl xl:border-amber-300 xl:bg-amber-50 xl:p-3 xl:text-slate-950 xl:shadow-none xl:focus:ring-amber-500 xl:dark:border-amber-800 xl:dark:bg-amber-950/30 xl:dark:text-white"
+  const issuePanel = (
+    <DeliveryActionModal
+      modalId={`delivery-issue-${delivery.id}`}
+      open={showIssue}
+      title={isRepairPickup ? 'Failed pickup' : 'Report issue'}
+      description={isRepairPickup
+        ? 'Record why the pickup could not be completed.'
+        : 'Share the delivery issue for dispatcher review.'}
+      onClose={() => setShowIssue(false)}
     >
-      <label className="block text-sm font-semibold">
-        {isRepairPickup ? 'Failed pickup reason' : 'Issue reason'}
-        <CompactModalPicker
-          pickerId={`${isRepairPickup ? 'failed-pickup' : 'delivery-issue'}-reason-${delivery.id}`}
-          label={isRepairPickup ? 'Failed pickup reason' : 'Issue reason'}
-          value={issueReason}
-          onChange={setIssueReason}
-          options={issueOptions}
-          placeholder="Choose a reason"
-          className="xl:border-amber-300 xl:focus:ring-amber-500 xl:dark:border-amber-800 xl:dark:bg-slate-900"
-        />
-      </label>
-      <label className="block text-sm font-semibold">
-        {isRepairPickup ? 'Failed pickup notes' : 'Notes'} {requiresIssueNotes ? '(required)' : '(optional)'}
-        <textarea
-          aria-label={isRepairPickup ? 'Failed pickup notes' : 'Issue notes'}
-          required={requiresIssueNotes}
-          value={issueNotes}
-          onChange={(event) => setIssueNotes(event.target.value)}
-          className="mt-2 min-h-24 w-full rounded-2xl border border-slate-300 bg-white p-4 text-base text-slate-950 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-slate-700 dark:bg-slate-950 dark:text-white xl:mt-1 xl:min-h-20 xl:rounded-xl xl:border-amber-300 xl:p-3 xl:text-sm xl:focus:ring-amber-500 xl:dark:border-amber-800 xl:dark:bg-slate-900"
-        />
-      </label>
-      <label className="block text-sm font-semibold">
-        {isRepairPickup ? 'Failed pickup photo (required)' : `Issue photo ${requiresIssuePhoto ? '(required)' : '(optional)'}`}
-        <input
-          type="file"
-          required={requiresIssuePhoto}
-          accept="image/*"
-          capture={isRepairPickup ? 'environment' : undefined}
-          aria-label={isRepairPickup ? 'Failed pickup photo' : 'Issue photo'}
-          onChange={(event) => setIssueFile(event.target.files?.[0] ?? null)}
-          className="mt-2 block w-full text-sm"
-        />
-      </label>
-      {!online && (
-        <p role="status" className="text-center text-sm font-semibold text-slate-700 dark:text-slate-300 xl:text-amber-700 xl:dark:text-amber-300">
-          Retry after reconnect
-        </p>
-      )}
-      <button
-        type="button"
-        disabled={
-          mutationDisabled ||
-          !assignment ||
-          !issueReason ||
-          (requiresIssuePhoto && !issueFile) ||
-          (requiresIssueNotes && !issueNotes.trim()) ||
-          pendingAction === issueKey
-        }
-        onClick={submitIssue}
-        className={compactPrimaryButtonClass}
+      <div
+        aria-label={isRepairPickup ? 'Failed pickup details' : 'Delivery issue details'}
+        className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 text-slate-950 dark:border-slate-700 dark:bg-slate-950 dark:text-white sm:p-5"
       >
-        {isRepairPickup ? 'Submit failed pickup' : 'Submit issue'}
-      </button>
-    </div>
-  ) : null;
-  const incidentPanel = showIncident ? (
-    <div
-      className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 text-slate-950 shadow-sm dark:border-slate-700 dark:bg-slate-950 dark:text-white xl:space-y-3 xl:rounded-xl xl:border-red-300 xl:bg-red-50 xl:p-3 xl:text-slate-950 xl:shadow-none xl:dark:border-red-800 xl:dark:bg-red-950/30 xl:dark:text-white"
-      aria-label="Delivery incident details"
+        <label className="block text-sm font-semibold">
+          {isRepairPickup ? 'Failed pickup reason' : 'Issue reason'}
+          <CompactModalPicker
+            pickerId={`${isRepairPickup ? 'failed-pickup' : 'delivery-issue'}-reason-${delivery.id}`}
+            label={isRepairPickup ? 'Failed pickup reason' : 'Issue reason'}
+            value={issueReason}
+            onChange={setIssueReason}
+            options={issueOptions}
+            placeholder="Choose a reason"
+          />
+        </label>
+        <label className="block text-sm font-semibold">
+          {isRepairPickup ? 'Failed pickup notes' : 'Notes'} {requiresIssueNotes ? '(required)' : '(optional)'}
+          <textarea
+            aria-label={isRepairPickup ? 'Failed pickup notes' : 'Issue notes'}
+            required={requiresIssueNotes}
+            value={issueNotes}
+            onChange={(event) => setIssueNotes(event.target.value)}
+            className="mt-2 min-h-24 w-full rounded-2xl border border-slate-300 bg-white p-4 text-base text-slate-950 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+          />
+        </label>
+        <label className="block text-sm font-semibold">
+          {isRepairPickup ? 'Failed pickup photo (required)' : `Issue photo ${requiresIssuePhoto ? '(required)' : '(optional)'}`}
+          <input
+            type="file"
+            required={requiresIssuePhoto}
+            accept="image/*"
+            capture={isRepairPickup ? 'environment' : undefined}
+            aria-label={isRepairPickup ? 'Failed pickup photo' : 'Issue photo'}
+            onChange={(event) => setIssueFile(event.target.files?.[0] ?? null)}
+            className="mt-2 block w-full text-sm"
+          />
+        </label>
+        {!online && (
+          <p role="status" className="text-center text-sm font-semibold text-slate-700 dark:text-slate-300">
+            Retry after reconnect
+          </p>
+        )}
+        <button
+          type="button"
+          disabled={
+            mutationDisabled ||
+            !assignment ||
+            !issueReason ||
+            (requiresIssuePhoto && !issueFile) ||
+            (requiresIssueNotes && !issueNotes.trim()) ||
+            pendingAction === issueKey
+          }
+          onClick={submitIssue}
+          className={compactPrimaryButtonClass}
+        >
+          {isRepairPickup ? 'Submit failed pickup' : 'Submit issue'}
+        </button>
+      </div>
+    </DeliveryActionModal>
+  );
+  const incidentPanel = (
+    <DeliveryActionModal
+      modalId={`delivery-incident-${delivery.id}`}
+      open={showIncident}
+      title="Report incident"
+      description="Add the details and evidence the dispatcher needs to review this incident."
+      onClose={() => setShowIncident(false)}
     >
-      <p className="text-sm font-semibold">Delivery incident</p>
-      <label className="block text-sm font-semibold">
-        Incident type
-        <CompactModalPicker
-          pickerId={`delivery-incident-type-${delivery.id}`}
-          label="Incident type"
-          value={incidentType}
-          onChange={setIncidentType}
-          options={incidentTypes}
-          placeholder="Choose an incident"
-          className="xl:border-red-300 xl:focus:ring-red-500 xl:dark:border-red-800 xl:dark:bg-slate-900"
-        />
-      </label>
-      <label className="block text-sm font-semibold">
-        What happened?
-        <textarea
-          aria-label="Incident notes"
-          value={incidentNotes}
-          onChange={(event) => setIncidentNotes(event.target.value)}
-          className="mt-2 min-h-24 w-full rounded-2xl border border-slate-300 bg-white p-4 text-base text-slate-950 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-slate-700 dark:bg-slate-950 dark:text-white xl:mt-1 xl:min-h-20 xl:rounded-xl xl:border-red-300 xl:p-3 xl:text-sm xl:focus:ring-red-500 xl:dark:border-red-800 xl:dark:bg-slate-900"
-        />
-      </label>
-      <label className="block text-sm font-semibold">
-        Evidence photo
-        <input
-          type="file"
-          required
-          accept="image/jpeg,image/png,image/webp"
-          aria-label="Incident evidence photo"
-          onChange={(event) => setIncidentFile(event.target.files?.[0] ?? null)}
-          className="mt-2 block w-full text-sm"
-        />
-      </label>
-      <button
-        type="button"
-        disabled={mutationDisabled || !incidentType || !incidentNotes.trim() || !incidentFile}
-        onClick={submitIncident}
-        className={`${compactPrimaryButtonClass} xl:bg-red-600 xl:focus:ring-red-500`}
+      <div
+        aria-label="Delivery incident details"
+        className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 text-slate-950 dark:border-slate-700 dark:bg-slate-950 dark:text-white sm:p-5"
       >
-        Submit incident
-      </button>
-    </div>
-  ) : null;
+        <label className="block text-sm font-semibold">
+          Incident type
+          <CompactModalPicker
+            pickerId={`delivery-incident-type-${delivery.id}`}
+            label="Incident type"
+            value={incidentType}
+            onChange={setIncidentType}
+            options={incidentTypes}
+            placeholder="Choose an incident"
+          />
+        </label>
+        <label className="block text-sm font-semibold">
+          What happened?
+          <textarea
+            aria-label="Incident notes"
+            value={incidentNotes}
+            onChange={(event) => setIncidentNotes(event.target.value)}
+            className="mt-2 min-h-24 w-full rounded-2xl border border-slate-300 bg-white p-4 text-base text-slate-950 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+          />
+        </label>
+        <label className="block text-sm font-semibold">
+          Evidence photo
+          <input
+            type="file"
+            required
+            accept="image/jpeg,image/png,image/webp"
+            aria-label="Incident evidence photo"
+            onChange={(event) => setIncidentFile(event.target.files?.[0] ?? null)}
+            className="mt-2 block w-full text-sm"
+          />
+        </label>
+        <button
+          type="button"
+          disabled={mutationDisabled || !incidentType || !incidentNotes.trim() || !incidentFile}
+          onClick={submitIncident}
+          className={compactPrimaryButtonClass}
+        >
+          Submit incident
+        </button>
+      </div>
+    </DeliveryActionModal>
+  );
   const arrivalPhase = ['assigned', 'pickup_scheduled'].includes(delivery.status)
     ? 'pickup'
     : delivery.status === 'in_transit'
@@ -877,7 +972,7 @@ function DeliveryActions({
               type="button"
               disabled={mutationDisabled}
               onClick={() => setShowIssue((current) => !current)}
-              className={`${compactSecondaryButtonClass} xl:border-amber-500 xl:text-amber-800 xl:dark:text-amber-200`}
+              className={compactSecondaryButtonClass}
             >
               Failed pickup
             </button>
@@ -997,7 +1092,7 @@ function DeliveryActions({
           type="button"
           disabled={mutationDisabled}
           onClick={() => setShowIncident((current) => !current)}
-          className={`${compactSecondaryButtonClass} xl:border-red-400 xl:text-red-700 xl:dark:text-red-300`}
+          className={compactSecondaryButtonClass}
         >
           Report incident
         </button>
@@ -1059,7 +1154,7 @@ function DeliveryActions({
         type="button"
         disabled={mutationDisabled}
         onClick={() => setShowIssue((current) => !current)}
-        className={`${compactSecondaryButtonClass} xl:border-amber-400 xl:text-amber-800 xl:dark:text-amber-200`}
+        className={compactSecondaryButtonClass}
       >
         Report issue
       </button>
@@ -1068,7 +1163,7 @@ function DeliveryActions({
         type="button"
         disabled={mutationDisabled}
         onClick={() => setShowIncident((current) => !current)}
-        className={`${compactSecondaryButtonClass} xl:border-red-400 xl:text-red-700 xl:dark:text-red-300`}
+        className={compactSecondaryButtonClass}
       >
         Report incident
       </button>
@@ -1123,8 +1218,8 @@ function CurrentDeliveryCard({
       <h2 id="current-delivery-heading" className="mb-4 text-center text-lg font-bold text-slate-950 dark:text-white xl:mb-3 xl:text-left">
         Current delivery
       </h2>
-      <article className="overflow-hidden rounded-2xl border-2 border-blue-400 bg-white shadow-sm dark:bg-slate-900">
-        <header className="space-y-4 border-b border-blue-100 p-5 dark:border-blue-900 xl:p-4">
+      <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
+        <header className="space-y-4 border-b border-slate-200 p-5 dark:border-slate-700 xl:p-4">
           <div className="flex flex-col items-start gap-3 xl:flex-row xl:justify-between">
             <div>
               <p className="text-xs font-bold uppercase tracking-wide text-blue-700 dark:text-blue-300">
