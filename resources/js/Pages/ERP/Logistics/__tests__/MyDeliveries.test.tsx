@@ -265,6 +265,10 @@ describe('MyDeliveries task-first hierarchy', () => {
     for (const label of ['Upcoming', 'History', 'Issues', 'All']) {
       expect(screen.getByRole('button', { name: label })).toBeVisible();
     }
+    const upcoming = screen.getByRole('button', { name: 'Upcoming' });
+    expect(upcoming).toHaveClass('bg-slate-100', 'text-slate-950');
+    expect(upcoming).not.toHaveClass('bg-slate-900');
+    expect(upcoming.className).not.toContain('ring-blue');
     expect(screen.getByLabelText('Business type')).toHaveValue('all');
   });
 
@@ -793,6 +797,8 @@ describe('MyDeliveries rider interactions', () => {
     expect(screen.getByRole('button', { name: 'Report incident' })).toHaveClass('bg-white', 'text-slate-950');
     expect(screen.getByRole('article')).toHaveClass('border', 'border-slate-200');
     expect(screen.getByRole('article')).not.toHaveClass('border-2', 'border-blue-400');
+    expect(screen.getByRole('link', { name: 'Directions' })).toHaveClass('border-slate-300', 'text-slate-950');
+    expect(screen.getByRole('link', { name: 'Directions' })).not.toHaveClass('border-blue-300', 'text-blue-700');
 
     for (const option of [
       'Recipient unavailable',
@@ -809,6 +815,8 @@ describe('MyDeliveries rider interactions', () => {
     const reason = screen.getByLabelText('Issue reason');
     const photo = screen.getByLabelText('Issue photo');
     const notes = screen.getByLabelText('Issue notes');
+    expect(screen.getByText('No photo selected')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Upload photo' })).toBeVisible();
     fireEvent.pointerDown(reason);
     const reasonPicker = screen.getByRole('dialog', { name: 'Issue reason' });
     fireEvent.click(within(reasonPicker).getByRole('option', { name: 'Recipient unavailable' }));
@@ -819,6 +827,13 @@ describe('MyDeliveries rider interactions', () => {
     fireEvent.change(reason, { target: { value: 'unsafe_location' } });
     expect(photo).not.toBeRequired();
     expect(notes).toBeRequired();
+    const issuePhoto = new File(['issue'], 'issue.jpg', { type: 'image/jpeg' });
+    fireEvent.change(photo, { target: { files: [issuePhoto] } });
+    expect(screen.getByText('issue.jpg')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Remove Issue photo' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Issue photo' }));
+    expect(screen.getByText('No photo selected')).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Remove Issue photo' })).not.toBeInTheDocument();
     fireEvent.change(notes, { target: { value: 'Unsafe road conditions.' } });
     fireEvent.click(screen.getByRole('button', { name: 'Submit issue' }));
 
@@ -1126,6 +1141,8 @@ describe('MyDeliveries rider interactions', () => {
     fireEvent.change(screen.getByLabelText('Incident notes'), { target: { value: 'Motorcycle puncture on route.' } });
     const photo = new File(['incident'], 'incident.jpg', { type: 'image/jpeg' });
     fireEvent.change(screen.getByLabelText('Incident evidence photo'), { target: { files: [photo] } });
+    expect(screen.getByText('incident.jpg')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Remove Incident evidence photo' })).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Submit incident' }));
 
     await waitFor(() => expect(mocks.reportIncident).toHaveBeenCalledOnce());
