@@ -149,7 +149,7 @@ function CompactModalPicker({
       </svg>
       {modalIsOpen && (
         <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-[2px]"
+          className="fixed inset-0 z-[100001] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-[2px]"
           onPointerDown={() => setIsOpen(false)}
         >
           <div
@@ -266,7 +266,7 @@ function DeliveryActionModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-[2px] sm:p-6"
+      className="fixed inset-0 z-[100000] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-[2px] sm:p-6"
       onPointerDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
