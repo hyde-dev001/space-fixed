@@ -46,7 +46,7 @@ During migration, canonical shell destinations may resolve to existing legacy or
 5. Home is the universal owner control surface.
 6. The Action Center is the canonical discovery path for owner-required decisions and material exceptions.
 7. Specialized domain pages remain the detail and execution surfaces.
-8. Routine low-risk work should not require owner approval when fixed policy permits it.
+8. Routine low-risk work may proceed without owner approval when the Shop Owner's selected policy and fixed domain safeguards permit it.
 9. Thresholds never bypass mandatory validation, maker/checker, legal, compliance, payment, tenancy, or source-state rules.
 10. Compatibility routes must delegate to authoritative behavior rather than duplicate it.
 11. Retirement is based on capability coverage, not page count.
@@ -132,7 +132,7 @@ Shop Owner
 
 `Operate` and `Oversee` are information-architecture groups, not semantic or authorization boundaries. A company owner may operate directly when authorized, and an individual owner may use oversight views.
 
-Transactional payment handling belongs under `Operate`. Payment-gateway configuration, refund policy, approval thresholds, and other owner-controlled financial rules belong under `Business Settings -> Payments and Approvals`. Finance workflows may consume those settings but Finance actors do not gain permission to change them unless a separate capability explicitly permits it.
+Transactional payment handling belongs under `Operate`. Payment-gateway configuration, refund policy, approval thresholds, and other owner-controlled financial rules belong in the existing Shop Settings approval/payment area, reached from the owner account/settings menu rather than a primary sidebar group. Finance workflows may consume those settings but Finance actors do not gain permission to change them unless a separate capability explicitly permits it.
 
 `Reports & Audit` remains separate because audit evidence is not an operational work queue.
 
@@ -438,13 +438,35 @@ Detailed states remain visible in authoritative records and audit. Simplificatio
 
 The system uses fixed workflow policies, not a configurable approval builder.
 
+Phase 4 evolves the existing Shop Settings approval section and `ShopOwnerApprovalPolicyService`. It does not introduce another settings page, a second configuration store, or a generic workflow engine.
+
 For each supported workflow, owner-controlled policy determines:
 
-1. whether the transaction may proceed without owner approval;
-2. the amount or risk threshold requiring owner approval;
-3. whether Finance validation is required;
-4. whether an exception always requires owner attention;
-5. the role responsible for execution after approval.
+1. the owner's approval-participation mode;
+2. the amount, risk, dispute, or exception threshold requiring owner approval;
+3. whether Finance or another domain validation is required;
+4. which conditions always require owner attention;
+5. the role responsible for delegated review or execution after approval;
+6. the owner's notification preference, independently from approval responsibility.
+
+The conceptual participation modes are:
+
+```text
+always
+→ every otherwise-valid qualifying request requires an owner decision
+
+policy_based
+→ an owner decision is required only when an authoritative threshold,
+  risk, dispute, or exception policy requires it
+
+delegated
+→ routine approvals route to an authorized staff role where domain policy permits
+→ mandatory owner cases still route to the owner
+```
+
+These names define product semantics; exact stored values may follow repository conventions. `Require my approval` and `Notify me` are independent concerns. Disabling a notification must not remove an approval responsibility, and requesting a notification must not grant decision authority.
+
+Existing `enabled` and `limit` settings must be compatibility-mapped to the expanded policy without silently changing a shop's current approval behavior. Reconciliation and verification precede stricter enforcement.
 
 ```text
 Transaction created
@@ -464,9 +486,13 @@ Thresholds determine whether owner approval is required. They never bypass manda
 
 The default is that an actor does not create and approve the same record. A fixed domain policy may permit direct owner operation where a legitimate owner-operated SME workflow requires it.
 
-Owner-controlled policies remain under `Business Settings -> Payments and Approvals`. Finance may consume those policies but cannot modify them without an explicit separate capability.
+Owner-controlled policies remain in the existing Shop Settings approval section, reachable from the owner account/settings area. They do not require a primary sidebar group. Finance may consume those policies but cannot modify them without an explicit separate capability.
 
-## 21. Approval Simplification Targets
+The Action Center is the canonical discovery surface for owner-required decisions. Authoritative domain approval/detail pages remain the execution, validation, reason-capture, and audit surfaces. Removing a consolidated `Approval Pages` sidebar group does not transfer mutation logic or approval history into the Action Center.
+
+## 21. Owner-Controlled Approval Participation Targets
+
+The targets below describe recommended `policy_based` defaults, not mandatory reductions in owner involvement. A shop may select `always` where the workflow supports it. `delegated` is available only where authoritative domain policy, staff capability, maker/checker requirements, and mandatory safeguards permit delegation.
 
 | Workflow | Target Owner Role |
 |---|---|
@@ -491,7 +517,7 @@ Operations: execute the approved action
 
 A workflow does not require both Finance and owner approval twice unless the facts or financial exposure materially change between stages.
 
-Each approval-family phase records a baseline and expected reduction in routine owner approvals. Verification confirms that material-risk cases still route to the owner and mandatory checks still execute.
+Each approval-family phase records baseline approval volume and the expected impact of each supported participation mode. Verification confirms that the owner's selected settings are honored, mandatory cases still route correctly, all required checks execute, and no shop is silently migrated to fewer approvals.
 
 ## 22. Responsibility Model
 
@@ -637,9 +663,9 @@ Scope:
 - canonical detail links;
 - notification-link migration where appropriate.
 
-### Phase 4 — Approval Simplification
+### Phase 4 — Owner-Controlled Approval Policy
 
-**Objective:** Reserve owner approval for material business risk and policy exceptions.
+**Objective:** Allow each Shop Owner to choose approval participation per supported workflow while preserving mandatory domain safeguards and clear execution responsibility.
 
 Approval families proceed in this order unless a focused design proves a dependency change:
 
@@ -649,7 +675,9 @@ Approval families proceed in this order unless a focused design proves a depende
 4. Payroll and Salary Adjustments;
 5. Suspensions, Repair Rejections, and High-Value Repairs.
 
-Each family defines fixed thresholds, Finance/owner/operation responsibility, exception routing, baseline approval volume, expected reduction, and evidence that material-risk cases remain owner-visible.
+For each family, Phase 4 evolves the existing Shop Settings approval controls and the existing approval-policy service rather than creating a parallel configuration surface. Current `enabled` and `limit` values are compatibility-mapped before expanded modes are enforced. Notification preferences remain separate from approval responsibility.
+
+Each family defines supported participation modes, compatibility mapping, authoritative thresholds, mandatory owner cases, Finance/owner/operation responsibility, delegation eligibility, notification behavior, exception routing, baseline approval volume, expected mode impact, and evidence that the selected settings are enforced safely. The Action Center discovers required decisions; existing domain workflows continue to execute them.
 
 ### Phase 5 — Legacy and Shop Owner ERP Consolidation
 
@@ -777,10 +805,10 @@ The master program is complete when:
 6. Default queues are bounded and cannot bury owner-required decisions beneath informational work.
 7. Domain state remains authoritative and projections are deterministic and decision-complete.
 8. Employee, Order, and Purchase Order state contracts are consistent.
-9. Routine low-risk work does not require owner approval where fixed policy permits it.
+9. Routine low-risk work follows the Shop Owner's selected approval policy subject to mandatory domain safeguards.
 10. Thresholds never bypass mandatory controls.
 11. Finance, owner, and operational responsibilities are explicit.
-12. Approval-family changes demonstrate reduced routine owner approval volume while preserving material-risk routing.
+12. Approval-family changes preserve existing shop behavior during migration and demonstrably honor each owner's selected participation mode while preserving mandatory routing.
 13. Authorized operational tools remain reachable when de-emphasized.
 14. Legacy or ERP entry points are retired only after capability coverage.
 15. The separate Shop Owner ERP portal is retired without removing useful ERP capability.
