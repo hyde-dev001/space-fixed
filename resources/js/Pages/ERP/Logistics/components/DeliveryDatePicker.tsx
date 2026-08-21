@@ -7,6 +7,7 @@ type Props = {
   onChange: (value: string) => void;
   disabled?: boolean;
   calendarId?: string;
+  insideModal?: boolean;
 };
 
 const monthFormatter = new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
@@ -35,7 +36,7 @@ const todayFallback = () => {
   return `${value('year')}-${value('month')}-${value('day')}`;
 };
 
-export default function DeliveryDatePicker({ value, minDate, onChange, disabled = false, calendarId = 'delivery-date-calendar' }: Props) {
+export default function DeliveryDatePicker({ value, minDate, onChange, disabled = false, calendarId = 'delivery-date-calendar', insideModal = false }: Props) {
   const minimum = minDate || todayFallback();
   const minimumDate = parseDate(minimum) ?? firstOfMonth(new Date());
   const initialMonth = firstOfMonth(parseDate(value) ?? minimumDate);
@@ -79,6 +80,9 @@ export default function DeliveryDatePicker({ value, minDate, onChange, disabled 
   }, [visibleMonth]);
 
   const previousMonthDisabled = monthKey(visibleMonth) <= monthKey(firstOfMonth(minimumDate));
+  const calendarClassName = insideModal
+    ? 'fixed left-1/2 top-1/2 z-[100000] max-h-[calc(100dvh-2rem)] w-[min(28rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl border border-gray-200 bg-white p-4 shadow-xl dark:border-gray-700 dark:bg-gray-800'
+    : 'absolute left-1/2 top-full z-30 mt-2 w-[min(28rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-2xl border border-gray-200 bg-white p-4 shadow-xl dark:border-gray-700 dark:bg-gray-800 xl:left-0 xl:translate-x-0';
   const chooseDate = (date: Date) => {
     const nextValue = dateKey(date);
     if (nextValue < minimum) return;
@@ -101,7 +105,7 @@ export default function DeliveryDatePicker({ value, minDate, onChange, disabled 
       <span className={value ? 'text-gray-900 dark:text-white' : 'text-gray-500'}>{displayDate(value)}</span>
       <CalendarDays aria-hidden="true" size={17} className="shrink-0 text-gray-500" />
     </button>
-    {open && <div id={calendarId} role="dialog" aria-label="Delivery date calendar" className="absolute left-1/2 top-full z-30 mt-2 w-[min(28rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-2xl border border-gray-200 bg-white p-4 shadow-xl dark:border-gray-700 dark:bg-gray-800 xl:left-0 xl:translate-x-0">
+    {open && <div id={calendarId} role="dialog" aria-label="Delivery date calendar" className={calendarClassName}>
       <div className="flex items-center justify-between gap-3">
         <button type="button" aria-label="Previous month" disabled={previousMonthDisabled} onClick={() => setVisibleMonth(new Date(Date.UTC(visibleMonth.getUTCFullYear(), visibleMonth.getUTCMonth() - 1, 1)))} className="inline-flex min-h-9 min-w-9 items-center justify-center rounded-lg border border-gray-300 text-gray-600 transition hover:border-blue-400 hover:text-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-600 dark:text-gray-300">
           <ChevronLeft aria-hidden="true" size={17} />
