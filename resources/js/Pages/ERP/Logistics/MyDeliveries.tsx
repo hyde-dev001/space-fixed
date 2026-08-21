@@ -42,23 +42,39 @@ const arrivalReasons = [
 const isCompactViewport = () =>
   typeof window !== 'undefined' && window.innerWidth < 1280;
 
-function ArrivalReasonPicker({
-  deliveryId,
+type PickerOption = readonly [string, string];
+
+function CompactModalPicker({
+  pickerId,
+  label,
   value,
   onChange,
+  options,
+  placeholder,
+  className = '',
 }: {
-  deliveryId: number;
+  pickerId: string;
+  label: string;
   value: string;
   onChange: (value: string) => void;
+  options: readonly PickerOption[];
+  placeholder: string;
+  className?: string;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const pickerRef = useRef<HTMLDivElement>(null);
-  const listboxId = `arrival-reason-options-${deliveryId}`;
-  const options = [['', 'Choose a reason'] as const, ...arrivalReasons];
-  const selectedLabel = options.find(([option]) => option === value)?.[1] ?? 'Choose a reason';
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const modalIsOpen = isOpen && isCompactViewport();
+  const listboxId = `${pickerId}-options`;
+  const dialogId = `${pickerId}-dialog`;
+  const pickerOptions: readonly PickerOption[] = [['', placeholder] as const, ...options];
+  const selectedLabel = pickerOptions.find(([option]) => option === value)?.[1] ?? placeholder;
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!modalIsOpen) return;
+
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
 
     const closeOnOutsidePress = (event: PointerEvent) => {
       if (!pickerRef.current?.contains(event.target as Node)) {
@@ -68,15 +84,24 @@ function ArrivalReasonPicker({
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setIsOpen(false);
     };
+    const closeOnResize = () => {
+      if (!isCompactViewport()) setIsOpen(false);
+    };
 
     document.addEventListener('pointerdown', closeOnOutsidePress);
     document.addEventListener('keydown', closeOnEscape);
+    window.addEventListener('resize', closeOnResize);
+    document.body.style.overflow = 'hidden';
+    closeButtonRef.current?.focus();
 
     return () => {
       document.removeEventListener('pointerdown', closeOnOutsidePress);
       document.removeEventListener('keydown', closeOnEscape);
+      window.removeEventListener('resize', closeOnResize);
+      document.body.style.overflow = previousOverflow;
+      if (previouslyFocused && document.contains(previouslyFocused)) previouslyFocused.focus();
     };
-  }, [isOpen]);
+  }, [modalIsOpen]);
 
   const choose = (nextValue: string) => {
     onChange(nextValue);
@@ -86,9 +111,10 @@ function ArrivalReasonPicker({
   return (
     <div ref={pickerRef} className="relative mt-1">
       <select
-        aria-label="Arrival reason"
-        aria-controls={listboxId}
-        aria-expanded={isOpen}
+        id={pickerId}
+        aria-label={label}
+        aria-controls={modalIsOpen ? dialogId : undefined}
+        aria-expanded={modalIsOpen}
         value={value}
         onChange={(event) => choose(event.target.value)}
         onPointerDown={(event) => {
@@ -107,43 +133,90 @@ function ArrivalReasonPicker({
             setIsOpen(true);
           }
         }}
-        className="min-h-12 w-full appearance-none rounded-xl border border-amber-300 bg-white px-4 pr-10 text-base transition-colors focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 dark:bg-slate-900 xl:min-h-11 xl:appearance-auto xl:px-3 xl:pr-3 xl:text-sm"
+        className={`min-h-12 w-full appearance-none rounded-2xl border border-slate-300 bg-white px-4 pr-11 text-base text-slate-950 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-slate-700 dark:bg-slate-950 dark:text-white xl:min-h-11 xl:appearance-auto xl:rounded-xl xl:px-3 xl:pr-3 xl:text-sm ${className}`}
       >
-        {options.map(([option, label]) => (
-          <option key={option || 'empty'} value={option}>{label}</option>
+        {pickerOptions.map(([option, optionLabel]) => (
+          <option key={option || 'empty'} value={option}>{optionLabel}</option>
         ))}
       </select>
       <svg
         aria-hidden="true"
-        className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-amber-900 xl:hidden dark:text-amber-100"
+        className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-950 xl:hidden dark:text-white"
         viewBox="0 0 20 20"
         fill="none"
       >
         <path d="m5 7.5 5 5 5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
-      {isOpen && isCompactViewport() && (
+      {modalIsOpen && (
         <div
-          id={listboxId}
-          role="listbox"
-          aria-label="Arrival reason options"
-          className="absolute inset-x-0 top-[calc(100%+0.5rem)] z-30 max-h-64 overflow-y-auto rounded-2xl border border-amber-200 bg-white p-1.5 shadow-xl ring-1 ring-amber-950/5 dark:border-amber-800 dark:bg-slate-900 dark:ring-white/10"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-[2px]"
+          onPointerDown={() => setIsOpen(false)}
         >
-          {options.map(([option, label]) => (
-            <button
-              key={option || 'empty-option'}
-              type="button"
-              role="option"
-              aria-selected={value === option}
-              onClick={() => choose(option)}
-              className={`min-h-11 w-full rounded-xl px-3 text-left text-sm font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-inset ${
-                value === option
-                  ? 'bg-amber-100 text-amber-950 dark:bg-amber-900/50 dark:text-amber-100'
-                  : 'text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
+          <div
+            id={dialogId}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={`${dialogId}-title`}
+            onPointerDown={(event) => event.stopPropagation()}
+            className="flex max-h-[calc(100dvh-2rem)] w-full max-w-md flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white text-slate-950 shadow-2xl dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+          >
+            <header className="flex items-start justify-between gap-4 border-b border-slate-200 p-5 dark:border-slate-700">
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                  Choose one
+                </p>
+                <h2 id={`${dialogId}-title`} className="mt-1 text-lg font-extrabold tracking-tight">
+                  {label}
+                </h2>
+                <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                  {selectedLabel === placeholder ? 'Select an option to continue.' : `Selected: ${selectedLabel}`}
+                </p>
+              </div>
+              <button
+                ref={closeButtonRef}
+                type="button"
+                aria-label={`Close ${label} picker`}
+                onClick={() => setIsOpen(false)}
+                className="inline-flex min-h-11 min-w-11 shrink-0 touch-manipulation items-center justify-center rounded-full border border-slate-300 text-slate-950 transition-colors hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-slate-700 dark:text-white dark:hover:bg-slate-900"
+              >
+                <svg aria-hidden="true" className="h-5 w-5" viewBox="0 0 20 20" fill="none">
+                  <path d="m5 5 10 10M15 5 5 15" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                </svg>
+              </button>
+            </header>
+            <div className="min-h-0 overflow-y-auto p-3">
+              <div
+                id={listboxId}
+                role="listbox"
+                aria-label={`${label} options`}
+                className="space-y-1"
+              >
+                {pickerOptions.map(([option, optionLabel]) => (
+                  <button
+                    key={option || 'empty-option'}
+                    type="button"
+                    role="option"
+                    aria-selected={value === option}
+                    onClick={() => choose(option)}
+                    className={`min-h-12 w-full touch-manipulation rounded-2xl border px-4 text-left text-sm font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-inset dark:focus:ring-white ${
+                      value === option
+                        ? 'border-slate-950 bg-slate-950 text-white dark:border-white dark:bg-white dark:text-slate-950'
+                        : 'border-slate-200 bg-white text-slate-950 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:hover:bg-slate-900'
+                    }`}
+                  >
+                    <span className="flex items-center justify-between gap-3">
+                      <span>{optionLabel}</span>
+                      {value === option && (
+                        <svg aria-hidden="true" className="h-4 w-4 shrink-0" viewBox="0 0 20 20" fill="none">
+                          <path d="m4 10 4 4 8-8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      )}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -392,6 +465,10 @@ function DeliveryActions({
   const mutationDisabled = locked || !online || pendingAction !== null;
   const buttonClass =
     'min-h-12 w-full touch-manipulation rounded-xl bg-blue-600 px-4 text-sm font-bold text-white transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 xl:min-h-11';
+  const compactPrimaryButtonClass =
+    'min-h-12 w-full touch-manipulation rounded-2xl bg-slate-950 px-4 text-sm font-bold text-white transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-slate-950 xl:min-h-11 xl:rounded-xl xl:bg-blue-600 xl:text-white xl:focus:ring-blue-500';
+  const compactSecondaryButtonClass =
+    'min-h-12 w-full touch-manipulation rounded-2xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-950 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-white xl:min-h-11 xl:rounded-xl xl:bg-transparent xl:dark:bg-transparent xl:focus:ring-0 xl:focus:ring-offset-0';
 
   useEffect(() => {
     if (showIssue) issuePanelRef.current?.focus();
@@ -541,21 +618,19 @@ function DeliveryActions({
       ref={issuePanelRef}
       tabIndex={-1}
       aria-label={isRepairPickup ? 'Failed pickup details' : 'Delivery issue details'}
-      className="space-y-3 rounded-xl border border-amber-300 bg-amber-50 p-3 outline-none focus:ring-2 focus:ring-amber-500 dark:border-amber-800 dark:bg-amber-950/30"
+      className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 text-slate-950 shadow-sm outline-none focus:ring-2 focus:ring-slate-950 dark:border-slate-700 dark:bg-slate-950 dark:text-white xl:space-y-3 xl:rounded-xl xl:border-amber-300 xl:bg-amber-50 xl:p-3 xl:text-slate-950 xl:shadow-none xl:focus:ring-amber-500 xl:dark:border-amber-800 xl:dark:bg-amber-950/30 xl:dark:text-white"
     >
       <label className="block text-sm font-semibold">
         {isRepairPickup ? 'Failed pickup reason' : 'Issue reason'}
-        <select
-          aria-label={isRepairPickup ? 'Failed pickup reason' : 'Issue reason'}
+        <CompactModalPicker
+          pickerId={`${isRepairPickup ? 'failed-pickup' : 'delivery-issue'}-reason-${delivery.id}`}
+          label={isRepairPickup ? 'Failed pickup reason' : 'Issue reason'}
           value={issueReason}
-          onChange={(event) => setIssueReason(event.target.value)}
-          className="mt-1 min-h-11 w-full rounded-xl border border-amber-300 bg-white px-3 dark:bg-slate-900"
-        >
-          <option value="">Choose a reason</option>
-          {issueOptions.map(([value, label]) => (
-            <option key={value} value={value}>{label}</option>
-          ))}
-        </select>
+          onChange={setIssueReason}
+          options={issueOptions}
+          placeholder="Choose a reason"
+          className="xl:border-amber-300 xl:focus:ring-amber-500 xl:dark:border-amber-800 xl:dark:bg-slate-900"
+        />
       </label>
       <label className="block text-sm font-semibold">
         {isRepairPickup ? 'Failed pickup notes' : 'Notes'} {requiresIssueNotes ? '(required)' : '(optional)'}
@@ -564,7 +639,7 @@ function DeliveryActions({
           required={requiresIssueNotes}
           value={issueNotes}
           onChange={(event) => setIssueNotes(event.target.value)}
-          className="mt-1 min-h-20 w-full rounded-xl border border-amber-300 bg-white p-3 dark:bg-slate-900"
+          className="mt-2 min-h-24 w-full rounded-2xl border border-slate-300 bg-white p-4 text-base text-slate-950 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-slate-700 dark:bg-slate-950 dark:text-white xl:mt-1 xl:min-h-20 xl:rounded-xl xl:border-amber-300 xl:p-3 xl:text-sm xl:focus:ring-amber-500 xl:dark:border-amber-800 xl:dark:bg-slate-900"
         />
       </label>
       <label className="block text-sm font-semibold">
@@ -580,7 +655,7 @@ function DeliveryActions({
         />
       </label>
       {!online && (
-        <p role="status" className="text-center text-sm font-semibold text-amber-700 dark:text-amber-300">
+        <p role="status" className="text-center text-sm font-semibold text-slate-700 dark:text-slate-300 xl:text-amber-700 xl:dark:text-amber-300">
           Retry after reconnect
         </p>
       )}
@@ -595,7 +670,7 @@ function DeliveryActions({
           pendingAction === issueKey
         }
         onClick={submitIssue}
-        className={buttonClass}
+        className={compactPrimaryButtonClass}
       >
         {isRepairPickup ? 'Submit failed pickup' : 'Submit issue'}
       </button>
@@ -603,21 +678,21 @@ function DeliveryActions({
   ) : null;
   const incidentPanel = showIncident ? (
     <div
-      className="space-y-3 rounded-xl border border-red-300 bg-red-50 p-3 dark:border-red-800 dark:bg-red-950/30"
+      className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 text-slate-950 shadow-sm dark:border-slate-700 dark:bg-slate-950 dark:text-white xl:space-y-3 xl:rounded-xl xl:border-red-300 xl:bg-red-50 xl:p-3 xl:text-slate-950 xl:shadow-none xl:dark:border-red-800 xl:dark:bg-red-950/30 xl:dark:text-white"
       aria-label="Delivery incident details"
     >
-      <p className="text-sm font-semibold text-red-950 dark:text-red-100">Delivery incident</p>
+      <p className="text-sm font-semibold">Delivery incident</p>
       <label className="block text-sm font-semibold">
         Incident type
-        <select
-          aria-label="Incident type"
+        <CompactModalPicker
+          pickerId={`delivery-incident-type-${delivery.id}`}
+          label="Incident type"
           value={incidentType}
-          onChange={(event) => setIncidentType(event.target.value)}
-          className="mt-1 min-h-11 w-full rounded-xl border border-red-300 bg-white px-3 dark:bg-slate-900"
-        >
-          <option value="">Choose an incident</option>
-          {incidentTypes.map(([value, text]) => <option key={value} value={value}>{text}</option>)}
-        </select>
+          onChange={setIncidentType}
+          options={incidentTypes}
+          placeholder="Choose an incident"
+          className="xl:border-red-300 xl:focus:ring-red-500 xl:dark:border-red-800 xl:dark:bg-slate-900"
+        />
       </label>
       <label className="block text-sm font-semibold">
         What happened?
@@ -625,7 +700,7 @@ function DeliveryActions({
           aria-label="Incident notes"
           value={incidentNotes}
           onChange={(event) => setIncidentNotes(event.target.value)}
-          className="mt-1 min-h-20 w-full rounded-xl border border-red-300 bg-white p-3 dark:bg-slate-900"
+          className="mt-2 min-h-24 w-full rounded-2xl border border-slate-300 bg-white p-4 text-base text-slate-950 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-slate-700 dark:bg-slate-950 dark:text-white xl:mt-1 xl:min-h-20 xl:rounded-xl xl:border-red-300 xl:p-3 xl:text-sm xl:focus:ring-red-500 xl:dark:border-red-800 xl:dark:bg-slate-900"
         />
       </label>
       <label className="block text-sm font-semibold">
@@ -643,7 +718,7 @@ function DeliveryActions({
         type="button"
         disabled={mutationDisabled || !incidentType || !incidentNotes.trim() || !incidentFile}
         onClick={submitIncident}
-        className="min-h-11 w-full rounded-xl bg-red-600 px-4 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+        className={`${compactPrimaryButtonClass} xl:bg-red-600 xl:focus:ring-red-500`}
       >
         Submit incident
       </button>
@@ -719,10 +794,14 @@ function DeliveryActions({
           </p>
           <label className="block text-sm font-semibold">
             Arrival reason
-            <ArrivalReasonPicker
-              deliveryId={delivery.id}
+            <CompactModalPicker
+              pickerId={`arrival-reason-${delivery.id}`}
+              label="Arrival reason"
               value={arrivalReason}
               onChange={setArrivalReason}
+              options={arrivalReasons}
+              placeholder="Choose a reason"
+              className="xl:border-amber-300 xl:focus:ring-amber-500 xl:dark:border-amber-800 xl:dark:bg-slate-900"
             />
           </label>
           <label className="block text-sm font-semibold">
@@ -798,7 +877,7 @@ function DeliveryActions({
               type="button"
               disabled={mutationDisabled}
               onClick={() => setShowIssue((current) => !current)}
-              className="min-h-11 w-full rounded-xl border border-amber-500 px-4 text-sm font-bold text-amber-800 disabled:cursor-not-allowed disabled:opacity-50 dark:text-amber-200"
+              className={`${compactSecondaryButtonClass} xl:border-amber-500 xl:text-amber-800 xl:dark:text-amber-200`}
             >
               Failed pickup
             </button>
@@ -918,7 +997,7 @@ function DeliveryActions({
           type="button"
           disabled={mutationDisabled}
           onClick={() => setShowIncident((current) => !current)}
-          className="min-h-11 w-full rounded-xl border border-red-400 px-4 text-sm font-bold text-red-700 disabled:cursor-not-allowed disabled:opacity-50 dark:text-red-300"
+          className={`${compactSecondaryButtonClass} xl:border-red-400 xl:text-red-700 xl:dark:text-red-300`}
         >
           Report incident
         </button>
@@ -980,7 +1059,7 @@ function DeliveryActions({
         type="button"
         disabled={mutationDisabled}
         onClick={() => setShowIssue((current) => !current)}
-        className="min-h-11 w-full rounded-xl border border-amber-400 px-4 text-sm font-bold text-amber-800 disabled:cursor-not-allowed disabled:opacity-50 dark:text-amber-200"
+        className={`${compactSecondaryButtonClass} xl:border-amber-400 xl:text-amber-800 xl:dark:text-amber-200`}
       >
         Report issue
       </button>
@@ -989,7 +1068,7 @@ function DeliveryActions({
         type="button"
         disabled={mutationDisabled}
         onClick={() => setShowIncident((current) => !current)}
-        className="min-h-11 w-full rounded-xl border border-red-400 px-4 text-sm font-bold text-red-700 disabled:cursor-not-allowed disabled:opacity-50 dark:text-red-300"
+        className={`${compactSecondaryButtonClass} xl:border-red-400 xl:text-red-700 xl:dark:text-red-300`}
       >
         Report incident
       </button>
