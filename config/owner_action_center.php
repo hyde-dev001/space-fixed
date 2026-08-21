@@ -20,9 +20,17 @@ return [
                 'logistics' => true,
             ],
         ],
+        'waiting_on_others' => [
+            'enabled' => true,
+            'coverage' => [
+                'compliance' => true,
+                'refunds' => true,
+                'logistics' => true,
+            ],
+        ],
     ],
     'per_page' => 20,
     'max_per_page' => 50,
     'max_page' => 100,
-    'home_limit' => 5,
+    'home_limit' => 3,
 ];

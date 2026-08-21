@@ -502,7 +502,7 @@ final class OwnerActionCenterServiceTest extends TestCase
             'owner_action_center.coverage.refunds' => $coverage === 'refunds',
             'owner_action_center.coverage.expenses' => $coverage === 'expenses',
             'owner_action_center.coverage.purchase_requests' => $coverage === 'purchase_requests',
-            'owner_action_center.home_limit' => 5,
+            'owner_action_center.home_limit' => 3,
         ]);
     }
 

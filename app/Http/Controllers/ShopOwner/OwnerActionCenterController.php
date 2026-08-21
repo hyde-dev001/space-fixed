@@ -73,13 +73,13 @@ final class OwnerActionCenterController extends Controller
     {
         $bucket = $request->query('bucket', 'needs_my_decision');
         if (! is_string($bucket)
-            || ! in_array($bucket, ['needs_my_decision', 'urgent_exceptions'], true)) {
+            || ! in_array($bucket, OwnerAttentionQuery::BUCKETS, true)) {
             throw ValidationException::withMessages([
                 'bucket' => 'The Action Center bucket is invalid.',
             ]);
         }
 
-        if ($bucket === 'urgent_exceptions' && ! $this->exceptionsEnabled()) {
+        if ($bucket !== 'needs_my_decision' && ! $this->bucketEnabled($bucket)) {
             return new OwnerAttentionQuery(
                 page: 1,
                 perPage: $this->configuredDefaultPerPage(
@@ -117,20 +117,30 @@ final class OwnerActionCenterController extends Controller
                 ->toArray(),
         ];
 
-        if ($this->exceptionsEnabled()) {
+        if ($this->bucketEnabled('urgent_exceptions')) {
             $summaries['urgent_exceptions'] = $this->actionCenter
                 ->summaryForHome($owner, 'urgent_exceptions')
+                ->toArray();
+        }
+
+        if ($this->bucketEnabled('waiting_on_others')) {
+            $summaries['waiting_on_others'] = $this->actionCenter
+                ->summaryForHome($owner, 'waiting_on_others')
                 ->toArray();
         }
 
         return $summaries;
     }
 
-    private function exceptionsEnabled(): bool
+    private function bucketEnabled(string $bucket): bool
     {
-        $coverage = config('owner_action_center.buckets.urgent_exceptions.coverage', []);
+        if ($bucket === 'needs_my_decision') {
+            return true;
+        }
 
-        return config('owner_action_center.buckets.urgent_exceptions.enabled', false) === true
+        $coverage = config("owner_action_center.buckets.{$bucket}.coverage", []);
+
+        return config("owner_action_center.buckets.{$bucket}.enabled", false) === true
             && is_array($coverage)
             && in_array(true, $coverage, true);
     }

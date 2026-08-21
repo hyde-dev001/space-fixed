@@ -65,6 +65,9 @@ final class PhaseThreeCCharacterizationTest extends TestCase
     public function test_waiting_baseline_is_no_enabled_and_absent_from_the_action_center_page(): void
     {
         $owner = ShopOwner::factory()->approved()->create();
+        config([
+            'owner_action_center.buckets.waiting_on_others.enabled' => false,
+        ]);
 
         $result = app(OwnerActionCenterService::class)->queueForActionCenter(
             $owner,

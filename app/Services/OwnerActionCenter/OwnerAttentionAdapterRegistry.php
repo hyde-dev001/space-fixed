@@ -90,18 +90,11 @@ final class OwnerAttentionAdapterRegistry
             throw new InvalidArgumentException('Owner Action Center coverage is not supported.');
         }
 
-        if ($bucket === 'waiting_on_others') {
+        if (! $this->bucketEnabled($bucket)) {
             return [];
         }
 
-        if ($bucket === 'urgent_exceptions'
-            && config('owner_action_center.buckets.urgent_exceptions.enabled', false) !== true) {
-            return [];
-        }
-
-        $configuredCoverage = $bucket === 'needs_my_decision'
-            ? config('owner_action_center.coverage', [])
-            : config('owner_action_center.buckets.urgent_exceptions.coverage', []);
+        $configuredCoverage = $this->configuredCoverage($bucket);
         if (! is_array($configuredCoverage)) {
             throw new InvalidArgumentException('Owner Action Center coverage configuration must be an array.');
         }
@@ -137,5 +130,21 @@ final class OwnerAttentionAdapterRegistry
         }
 
         return $adapters;
+    }
+
+    private function bucketEnabled(string $bucket): bool
+    {
+        if ($bucket === 'needs_my_decision') {
+            return true;
+        }
+
+        return config("owner_action_center.buckets.{$bucket}.enabled", false) === true;
+    }
+
+    private function configuredCoverage(string $bucket): mixed
+    {
+        return $bucket === 'needs_my_decision'
+            ? config('owner_action_center.coverage', [])
+            : config("owner_action_center.buckets.{$bucket}.coverage", []);
     }
 }

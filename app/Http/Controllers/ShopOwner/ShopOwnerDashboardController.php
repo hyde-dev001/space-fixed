@@ -46,6 +46,12 @@ final class ShopOwnerDashboardController extends Controller
                             ->summaryForHome($owner, 'urgent_exceptions')
                             ->toArray();
                     }
+
+                    if ($this->waitingEnabled()) {
+                        $props['ownerWaitingOnOthers'] = $this->actionCenter
+                            ->summaryForHome($owner, 'waiting_on_others')
+                            ->toArray();
+                    }
                 }
             } catch (Throwable $exception) {
                 report($exception);
@@ -57,9 +63,19 @@ final class ShopOwnerDashboardController extends Controller
 
     private function exceptionsEnabled(): bool
     {
-        $coverage = config('owner_action_center.buckets.urgent_exceptions.coverage', []);
+        return $this->bucketEnabled('urgent_exceptions');
+    }
 
-        return config('owner_action_center.buckets.urgent_exceptions.enabled', false) === true
+    private function waitingEnabled(): bool
+    {
+        return $this->bucketEnabled('waiting_on_others');
+    }
+
+    private function bucketEnabled(string $bucket): bool
+    {
+        $coverage = config("owner_action_center.buckets.{$bucket}.coverage", []);
+
+        return config("owner_action_center.buckets.{$bucket}.enabled", false) === true
             && is_array($coverage)
             && in_array(true, $coverage, true);
     }

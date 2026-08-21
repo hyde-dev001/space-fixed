@@ -115,6 +115,37 @@ final class OwnerActionCenterRouteTest extends TestCase
                 ->has('bucketSummaries.urgent_exceptions'));
     }
 
+    public function test_waiting_bucket_accepts_its_scoped_source_and_resets_pagination(): void
+    {
+        $owner = $this->phaseThreeOwner();
+        config([
+            'owner_action_center.buckets.urgent_exceptions.enabled' => true,
+            'owner_action_center.buckets.urgent_exceptions.coverage.compliance' => true,
+            'owner_action_center.buckets.waiting_on_others.enabled' => true,
+            'owner_action_center.buckets.waiting_on_others.coverage.compliance' => true,
+        ]);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->get(route('shop-owner.shell.action-center', [
+                'bucket' => 'waiting_on_others',
+                'source' => 'compliance',
+                'page' => 2,
+                'per_page' => 3,
+            ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('ShopOwner/ActionCenter', false)
+                ->where('bucket', 'waiting_on_others')
+                ->where('source', 'compliance')
+                ->where('page', 1)
+                ->where('ownerActionCenter.bucket', 'waiting_on_others')
+                ->where('ownerActionCenter.coverage', 'compliance')
+                ->where('ownerActionCenter.degradation_status', 'no_enabled_adapters')
+                ->has('bucketSummaries.needs_my_decision')
+                ->has('bucketSummaries.urgent_exceptions')
+                ->has('bucketSummaries.waiting_on_others'));
+    }
+
     public function test_disabled_exception_bucket_normalizes_to_the_default_decision_bucket(): void
     {
         $owner = $this->phaseThreeOwner();
@@ -133,6 +164,30 @@ final class OwnerActionCenterRouteTest extends TestCase
                 ->where('ownerActionCenter.bucket', 'needs_my_decision'));
     }
 
+    public function test_disabling_waiting_leaves_existing_bucket_summaries_unchanged(): void
+    {
+        $owner = $this->phaseThreeOwner();
+        config([
+            'owner_action_center.buckets.urgent_exceptions.enabled' => true,
+            'owner_action_center.buckets.urgent_exceptions.coverage.compliance' => true,
+            'owner_action_center.buckets.waiting_on_others.enabled' => false,
+            'owner_action_center.buckets.waiting_on_others.coverage.compliance' => true,
+        ]);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->get(route('shop-owner.shell.action-center', [
+                'bucket' => 'waiting_on_others',
+                'source' => 'compliance',
+            ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('bucket', 'needs_my_decision')
+                ->where('source', 'all')
+                ->has('bucketSummaries.needs_my_decision')
+                ->has('bucketSummaries.urgent_exceptions')
+                ->missing('bucketSummaries.waiting_on_others'));
+    }
+
     public function test_selected_canonical_home_receives_a_bounded_summary(): void
     {
         $owner = $this->phaseThreeOwner();
@@ -144,7 +199,7 @@ final class OwnerActionCenterRouteTest extends TestCase
                 ->component('ShopOwner/Dashboard', false)
                 ->where('showPhaseThreePlaceholders', true)
                 ->where('ownerActionCenter.coverage', 'all')
-                ->where('ownerActionCenter.pagination.per_page', 5));
+                ->where('ownerActionCenter.pagination.per_page', 3));
     }
 
     public function test_canonical_home_receives_separate_decision_and_exception_summaries(): void
@@ -161,7 +216,27 @@ final class OwnerActionCenterRouteTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->where('ownerActionCenter.bucket', 'needs_my_decision')
                 ->where('ownerUrgentExceptions.bucket', 'urgent_exceptions')
-                ->where('ownerUrgentExceptions.pagination.per_page', 5));
+                ->where('ownerUrgentExceptions.pagination.per_page', 3));
+    }
+
+    public function test_canonical_home_receives_an_independent_waiting_summary(): void
+    {
+        $owner = $this->phaseThreeOwner();
+        config([
+            'owner_action_center.buckets.urgent_exceptions.enabled' => true,
+            'owner_action_center.buckets.urgent_exceptions.coverage.compliance' => true,
+            'owner_action_center.buckets.waiting_on_others.enabled' => true,
+            'owner_action_center.buckets.waiting_on_others.coverage.compliance' => true,
+        ]);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->get(route('shop-owner.shell.home'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('ownerActionCenter.bucket', 'needs_my_decision')
+                ->where('ownerUrgentExceptions.bucket', 'urgent_exceptions')
+                ->where('ownerWaitingOnOthers.bucket', 'waiting_on_others')
+                ->where('ownerWaitingOnOthers.pagination.per_page', 3));
     }
 
     public function test_existing_dashboard_never_reads_phase_three_attention_sources(): void
