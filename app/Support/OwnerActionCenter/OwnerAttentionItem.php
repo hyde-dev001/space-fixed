@@ -68,7 +68,7 @@ final readonly class OwnerAttentionItem
         $validResponsibility = match ($primaryBucket) {
             'needs_my_decision' => $waitingOn === 'shop_owner' && $ownerActionRequired,
             'urgent_exceptions' => $waitingOn === 'none' && ! $ownerActionRequired,
-            'waiting_on_others' => in_array($waitingOn, ['finance', 'hr', 'procurement', 'logistics', 'compliance', 'staff', 'super_admin'], true)
+            'waiting_on_others' => in_array($waitingOn, ['super_admin', 'finance', 'payment_recovery', 'rider', 'dispatcher'], true)
                 && ! $ownerActionRequired,
             default => false,
         };

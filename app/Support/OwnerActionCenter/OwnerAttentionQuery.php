@@ -15,7 +15,7 @@ final readonly class OwnerAttentionQuery
     public const COVERAGES_BY_BUCKET = [
         'needs_my_decision' => ['all', 'refunds', 'expenses', 'purchase_requests'],
         'urgent_exceptions' => ['all', 'compliance', 'refunds', 'logistics'],
-        'waiting_on_others' => ['all', 'compliance', 'refunds', 'expenses', 'purchase_requests', 'logistics'],
+        'waiting_on_others' => ['all', 'compliance', 'refunds', 'logistics'],
     ];
 
     public const MAX_PAGE = 100;

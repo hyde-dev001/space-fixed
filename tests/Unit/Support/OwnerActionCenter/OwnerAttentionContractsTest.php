@@ -117,6 +117,106 @@ final class OwnerAttentionContractsTest extends TestCase
         }
     }
 
+    public function test_waiting_on_others_accepts_only_other_party_responsibility_values(): void
+    {
+        foreach (['super_admin', 'finance', 'payment_recovery', 'rider', 'dispatcher'] as $waitingOn) {
+            $item = $this->classifiedExpense('waiting_on_others', $waitingOn, false, 'expenses');
+
+            $this->assertSame('waiting_on_others', $item->primaryBucket);
+            $this->assertSame($waitingOn, $item->waitingOn);
+            $this->assertFalse($item->ownerActionRequired);
+        }
+    }
+
+    #[DataProvider('invalidWaitingClassificationProvider')]
+    public function test_waiting_on_others_rejects_owner_or_unowned_responsibility(callable $factory): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        $factory();
+    }
+
+    /**
+     * @return array<string, array{callable(): OwnerAttentionItem}>
+     */
+    public static function invalidWaitingClassificationProvider(): array
+    {
+        return [
+            'owner responsibility' => [static fn (): OwnerAttentionItem => new OwnerAttentionItem(
+                sourceType: 'expense',
+                sourceId: 1,
+                category: 'owner_approval',
+                primaryBucket: 'waiting_on_others',
+                module: 'finance',
+                title: 'Expense',
+                conciseSummary: 'Review expense.',
+                priorityTier: 'high',
+                materialityTier: 'medium',
+                comparableMonetaryExposure: 1.0,
+                urgencyAt: null,
+                actionableSince: '2026-08-15T09:00:00+08:00',
+                waitingOn: 'shop_owner',
+                ownerActionRequired: false,
+                coverageSource: 'expenses',
+                destinationUrl: '/shop-owner/expense-approvals',
+            )],
+            'unowned responsibility' => [static fn (): OwnerAttentionItem => new OwnerAttentionItem(
+                sourceType: 'expense',
+                sourceId: 1,
+                category: 'owner_approval',
+                primaryBucket: 'waiting_on_others',
+                module: 'finance',
+                title: 'Expense',
+                conciseSummary: 'Review expense.',
+                priorityTier: 'high',
+                materialityTier: 'medium',
+                comparableMonetaryExposure: 1.0,
+                urgencyAt: null,
+                actionableSince: '2026-08-15T09:00:00+08:00',
+                waitingOn: 'none',
+                ownerActionRequired: false,
+                coverageSource: 'expenses',
+                destinationUrl: '/shop-owner/expense-approvals',
+            )],
+            'unknown responsibility' => [static fn (): OwnerAttentionItem => new OwnerAttentionItem(
+                sourceType: 'expense',
+                sourceId: 1,
+                category: 'owner_approval',
+                primaryBucket: 'waiting_on_others',
+                module: 'finance',
+                title: 'Expense',
+                conciseSummary: 'Review expense.',
+                priorityTier: 'high',
+                materialityTier: 'medium',
+                comparableMonetaryExposure: 1.0,
+                urgencyAt: null,
+                actionableSince: '2026-08-15T09:00:00+08:00',
+                waitingOn: 'unknown_party',
+                ownerActionRequired: false,
+                coverageSource: 'expenses',
+                destinationUrl: '/shop-owner/expense-approvals',
+            )],
+            'owner action required' => [static fn (): OwnerAttentionItem => new OwnerAttentionItem(
+                sourceType: 'expense',
+                sourceId: 1,
+                category: 'owner_approval',
+                primaryBucket: 'waiting_on_others',
+                module: 'finance',
+                title: 'Expense',
+                conciseSummary: 'Review expense.',
+                priorityTier: 'high',
+                materialityTier: 'medium',
+                comparableMonetaryExposure: 1.0,
+                urgencyAt: null,
+                actionableSince: '2026-08-15T09:00:00+08:00',
+                waitingOn: 'payment_recovery',
+                ownerActionRequired: true,
+                coverageSource: 'expenses',
+                destinationUrl: '/shop-owner/expense-approvals',
+            )],
+        ];
+    }
+
     #[DataProvider('invalidAttentionItemProvider')]
     public function test_attention_item_rejects_invalid_values(callable $factory): void
     {
@@ -250,6 +350,18 @@ final class OwnerAttentionContractsTest extends TestCase
         $this->assertSame(20, $query->candidateLimit);
     }
 
+    public function test_waiting_on_others_exposes_only_phase_three_c_coverage_families(): void
+    {
+        foreach (['all', 'compliance', 'refunds', 'logistics'] as $coverage) {
+            $query = new OwnerAttentionQuery(
+                bucket: 'waiting_on_others',
+                coverage: $coverage,
+            );
+
+            $this->assertSame($coverage, $query->coverage);
+        }
+    }
+
     #[DataProvider('invalidQueryProvider')]
     public function test_query_rejects_invalid_coverage_and_pagination(callable $factory): void
     {
@@ -274,12 +386,51 @@ final class OwnerAttentionContractsTest extends TestCase
                 bucket: 'needs_my_decision',
                 coverage: 'compliance',
             )],
+            'expense source in waiting bucket' => [static fn (): OwnerAttentionQuery => new OwnerAttentionQuery(
+                bucket: 'waiting_on_others',
+                coverage: 'expenses',
+            )],
+            'purchase request source in waiting bucket' => [static fn (): OwnerAttentionQuery => new OwnerAttentionQuery(
+                bucket: 'waiting_on_others',
+                coverage: 'purchase_requests',
+            )],
             'page below one' => [static fn (): OwnerAttentionQuery => new OwnerAttentionQuery(page: 0)],
             'page beyond bound' => [static fn (): OwnerAttentionQuery => new OwnerAttentionQuery(page: 101)],
             'per page below one' => [static fn (): OwnerAttentionQuery => new OwnerAttentionQuery(perPage: 0)],
             'per page beyond bound' => [static fn (): OwnerAttentionQuery => new OwnerAttentionQuery(perPage: 51)],
             'candidate bound below one' => [static fn (): OwnerAttentionQuery => new OwnerAttentionQuery(candidateLimit: 0)],
         ];
+    }
+
+    public function test_action_center_result_accepts_phase_three_c_adapter_keys(): void
+    {
+        $adapterKeys = [
+            'pending_compliance_renewals',
+            'waiting_order_refund_recovery',
+            'waiting_repair_refund_recovery',
+            'active_logistics_recovery',
+        ];
+
+        $result = new OwnerActionCenterResult(
+            items: [],
+            coverageCounts: [
+                'compliance' => 0,
+                'refunds' => 0,
+                'logistics' => 0,
+            ],
+            enabledAdapterKeys: $adapterKeys,
+            healthyAdapterKeys: $adapterKeys,
+            failedAdapterKeys: [],
+            degradationStatus: OwnerActionCenterDegradationStatus::None,
+            bucket: 'waiting_on_others',
+            coverage: 'all',
+            page: 1,
+            perPage: 20,
+            total: 0,
+            lastPage: 1,
+        );
+
+        $this->assertSame($adapterKeys, $result->toArray()['health']['enabled_adapter_keys']);
     }
 
     public function test_adapter_result_and_action_center_result_validate_immutable_shapes(): void

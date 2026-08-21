@@ -26,7 +26,11 @@ export type OwnerAttentionAdapterKey =
   | "compliance_documents"
   | "failed_order_refunds"
   | "failed_repair_refunds"
-  | "unowned_logistics_failures";
+  | "unowned_logistics_failures"
+  | "pending_compliance_renewals"
+  | "waiting_order_refund_recovery"
+  | "waiting_repair_refund_recovery"
+  | "active_logistics_recovery";
 
 export type OwnerAttentionSourceType =
   | "order_refund"
@@ -57,7 +61,7 @@ export interface OwnerAttentionItem {
   comparable_monetary_exposure: number | null;
   urgency_at: string | null;
   actionable_since: string;
-  waiting_on: "shop_owner" | "none" | "finance" | "hr" | "procurement" | "logistics" | "compliance" | "staff" | "super_admin";
+  waiting_on: "shop_owner" | "none" | "super_admin" | "finance" | "payment_recovery" | "rider" | "dispatcher";
   owner_action_required: boolean;
   coverage_source: OwnerAttentionCoverageSource;
   destination_url: string;

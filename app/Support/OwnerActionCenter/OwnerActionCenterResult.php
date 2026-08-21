@@ -18,6 +18,10 @@ final readonly class OwnerActionCenterResult
         'failed_order_refunds',
         'failed_repair_refunds',
         'unowned_logistics_failures',
+        'pending_compliance_renewals',
+        'waiting_order_refund_recovery',
+        'waiting_repair_refund_recovery',
+        'active_logistics_recovery',
     ];
 
     /**
