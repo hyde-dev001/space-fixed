@@ -1196,12 +1196,12 @@ function DeliveryActions({
           </p>
         </div>
         {!returnProof && (
-          <input
-            type="file"
-            accept="image/*"
-            aria-label="Return handoff photo"
-            onChange={(event) => setProofFile(event.target.files?.[0] ?? null)}
-            className="block w-full text-sm"
+          <DeliveryPhotoUpload
+            inputId={`return-handoff-photo-${delivery.id}`}
+            inputLabel="Return handoff photo"
+            label="Handoff photo"
+            file={proofFile}
+            onChange={setProofFile}
           />
         )}
         <button
@@ -1262,16 +1262,13 @@ function DeliveryActions({
       {arrivalSummary}
       {canRecordProof && (
         <div className="space-y-2 rounded-xl bg-slate-50 p-3 dark:bg-slate-800">
-          <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
-            Delivery proof
-            <input
-              type="file"
-              accept="image/*"
-              aria-label="Delivery proof"
-              onChange={(event) => setProofFile(event.target.files?.[0] ?? null)}
-              className="mt-2 block w-full text-sm"
-            />
-          </label>
+          <DeliveryPhotoUpload
+            inputId={`delivery-proof-photo-${delivery.id}`}
+            inputLabel="Delivery proof"
+            label="Delivery proof"
+            file={proofFile}
+            onChange={setProofFile}
+          />
           <button
             type="button"
             disabled={mutationDisabled || !proofFile || pendingAction === proofKey}

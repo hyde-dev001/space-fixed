@@ -759,8 +759,12 @@ describe('MyDeliveries rider interactions', () => {
     mocks.props.deliveryData.current = workItem('single', 'in_transit', [delivery]);
     render(<MyDeliveries />);
 
+    expect(screen.getByText('No photo selected')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Upload photo' })).toBeVisible();
     const proof = new File(['proof'], 'proof.jpg', { type: 'image/jpeg' });
     fireEvent.change(screen.getByLabelText('Delivery proof'), { target: { files: [proof] } });
+    expect(screen.getByText('proof.jpg')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Remove Delivery proof' })).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Submit delivery proof' }));
     await waitFor(() => expect(mocks.post).toHaveBeenCalledWith(
       '/api/logistics/legs/5/proof',
@@ -815,8 +819,9 @@ describe('MyDeliveries rider interactions', () => {
     const reason = screen.getByLabelText('Issue reason');
     const photo = screen.getByLabelText('Issue photo');
     const notes = screen.getByLabelText('Issue notes');
-    expect(screen.getByText('No photo selected')).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Upload photo' })).toBeVisible();
+    const issueDetails = screen.getByLabelText('Delivery issue details');
+    expect(within(issueDetails).getByText('No photo selected')).toBeVisible();
+    expect(within(issueDetails).getByRole('button', { name: 'Upload photo' })).toBeVisible();
     fireEvent.pointerDown(reason);
     const reasonPicker = screen.getByRole('dialog', { name: 'Issue reason' });
     fireEvent.click(within(reasonPicker).getByRole('option', { name: 'Recipient unavailable' }));
@@ -829,11 +834,11 @@ describe('MyDeliveries rider interactions', () => {
     expect(notes).toBeRequired();
     const issuePhoto = new File(['issue'], 'issue.jpg', { type: 'image/jpeg' });
     fireEvent.change(photo, { target: { files: [issuePhoto] } });
-    expect(screen.getByText('issue.jpg')).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Remove Issue photo' })).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'Remove Issue photo' }));
-    expect(screen.getByText('No photo selected')).toBeVisible();
-    expect(screen.queryByRole('button', { name: 'Remove Issue photo' })).not.toBeInTheDocument();
+    expect(within(issueDetails).getByText('issue.jpg')).toBeVisible();
+    expect(within(issueDetails).getByRole('button', { name: 'Remove Issue photo' })).toBeVisible();
+    fireEvent.click(within(issueDetails).getByRole('button', { name: 'Remove Issue photo' }));
+    expect(within(issueDetails).getByText('No photo selected')).toBeVisible();
+    expect(within(issueDetails).queryByRole('button', { name: 'Remove Issue photo' })).not.toBeInTheDocument();
     fireEvent.change(notes, { target: { value: 'Unsafe road conditions.' } });
     fireEvent.click(screen.getByRole('button', { name: 'Submit issue' }));
 
