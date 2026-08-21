@@ -275,11 +275,13 @@ describe('MyDeliveries task-first hierarchy', () => {
     const tabs = screen.getByRole('button', { name: 'Upcoming' }).parentElement;
     const filters = screen.getByLabelText('Business type').parentElement?.parentElement;
 
-    expect(page).toHaveClass('max-w-xl', 'space-y-8', 'lg:max-w-3xl', 'lg:space-y-6');
+    expect(page).toHaveClass('mx-auto', 'w-full', 'max-w-xl', 'space-y-8', 'xl:max-w-3xl', 'xl:space-y-6');
+    expect(page).not.toHaveClass('lg:max-w-3xl');
     expect(tabs).toHaveClass('gap-2');
-    expect(filters).toHaveClass('lg:grid-cols-3');
+    expect(filters).toHaveClass('xl:grid-cols-3');
+    expect(filters).not.toHaveClass('lg:grid-cols-3');
     expect(filters).not.toHaveClass('sm:grid-cols-3');
-    expect(screen.getByLabelText('Business type')).toHaveClass('min-h-12', 'text-base', 'lg:min-h-11', 'lg:text-sm');
+    expect(screen.getByLabelText('Business type')).toHaveClass('min-h-12', 'text-base', 'xl:min-h-11', 'xl:text-sm');
   });
 
   it('distinguishes batch and standalone work without bulk controls', () => {
