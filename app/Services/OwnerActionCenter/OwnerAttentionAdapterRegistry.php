@@ -101,6 +101,14 @@ final class OwnerAttentionAdapterRegistry
                     'bucket' => 'waiting_on_others',
                 ],
             ],
+            'logistics' => [
+                [
+                    'class' => 'App\\Services\\OwnerActionCenter\\Adapters\\ActiveLogisticsRecoveryAttentionAdapter',
+                    'key' => 'active_logistics_recovery',
+                    'coverage' => 'logistics',
+                    'bucket' => 'waiting_on_others',
+                ],
+            ],
         ],
     ];
 
