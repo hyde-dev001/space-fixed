@@ -275,13 +275,33 @@ describe('MyDeliveries task-first hierarchy', () => {
     const tabs = screen.getByRole('button', { name: 'Upcoming' }).parentElement;
     const filters = screen.getByLabelText('Business type').parentElement?.parentElement;
 
-    expect(page).toHaveClass('mx-auto', 'w-full', 'max-w-xl', 'space-y-8', 'xl:max-w-3xl', 'xl:space-y-6');
+    expect(page).toHaveClass('mx-auto', 'w-full', 'max-w-xl', 'md:max-w-3xl', 'xl:max-w-3xl', 'space-y-8', 'xl:space-y-6');
     expect(page).not.toHaveClass('lg:max-w-3xl');
+    expect(screen.getByRole('heading', { name: 'My Deliveries' }).parentElement).toHaveClass('text-center', 'xl:text-left');
     expect(tabs).toHaveClass('gap-2');
+    expect(tabs).toHaveClass('justify-center', 'xl:justify-start');
     expect(filters).toHaveClass('xl:grid-cols-3');
     expect(filters).not.toHaveClass('lg:grid-cols-3');
     expect(filters).not.toHaveClass('sm:grid-cols-3');
     expect(screen.getByLabelText('Business type')).toHaveClass('min-h-12', 'text-base', 'xl:min-h-11', 'xl:text-sm');
+  });
+
+  it('keeps the arrival reason picker contained on compact viewports', async () => {
+    mocks.arrive.mockRejectedValueOnce({
+      response: { status: 422, data: { errors: { exception_reason: ['Reason required.'] } } },
+    });
+    mocks.props.deliveryData.current = workItem('single', 'in_transit', [leg(10, null, 'in_transit')]);
+    render(<MyDeliveries />);
+
+    fireEvent.click(screen.getByRole('button', { name: "I've arrived" }));
+    await waitFor(() => expect(screen.getByLabelText('Arrival reason')).toBeVisible());
+
+    fireEvent.pointerDown(screen.getByLabelText('Arrival reason'));
+
+    const picker = screen.getByRole('listbox', { name: 'Arrival reason options' });
+    expect(picker).toBeVisible();
+    fireEvent.click(within(picker).getByRole('option', { name: 'GPS location is inaccurate' }));
+    expect(screen.getByLabelText('Arrival reason')).toHaveValue('gps_inaccurate');
   });
 
   it('distinguishes batch and standalone work without bulk controls', () => {

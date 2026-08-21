@@ -39,6 +39,117 @@ const arrivalReasons = [
   ['other', 'Other'],
 ] as const;
 
+const isCompactViewport = () =>
+  typeof window !== 'undefined' && window.innerWidth < 1280;
+
+function ArrivalReasonPicker({
+  deliveryId,
+  value,
+  onChange,
+}: {
+  deliveryId: number;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const pickerRef = useRef<HTMLDivElement>(null);
+  const listboxId = `arrival-reason-options-${deliveryId}`;
+  const options = [['', 'Choose a reason'] as const, ...arrivalReasons];
+  const selectedLabel = options.find(([option]) => option === value)?.[1] ?? 'Choose a reason';
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const closeOnOutsidePress = (event: PointerEvent) => {
+      if (!pickerRef.current?.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsOpen(false);
+    };
+
+    document.addEventListener('pointerdown', closeOnOutsidePress);
+    document.addEventListener('keydown', closeOnEscape);
+
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsidePress);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [isOpen]);
+
+  const choose = (nextValue: string) => {
+    onChange(nextValue);
+    setIsOpen(false);
+  };
+
+  return (
+    <div ref={pickerRef} className="relative mt-1">
+      <select
+        aria-label="Arrival reason"
+        aria-controls={listboxId}
+        aria-expanded={isOpen}
+        value={value}
+        onChange={(event) => choose(event.target.value)}
+        onPointerDown={(event) => {
+          if (!isCompactViewport()) return;
+          event.preventDefault();
+          event.stopPropagation();
+          setIsOpen(true);
+        }}
+        onKeyDown={(event) => {
+          if (!isCompactViewport()) return;
+          if (event.key === 'Escape') {
+            event.preventDefault();
+            setIsOpen(false);
+          } else if (event.key === 'Enter' || event.key === ' ' || event.key === 'ArrowDown') {
+            event.preventDefault();
+            setIsOpen(true);
+          }
+        }}
+        className="min-h-12 w-full appearance-none rounded-xl border border-amber-300 bg-white px-4 pr-10 text-base transition-colors focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 dark:bg-slate-900 xl:min-h-11 xl:appearance-auto xl:px-3 xl:pr-3 xl:text-sm"
+      >
+        {options.map(([option, label]) => (
+          <option key={option || 'empty'} value={option}>{label}</option>
+        ))}
+      </select>
+      <svg
+        aria-hidden="true"
+        className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-amber-900 xl:hidden dark:text-amber-100"
+        viewBox="0 0 20 20"
+        fill="none"
+      >
+        <path d="m5 7.5 5 5 5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+      {isOpen && isCompactViewport() && (
+        <div
+          id={listboxId}
+          role="listbox"
+          aria-label="Arrival reason options"
+          className="absolute inset-x-0 top-[calc(100%+0.5rem)] z-30 max-h-64 overflow-y-auto rounded-2xl border border-amber-200 bg-white p-1.5 shadow-xl ring-1 ring-amber-950/5 dark:border-amber-800 dark:bg-slate-900 dark:ring-white/10"
+        >
+          {options.map(([option, label]) => (
+            <button
+              key={option || 'empty-option'}
+              type="button"
+              role="option"
+              aria-selected={value === option}
+              onClick={() => choose(option)}
+              className={`min-h-11 w-full rounded-xl px-3 text-left text-sm font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-inset ${
+                value === option
+                  ? 'bg-amber-100 text-amber-950 dark:bg-amber-900/50 dark:text-amber-100'
+                  : 'text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const photoIssueReasons = new Set([
   'recipient_unavailable',
   'wrong_or_incomplete_address',
@@ -608,17 +719,11 @@ function DeliveryActions({
           </p>
           <label className="block text-sm font-semibold">
             Arrival reason
-            <select
-              aria-label="Arrival reason"
+            <ArrivalReasonPicker
+              deliveryId={delivery.id}
               value={arrivalReason}
-              onChange={(event) => setArrivalReason(event.target.value)}
-              className="mt-1 min-h-11 w-full rounded-xl border border-amber-300 bg-white px-3 dark:bg-slate-900"
-            >
-              <option value="">Choose a reason</option>
-              {arrivalReasons.map(([value, label]) => (
-                <option key={value} value={value}>{label}</option>
-              ))}
-            </select>
+              onChange={setArrivalReason}
+            />
           </label>
           <label className="block text-sm font-semibold">
             Arrival notes {arrivalReason === 'other' ? '(required)' : '(optional)'}
@@ -919,7 +1024,7 @@ function CurrentDeliveryCard({
   if (!item) {
     return (
       <section aria-labelledby="current-delivery-heading">
-        <h2 id="current-delivery-heading" className="mb-4 text-lg font-bold text-slate-950 dark:text-white xl:mb-3">
+        <h2 id="current-delivery-heading" className="mb-4 text-center text-lg font-bold text-slate-950 dark:text-white xl:mb-3 xl:text-left">
           Current delivery
         </h2>
         <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-5 text-center dark:border-slate-700 dark:bg-slate-900">
@@ -936,7 +1041,7 @@ function CurrentDeliveryCard({
 
   return (
     <section aria-labelledby="current-delivery-heading">
-      <h2 id="current-delivery-heading" className="mb-4 text-lg font-bold text-slate-950 dark:text-white xl:mb-3">
+      <h2 id="current-delivery-heading" className="mb-4 text-center text-lg font-bold text-slate-950 dark:text-white xl:mb-3 xl:text-left">
         Current delivery
       </h2>
       <article className="overflow-hidden rounded-2xl border-2 border-blue-400 bg-white shadow-sm dark:bg-slate-900">
@@ -1049,7 +1154,7 @@ function UpNextCard({
 
   return (
     <section aria-label="Up next">
-      <h2 className="mb-4 text-lg font-bold text-slate-950 dark:text-white xl:mb-3">Up next</h2>
+      <h2 className="mb-4 text-center text-lg font-bold text-slate-950 dark:text-white xl:mb-3 xl:text-left">Up next</h2>
       <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900 xl:p-4">
         <div className="flex flex-col items-start gap-3 xl:flex-row xl:justify-between">
           <div>
@@ -1269,10 +1374,10 @@ function DeliveryLists({
 
   return (
     <section aria-labelledby="delivery-list-heading" className="space-y-5 xl:space-y-4">
-      <h2 id="delivery-list-heading" className="text-lg font-bold text-slate-950 dark:text-white">
+      <h2 id="delivery-list-heading" className="text-center text-lg font-bold text-slate-950 dark:text-white xl:text-left">
         Deliveries
       </h2>
-      <div className="-mx-1 flex touch-pan-x gap-2 overflow-x-auto px-1 pb-2 xl:gap-1 xl:pb-1" aria-label="Delivery lists">
+      <div className="-mx-1 flex touch-pan-x justify-center gap-2 overflow-x-auto px-1 pb-2 xl:justify-start xl:gap-1 xl:pb-1" aria-label="Delivery lists">
         {(Object.keys(tabLabels) as RiderDeliveryTab[]).map((tab) => (
           <button
             key={tab}
@@ -1495,13 +1600,13 @@ export default function MyDeliveries() {
   return (
     <AppLayoutERP>
       <Head title="My Deliveries" />
-      <div className="mx-auto w-full max-w-xl space-y-8 pb-[calc(2rem+env(safe-area-inset-bottom))] xl:max-w-3xl xl:space-y-6 xl:pb-10">
-        <header>
+      <div className="mx-auto w-full max-w-xl space-y-8 pb-[calc(2rem+env(safe-area-inset-bottom))] md:max-w-3xl xl:max-w-3xl xl:space-y-6 xl:pb-10">
+        <header className="text-center xl:text-left">
           <h1 className="text-2xl font-extrabold text-slate-950 dark:text-white">My Deliveries</h1>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
             See what needs your attention now.
           </p>
-          <div className="mt-4 flex flex-col items-stretch gap-3 xl:mt-2 xl:flex-row xl:items-center xl:justify-between xl:gap-2">
+          <div className="mt-4 flex flex-col items-center gap-3 xl:mt-2 xl:flex-row xl:items-center xl:justify-between xl:gap-2">
             <p
               role="status"
               aria-live="polite"
