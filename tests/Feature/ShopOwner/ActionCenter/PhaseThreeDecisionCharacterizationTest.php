@@ -15,6 +15,10 @@ use App\Models\PurchaseOrderReceipt;
 use App\Models\PurchaseRequest;
 use App\Models\RepairRequest;
 use App\Models\ShopOwner;
+use App\Services\OwnerActionCenter\Adapters\FailedOrderRefundAttentionAdapter;
+use App\Services\OwnerActionCenter\Adapters\OrderRefundAttentionAdapter;
+use App\Services\OwnerActionCenter\OwnerActionCenterService;
+use App\Support\OwnerActionCenter\OwnerAttentionQuery;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -81,6 +85,40 @@ class PhaseThreeDecisionCharacterizationTest extends TestCase
         ]);
 
         $this->assertOrderRefundQueueContainsOnly($shopOwner, $refund->id);
+    }
+
+    public function test_owner_decision_refund_does_not_overlap_with_exception_or_waiting_baseline(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
+            'business_type' => 'retail',
+        ]);
+        $this->enableRefundOwnerApproval($shopOwner);
+        $refund = $this->createOrderRefund($shopOwner, [
+            'status' => 'requested',
+            'shop_owner_status' => 'pending',
+            'finance_status' => 'approved_initial',
+        ]);
+
+        $decision = app(OrderRefundAttentionAdapter::class)->read(
+            $shopOwner,
+            new OwnerAttentionQuery(bucket: 'needs_my_decision', coverage: 'refunds'),
+        );
+        $exception = app(FailedOrderRefundAttentionAdapter::class)->read(
+            $shopOwner,
+            new OwnerAttentionQuery(bucket: 'urgent_exceptions', coverage: 'refunds'),
+        );
+        $waiting = app(OwnerActionCenterService::class)->queueForActionCenter(
+            $shopOwner,
+            new OwnerAttentionQuery(bucket: 'waiting_on_others'),
+        );
+
+        $this->assertSame(['order_refund:'.$refund->id.':refund_approval'], array_map(
+            static fn ($item): string => $item->attentionKey,
+            $decision->items,
+        ));
+        $this->assertSame([], $exception->items);
+        $this->assertSame([], $waiting->items);
     }
 
     public function test_repair_refund_queue_keeps_tenant_scope_and_exposes_the_current_finance_stage(): void

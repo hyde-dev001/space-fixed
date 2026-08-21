@@ -7,7 +7,10 @@ namespace Tests\Feature\ShopOwner\ActionCenter;
 use App\Models\ShopDocument;
 use App\Models\ShopOwner;
 use App\Models\SuperAdmin;
+use App\Services\OwnerActionCenter\Adapters\ComplianceDocumentAttentionAdapter;
+use App\Services\OwnerActionCenter\OwnerActionCenterService;
 use App\Services\ShopDocumentValidityService;
+use App\Support\OwnerActionCenter\OwnerAttentionQuery;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -113,6 +116,30 @@ final class PhaseThreeBCharacterizationTest extends TestCase
         $this->persistDocument($owner, $reviewer, 'mayors_permit', [
             'version_number' => 2,
         ]);
+    }
+
+    public function test_material_compliance_exception_does_not_overlap_with_waiting_baseline(): void
+    {
+        $owner = ShopOwner::factory()->approved()->create();
+        $reviewer = SuperAdmin::factory()->admin()->create();
+        $document = $this->persistDocument($owner, $reviewer, 'mayors_permit', [
+            'expires_on' => '2026-08-23',
+        ]);
+
+        $exception = app(ComplianceDocumentAttentionAdapter::class)->read(
+            $owner,
+            new OwnerAttentionQuery(bucket: 'urgent_exceptions', coverage: 'compliance'),
+        );
+        $waiting = app(OwnerActionCenterService::class)->queueForActionCenter(
+            $owner,
+            new OwnerAttentionQuery(bucket: 'waiting_on_others'),
+        );
+
+        $this->assertSame(['compliance_document:'.$document->id.':document_expiry'], array_map(
+            static fn ($item): string => $item->attentionKey,
+            $exception->items,
+        ));
+        $this->assertSame([], $waiting->items);
     }
 
     /** @param array<string, mixed> $overrides */
