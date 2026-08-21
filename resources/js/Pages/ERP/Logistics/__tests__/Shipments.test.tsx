@@ -94,7 +94,7 @@ it('opens shipment details in an accessible modal and restores trigger focus', (
   expect(document.activeElement).toBe(open);
 });
 
-it('uses the shared Batches delivery date picker when scheduling a shipment leg', () => {
+it('keeps the delivery date calendar visible inside the shipment modal', () => {
   setDispatcherLeg({
     ...defaultProps().shipments.data[0].legs[0],
     status: 'pending',
@@ -112,7 +112,7 @@ it('uses the shared Batches delivery date picker when scheduling a shipment leg'
   fireEvent.click(datePicker);
 
   const calendar = screen.getByRole('dialog', { name: 'Delivery date calendar' });
-  expect(calendar).toHaveClass('left-1/2', '-translate-x-1/2', 'xl:left-0', 'xl:translate-x-0');
+  expect(calendar).toHaveClass('fixed', 'left-1/2', 'top-1/2', '-translate-x-1/2', '-translate-y-1/2', 'max-h-[calc(100dvh-2rem)]');
   fireEvent.click(screen.getByRole('button', { name: 'Select July 22, 2026' }));
 
   expect(screen.getByRole('button', { name: 'Open delivery date picker' })).toHaveTextContent('07/22/2026');

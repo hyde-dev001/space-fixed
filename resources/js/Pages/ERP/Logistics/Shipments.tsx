@@ -917,6 +917,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                           value={schedule.date}
                                           minDate={today}
                                           calendarId={`delivery-date-calendar-${leg.id}`}
+                                          insideModal
                                           onChange={(value) => setDeliverySchedules({ ...deliverySchedules, [leg.id]: { ...schedule, date: value } })}
                                           disabled={assigningLegId === leg.id}
                                         />
