@@ -140,7 +140,7 @@ final class OwnerActionCenterRouteTest extends TestCase
                 ->where('page', 1)
                 ->where('ownerActionCenter.bucket', 'waiting_on_others')
                 ->where('ownerActionCenter.coverage', 'compliance')
-                ->where('ownerActionCenter.degradation_status', 'no_enabled_adapters')
+                ->where('ownerActionCenter.degradation_status', 'none')
                 ->has('bucketSummaries.needs_my_decision')
                 ->has('bucketSummaries.urgent_exceptions')
                 ->has('bucketSummaries.waiting_on_others'));

@@ -78,6 +78,16 @@ final class OwnerAttentionAdapterRegistry
                 ],
             ],
         ],
+        'waiting_on_others' => [
+            'compliance' => [
+                [
+                    'class' => 'App\\Services\\OwnerActionCenter\\Adapters\\PendingComplianceRenewalAttentionAdapter',
+                    'key' => 'pending_compliance_renewals',
+                    'coverage' => 'compliance',
+                    'bucket' => 'waiting_on_others',
+                ],
+            ],
+        ],
     ];
 
     /**

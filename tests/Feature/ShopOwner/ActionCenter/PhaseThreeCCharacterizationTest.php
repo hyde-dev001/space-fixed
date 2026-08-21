@@ -37,6 +37,7 @@ final class PhaseThreeCCharacterizationTest extends TestCase
                 'refunds' => true,
                 'logistics' => true,
             ],
+            'owner_action_center.buckets.waiting_on_others.enabled' => false,
         ]);
 
         $registry = app(OwnerAttentionAdapterRegistry::class);
