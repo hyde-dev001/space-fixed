@@ -3403,7 +3403,7 @@ const Payment: React.FC = () => {
                                   setIsVoucherSuggestionOpen(false);
                                 }
                               }}
-                              className="hide-scrollbar absolute z-30 mt-1 max-h-80 w-full overflow-y-auto rounded-xl border border-gray-200 bg-white p-2 shadow-md"
+                              className="hide-scrollbar absolute z-30 mt-1 flex max-h-[15rem] w-[min(42rem,calc(100vw-2rem))] gap-2 overflow-x-auto overflow-y-hidden overscroll-x-contain rounded-xl border border-gray-200 bg-white p-2 shadow-md snap-x snap-mandatory touch-pan-x cursor-grab active:cursor-grabbing"
                             >
                               {filteredVoucherCodeSuggestions.length > 0 ? (
                                 filteredVoucherCodeSuggestions.map((voucher) => {
@@ -3431,7 +3431,7 @@ const Payment: React.FC = () => {
                                           handleUseVoucher(voucher);
                                         }
                                       }}
-                                      className={`rounded-lg border px-3 py-3 text-left transition-colors focus:outline-none focus:ring-2 focus:ring-gray-900/20 ${
+                                      className={`min-w-[250px] max-w-[250px] shrink-0 snap-start rounded-lg border px-3 py-3 text-left transition-colors focus:outline-none focus:ring-2 focus:ring-gray-900/20 ${
                                         selectedVoucherCampaignId === voucher.id
                                           ? 'border-gray-900 bg-gray-50'
                                           : 'border-gray-200 bg-white hover:border-gray-400 hover:bg-gray-50'
@@ -3449,7 +3449,7 @@ const Payment: React.FC = () => {
                                         </span>
                                       </div>
 
-                                      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+                                      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
                                         <span className="font-semibold text-gray-900">{formatVoucherBenefit(voucher)}</span>
                                         <span className="rounded-full bg-gray-100 px-2 py-1 text-gray-600">
                                           {voucher.target === 'shipping' ? 'Shipping' : 'Items'} · {voucher.scope === 'shop_wide' ? 'Shop-wide' : 'Selected products'}
@@ -3457,7 +3457,7 @@ const Payment: React.FC = () => {
                                       </div>
 
                                       {minimumSpend > 0 && (
-                                        <div className="mt-3 rounded-md bg-gray-50 px-2.5 py-2">
+                                        <div className="mt-2 rounded-md bg-gray-50 px-2.5 py-2">
                                           <div className="flex items-center justify-between gap-2 text-[11px] text-gray-600">
                                             <span>Minimum spend {formatVoucherMoney(minimumSpend)}</span>
                                             <span>{formatVoucherMoney(eligibleSubtotal)} eligible</span>
@@ -3472,7 +3472,7 @@ const Payment: React.FC = () => {
                                         {voucher.eligibility_message}
                                       </p>
 
-                                      <div className="mt-3 flex items-center justify-between gap-3">
+                                      <div className="mt-2 flex items-center justify-between gap-3">
                                         <span className="text-[11px] text-gray-500">
                                           {isEligible ? 'Ready to apply to this order.' : 'Review the requirement above.'}
                                         </span>
