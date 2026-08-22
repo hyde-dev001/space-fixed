@@ -83,6 +83,7 @@ interface AppliedVoucherSummary {
   id: number;
   name: string;
   code?: string | null;
+  target: 'items' | 'shipping';
   scope: 'shop_wide' | 'product_specific';
   discount_mode: 'percentage' | 'fixed';
   value: number;
@@ -92,6 +93,7 @@ interface AvailableVoucherOption {
   id: number;
   name: string;
   code?: string | null;
+  target: 'items' | 'shipping';
   discount_mode: 'percentage' | 'fixed';
   value: number;
   min_spend: number;
@@ -105,6 +107,10 @@ interface PromoPreviewData {
   net_subtotal: number;
   vat_amount: number;
   vat_rate: number;
+  raw_shipping_fee: number;
+  shipping_voucher_discount: number;
+  discounted_shipping_fee: number;
+  shipping_voucher_error?: string | null;
   applied_voucher?: AppliedVoucherSummary | null;
   available_vouchers?: AvailableVoucherOption[];
   voucher_code_suggestions?: AvailableVoucherOption[];
@@ -1182,6 +1188,10 @@ const Payment: React.FC = () => {
         const promoPayload: any = {
           items: promoPreviewItems,
           disable_voucher: !isVoucherSelectionEnabled,
+          shipping_fee: Math.max(0, toFiniteNumber(shippingEstimate?.max_fee ?? checkoutData.shipping_fee, 0)),
+          address_id: checkoutData.address_id,
+          shipping_latitude: shippingLatitude,
+          shipping_longitude: shippingLongitude,
         };
 
         if (selectedVoucherCampaignId !== null && selectedVoucherCampaignId > 0) {
@@ -1228,7 +1238,17 @@ const Payment: React.FC = () => {
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [checkoutData, isPremiumPayment, isRepairPayment, selectedVoucherCampaignId, appliedVoucherCode, isVoucherSelectionEnabled]);
+  }, [
+    checkoutData,
+    isPremiumPayment,
+    isRepairPayment,
+    selectedVoucherCampaignId,
+    appliedVoucherCode,
+    isVoucherSelectionEnabled,
+    shippingEstimate?.max_fee,
+    shippingLatitude,
+    shippingLongitude,
+  ]);
 
   useEffect(() => {
     if (isPremiumPayment) {
@@ -2118,6 +2138,15 @@ const Payment: React.FC = () => {
       ? Math.max(0, Number(shippingEstimate?.max_fee ?? checkoutShipping ?? 0))
       : 0)
     : 0;
+  const previewRawShippingFee = toFiniteNumber(promoPreview?.raw_shipping_fee, Number.NaN);
+  const hasMatchingShippingPreview = Number.isFinite(previewRawShippingFee)
+    && Math.abs(previewRawShippingFee - shipping) < 0.01;
+  const shippingVoucherDiscount = !isPremiumPayment && !isRepairPayment && hasMatchingShippingPreview
+    ? Math.min(shipping, Math.max(0, toFiniteNumber(promoPreview?.shipping_voucher_discount, 0)))
+    : 0;
+  const discountedShipping = !isPremiumPayment && !isRepairPayment && hasMatchingShippingPreview
+    ? Math.min(shipping, Math.max(0, toFiniteNumber(promoPreview?.discounted_shipping_fee, shipping)))
+    : shipping;
   const parsedVatRate = toFiniteNumber(promoPreview?.vat_rate, toFiniteNumber(checkoutData.vat_rate, 12));
   const vatRatePercent = Number.isFinite(parsedVatRate) && parsedVatRate >= 0 ? parsedVatRate : 12;
   const hasStoredVat = (promoPreview?.vat_amount !== undefined && promoPreview?.vat_amount !== null)
@@ -2143,8 +2172,8 @@ const Payment: React.FC = () => {
     ? normalizedRawSubtotal
     : subtotal;
   const total = !isPremiumPayment && !isRepairPayment
-    ? productTotalInclusive + shipping
-    : subtotal + shipping;
+    ? productTotalInclusive + discountedShipping
+    : subtotal + discountedShipping;
   const vatLabel = `VAT (${vatRatePercent}%)`;
   const vatDisplay = `₱${vatAmount.toLocaleString()}`;
   const voucherDiscountAmount = !isPremiumPayment && !isRepairPayment
@@ -2153,6 +2182,9 @@ const Payment: React.FC = () => {
   const appliedVoucherLabel = promoPreview?.applied_voucher?.name
     || promoPreview?.applied_voucher?.code
     || 'Voucher';
+  const shippingVoucherLabel = promoPreview?.applied_voucher?.target === 'shipping'
+    ? (promoPreview.applied_voucher.name || promoPreview.applied_voucher.code || 'Shipping voucher')
+    : 'Shipping voucher';
   const availableVouchers = promoPreview?.available_vouchers || [];
   const voucherCodeSuggestions = promoPreview?.voucher_code_suggestions || [];
   const voucherSuggestionMap = new Map<number, AvailableVoucherOption>();
@@ -2178,11 +2210,12 @@ const Payment: React.FC = () => {
     return candidateCode !== '' && candidateCode === normalizeVoucherCode(voucherCodeInput);
   });
   const voucherErrorMessage = promoPreview?.voucher_error || null;
+  const shippingVoucherErrorMessage = promoPreview?.shipping_voucher_error || null;
   const showVoucherSuggestionDropdown = isVoucherSuggestionOpen && !hasExactVoucherSuggestionMatch;
   const itemCount = checkoutData.items.reduce((sum, item) => sum + Math.max(1, Math.trunc(toFiniteNumber(item.qty, 1))), 0);
   const hasShippingEstimate = Boolean(shippingEstimate) && hasSelectedCity;
   const shippingSummaryValue = hasSelectedCity
-    ? (hasShippingEstimate ? `₱${shipping.toLocaleString()}` : (isShippingEstimateLoading ? 'Calculating...' : 'Unavailable'))
+    ? (hasShippingEstimate ? `₱${discountedShipping.toLocaleString()}` : (isShippingEstimateLoading ? 'Calculating...' : 'Unavailable'))
     : '';
   const isShippingCalculating = hasSelectedCity && isShippingEstimateLoading;
   const shippingCarrierNote = hasShippingEstimate
@@ -2375,11 +2408,14 @@ const Payment: React.FC = () => {
                       {isShippingCalculating
                         ? 'Calculating...'
                         : hasShippingEstimate
-                          ? `₱${shipping.toLocaleString()}`
+                          ? `₱${discountedShipping.toLocaleString()}`
                           : 'Unavailable'}
                     </span>
                   </span>
                 </div>
+                {shippingVoucherDiscount > 0 && (
+                  <p className="mt-1 text-right text-xs text-emerald-700">Shipping voucher saved ₱{shippingVoucherDiscount.toLocaleString()}</p>
+                )}
               </div>
               {shopOwnedCoverageNotice}
             </div>
@@ -2408,6 +2444,12 @@ const Payment: React.FC = () => {
                     <span className="font-semibold text-emerald-700">-₱{voucherDiscountAmount.toLocaleString()}</span>
                   </div>
                 )}
+                {!isPromoPreviewLoading && shippingVoucherDiscount > 0 && (
+                  <div className="flex items-center justify-between pl-3 text-xs md:text-sm">
+                    <span className="text-emerald-700 font-semibold">{shippingVoucherLabel}</span>
+                    <span className="font-semibold text-emerald-700">-₱{shippingVoucherDiscount.toLocaleString()}</span>
+                  </div>
+                )}
 
                 <div className="pt-2">
                   <div className="flex items-start justify-between gap-3">
@@ -2419,8 +2461,15 @@ const Payment: React.FC = () => {
                       <span>{shippingSummaryValue}</span>
                     </span>
                   </div>
+                  {shippingVoucherDiscount > 0 && (
+                    <div className="mt-1 flex items-center justify-between text-xs text-gray-500">
+                      <span>Original shipping</span>
+                      <span className="line-through">₱{shipping.toLocaleString()}</span>
+                    </div>
+                  )}
                   {shippingCarrierNote && <p className="text-xs text-gray-500 mt-1 leading-relaxed">{shippingCarrierNote}</p>}
                   {shippingPayLaterNotice && <p className="text-xs text-gray-500 mt-1 leading-relaxed">{shippingPayLaterNotice}</p>}
+                  {shippingVoucherErrorMessage && <p className="text-xs font-medium text-red-600 mt-1 leading-relaxed">{shippingVoucherErrorMessage}</p>}
                 </div>
 
                 <div className="flex items-center justify-between pt-0.5">
@@ -3256,6 +3305,9 @@ const Payment: React.FC = () => {
                                       className="w-full border-b border-gray-100 px-3 py-2 text-left text-sm text-black hover:bg-gray-50 last:border-b-0"
                                     >
                                       <span className="block font-medium text-black">{displayName}</span>
+                                      <span className="block text-[11px] font-medium uppercase tracking-wide text-gray-500">
+                                        {voucher.target === 'shipping' ? 'Shipping' : 'Items'}
+                                      </span>
                                       {voucher.code && voucher.name && normalizeVoucherCode(voucher.code) !== normalizeVoucherCode(voucher.name) && (
                                         <span className="block text-xs text-gray-500">{normalizeVoucherCode(voucher.code)}</span>
                                       )}
@@ -3312,13 +3364,26 @@ const Payment: React.FC = () => {
                       <span className="text-emerald-700 font-medium">-₱{voucherDiscountAmount.toLocaleString()}</span>
                     </div>
                   )}
+                  {!isPromoPreviewLoading && shippingVoucherDiscount > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-emerald-700 font-semibold">{shippingVoucherLabel}</span>
+                      <span className="text-emerald-700 font-medium">-₱{shippingVoucherDiscount.toLocaleString()}</span>
+                    </div>
+                  )}
                   <div className="text-sm">
                     <div className="flex items-start justify-between gap-3">
                       <span className="text-gray-600">Shipping</span>
                       <span className="text-black text-right font-medium max-w-[70%] wrap-break-word">{shippingSummaryValue}</span>
                     </div>
+                    {shippingVoucherDiscount > 0 && (
+                      <div className="mt-1 flex items-center justify-between text-xs text-gray-500">
+                        <span>Original shipping</span>
+                        <span className="line-through">₱{shipping.toLocaleString()}</span>
+                      </div>
+                    )}
                     {shippingCarrierNote && <p className="text-xs text-gray-500 mt-1 leading-relaxed">{shippingCarrierNote}</p>}
                     {shippingPayLaterNotice && <p className="text-xs text-gray-500 mt-1 leading-relaxed">{shippingPayLaterNotice}</p>}
+                    {shippingVoucherErrorMessage && <p className="text-xs font-medium text-red-600 mt-1 leading-relaxed">{shippingVoucherErrorMessage}</p>}
                     {shopOwnedCoverageNotice}
                   </div>
                   <div className="flex justify-between text-sm">

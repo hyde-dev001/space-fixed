@@ -15,6 +15,7 @@ use App\Models\ShopOwner;
 use App\Models\ShopPolicyVersion;
 use App\Models\StockMovement;
 use App\Models\User;
+use App\Models\UserAddress;
 use App\Models\VoucherClaim;
 use App\Models\Finance\Invoice;
 use App\Models\Finance\InvoiceItem;
@@ -23,6 +24,7 @@ use App\Services\NotificationService;
 use App\Services\PaymentSettlementService;
 use App\Services\PolicyAcceptanceService;
 use App\Services\PromoPricingService;
+use App\Services\Logistics\ShippingVoucherService;
 use App\Support\Tax\VatInclusiveCalculator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -38,11 +40,16 @@ class CheckoutController extends Controller
 
     protected NotificationService $notificationService;
     protected PromoPricingService $promoPricingService;
+    protected ShippingVoucherService $shippingVoucherService;
 
-    public function __construct(NotificationService $notificationService, PromoPricingService $promoPricingService)
-    {
+    public function __construct(
+        NotificationService $notificationService,
+        PromoPricingService $promoPricingService,
+        ShippingVoucherService $shippingVoucherService,
+    ) {
         $this->notificationService = $notificationService;
         $this->promoPricingService = $promoPricingService;
+        $this->shippingVoucherService = $shippingVoucherService;
     }
 
     private function normalizeSizeSystem(?string $rawSystem): string
@@ -361,7 +368,8 @@ class CheckoutController extends Controller
     {
         return Schema::hasTable('promo_campaigns')
             && Schema::hasTable('promo_campaign_products')
-            && Schema::hasTable('voucher_claims');
+            && Schema::hasTable('voucher_claims')
+            && Schema::hasColumn('promo_campaigns', 'discount_target');
     }
 
     private function activeCampaignsForShop(int $shopOwnerId, string $kind): Collection
@@ -381,7 +389,9 @@ class CheckoutController extends Controller
                 $query->whereNull('usage_limit')
                     ->orWhereColumn('used_count', '<', 'usage_limit');
             })
-            ->get();
+            ->get()
+            ->filter(fn (PromoCampaign $campaign): bool => ! $this->isShippingVoucher($campaign))
+            ->values();
     }
 
     private function claimedVoucherCampaignsForShop(int $shopOwnerId, int $userId): Collection
@@ -500,6 +510,7 @@ class CheckoutController extends Controller
             'id' => (int) $campaign->id,
             'name' => (string) $campaign->name,
             'code' => $campaign->code,
+            'target' => $this->discountTarget($campaign),
             'discount_mode' => (string) $campaign->discount_mode,
             'value' => (float) $campaign->value,
             'min_spend' => (float) $campaign->min_spend,
@@ -556,9 +567,21 @@ class CheckoutController extends Controller
             'name' => (string) $campaign->name,
             'code' => $campaign->code,
             'scope' => (string) $campaign->scope,
+            'target' => $this->discountTarget($campaign),
             'discount_mode' => (string) $campaign->discount_mode,
             'value' => (float) $campaign->value,
         ];
+    }
+
+    private function discountTarget(PromoCampaign $campaign): string
+    {
+        return (string) ($campaign->discount_target ?: 'items');
+    }
+
+    private function isShippingVoucher(PromoCampaign $campaign): bool
+    {
+        return (string) $campaign->kind === 'voucher'
+            && $this->discountTarget($campaign) === 'shipping';
     }
 
     /**
@@ -641,6 +664,14 @@ class CheckoutController extends Controller
             'disable_voucher' => 'nullable|boolean',
             'voucher_campaign_id' => 'nullable|integer',
             'voucher_code' => 'nullable|string|max:100',
+            'shipping_fee' => 'nullable|numeric|min:0',
+            'address_id' => [
+                'nullable',
+                'integer',
+                Rule::exists('user_addresses', 'id')->where('user_id', $user->id),
+            ],
+            'shipping_latitude' => ['nullable', 'numeric', 'between:4.5,21.5', 'required_with:shipping_longitude'],
+            'shipping_longitude' => ['nullable', 'numeric', 'between:116,127', 'required_with:shipping_latitude'],
         ]);
 
         $disableVoucher = (bool) ($validated['disable_voucher'] ?? false);
@@ -684,6 +715,16 @@ class CheckoutController extends Controller
         }
 
         $shopOwnerId = (int) $shopOwnerIds->first();
+        $rawShippingFee = round(max(0.0, (float) ($validated['shipping_fee'] ?? 0)), 2);
+        $shippingAddress = ! empty($validated['address_id'])
+            ? $user->addresses()->find((int) $validated['address_id'])
+            : null;
+        $shippingLatitude = array_key_exists('shipping_latitude', $validated)
+            ? (float) $validated['shipping_latitude']
+            : $shippingAddress?->latitude;
+        $shippingLongitude = array_key_exists('shipping_longitude', $validated)
+            ? (float) $validated['shipping_longitude']
+            : $shippingAddress?->longitude;
 
         if (!$this->promoTablesReady()) {
             $fallbackSubtotal = round(max(0.0, (float) $requestedItems->sum(fn ($item) => ((float) ($item['price'] ?? 0)) * ((int) ($item['qty'] ?? 1)))), 2);
@@ -700,6 +741,10 @@ class CheckoutController extends Controller
                     'net_subtotal' => round((float) ($vatBreakdown['net'] ?? 0), 2),
                     'vat_amount' => round((float) ($vatBreakdown['vat'] ?? 0), 2),
                     'vat_rate' => $vatRatePercent,
+                    'raw_shipping_fee' => $rawShippingFee,
+                    'shipping_voucher_discount' => 0,
+                    'discounted_shipping_fee' => $rawShippingFee,
+                    'shipping_voucher_error' => null,
                     'applied_voucher' => null,
                     'available_vouchers' => [],
                     'voucher_code_suggestions' => [],
@@ -736,17 +781,53 @@ class CheckoutController extends Controller
         if ($disableVoucher) {
             $voucherCandidates = collect();
         } else {
+            $isShippingVoucherSelection = $selectedVoucher !== null && $this->isShippingVoucher($selectedVoucher);
             $voucherCandidates = $hasVoucherSelectionIntent
-                ? ($selectedVoucher ? collect([$selectedVoucher]) : collect())
-                : $availableVouchers;
+                ? ($isShippingVoucherSelection ? collect() : ($selectedVoucher ? collect([$selectedVoucher]) : collect()))
+                : $availableVouchers->reject(fn (PromoCampaign $campaign): bool => $this->isShippingVoucher($campaign));
         }
+
+        $isShippingVoucherSelection = $selectedVoucher !== null && $this->isShippingVoucher($selectedVoucher);
 
         $pricing = $this->promoPricingService->applySaleThenVoucher($pricingLineItems, $activeSales, $voucherCandidates);
 
         $appliedVoucher = $pricing['applied_voucher'] ?? null;
         $voucherError = null;
 
-        if (!$disableVoucher && $hasVoucherSelectionIntent && !($appliedVoucher instanceof PromoCampaign)) {
+        $shopOwner = ShopOwner::query()->find($shopOwnerId);
+        if (! $shopOwner) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Shop is no longer available for checkout.',
+            ], 404);
+        }
+
+        $shippingVoucherResult = [
+            'discount' => 0.0,
+            'shipping_fee' => $rawShippingFee,
+            'error' => null,
+            'coverage' => null,
+        ];
+        if (! $disableVoucher && $isShippingVoucherSelection) {
+            $shippingVoucherResult = $this->shippingVoucherService->apply(
+                $selectedVoucher,
+                $shopOwner,
+                $rawShippingFee,
+                (float) ($pricing['sale_adjusted_subtotal'] ?? 0),
+                $shippingAddress,
+                $shippingLatitude,
+                $shippingLongitude,
+            );
+
+            if ($shippingVoucherResult['error'] === null) {
+                $appliedVoucher = $selectedVoucher;
+            }
+        }
+
+        if (!$disableVoucher
+            && $hasVoucherSelectionIntent
+            && ! $isShippingVoucherSelection
+            && !($appliedVoucher instanceof PromoCampaign)) {
             $voucherError = $this->buildVoucherIneligibilityMessage($selectedVoucher, $pricing);
         }
 
@@ -763,6 +844,10 @@ class CheckoutController extends Controller
                 'net_subtotal' => round((float) ($vatBreakdown['net'] ?? 0), 2),
                 'vat_amount' => round((float) ($vatBreakdown['vat'] ?? 0), 2),
                 'vat_rate' => $vatRatePercent,
+                'raw_shipping_fee' => $rawShippingFee,
+                'shipping_voucher_discount' => round((float) $shippingVoucherResult['discount'], 2),
+                'discounted_shipping_fee' => round((float) $shippingVoucherResult['shipping_fee'], 2),
+                'shipping_voucher_error' => $shippingVoucherResult['error'],
                 'applied_voucher' => $this->summarizeAppliedVoucher($appliedVoucher),
                 'available_vouchers' => $this->summarizeAvailableVouchers($availableVouchers),
                 'voucher_code_suggestions' => $this->summarizeAvailableVouchers($voucherCodeSuggestions),
@@ -816,6 +901,8 @@ class CheckoutController extends Controller
                 'shipping_barangay' => 'nullable|string|max:100',
                 'shipping_postal_code' => 'nullable|string|max:10',
                 'shipping_address_line' => 'nullable|string|max:255',
+                'shipping_latitude' => ['nullable', 'numeric', 'between:4.5,21.5', 'required_with:shipping_longitude'],
+                'shipping_longitude' => ['nullable', 'numeric', 'between:116,127', 'required_with:shipping_latitude'],
                 'disable_voucher' => 'nullable|boolean',
                 'voucher_campaign_id' => 'nullable|integer',
                 'voucher_code' => 'nullable|string|max:100',
@@ -823,6 +910,15 @@ class CheckoutController extends Controller
 
             $customerId = $user->id;
             $requestedShippingFee = max(0.0, round((float) ($validated['shipping_fee'] ?? 0), 2));
+            $shippingAddress = ! empty($validated['address_id'])
+                ? $user->addresses()->find((int) $validated['address_id'])
+                : null;
+            $shippingLatitude = array_key_exists('shipping_latitude', $validated)
+                ? (float) $validated['shipping_latitude']
+                : $shippingAddress?->latitude;
+            $shippingLongitude = array_key_exists('shipping_longitude', $validated)
+                ? (float) $validated['shipping_longitude']
+                : $shippingAddress?->longitude;
             $disableVoucher = (bool) ($validated['disable_voucher'] ?? false);
             $requestedVoucherCampaignId = isset($validated['voucher_campaign_id'])
                 ? (int) $validated['voucher_campaign_id']
@@ -1025,16 +1121,22 @@ class CheckoutController extends Controller
                     if ($disableVoucher) {
                         $voucherCandidates = collect();
                     } else {
+                        $isShippingVoucherSelection = $selectedVoucher !== null && $this->isShippingVoucher($selectedVoucher);
                         $voucherCandidates = $hasVoucherSelectionIntent
-                            ? ($selectedVoucher ? collect([$selectedVoucher]) : collect())
-                            : $availableVouchers;
+                            ? ($isShippingVoucherSelection ? collect() : ($selectedVoucher ? collect([$selectedVoucher]) : collect()))
+                            : $availableVouchers->reject(fn (PromoCampaign $campaign): bool => $this->isShippingVoucher($campaign));
                     }
+
+                    $isShippingVoucherSelection = $selectedVoucher !== null && $this->isShippingVoucher($selectedVoucher);
 
                     $pricingResult = $this->promoPricingService->applySaleThenVoucher($pricingLineItems, $activeSales, $voucherCandidates);
 
                     $selectedPricingVoucher = $pricingResult['applied_voucher'] ?? null;
 
-                    if (!$disableVoucher && $hasVoucherSelectionIntent && !($selectedPricingVoucher instanceof PromoCampaign)) {
+                    if (!$disableVoucher
+                        && $hasVoucherSelectionIntent
+                        && ! $isShippingVoucherSelection
+                        && !($selectedPricingVoucher instanceof PromoCampaign)) {
                         throw new \RuntimeException($this->buildVoucherIneligibilityMessage($selectedVoucher, $pricingResult));
                     }
 
@@ -1057,6 +1159,36 @@ class CheckoutController extends Controller
                         $shippingFeeForOrder = round(($expectedRawTotal / $cartSubtotal) * $requestedShippingFee, 2);
                     }
                     $allocatedShippingFee = round($allocatedShippingFee + $shippingFeeForOrder, 2);
+
+                    $shippingVoucherResult = [
+                        'discount' => 0.0,
+                        'shipping_fee' => $shippingFeeForOrder,
+                        'error' => null,
+                        'coverage' => null,
+                    ];
+                    if (! $disableVoucher && $isShippingVoucherSelection) {
+                        $shopOwner = ShopOwner::query()->find((int) $shopOwnerId);
+                        if (! $shopOwner) {
+                            throw new \RuntimeException('Shop is no longer available for checkout.');
+                        }
+
+                        $shippingVoucherResult = $this->shippingVoucherService->apply(
+                            $selectedVoucher,
+                            $shopOwner,
+                            $shippingFeeForOrder,
+                            (float) ($pricingResult['sale_adjusted_subtotal'] ?? 0),
+                            $shippingAddress,
+                            $shippingLatitude,
+                            $shippingLongitude,
+                        );
+
+                        if ($shippingVoucherResult['error'] !== null) {
+                            throw new \RuntimeException($shippingVoucherResult['error']);
+                        }
+
+                        $shippingFeeForOrder = $shippingVoucherResult['shipping_fee'];
+                        $appliedVoucher = $selectedVoucher;
+                    }
 
                     // Duplicate guard: if an identical pending order exists for this
                     // customer + shop within the last 5 minutes, return it instead of
@@ -1098,6 +1230,7 @@ class CheckoutController extends Controller
                             'order_number' => $existingOrder->order_number,
                             'total'       => ((float) $existingOrder->total_amount) + ((float) ($existingOrder->shipping_fee ?? 0)) + $existingVatAmount,
                             'items_count' => count($shopItems),
+                            'shipping_voucher_discount' => 0.0,
                         ];
                         continue;
                     }
@@ -1322,6 +1455,7 @@ class CheckoutController extends Controller
                         'total' => $orderGrandTotal,
                         'items_count' => count($shopItems),
                         'voucher_discount' => $appliedVoucherDiscount,
+                        'shipping_voucher_discount' => round((float) ($shippingVoucherResult['discount'] ?? 0), 2),
                         'applied_voucher' => $this->summarizeAppliedVoucher($appliedVoucher),
                     ];
 
@@ -1337,6 +1471,7 @@ class CheckoutController extends Controller
                         'vat_amount' => $orderVatAmount,
                         'vat_rate' => $vatRatePercent,
                         'voucher_discount' => $appliedVoucherDiscount,
+                        'shipping_voucher_discount' => round((float) ($shippingVoucherResult['discount'] ?? 0), 2),
                         'applied_voucher_id' => $appliedVoucher?->id,
                     ]);
 
@@ -1741,14 +1876,12 @@ class CheckoutController extends Controller
             }
 
             $shippingFee = max(0.0, (float) ($order->shipping_fee ?? 0));
-            if ($fallbackShippingFee > 0) {
+            if ($order->shipping_fee === null && $fallbackShippingFee > 0) {
                 $shippingFee = max($shippingFee, $fallbackShippingFee);
 
-                if ((float) ($order->shipping_fee ?? 0) <= 0) {
-                    $order->update($this->filterOrderColumns([
-                        'shipping_fee' => $shippingFee,
-                    ]));
-                }
+                $order->update($this->filterOrderColumns([
+                    'shipping_fee' => $shippingFee,
+                ]));
             }
 
             $description = 'SoleSpace Order #' . $order->order_number;

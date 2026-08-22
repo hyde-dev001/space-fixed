@@ -7,6 +7,7 @@ import AppLayoutERP from "../../../../layout/AppLayout_ERP";
 type PromoKind = "voucher" | "discount";
 type DiscountMode = "percentage" | "fixed";
 type CampaignStatus = "draft" | "scheduled" | "active" | "expired";
+type DiscountTarget = 'items' | 'shipping';
 
 type ProductOption = {
 	id: number;
@@ -35,6 +36,7 @@ type Campaign = {
 	startDate: string;
 	endDate: string;
 	status: CampaignStatus;
+	discountTarget: DiscountTarget;
 };
 
 type ApiCampaign = {
@@ -51,7 +53,16 @@ type ApiCampaign = {
 	start_at: string;
 	end_at: string;
 	status: CampaignStatus;
+	discount_target?: DiscountTarget | null;
 	products?: Array<{ id: number; name: string }>;
+};
+
+type LogisticsCapability = {
+	eligible: boolean;
+	enabled: boolean;
+	accessible: boolean;
+	code: string | null;
+	reason: string | null;
 };
 
 type PromoFormState = {
@@ -66,6 +77,7 @@ type PromoFormState = {
 	usageLimit: string;
 	startDate: string;
 	endDate: string;
+	discountTarget: 'items' | 'shipping';
 };
 
 const PROMO_CODE_MAX_LENGTH = 7;
@@ -87,6 +99,7 @@ const buildInitialForm = (firstProductId: string = ""): PromoFormState => {
 		usageLimit: "100",
 		startDate: today.toISOString().slice(0, 10),
 		endDate: nextWeek.toISOString().slice(0, 10),
+		discountTarget: "items",
 	};
 };
 
@@ -170,6 +183,8 @@ export default function VouchersDiscountPage() {
 	const [editingCampaignId, setEditingCampaignId] = useState<number | null>(null);
 	const [form, setForm] = useState<PromoFormState>(buildInitialForm());
 	const [filter, setFilter] = useState<"all" | PromoKind>("all");
+	const [logisticsCapability, setLogisticsCapability] = useState<LogisticsCapability | null>(null);
+	const shippingVouchersAvailable = logisticsCapability?.accessible === true;
 
 	const mapApiCampaignToUi = (campaign: ApiCampaign): Campaign => {
 		const scopedProducts = Array.isArray(campaign.products) ? campaign.products : [];
@@ -184,7 +199,7 @@ export default function VouchersDiscountPage() {
 			productId: firstProduct ? String(firstProduct.id) : "",
 			productName: scopedProducts.length > 0
 				? scopedProducts.map((product) => product.name).join(", ")
-				: "All products",
+				: campaign.discount_target === "shipping" ? "Shipping" : "All products",
 			discountMode: campaign.discount_mode,
 			value: Number(campaign.value || 0),
 			minSpend: Number(campaign.min_spend || 0),
@@ -193,6 +208,7 @@ export default function VouchersDiscountPage() {
 			startDate: String(campaign.start_at || "").slice(0, 10),
 			endDate: String(campaign.end_at || "").slice(0, 10),
 			status: campaign.status,
+			discountTarget: isVoucher && campaign.discount_target === "shipping" ? "shipping" : "items",
 		};
 	};
 
@@ -245,6 +261,7 @@ export default function VouchersDiscountPage() {
 
 		const data = await response.json();
 		const list: ApiCampaign[] = Array.isArray(data?.data) ? data.data : [];
+		setLogisticsCapability(data?.logistics ?? null);
 		setCampaigns(list.map(mapApiCampaignToUi));
 	};
 
@@ -291,6 +308,7 @@ export default function VouchersDiscountPage() {
 	);
 
 	const isProductDiscountMode = form.kind === "discount";
+	const isShippingVoucher = !isProductDiscountMode && form.discountTarget === "shipping";
 	const parsedFormValue = form.value.trim() === "" ? Number.NaN : Number(form.value);
 	const currentProductPrice = Number(selectedProduct?.price || 0);
 	const baselineOriginalPrice = selectedProduct && selectedProduct.compareAtPrice !== null && selectedProduct.compareAtPrice > selectedProduct.price
@@ -331,7 +349,9 @@ export default function VouchersDiscountPage() {
 		: `${previewDurationDays} day${previewDurationDays === 1 ? "" : "s"}`;
 	const previewScopeLabel = isProductDiscountMode
 		? (form.discountScheduleEnabled ? "Scheduled sale" : "Immediate sale")
-		: (Number(form.usageLimit || 0) > 0 ? `${form.usageLimit} max uses` : "Unlimited uses");
+		: (isShippingVoucher
+			? "Shop-owned shipping"
+			: (Number(form.usageLimit || 0) > 0 ? `${form.usageLimit} max uses` : "Unlimited uses"));
 	const previewIntensity = Math.min(100, Math.max(14, previewDurationDays * 8));
 	const previewIntensityClass = previewIntensity >= 80
 		? "w-5/6"
@@ -424,10 +444,13 @@ export default function VouchersDiscountPage() {
 
 	const handleEditCampaign = (campaign: Campaign) => {
 		const fallbackProductId = products[0] ? String(products[0].id) : "";
+		const isShippingTarget = campaign.discountTarget === "shipping";
 		const productExists = campaign.productId
 			? products.some((product) => String(product.id) === campaign.productId)
 			: false;
-		const targetProductId = campaign.productId && productExists ? campaign.productId : fallbackProductId;
+		const targetProductId = isShippingTarget
+			? ""
+			: (campaign.productId && productExists ? campaign.productId : fallbackProductId);
 		setEditingCampaignId(campaign.id);
 
 		setForm((current) => ({
@@ -445,6 +468,7 @@ export default function VouchersDiscountPage() {
 			usageLimit: campaign.usageLimit > 0 ? String(campaign.usageLimit) : "",
 			startDate: campaign.startDate || current.startDate,
 			endDate: campaign.endDate || current.endDate,
+			discountTarget: isShippingTarget ? "shipping" : "items",
 		}));
 
 		window.scrollTo({ top: 0, behavior: "smooth" });
@@ -547,11 +571,21 @@ export default function VouchersDiscountPage() {
 
 			if (field === "kind" && value === "discount") {
 				next.code = "AUTO-DISCOUNT";
+				next.discountTarget = "items";
+				next.productId = next.productId || (products[0] ? String(products[0].id) : "");
 			}
 
 			if (field === "kind" && value === "voucher" && current.code === "AUTO-DISCOUNT") {
 				next.code = "";
 				next.discountScheduleEnabled = false;
+			}
+
+			if (field === "discountTarget" && value === "shipping") {
+				next.productId = "";
+			}
+
+			if (field === "discountTarget" && value === "items") {
+				next.productId = next.productId || (products[0] ? String(products[0].id) : "");
 			}
 
 			return next;
@@ -654,6 +688,16 @@ export default function VouchersDiscountPage() {
 			return;
 		}
 
+		if (form.kind === "voucher" && form.discountTarget === "shipping" && !shippingVouchersAvailable) {
+			await Swal.fire({
+				title: "Shipping vouchers unavailable",
+				text: "Shipping voucher requires accessible Shop-owned Logistics.",
+				icon: "warning",
+				confirmButtonColor: "#111827",
+			});
+			return;
+		}
+
 		if ((!isProductDiscountMode || form.discountScheduleEnabled) && new Date(form.endDate) < new Date(form.startDate)) {
 			await Swal.fire({
 				title: "Invalid schedule",
@@ -693,8 +737,9 @@ export default function VouchersDiscountPage() {
 			if (editingCampaignId !== null) {
 				const payload = {
 					kind: form.kind === "discount" ? "sale" : "voucher",
-					scope: form.productId ? "product_specific" : "shop_wide",
-					product_ids: form.productId ? [Number(form.productId)] : [],
+					discount_target: form.discountTarget,
+					scope: form.discountTarget === "shipping" ? "shop_wide" : (form.productId ? "product_specific" : "shop_wide"),
+					product_ids: form.discountTarget === "shipping" ? [] : (form.productId ? [Number(form.productId)] : []),
 					name: form.name.trim(),
 					code: form.kind === "voucher" ? form.code.trim().toUpperCase() : null,
 					discount_mode: form.discountMode,
@@ -803,8 +848,9 @@ export default function VouchersDiscountPage() {
 
 			const payload = {
 				kind: form.kind === "discount" ? "sale" : "voucher",
-				scope: form.productId ? "product_specific" : "shop_wide",
-				product_ids: form.productId ? [Number(form.productId)] : [],
+				discount_target: form.discountTarget,
+				scope: form.discountTarget === "shipping" ? "shop_wide" : (form.productId ? "product_specific" : "shop_wide"),
+				product_ids: form.discountTarget === "shipping" ? [] : (form.productId ? [Number(form.productId)] : []),
 				name: form.name.trim(),
 				code: form.kind === "voucher" ? form.code.trim().toUpperCase() : null,
 				discount_mode: form.discountMode,
@@ -965,8 +1011,56 @@ export default function VouchersDiscountPage() {
 									<p className="text-xs text-slate-500">Maximum of {PROMO_CODE_MAX_LENGTH} characters.</p>
 								</label>
 
-								<label className="space-y-2 text-sm text-slate-600">
-									<span className="font-medium text-slate-800">Select product</span>
+								{!isProductDiscountMode && (
+									<fieldset className="space-y-2 text-sm text-slate-600 md:col-span-2">
+										<legend className="font-medium text-slate-800">Voucher target</legend>
+										<div className="grid gap-3 md:grid-cols-2">
+											<label className={`flex min-h-11 cursor-pointer items-start gap-3 rounded-2xl border px-4 py-3 transition ${form.discountTarget === "items" ? "border-slate-900 bg-slate-50" : "border-slate-200 bg-white"}`}>
+												<input
+													type="radio"
+													name="discount-target"
+													value="items"
+													checked={form.discountTarget === "items"}
+													onChange={(event) => handleChange("discountTarget", event.target.value)}
+													className="mt-0.5 h-4 w-4 accent-slate-900"
+												/>
+												<span>
+													<span className="block font-semibold text-slate-800">Items</span>
+													<span className="block text-xs text-slate-500">Apply the voucher to eligible product items.</span>
+												</span>
+											</label>
+											<label className={`flex min-h-11 cursor-pointer items-start gap-3 rounded-2xl border px-4 py-3 transition ${form.discountTarget === "shipping" ? "border-slate-900 bg-slate-50" : "border-slate-200 bg-white"}`}>
+												<input
+													type="radio"
+													name="discount-target"
+													value="shipping"
+													checked={form.discountTarget === "shipping"}
+													onChange={(event) => handleChange("discountTarget", event.target.value)}
+													disabled={!shippingVouchersAvailable}
+													className="mt-0.5 h-4 w-4 accent-slate-900"
+												/>
+												<span>
+													<span className="block font-semibold text-slate-800">Shipping voucher</span>
+													<span className="block text-xs text-slate-500">Discount Shop-owned Logistics delivery fees.</span>
+												</span>
+											</label>
+										</div>
+										<p className="text-xs leading-5 text-slate-500" role="status" aria-live="polite">
+											{shippingVouchersAvailable
+												? "Shipping vouchers apply only when the customer delivery is covered by Shop-owned Logistics."
+												: "Shipping vouchers are unavailable because this shop does not have accessible Shop-owned Logistics."}
+										</p>
+									</fieldset>
+								)}
+
+								{isShippingVoucher ? (
+									<div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900 md:col-span-2">
+										<p className="font-semibold">Shipping voucher is shop-wide</p>
+										<p className="mt-1 text-xs leading-5 text-blue-800">No product is attached. The voucher will reduce the eligible Shop-owned Logistics fee at payment.</p>
+									</div>
+								) : (
+									<label className="space-y-2 text-sm text-slate-600">
+										<span className="font-medium text-slate-800">Select product</span>
 									<select
 										value={form.productId}
 										onChange={(event) => handleChange("productId", event.target.value)}
@@ -979,7 +1073,8 @@ export default function VouchersDiscountPage() {
 											</option>
 										))}
 									</select>
-								</label>
+									</label>
+								)}
 
 								{!isProductDiscountMode ? (
 									<label className="space-y-2 text-sm text-slate-600">
@@ -1177,8 +1272,8 @@ export default function VouchersDiscountPage() {
 
 								<div className="mt-6 space-y-3 text-sm text-slate-300">
 									<div className="flex items-center justify-between gap-4">
-										<span>Product</span>
-										<span className="font-medium text-white">{selectedProduct?.name ?? "All products"}</span>
+											<span>{isShippingVoucher ? "Shipping" : "Product"}</span>
+											<span className="font-medium text-white">{isShippingVoucher ? "Shop-owned Logistics" : (selectedProduct?.name ?? "All products")}</span>
 									</div>
 									<div className="flex items-center justify-between gap-4">
 										<span>Schedule</span>
