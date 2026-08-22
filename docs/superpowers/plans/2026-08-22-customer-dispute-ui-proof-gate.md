@@ -40,3 +40,19 @@
 - [x] Preserve legacy order-level shipping fields as a fallback for third-party logistics records.
 - [x] Add regression coverage for complete shop-owned shipment and tracking details.
 - [x] Scope existing logistics assertions to their sections after the new summary intentionally repeats shipment values.
+
+## Follow-up: Remove duplicate shipping summary
+
+**Files:**
+- Modify: `resources/js/Pages/ERP/STAFF/JobOrders.tsx`
+- Test: `resources/js/Pages/ERP/STAFF/__tests__/JobOrders.shippingCoverage.test.ts`
+- Update: `docs/superpowers/specs/2026-08-22-customer-dispute-ui-proof-gate-design.md`
+- Build: `public/build`
+
+- [x] Update the regression test to require ETA inside the existing `Customer delivery` region and reject a separate `Shipping & Tracking` region.
+- [x] Run the focused test to confirm the current duplicate layout fails the new expectation.
+- [x] Add ETA to the existing customer-delivery logistics rows and remove the duplicate summary block/state.
+- [x] Preserve legacy third-party shipping fields through the same customer-delivery region.
+- [x] Run Staff Job Orders and Logistics Shipments tests.
+- [x] Build and commit the updated frontend assets and documentation.
+- [x] Push the feature branch and verify the remote commit.

@@ -305,18 +305,49 @@ describe('staff delivered order refresh', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Shipped (1)' }));
     fireEvent.click((await screen.findAllByTitle('View order details'))[0]);
 
-    const shippingDetails = screen.getByRole('region', { name: 'Shipping & Tracking' });
-    expect(within(shippingDetails).getByText('1-2 business days')).toBeInTheDocument();
-    expect(within(shippingDetails).getByText('7')).toBeInTheDocument();
-    expect(within(shippingDetails).getByText('Completed')).toBeInTheDocument();
-    expect(within(shippingDetails).getByText('Delivered')).toBeInTheDocument();
-    expect(within(shippingDetails).getByText('Marco Santos')).toBeInTheDocument();
-    expect(within(shippingDetails).getByText('+639180000002')).toBeInTheDocument();
-    expect(within(shippingDetails).getByText('SHP-7')).toBeInTheDocument();
-    expect(within(shippingDetails).getByRole('link', { name: 'View tracking' })).toHaveAttribute(
+    const customerDelivery = screen.getByRole('region', { name: 'Customer delivery' });
+    expect(within(customerDelivery).getByText('1-2 business days')).toBeInTheDocument();
+    expect(within(customerDelivery).getByText('7')).toBeInTheDocument();
+    expect(within(customerDelivery).getByText('Completed')).toBeInTheDocument();
+    expect(within(customerDelivery).getByText('Delivered')).toBeInTheDocument();
+    expect(within(customerDelivery).getByText('Marco Santos')).toBeInTheDocument();
+    expect(within(customerDelivery).getByText('+639180000002')).toBeInTheDocument();
+    expect(within(customerDelivery).getByText('SHP-7')).toBeInTheDocument();
+    expect(within(customerDelivery).getByRole('link', { name: 'SHP-7' })).toHaveAttribute(
       'href',
       'https://example.test/shipments/7',
     );
+    expect(screen.queryByRole('region', { name: 'Shipping & Tracking' })).not.toBeInTheDocument();
+  });
+
+  it('keeps legacy shipping details in the single customer delivery region', async () => {
+    const legacyOrder = {
+      ...makeOrder(52),
+      status: 'shipped',
+      eta: '2-3 business days',
+      carrier_company: 'J&T',
+      carrier_name: 'Juan Rider',
+      carrier_phone: '09171234568',
+      tracking_number: 'JT-52',
+      tracking_link: 'https://example.test/legacy/52',
+    };
+    mockPage.props.initialOrders = [legacyOrder];
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(jsonResponse(200, [legacyOrder]))));
+
+    render(React.createElement(JobOrdersPage));
+    fireEvent.click(await screen.findByRole('button', { name: 'Shipped (1)' }));
+    fireEvent.click((await screen.findAllByTitle('View order details'))[0]);
+
+    const customerDelivery = screen.getByRole('region', { name: 'Customer delivery' });
+    expect(within(customerDelivery).getByText('2-3 business days')).toBeInTheDocument();
+    expect(within(customerDelivery).getByText('J&T')).toBeInTheDocument();
+    expect(within(customerDelivery).getByText('Juan Rider')).toBeInTheDocument();
+    expect(within(customerDelivery).getByText('09171234568')).toBeInTheDocument();
+    expect(within(customerDelivery).getByRole('link', { name: 'JT-52' })).toHaveAttribute(
+      'href',
+      'https://example.test/legacy/52',
+    );
+    expect(screen.queryByRole('region', { name: 'Shipping & Tracking' })).not.toBeInTheDocument();
   });
 });
 

@@ -28,7 +28,7 @@ The private proof endpoint authorizes same-shop users with `access-staff-job-ord
 6. Staff can click a delivery-proof thumbnail on Job Orders and view the full image in a modal above the Order Details modal, with an accessible close action.
 7. Same-shop staff can fetch retail delivery proof files, while unrelated logistics proof files remain forbidden.
 8. Existing legacy resolution records remain readable and existing refund/return processing is not changed.
-9. Staff Order Details shows the complete Shipping & Tracking summary from the shipment payload: ETA, shipment ID/status, leg status, carrier, rider, rider phone, tracking number, and tracking link, with legacy order fields used as fallback.
+9. Staff Order Details shows one complete shipping/tracking summary inside the existing `Logistics > Customer delivery` region: ETA, shipment ID/status, leg status, carrier, rider, rider phone, tracking number, and tracking link, with legacy order fields used as fallback; no duplicate shipping section is rendered.
 
 ## Scope and risks
 
