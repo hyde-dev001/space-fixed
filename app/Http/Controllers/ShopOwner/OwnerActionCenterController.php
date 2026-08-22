@@ -21,6 +21,20 @@ use Throwable;
 
 final class OwnerActionCenterController extends Controller
 {
+    /** @var array<int, string> */
+    private const APPROVAL_SOURCE_TYPES = [
+        'order_refund',
+        'repair_refund',
+        'product_price_change',
+        'repair_price_change',
+        'repair_package_price_change',
+        'payslip',
+        'salary_change',
+        'purchase_request',
+        'expense',
+        'repair_rejection',
+    ];
+
     public function __construct(
         private readonly OwnerActionCenterRolloutPolicy $rollout,
         private readonly CanonicalOwnerShellService $shell,
@@ -35,6 +49,10 @@ final class OwnerActionCenterController extends Controller
         }
 
         $query = $this->queryFrom($request);
+        $approvalSelection = $this->approvalSelectionFrom($request);
+        $approvalSelectionError = $request->query->has('approval') && $approvalSelection === null
+            ? 'invalid'
+            : null;
 
         try {
             $result = $this->actionCenter->queueForActionCenter($owner, $query);
@@ -60,6 +78,8 @@ final class OwnerActionCenterController extends Controller
             'source' => $result->coverage,
             'page' => $result->page,
             'per_page' => $result->perPage,
+            'approvalSelection' => $approvalSelection,
+            'approvalSelectionError' => $approvalSelectionError,
         ]);
     }
 
@@ -106,6 +126,35 @@ final class OwnerActionCenterController extends Controller
             page: $this->boundedInteger($request->query('page', 1), 'page', 1, $maxPage),
             perPage: $this->boundedInteger($request->query('per_page', $defaultPerPage), 'per_page', 1, $maxPerPage),
         );
+    }
+
+    /** @return array{sourceType: string, sourceId: int}|null */
+    private function approvalSelectionFrom(Request $request): ?array
+    {
+        $value = $request->query('approval');
+        if (! is_string($value)) {
+            return null;
+        }
+
+        if (preg_match('/\A([a-z][a-z0-9_]*):([1-9][0-9]*)\z/', $value, $matches) !== 1
+            || ! in_array($matches[1], self::APPROVAL_SOURCE_TYPES, true)) {
+            return null;
+        }
+
+        $sourceId = filter_var($matches[2], FILTER_VALIDATE_INT, [
+            'options' => [
+                'min_range' => 1,
+                'max_range' => 9_007_199_254_740_991,
+            ],
+        ]);
+        if ($sourceId === false) {
+            return null;
+        }
+
+        return [
+            'sourceType' => $matches[1],
+            'sourceId' => (int) $sourceId,
+        ];
     }
 
     /** @return array<string, array<string, mixed>> */

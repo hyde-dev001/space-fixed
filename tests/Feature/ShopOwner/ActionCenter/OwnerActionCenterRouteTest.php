@@ -5,7 +5,16 @@ declare(strict_types=1);
 namespace Tests\Feature\ShopOwner\ActionCenter;
 
 use App\Contracts\OwnerActionCenter\OwnerAttentionAdapter;
+use App\Models\Finance\Expense;
+use App\Models\Order;
+use App\Models\OrderRefund;
+use App\Models\PriceChangeRequest;
+use App\Models\Product;
+use App\Models\PurchaseRequest;
+use App\Models\RepairRequest;
+use App\Models\RepairService;
 use App\Models\ShopOwner;
+use App\Models\User;
 use App\Services\OwnerActionCenter\Adapters\OrderRefundAttentionAdapter;
 use App\Services\OwnerActionCenter\Adapters\RepairRefundAttentionAdapter;
 use App\Support\OwnerActionCenter\OwnerAttentionAdapterResult;
@@ -90,6 +99,254 @@ final class OwnerActionCenterRouteTest extends TestCase
                 ->where('ownerActionCenter.coverage', 'refunds')
                 ->where('ownerActionCenter.bucket', 'needs_my_decision')
                 ->where('ownerActionCenter.pagination.per_page', 3));
+    }
+
+    public function test_invalid_approval_selection_keeps_the_queue_available_and_marks_the_link_invalid(): void
+    {
+        $owner = $this->phaseThreeOwner();
+
+        foreach (['1 OR 1=1', 'order_refund:9007199254740992'] as $approval) {
+            $this->actingAs($owner, 'shop_owner')
+                ->get(route('shop-owner.shell.action-center', [
+                    'approval' => $approval,
+                ]))
+                ->assertOk()
+                ->assertInertia(fn (Assert $page) => $page
+                    ->where('approvalSelection', null)
+                    ->where('approvalSelectionError', 'invalid')
+                    ->where('ownerActionCenter.bucket', 'needs_my_decision'));
+        }
+    }
+
+    public function test_valid_approval_selection_is_whitelisted_and_positive(): void
+    {
+        $owner = $this->phaseThreeOwner();
+
+        $this->actingAs($owner, 'shop_owner')
+            ->get(route('shop-owner.shell.action-center', [
+                'approval' => 'repair_rejection:123',
+            ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('approvalSelection.sourceType', 'repair_rejection')
+                ->where('approvalSelection.sourceId', 123)
+                ->where('approvalSelectionError', null));
+    }
+
+    public function test_new_approval_detail_reads_are_tenant_scoped_and_keep_completed_context(): void
+    {
+        $owner = $this->phaseThreeOwner();
+        $otherOwner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
+            'business_type' => 'both',
+        ]);
+
+        $purchaseRequest = PurchaseRequest::factory()->create([
+            'shop_owner_id' => $owner->id,
+            'status' => 'approved',
+        ]);
+        $otherPurchaseRequest = PurchaseRequest::factory()->create([
+            'shop_owner_id' => $otherOwner->id,
+        ]);
+        $expense = Expense::create([
+            'reference' => 'EXP-DETAIL-'.uniqid(),
+            'date' => now()->toDateString(),
+            'category' => 'Operations',
+            'description' => 'Action Center detail expense',
+            'amount' => 1000,
+            'tax_amount' => 0,
+            'status' => 'approved',
+            'shop_id' => $owner->id,
+        ]);
+        $otherExpense = Expense::create([
+            'reference' => 'EXP-DETAIL-'.uniqid(),
+            'date' => now()->toDateString(),
+            'category' => 'Operations',
+            'description' => 'Other shop expense',
+            'amount' => 1000,
+            'tax_amount' => 0,
+            'status' => 'approved',
+            'shop_id' => $otherOwner->id,
+        ]);
+        $customer = User::factory()->create();
+        $order = Order::factory()->create([
+            'shop_owner_id' => $owner->id,
+            'customer_id' => $customer->id,
+            'payment_status' => 'paid',
+        ]);
+        $refund = OrderRefund::factory()->create([
+            'order_id' => $order->id,
+            'customer_id' => $customer->id,
+            'shop_owner_id' => $owner->id,
+            'status' => 'succeeded',
+            'shop_owner_status' => 'approved',
+            'finance_status' => 'approved',
+        ]);
+        $otherCustomer = User::factory()->create();
+        $otherOrder = Order::factory()->create([
+            'shop_owner_id' => $otherOwner->id,
+            'customer_id' => $otherCustomer->id,
+            'payment_status' => 'paid',
+        ]);
+        $otherRefund = OrderRefund::factory()->create([
+            'order_id' => $otherOrder->id,
+            'customer_id' => $otherCustomer->id,
+            'shop_owner_id' => $otherOwner->id,
+        ]);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->getJson("/api/shop-owner/purchase-requests/{$purchaseRequest->id}")
+            ->assertOk()
+            ->assertJsonPath('data.id', $purchaseRequest->id);
+        $this->actingAs($owner, 'shop_owner')
+            ->getJson("/api/shop-owner/expenses/{$expense->id}")
+            ->assertOk()
+            ->assertJsonPath('id', $expense->id);
+        $this->actingAs($owner, 'shop_owner')
+            ->getJson("/api/shop-owner/refunds/{$refund->id}")
+            ->assertOk()
+            ->assertJsonPath('id', $refund->id)
+            ->assertJsonPath('status', 'Approved');
+
+        $this->actingAs($owner, 'shop_owner')
+            ->getJson("/api/shop-owner/purchase-requests/{$otherPurchaseRequest->id}")
+            ->assertNotFound();
+        $this->actingAs($owner, 'shop_owner')
+            ->getJson("/api/shop-owner/expenses/{$otherExpense->id}")
+            ->assertNotFound();
+        $this->actingAs($owner, 'shop_owner')
+            ->getJson("/api/shop-owner/refunds/{$otherRefund->id}")
+            ->assertNotFound();
+        $this->actingAs($owner, 'shop_owner')
+            ->getJson('/api/shop-owner/purchase-requests/999999')
+            ->assertNotFound();
+    }
+
+    public function test_price_and_repair_rejection_details_are_tenant_scoped(): void
+    {
+        $owner = $this->phaseThreeOwner();
+        $otherOwner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
+            'business_type' => 'both',
+        ]);
+        $requester = User::factory()->create(['shop_owner_id' => $owner->id]);
+
+        $product = Product::create([
+            'shop_owner_id' => $owner->id,
+            'name' => 'Action Center Detail Product',
+            'slug' => 'action-center-detail-product-'.uniqid(),
+            'description' => 'Product detail',
+            'price' => 100,
+            'category' => 'shoes',
+            'stock_quantity' => 10,
+            'is_active' => true,
+        ]);
+        $priceChange = PriceChangeRequest::create([
+            'product_id' => $product->id,
+            'product_name' => $product->name,
+            'current_price' => 100,
+            'proposed_price' => 140,
+            'reason' => 'Detail test',
+            'requested_by' => $requester->id,
+            'status' => 'owner_approved',
+            'shop_owner_id' => $owner->id,
+        ]);
+        $otherProduct = Product::create([
+            'shop_owner_id' => $otherOwner->id,
+            'name' => 'Other Detail Product',
+            'slug' => 'other-detail-product-'.uniqid(),
+            'description' => 'Other product detail',
+            'price' => 100,
+            'category' => 'shoes',
+            'stock_quantity' => 10,
+            'is_active' => true,
+        ]);
+        $otherPriceChange = PriceChangeRequest::create([
+            'product_id' => $otherProduct->id,
+            'product_name' => $otherProduct->name,
+            'current_price' => 100,
+            'proposed_price' => 140,
+            'reason' => 'Other detail test',
+            'requested_by' => User::factory()->create(['shop_owner_id' => $otherOwner->id])->id,
+            'status' => 'owner_approved',
+            'shop_owner_id' => $otherOwner->id,
+        ]);
+        $repairService = RepairService::create([
+            'name' => 'Action Center Detail Repair',
+            'category' => 'Restoration',
+            'price' => 1400,
+            'old_price' => 1200,
+            'duration' => '2 days',
+            'description' => 'Repair detail',
+            'change_reason' => 'Detail test',
+            'status' => 'Active',
+            'shop_owner_id' => $owner->id,
+            'created_by' => $requester->id,
+            'updated_by' => $requester->id,
+        ]);
+        $otherRepairService = RepairService::create([
+            'name' => 'Other Detail Repair',
+            'category' => 'Restoration',
+            'price' => 1400,
+            'old_price' => 1200,
+            'duration' => '2 days',
+            'description' => 'Other repair detail',
+            'change_reason' => 'Other detail test',
+            'status' => 'Active',
+            'shop_owner_id' => $otherOwner->id,
+        ]);
+        $repair = RepairRequest::factory()->create([
+            'shop_owner_id' => $owner->id,
+            'status' => 'rejected',
+            'requires_owner_approval' => true,
+            'repairer_rejected_at' => now(),
+        ]);
+        $otherRepair = RepairRequest::factory()->create([
+            'shop_owner_id' => $otherOwner->id,
+            'status' => 'rejected',
+            'requires_owner_approval' => true,
+            'repairer_rejected_at' => now(),
+        ]);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->getJson("/api/shop-owner/price-changes/{$priceChange->id}")
+            ->assertOk()
+            ->assertJsonPath('data.id', $priceChange->id);
+        $this->actingAs($owner, 'shop_owner')
+            ->getJson("/api/shop-owner/repair-price-changes/{$repairService->id}")
+            ->assertOk()
+            ->assertJsonPath('data.id', $repairService->id);
+        $this->actingAs($owner, 'shop_owner')
+            ->getJson("/api/shop-owner/repairs/rejection-pending/{$repair->id}")
+            ->assertOk()
+            ->assertJsonPath('repair.id', $repair->id);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->getJson("/api/shop-owner/price-changes/{$otherPriceChange->id}")
+            ->assertNotFound();
+        $this->actingAs($owner, 'shop_owner')
+            ->getJson("/api/shop-owner/repair-price-changes/{$otherRepairService->id}")
+            ->assertNotFound();
+        $this->actingAs($owner, 'shop_owner')
+            ->getJson("/api/shop-owner/repairs/rejection-pending/{$otherRepair->id}")
+            ->assertNotFound();
+    }
+
+    public function test_disabled_coverage_keeps_a_valid_selection_non_mutating(): void
+    {
+        $owner = $this->phaseThreeOwner();
+        config(['owner_action_center.coverage.purchase_requests' => false]);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->get(route('shop-owner.shell.action-center', [
+                'approval' => 'purchase_request:123',
+            ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('approvalSelection.sourceType', 'purchase_request')
+                ->where('approvalSelection.sourceId', 123)
+                ->where('approvalSelectionError', null)
+                ->where('ownerActionCenter.coverage', 'all'));
     }
 
     public function test_exception_bucket_uses_bucket_scoped_source_and_independent_page_state(): void

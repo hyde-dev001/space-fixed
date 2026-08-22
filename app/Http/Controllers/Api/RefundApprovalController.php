@@ -75,6 +75,25 @@ class RefundApprovalController extends Controller
         return response()->json($paginated);
     }
 
+    public function shopOwnerShow(Request $request, int $id)
+    {
+        $shopOwner = Auth::guard('shop_owner')->user();
+        if (!$shopOwner) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        $refund = $this->baseListQuery($request)
+            ->where('shop_owner_id', (int) $shopOwner->id)
+            ->whereKey($id)
+            ->first();
+
+        if (!$refund) {
+            return response()->json(['message' => 'Refund not found'], 404);
+        }
+
+        return response()->json($this->transformRefund($refund));
+    }
+
     public function financeApprove(Request $request, int $id)
     {
         $user = Auth::guard('user')->user();

@@ -2,6 +2,7 @@ import { Head, router, usePage } from "@inertiajs/react";
 import AppLayoutShopOwner from "../../layout/AppLayout_shopOwner";
 import OwnerActionCenterAvailability from "../../components/owner-action-center/OwnerActionCenterAvailability";
 import OwnerAttentionList from "../../components/owner-action-center/OwnerAttentionList";
+import { parseApprovalSelection, type ApprovalSelection } from "../../components/owner-action-center/approvalSelection";
 import type {
   OwnerActionCenterCoverage,
   OwnerActionCenterResult,
@@ -17,6 +18,8 @@ interface ActionCenterPageProps {
   source?: OwnerActionCenterCoverage;
   page?: number;
   per_page?: number;
+  approvalSelection?: ApprovalSelection | null;
+  approvalSelectionError?: "invalid" | null;
 }
 
 const filterLabels: Array<{ key: OwnerAttentionCoverageSource; label: string }> = [
@@ -91,6 +94,11 @@ export default function ActionCenter() {
   const lastPage = result?.pagination.last_page ?? 1;
   const filters = result === null ? [] : availableFilters(result);
   const summaries = props.bucketSummaries ?? {};
+  const rawApproval = typeof window === "undefined"
+    ? null
+    : new URLSearchParams(window.location.search).get("approval");
+  const hasInvalidApproval = props.approvalSelectionError === "invalid"
+    || (rawApproval !== null && parseApprovalSelection(rawApproval) === null);
   const buckets: Array<{ key: OwnerAttentionBucket; label: string }> = [
     { key: "needs_my_decision", label: "Needs My Decision" },
     ...(summaries.urgent_exceptions
@@ -173,6 +181,12 @@ export default function ActionCenter() {
           <div className="mt-4">
             <OwnerActionCenterAvailability result={result} />
           </div>
+
+          {hasInvalidApproval && (
+            <p role="alert" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-900/20 dark:text-amber-100">
+              This approval link is invalid. The Action Center queue is still available below.
+            </p>
+          )}
 
           {filters.length > 0 && (
             <nav aria-label="Action Center source filters" className="mt-5 flex flex-wrap gap-2">

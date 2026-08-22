@@ -86,6 +86,37 @@ class PurchaseRequestController extends Controller
     }
 
     /**
+     * Show a purchase request belonging to this shop owner.
+     */
+    public function show($id)
+    {
+        $shopOwner = $this->shopOwner();
+
+        $purchaseRequest = PurchaseRequest::query()
+            ->with(self::PURCHASE_REQUEST_RELATIONS)
+            ->where('shop_owner_id', $shopOwner->id)
+            ->find($id);
+
+        if (!$purchaseRequest) {
+            return response()->json(['message' => 'Purchase request not found'], 404);
+        }
+
+        $payload = $purchaseRequest->toArray();
+        $payload['total_cost'] = $this->calculatePurchaseRequestTotalCost(
+            [
+                'inventory_item_id' => $purchaseRequest->inventory_item_id,
+                'requested_size' => $purchaseRequest->requested_size,
+                'requested_color' => $purchaseRequest->requested_color,
+                'quantity' => $purchaseRequest->quantity,
+                'unit_cost' => $purchaseRequest->unit_cost,
+            ],
+            (int) $shopOwner->id
+        );
+
+        return response()->json(['data' => $payload]);
+    }
+
+    /**
      * Shop owner final approval for a purchase request.
      */
     public function approve(Request $request, $id)

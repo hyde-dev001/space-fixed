@@ -336,6 +336,29 @@ class PriceChangeRequestController extends Controller
         ]);
     }
 
+    public function ownerShow(int $id)
+    {
+        $shopOwner = Auth::guard('shop_owner')->user();
+        if (!$shopOwner) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        $priceChangeRequest = PriceChangeRequest::query()
+            ->with(['product', 'requester', 'financeReviewer', 'ownerReviewer', 'approval'])
+            ->where('shop_owner_id', (int) $shopOwner->id)
+            ->whereKey($id)
+            ->first();
+
+        if (!$priceChangeRequest) {
+            return response()->json(['message' => 'Price change request not found'], 404);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => $priceChangeRequest,
+        ]);
+    }
+
     /**
      * Get all owner-relevant requests (for metrics calculation)
      */

@@ -53,6 +53,7 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
     // ============================================
     Route::prefix('purchase-requests')->group(function () {
         Route::get('/', [ShopOwnerPurchaseRequestController::class, 'index'])->name('shop_owner.purchase-requests.index');
+        Route::get('/{id}', [ShopOwnerPurchaseRequestController::class, 'show'])->name('shop_owner.purchase-requests.show');
         Route::post('/{id}/approve', [ShopOwnerPurchaseRequestController::class, 'approve'])->name('shop_owner.purchase-requests.approve');
         Route::post('/{id}/reject', [ShopOwnerPurchaseRequestController::class, 'reject'])->name('shop_owner.purchase-requests.reject');
     });
@@ -62,6 +63,7 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
     // ============================================
     Route::prefix('expenses')->group(function () {
         Route::get('/', [ShopOwnerExpenseController::class, 'index'])->name('shop_owner.expenses.index');
+        Route::get('/{id}', [ShopOwnerExpenseController::class, 'show'])->name('shop_owner.expenses.show');
         Route::post('/{id}/approve', [ShopOwnerExpenseController::class, 'approve'])->name('shop_owner.expenses.approve');
         Route::post('/{id}/reject', [ShopOwnerExpenseController::class, 'reject'])->name('shop_owner.expenses.reject');
     });
@@ -151,6 +153,7 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
     // ============================================
     Route::prefix('refunds')->group(function () {
         Route::get('/', [RefundApprovalController::class, 'shopOwnerIndex'])->name('shop_owner.refunds.index');
+        Route::get('/{id}', [RefundApprovalController::class, 'shopOwnerShow'])->name('shop_owner.refunds.show');
         Route::post('/{id}/approve', [RefundApprovalController::class, 'shopOwnerApprove'])->name('shop_owner.refunds.approve');
         Route::post('/{id}/reject', [RefundApprovalController::class, 'shopOwnerReject'])->name('shop_owner.refunds.reject');
         Route::post('/{id}/execute-gateway-refund', [RefundApprovalController::class, 'shopOwnerExecuteGatewayRefund'])->name('shop_owner.refunds.execute');
@@ -159,6 +162,8 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
     Route::prefix('repair-refunds')->group(function () {
         Route::get('/', [\App\Http\Controllers\Api\RepairRefundWorkflowController::class, 'ownerIndex'])
             ->name('shop_owner.repair-refunds.index');
+        Route::get('/{refund}', [\App\Http\Controllers\Api\RepairRefundWorkflowController::class, 'ownerShow'])
+            ->name('shop_owner.repair-refunds.show');
         Route::post('/{refund}/approve', [\App\Http\Controllers\Api\RepairRefundWorkflowController::class, 'ownerApprove'])
             ->name('shop_owner.repair-refunds.approve');
         Route::post('/{refund}/reject', [\App\Http\Controllers\Api\RepairRefundWorkflowController::class, 'ownerReject'])
@@ -182,6 +187,7 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
     Route::prefix('price-changes')->middleware('check.business.type:retail,both')->group(function () {
         Route::get('/pending', [PriceChangeRequestController::class, 'ownerPending'])->name('shop_owner.price-changes.pending');
         Route::get('/all', [PriceChangeRequestController::class, 'ownerAll'])->name('shop_owner.price-changes.all');
+        Route::get('/{id}', [PriceChangeRequestController::class, 'ownerShow'])->name('shop_owner.price-changes.show');
         Route::post('/{id}/approve', [PriceChangeRequestController::class, 'ownerApprove'])->name('shop_owner.price-changes.approve');
         Route::post('/{id}/reject', [PriceChangeRequestController::class, 'ownerReject'])->name('shop_owner.price-changes.reject');
     });
@@ -192,6 +198,7 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
     Route::prefix('repair-price-changes')->middleware('check.business.type:repair,both')->group(function () {
         Route::get('/pending', [RepairServiceController::class, 'ownerPending'])->name('shop_owner.repair-price-changes.pending');
         Route::get('/all', [RepairServiceController::class, 'ownerAll'])->name('shop_owner.repair-price-changes.all');
+        Route::get('/{id}', [RepairServiceController::class, 'ownerShow'])->name('shop_owner.repair-price-changes.show');
         Route::post('/{id}/approve', [RepairServiceController::class, 'ownerApprove'])->name('shop_owner.repair-price-changes.approve');
         Route::post('/{id}/reject', [RepairServiceController::class, 'ownerReject'])->name('shop_owner.repair-price-changes.reject');
     });

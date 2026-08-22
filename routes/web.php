@@ -1551,6 +1551,7 @@ Route::middleware(['auth:shop_owner', 'check.business.type:repair,both'])->prefi
 
     // Rejection workflow owner approval routes
     Route::get('/rejection-pending', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'getOwnerRejectionPendingApprovals']);
+    Route::get('/rejection-pending/{id}', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'getOwnerRejectionApproval']);
     Route::post('{id}/approve-rejection', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'approveOwnerRejection']);
     Route::post('{id}/reject-rejection', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'rejectOwnerRejection']);
 

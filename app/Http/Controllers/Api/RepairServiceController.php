@@ -1077,6 +1077,48 @@ class RepairServiceController extends Controller
         ]);
     }
 
+    public function ownerShow(int $id)
+    {
+        $shopOwnerId = Auth::guard('shop_owner')->id();
+        if (!$shopOwnerId) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        $service = RepairService::query()
+            ->where('shop_owner_id', (int) $shopOwnerId)
+            ->whereKey($id)
+            ->with(['creator', 'updater', 'financeReviewer', 'ownerReviewer'])
+            ->first();
+
+        if (!$service) {
+            return response()->json(['message' => 'Repair service price change not found'], 404);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'id' => $service->id,
+                'name' => $service->name,
+                'category' => $service->category,
+                'old_price' => (float) ($service->old_price ?? $service->price),
+                'price' => (float) ($this->resolveProposedPrice($service) ?? $service->price),
+                'change_reason' => $this->resolveChangeReason($service),
+                'status' => $service->status,
+                'approval_workflow_version' => $service->approval_workflow_version,
+                'created_at' => $service->created_at,
+                'updated_at' => $service->updated_at,
+                'creator' => $service->creator,
+                'updater' => $service->updater,
+                'financeReviewer' => $service->financeReviewer,
+                'ownerReviewer' => $service->ownerReviewer,
+                'finance_notes' => $service->finance_notes,
+                'finance_reviewed_at' => $service->finance_reviewed_at,
+                'owner_reviewed_at' => $service->owner_reviewed_at,
+                'rejection_reason' => $service->rejection_reason,
+            ],
+        ]);
+    }
+
     /**
      * Get all services for owner review (pending + approved + rejected)
      */

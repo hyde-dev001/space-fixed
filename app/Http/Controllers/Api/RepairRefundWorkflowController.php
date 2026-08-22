@@ -139,6 +139,26 @@ class RepairRefundWorkflowController extends Controller
         ]);
     }
 
+    public function ownerShow(Request $request, int $id)
+    {
+        $actor = Auth::guard('shop_owner')->user();
+        if (!$actor) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        $refund = $this->buildApprovalListQuery($request, (int) $actor->id)
+            ->whereKey($id)
+            ->first();
+
+        if (!$refund) {
+            return response()->json(['message' => 'Repair refund not found'], 404);
+        }
+
+        return response()->json([
+            'data' => $this->transformApprovalRefund($refund),
+        ]);
+    }
+
     public function repairerQueue(Request $request)
     {
         $actor = Auth::guard('user')->user();

@@ -1546,6 +1546,45 @@ class RepairWorkflowController extends Controller
     }
 
     /**
+     * Show a rejection-workflow repair belonging to this shop owner.
+     */
+    public function getOwnerRejectionApproval(Request $request, $id)
+    {
+        $shopOwner = Auth::guard('shop_owner')->user();
+
+        if (!$shopOwner) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthenticated',
+            ], 401);
+        }
+
+        $repair = RepairRequest::with([
+            'user:id,first_name,last_name,email,phone',
+            'services:id,name,price',
+            'repairer:id,first_name,last_name',
+            'repairerRejectedBy',
+            'managerReviewedBy',
+            'ownerReviewedBy',
+        ])
+            ->where('shop_owner_id', $shopOwner->id)
+            ->whereKey($id)
+            ->first();
+
+        if (!$repair) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Repair rejection approval not found',
+            ], 404);
+        }
+
+        return response()->json([
+            'success' => true,
+            'repair' => $repair,
+        ]);
+    }
+
+    /**
      * Shop-owner approval step for rejection workflow.
      */
     public function approveOwnerRejection(Request $request, $id)
