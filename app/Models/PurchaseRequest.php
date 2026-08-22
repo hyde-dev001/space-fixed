@@ -28,6 +28,7 @@ class PurchaseRequest extends Model
         'priority',
         'justification',
         'status',
+        'requires_owner_approval',
         'rejection_reason',
         'requested_by',
         'requested_date',
@@ -45,6 +46,7 @@ class PurchaseRequest extends Model
 
     protected $casts = [
         'requested_date' => 'datetime',
+        'requires_owner_approval' => 'boolean',
         'reviewed_date' => 'datetime',
         'shop_owner_approved_at' => 'datetime',
         'approved_date' => 'datetime',

@@ -40,6 +40,7 @@ class OrderRefund extends Model
         'flow_type',
         'status',
         'shop_owner_status',
+        'requires_owner_approval',
         'shop_owner_approved_at',
         'shop_owner_approved_by',
         'finance_status',
@@ -98,6 +99,7 @@ class OrderRefund extends Model
 
     protected $casts = [
         'amount' => 'decimal:2',
+        'requires_owner_approval' => 'boolean',
         'evidence_media' => 'array',
         'requested_at' => 'datetime',
         'approved_at' => 'datetime',

@@ -49,6 +49,7 @@ class PosRefund extends Model
         'status',
         'finance_status',
         'shop_owner_status',
+        'requires_owner_approval',
         'repairer_status',
         'repairer_assessment_note',
         'repairer_reviewed_by',
@@ -92,6 +93,7 @@ class PosRefund extends Model
     protected $casts = [
         'requested_amount' => 'decimal:2',
         'approved_amount' => 'decimal:2',
+        'requires_owner_approval' => 'boolean',
         'requested_at' => 'datetime',
         'approved_at' => 'datetime',
         'executed_at' => 'datetime',
