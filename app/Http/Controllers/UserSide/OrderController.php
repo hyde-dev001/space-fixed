@@ -20,6 +20,7 @@ use App\Services\NotificationService;
 use App\Services\OrderReceiptService;
 use App\Services\OrderRefundService;
 use App\Services\DeliveryDisputeService;
+use App\Services\DeliveryDisputeEvidenceService;
 use App\Services\PaymongoRefundService;
 use App\Services\PaymentSettlementService;
 use App\Services\RefundLineCalculatorService;
@@ -44,6 +45,7 @@ class OrderController extends Controller
     protected RefundLineCalculatorService $refundLineCalculatorService;
     protected OrderReceiptService $orderReceiptService;
     protected DeliveryDisputeService $deliveryDisputeService;
+    protected DeliveryDisputeEvidenceService $deliveryDisputeEvidenceService;
     private ?array $orderRefundColumns = null;
     private bool $orderRefundColumnIntrospectionFailed = false;
 
@@ -55,6 +57,7 @@ class OrderController extends Controller
         RefundLineCalculatorService $refundLineCalculatorService,
         OrderReceiptService $orderReceiptService,
         DeliveryDisputeService $deliveryDisputeService,
+        DeliveryDisputeEvidenceService $deliveryDisputeEvidenceService,
     )
     {
         $this->notificationService = $notificationService;
@@ -64,6 +67,7 @@ class OrderController extends Controller
         $this->refundLineCalculatorService = $refundLineCalculatorService;
         $this->orderReceiptService = $orderReceiptService;
         $this->deliveryDisputeService = $deliveryDisputeService;
+        $this->deliveryDisputeEvidenceService = $deliveryDisputeEvidenceService;
     }
     /**
      * Display user's orders
@@ -610,6 +614,8 @@ class OrderController extends Controller
         $validated = $request->validate([
             'reason' => ['required', 'string', 'in:' . implode(',', DeliveryDisputeService::REASONS)],
             'notes' => ['nullable', 'string', 'max:2000'],
+            'media' => ['required', 'array', 'size:6'],
+            'media.*' => ['required', 'file', 'mimes:jpg,jpeg,png,webp,mp4,mov,avi,mkv,webm'],
         ]);
 
         $user = Auth::guard('user')->user();
@@ -617,12 +623,27 @@ class OrderController extends Controller
             return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
         }
 
-        $result = $this->deliveryDisputeService->report(
-            $order,
-            (int) $user->id,
-            (string) $validated['reason'],
-            $validated['notes'] ?? null,
-        );
+        $mediaFiles = $request->file('media', []);
+        $this->deliveryDisputeEvidenceService->validateFiles($mediaFiles);
+        $storedEvidence = $this->deliveryDisputeEvidenceService->store($mediaFiles, (int) $order->id);
+
+        try {
+            $result = $this->deliveryDisputeService->report(
+                $order,
+                (int) $user->id,
+                (string) $validated['reason'],
+                $validated['notes'] ?? null,
+                $storedEvidence,
+            );
+        } catch (\Throwable $exception) {
+            $this->deliveryDisputeEvidenceService->delete($storedEvidence);
+
+            throw $exception;
+        }
+
+        if (($result['result'] ?? null) === 'existing') {
+            $this->deliveryDisputeEvidenceService->delete($storedEvidence);
+        }
 
         /** @var DeliveryDispute $dispute */
         $dispute = $result['dispute'];
@@ -637,6 +658,7 @@ class OrderController extends Controller
                 'status' => $dispute->status,
                 'reason' => $dispute->reason,
                 'reported_at' => optional($dispute->reported_at)->toISOString(),
+                'evidence_count' => count($dispute->evidence_media ?? []),
             ],
         ]);
     }
@@ -766,6 +788,13 @@ class OrderController extends Controller
                 return response()->json([
                     'success' => false,
                     'message' => 'Only delivered or completed orders can request a refund.',
+                ], 422);
+            }
+
+            if (strtolower(trim((string) $order->carrier_company)) === 'shop-owned logistics') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Shop-owned logistics orders use Report Order for dispatcher investigation.',
                 ], 422);
             }
 

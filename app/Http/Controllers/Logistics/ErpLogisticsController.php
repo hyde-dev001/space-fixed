@@ -1036,6 +1036,26 @@ class ErpLogisticsController extends Controller
                         'resolution' => $dispute->resolution,
                         'resolution_note' => $dispute->resolution_note,
                         'resolved_at' => optional($dispute->resolved_at)->toISOString(),
+                        'evidence' => collect($dispute->evidence_media ?? [])
+                            ->filter(fn ($media) => is_array($media)
+                                && is_string($media['id'] ?? null)
+                                && is_string($media['path'] ?? null)
+                                && str_starts_with($media['path'], 'delivery-dispute-evidence/')
+                                && ! str_contains($media['path'], '..')
+                                && ! str_contains($media['path'], '\\')
+                                && Storage::disk('local')->exists($media['path']))
+                            ->map(fn (array $media) => [
+                                'id' => $media['id'],
+                                'kind' => ($media['kind'] ?? 'image') === 'video' ? 'video' : 'image',
+                                'mime_type' => $media['mime_type'] ?? null,
+                                'original_name' => $media['original_name'] ?? null,
+                                'url' => route('api.logistics.delivery-disputes.evidence', [
+                                    'dispute' => $dispute->id,
+                                    'mediaId' => $media['id'],
+                                ]),
+                            ])
+                            ->values()
+                            ->all(),
                     ])->values()->all()
                     : []);
             });

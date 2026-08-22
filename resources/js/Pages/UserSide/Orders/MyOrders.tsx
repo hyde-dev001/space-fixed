@@ -195,6 +195,12 @@ const MyOrders: React.FC = () => {
   const [reasonDetailsOrder, setReasonDetailsOrder] = useState<Order | null>(null);
   const [showRefundRejectionModal, setShowRefundRejectionModal] = useState(false);
   const [refundRejectionOrder, setRefundRejectionOrder] = useState<Order | null>(null);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportOrderId, setReportOrderId] = useState<number | null>(null);
+  const [reportReason, setReportReason] = useState<string>('');
+  const [reportMedia, setReportMedia] = useState<File[]>([]);
+  const [reportNote, setReportNote] = useState<string>('');
+  const [isSubmittingReport, setIsSubmittingReport] = useState(false);
   const [showTrackingModal, setShowTrackingModal] = useState(false);
   const [trackingShipmentId, setTrackingShipmentId] = useState<number | null>(null);
   const trackingTriggerRef = useRef<HTMLElement | null>(null);
@@ -478,50 +484,129 @@ const MyOrders: React.FC = () => {
     }
   };
 
-  const reportDeliveryIssue = async (orderId: number) => {
-    const reason = await Swal.fire({
-      title: 'Report Order',
-      input: 'select',
-      inputOptions: {
-        item_not_received: 'Hindi natanggap ang item',
-        damaged: 'Damaged ang item',
-        incomplete: 'Incomplete ang order',
-        wrong_item: 'Wrong item ang natanggap',
-        other: 'Other',
-      },
-      inputPlaceholder: 'Piliin ang problema',
-      inputValidator: (value) => value ? undefined : 'Piliin muna ang dahilan.',
-      showCancelButton: true,
-      confirmButtonText: 'Continue',
-      cancelButtonText: 'Cancel',
-    });
-    if (!reason.isConfirmed) return;
+  const resetReportModal = () => {
+    setShowReportModal(false);
+    setReportOrderId(null);
+    setReportReason('');
+    setReportMedia([]);
+    setReportNote('');
+  };
 
-    const note = await Swal.fire({
-      title: 'Report details',
-      input: 'textarea',
-      inputPlaceholder: 'Ilagay ang karagdagang detalye (optional)...',
-      showCancelButton: true,
-      confirmButtonText: 'Submit Report',
-      cancelButtonText: 'Cancel',
-    });
-    if (!note.isConfirmed) return;
+  const openReportModal = (orderId: number) => {
+    setReportOrderId(orderId);
+    setReportReason('');
+    setReportMedia([]);
+    setReportNote('');
+    setShowReportModal(true);
+  };
 
+  const isReportMediaRequirementMet = (): boolean => {
+    const videos = reportMedia.filter((file) => isAllowedRefundVideoFile(file));
+    const images = reportMedia.filter((file) => isAllowedRefundImageFile(file));
+
+    return images.length === 5
+      && videos.length === 1
+      && images.length + videos.length === reportMedia.length;
+  };
+
+  const handleReportMediaUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = Array.from(event.target.files ?? []);
+    event.target.value = '';
+    if (selectedFiles.length === 0) return;
+
+    const invalidFile = selectedFiles.find(
+      (file) => !isAllowedRefundImageFile(file) && !isAllowedRefundVideoFile(file),
+    );
+    if (invalidFile) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Invalid File Type',
+        text: 'Only JPG, JPEG, PNG, WEBP images and MP4, MOV, AVI, MKV, WEBM videos are allowed.',
+        confirmButtonColor: '#000000',
+      });
+      return;
+    }
+
+    const currentVideos = reportMedia.filter((file) => isAllowedRefundVideoFile(file));
+    const currentImages = reportMedia.filter((file) => isAllowedRefundImageFile(file));
+    const newVideos = selectedFiles.filter((file) => isAllowedRefundVideoFile(file));
+    const newImages = selectedFiles.filter((file) => isAllowedRefundImageFile(file));
+
+    if (currentVideos.length + newVideos.length > 1 || currentImages.length + newImages.length > 5) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Media Limit Exceeded',
+        text: 'Upload exactly 5 images and 1 opening-parcel video.',
+        confirmButtonColor: '#000000',
+      });
+      return;
+    }
+
+    if (newVideos.some((file) => file.size > MAX_REFUND_VIDEO_SIZE_BYTES)) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Video Too Large',
+        text: 'The opening-parcel video must be 256MB or smaller.',
+        confirmButtonColor: '#000000',
+      });
+      return;
+    }
+
+    if (newImages.some((file) => file.size > MAX_REFUND_IMAGE_SIZE_BYTES)) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Image Too Large',
+        text: 'Each report image must be 20MB or smaller.',
+        confirmButtonColor: '#000000',
+      });
+      return;
+    }
+
+    setReportMedia((previous) => [...previous, ...selectedFiles]);
+  };
+
+  const removeReportMedia = (index: number) => {
+    setReportMedia((previous) => previous.filter((_, currentIndex) => currentIndex !== index));
+  };
+
+  const submitReportDeliveryIssue = async () => {
+    if (!reportOrderId || !reportReason || !isReportMediaRequirementMet()) return;
+
+    setIsSubmittingReport(true);
     try {
-      const response = await fetch(`/orders/${orderId}/delivery-disputes`, {
+      const formData = new FormData();
+      formData.append('reason', reportReason);
+      if (reportNote.trim()) formData.append('notes', reportNote.trim());
+      reportMedia.forEach((file, index) => formData.append(`media[${index}]`, file));
+
+      const response = await fetch(`/orders/${reportOrderId}/delivery-disputes`, {
         method: 'POST',
         credentials: 'include',
         headers: {
-          'Content-Type': 'application/json',
           'Accept': 'application/json',
           'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
         },
-        body: JSON.stringify({ reason: reason.value, notes: String(note.value ?? '').trim() || null }),
+        body: formData,
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Hindi naisumite ang report.');
+      let data: any = null;
 
-      setOrders((prev) => prev.map((order) => order.id === orderId ? {
+      try {
+        data = await response.json();
+      } catch {
+        data = null;
+      }
+
+      if (!response.ok) {
+        const validationErrors = data?.errors;
+        if (validationErrors && typeof validationErrors === 'object') {
+          const firstErrorList = Object.values(validationErrors)
+            .find((entry) => Array.isArray(entry) && entry.length > 0) as string[] | undefined;
+          if (firstErrorList?.[0]) throw new Error(firstErrorList[0]);
+        }
+        throw new Error(data?.message || 'Hindi naisumite ang report.');
+      }
+
+      setOrders((previous) => previous.map((order) => order.id === reportOrderId ? {
         ...order,
         customer_receipt_status: 'disputed',
         can_confirm_receipt: false,
@@ -530,9 +615,11 @@ const MyOrders: React.FC = () => {
           id: Number(data.dispute.id),
           status: String(data.dispute.status),
           reason: String(data.dispute.reason),
+          notes: reportNote.trim() || null,
           reported_at: data.dispute.reported_at || new Date().toISOString(),
         } : order.active_delivery_dispute,
       } : order));
+      resetReportModal();
 
       Swal.fire({
         icon: 'success',
@@ -547,6 +634,8 @@ const MyOrders: React.FC = () => {
         text: error instanceof Error ? error.message : 'Hindi naisumite ang report. Subukan ulit.',
         confirmButtonColor: '#000000',
       });
+    } finally {
+      setIsSubmittingReport(false);
     }
   };
 
@@ -1121,7 +1210,16 @@ const MyOrders: React.FC = () => {
     return order.status === 'pending' && !isDeadlinePassed(order);
   };
 
+  const isShopOwnedDeliveryOrder = (order: Order): boolean => {
+    return order.is_shop_owned_delivery === true
+      || String(order.carrier_company || '').trim().toLowerCase() === 'shop-owned logistics';
+  };
+
   const canRequestRefund = (order: Order): boolean => {
+    if (isShopOwnedDeliveryOrder(order)) {
+      return false;
+    }
+
     const isDeliveredOrCompleted = ['delivered', 'completed'].includes(order.status);
     if (!isDeliveredOrCompleted) {
       return false;
@@ -1156,6 +1254,10 @@ const MyOrders: React.FC = () => {
   };
 
   const getRefundIneligibilityMessage = (order: Order): string => {
+    if (isShopOwnedDeliveryOrder(order)) {
+      return 'Shop-owned logistics orders use Report Order for dispatcher investigation.';
+    }
+
     const isDeliveredOrCompleted = ['delivered', 'completed'].includes(order.status);
     if (!isDeliveredOrCompleted) {
       return 'Only delivered or completed orders can request a refund.';
@@ -2313,10 +2415,10 @@ const MyOrders: React.FC = () => {
                             REPORT {order.active_delivery_dispute.status === 'open' ? 'SUBMITTED' : 'UNDER INVESTIGATION'}
                           </span>
                         )}
-                        {order.can_report_delivery_issue === true && (
+                        {isShopOwnedDeliveryOrder(order) && order.can_report_delivery_issue === true && (
                           <button
                             type="button"
-                            onClick={() => void reportDeliveryIssue(order.id)}
+                            onClick={() => openReportModal(order.id)}
                             className={`${actionButtonBaseClass} ${actionButtonDangerClass}`}
                             title="Report a problem with this delivered order"
                           >
@@ -2335,7 +2437,7 @@ const MyOrders: React.FC = () => {
                         )}
                         {['delivered', 'completed'].includes(order.status) && (
                           <>
-                            {!order.refund_stage && !reviewSubmitted ? (
+                            {!isShopOwnedDeliveryOrder(order) && !order.refund_stage && !reviewSubmitted ? (
                               canRefund ? refundButton : (
                                 <RefundEligibilityTooltip message={getRefundIneligibilityMessage(order)}>
                                   {refundButton}
@@ -2373,7 +2475,7 @@ const MyOrders: React.FC = () => {
                         </p>
                       )}
 
-                      {['delivered', 'completed'].includes(order.status) && !reviewSubmitted && canRefund && (
+                      {['delivered', 'completed'].includes(order.status) && !isShopOwnedDeliveryOrder(order) && !reviewSubmitted && canRefund && (
                         <p className="mt-3 text-xs text-gray-500 sm:text-right">
                           You can request a refund until {formatDeadline(order.cancellation_refund_deadline_at)}.
                         </p>
@@ -2577,6 +2679,135 @@ const MyOrders: React.FC = () => {
                   className={`${actionButtonBaseClass} ${actionButtonSecondaryClass}`}
                 >
                   Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {showReportModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div
+              className="absolute inset-0 bg-black opacity-40"
+              onClick={() => {
+                if (!isSubmittingReport) resetReportModal();
+              }}
+            ></div>
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="report-order-title"
+              className="bg-white rounded-lg shadow-xl z-50 max-w-3xl w-full max-h-[90vh] flex flex-col"
+            >
+              <div className="px-6 py-4 border-b shrink-0">
+                <h3 id="report-order-title" className="text-xl font-semibold">Report Order</h3>
+                <p className="text-sm text-gray-500 mt-1">
+                  I-upload ang proof ng pagbukas ng parcel para ma-verify ng dispatcher.
+                </p>
+              </div>
+              <div className="px-6 py-5 overflow-y-auto flex-1 space-y-5">
+                <div>
+                  <label htmlFor="report-reason" className="block text-sm font-medium text-gray-700 mb-2">
+                    Piliin ang problema <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    id="report-reason"
+                    aria-label="Report reason"
+                    value={reportReason}
+                    onChange={(event) => setReportReason(event.target.value)}
+                    className="w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-gray-400 focus:outline-none"
+                  >
+                    <option value="">Piliin ang problema</option>
+                    <option value="item_not_received">Hindi natanggap ang item</option>
+                    <option value="damaged">Damaged ang item</option>
+                    <option value="incomplete">Incomplete ang order</option>
+                    <option value="wrong_item">Wrong item ang natanggap</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between gap-3 mb-2">
+                    <label htmlFor="report-evidence-files" className="block text-sm font-medium text-gray-700">
+                      Proof of opening the parcel <span className="text-red-500">*</span>
+                    </label>
+                    <span className="text-xs text-gray-500">
+                      {reportMedia.filter((file) => isAllowedRefundImageFile(file)).length}/5 images · {reportMedia.filter((file) => isAllowedRefundVideoFile(file)).length}/1 video
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-600 mb-3">
+                    Required: exactly 5 JPG/PNG/WEBP images and 1 MP4/MOV/AVI/MKV/WEBM opening-parcel video. Images max 20MB each; video max 256MB.
+                  </p>
+                  <input
+                    id="report-evidence-files"
+                    aria-label="Report evidence files"
+                    type="file"
+                    accept={REFUND_MEDIA_ACCEPT}
+                    multiple
+                    onChange={handleReportMediaUpload}
+                    className="sr-only"
+                  />
+                  <label
+                    htmlFor="report-evidence-files"
+                    className="flex cursor-pointer items-center justify-center rounded-lg border-2 border-dashed border-gray-300 px-4 py-5 text-sm font-medium text-gray-600 hover:border-gray-500 hover:bg-gray-50"
+                  >
+                    Add photos and opening video
+                  </label>
+                  {reportMedia.length > 0 && (
+                    <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                      {reportMedia.map((file, index) => (
+                        <div key={`${file.name}-${index}`} className="flex items-center justify-between gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                          <div className="min-w-0">
+                            <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                              {isAllowedRefundVideoFile(file) ? 'Video' : 'Image'} {index + 1}
+                            </p>
+                            <p className="truncate text-xs text-gray-700" title={file.name}>{file.name}</p>
+                          </div>
+                          <button
+                            type="button"
+                            aria-label={`Remove report evidence ${index + 1}`}
+                            onClick={() => removeReportMedia(index)}
+                            className="shrink-0 text-lg leading-none text-gray-500 hover:text-red-600"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label htmlFor="report-note" className="block text-sm font-medium text-gray-700 mb-2">
+                    Karagdagang detalye (optional)
+                  </label>
+                  <textarea
+                    id="report-note"
+                    aria-label="Report details"
+                    value={reportNote}
+                    onChange={(event) => setReportNote(event.target.value)}
+                    className="w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-gray-400 focus:outline-none resize-none"
+                    rows={4}
+                    maxLength={2000}
+                    placeholder="Ilagay ang karagdagang detalye tungkol sa problema..."
+                  />
+                </div>
+              </div>
+              <div className="px-6 py-4 border-t flex justify-end gap-3 shrink-0">
+                <button
+                  type="button"
+                  disabled={isSubmittingReport}
+                  onClick={resetReportModal}
+                  className={`${actionButtonBaseClass} ${isSubmittingReport ? actionButtonDisabledClass : actionButtonSecondaryClass}`}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={!reportReason || !isReportMediaRequirementMet() || isSubmittingReport}
+                  onClick={() => void submitReportDeliveryIssue()}
+                  className={`${actionButtonBaseClass} ${!reportReason || !isReportMediaRequirementMet() || isSubmittingReport ? actionButtonDisabledClass : actionButtonDangerClass}`}
+                >
+                  {isSubmittingReport ? 'Submitting...' : 'Submit Report'}
                 </button>
               </div>
             </div>

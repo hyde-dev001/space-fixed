@@ -472,6 +472,8 @@ Route::prefix('api/logistics')->middleware(['auth:user,shop_owner'])->group(func
         ->name('logistics.api.shipments.show');
     Route::post('/delivery-disputes/{dispute}/investigate', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'investigateDispute']);
     Route::post('/delivery-disputes/{dispute}/resolve', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'resolveDispute']);
+    Route::get('/delivery-disputes/{dispute}/evidence/{mediaId}', [\App\Http\Controllers\Api\Logistics\DeliveryDisputeEvidenceController::class, 'show'])
+        ->name('api.logistics.delivery-disputes.evidence');
     Route::post('/legs/{leg}/assign', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'assign']);
     Route::post('/legs/{leg}/accept', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'acceptOffer']);
     Route::post('/legs/{leg}/reject', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'rejectOffer']);

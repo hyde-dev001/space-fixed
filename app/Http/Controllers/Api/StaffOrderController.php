@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\DeliveryDispute;
 use App\Models\Logistics\Shipment;
 use App\Models\Order;
 use App\Models\OrderRefund;
@@ -15,6 +16,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 
 class StaffOrderController extends Controller
 {
@@ -120,6 +122,9 @@ class StaffOrderController extends Controller
                 ? round((float) $order->vat_rate, 2)
                 : null;
             $latestRefund = $order->refunds->first();
+            $refundDispute = $latestRefund
+                ? $order->deliveryDisputes->first(fn ($dispute) => (int) ($dispute->order_refund_id ?? 0) === (int) $latestRefund->id)
+                : null;
             $cancelledShipment = $deliveryCancellations->get($order->id);
             $activeDispute = $order->deliveryDisputes
                 ->first(fn ($dispute) => in_array((string) $dispute->status, ['open', 'investigating'], true));
@@ -198,6 +203,7 @@ class StaffOrderController extends Controller
                         $latestRefund,
                         $latestRefundItems,
                         $refundShipments->get($latestRefund->id),
+                        $refundDispute,
                     )
                     : null,
                 'created_at' => $order->created_at->toISOString(),
@@ -275,6 +281,9 @@ class StaffOrderController extends Controller
             ? round((float) $order->vat_rate, 2)
             : null;
         $latestRefund = $order->refunds->first();
+        $refundDispute = $latestRefund
+            ? $order->deliveryDisputes->first(fn ($dispute) => (int) ($dispute->order_refund_id ?? 0) === (int) $latestRefund->id)
+            : null;
         $activeDispute = $order->deliveryDisputes
             ->first(fn ($dispute) => in_array((string) $dispute->status, ['open', 'investigating'], true));
         $latestRefundItems = [];
@@ -359,7 +368,7 @@ class StaffOrderController extends Controller
                 $this->orderLogisticsFallback($order),
             ),
             'latest_refund' => $latestRefund
-                ? $this->serializeLatestRefund($latestRefund, $latestRefundItems, $refundShipment)
+                ? $this->serializeLatestRefund($latestRefund, $latestRefundItems, $refundShipment, $refundDispute)
                 : null,
             'created_at' => $order->created_at->toISOString(),
             'updated_at' => $order->updated_at->toISOString(),
@@ -384,7 +393,12 @@ class StaffOrderController extends Controller
         ]);
     }
 
-    private function serializeLatestRefund(OrderRefund $refund, array $items, ?Shipment $shipment): array
+    private function serializeLatestRefund(
+        OrderRefund $refund,
+        array $items,
+        ?Shipment $shipment,
+        ?DeliveryDispute $dispute = null,
+    ): array
     {
         return [
             'id' => (int) $refund->id,
@@ -416,6 +430,7 @@ class StaffOrderController extends Controller
             'flow_type' => (string) ($refund->flow_type ?? ''),
             'payout_amount_value' => $this->orderRefundService->resolvePayoutAmount($refund),
             'evidence_media' => is_array($refund->evidence_media) ? $refund->evidence_media : [],
+            'customer_dispute_evidence' => $this->serializeCustomerDisputeEvidence($dispute),
             'items' => $items,
             'return_logistics' => $this->serializeShipmentSummary(
                 $shipment,
@@ -424,6 +439,34 @@ class StaffOrderController extends Controller
                 true,
             ),
         ];
+    }
+
+    private function serializeCustomerDisputeEvidence(?DeliveryDispute $dispute): array
+    {
+        if (! $dispute) {
+            return [];
+        }
+
+        return collect($dispute->evidence_media ?? [])
+            ->filter(fn ($media) => is_array($media)
+                && is_string($media['id'] ?? null)
+                && is_string($media['path'] ?? null)
+                && str_starts_with($media['path'], 'delivery-dispute-evidence/')
+                && ! str_contains($media['path'], '..')
+                && ! str_contains($media['path'], '\\')
+                && Storage::disk('local')->exists($media['path']))
+            ->map(fn (array $media) => [
+                'id' => $media['id'],
+                'kind' => ($media['kind'] ?? 'image') === 'video' ? 'video' : 'image',
+                'mime_type' => $media['mime_type'] ?? null,
+                'original_name' => $media['original_name'] ?? null,
+                'url' => route('api.logistics.delivery-disputes.evidence', [
+                    'dispute' => $dispute->id,
+                    'mediaId' => $media['id'],
+                ]),
+            ])
+            ->values()
+            ->all();
     }
 
     private function latestShipmentLookup(

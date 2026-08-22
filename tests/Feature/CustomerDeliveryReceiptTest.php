@@ -11,12 +11,21 @@ use App\Models\OrderRefund;
 use App\Models\ShopOwner;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
 class CustomerDeliveryReceiptTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        Storage::fake('local');
+    }
 
     public function test_shop_owned_customer_can_confirm_receipt_while_proof_awaits_dispatcher_approval(): void
     {
@@ -117,10 +126,11 @@ class CustomerDeliveryReceiptTest extends TestCase
         ]);
 
         $response = $this->actingAs($customer, 'user')
-            ->postJson("/orders/{$order->id}/delivery-disputes", [
+            ->post("/orders/{$order->id}/delivery-disputes", [
                 'reason' => 'damaged',
                 'notes' => 'The sole is damaged.',
-            ]);
+                'media' => $this->reportMedia(),
+            ], ['Accept' => 'application/json']);
 
         $response->assertOk()
             ->assertJsonPath('success', true)
@@ -144,18 +154,48 @@ class CustomerDeliveryReceiptTest extends TestCase
             'shop_owner_id' => $shop->id,
             'customer_id' => $customer->id,
             'status' => OrderStatus::DELIVERED,
+            'carrier_company' => 'Shop-owned logistics',
             'customer_receipt_status' => 'pending',
         ]);
 
-        $first = $this->actingAs($customer, 'user')->postJson("/orders/{$order->id}/delivery-disputes", [
+        $first = $this->actingAs($customer, 'user')->post("/orders/{$order->id}/delivery-disputes", [
             'reason' => 'item_not_received',
-        ])->assertOk()->json('dispute.id');
-        $second = $this->actingAs($customer, 'user')->postJson("/orders/{$order->id}/delivery-disputes", [
+            'media' => $this->reportMedia(),
+        ], ['Accept' => 'application/json'])->assertOk()->json('dispute.id');
+        $second = $this->actingAs($customer, 'user')->post("/orders/{$order->id}/delivery-disputes", [
             'reason' => 'other',
-        ])->assertOk()->json('dispute.id');
+            'media' => $this->reportMedia(),
+        ], ['Accept' => 'application/json'])->assertOk()->json('dispute.id');
 
         $this->assertSame($first, $second);
         $this->assertDatabaseCount('delivery_disputes', 1);
+    }
+
+    public function test_shop_owned_order_uses_report_instead_of_direct_refund(): void
+    {
+        $shop = ShopOwner::factory()->create();
+        $customer = User::factory()->create();
+        $order = Order::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'customer_id' => $customer->id,
+            'status' => OrderStatus::DELIVERED,
+            'carrier_company' => 'Shop-owned logistics',
+            'payment_status' => 'paid',
+            'payment_method' => 'paymongo',
+        ]);
+
+        $this->actingAs($customer, 'user')
+            ->post('/orders/request-refund', [
+                'order_id' => $order->id,
+                'reason' => 'damaged_item',
+                'media' => $this->reportMedia(),
+            ], ['Accept' => 'application/json'])
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Shop-owned logistics orders use Report Order for dispatcher investigation.');
+
+        $this->assertDatabaseMissing('order_refunds', [
+            'order_id' => $order->id,
+        ]);
     }
 
     public function test_customer_cannot_report_again_after_refund_is_completed(): void
@@ -166,6 +206,7 @@ class CustomerDeliveryReceiptTest extends TestCase
             'shop_owner_id' => $shop->id,
             'customer_id' => $customer->id,
             'status' => OrderStatus::DELIVERED,
+            'carrier_company' => 'Shop-owned logistics',
             'payment_status' => 'refunded',
             'customer_receipt_status' => 'disputed',
         ]);
@@ -178,9 +219,10 @@ class CustomerDeliveryReceiptTest extends TestCase
         ]);
 
         $this->actingAs($customer, 'user')
-            ->postJson("/orders/{$order->id}/delivery-disputes", [
+            ->post("/orders/{$order->id}/delivery-disputes", [
                 'reason' => 'damaged',
-            ])
+                'media' => $this->reportMedia(),
+            ], ['Accept' => 'application/json'])
             ->assertStatus(422)
             ->assertJsonValidationErrors('order');
 
@@ -363,5 +405,20 @@ class CustomerDeliveryReceiptTest extends TestCase
         $this->assertSame(OrderStatus::DELIVERED, $order->fresh()->status);
         $this->assertSame('confirmed', $order->fresh()->customer_receipt_status);
         $this->assertNotNull($order->fresh()->customer_received_at);
+    }
+
+    /**
+     * @return array<int, UploadedFile>
+     */
+    private function reportMedia(): array
+    {
+        return [
+            UploadedFile::fake()->create('report-1.jpg', 1024, 'image/jpeg'),
+            UploadedFile::fake()->create('report-2.jpg', 1024, 'image/jpeg'),
+            UploadedFile::fake()->create('report-3.jpg', 1024, 'image/jpeg'),
+            UploadedFile::fake()->create('report-4.jpg', 1024, 'image/jpeg'),
+            UploadedFile::fake()->create('report-5.jpg', 1024, 'image/jpeg'),
+            UploadedFile::fake()->create('opening.mp4', 1024, 'video/mp4'),
+        ];
     }
 }

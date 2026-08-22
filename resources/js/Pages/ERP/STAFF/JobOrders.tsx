@@ -142,6 +142,13 @@ type Order = {
     flow_type?: string;
     payout_amount_value?: number;
     evidence_media?: string[];
+    customer_dispute_evidence?: Array<{
+      id: string;
+      kind: 'image' | 'video';
+      mime_type?: string | null;
+      original_name?: string | null;
+      url: string;
+    }>;
     return_logistics?: LogisticsSummary | null;
     items?: Array<{
       order_item_id: number;
@@ -2735,6 +2742,35 @@ export default function JobOrdersPage() {
                         <a key={`${mediaUrl}-${index}`} href={mediaUrl} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
                           <img src={mediaUrl} alt={`Refund evidence ${index + 1}`} loading="lazy" className="h-28 w-full object-cover" />
                         </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {Array.isArray(viewOrder.latest_refund?.customer_dispute_evidence) && viewOrder.latest_refund.customer_dispute_evidence.length > 0 && (
+                  <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Customer Report Proof</p>
+                    <p className="mb-3 text-xs text-gray-500 dark:text-gray-400">Proof submitted with the Shop-owned delivery report before refund/return approval.</p>
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                      {viewOrder.latest_refund.customer_dispute_evidence.map((media) => media.kind === 'video' ? (
+                        <video
+                          key={media.id}
+                          controls
+                          preload="metadata"
+                          src={media.url}
+                          aria-label={media.original_name || 'Customer opening-parcel video'}
+                          className="h-28 w-full rounded-lg border border-gray-200 bg-black object-contain dark:border-gray-700"
+                        />
+                      ) : (
+                        <button
+                          key={media.id}
+                          type="button"
+                          aria-label={`View customer report proof ${media.original_name || media.id}`}
+                          aria-haspopup="dialog"
+                          onClick={(event) => openProof(media.url, event.currentTarget)}
+                          className="block w-full overflow-hidden rounded-lg border border-gray-200 text-left dark:border-gray-700"
+                        >
+                          <img src={media.url} alt={media.original_name || 'Customer delivery report proof'} loading="lazy" className="h-28 w-full object-cover" />
+                        </button>
                       ))}
                     </div>
                   </div>

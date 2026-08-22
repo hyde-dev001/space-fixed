@@ -383,6 +383,20 @@ describe('staff refund visibility', () => {
       flow_type: 'request_approval',
       payout_amount_value: 2499,
       evidence_media: ['/storage/refunds/customer-evidence.jpg'],
+      customer_dispute_evidence: [
+        {
+          id: 'customer-report-image-1',
+          kind: 'image',
+          original_name: 'opening-1.jpg',
+          url: '/api/logistics/delivery-disputes/12/evidence/customer-report-image-1',
+        },
+        {
+          id: 'customer-report-video-1',
+          kind: 'video',
+          original_name: 'opening.mp4',
+          url: '/api/logistics/delivery-disputes/12/evidence/customer-report-video-1',
+        },
+      ],
       items: [{
         order_item_id: 41,
         product_name: 'Product 41',
@@ -447,6 +461,19 @@ describe('staff refund visibility', () => {
 
     expect(screen.getByText('Refund Evidence')).toBeInTheDocument();
     expect(screen.getByAltText('Refund evidence 1')).toHaveAttribute('src', '/storage/refunds/customer-evidence.jpg');
+    expect(screen.getByText('Customer Report Proof')).toBeInTheDocument();
+    expect(screen.getByLabelText('opening.mp4')).toHaveAttribute(
+      'src',
+      '/api/logistics/delivery-disputes/12/evidence/customer-report-video-1',
+    );
+    const customerProofTrigger = screen.getByRole('button', { name: 'View customer report proof opening-1.jpg' });
+    fireEvent.click(customerProofTrigger);
+    expect(screen.getByRole('dialog', { name: 'Delivery proof image' })).toBeInTheDocument();
+    expect(screen.getByAltText('Enlarged delivery proof')).toHaveAttribute(
+      'src',
+      '/api/logistics/delivery-disputes/12/evidence/customer-report-image-1',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Close delivery proof image' }));
     expect(screen.getByText('Logistics')).toBeInTheDocument();
     const customerDelivery = screen.getByRole('region', { name: 'Customer delivery' });
     const returnToShop = screen.getByRole('region', { name: 'Return to shop' });

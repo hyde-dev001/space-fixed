@@ -810,6 +810,7 @@ $routeBuckets = [
     ],
     'logistics' => [
         'api.logistics.attempts.file',
+        'api.logistics.delivery-disputes.evidence',
         'api.logistics.incidents.evidence',
         'logistics.api.dashboard-stats',
         'logistics.api.riders.index',
