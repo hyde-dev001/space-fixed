@@ -179,6 +179,12 @@ const getShopOwnedCoverageMessage = (coverage: Order['shopOwnedCoverage']): stri
   return 'Shop-owned logistics is unavailable for this order.';
 };
 
+const formatLogisticsStatus = (status: string | null | undefined): string => {
+  if (!status) return 'Not available';
+
+  return status.replaceAll('_', ' ').replace(/^./, (character) => character.toUpperCase());
+};
+
 const parseAmount = (value: unknown): number => {
   const parsed = Number.parseFloat(String(value ?? 0).replace(/[^0-9.-]/g, ""));
   return Number.isFinite(parsed) ? parsed : 0;
@@ -1838,6 +1844,33 @@ export default function JobOrdersPage() {
     }
   };
 
+  const shippingTrackingDetails = viewOrder
+    ? {
+        eta: viewOrder.eta || null,
+        shipmentId: viewOrder.logistics?.shipment_id ?? null,
+        shipmentStatus: viewOrder.logistics?.shipment_status || null,
+        legStatus: viewOrder.logistics?.leg_status || null,
+        carrier: viewOrder.logistics?.carrier || viewOrder.carrierCompany || null,
+        riderName: viewOrder.logistics?.rider_name || viewOrder.carrierName || null,
+        riderPhone: viewOrder.logistics?.rider_phone || viewOrder.carrierPhone || null,
+        trackingNumber: viewOrder.logistics?.tracking_number || viewOrder.trackingNumber || null,
+        trackingUrl: viewOrder.logistics?.tracking_url || viewOrder.trackingLink || null,
+      }
+    : null;
+
+  const shippingTrackingRows = shippingTrackingDetails
+    ? [
+        ['ETA', shippingTrackingDetails.eta || 'Not available'],
+        ['Shipment ID', shippingTrackingDetails.shipmentId ?? 'Not available'],
+        ['Shipment status', formatLogisticsStatus(shippingTrackingDetails.shipmentStatus)],
+        ['Leg status', formatLogisticsStatus(shippingTrackingDetails.legStatus)],
+        ['Carrier', shippingTrackingDetails.carrier || 'Not available'],
+        ['Rider', shippingTrackingDetails.riderName || 'Not available'],
+        ['Rider phone', shippingTrackingDetails.riderPhone || 'Not available'],
+        ['Tracking #', shippingTrackingDetails.trackingNumber || 'Not available'],
+      ]
+    : [];
+
   return (
     <AppLayoutERP>
       <Head title="Job Orders - Solespace ERP" />
@@ -2730,12 +2763,11 @@ export default function JobOrdersPage() {
                         },
                       ].filter((card) => card.summary).map((card) => {
                         const summary = card.summary as LogisticsSummary;
-                        const readable = (status: string) => status.replaceAll('_', ' ').replace(/^./, (character) => character.toUpperCase());
                         const rows = [
                           ['Shipment ID', summary.shipment_id],
-                          ['Shipment status', readable(summary.shipment_status)],
-                          ...(card.returnStatus ? [['Return status', readable(card.returnStatus)]] : []),
-                          ['Leg status', summary.leg_status ? readable(summary.leg_status) : 'Leg not created yet'],
+                          ['Shipment status', formatLogisticsStatus(summary.shipment_status)],
+                          ...(card.returnStatus ? [['Return status', formatLogisticsStatus(card.returnStatus)]] : []),
+                          ['Leg status', summary.leg_status ? formatLogisticsStatus(summary.leg_status) : 'Leg not created yet'],
                           ['Carrier', summary.carrier || 'Not available'],
                           ['Rider', summary.rider_name || 'Not assigned'],
                           ['Rider phone', summary.rider_phone || 'Not available'],
@@ -2786,32 +2818,39 @@ export default function JobOrdersPage() {
                     </div>
                   )}
                 </div>
-                {(viewOrder.trackingNumber || viewOrder.trackingLink || viewOrder.eta) && (
-                  <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+                {shippingTrackingRows.length > 0 && (
+                  <section
+                    role="region"
+                    aria-label="Shipping & Tracking"
+                    className="pt-4 border-t border-gray-200 dark:border-gray-700"
+                  >
                     <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Shipping & Tracking</p>
-                    <div className="bg-gray-50 dark:bg-gray-900/30 rounded-lg p-4 space-y-2 text-sm text-gray-700 dark:text-gray-300">
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-600">ETA</span>
-                        <span className="font-medium">{viewOrder.eta || '-'}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-600">Carrier</span>
-                        <span className="font-medium">{viewOrder.carrierCompany || '-'}</span>
-                      </div>
-                      {viewOrder.trackingNumber && (
-                        <div className="flex items-center justify-between">
-                          <span className="text-gray-600">Tracking #</span>
-                          <span className="font-medium">{viewOrder.trackingNumber}</span>
+                    <div className="rounded-lg bg-gray-50 p-4 text-sm text-gray-700 dark:bg-gray-900/30 dark:text-gray-300">
+                      <dl className="space-y-2">
+                        {shippingTrackingRows.map(([label, value]) => (
+                          <div key={label} className="flex items-start justify-between gap-4">
+                            <dt className="text-gray-600 dark:text-gray-400">{label}</dt>
+                            <dd className="text-right font-medium">{value}</dd>
+                          </div>
+                        ))}
+                        <div className="flex items-start justify-between gap-4">
+                          <dt className="text-gray-600 dark:text-gray-400">Tracking Link</dt>
+                          <dd className="text-right font-medium">
+                            {shippingTrackingDetails?.trackingUrl ? (
+                              <a
+                                className="text-blue-600 hover:underline dark:text-blue-400"
+                                href={shippingTrackingDetails.trackingUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                View tracking
+                              </a>
+                            ) : 'Not available'}
+                          </dd>
                         </div>
-                      )}
-                      {viewOrder.trackingLink && (
-                        <div className="flex items-center justify-between">
-                          <span className="text-gray-600">Tracking Link</span>
-                          <a className="font-medium text-blue-600 hover:underline" href={viewOrder.trackingLink} target="_blank" rel="noreferrer">View tracking</a>
-                        </div>
-                      )}
+                      </dl>
                     </div>
-                  </div>
+                  </section>
                 )}
                 {viewOrder.delivery_cancellation && (
                   <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200">
