@@ -21,3 +21,7 @@
 ## 2026-08-14 - Middleware priority preserves framework prerequisites
 
 - Laravel's `Middleware::priority()` replaces the framework priority list. Any custom list must retain cookie decryption and session startup before authentication; otherwise session-backed API routes can return `401` before reading a valid browser session, especially when Sanctum does not classify the production host as stateful.
+
+## 2026-08-23 - Checkout voucher suggestion state
+
+- Keep voucher eligibility and claim state server-authoritative. Reuse checkout pricing and `ShippingVoucherService` so payment suggestions cannot advertise a logistics discount outside Shop-owned coverage.

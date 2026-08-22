@@ -31,4 +31,18 @@ describe('payment shipping voucher integration', () => {
     expect(paymentSource).toContain('subtotal_amount: normalizedSubtotalAmount');
     expect(paymentSource).toMatch(/shipping voucher/i);
   });
+
+  it('renders complete voucher suggestion states and supports claim and use', () => {
+    expect(paymentSource).toContain("type VoucherClaimStatus = 'claimed' | 'claimable' | 'redeemed' | 'unavailable'");
+    expect(paymentSource).toContain("type VoucherEligibility = 'eligible' | 'minimum_spend' | 'not_applicable' | 'shipping_unavailable' | 'shipping_fee_required' | 'unavailable'");
+    expect(paymentSource).toContain('eligibility_message');
+    expect(paymentSource).toContain('remaining_spend');
+    expect(paymentSource).toContain('claim_product_id');
+    expect(paymentSource).toContain('Claim & use');
+    expect(paymentSource).toContain('Claim for later');
+    expect(paymentSource).toContain('role="listbox"');
+    expect(paymentSource).toContain('aria-expanded={showVoucherSuggestionDropdown}');
+    expect(paymentSource).toContain('/api/products/${voucher.claim_product_id}/vouchers/${voucher.id}/claim');
+    expect(paymentSource).toContain("'X-CSRF-TOKEN'");
+  });
 });

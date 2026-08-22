@@ -143,6 +143,133 @@ class CheckoutPromoPricingTest extends TestCase
     }
 
     #[Test]
+    public function promo_preview_describes_voucher_suggestion_status_and_order_eligibility(): void
+    {
+        $shopOwner = $this->createRetailShopOwner();
+        /** @var User $customer */
+        $customer = User::factory()->createOne();
+
+        $product = Product::create([
+            'shop_owner_id' => $shopOwner->id,
+            'name' => 'Voucher Suggestion Sneaker',
+            'slug' => 'voucher-suggestion-sneaker-' . random_int(1000, 9999),
+            'description' => 'Voucher suggestion metadata test product',
+            'price' => 1000,
+            'stock_quantity' => 10,
+            'is_active' => true,
+            'is_featured' => false,
+        ]);
+
+        $claimable = PromoCampaign::create([
+            'shop_owner_id' => $shopOwner->id,
+            'kind' => 'voucher',
+            'scope' => 'shop_wide',
+            'name' => 'Claimable Ten',
+            'code' => 'CLAIMME',
+            'discount_mode' => 'percentage',
+            'value' => 10,
+            'min_spend' => 0,
+            'usage_limit' => null,
+            'used_count' => 0,
+            'start_at' => now()->subHour(),
+            'end_at' => now()->addDay(),
+            'status' => 'active',
+            'stacking_mode' => 'combinable',
+        ]);
+
+        $claimed = PromoCampaign::create([
+            'shop_owner_id' => $shopOwner->id,
+            'kind' => 'voucher',
+            'scope' => 'shop_wide',
+            'name' => 'Claimed Twenty',
+            'code' => 'CLAIMED',
+            'discount_mode' => 'percentage',
+            'value' => 20,
+            'min_spend' => 0,
+            'usage_limit' => null,
+            'used_count' => 0,
+            'start_at' => now()->subHour(),
+            'end_at' => now()->addDay(),
+            'status' => 'active',
+            'stacking_mode' => 'combinable',
+        ]);
+
+        $minimumSpend = PromoCampaign::create([
+            'shop_owner_id' => $shopOwner->id,
+            'kind' => 'voucher',
+            'scope' => 'shop_wide',
+            'name' => 'Spend More Voucher',
+            'code' => 'MINSPEND',
+            'discount_mode' => 'fixed',
+            'value' => 100,
+            'min_spend' => 1500,
+            'usage_limit' => null,
+            'used_count' => 0,
+            'start_at' => now()->subHour(),
+            'end_at' => now()->addDay(),
+            'status' => 'active',
+            'stacking_mode' => 'combinable',
+        ]);
+
+        $redeemed = PromoCampaign::create([
+            'shop_owner_id' => $shopOwner->id,
+            'kind' => 'voucher',
+            'scope' => 'shop_wide',
+            'name' => 'Already Used Voucher',
+            'code' => 'USEDONCE',
+            'discount_mode' => 'fixed',
+            'value' => 50,
+            'min_spend' => 0,
+            'usage_limit' => null,
+            'used_count' => 1,
+            'start_at' => now()->subHour(),
+            'end_at' => now()->addDay(),
+            'status' => 'active',
+            'stacking_mode' => 'combinable',
+        ]);
+
+        VoucherClaim::create([
+            'promo_campaign_id' => $claimed->id,
+            'user_id' => $customer->id,
+            'shop_owner_id' => $shopOwner->id,
+            'status' => 'claimed',
+            'claimed_at' => now()->subMinutes(10),
+        ]);
+        VoucherClaim::create([
+            'promo_campaign_id' => $redeemed->id,
+            'user_id' => $customer->id,
+            'shop_owner_id' => $shopOwner->id,
+            'status' => 'redeemed',
+            'claimed_at' => now()->subHour(),
+            'redeemed_at' => now()->subMinutes(30),
+        ]);
+
+        $response = $this->actingAs($customer, 'user')
+            ->postJson('/api/checkout/promo-preview', [
+                'items' => [['pid' => $product->id, 'qty' => 1, 'price' => 1000]],
+            ]);
+
+        $response->assertOk()->assertJsonPath('success', true);
+
+        $suggestions = collect($response->json('data.voucher_code_suggestions'))->keyBy('code');
+
+        $this->assertSame('claimable', data_get($suggestions->get('CLAIMME'), 'claim_status'));
+        $this->assertSame('eligible', data_get($suggestions->get('CLAIMME'), 'eligibility'));
+        $this->assertTrue(data_get($suggestions->get('CLAIMME'), 'can_claim'));
+        $this->assertSame($product->id, data_get($suggestions->get('CLAIMME'), 'claim_product_id'));
+
+        $this->assertSame('claimed', data_get($suggestions->get('CLAIMED'), 'claim_status'));
+        $this->assertFalse(data_get($suggestions->get('CLAIMED'), 'can_claim'));
+
+        $this->assertSame('minimum_spend', data_get($suggestions->get('MINSPEND'), 'eligibility'));
+        $this->assertEquals(500.0, data_get($suggestions->get('MINSPEND'), 'remaining_spend'));
+        $this->assertTrue(data_get($suggestions->get('MINSPEND'), 'can_claim'));
+
+        $this->assertSame('redeemed', data_get($suggestions->get('USEDONCE'), 'claim_status'));
+        $this->assertFalse(data_get($suggestions->get('USEDONCE'), 'can_claim'));
+    }
+
+    #[Test]
     public function create_order_auto_applies_claimed_voucher_and_redeems_it(): void
     {
         $shopOwner = $this->createRetailShopOwner();
@@ -293,6 +420,12 @@ class CheckoutPromoPricingTest extends TestCase
             ->assertJsonPath('data.applied_voucher.target', 'shipping')
             ->assertJsonPath('data.voucher_discount', 0)
             ->assertJsonPath('data.final_subtotal', 2000);
+
+        $shippingSuggestion = collect($response->json('data.voucher_code_suggestions'))
+            ->firstWhere('code', 'SHIP50');
+        $this->assertSame('claimed', data_get($shippingSuggestion, 'claim_status'));
+        $this->assertSame('eligible', data_get($shippingSuggestion, 'eligibility'));
+        $this->assertSame('Eligible for this delivery.', data_get($shippingSuggestion, 'eligibility_message'));
     }
 
     #[Test]
@@ -439,6 +572,12 @@ class CheckoutPromoPricingTest extends TestCase
             ->assertJsonPath('data.applied_voucher', null)
             ->assertJsonPath('data.voucher_discount', 0)
             ->assertJsonPath('data.shipping_voucher_error', 'Shipping vouchers require accessible Shop-owned Logistics.');
+
+        $shippingSuggestion = collect($response->json('data.voucher_code_suggestions'))
+            ->firstWhere('code', 'NOLOGI');
+        $this->assertSame('shipping_unavailable', data_get($shippingSuggestion, 'eligibility'));
+        $this->assertSame('Shipping vouchers require accessible Shop-owned Logistics.', data_get($shippingSuggestion, 'eligibility_message'));
+        $this->assertFalse(data_get($shippingSuggestion, 'can_claim'));
     }
 
     #[Test]
