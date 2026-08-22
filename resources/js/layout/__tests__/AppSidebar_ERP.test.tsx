@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import AppSidebarERP from '../AppSidebar_ERP';
 
@@ -61,13 +61,6 @@ vi.mock('ziggy-js', () => ({
       'shop-owner.logistics.dashboard': '/shop-owner/logistics',
       'shop-owner.logistics.shipments': '/shop-owner/logistics/shipments',
       'shop-owner.logistics.riders': '/shop-owner/logistics/riders',
-      'shop-owner.refund-approvals': '/shop-owner/refund-approvals',
-      'shop-owner.price-approvals': '/shop-owner/price-approvals',
-      'shop-owner.payslip-approvals': '/shop-owner/payslip-approvals',
-      'shop-owner.salary-adjustment-approvals': '/shop-owner/salary-adjustment-approvals',
-      'shop-owner.purchase-request-approval': '/shop-owner/purchase-request-approval',
-      'shop-owner.expense-approvals': '/shop-owner/expense-approvals',
-      'shop-owner.repair-reject-approval': '/shop-owner/repair-reject-approval',
     };
     if (ownerSubmenuPaths[name]) return ownerSubmenuPaths[name];
     throw new Error('use sidebar fallback map');
@@ -197,7 +190,7 @@ it('uses the top-level module state when the nested auth state is unavailable', 
   expect(screen.getByRole('link', { name: /^logistics$/i })).toBeInTheDocument();
 });
 
-it('shows core-only navigation in the owner ERP picker', () => {
+it('shows core navigation with one Action Center entry in the owner ERP picker', () => {
   state.url = '/shop-owner/erp/workspace/?tab=modules';
   state.role = 'MANAGER';
   state.roles = ['MANAGER'];
@@ -213,6 +206,31 @@ it('shows core-only navigation in the owner ERP picker', () => {
     },
   };
   state.erpUrls = { workspace: '/shop-owner/erp/workspace' };
+  state.ownerShell = {
+    presentation: 'canonical',
+    selection_reason: 'always_on',
+    context: 'company',
+    groups: [{
+      key: 'home',
+      label: 'Home',
+      order: 0,
+      default_expanded: true,
+      items: [{
+        key: 'action-center',
+        label: 'Action Center',
+        canonical_url: '/shop-owner/action-center',
+        available: true,
+        unavailable_reason: null,
+        management_url: null,
+        active_matching: ['/shop-owner/action-center'],
+      }],
+    }],
+    compatibility: {
+      show_erp_fallback: false,
+      erp_workspace_url: null,
+      fallback_url: null,
+    },
+  };
 
   render(<AppSidebarERP />);
 
@@ -228,10 +246,9 @@ it('shows core-only navigation in the owner ERP picker', () => {
   expect(screen.getByRole('link', { name: /Suspend Accounts/i })).toBeInTheDocument();
   expect(screen.getByRole('link', { name: /Assist Center/i })).toBeInTheDocument();
   expect(screen.getByRole('link', { name: /Vouchers & Discount/i })).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: /Approval Pages/i }));
-  expect(screen.getByRole('link', { name: /Refund Approval/i })).toHaveAttribute(
+  expect(screen.getByRole('link', { name: /Action Center/i })).toHaveAttribute(
     'href',
-    '/shop-owner/refund-approvals',
+    '/shop-owner/action-center',
   );
   expect(screen.queryByRole('link', { name: /HR & Employees/i })).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: /^Logistics$/i })).not.toBeInTheDocument();

@@ -8,6 +8,7 @@ import {
   formatStatus,
   hasAny,
   numberValue,
+  personName,
   pick,
   StatusBadge,
   stringValue,
@@ -35,8 +36,8 @@ export default function SalaryAdjustmentApprovalDetails({ detail, item }: Approv
 
       <DetailSection title="Request details">
         <DetailGrid>
-          <DetailField label="Employee" value={stringValue(pick(detail, "employee.name", "employee_name"))} />
-          <DetailField label="Proposed by" value={stringValue(pick(detail, "proposer.name", "requested_by.name", "created_by.name", "proposer"))} />
+          <DetailField label="Employee" value={personName(pick(detail, "employee", "employee_name"))} />
+          <DetailField label="Proposed by" value={personName(pick(detail, "proposer", "requested_by", "created_by"))} />
           <DetailField label="Effective date" value={formatDate(pick(detail, "effective_date"))} />
           <DetailField label="Submitted" value={formatDate(pick(detail, "created_at", "submitted_at"))} />
         </DetailGrid>
@@ -62,4 +63,3 @@ export default function SalaryAdjustmentApprovalDetails({ detail, item }: Approv
     </div>
   );
 }
-

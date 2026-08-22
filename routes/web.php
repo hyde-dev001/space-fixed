@@ -166,9 +166,10 @@ Route::get('/repair-process', function () {
 Route::get('/api/policies/shops/{shopOwnerId}/active', [\App\Http\Controllers\Api\ShopPolicyController::class, 'active']);
 Route::middleware('auth:user')->get('/api/policies/shops/{shopOwnerId}/prefill', [\App\Http\Controllers\Api\ShopPolicyController::class, 'prefill']);
 Route::middleware('auth:user')->post('/api/policies/checkout/context', [\App\Http\Controllers\Api\ShopPolicyController::class, 'checkoutContext']);
-Route::get('/erp/user/repair-reject-approval', function () {
-    return Inertia::render('ShopOwner/Repairs/repairRejectReview');
-})->middleware('auth:user')->name('erp.user.repair-reject-approval');
+Route::get('/erp/user/repair-reject-approval', [OwnerActionCenterController::class, 'legacyRedirect'])
+    ->defaults('legacy_approval_family', 'repair_rejection')
+    ->middleware('auth:user')
+    ->name('erp.user.repair-reject-approval');
 Route::get('/repair-services', [LandingPageController::class, 'repair'])->name('repair');
 Route::get('/repair-shop/{id}', [LandingPageController::class, 'repairShow'])->name('repair.show');
 // Customer conversations / Chat with repairer

@@ -7,6 +7,7 @@ import {
   formatDate,
   formatStatus,
   hasAny,
+  personName,
   pick,
   StatusBadge,
   stringValue,
@@ -21,7 +22,7 @@ export default function PurchaseRequestApprovalDetails({ detail, item }: Approva
     <div className="space-y-4">
       <DetailSection title="Decision summary">
         <DetailGrid>
-          <DetailField label="Total" value={formatCurrency(pick(detail, "total", "total_amount", "estimated_total", "amount"))} />
+          <DetailField label="Total" value={formatCurrency(pick(detail, "total_cost", "total", "total_amount", "estimated_total", "amount"))} />
           <DetailField label="Status" value={<StatusBadge value={status} />} />
           <DetailField label="Priority" value={formatStatus(pick(detail, "priority", "priority_level"))} />
           <DetailField label="Record" value={item.title} />
@@ -30,12 +31,13 @@ export default function PurchaseRequestApprovalDetails({ detail, item }: Approva
 
       <DetailSection title="Request details">
         <DetailGrid>
-          <DetailField label="Request number" value={stringValue(pick(detail, "request_number", "reference", "request_code"))} />
-          <DetailField label="Product or item" value={stringValue(pick(detail, "product.name", "product_name", "item_name", "item"))} />
+          <DetailField label="Request number" value={stringValue(pick(detail, "pr_number", "request_number", "reference", "request_code"))} />
+          <DetailField label="Product or item" value={stringValue(pick(detail, "product.name", "product_name", "inventoryItem.name", "item_name", "item"))} />
           <DetailField label="Quantity" value={stringValue(pick(detail, "quantity", "requested_quantity"))} />
-          <DetailField label="Unit" value={stringValue(pick(detail, "unit", "unit_name"))} />
+          <DetailField label="Requested size" value={stringValue(pick(detail, "requested_size", "size"))} />
+          <DetailField label="Requested color" value={stringValue(pick(detail, "requested_color", "color"))} />
           <DetailField label="Supplier" value={stringValue(pick(detail, "supplier.name", "supplier_name"))} />
-          <DetailField label="Requested by" value={stringValue(pick(detail, "requester.name", "requested_by.name", "requested_by"))} />
+          <DetailField label="Requested by" value={personName(pick(detail, "requester", "requested_by"))} />
           <DetailField label="Submitted" value={formatDate(pick(detail, "requested_date", "created_at", "submitted_at"))} />
         </DetailGrid>
       </DetailSection>
@@ -60,4 +62,3 @@ export default function PurchaseRequestApprovalDetails({ detail, item }: Approva
     </div>
   );
 }
-

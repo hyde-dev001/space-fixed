@@ -158,7 +158,7 @@ const NotificationList: React.FC<NotificationListProps> = ({
       }
 
       if (normalized === '/shop-owner/expenses') {
-        return '/shop-owner/expense-approvals';
+        return '/shop-owner/action-center';
       }
 
       return normalized;

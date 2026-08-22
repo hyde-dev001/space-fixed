@@ -39,6 +39,19 @@ export const stringValue = (value: unknown, fallback = "—"): string => {
   return fallback;
 };
 
+export const personName = (value: unknown, fallback = "—"): string => {
+  if (!isRecord(value)) return stringValue(value, fallback);
+
+  const named = pick(value, "name", "full_name", "display_name");
+  if (named !== null) return stringValue(named, fallback);
+
+  const first = stringValue(pick(value, "first_name", "firstName"), "").trim();
+  const last = stringValue(pick(value, "last_name", "lastName"), "").trim();
+  const combined = `${first} ${last}`.trim();
+
+  return combined || fallback;
+};
+
 export const numberValue = (value: unknown): number | null => {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim() !== "") {
@@ -79,7 +92,7 @@ export const formatStatus = (value: unknown): string => {
 export const displayValue = (value: unknown): string => {
   if (value === null || value === undefined || value === "") return "—";
   if (Array.isArray(value)) return value.map((entry) => displayValue(entry)).join(", ");
-  if (isRecord(value)) return stringValue(pick(value, "name", "label", "title", "reference"));
+  if (isRecord(value)) return personName(value, stringValue(pick(value, "label", "title", "reference")));
   return stringValue(value);
 };
 
@@ -123,4 +136,3 @@ export function DetailNote({ label, value }: { label: string; value: unknown }) 
     </div>
   );
 }
-

@@ -15,7 +15,7 @@ import {
 
 export default function ExpenseApprovalDetails({ detail, item }: ApprovalDetailRendererProps) {
   const status = pick(detail, "status", "approval_status") ?? "submitted";
-  const hasEvidence = hasAny(detail, "receipt", "receipt_url", "attachment", "notes", "approval_notes", "description");
+  const hasEvidence = hasAny(detail, "receipt", "receipt_url", "receipt_path", "receipt_original_name", "attachment", "notes", "approval_notes", "description");
 
   return (
     <div className="space-y-4">
@@ -41,7 +41,7 @@ export default function ExpenseApprovalDetails({ detail, item }: ApprovalDetailR
       {hasEvidence && (
         <DetailSection title="Evidence/notes">
           <dl className="space-y-3">
-            {hasAny(detail, "receipt", "receipt_url", "attachment") && <DetailNote label="Receipt or attachment" value={pick(detail, "receipt", "receipt_url", "attachment")} />}
+            {hasAny(detail, "receipt", "receipt_url", "receipt_path", "receipt_original_name", "attachment") && <DetailNote label="Receipt or attachment" value={pick(detail, "receipt_original_name", "receipt", "receipt_url", "receipt_path", "attachment")} />}
             {hasAny(detail, "description") && <DetailNote label="Description" value={pick(detail, "description")} />}
             {hasAny(detail, "notes", "approval_notes") && <DetailNote label="Notes" value={pick(detail, "notes", "approval_notes")} />}
           </dl>
@@ -60,4 +60,3 @@ export default function ExpenseApprovalDetails({ detail, item }: ApprovalDetailR
     </div>
   );
 }
-

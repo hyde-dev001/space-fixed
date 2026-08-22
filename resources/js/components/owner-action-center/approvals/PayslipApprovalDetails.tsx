@@ -6,6 +6,7 @@ import {
   formatCurrency,
   formatDate,
   hasAny,
+  personName,
   pick,
   StatusBadge,
   stringValue,
@@ -14,7 +15,7 @@ import {
 
 export default function PayslipApprovalDetails({ detail, item }: ApprovalDetailRendererProps) {
   const status = pick(detail, "status", "approval_status") ?? "pending";
-  const hasNotes = hasAny(detail, "line_items", "components", "notes", "allowances", "deductions");
+  const hasNotes = hasAny(detail, "line_items", "components", "notes", "approval_notes", "final_approval_notes", "allowances", "deductions", "payout_proof_notes");
 
   return (
     <div className="space-y-4">
@@ -29,7 +30,7 @@ export default function PayslipApprovalDetails({ detail, item }: ApprovalDetailR
 
       <DetailSection title="Request details">
         <DetailGrid>
-          <DetailField label="Employee" value={stringValue(pick(detail, "employee_name", "employee.name"))} />
+          <DetailField label="Employee" value={personName(pick(detail, "employee_name", "employee"))} />
           <DetailField label="Employee ID" value={stringValue(pick(detail, "employee_id", "employee.id"))} />
           <DetailField label="Pay period" value={stringValue(pick(detail, "pay_period", "payroll_period", "period"))} />
           <DetailField label="Department" value={stringValue(pick(detail, "department", "employee.department"))} />
@@ -43,7 +44,8 @@ export default function PayslipApprovalDetails({ detail, item }: ApprovalDetailR
             {hasAny(detail, "line_items", "components") && <DetailNote label="Line items" value={pick(detail, "line_items", "components")} />}
             {hasAny(detail, "allowances") && <DetailNote label="Allowances" value={pick(detail, "allowances")} />}
             {hasAny(detail, "deductions") && <DetailNote label="Deductions" value={pick(detail, "deductions")} />}
-            {hasAny(detail, "notes") && <DetailNote label="Notes" value={pick(detail, "notes")} />}
+            {hasAny(detail, "notes", "approval_notes", "final_approval_notes") && <DetailNote label="Notes" value={pick(detail, "notes", "final_approval_notes", "approval_notes")} />}
+            {hasAny(detail, "payout_proof_notes") && <DetailNote label="Payout notes" value={pick(detail, "payout_proof_notes")} />}
           </dl>
         </DetailSection>
       )}
@@ -52,11 +54,10 @@ export default function PayslipApprovalDetails({ detail, item }: ApprovalDetailR
         <DetailGrid>
           <DetailField label="Current approver" value={stringValue(pick(detail, "approval.current_approver_role", "current_approver_role"), "Shop owner")} />
           <DetailField label="Generated" value={formatDate(pick(detail, "generated_date", "generated_at", "created_at"))} />
-          <DetailField label="Final approver" value={stringValue(pick(detail, "final_approver.name", "approved_by.name", "approved_by"))} />
+          <DetailField label="Final approver" value={stringValue(pick(detail, "final_approver_name", "final_approver.name", "approved_by.name", "approved_by"))} />
           <DetailField label="Disbursement" value={stringValue(pick(detail, "disbursement_status", "payment_status"))} />
         </DetailGrid>
       </DetailSection>
     </div>
   );
 }
-

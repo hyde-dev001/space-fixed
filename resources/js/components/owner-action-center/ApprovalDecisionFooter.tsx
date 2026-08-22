@@ -37,6 +37,11 @@ export default function ApprovalDecisionFooter({
         setReasonError("Enter a rejection reason before confirming.");
         return;
       }
+      const minimumLength = definition.reject?.minLength ?? 0;
+      if (trimmedReason.length < minimumLength) {
+        setReasonError(`Enter at least ${minimumLength} characters explaining the rejection.`);
+        return;
+      }
       onSubmit("reject", trimmedReason);
       return;
     }
@@ -152,4 +157,3 @@ export default function ApprovalDecisionFooter({
     </div>
   );
 }
-

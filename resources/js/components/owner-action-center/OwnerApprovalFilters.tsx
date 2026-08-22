@@ -75,7 +75,6 @@ interface OwnerApprovalFiltersProps {
   source: OwnerActionCenterCoverage;
   perPage: number;
 }
-
 export default function OwnerApprovalFilters({ result, source, perPage }: OwnerApprovalFiltersProps) {
   if (result === null) return null;
 
@@ -103,4 +102,3 @@ export default function OwnerApprovalFilters({ result, source, perPage }: OwnerA
     </nav>
   );
 }
-

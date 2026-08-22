@@ -83,4 +83,25 @@ describe("ApprovalDecisionFooter", () => {
     expect(screen.getByRole("button", { name: /^Approve$/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: /^Reject$/i })).toBeDisabled();
   });
+
+  it("preserves the repair rejection minimum reason length", () => {
+    const onSubmit = vi.fn();
+
+    render(
+      <ApprovalDecisionFooter
+        definition={approvalPanelRegistry.repair_rejection}
+        item={{ ...item, source_type: "repair_rejection", category: "repair_rejection" }}
+        recordLabel="Repair rejection #1"
+        submitting={false}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /^Reject$/i }));
+    fireEvent.change(screen.getByLabelText(/rejection reason/i), { target: { value: "Too short" } });
+    fireEvent.click(screen.getByRole("button", { name: /Confirm rejection/i }));
+
+    expect(screen.getByText(/at least 10 characters/i)).toBeInTheDocument();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
 });

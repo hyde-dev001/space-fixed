@@ -105,7 +105,7 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
     }
 
     if (normalized === '/shop-owner/expenses') {
-      return '/shop-owner/expense-approvals';
+      return '/shop-owner/action-center';
     }
 
     return normalized;

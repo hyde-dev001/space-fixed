@@ -14,6 +14,7 @@ export type ApprovalAction = "approve" | "reject";
 export interface ApprovalActionConfig {
   path: (id: number) => string;
   body?: (reason?: string) => Record<string, unknown>;
+  minLength?: number;
   maxLength?: number;
 }
 
@@ -198,6 +199,7 @@ export const approvalPanelRegistry: Record<ApprovalSourceType, ApprovalPanelDefi
     reject: {
       path: (id) => `/api/shop-owner/repairs/${id}/reject-rejection`,
       body: noteBody("notes"),
+      minLength: 10,
       maxLength: 500,
     },
     consequence: "send the repair rejection to the authoritative repair workflow decision stage",
@@ -215,4 +217,3 @@ export const approvalRecordLabel = (item: Pick<OwnerAttentionItem, "source_type"
   const definition = approvalDefinitionFor(item.source_type);
   return `${definition?.noun ?? "Approval"} #${item.source_id}`;
 };
-

@@ -11,7 +11,6 @@ import {
     canAccessProducts,
     canAccessServices,
     canAccessStaffManagement,
-    canAccessPriceApprovals,
 } from '@/utils/shopOwnerAccess';
 
 /**
@@ -81,22 +80,12 @@ export const getShopOwnerNavigation = (access: ShopOwnerAccess): NavigationItem[
             visible: true,
         },
 
-        // Price Approvals - Business only
+        // All owner approval decisions use the Action Center.
         {
-            label: 'Price Approvals',
-            path: '/shop-owner/price-approvals',
-            icon: '💰',
-            visible: canAccessPriceApprovals(access),
-            badge: 'Business Only',
-        },
-
-        // Expense Approvals - Business only
-        {
-            label: 'Expense Approvals',
-            path: '/shop-owner/expense-approvals',
-            icon: '🧾',
-            visible: canAccessPriceApprovals(access),
-            badge: 'Business Only',
+            label: 'Action Center',
+            path: '/shop-owner/action-center',
+            icon: '✓',
+            visible: true,
         },
 
         // Refunds - Always visible
