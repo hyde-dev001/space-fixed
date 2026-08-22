@@ -29,3 +29,8 @@
 ## 2026-08-15 - Shop module route catalog parity
 
 - A new named Shop Owner route is incomplete until its authoritative route bucket, method override, and module `supporting_routes` entry are updated together; `ShopModuleCatalogTest` detects drift between route registration and the capability catalog.
+
+## 2026-08-22 - Centralized approval contract
+
+- When a workflow is presented through a shared Action Center, freeze the approval policy at submission and let the existing domain service remain authoritative. Queue adapters, notifications, detail panels, and mutations should all derive responsibility from that same persisted snapshot.
+- A named route added for a shared detail or summary surface must be added to the authoritative route catalog in the same change, including tenant-scoped `show` routes; route-catalog parity tests catch this boundary before deployment.

@@ -21,3 +21,23 @@ The focused characterization test was necessary because Salary Adjustment had no
 ## Task 1 decision
 
 All seven rows are `PROVEN`. Continue to Task 2. The matrix is evidence for implementation routing only; it does not authorize changing any domain service until the corresponding task adds failing tests, preserves these guards, and verifies the result.
+
+## Task 16 implementation reconciliation
+
+The seven `PROVEN` decisions above are implemented without adding a fallback actor or a second approval state machine. Each workflow freezes its owner-stage decision at submission, and the Action Center only projects records whose frozen state still requires the authenticated owner. Toggle `OFF` paths continue through the exact non-owner authority named in the matrix.
+
+| Family | Frozen workflow state | Action Center source and typed deep-link key | Verified `OFF` authority | Reconciliation result |
+| --- | --- | --- | --- | --- |
+| Refund | `OrderRefund.requires_owner_approval` and `PosRefund.requires_owner_approval` | `order_refund` and `repair_refund` | Existing Finance approval/finalization methods | Queue, detail reads, tenant scope, payout guards, and typed legacy redirects verified |
+| Price | Existing `Approval.approval_roles` / workflow version for product, repair-service, and package changes | `product_price_change`, `repair_price_change`, `repair_package_price_change` | Existing Finance level/final approval; only final Finance applies the price | Product, service, and package renderer parity plus three-level and Finance-only tests verified |
+| Payslip | Existing v4 `Approval.approval_roles` and payroll workflow version | `payslip` | Existing Finance checker/final approval stages; disbursement remains separate | Owner level is projected only when current and required; final approval and disbursement separation verified |
+| Salary Adjustment | `SalaryChange.requires_owner_approval` | `salary_change` | Existing authorized non-proposer salary reviewer | Approval records the actor while effective-dated salary application remains separate |
+| Purchase Request | `PurchaseRequest.requires_owner_approval` | `purchase_request` | Existing Finance final release | Owner action never creates a PO or releases purchasing before final approval |
+| Expense | Manual `Approval.approval_roles`; procurement-receipt and payroll sources remain excluded | `expense` | Existing Finance approval for the manual Expense workflow | Settlement remains downstream of approval; source exclusions and tenant scope verified |
+| Repair Reject | `RepairRequest.requires_owner_approval` | `repair_rejection` | Existing Manager finalization | Owner action cannot terminally reject; Manager finalization remains the terminal authority |
+
+The centralized decision registry uses the existing domain detail and mutation routes. Its stable selection contract is:
+
+`/shop-owner/action-center?bucket=needs_my_decision&approval=<source_type>:<positive_id>`
+
+The route catalog includes the Action Center summary, canonical shell route, and all tenant-scoped approval detail routes so route-contract checks cover the complete presentation and decision surface.
