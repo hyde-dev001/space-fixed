@@ -33,3 +33,10 @@
 - [x] Review the diff for compatibility, authorization/data-integrity regressions, dead code, and unnecessary complexity.
 - [x] Include the generated `public/build` output requested for the deployed preview.
 - [x] Commit and push the feature branch for PR creation.
+
+## Follow-up: Complete Staff Order Details shipping coverage
+
+- [x] Read shipment summary fields from `logistics` for the Staff Order Details Shipping & Tracking section.
+- [x] Preserve legacy order-level shipping fields as a fallback for third-party logistics records.
+- [x] Add regression coverage for complete shop-owned shipment and tracking details.
+- [x] Scope existing logistics assertions to their sections after the new summary intentionally repeats shipment values.

@@ -277,6 +277,47 @@ describe('staff delivered order refresh', () => {
     expect(screen.getByRole('button', { name: 'Delivered (1)' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Shipped (0)' })).toBeInTheDocument();
   });
+
+  it('shows complete shop-owned shipping and tracking details in order details', async () => {
+    const shippedOrder = {
+      ...makeOrder(51),
+      status: 'shipped',
+      eta: '1-2 business days',
+      carrier_company: 'Shop-owned logistics',
+      logistics: {
+        shipment_id: 7,
+        shipment_status: 'completed',
+        leg_id: 8,
+        leg_type: 'outbound',
+        leg_status: 'delivered',
+        carrier: 'Shop-owned logistics',
+        rider_name: 'Marco Santos',
+        rider_phone: '+639180000002',
+        tracking_number: 'SHP-7',
+        tracking_url: 'https://example.test/shipments/7',
+        proofs: [],
+      },
+    };
+    mockPage.props.initialOrders = [shippedOrder];
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(jsonResponse(200, [shippedOrder]))));
+
+    render(React.createElement(JobOrdersPage));
+    fireEvent.click(await screen.findByRole('button', { name: 'Shipped (1)' }));
+    fireEvent.click((await screen.findAllByTitle('View order details'))[0]);
+
+    const shippingDetails = screen.getByRole('region', { name: 'Shipping & Tracking' });
+    expect(within(shippingDetails).getByText('1-2 business days')).toBeInTheDocument();
+    expect(within(shippingDetails).getByText('7')).toBeInTheDocument();
+    expect(within(shippingDetails).getByText('Completed')).toBeInTheDocument();
+    expect(within(shippingDetails).getByText('Delivered')).toBeInTheDocument();
+    expect(within(shippingDetails).getByText('Marco Santos')).toBeInTheDocument();
+    expect(within(shippingDetails).getByText('+639180000002')).toBeInTheDocument();
+    expect(within(shippingDetails).getByText('SHP-7')).toBeInTheDocument();
+    expect(within(shippingDetails).getByRole('link', { name: 'View tracking' })).toHaveAttribute(
+      'href',
+      'https://example.test/shipments/7',
+    );
+  });
 });
 
 describe('staff refund visibility', () => {
@@ -376,16 +417,19 @@ describe('staff refund visibility', () => {
     expect(screen.getByText('Refund Evidence')).toBeInTheDocument();
     expect(screen.getByAltText('Refund evidence 1')).toHaveAttribute('src', '/storage/refunds/customer-evidence.jpg');
     expect(screen.getByText('Logistics')).toBeInTheDocument();
-    expect(screen.getByText('Customer delivery')).toBeInTheDocument();
-    expect(screen.getByText('Return to shop')).toBeInTheDocument();
-    expect(screen.getByText('81')).toBeInTheDocument();
-    expect(screen.getByText('91')).toBeInTheDocument();
-    expect(screen.getByText('Received')).toBeInTheDocument();
-    expect(screen.getAllByText('Shop-owned logistics')).toHaveLength(2);
-    expect(screen.getByText('Marco Santos')).toBeInTheDocument();
-    expect(screen.getByText('09171234567')).toBeInTheDocument();
-    expect(screen.getByText('Paolo Mendoza')).toBeInTheDocument();
-    expect(screen.getByText('RETURN-91')).toBeInTheDocument();
+    const customerDelivery = screen.getByRole('region', { name: 'Customer delivery' });
+    const returnToShop = screen.getByRole('region', { name: 'Return to shop' });
+    expect(customerDelivery).toBeInTheDocument();
+    expect(returnToShop).toBeInTheDocument();
+    expect(within(customerDelivery).getByText('81')).toBeInTheDocument();
+    expect(within(returnToShop).getByText('91')).toBeInTheDocument();
+    expect(within(returnToShop).getByText('Received')).toBeInTheDocument();
+    expect(within(customerDelivery).getByText('Shop-owned logistics')).toBeInTheDocument();
+    expect(within(returnToShop).getByText('Shop-owned logistics')).toBeInTheDocument();
+    expect(within(customerDelivery).getByText('Marco Santos')).toBeInTheDocument();
+    expect(within(customerDelivery).getByText('09171234567')).toBeInTheDocument();
+    expect(within(returnToShop).getByText('Paolo Mendoza')).toBeInTheDocument();
+    expect(within(returnToShop).getByText('RETURN-91')).toBeInTheDocument();
     const proofTrigger = screen.getByRole('button', { name: 'Return delivery proof 1' });
     expect(proofTrigger).toBeInTheDocument();
     fireEvent.click(proofTrigger);
@@ -434,9 +478,10 @@ describe('staff refund visibility', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Processing (1)' }));
     fireEvent.click((await screen.findAllByTitle('View order details'))[0]);
 
-    expect(screen.getByText('83')).toBeInTheDocument();
-    expect(screen.getByText('Leg not created yet')).toBeInTheDocument();
-    expect(screen.getAllByText('Not assigned').length).toBeGreaterThan(0);
+    const customerDelivery = screen.getByRole('region', { name: 'Customer delivery' });
+    expect(within(customerDelivery).getByText('83')).toBeInTheDocument();
+    expect(within(customerDelivery).getByText('Leg not created yet')).toBeInTheDocument();
+    expect(within(customerDelivery).getByText('Not assigned')).toBeInTheDocument();
   });
 
   it('closes stale order details after confirming a returned item', async () => {
