@@ -16,6 +16,8 @@ An open dispute must first be moved to `investigating` with **Start investigatio
 
 Staff Job Orders already receives the rider proof metadata and file URL. Its proof thumbnails will become accessible buttons that open the same image-preview modal pattern used by the Shipment page. No new storage or delivery-proof endpoint is introduced.
 
+The private proof endpoint authorizes same-shop users with `access-staff-job-orders` for retail delivery and refund/return proofs. Repair and unrelated logistics proofs remain restricted to their existing logistics permissions.
+
 ## Acceptance criteria
 
 1. The resolution selector does not offer replacement or a separate return option.
@@ -24,7 +26,8 @@ Staff Job Orders already receives the rider proof metadata and file URL. Its pro
 4. Resolve is hidden while a dispute is open and appears only after investigation starts.
 5. A direct resolve request for an open dispute is rejected and leaves the dispute open.
 6. Staff can click a delivery-proof thumbnail on Job Orders and view the full image in a modal, with an accessible close action.
-7. Existing legacy resolution records remain readable and existing refund/return processing is not changed.
+7. Same-shop staff can fetch retail delivery proof files, while unrelated logistics proof files remain forbidden.
+8. Existing legacy resolution records remain readable and existing refund/return processing is not changed.
 
 ## Scope and risks
 
