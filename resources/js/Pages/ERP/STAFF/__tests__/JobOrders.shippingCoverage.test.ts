@@ -386,7 +386,13 @@ describe('staff refund visibility', () => {
     expect(screen.getByText('09171234567')).toBeInTheDocument();
     expect(screen.getByText('Paolo Mendoza')).toBeInTheDocument();
     expect(screen.getByText('RETURN-91')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Return delivery proof 1' })).toHaveAttribute('href', '/api/logistics/proofs/93/file');
+    const proofTrigger = screen.getByRole('button', { name: 'Return delivery proof 1' });
+    expect(proofTrigger).toBeInTheDocument();
+    fireEvent.click(proofTrigger);
+    expect(screen.getByRole('dialog', { name: 'Delivery proof image' })).toBeInTheDocument();
+    expect(screen.getByAltText('Enlarged delivery proof')).toHaveAttribute('src', '/api/logistics/proofs/93/file');
+    fireEvent.click(screen.getByRole('button', { name: 'Close delivery proof image' }));
+    expect(screen.queryByRole('dialog', { name: 'Delivery proof image' })).not.toBeInTheDocument();
     expect(screen.getByText('No proof submitted yet.')).toBeInTheDocument();
   });
 

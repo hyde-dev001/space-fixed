@@ -148,8 +148,11 @@ class DeliveryDisputeService
             if (in_array((string) $locked->status, ['resolved', 'rejected'], true)) {
                 return ['result' => 'existing', 'dispute' => $locked->fresh('orderRefund')];
             }
-            if (! in_array((string) $locked->status, ['open', 'investigating'], true)) {
-                throw ValidationException::withMessages(['status' => 'This dispute cannot be resolved in its current state.']);
+            if ($locked->status !== 'investigating') {
+                throw ValidationException::withMessages(['status' => 'Only disputes under investigation can be resolved.']);
+            }
+            if ($resolution === 'customer_confirmed' && $locked->reason !== 'item_not_received') {
+                throw ValidationException::withMessages(['resolution' => 'Customer confirmation is only valid for an item-not-received dispute.']);
             }
 
             $order = Order::query()->lockForUpdate()->findOrFail($locked->order_id);

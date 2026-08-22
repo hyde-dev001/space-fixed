@@ -210,4 +210,126 @@ class CustomerDeliveryReceiptTest extends TestCase
             'return_status' => 'awaiting_approval',
         ]);
     }
+
+    public function test_dispatcher_cannot_resolve_an_open_dispute_before_investigation(): void
+    {
+        Permission::findOrCreate('view-logistics-shipments', 'user');
+        Permission::findOrCreate('resolve-logistics-exceptions', 'user');
+        $shop = ShopOwner::factory()->create();
+        $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $dispatcher->givePermissionTo(['view-logistics-shipments', 'resolve-logistics-exceptions']);
+        $customer = User::factory()->create();
+        $order = Order::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'customer_id' => $customer->id,
+            'status' => OrderStatus::DELIVERED,
+            'carrier_company' => 'Shop-owned logistics',
+            'payment_status' => 'paid',
+            'payment_method' => 'paymongo',
+            'total_amount' => 1000,
+        ]);
+        $dispute = DeliveryDispute::query()->create([
+            'shop_owner_id' => $shop->id,
+            'order_id' => $order->id,
+            'customer_id' => $customer->id,
+            'status' => 'open',
+            'reason' => 'item_not_received',
+            'reported_at' => now(),
+        ]);
+
+        $this->actingAs($dispatcher, 'user')
+            ->postJson("/api/logistics/delivery-disputes/{$dispute->id}/resolve", [
+                'resolution' => 'customer_confirmed',
+                'resolution_note' => 'Attempted to resolve without investigation.',
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('status');
+
+        $this->assertDatabaseHas('delivery_disputes', [
+            'id' => $dispute->id,
+            'status' => 'open',
+            'resolution' => null,
+        ]);
+    }
+
+    public function test_dispatcher_cannot_confirm_receipt_for_a_non_receipt_dispute(): void
+    {
+        Permission::findOrCreate('view-logistics-shipments', 'user');
+        Permission::findOrCreate('resolve-logistics-exceptions', 'user');
+        $shop = ShopOwner::factory()->create();
+        $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $dispatcher->givePermissionTo(['view-logistics-shipments', 'resolve-logistics-exceptions']);
+        $customer = User::factory()->create();
+        $order = Order::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'customer_id' => $customer->id,
+            'status' => OrderStatus::DELIVERED,
+            'carrier_company' => 'Shop-owned logistics',
+            'customer_receipt_status' => 'disputed',
+            'payment_status' => 'paid',
+            'payment_method' => 'paymongo',
+            'total_amount' => 1000,
+        ]);
+        $dispute = DeliveryDispute::query()->create([
+            'shop_owner_id' => $shop->id,
+            'order_id' => $order->id,
+            'customer_id' => $customer->id,
+            'status' => 'investigating',
+            'reason' => 'damaged',
+            'reported_at' => now(),
+        ]);
+
+        $this->actingAs($dispatcher, 'user')
+            ->postJson("/api/logistics/delivery-disputes/{$dispute->id}/resolve", [
+                'resolution' => 'customer_confirmed',
+                'resolution_note' => 'Attempted to mark a damaged item as received.',
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('resolution');
+
+        $this->assertDatabaseHas('delivery_disputes', [
+            'id' => $dispute->id,
+            'status' => 'investigating',
+            'resolution' => null,
+        ]);
+        $this->assertSame('disputed', $order->fresh()->customer_receipt_status);
+    }
+
+    public function test_dispatcher_can_confirm_receipt_for_an_item_not_received_dispute(): void
+    {
+        Permission::findOrCreate('view-logistics-shipments', 'user');
+        Permission::findOrCreate('resolve-logistics-exceptions', 'user');
+        $shop = ShopOwner::factory()->create();
+        $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $dispatcher->givePermissionTo(['view-logistics-shipments', 'resolve-logistics-exceptions']);
+        $customer = User::factory()->create();
+        $order = Order::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'customer_id' => $customer->id,
+            'status' => OrderStatus::DELIVERED,
+            'carrier_company' => 'Shop-owned logistics',
+            'customer_receipt_status' => 'disputed',
+        ]);
+        $dispute = DeliveryDispute::query()->create([
+            'shop_owner_id' => $shop->id,
+            'order_id' => $order->id,
+            'customer_id' => $customer->id,
+            'status' => 'investigating',
+            'reason' => 'item_not_received',
+            'reported_at' => now(),
+        ]);
+
+        $this->actingAs($dispatcher, 'user')
+            ->postJson("/api/logistics/delivery-disputes/{$dispute->id}/resolve", [
+                'resolution' => 'customer_confirmed',
+                'resolution_note' => 'Customer confirmed the order was received after investigation.',
+            ])
+            ->assertOk()
+            ->assertJsonPath('result', 'resolved')
+            ->assertJsonPath('dispute.resolution', 'customer_confirmed');
+
+        $this->assertSame(OrderStatus::DELIVERED, $order->fresh()->status);
+        $this->assertSame('confirmed', $order->fresh()->customer_receipt_status);
+        $this->assertNotNull($order->fresh()->customer_received_at);
+    }
 }

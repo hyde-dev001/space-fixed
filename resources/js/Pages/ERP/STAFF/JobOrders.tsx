@@ -1,8 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Swal from "sweetalert2";
+import { X } from "lucide-react";
 import { Head, usePage } from "@inertiajs/react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import ErrorModal from "../../../components/common/ErrorModal";
+import { Modal } from "../../../components/ui/modal";
 import { calculateRetailRevenue } from "../../../utils/deliveryRevenue";
 import axios from "axios";
 
@@ -475,6 +477,7 @@ export default function JobOrdersPage() {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [viewOrder, setViewOrder] = useState<Order | null>(null);
+  const [selectedProofUrl, setSelectedProofUrl] = useState<string | null>(null);
   const [eta, setEta] = useState("");
   const [etaPreset, setEtaPreset] = useState("");
   const [carrierCompany, setCarrierCompany] = useState("");
@@ -487,6 +490,8 @@ export default function JobOrdersPage() {
   const [isActivatingReceive, setIsActivatingReceive] = useState(false);
   const shippingRequestTokenRef = useRef(0);
   const activeShippingOrderIdRef = useRef<number | null>(null);
+  const proofTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const proofCloseButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const mapApiOrder = (order: any): Order => {
     const itemSubtotal = parseAmount(order.total_amount);
@@ -1299,9 +1304,28 @@ export default function JobOrdersPage() {
   };
 
   const handleViewOrder = (order: Order) => {
+    setSelectedProofUrl(null);
     setViewOrder(order);
     setIsViewModalOpen(true);
   };
+
+  const openProof = (url: string, trigger: HTMLButtonElement) => {
+    proofTriggerRef.current = trigger;
+    setSelectedProofUrl(url);
+  };
+
+  const closeProof = () => {
+    const trigger = proofTriggerRef.current;
+    setSelectedProofUrl(null);
+    window.requestAnimationFrame(() => trigger?.focus());
+  };
+
+  useEffect(() => {
+    if (selectedProofUrl === null) return;
+
+    const frame = window.requestAnimationFrame(() => proofCloseButtonRef.current?.focus());
+    return () => window.cancelAnimationFrame(frame);
+  }, [selectedProofUrl]);
 
   const handleConfirmReturnReceived = async (order: Order) => {
     if (isConfirmingReturn) return;
@@ -2741,16 +2765,16 @@ export default function JobOrdersPage() {
                             {summary.proofs.length > 0 ? (
                               <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
                                 {summary.proofs.map((proof, index) => (
-                                  <a
+                                  <button
                                     key={proof.id}
-                                    href={proof.file_url}
-                                    target="_blank"
-                                    rel="noreferrer"
+                                    type="button"
+                                    onClick={(event) => openProof(proof.file_url, event.currentTarget)}
                                     aria-label={`${card.proofLabel} ${index + 1}`}
-                                    className="block overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700"
+                                    aria-haspopup="dialog"
+                                    className="block w-full overflow-hidden rounded-lg border border-gray-200 text-left dark:border-gray-700"
                                   >
                                     <img src={proof.file_url} alt={`${card.proofLabel} ${index + 1}`} loading="lazy" className="h-28 w-full object-cover" />
-                                  </a>
+                                  </button>
                                 ))}
                               </div>
                             ) : (
@@ -2833,6 +2857,7 @@ export default function JobOrdersPage() {
                 )}
                 <button
                   onClick={() => {
+                    setSelectedProofUrl(null);
                     setIsViewModalOpen(false);
                     setViewOrder(null);
                   }}
@@ -2844,6 +2869,27 @@ export default function JobOrdersPage() {
             </div>
           </div>
         )}
+        <Modal isOpen={selectedProofUrl !== null} onClose={closeProof} showCloseButton={false} size="7xl" className="bg-gray-950 p-4 sm:p-6">
+          {selectedProofUrl && (
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label="Delivery proof image"
+              className="relative flex h-[min(88dvh,56rem)] items-center justify-center overflow-hidden"
+            >
+              <button
+                ref={proofCloseButtonRef}
+                type="button"
+                aria-label="Close delivery proof image"
+                onClick={closeProof}
+                className="absolute right-0 top-0 z-10 inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-gray-600 bg-gray-800 text-gray-200 transition-colors hover:bg-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              >
+                <X aria-hidden="true" size={20} />
+              </button>
+              <img src={selectedProofUrl} alt="Enlarged delivery proof" className="max-h-full max-w-full object-contain" />
+            </div>
+          )}
+        </Modal>
       </div>
     )}
     </AppLayoutERP>
