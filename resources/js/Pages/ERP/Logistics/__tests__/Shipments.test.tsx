@@ -985,6 +985,34 @@ it('offers only supported dispute resolutions after investigation starts', async
   await waitFor(() => expect(Swal.fire).toHaveBeenCalledWith(expect.objectContaining({
     title: 'Resolve customer dispute',
     inputOptions: {
+      refund_required: 'Refund / Return required',
+      report_rejected: 'Reject report',
+    },
+  })));
+});
+
+it('keeps customer confirmation available for an item-not-received dispute', async () => {
+  setDispatcherLeg({
+    ...defaultProps().shipments.data[0].legs[0],
+    status: 'delivered',
+  });
+  mocks.props.canResolveDisputes = true;
+  mocks.props.shipments.data[0].customer_disputes = [{
+    id: 53,
+    status: 'investigating',
+    reason: 'item_not_received',
+    notes: 'Customer says the order was not received.',
+    reported_at: '2026-07-21T10:00:00Z',
+    resolution: null,
+  }];
+
+  render(<Shipments />);
+  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Resolve' }));
+
+  await waitFor(() => expect(Swal.fire).toHaveBeenCalledWith(expect.objectContaining({
+    title: 'Resolve customer dispute',
+    inputOptions: {
       customer_confirmed: 'Customer confirmed',
       refund_required: 'Refund / Return required',
       report_rejected: 'Reject report',

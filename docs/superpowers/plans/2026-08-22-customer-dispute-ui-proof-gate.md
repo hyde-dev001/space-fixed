@@ -13,7 +13,7 @@
 ## Task 1: Add failing regression coverage
 
 - [x] Add a feature test proving an open dispute cannot be resolved directly.
-- [x] Add Shipment UI coverage for the reduced resolution choices and investigation gate.
+- [x] Add Shipment UI coverage for the reduced and reason-conditioned resolution choices and investigation gate.
 - [x] Add Job Orders UI coverage for opening delivery proof in a modal.
 - [x] Run the focused tests and confirm they fail for the current implementation.
 
@@ -21,6 +21,7 @@
 
 - [x] Restrict service resolution to disputes in `investigating` state.
 - [x] Hide unsupported resolution choices while retaining legacy backend values.
+- [x] Allow `customer_confirmed` only for `item_not_received` in both the Shipment UI and service validation.
 - [x] Show Resolve only after Start investigation is completed.
 - [x] Convert Staff Job Orders proof links into accessible modal triggers and add the proof preview modal.
 
