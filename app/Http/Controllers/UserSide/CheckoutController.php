@@ -504,40 +504,75 @@ class CheckoutController extends Controller
         return $campaign;
     }
 
-    private function summarizeAvailableVoucher(PromoCampaign $campaign): array
+    /**
+     * @param array<string, mixed> $context
+     * @param string|null $claimStatus
+     * @return array<string, mixed>
+     */
+    private function summarizeAvailableVoucher(PromoCampaign $campaign, array $context = [], ?string $claimStatus = null): array
     {
+        $eligibility = $this->voucherEligibilityForCheckout($campaign, $context);
+        $claimProductId = $this->claimProductIdForVoucher(
+            $campaign,
+            is_array($context['pricing_line_items'] ?? null) ? $context['pricing_line_items'] : [],
+        );
+        $normalizedClaimStatus = match ($claimStatus) {
+            'claimed', 'redeemed' => $claimStatus,
+            null => 'claimable',
+            default => 'unavailable',
+        };
+        $canClaim = $normalizedClaimStatus === 'claimable'
+            && $claimProductId !== null
+            && !in_array($eligibility['eligibility'], ['shipping_unavailable', 'unavailable'], true);
+
         return [
             'id' => (int) $campaign->id,
             'name' => (string) $campaign->name,
             'code' => $campaign->code,
             'target' => $this->discountTarget($campaign),
+            'scope' => (string) $campaign->scope,
             'discount_mode' => (string) $campaign->discount_mode,
             'value' => (float) $campaign->value,
             'min_spend' => (float) $campaign->min_spend,
+            'claim_status' => $normalizedClaimStatus,
+            'eligibility' => $eligibility['eligibility'],
+            'eligibility_message' => $eligibility['eligibility_message'],
+            'eligible_subtotal' => $eligibility['eligible_subtotal'],
+            'remaining_spend' => $eligibility['remaining_spend'],
+            'claim_product_id' => $claimProductId,
+            'can_claim' => $canClaim,
         ];
     }
 
-    private function summarizeAvailableVouchers(Collection $campaigns): array
+    /**
+     * @param array<string, mixed> $context
+     */
+    private function summarizeAvailableVouchers(Collection $campaigns, array $context = []): array
     {
+        $claimStatuses = is_array($context['claim_statuses'] ?? null)
+            ? $context['claim_statuses']
+            : [];
+
         return $campaigns
-            ->map(fn (PromoCampaign $campaign) => $this->summarizeAvailableVoucher($campaign))
+            ->map(function (PromoCampaign $campaign) use ($context, $claimStatuses): array {
+                return $this->summarizeAvailableVoucher(
+                    $campaign,
+                    $context,
+                    $claimStatuses[(int) $campaign->id] ?? null,
+                );
+            })
             ->values()
             ->all();
     }
 
-    private function voucherCodeSuggestionCampaignsForCheckout(int $shopOwnerId, int $userId): Collection
+    private function voucherCodeSuggestionCampaignsForCheckout(int $shopOwnerId): Collection
     {
         if (!$this->promoTablesReady()) {
             return collect();
         }
 
-        $redeemedCampaignIds = VoucherClaim::query()
-            ->where('shop_owner_id', $shopOwnerId)
-            ->where('user_id', $userId)
-            ->where('status', 'redeemed')
-            ->pluck('promo_campaign_id');
-
         return PromoCampaign::query()
+            ->with('products:id')
             ->where('shop_owner_id', $shopOwnerId)
             ->where('kind', 'voucher')
             ->where('status', 'active')
@@ -549,11 +584,155 @@ class CheckoutController extends Controller
                 $query->whereNull('usage_limit')
                     ->orWhereColumn('used_count', '<', 'usage_limit');
             })
-            ->when($redeemedCampaignIds->isNotEmpty(), function ($query) use ($redeemedCampaignIds) {
-                $query->whereNotIn('id', $redeemedCampaignIds);
-            })
             ->orderBy('code')
             ->get();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function voucherClaimStatusesForCampaigns(Collection $campaigns, int $shopOwnerId, int $userId): array
+    {
+        $campaignIds = $campaigns
+            ->pluck('id')
+            ->map(fn ($campaignId): int => (int) $campaignId)
+            ->filter(fn (int $campaignId): bool => $campaignId > 0)
+            ->unique()
+            ->values();
+
+        if ($campaignIds->isEmpty()) {
+            return [];
+        }
+
+        return VoucherClaim::query()
+            ->where('shop_owner_id', $shopOwnerId)
+            ->where('user_id', $userId)
+            ->whereIn('promo_campaign_id', $campaignIds)
+            ->get(['promo_campaign_id', 'status'])
+            ->mapWithKeys(fn (VoucherClaim $claim): array => [
+                (int) $claim->promo_campaign_id => (string) $claim->status,
+            ])
+            ->all();
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function shippingVoucherEligibilityResults(
+        Collection $campaigns,
+        ShopOwner $shopOwner,
+        float $rawShippingFee,
+        float $eligibleSubtotal,
+        ?UserAddress $shippingAddress,
+        ?float $shippingLatitude,
+        ?float $shippingLongitude,
+    ): array {
+        return $campaigns
+            ->filter(fn (PromoCampaign $campaign): bool => $this->isShippingVoucher($campaign))
+            ->unique('id')
+            ->mapWithKeys(fn (PromoCampaign $campaign): array => [
+                (int) $campaign->id => $this->shippingVoucherService->apply(
+                    $campaign,
+                    $shopOwner,
+                    $rawShippingFee,
+                    $eligibleSubtotal,
+                    $shippingAddress,
+                    $shippingLatitude,
+                    $shippingLongitude,
+                ),
+            ])
+            ->all();
+    }
+
+    /**
+     * @param array<string, mixed> $context
+     * @return array{eligibility:string, eligibility_message:string, eligible_subtotal:float, remaining_spend:float}
+     */
+    private function voucherEligibilityForCheckout(PromoCampaign $campaign, array $context): array
+    {
+        $pricingLineItems = is_array($context['pricing_line_items'] ?? null)
+            ? $context['pricing_line_items']
+            : [];
+        $eligibleSubtotal = $this->isShippingVoucher($campaign)
+            ? round(max(0.0, (float) ($context['sale_adjusted_subtotal'] ?? 0)), 2)
+            : $this->voucherEligibleSubtotalFromPricedLineItems($campaign, $pricingLineItems);
+        $minimumSpend = round(max(0.0, (float) $campaign->min_spend), 2);
+        $remainingSpend = round(max(0.0, $minimumSpend - $eligibleSubtotal), 2);
+
+        if (!$this->isShippingVoucher($campaign) && $eligibleSubtotal <= 0.0) {
+            return [
+                'eligibility' => 'not_applicable',
+                'eligibility_message' => 'This voucher does not apply to items in your order.',
+                'eligible_subtotal' => $eligibleSubtotal,
+                'remaining_spend' => 0.0,
+            ];
+        }
+
+        if ($remainingSpend > 0.0) {
+            return [
+                'eligibility' => 'minimum_spend',
+                'eligibility_message' => sprintf(
+                    'Spend PHP %s more to unlock this voucher.',
+                    number_format($remainingSpend, 2, '.', ','),
+                ),
+                'eligible_subtotal' => $eligibleSubtotal,
+                'remaining_spend' => $remainingSpend,
+            ];
+        }
+
+        if ($this->isShippingVoucher($campaign)) {
+            $shippingResults = is_array($context['shipping_results'] ?? null)
+                ? $context['shipping_results']
+                : [];
+            $shippingResult = $shippingResults[(int) $campaign->id] ?? null;
+            $shippingError = is_array($shippingResult) ? ($shippingResult['error'] ?? null) : null;
+
+            if ($shippingError !== null) {
+                $normalizedError = strtolower((string) $shippingError);
+
+                return [
+                    'eligibility' => str_contains($normalizedError, 'shipping fee')
+                        ? 'shipping_fee_required'
+                        : 'shipping_unavailable',
+                    'eligibility_message' => (string) $shippingError,
+                    'eligible_subtotal' => $eligibleSubtotal,
+                    'remaining_spend' => 0.0,
+                ];
+            }
+
+            if ($eligibleSubtotal <= 0.0) {
+                return [
+                    'eligibility' => 'not_applicable',
+                    'eligibility_message' => 'Add a qualifying order to use this shipping voucher.',
+                    'eligible_subtotal' => $eligibleSubtotal,
+                    'remaining_spend' => 0.0,
+                ];
+            }
+        }
+
+        return [
+            'eligibility' => 'eligible',
+            'eligibility_message' => $this->isShippingVoucher($campaign)
+                ? 'Eligible for this delivery.'
+                : 'Eligible for the items in your order.',
+            'eligible_subtotal' => $eligibleSubtotal,
+            'remaining_spend' => 0.0,
+        ];
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $pricingLineItems
+     */
+    private function claimProductIdForVoucher(PromoCampaign $campaign, array $pricingLineItems): ?int
+    {
+        foreach ($pricingLineItems as $lineItem) {
+            $productId = (int) ($lineItem['product_id'] ?? 0);
+            if ($productId > 0 && $this->isVoucherCampaignApplicableToProduct($campaign, $productId)) {
+                return $productId;
+            }
+        }
+
+        return null;
     }
 
     private function summarizeAppliedVoucher(?PromoCampaign $campaign): ?array
@@ -775,7 +954,7 @@ class CheckoutController extends Controller
             ? collect()
             : $this->activeCampaignsForShop($shopOwnerId, 'sale');
         $availableVouchers = $this->availableVoucherCampaignsForCheckout($shopOwnerId, (int) $user->id, $requestedVoucherCode);
-        $voucherCodeSuggestions = $this->voucherCodeSuggestionCampaignsForCheckout($shopOwnerId, (int) $user->id);
+        $voucherCodeSuggestions = $this->voucherCodeSuggestionCampaignsForCheckout($shopOwnerId);
         $selectedVoucher = $this->pickRequestedVoucher($availableVouchers, $requestedVoucherCampaignId, $requestedVoucherCode);
 
         if ($disableVoucher) {
@@ -831,6 +1010,29 @@ class CheckoutController extends Controller
             $voucherError = $this->buildVoucherIneligibilityMessage($selectedVoucher, $pricing);
         }
 
+        $voucherSummaryCampaigns = $availableVouchers
+            ->concat($voucherCodeSuggestions)
+            ->unique('id')
+            ->values();
+        $voucherSummaryContext = [
+            'pricing_line_items' => is_array($pricing['line_items'] ?? null) ? $pricing['line_items'] : [],
+            'sale_adjusted_subtotal' => (float) ($pricing['sale_adjusted_subtotal'] ?? 0),
+            'shipping_results' => $this->shippingVoucherEligibilityResults(
+                $voucherSummaryCampaigns,
+                $shopOwner,
+                $rawShippingFee,
+                (float) ($pricing['sale_adjusted_subtotal'] ?? 0),
+                $shippingAddress,
+                $shippingLatitude,
+                $shippingLongitude,
+            ),
+            'claim_statuses' => $this->voucherClaimStatusesForCampaigns(
+                $voucherSummaryCampaigns,
+                $shopOwnerId,
+                (int) $user->id,
+            ),
+        ];
+
         $vatRatePercent = 12.0;
         $vatBreakdown = VatInclusiveCalculator::extract((float) $pricing['final_subtotal'], $vatRatePercent);
 
@@ -849,8 +1051,8 @@ class CheckoutController extends Controller
                 'discounted_shipping_fee' => round((float) $shippingVoucherResult['shipping_fee'], 2),
                 'shipping_voucher_error' => $shippingVoucherResult['error'],
                 'applied_voucher' => $this->summarizeAppliedVoucher($appliedVoucher),
-                'available_vouchers' => $this->summarizeAvailableVouchers($availableVouchers),
-                'voucher_code_suggestions' => $this->summarizeAvailableVouchers($voucherCodeSuggestions),
+                'available_vouchers' => $this->summarizeAvailableVouchers($availableVouchers, $voucherSummaryContext),
+                'voucher_code_suggestions' => $this->summarizeAvailableVouchers($voucherCodeSuggestions, $voucherSummaryContext),
                 'voucher_error' => $voucherError,
             ],
         ]);

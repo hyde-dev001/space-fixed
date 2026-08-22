@@ -89,14 +89,25 @@ interface AppliedVoucherSummary {
   value: number;
 }
 
+type VoucherClaimStatus = 'claimed' | 'claimable' | 'redeemed' | 'unavailable';
+type VoucherEligibility = 'eligible' | 'minimum_spend' | 'not_applicable' | 'shipping_unavailable' | 'shipping_fee_required' | 'unavailable';
+
 interface AvailableVoucherOption {
   id: number;
   name: string;
   code?: string | null;
   target: 'items' | 'shipping';
+  scope: 'shop_wide' | 'product_specific';
   discount_mode: 'percentage' | 'fixed';
   value: number;
   min_spend: number;
+  claim_status: VoucherClaimStatus;
+  eligibility: VoucherEligibility;
+  eligibility_message: string;
+  eligible_subtotal: number;
+  remaining_spend: number;
+  claim_product_id: number | null;
+  can_claim: boolean;
 }
 
 interface PromoPreviewData {
@@ -132,6 +143,43 @@ const toFiniteNumber = (value: unknown, fallback = 0): number => {
 
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const formatVoucherMoney = (value: number): string => `PHP ${toFiniteNumber(value).toLocaleString(undefined, {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 2,
+})}`;
+
+const formatVoucherBenefit = (voucher: AvailableVoucherOption): string => {
+  const value = toFiniteNumber(voucher.value);
+  const targetLabel = voucher.target === 'shipping' ? 'shipping' : 'items';
+
+  if (voucher.discount_mode === 'percentage') {
+    return `${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}% off ${targetLabel}`;
+  }
+
+  return `${formatVoucherMoney(value)} off ${targetLabel}`;
+};
+
+const voucherClaimStatusLabel = (status: VoucherClaimStatus): string => {
+  if (status === 'claimed') return 'Claimed';
+  if (status === 'claimable') return 'Available to claim';
+  if (status === 'redeemed') return 'Already used';
+  return 'Unavailable';
+};
+
+const voucherClaimStatusClass = (status: VoucherClaimStatus): string => {
+  if (status === 'claimed') return 'border-blue-200 bg-blue-50 text-blue-700';
+  if (status === 'claimable') return 'border-gray-200 bg-gray-50 text-gray-700';
+  if (status === 'redeemed') return 'border-gray-200 bg-gray-100 text-gray-500';
+  return 'border-red-200 bg-red-50 text-red-700';
+};
+
+const voucherEligibilityClass = (eligibility: VoucherEligibility): string => {
+  if (eligibility === 'eligible') return 'text-emerald-700';
+  if (eligibility === 'minimum_spend') return 'text-amber-700';
+  if (eligibility === 'shipping_unavailable' || eligibility === 'shipping_fee_required') return 'text-red-600';
+  return 'text-gray-500';
 };
 
 const Payment: React.FC = () => {
@@ -189,6 +237,9 @@ const Payment: React.FC = () => {
   const [appliedVoucherCode, setAppliedVoucherCode] = useState('');
   const [isVoucherSelectionEnabled, setIsVoucherSelectionEnabled] = useState(true);
   const [isVoucherSuggestionOpen, setIsVoucherSuggestionOpen] = useState(false);
+  const [claimingVoucherCampaignId, setClaimingVoucherCampaignId] = useState<number | null>(null);
+  const [voucherClaimError, setVoucherClaimError] = useState<string | null>(null);
+  const [voucherPreviewRefreshKey, setVoucherPreviewRefreshKey] = useState(0);
   const [hasVoucherInputInteraction, setHasVoucherInputInteraction] = useState(false);
   const voucherInputContainerRef = useRef<HTMLDivElement | null>(null);
   const desktopCityDropdownRef = useRef<HTMLDivElement | null>(null);
@@ -282,6 +333,62 @@ const Payment: React.FC = () => {
     setAppliedVoucherCode(normalizedCode);
     setHasVoucherInputInteraction(true);
     setIsVoucherSuggestionOpen(false);
+  };
+
+  const handleUseVoucher = (voucher: AvailableVoucherOption) => {
+    const normalizedCode = normalizeVoucherCode(String(voucher.code || voucher.name || ''));
+    if (!normalizedCode) {
+      return;
+    }
+
+    setIsVoucherSelectionEnabled(true);
+    setSelectedVoucherCampaignId(voucher.id);
+    setHasVoucherInputInteraction(true);
+    setVoucherCodeInput(normalizedCode);
+    setAppliedVoucherCode(normalizedCode);
+    setVoucherClaimError(null);
+    setIsVoucherSuggestionOpen(false);
+  };
+
+  const handleClaimVoucher = async (voucher: AvailableVoucherOption, applyAfterClaim: boolean) => {
+    if (!voucher.can_claim || voucher.claim_product_id === null || claimingVoucherCampaignId !== null) {
+      return;
+    }
+
+    setClaimingVoucherCampaignId(voucher.id);
+    setVoucherClaimError(null);
+
+    try {
+      const csrfToken = document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content ?? '';
+      const response = await fetch(`/api/products/${voucher.claim_product_id}/vouchers/${voucher.id}/claim`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          'X-CSRF-TOKEN': csrfToken,
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+      });
+      const payload = await response.json().catch(() => ({})) as { success?: boolean; message?: string };
+
+      if (!response.ok || payload.success === false) {
+        throw new Error(payload.message || 'Unable to claim this voucher right now.');
+      }
+
+      if (applyAfterClaim) {
+        handleUseVoucher(voucher);
+      } else {
+        setIsVoucherSuggestionOpen(true);
+      }
+
+      setVoucherPreviewRefreshKey((current) => current + 1);
+    } catch (error) {
+      setVoucherClaimError(error instanceof Error ? error.message : 'Unable to claim this voucher right now.');
+      setIsVoucherSuggestionOpen(true);
+    } finally {
+      setClaimingVoucherCampaignId(null);
+    }
   };
 
   const handleClearVoucherSelection = () => {
@@ -1248,6 +1355,7 @@ const Payment: React.FC = () => {
     shippingEstimate?.max_fee,
     shippingLatitude,
     shippingLongitude,
+    voucherPreviewRefreshKey,
   ]);
 
   useEffect(() => {
@@ -1672,7 +1780,10 @@ const Payment: React.FC = () => {
       return;
     }
 
-    const availableVoucherIds = (promoPreview?.available_vouchers || []).map((voucher) => voucher.id);
+    const availableVoucherIds = [
+      ...(promoPreview?.available_vouchers || []),
+      ...(promoPreview?.voucher_code_suggestions || []),
+    ].map((voucher) => voucher.id);
     if (!availableVoucherIds.includes(selectedVoucherCampaignId)) {
       setSelectedVoucherCampaignId(null);
     }
@@ -3250,6 +3361,7 @@ const Payment: React.FC = () => {
                           <input
                             type="text"
                             aria-label="Voucher code"
+                            aria-expanded={showVoucherSuggestionDropdown}
                             value={voucherCodeInput}
                             onFocus={() => setIsVoucherSuggestionOpen(true)}
                             onClick={() => setIsVoucherSuggestionOpen(true)}
@@ -3282,40 +3394,121 @@ const Payment: React.FC = () => {
                             className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-black"
                           />
                           {showVoucherSuggestionDropdown && (
-                            <div className="hide-scrollbar absolute z-30 mt-1 max-h-44 w-full overflow-y-auto rounded-md border border-gray-200 bg-white shadow-lg">
+                            <div
+                              role="listbox"
+                              aria-label="Voucher suggestions"
+                              onKeyDown={(event) => {
+                                if (event.key === 'Escape') {
+                                  event.preventDefault();
+                                  setIsVoucherSuggestionOpen(false);
+                                }
+                              }}
+                              className="hide-scrollbar absolute z-30 mt-1 max-h-80 w-full overflow-y-auto rounded-xl border border-gray-200 bg-white p-2 shadow-md"
+                            >
                               {filteredVoucherCodeSuggestions.length > 0 ? (
                                 filteredVoucherCodeSuggestions.map((voucher) => {
                                   const displayName = voucher.name || voucher.code || 'Voucher';
                                   const displayCode = normalizeVoucherCode(String(voucher.code || voucher.name || ''));
+                                  const isEligible = voucher.eligibility === 'eligible';
+                                  const canUseVoucher = voucher.claim_status === 'claimed' && isEligible;
+                                  const isClaiming = claimingVoucherCampaignId === voucher.id;
+                                  const minimumSpend = toFiniteNumber(voucher.min_spend);
+                                  const eligibleSubtotal = toFiniteNumber(voucher.eligible_subtotal);
+                                  const spendProgress = minimumSpend > 0
+                                    ? Math.min(100, (eligibleSubtotal / minimumSpend) * 100)
+                                    : 100;
 
                                   return (
-                                    <button
+                                    <div
                                       key={voucher.id}
-                                      type="button"
-                                      onMouseDown={(e) => {
-                                        e.preventDefault();
-                                        const normalizedCode = normalizeVoucherCode(displayCode);
-                                        setIsVoucherSelectionEnabled(true);
-                                        setSelectedVoucherCampaignId(voucher.id);
-                                        setHasVoucherInputInteraction(true);
-                                        setVoucherCodeInput(normalizedCode);
-                                        setAppliedVoucherCode(normalizedCode);
-                                        setIsVoucherSuggestionOpen(false);
+                                      role="option"
+                                      tabIndex={voucher.claim_status === 'redeemed' ? -1 : 0}
+                                      aria-selected={selectedVoucherCampaignId === voucher.id}
+                                      aria-disabled={!canUseVoucher && !voucher.can_claim}
+                                      onKeyDown={(event) => {
+                                        if ((event.key === 'Enter' || event.key === ' ') && canUseVoucher) {
+                                          event.preventDefault();
+                                          handleUseVoucher(voucher);
+                                        }
                                       }}
-                                      className="w-full border-b border-gray-100 px-3 py-2 text-left text-sm text-black hover:bg-gray-50 last:border-b-0"
+                                      className={`rounded-lg border px-3 py-3 text-left transition-colors focus:outline-none focus:ring-2 focus:ring-gray-900/20 ${
+                                        selectedVoucherCampaignId === voucher.id
+                                          ? 'border-gray-900 bg-gray-50'
+                                          : 'border-gray-200 bg-white hover:border-gray-400 hover:bg-gray-50'
+                                      }`}
                                     >
-                                      <span className="block font-medium text-black">{displayName}</span>
-                                      <span className="block text-[11px] font-medium uppercase tracking-wide text-gray-500">
-                                        {voucher.target === 'shipping' ? 'Shipping' : 'Items'}
-                                      </span>
-                                      {voucher.code && voucher.name && normalizeVoucherCode(voucher.code) !== normalizeVoucherCode(voucher.name) && (
-                                        <span className="block text-xs text-gray-500">{normalizeVoucherCode(voucher.code)}</span>
+                                      <div className="flex items-start justify-between gap-3">
+                                        <div className="min-w-0">
+                                          <p className="truncate text-sm font-semibold text-black">{displayName}</p>
+                                          {displayCode && normalizeVoucherCode(displayName) !== displayCode && (
+                                            <p className="mt-0.5 truncate font-mono text-[11px] font-semibold tracking-wide text-gray-500">{displayCode}</p>
+                                          )}
+                                        </div>
+                                        <span className={`shrink-0 rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-wide ${voucherClaimStatusClass(voucher.claim_status)}`}>
+                                          {voucherClaimStatusLabel(voucher.claim_status)}
+                                        </span>
+                                      </div>
+
+                                      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+                                        <span className="font-semibold text-gray-900">{formatVoucherBenefit(voucher)}</span>
+                                        <span className="rounded-full bg-gray-100 px-2 py-1 text-gray-600">
+                                          {voucher.target === 'shipping' ? 'Shipping' : 'Items'} · {voucher.scope === 'shop_wide' ? 'Shop-wide' : 'Selected products'}
+                                        </span>
+                                      </div>
+
+                                      {minimumSpend > 0 && (
+                                        <div className="mt-3 rounded-md bg-gray-50 px-2.5 py-2">
+                                          <div className="flex items-center justify-between gap-2 text-[11px] text-gray-600">
+                                            <span>Minimum spend {formatVoucherMoney(minimumSpend)}</span>
+                                            <span>{formatVoucherMoney(eligibleSubtotal)} eligible</span>
+                                          </div>
+                                          <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-gray-200" aria-hidden="true">
+                                            <div className="h-full rounded-full bg-gray-900" style={{ width: `${spendProgress}%` }} />
+                                          </div>
+                                        </div>
                                       )}
-                                    </button>
+
+                                      <p className={`mt-2 text-xs font-medium ${voucherEligibilityClass(voucher.eligibility)}`}>
+                                        {voucher.eligibility_message}
+                                      </p>
+
+                                      <div className="mt-3 flex items-center justify-between gap-3">
+                                        <span className="text-[11px] text-gray-500">
+                                          {isEligible ? 'Ready to apply to this order.' : 'Review the requirement above.'}
+                                        </span>
+                                        {isClaiming ? (
+                                          <button type="button" disabled className="min-h-11 shrink-0 rounded-md bg-gray-200 px-3 text-xs font-semibold text-gray-500">
+                                            Claiming…
+                                          </button>
+                                        ) : canUseVoucher ? (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleUseVoucher(voucher)}
+                                            className="min-h-11 shrink-0 rounded-md bg-gray-900 px-3 text-xs font-semibold text-white hover:bg-black"
+                                          >
+                                            Use voucher
+                                          </button>
+                                        ) : voucher.claim_status === 'claimable' && voucher.can_claim ? (
+                                          <button
+                                            type="button"
+                                            onClick={() => void handleClaimVoucher(voucher, isEligible)}
+                                            className="min-h-11 shrink-0 rounded-md bg-gray-900 px-3 text-xs font-semibold text-white hover:bg-black"
+                                          >
+                                            {isEligible ? 'Claim & use' : 'Claim for later'}
+                                          </button>
+                                        ) : (
+                                          <span className="shrink-0 text-[11px] font-semibold text-gray-500">
+                                            {voucher.claim_status === 'redeemed' ? 'Already used' : voucher.claim_status === 'claimed' ? 'Claimed' : 'Not available'}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
                                   );
                                 })
                               ) : (
-                                <div className="px-3 py-2 text-sm text-gray-500">No available vouchers</div>
+                                <div className="rounded-lg border border-dashed border-gray-200 px-3 py-4 text-center text-sm text-gray-500">
+                                  No matching vouchers
+                                </div>
                               )}
                             </div>
                           )}
@@ -3341,6 +3534,10 @@ const Payment: React.FC = () => {
 
                       {voucherErrorMessage && (
                         <p className="text-xs font-medium text-red-600">{voucherErrorMessage}</p>
+                      )}
+
+                      {voucherClaimError && (
+                        <p role="alert" className="text-xs font-medium text-red-600">{voucherClaimError}</p>
                       )}
                     </div>
                   )}
