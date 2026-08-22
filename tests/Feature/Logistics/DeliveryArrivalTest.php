@@ -155,10 +155,17 @@ class DeliveryArrivalTest extends TestCase
             }
             $payload = [...$this->arrivalPayload(), ...$changes];
 
+            $expectedResult = match ($name) {
+                'outside_geofence' => 'outside_geofence',
+                'low_accuracy' => 'low_accuracy',
+                default => 'location_unavailable',
+            };
+
             $this->actingAs($rider, 'user')
                 ->postJson("/api/logistics/legs/{$leg->id}/arrivals", $payload)
                 ->assertUnprocessable()
-                ->assertJsonValidationErrors('exception_reason');
+                ->assertJsonValidationErrors('exception_reason')
+                ->assertJsonPath('errors.arrival_result.0', $expectedResult);
 
             $this->actingAs($rider, 'user')
                 ->postJson("/api/logistics/legs/{$leg->id}/arrivals", [

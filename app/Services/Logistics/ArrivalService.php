@@ -181,14 +181,20 @@ class ArrivalService
             return;
         }
 
+        $messages = [
+            'arrival_result' => [$check['result']],
+        ];
+
         if (! in_array($payload['exception_reason'] ?? null, self::EXCEPTION_REASONS, true)) {
             throw ValidationException::withMessages([
+                ...$messages,
                 'exception_reason' => ['Choose why you need to continue outside the normal arrival check.'],
             ]);
         }
 
         if ($payload['exception_reason'] === 'other' && blank($payload['exception_notes'] ?? null)) {
             throw ValidationException::withMessages([
+                ...$messages,
                 'exception_notes' => ['Add a short note for the other reason.'],
             ]);
         }
