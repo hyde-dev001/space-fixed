@@ -2869,7 +2869,7 @@ export default function JobOrdersPage() {
             </div>
           </div>
         )}
-        <Modal isOpen={selectedProofUrl !== null} onClose={closeProof} showCloseButton={false} size="7xl" className="bg-gray-950 p-4 sm:p-6">
+        <Modal isOpen={selectedProofUrl !== null} onClose={closeProof} showCloseButton={false} size="7xl" zIndex={1000000} className="bg-gray-950 p-4 sm:p-6">
           {selectedProofUrl && (
             <div
               role="dialog"

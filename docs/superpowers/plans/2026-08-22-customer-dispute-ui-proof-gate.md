@@ -25,6 +25,7 @@
 - [x] Allow same-shop Job Orders staff to fetch retail delivery proof files without granting access to unrelated logistics proofs.
 - [x] Show Resolve only after Start investigation is completed.
 - [x] Convert Staff Job Orders proof links into accessible modal triggers and add the proof preview modal.
+- [x] Keep the Job Orders proof preview above the Order Details modal when both are open.
 
 ## Task 3: Verify, review, and prepare the branch
 
