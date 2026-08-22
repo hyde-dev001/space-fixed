@@ -1,4 +1,7 @@
-import "@testing-library/jest-dom/vitest";
+import * as matchers from "@testing-library/jest-dom/matchers";
+import { expect } from "vitest";
+
+expect.extend(matchers);
 
 // Node 25 can expose a partial localStorage object when the jsdom runtime is
 // started without a valid --localstorage-file. Keep browser-facing tests on

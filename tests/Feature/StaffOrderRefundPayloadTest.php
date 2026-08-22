@@ -99,7 +99,7 @@ class StaffOrderRefundPayloadTest extends TestCase
             $this->assertSame(2499, $payload['payout_amount_value']);
             $this->assertSame(['/storage/refunds/customer-evidence.jpg'], $payload['evidence_media']);
             $this->assertSame($shipment->id, $payload['return_logistics']['shipment_id']);
-            $this->assertSame('inbound', $payload['return_logistics']['leg_type']);
+            $this->assertSame('return_to_shop', $payload['return_logistics']['leg_type']);
             $this->assertSame('Shop-owned logistics', $payload['return_logistics']['carrier']);
             $this->assertSame('Marco Santos', $payload['return_logistics']['rider_name']);
             $this->assertSame('09171234567', $payload['return_logistics']['rider_phone']);

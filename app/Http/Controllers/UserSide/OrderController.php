@@ -644,8 +644,9 @@ class OrderController extends Controller
     public function markRefundReturnShipped(Request $request, int $id)
     {
         $validated = $request->validate([
-            'tracking_number' => ['required', 'string', 'max:255'],
-            'carrier' => ['required', 'string', 'max:100'],
+            'delivery_method' => ['nullable', 'in:shop_owned,third_party'],
+            'tracking_number' => ['required_unless:delivery_method,shop_owned', 'string', 'max:255'],
+            'carrier' => ['required_unless:delivery_method,shop_owned', 'string', 'max:100'],
             'rider_name' => ['nullable', 'string', 'max:100'],
             'rider_phone' => ['nullable', 'string', 'max:50'],
             'tracking_link' => ['nullable', 'url', 'max:2048'],
@@ -663,7 +664,7 @@ class OrderController extends Controller
             ->firstOrFail();
 
         $result = $this->orderRefundService->markCustomerReturnShipped($refund, $validated);
-        if (($result['result'] ?? null) !== 'in_transit') {
+        if (!in_array(($result['result'] ?? null), ['in_transit', 'pickup_arranged'], true)) {
             return response()->json([
                 'success' => false,
                 'message' => $result['message'] ?? 'Return shipment cannot be updated in the current state.',
@@ -671,18 +672,44 @@ class OrderController extends Controller
         }
 
         $updatedRefund = $result['refund'] ?? $refund->fresh();
+        $refundShipment = Shipment::query()
+            ->where('source_type', 'order_refund')
+            ->where('source_id', $updatedRefund->id)
+            ->where('purpose', 'refund_return')
+            ->with([
+                'legs' => fn ($query) => $query->orderBy('sequence')->orderBy('id'),
+                'legs.assignments.riderProfile',
+            ])
+            ->latest('id')
+            ->first();
+        $refundLeg = $refundShipment?->legs->last();
+        $activeAssignment = $refundLeg?->assignments->first(
+            fn ($assignment) => in_array($assignment->status, ['assigned', 'accepted'], true)
+        );
 
         return response()->json([
             'success' => true,
             'message' => $result['message'] ?? 'Return shipment details submitted successfully.',
             'refund' => [
                 'id' => $updatedRefund->id,
+                'logistics_shipment_id' => $refundShipment?->id,
+                'is_shop_owned_return' => strtolower((string) ($updatedRefund->staff_return_carrier ?? '')) === 'shop-owned logistics',
                 'return_status' => (string) $updatedRefund->return_status,
                 'return_source' => (string) ($updatedRefund->return_source ?? 'customer'),
                 'customer_return_tracking_number' => $updatedRefund->customer_return_tracking_number,
                 'customer_return_carrier' => $updatedRefund->customer_return_carrier,
                 'customer_return_tracking_link' => $updatedRefund->customer_return_tracking_link,
                 'customer_return_shipped_at' => optional($updatedRefund->customer_return_shipped_at)->toDateTimeString(),
+                'staff_return_tracking_number' => $updatedRefund->staff_return_tracking_number,
+                'staff_return_carrier' => $updatedRefund->staff_return_carrier,
+                'staff_return_rider_name' => $updatedRefund->staff_return_rider_name,
+                'staff_return_rider_phone' => $updatedRefund->staff_return_rider_phone,
+                'staff_return_tracking_link' => $updatedRefund->staff_return_tracking_link,
+                'staff_return_shipped_at' => optional($updatedRefund->staff_return_shipped_at)->toDateTimeString(),
+                'return_arranged_by_staff_at' => optional($updatedRefund->return_arranged_by_staff_at)->toDateTimeString(),
+                'delivery_rider_name' => $activeAssignment?->riderProfile?->name,
+                'delivery_rider_phone' => $activeAssignment?->riderProfile?->phone,
+                'delivery_reference' => $refundShipment ? 'RET-' . $refundShipment->id : null,
             ],
         ]);
     }

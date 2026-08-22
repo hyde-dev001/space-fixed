@@ -147,7 +147,7 @@ class SourceModuleShipmentRequestTest extends TestCase
             ->assertJsonPath('0.delivery_cancellation.message', 'Delivery cancelled: Recipient was unavailable.');
     }
 
-    public function test_approved_refund_return_creates_inbound_shipment(): void
+    public function test_approved_refund_return_creates_dispatcher_return_to_shop_leg(): void
     {
         $shop = ShopOwner::factory()->create([
             'shop_latitude' => 14.3011,
@@ -186,7 +186,7 @@ class SourceModuleShipmentRequestTest extends TestCase
             'purpose' => 'refund_return',
         ]);
         $this->assertDatabaseHas('shipment_legs', [
-            'leg_type' => 'inbound',
+            'leg_type' => 'return_to_shop',
         ]);
         $leg = Shipment::query()
             ->where('source_type', 'order_refund')

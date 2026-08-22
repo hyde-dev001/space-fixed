@@ -554,29 +554,54 @@ const MyOrders: React.FC = () => {
     const stage = order.refund_stage;
     if (!stage?.can_mark_return_shipped) return;
 
-    const tracking = await Swal.fire({
-      title: 'Ship the returned item',
-      text: 'Ilagay ang tracking number ng parcel na ibinabalik mo.',
-      input: 'text',
-      inputPlaceholder: 'Tracking number',
-      inputValidator: (value) => value.trim() ? undefined : 'Required ang tracking number.',
+    const returnMethod = await Swal.fire({
+      title: 'Return method',
+      text: 'Paano mo ibabalik ang item?',
+      input: 'select',
+      inputOptions: {
+        shop_owned: 'Shop-owned logistics (rider pickup)',
+        third_party: 'Third-party courier (ikaw ang magpapadala)',
+      },
+      inputPlaceholder: 'Pumili ng return method',
+      inputValidator: (value) => value ? undefined : 'Pumili muna ng return method.',
       showCancelButton: true,
       confirmButtonText: 'Continue',
       cancelButtonText: 'Cancel',
     });
-    if (!tracking.isConfirmed) return;
+    if (!returnMethod.isConfirmed) return;
 
-    const carrier = await Swal.fire({
-      title: 'Return carrier',
-      text: 'Anong courier ang gagamitin mo sa pagbalik ng item?',
-      input: 'text',
-      inputPlaceholder: 'Hal. J&T, LBC, Ninja Van',
-      inputValidator: (value) => value.trim() ? undefined : 'Required ang carrier.',
-      showCancelButton: true,
-      confirmButtonText: 'Continue',
-      cancelButtonText: 'Cancel',
-    });
-    if (!carrier.isConfirmed) return;
+    const deliveryMethod = String(returnMethod.value || '');
+    const isShopOwnedReturn = deliveryMethod === 'shop_owned';
+    let trackingValue = '';
+    let carrierValue = '';
+
+    if (!isShopOwnedReturn) {
+      const tracking = await Swal.fire({
+        title: 'Ship the returned item',
+        text: 'Ilagay ang tracking number ng parcel na ibinabalik mo.',
+        input: 'text',
+        inputPlaceholder: 'Tracking number',
+        inputValidator: (value) => value.trim() ? undefined : 'Required ang tracking number.',
+        showCancelButton: true,
+        confirmButtonText: 'Continue',
+        cancelButtonText: 'Cancel',
+      });
+      if (!tracking.isConfirmed) return;
+      trackingValue = String(tracking.value || '').trim();
+
+      const carrier = await Swal.fire({
+        title: 'Return carrier',
+        text: 'Anong courier ang gagamitin mo sa pagbalik ng item?',
+        input: 'text',
+        inputPlaceholder: 'Hal. J&T, LBC, Ninja Van',
+        inputValidator: (value) => value.trim() ? undefined : 'Required ang carrier.',
+        showCancelButton: true,
+        confirmButtonText: 'Continue',
+        cancelButtonText: 'Cancel',
+      });
+      if (!carrier.isConfirmed) return;
+      carrierValue = String(carrier.value || '').trim();
+    }
 
     const note = await Swal.fire({
       title: 'Return note',
@@ -588,6 +613,15 @@ const MyOrders: React.FC = () => {
     });
     if (!note.isConfirmed) return;
 
+    const returnPayload: Record<string, string | null> = {
+      delivery_method: deliveryMethod,
+      note: String(note.value ?? '').trim() || null,
+    };
+    if (!isShopOwnedReturn) {
+      returnPayload.tracking_number = trackingValue;
+      returnPayload.carrier = carrierValue;
+    }
+
     try {
       const response = await fetch(`/orders/refunds/${stage.id}/mark-shipped-return`, {
         method: 'POST',
@@ -597,11 +631,7 @@ const MyOrders: React.FC = () => {
           'Accept': 'application/json',
           'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
         },
-        body: JSON.stringify({
-          tracking_number: String(tracking.value).trim(),
-          carrier: String(carrier.value).trim(),
-          note: String(note.value ?? '').trim() || null,
-        }),
+        body: JSON.stringify(returnPayload),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || 'Hindi ma-update ang return shipment.');
@@ -610,12 +640,24 @@ const MyOrders: React.FC = () => {
         ...currentOrder,
         refund_stage: currentOrder.refund_stage ? {
           ...currentOrder.refund_stage,
-          return_status: String(data.refund?.return_status || 'in_transit'),
+          logistics_shipment_id: data.refund?.logistics_shipment_id || currentOrder.refund_stage.logistics_shipment_id,
+          is_shop_owned_return: data.refund?.is_shop_owned_return ?? currentOrder.refund_stage.is_shop_owned_return,
+          delivery_rider_name: data.refund?.delivery_rider_name || null,
+          delivery_rider_phone: data.refund?.delivery_rider_phone || null,
+          delivery_reference: data.refund?.delivery_reference || null,
+          return_status: String(data.refund?.return_status || (isShopOwnedReturn ? 'pending_staff_pickup' : 'in_transit')),
           return_source: String(data.refund?.return_source || 'customer'),
-          customer_return_tracking_number: data.refund?.customer_return_tracking_number || String(tracking.value).trim(),
-          customer_return_carrier: data.refund?.customer_return_carrier || String(carrier.value).trim(),
+          customer_return_tracking_number: data.refund?.customer_return_tracking_number || (isShopOwnedReturn ? null : trackingValue),
+          customer_return_carrier: data.refund?.customer_return_carrier || (isShopOwnedReturn ? null : carrierValue),
           customer_return_tracking_link: data.refund?.customer_return_tracking_link || null,
-          customer_return_shipped_at: data.refund?.customer_return_shipped_at || new Date().toISOString(),
+          customer_return_shipped_at: data.refund?.customer_return_shipped_at || (isShopOwnedReturn ? null : new Date().toISOString()),
+          staff_return_tracking_number: data.refund?.staff_return_tracking_number || null,
+          staff_return_carrier: data.refund?.staff_return_carrier || null,
+          staff_return_rider_name: data.refund?.staff_return_rider_name || null,
+          staff_return_rider_phone: data.refund?.staff_return_rider_phone || null,
+          staff_return_tracking_link: data.refund?.staff_return_tracking_link || null,
+          staff_return_shipped_at: data.refund?.staff_return_shipped_at || null,
+          return_arranged_by_staff_at: data.refund?.return_arranged_by_staff_at || (isShopOwnedReturn ? new Date().toISOString() : null),
           can_mark_return_shipped: false,
         } : currentOrder.refund_stage,
       } : currentOrder));
@@ -623,7 +665,9 @@ const MyOrders: React.FC = () => {
       Swal.fire({
         icon: 'success',
         title: 'Return Shipment Submitted',
-        text: 'Na-record na ang return. Hintayin ang staff inspection bago ma-release ang refund.',
+        text: isShopOwnedReturn
+          ? 'Naipasa na ang pickup request sa dispatcher. I-aassign nila ito sa rider para maibalik sa shop.'
+          : 'Na-record na ang return. Hintayin ang staff inspection bago ma-release ang refund.',
         confirmButtonColor: '#000000',
       });
     } catch (error) {
