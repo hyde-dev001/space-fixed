@@ -205,6 +205,11 @@ class OrderRefundService
             $payload['customer_id'] = $payload['customer_id'] ?? $lockedOrder->customer_id;
             $payload['shop_owner_id'] = $payload['shop_owner_id'] ?? $lockedOrder->shop_owner_id;
             $payload['amount'] = $requestedAmount;
+            $payload['requires_owner_approval'] = $this->resolveRefundApprovalSnapshot(
+                $payload,
+                (int) $payload['shop_owner_id'],
+                $requestedAmount,
+            );
             $refund = $this->createReservedRefund($payload, $lockedOrder->id);
             $this->reconcileRefundLines($refund, $lines);
 
@@ -451,10 +456,7 @@ class OrderRefundService
             ];
         }
 
-        $requiresOwnerApproval = $this->shopOwnerApprovalPolicyService->requiresOwnerApprovalForRefund(
-            (int) ($refund->shop_owner_id ?? 0),
-            (float) ($refund->amount ?? 0)
-        );
+        $requiresOwnerApproval = (bool) ($refund->requires_owner_approval ?? true);
         if ($isExhaustedDeliveryRefund) {
             $requiresOwnerApproval = false;
         }
@@ -464,11 +466,6 @@ class OrderRefundService
         );
         $isCompanyCustomerRefund = strtolower(trim((string) ($order->shopOwner?->registration_type ?? ''))) === 'company'
             && !$isExhaustedDeliveryRefund;
-
-        // Individual shops should route refund approvals directly to shop owner without finance pre-approval.
-        if ($isIndividualRegistration && !$isExhaustedDeliveryRefund) {
-            $requiresOwnerApproval = true;
-        }
 
         $payload = [
             'approved_at' => $refund->approved_at ?? now(),
@@ -729,6 +726,10 @@ class OrderRefundService
 
         $isCompanyCustomerRefund = strtolower(trim((string) ($refund->order?->shopOwner?->registration_type ?? ''))) === 'company'
             && (string) ($refund->reason_code ?? '') !== 'delivery_attempts_exhausted';
+        $requiresOwnerApproval = (bool) ($refund->requires_owner_approval ?? true);
+        if ((string) ($refund->reason_code ?? '') === 'delivery_attempts_exhausted') {
+            $requiresOwnerApproval = false;
+        }
 
         if ($stageNormalized === 'finance') {
             if ($isCompanyCustomerRefund && (string) ($refund->shop_owner_status ?? 'pending') !== 'approved') {
@@ -768,6 +769,14 @@ class OrderRefundService
         }
 
         if ($stageNormalized === 'shop_owner') {
+            if (!$requiresOwnerApproval) {
+                return [
+                    'result' => 'invalid_state',
+                    'message' => 'Shop owner approval is not required by policy for this refund request.',
+                    'refund' => $refund,
+                ];
+            }
+
             $shopOwnerStatus = strtolower(trim((string) ($refund->shop_owner_status ?? 'pending')));
             $registrationType = strtolower(trim((string) ($refund->order?->shopOwner?->registration_type ?? '')));
             $isIndividualRegistration = $registrationType === 'individual';
@@ -1580,6 +1589,16 @@ class OrderRefundService
         }
     }
 
+    private function resolveRefundApprovalSnapshot(array $payload, int $shopOwnerId, float $amount): bool
+    {
+        if (($payload['flow_type'] ?? null) === 'cancel_auto'
+            || ($payload['reason_code'] ?? null) === 'delivery_attempts_exhausted') {
+            return false;
+        }
+
+        return $this->shopOwnerApprovalPolicyService->requiresOwnerApprovalForRefund($shopOwnerId, $amount);
+    }
+
     private function resolveOrderCapturedAmount(Order $order): float
     {
         $subtotal = max(0, (float) ($order->total_amount ?? 0));
@@ -1763,10 +1782,7 @@ class OrderRefundService
             return;
         }
 
-        $requiresOwnerApproval = $this->shopOwnerApprovalPolicyService->requiresOwnerApprovalForRefund(
-            (int) ($refund->shop_owner_id ?? 0),
-            (float) ($refund->amount ?? 0)
-        );
+        $requiresOwnerApproval = (bool) ($refund->requires_owner_approval ?? true);
         $isIndividualRegistration = $this->isIndividualRegistrationType(
             (string) ($order->shopOwner?->registration_type ?? '')
         );
@@ -1776,7 +1792,7 @@ class OrderRefundService
             'requires_owner_approval' => $requiresOwnerApproval,
         ]);
 
-        if ($isIndividualRegistration) {
+        if ($isIndividualRegistration && $requiresOwnerApproval) {
             $this->notificationService->notifyRefundRequest(
                 (int) ($refund->shop_owner_id ?? 0),
                 $data,

@@ -23,6 +23,7 @@ class RepairPosRefundService
 
     public function __construct(
         private readonly NotificationService $notificationService,
+        private readonly ShopOwnerApprovalPolicyService $shopOwnerApprovalPolicyService,
         private readonly ?RepairRefundRecoveryService $repairRefundRecoveryService = null,
     ) {}
 
@@ -206,6 +207,13 @@ class RepairPosRefundService
             ]);
         }
 
+        $requiresOwnerApproval = $workflowSource === 'delivery_reconciliation'
+            ? false
+            : $this->shopOwnerApprovalPolicyService->requiresOwnerApprovalForRefund(
+                (int) $source->shop_owner_id,
+                $requested,
+            );
+
         $refund = PosRefund::create([
             'refund_no' => 'RFD-' . now()->format('YmdHis') . '-' . str_pad((string) random_int(1, 999), 3, '0', STR_PAD_LEFT),
             'shop_owner_id' => $source->shop_owner_id,
@@ -224,6 +232,7 @@ class RepairPosRefundService
             'status' => 'requested',
             'finance_status' => 'pending',
             'shop_owner_status' => 'pending',
+            'requires_owner_approval' => $requiresOwnerApproval,
             'requested_by' => $actorId > 0 ? $actorId : null,
             'requested_at' => now(),
         ]);
@@ -521,6 +530,8 @@ class RepairPosRefundService
             ]);
         }
 
+        $requiresOwnerApproval = (bool) ($refund->requires_owner_approval ?? true);
+
         $notes = trim((string) ($refund->reason_notes ?? ''));
         if ($approvalNote) {
             $notes = trim($notes . "\n\nApproval note: " . trim($approvalNote));
@@ -542,9 +553,6 @@ class RepairPosRefundService
                 ]);
             }
 
-            $requiresOwnerApproval = app(ShopOwnerApprovalPolicyService::class)
-                ->requiresOwnerApprovalForRefund((int) $refund->shop_owner_id, $amountToApprove);
-
             $refund->update([
                 'status' => $requiresOwnerApproval ? 'requested' : 'approved',
                 'approved_amount' => round($amountToApprove, 2),
@@ -561,16 +569,22 @@ class RepairPosRefundService
                 title: 'Repair Refund Approved',
                 message: 'Your repair refund request was approved by finance.',
                 actionUrl: '/my-repairs',
-                includeOwner: true,
                 ownerTitle: 'Repair Refund Approved By Finance',
                 ownerMessage: "Repair refund {$refund->refund_no} was approved by finance.",
                 ownerActionUrl: '/shop-owner/refund-approvals',
+                includeOwner: $requiresOwnerApproval,
             );
 
             return $refund->fresh();
         }
 
         $isIndividualRegistration = $this->isIndividualShopOwner((int) $refund->shop_owner_id);
+
+        if (!$requiresOwnerApproval) {
+            throw ValidationException::withMessages([
+                'shop_owner_status' => ['Shop owner approval is not required by policy for this refund request.'],
+            ]);
+        }
 
         if (!$isIndividualRegistration && (string) ($refund->finance_status ?? 'pending') !== 'approved_initial') {
             throw ValidationException::withMessages([
@@ -622,6 +636,13 @@ class RepairPosRefundService
         }
 
         $isIndividualRegistration = $this->isIndividualShopOwner((int) $refund->shop_owner_id);
+        $requiresOwnerApproval = (bool) ($refund->requires_owner_approval ?? true);
+
+        if ($stage === 'shop_owner' && !$requiresOwnerApproval) {
+            throw ValidationException::withMessages([
+                'shop_owner_status' => ['Shop owner approval is not required by policy for this refund request.'],
+            ]);
+        }
 
         if ($stage === 'shop_owner' && !$isIndividualRegistration && (string) ($refund->finance_status ?? 'pending') !== 'approved_initial') {
             throw ValidationException::withMessages([
@@ -659,7 +680,7 @@ class RepairPosRefundService
                 title: 'Repair Refund Rejected',
                 message: 'Your repair refund request was rejected. Please review the provided reason.',
                 actionUrl: '/my-repairs',
-                includeOwner: true,
+                includeOwner: $requiresOwnerApproval,
             );
         }
 
@@ -1306,13 +1327,41 @@ class RepairPosRefundService
             $source->loadMissing('receipt');
 
             $orderNumber = (string) ($source->receipt?->receipt_no ?? $source->transaction_no ?? $refund->refund_no);
+            $requiresOwnerApproval = (bool) ($refund->requires_owner_approval ?? true);
+            $workflowSource = strtolower((string) ($refund->workflow_source ?? 'pos'));
+
+            if (!$requiresOwnerApproval && $workflowSource === 'online_myrepair') {
+                return;
+            }
+
+            if (!$requiresOwnerApproval) {
+                $this->notificationService->sendToErpRole(
+                    roleName: 'Finance',
+                    shopId: (int) $refund->shop_owner_id,
+                    type: NotificationType::REFUND_REQUEST,
+                    title: 'Repair Refund Ready For Finance Review',
+                    message: "Repair refund {$refund->refund_no} is ready for finance review.",
+                    data: [
+                        'refund_id' => (int) $refund->id,
+                        'refund_no' => (string) $refund->refund_no,
+                        'order_number' => $orderNumber,
+                        'amount' => number_format($requestedAmount, 2, '.', ''),
+                        'workflow_source' => $workflowSource,
+                        'status' => (string) ($refund->status ?? 'requested'),
+                    ],
+                    actionUrl: '/finance?section=refund-approvals',
+                    priority: 'high',
+                );
+
+                return;
+            }
 
             $notification = $this->notificationService->notifyRefundRequest((int) $refund->shop_owner_id, [
                 'refund_id' => (int) $refund->id,
                 'refund_no' => (string) $refund->refund_no,
                 'order_number' => $orderNumber,
                 'amount' => number_format($requestedAmount, 2, '.', ''),
-                'workflow_source' => (string) ($refund->workflow_source ?? 'pos'),
+                'workflow_source' => $workflowSource,
                 'status' => (string) ($refund->status ?? 'requested'),
             ]);
 

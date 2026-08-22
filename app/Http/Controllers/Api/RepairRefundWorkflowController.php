@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Models\PosRefund;
 use App\Models\RepairRequest;
 use App\Services\PaymentSettlementService;
-use App\Services\ShopOwnerApprovalPolicyService;
 use App\Services\RepairOnlineRefundWorkflowService;
 use App\Services\RepairPosRefundService;
 use App\Services\Orders\OrderRefundOwnerProjection;
@@ -489,8 +488,7 @@ class RepairRefundWorkflowController extends Controller
         $shopOwnerStatus = strtolower((string) ($refund->shop_owner_status ?? 'pending'));
         $status = strtolower((string) $refund->status);
 
-        $requiresOwnerApproval = app(ShopOwnerApprovalPolicyService::class)
-            ->requiresOwnerApprovalForRefund((int) $refund->shop_owner_id, (float) ($refund->requested_amount ?? 0));
+        $requiresOwnerApproval = (bool) ($refund->requires_owner_approval ?? true);
 
         $approvalStage = 'none';
         if ($financeStatus === 'pending') {

@@ -32,7 +32,9 @@ class RepairOnlineRefundWorkflowService
             'status' => 'requested',
         ]);
 
-        if ($this->isIndividualShopOwner((int) $refund->shop_owner_id)) {
+        $requiresOwnerApproval = (bool) ($refund->requires_owner_approval ?? true);
+
+        if ($requiresOwnerApproval && $this->isIndividualShopOwner((int) $refund->shop_owner_id)) {
             $this->notificationService->sendToShopOwner(
                 shopOwnerId: (int) $refund->shop_owner_id,
                 type: NotificationType::REFUND_REQUEST,

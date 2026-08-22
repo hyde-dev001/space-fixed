@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\OrderRefund;
 use App\Services\OrderRefundService;
-use App\Services\ShopOwnerApprovalPolicyService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -13,7 +12,6 @@ class RefundApprovalController extends Controller
 {
     public function __construct(
         private readonly OrderRefundService $orderRefundService,
-        private readonly ShopOwnerApprovalPolicyService $shopOwnerApprovalPolicyService,
     ) {
     }
 
@@ -366,10 +364,7 @@ class RefundApprovalController extends Controller
             && $shippingFee > 0
             && str_contains($cleanReasonNote, OrderRefundService::FINANCE_SHIPPING_DECISION_MARKER);
 
-        $requiresOwnerApproval = $this->shopOwnerApprovalPolicyService->requiresOwnerApprovalForRefund(
-            (int) ($refund->shop_owner_id ?? 0),
-            $effectiveAmount
-        );
+        $requiresOwnerApproval = (bool) ($refund->requires_owner_approval ?? true);
 
         $approvalStage = 'none';
         if ($financeStatus === 'pending') {
