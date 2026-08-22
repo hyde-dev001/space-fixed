@@ -25,7 +25,7 @@ The private proof endpoint authorizes same-shop users with `access-staff-job-ord
 3. The service rejects `customer_confirmed` for any reason other than `item_not_received`.
 4. Resolve is hidden while a dispute is open and appears only after investigation starts.
 5. A direct resolve request for an open dispute is rejected and leaves the dispute open.
-6. Staff can click a delivery-proof thumbnail on Job Orders and view the full image in a modal, with an accessible close action.
+6. Staff can click a delivery-proof thumbnail on Job Orders and view the full image in a modal above the Order Details modal, with an accessible close action.
 7. Same-shop staff can fetch retail delivery proof files, while unrelated logistics proof files remain forbidden.
 8. Existing legacy resolution records remain readable and existing refund/return processing is not changed.
 

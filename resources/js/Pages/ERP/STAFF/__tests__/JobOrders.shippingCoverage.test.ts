@@ -396,6 +396,20 @@ describe('staff refund visibility', () => {
     expect(screen.getByText('No proof submitted yet.')).toBeInTheDocument();
   });
 
+  it('keeps the delivery proof viewer above the order details modal', async () => {
+    const order = makeRefundOrder();
+    mockPage.props.initialOrders = [order];
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(jsonResponse(200, [order]))));
+
+    render(React.createElement(JobOrdersPage));
+    fireEvent.click(await screen.findByRole('button', { name: 'Refund (1)' }));
+    fireEvent.click((await screen.findAllByTitle('View order details'))[0]);
+    fireEvent.click(screen.getByRole('button', { name: 'Return delivery proof 1' }));
+
+    const proofDialog = screen.getByRole('dialog', { name: 'Delivery proof image' });
+    expect(proofDialog.closest('.modal')).toHaveStyle({ zIndex: '1000000' });
+  });
+
   it('shows a shipment even before its delivery leg is created', async () => {
     const order = {
       ...makeOrder(43),
