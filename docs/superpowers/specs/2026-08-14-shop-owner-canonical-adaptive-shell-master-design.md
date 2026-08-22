@@ -98,6 +98,7 @@ This master design changes the long-term Shop Owner experience, not the authorit
 - [`2026-08-10-business-scaling-module-access-design.md`](./2026-08-10-business-scaling-module-access-design.md) remains authoritative for registration type, business type, module eligibility, enabled state, and business-scaling transitions.
 - [`2026-08-11-owner-erp-operational-parity-fixes-design.md`](./2026-08-11-owner-erp-operational-parity-fixes-design.md) and later focused operational designs remain authoritative for the corrected behaviors they introduced.
 - Finance, Refund, Logistics, Procurement, Payroll, Warranty, payment-recovery, and compliance designs remain authoritative for their domain invariants.
+- [`2026-08-22-shop-owner-phase-4-approval-simplification-design.md`](./2026-08-22-shop-owner-phase-4-approval-simplification-design.md) defines the Phase 4 approval-policy and centralized Action Center changes while preserving those domain authorities.
 
 This master design supersedes the earlier designs only in the final user-facing topology after the relevant phases are implemented: one canonical Shop Owner shell replaces the separate legacy and owner ERP portal experiences. It does not supersede employee ERP navigation or the shared domain safeguards used by owner ERP routes.
 
