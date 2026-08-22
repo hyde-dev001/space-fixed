@@ -42,6 +42,11 @@ describe('payment shipping voucher integration', () => {
     expect(paymentSource).toContain('Claim for later');
     expect(paymentSource).toContain('role="listbox"');
     expect(paymentSource).toContain('aria-expanded={showVoucherSuggestionDropdown}');
+    expect(paymentSource).toContain('max-h-[15rem]');
+    expect(paymentSource).toContain('overflow-x-auto');
+    expect(paymentSource).toContain('snap-x');
+    expect(paymentSource).toContain('min-w-[250px]');
+    expect(paymentSource).toContain('snap-start');
     expect(paymentSource).toContain('/api/products/${voucher.claim_product_id}/vouchers/${voucher.id}/claim');
     expect(paymentSource).toContain("'X-CSRF-TOKEN'");
   });
