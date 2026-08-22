@@ -278,9 +278,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
       input: 'select',
       inputOptions: {
         customer_confirmed: 'Customer confirmed',
-        refund_required: 'Refund required',
-        replacement_required: 'Replacement required',
-        return_required: 'Return required',
+        refund_required: 'Refund / Return required',
         report_rejected: 'Reject report',
       },
       inputPlaceholder: 'Choose a resolution',
@@ -724,7 +722,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                           {!ownerMode && !riderMode && canResolveDisputes && ['open', 'investigating'].includes(dispute.status) && (
                             <div className="flex flex-wrap gap-2">
                               {dispute.status === 'open' && <button type="button" onClick={() => void investigateCustomerDispute(dispute.id)} className="rounded-lg border border-rose-700 px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-100 dark:text-rose-300 dark:hover:bg-rose-900/40">Start investigation</button>}
-                              <button type="button" onClick={() => void resolveCustomerDispute(dispute.id)} className="rounded-lg bg-rose-700 px-3 py-2 text-xs font-semibold text-white hover:bg-rose-800">Resolve</button>
+                              {dispute.status === 'investigating' && <button type="button" onClick={() => void resolveCustomerDispute(dispute.id)} className="rounded-lg bg-rose-700 px-3 py-2 text-xs font-semibold text-white hover:bg-rose-800">Resolve</button>}
                             </div>
                           )}
                         </div>

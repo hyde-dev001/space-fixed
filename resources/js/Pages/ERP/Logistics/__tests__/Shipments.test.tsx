@@ -931,3 +931,63 @@ it('shows dispatcher incident details and saves a resolution', async () => {
   expect((mocks.post.mock.calls[0][1] as FormData).get('resolution')).toBe('dismissed');
   expect((mocks.post.mock.calls[0][1] as FormData).get('note')).toBe('Dispatcher reviewed the customer claim.');
 });
+
+it('requires investigation before showing customer dispute resolution', async () => {
+  setDispatcherLeg({
+    ...defaultProps().shipments.data[0].legs[0],
+    status: 'delivered',
+  });
+  mocks.props.canResolveDisputes = true;
+  mocks.props.shipments.data[0].customer_disputes = [{
+    id: 51,
+    status: 'open',
+    reason: 'item_not_received',
+    notes: 'Customer says the order was not received.',
+    reported_at: '2026-07-21T10:00:00Z',
+    resolution: null,
+  }];
+
+  render(<Shipments />);
+  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+
+  expect(screen.getByRole('button', { name: 'Start investigation' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Resolve' })).not.toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Start investigation' }));
+
+  await waitFor(() => expect(mocks.post).toHaveBeenCalledWith(
+    '/api/logistics/delivery-disputes/51/investigate',
+    undefined,
+    undefined,
+  ));
+});
+
+it('offers only supported dispute resolutions after investigation starts', async () => {
+  setDispatcherLeg({
+    ...defaultProps().shipments.data[0].legs[0],
+    status: 'delivered',
+  });
+  mocks.props.canResolveDisputes = true;
+  mocks.props.shipments.data[0].customer_disputes = [{
+    id: 52,
+    status: 'investigating',
+    reason: 'damaged',
+    notes: 'Customer reported damage.',
+    reported_at: '2026-07-21T10:00:00Z',
+    resolution: null,
+  }];
+  mocks.post.mockResolvedValue(undefined);
+
+  render(<Shipments />);
+  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Resolve' }));
+
+  await waitFor(() => expect(Swal.fire).toHaveBeenCalledWith(expect.objectContaining({
+    title: 'Resolve customer dispute',
+    inputOptions: {
+      customer_confirmed: 'Customer confirmed',
+      refund_required: 'Refund / Return required',
+      report_rejected: 'Reject report',
+    },
+  })));
+});
