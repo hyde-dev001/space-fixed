@@ -39,6 +39,12 @@ const arrivalReasons = [
   ['other', 'Other'],
 ] as const;
 
+const arrivalResultLabel = (value: unknown): string | null => ({
+  outside_geofence: 'Outside geofence',
+  low_accuracy: 'Low GPS accuracy',
+  location_unavailable: 'Location unavailable',
+}[String(value ?? '')] ?? null);
+
 const isCompactViewport = () =>
   typeof window !== 'undefined' && window.innerWidth < 1280;
 
@@ -681,6 +687,7 @@ function DeliveryActions({
   const [incidentNotes, setIncidentNotes] = useState('');
   const [incidentFile, setIncidentFile] = useState<File | null>(null);
   const [showArrivalReason, setShowArrivalReason] = useState(false);
+  const [arrivalResult, setArrivalResult] = useState<string | null>(null);
   const [arrivalReason, setArrivalReason] = useState('');
   const [arrivalNotes, setArrivalNotes] = useState('');
   const arrivalEvidence = useRef<Record<string, unknown> | null>(null);
@@ -961,6 +968,7 @@ function DeliveryActions({
   const arrivalKey = `arrival:${delivery.id}`;
   const recordArrival = () => {
     if (!arrivalPhase) return;
+    setArrivalResult(null);
     runAction(
       arrivalKey,
       async () => {
@@ -979,6 +987,10 @@ function DeliveryActions({
       undefined,
       (error) => {
         if (!needsArrivalReason(error)) return false;
+        const response = (error as {
+          response?: { data?: { errors?: Record<string, string[]> } };
+        })?.response;
+        setArrivalResult(arrivalResultLabel(response?.data?.errors?.arrival_result?.[0]));
         setShowArrivalReason(true);
         return true;
       },
@@ -1018,7 +1030,9 @@ function DeliveryActions({
       {showArrivalReason && (
         <div className="space-y-3 rounded-xl border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/30">
           <p className="text-sm text-amber-950 dark:text-amber-100">
-            Location could not be verified. Choose a reason to continue.
+            {arrivalResult
+              ? `${arrivalResult}. Choose a reason to continue.`
+              : 'Location could not be verified. Choose a reason to continue.'}
           </p>
           <label className="block text-sm font-semibold">
             Arrival reason

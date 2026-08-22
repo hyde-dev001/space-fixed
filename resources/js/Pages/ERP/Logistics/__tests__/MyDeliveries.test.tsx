@@ -292,13 +292,22 @@ describe('MyDeliveries task-first hierarchy', () => {
 
   it('opens the arrival reason picker in an accessible modal on compact viewports', async () => {
     mocks.arrive.mockRejectedValueOnce({
-      response: { status: 422, data: { errors: { exception_reason: ['Reason required.'] } } },
+      response: {
+        status: 422,
+        data: {
+          errors: {
+            exception_reason: ['Reason required.'],
+            arrival_result: ['outside_geofence'],
+          },
+        },
+      },
     });
     mocks.props.deliveryData.current = workItem('single', 'in_transit', [leg(10, null, 'in_transit')]);
     render(<MyDeliveries />);
 
     fireEvent.click(screen.getByRole('button', { name: "I've arrived" }));
     await waitFor(() => expect(screen.getByLabelText('Arrival reason')).toBeVisible());
+    expect(screen.getByText(/Outside geofence/)).toBeVisible();
 
     fireEvent.pointerDown(screen.getByLabelText('Arrival reason'));
 
