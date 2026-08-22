@@ -107,6 +107,7 @@ class ApprovalWorkflowServicesTest extends TestCase
 
     public function test_expense_approval_service_marks_final_approval(): void
     {
+        $this->setExpenseApprovalPolicy(true);
         $service = app(ExpenseApprovalService::class);
         $expense = $this->createExpense();
         $expense->update(['amount' => 6000]);
@@ -122,6 +123,41 @@ class ApprovalWorkflowServicesTest extends TestCase
         $expense->refresh();
         $this->assertEquals('approved', $expense->status);
         $this->assertEquals($approval->fresh()->current_level, $expense->current_approval_level);
+    }
+
+    public function test_expense_approval_service_freezes_the_manual_owner_policy_role_map(): void
+    {
+        $service = app(ExpenseApprovalService::class);
+        $this->setExpenseApprovalPolicy(true);
+        $onExpense = $this->createExpense();
+        $onApproval = $service->createExpenseApproval($onExpense, $this->requester);
+
+        $this->assertSame([
+            '1' => 'finance',
+            '2' => 'shop_owner',
+        ], $onApproval->approval_roles);
+
+        $this->setExpenseApprovalPolicy(false);
+        $onFirstApproval = $service->approveExpense($onExpense->fresh(), $this->financeUser, 'Finance review');
+
+        $this->assertTrue($onFirstApproval['success']);
+        $this->assertFalse($onFirstApproval['is_final']);
+
+        $this->setExpenseApprovalPolicy(false);
+        $offExpense = $this->createExpense();
+        $offExpense->update(['amount' => 6000]);
+        $offApproval = $service->createExpenseApproval($offExpense, $this->requester);
+
+        $this->assertSame(['1' => 'finance'], $offApproval->approval_roles);
+    }
+
+    public function test_manual_approval_excludes_payroll_expense_sources(): void
+    {
+        $expense = $this->createExpense();
+        $expense->update(['meta' => ['source' => 'payroll']]);
+
+        $this->expectException(\LogicException::class);
+        app(ExpenseApprovalService::class)->createExpenseApproval($expense, $this->requester);
     }
 
     public function test_payslip_approval_service_marks_final_approval(): void
@@ -246,6 +282,14 @@ class ApprovalWorkflowServicesTest extends TestCase
             'tax_amount' => 0,
             'status' => 'submitted',
         ]);
+    }
+
+    private function setExpenseApprovalPolicy(bool $enabled): void
+    {
+        $settings = ProcurementSettings::getForShopOwner($this->shopOwnerRecord->id);
+        $settingsJson = $settings->settings_json;
+        $settingsJson['approval_pages']['expense_approval']['enabled'] = $enabled;
+        $settings->update(['settings_json' => $settingsJson]);
     }
 
     private function createPayroll(): Payroll

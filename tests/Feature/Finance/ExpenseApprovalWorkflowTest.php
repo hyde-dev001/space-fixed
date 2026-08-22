@@ -7,6 +7,7 @@ use App\Models\Finance\Expense;
 use App\Models\Finance\ExpenseSettlement;
 use App\Models\ShopOwner;
 use App\Models\User;
+use App\Models\ProcurementSettings;
 use App\Services\ExpenseApprovalService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Permission;
@@ -77,6 +78,7 @@ class ExpenseApprovalWorkflowTest extends TestCase
 
     public function test_low_value_expense_has_one_finance_approval(): void
     {
+        $this->setExpenseApprovalPolicy(false);
         $expense = $this->createWorkflowBoundExpense();
         $approval = $expense->approval()->firstOrFail();
 
@@ -98,8 +100,16 @@ class ExpenseApprovalWorkflowTest extends TestCase
 
     public function test_high_value_expense_escalates_once_to_shop_owner(): void
     {
+        $this->setExpenseApprovalPolicy(true);
         $expense = $this->createWorkflowBoundExpense(6000);
-        $this->assertSame(2, $expense->approval()->firstOrFail()->total_levels);
+        $approval = $expense->approval()->firstOrFail();
+        $this->assertSame(2, $approval->total_levels);
+        $this->assertSame([
+            '1' => 'finance',
+            '2' => 'shop_owner',
+        ], $approval->approval_roles);
+
+        $this->setExpenseApprovalPolicy(false);
 
         $first = $this->actingAs($this->financeFirst, 'user')
             ->postJson("/api/finance/expenses/{$expense->id}/approve", [
@@ -118,6 +128,78 @@ class ExpenseApprovalWorkflowTest extends TestCase
             ]);
         $final->assertStatus(200)->assertJson(['is_final' => true]);
         $this->assertSame('approved', $expense->fresh()->status);
+    }
+
+    public function test_enabled_policy_requires_owner_for_low_value_manual_expense(): void
+    {
+        $this->setExpenseApprovalPolicy(true);
+        $expense = $this->createWorkflowBoundExpense(100);
+        $approval = $expense->approval()->firstOrFail();
+
+        $this->assertSame(2, $approval->total_levels);
+        $this->assertSame([
+            '1' => 'finance',
+            '2' => 'shop_owner',
+        ], $approval->approval_roles);
+
+        $this->actingAs($this->financeFirst, 'user')
+            ->postJson("/api/finance/expenses/{$expense->id}/approve", [
+                'approval_notes' => 'Finance review complete',
+            ])
+            ->assertOk()
+            ->assertJson(['is_final' => false]);
+
+        $this->assertSame(2, $expense->fresh()->current_approval_level);
+    }
+
+    public function test_disabled_policy_keeps_high_value_manual_expense_finance_only(): void
+    {
+        $this->setExpenseApprovalPolicy(false);
+        $expense = $this->createWorkflowBoundExpense(6000);
+        $approval = $expense->approval()->firstOrFail();
+
+        $this->assertSame(1, $approval->total_levels);
+        $this->assertSame(['1' => 'finance'], $approval->approval_roles);
+
+        $this->actingAs($this->financeFirst, 'user')
+            ->postJson("/api/finance/expenses/{$expense->id}/approve", [
+                'approval_notes' => 'Finance approved without owner stage',
+            ])
+            ->assertOk()
+            ->assertJson(['is_final' => true]);
+
+        $this->assertSame('approved', $expense->fresh()->status);
+    }
+
+    public function test_shop_owner_cannot_act_at_the_initial_finance_level(): void
+    {
+        $this->setExpenseApprovalPolicy(true);
+        $expense = $this->createWorkflowBoundExpense(100);
+
+        $this->actingAs($this->shopOwnerMappedUser, 'user')
+            ->postJson("/api/finance/expenses/{$expense->id}/approve", [
+                'approval_notes' => 'Wrong stage',
+            ])
+            ->assertStatus(422)
+            ->assertJsonPath('details.success', false);
+
+        $this->assertSame(1, $expense->fresh()->current_approval_level);
+    }
+
+    public function test_foreign_finance_user_cannot_approve_an_expense_from_another_shop(): void
+    {
+        $expense = $this->createWorkflowBoundExpense(100);
+        $foreignShop = ShopOwner::factory()->approved()->create();
+        $foreignFinance = User::factory()->create(['shop_owner_id' => $foreignShop->id]);
+        $foreignFinance->assignRole('finance');
+
+        $this->actingAs($foreignFinance, 'user')
+            ->postJson("/api/finance/expenses/{$expense->id}/approve", [
+                'approval_notes' => 'Foreign shop attempt',
+            ])
+            ->assertNotFound();
+
+        $this->assertSame(1, $expense->fresh()->current_approval_level);
     }
 
     public function test_rejecting_a_paid_expense_does_not_create_a_reversal(): void
@@ -148,6 +230,7 @@ class ExpenseApprovalWorkflowTest extends TestCase
     {
         $this->withMiddleware();
         $this->financeFirst->givePermissionTo('access-approval-workflow');
+        $this->setExpenseApprovalPolicy(false);
 
         $expense = $this->createWorkflowBoundExpense();
 
@@ -191,5 +274,13 @@ class ExpenseApprovalWorkflowTest extends TestCase
         ]);
 
         return $expense->fresh();
+    }
+
+    private function setExpenseApprovalPolicy(bool $enabled): void
+    {
+        $settings = ProcurementSettings::getForShopOwner($this->shopOwnerAuth->id);
+        $settingsJson = $settings->settings_json;
+        $settingsJson['approval_pages']['expense_approval']['enabled'] = $enabled;
+        $settings->update(['settings_json' => $settingsJson]);
     }
 }
