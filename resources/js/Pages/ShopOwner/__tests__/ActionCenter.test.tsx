@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 import ActionCenter from "../ActionCenter";
 import type { OwnerActionCenterResult, OwnerAttentionItem } from "../../../types/ownerActionCenter";
@@ -42,10 +42,36 @@ const item = (overrides: Partial<OwnerAttentionItem> = {}): OwnerAttentionItem =
 
 const result = (overrides: Partial<OwnerActionCenterResult> = {}): OwnerActionCenterResult => ({
   items: [item()],
-  coverage_counts: { refunds: 0, expenses: 1, purchase_requests: 0 },
+  coverage_counts: {
+    refunds: 0,
+    prices: 0,
+    payslips: 0,
+    salary_changes: 0,
+    expenses: 1,
+    purchase_requests: 0,
+    repair_rejections: 0,
+  },
   health: {
-    enabled_adapter_keys: ["order_refunds", "repair_refunds", "expenses", "purchase_requests"],
-    healthy_adapter_keys: ["order_refunds", "repair_refunds", "expenses", "purchase_requests"],
+    enabled_adapter_keys: [
+      "order_refunds",
+      "repair_refunds",
+      "price_approvals",
+      "payslips",
+      "salary_changes",
+      "expenses",
+      "purchase_requests",
+      "repair_rejections",
+    ],
+    healthy_adapter_keys: [
+      "order_refunds",
+      "repair_refunds",
+      "price_approvals",
+      "payslips",
+      "salary_changes",
+      "expenses",
+      "purchase_requests",
+      "repair_rejections",
+    ],
     failed_adapter_keys: [],
   },
   degradation_status: "none",
@@ -130,8 +156,25 @@ const waitingResult = (overrides: Partial<OwnerActionCenterResult> = {}): OwnerA
 });
 
 describe("Shop Owner Action Center", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   beforeEach(() => {
     mocks.reload.mockReset();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        id: 12,
+        reference: "EXP-12",
+        category: "Operations",
+        description: "Submitted supplier expense",
+        amount: 450,
+        status: "submitted",
+        created_at: "2026-08-14T09:00:00+08:00",
+        approval: { current_approver_role: "shop_owner" },
+      }),
+    }));
     mocks.props = {
       ownerActionCenter: result(),
       source: "all",
@@ -310,7 +353,7 @@ describe("Shop Owner Action Center", () => {
     );
   });
 
-  it("renders grounded decisions with enabled filters and workflow links", () => {
+  it("renders grounded decisions with all seven approval filters and review-only rows", async () => {
     render(<ActionCenter />);
 
     expect(screen.getByRole("heading", { name: /owner action center/i })).toBeInTheDocument();
@@ -319,23 +362,78 @@ describe("Shop Owner Action Center", () => {
     expect(screen.getAllByText(/Expense/i).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText(/450\.00/)).toBeInTheDocument();
     expect(screen.getByText(/Priority:\s*High/i)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Open workflow/i })).toHaveAttribute(
-      "href",
-      "/shop-owner/expense-approvals?expense=12",
-    );
+    for (const label of [
+      "Refunds",
+      "Prices",
+      "Payslips",
+      "Salary Adjustments",
+      "Purchase Requests",
+      "Expenses",
+      "Repair Rejections",
+    ]) {
+      expect(screen.getByRole("link", { name: new RegExp(`^${label}$`, "i") })).toBeInTheDocument();
+    }
     expect(screen.getByRole("link", { name: /^Refunds$/i })).toHaveAttribute(
       "href",
       expect.stringContaining("source=refunds"),
     );
-    expect(screen.getByRole("link", { name: /^Expenses$/i })).toHaveAttribute(
-      "href",
-      expect.stringContaining("source=expenses"),
-    );
-    expect(screen.getByRole("link", { name: /^Purchase Requests$/i })).toHaveAttribute(
-      "href",
-      expect.stringContaining("source=purchase_requests"),
-    );
-    expect(screen.queryByRole("button", { name: /approve|reject/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Review Supplier expense/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Approve$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Reject$/i })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Review Supplier expense/i }));
+    await waitFor(() => expect(screen.getByRole("dialog", { name: /Expense approval/i })).toBeInTheDocument());
+  });
+
+  it("labels all seven approval families and keeps decisions at review level in the queue", () => {
+    const approvals: Array<{
+      source_type: OwnerAttentionItem["source_type"];
+      coverage_source: OwnerAttentionItem["coverage_source"];
+      title: string;
+    }> = [
+      { source_type: "order_refund", coverage_source: "refunds", title: "Order refund approval" },
+      { source_type: "product_price_change", coverage_source: "prices", title: "Product price approval" },
+      { source_type: "payslip", coverage_source: "payslips", title: "Payslip approval" },
+      { source_type: "salary_change", coverage_source: "salary_changes", title: "Salary adjustment approval" },
+      { source_type: "purchase_request", coverage_source: "purchase_requests", title: "Purchase request approval" },
+      { source_type: "expense", coverage_source: "expenses", title: "Expense approval" },
+      { source_type: "repair_rejection", coverage_source: "repair_rejections", title: "Repair rejection approval" },
+    ];
+
+    mocks.props = {
+      ...mocks.props,
+      ownerActionCenter: result({
+        items: approvals.map((approval, index) => item({
+          attention_key: `${approval.source_type}:${index + 1}:owner_approval`,
+          source_type: approval.source_type,
+          source_id: index + 1,
+          title: approval.title,
+          coverage_source: approval.coverage_source,
+          comparable_monetary_exposure: 100 + index,
+          destination_url: `/shop-owner/action-center?approval=${approval.source_type}:${index + 1}`,
+        })),
+        coverage_counts: {
+          refunds: 1,
+          prices: 1,
+          payslips: 1,
+          salary_changes: 1,
+          expenses: 1,
+          purchase_requests: 1,
+          repair_rejections: 1,
+        },
+        pagination: { page: 1, per_page: 20, total: 7, last_page: 1 },
+      }),
+    };
+
+    render(<ActionCenter />);
+
+    for (const approval of approvals) {
+      expect(screen.getByText(approval.title)).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: `Review ${approval.title}` })).toBeInTheDocument();
+    }
+    expect(screen.getAllByRole("button", { name: /^Review /i })).toHaveLength(7);
+    expect(screen.queryByRole("button", { name: /^Approve$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Reject$/i })).not.toBeInTheDocument();
   });
 
   it("labels partial coverage and names the failed source", () => {

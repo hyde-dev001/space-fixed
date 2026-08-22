@@ -1,12 +1,16 @@
 import { Head, router, usePage } from "@inertiajs/react";
+import { useEffect, useRef, useState } from "react";
 import AppLayoutShopOwner from "../../layout/AppLayout_shopOwner";
 import OwnerActionCenterAvailability from "../../components/owner-action-center/OwnerActionCenterAvailability";
 import OwnerAttentionList from "../../components/owner-action-center/OwnerAttentionList";
+import OwnerApprovalDetailPanel from "../../components/owner-action-center/OwnerApprovalDetailPanel";
+import OwnerApprovalFilters, { actionCenterUrl } from "../../components/owner-action-center/OwnerApprovalFilters";
+import { approvalDefinitionFor } from "../../components/owner-action-center/approvalPanelRegistry";
 import { parseApprovalSelection, type ApprovalSelection } from "../../components/owner-action-center/approvalSelection";
 import type {
   OwnerActionCenterCoverage,
+  OwnerAttentionItem,
   OwnerActionCenterResult,
-  OwnerAttentionAdapterKey,
   OwnerAttentionBucket,
   OwnerAttentionCoverageSource,
 } from "../../types/ownerActionCenter";
@@ -22,59 +26,31 @@ interface ActionCenterPageProps {
   approvalSelectionError?: "invalid" | null;
 }
 
-const filterLabels: Array<{ key: OwnerAttentionCoverageSource; label: string }> = [
-  { key: "refunds", label: "Refunds" },
-  { key: "expenses", label: "Expenses" },
-  { key: "purchase_requests", label: "Purchase Requests" },
-  { key: "compliance", label: "Compliance" },
-  { key: "logistics", label: "Logistics" },
-];
-
-const adapterCoverage = (key: OwnerAttentionAdapterKey): OwnerAttentionCoverageSource | null => {
-  if (["order_refunds", "repair_refunds", "failed_order_refunds", "failed_repair_refunds"].includes(key)) return "refunds";
-  if (["waiting_order_refund_recovery", "waiting_repair_refund_recovery"].includes(key)) return "refunds";
-  if (key === "expenses") return "expenses";
-  if (key === "purchase_requests") return "purchase_requests";
-  if (["compliance_documents", "pending_compliance_renewals"].includes(key)) return "compliance";
-  if (["unowned_logistics_failures", "active_logistics_recovery"].includes(key)) return "logistics";
-  return null;
+const approvalCoverage = (sourceType: OwnerAttentionItem["source_type"]): OwnerAttentionCoverageSource => {
+  if (sourceType === "product_price_change" || sourceType === "repair_price_change" || sourceType === "repair_package_price_change") return "prices";
+  if (sourceType === "payslip") return "payslips";
+  if (sourceType === "salary_change") return "salary_changes";
+  if (sourceType === "purchase_request") return "purchase_requests";
+  if (sourceType === "expense") return "expenses";
+  if (sourceType === "repair_rejection") return "repair_rejections";
+  return "refunds";
 };
 
-const bucketCoverages: Record<OwnerAttentionBucket, OwnerAttentionCoverageSource[]> = {
-  needs_my_decision: ["refunds", "expenses", "purchase_requests"],
-  urgent_exceptions: ["compliance", "refunds", "logistics"],
-  waiting_on_others: ["compliance", "refunds", "logistics"],
+const approvalUrl = (selection: ApprovalSelection): string => {
+  if (typeof window === "undefined") {
+    return `/shop-owner/action-center?approval=${selection.sourceType}:${selection.sourceId}`;
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  params.set("approval", `${selection.sourceType}:${selection.sourceId}`);
+  return `${window.location.pathname}?${params.toString()}`;
 };
 
-const availableFilters = (result: OwnerActionCenterResult): Array<{ key: OwnerActionCenterCoverage; label: string }> => {
-  const allowedCoverages = bucketCoverages[result.bucket];
-  const coverages = Array.from(new Set(result.health.enabled_adapter_keys
-    .map(adapterCoverage)
-    .filter((coverage): coverage is OwnerAttentionCoverageSource => coverage !== null)
-    .filter((coverage) => allowedCoverages.includes(coverage))));
-
-  if (coverages.length <= 1) return [];
-
-  return [
-    { key: "all", label: "All" },
-    ...filterLabels.filter(({ key }) => coverages.includes(key)),
-  ];
-};
-
-const actionCenterUrl = (
-  bucket: OwnerAttentionBucket,
-  source: OwnerActionCenterCoverage,
-  page: number,
-  perPage: number,
-): string => {
-  const params = new URLSearchParams({
-    bucket,
-    source,
-    page: String(page),
-    per_page: String(perPage),
-  });
-
-  return `/shop-owner/action-center?${params.toString()}`;
+const clearApprovalUrl = (): string => {
+  const params = new URLSearchParams(window.location.search);
+  params.delete("approval");
+  const query = params.toString();
+  return `${window.location.pathname}${query ? `?${query}` : ""}`;
 };
 
 const pageNumbers = (current: number, last: number): number[] => {
@@ -92,13 +68,71 @@ export default function ActionCenter() {
   const page = result?.pagination.page ?? props.page ?? 1;
   const perPage = result?.pagination.per_page ?? props.per_page ?? 20;
   const lastPage = result?.pagination.last_page ?? 1;
-  const filters = result === null ? [] : availableFilters(result);
   const summaries = props.bucketSummaries ?? {};
   const rawApproval = typeof window === "undefined"
     ? null
     : new URLSearchParams(window.location.search).get("approval");
   const hasInvalidApproval = props.approvalSelectionError === "invalid"
     || (rawApproval !== null && parseApprovalSelection(rawApproval) === null);
+  const [selectedSelection, setSelectedSelection] = useState<ApprovalSelection | null>(props.approvalSelection ?? null);
+  const lastReviewedKey = useRef<string | null>(null);
+  const [queueAnnouncement, setQueueAnnouncement] = useState("");
+
+  useEffect(() => {
+    setSelectedSelection(props.approvalSelection ?? null);
+  }, [props.approvalSelection]);
+
+  const selectedItem = selectedSelection
+    ? result?.items.find((item) => item.source_type === selectedSelection.sourceType && item.source_id === selectedSelection.sourceId)
+      ?? (() => {
+        const definition = approvalDefinitionFor(selectedSelection.sourceType);
+        if (!definition) return null;
+
+        return {
+          attention_key: `${selectedSelection.sourceType}:${selectedSelection.sourceId}:owner_approval`,
+          source_type: selectedSelection.sourceType,
+          source_id: selectedSelection.sourceId,
+          category: "owner_approval",
+          primary_bucket: "needs_my_decision",
+          module: "owner_action_center",
+          title: definition.label,
+          concise_summary: "Selected approval record from the Action Center link.",
+          priority_tier: "normal",
+          materiality_tier: "none",
+          comparable_monetary_exposure: null,
+          urgency_at: null,
+          actionable_since: new Date().toISOString(),
+          waiting_on: "shop_owner",
+          owner_action_required: true,
+          coverage_source: approvalCoverage(selectedSelection.sourceType),
+          destination_url: approvalUrl(selectedSelection),
+        } satisfies OwnerAttentionItem;
+      })()
+    : null;
+
+  const selectApproval = (item: OwnerAttentionItem) => {
+    const nextSelection: ApprovalSelection = { sourceType: item.source_type, sourceId: item.source_id };
+    lastReviewedKey.current = item.attention_key;
+    setSelectedSelection(nextSelection);
+    window.history.pushState({}, "", approvalUrl(nextSelection));
+  };
+
+  const closeApproval = () => {
+    setSelectedSelection(null);
+    window.history.replaceState({}, "", clearApprovalUrl());
+    setQueueAnnouncement("Approval details closed. The Action Center queue is still available.");
+    window.requestAnimationFrame(() => {
+      const button = Array.from(document.querySelectorAll<HTMLButtonElement>("button[data-attention-key]"))
+        .find((candidate) => candidate.dataset.attentionKey === lastReviewedKey.current);
+      button?.focus();
+    });
+  };
+
+  const decisionComplete = () => {
+    closeApproval();
+    setQueueAnnouncement("Decision saved. The Action Center queue was refreshed.");
+    router.reload({ preserveScroll: true, preserveState: true });
+  };
   const buckets: Array<{ key: OwnerAttentionBucket; label: string }> = [
     { key: "needs_my_decision", label: "Needs My Decision" },
     ...(summaries.urgent_exceptions
@@ -188,43 +222,28 @@ export default function ActionCenter() {
             </p>
           )}
 
-          {filters.length > 0 && (
-            <nav aria-label="Action Center source filters" className="mt-5 flex flex-wrap gap-2">
-              {filters.map((filter) => {
-                const active = source === filter.key;
+          <OwnerApprovalFilters result={result} source={source} perPage={perPage} />
 
-                return (
-                  <a
-                    key={filter.key}
-                    href={actionCenterUrl(bucket, filter.key, 1, perPage)}
-                    aria-current={active ? "page" : undefined}
-                    className={active
-                      ? "rounded-full bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
-                      : "rounded-full border border-gray-300 px-3 py-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/[0.06]"}
-                  >
-                    {filter.label}
-                  </a>
-                );
-              })}
-            </nav>
-          )}
+          <div className={selectedItem ? "mt-5 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(26rem,38rem)]" : "mt-5"}>
+            <div className="min-w-0">
+              <OwnerAttentionList
+                items={result?.items ?? []}
+                onReview={selectApproval}
+                selectedAttentionKey={selectedItem?.attention_key ?? null}
+              />
 
-          <div className="mt-5">
-            <OwnerAttentionList items={result?.items ?? []} />
-          </div>
+              {result !== null && result.degradation_status !== "unavailable" && result.degradation_status !== "no_enabled_adapters" && result.items.length === 0 && (
+                <p className="mt-5 rounded-xl border border-dashed border-gray-300 p-5 text-center text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
+                  {bucket === "urgent_exceptions"
+                    ? "No urgent exceptions are listed on this page."
+                    : bucket === "waiting_on_others"
+                      ? "No waiting items are listed on this page."
+                      : "No decisions are listed on this page."}
+                </p>
+              )}
 
-          {result !== null && result.degradation_status !== "unavailable" && result.degradation_status !== "no_enabled_adapters" && result.items.length === 0 && (
-            <p className="mt-5 rounded-xl border border-dashed border-gray-300 p-5 text-center text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
-              {bucket === "urgent_exceptions"
-                ? "No urgent exceptions are listed on this page."
-                : bucket === "waiting_on_others"
-                  ? "No waiting items are listed on this page."
-                  : "No decisions are listed on this page."}
-            </p>
-          )}
-
-          {result !== null && result.degradation_status !== "unavailable" && result.degradation_status !== "no_enabled_adapters" && lastPage > 1 && (
-            <nav aria-label="Action Center pagination" className="mt-6 flex flex-wrap items-center justify-center gap-2">
+              {result !== null && result.degradation_status !== "unavailable" && result.degradation_status !== "no_enabled_adapters" && lastPage > 1 && (
+                <nav aria-label="Action Center pagination" className="mt-6 flex flex-wrap items-center justify-center gap-2">
               {page > 1 ? (
                 <a
                   href={actionCenterUrl(bucket, source, page - 1, perPage)}
@@ -265,8 +284,20 @@ export default function ActionCenter() {
                   Next
                 </button>
               )}
-            </nav>
-          )}
+                </nav>
+              )}
+            </div>
+
+            {selectedItem && selectedSelection && (
+              <OwnerApprovalDetailPanel
+                item={selectedItem}
+                selection={selectedSelection}
+                onClose={closeApproval}
+                onDecisionComplete={decisionComplete}
+              />
+            )}
+          </div>
+          <div role="status" aria-live="polite" className="sr-only">{queueAnnouncement}</div>
         </section>
       </main>
     </AppLayoutShopOwner>

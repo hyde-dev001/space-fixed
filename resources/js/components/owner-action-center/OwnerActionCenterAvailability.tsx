@@ -7,8 +7,12 @@ interface OwnerActionCenterAvailabilityProps {
 const adapterLabels: Record<OwnerAttentionAdapterKey, string> = {
   order_refunds: "Order refunds",
   repair_refunds: "Repair refunds",
+  price_approvals: "Price approvals",
+  payslips: "Payslips",
+  salary_changes: "Salary changes",
   expenses: "Expenses",
   purchase_requests: "Purchase requests",
+  repair_rejections: "Repair rejections",
   compliance_documents: "Compliance documents",
   failed_order_refunds: "Order refund recovery",
   failed_repair_refunds: "Repair refund recovery",
