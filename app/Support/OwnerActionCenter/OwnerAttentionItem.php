@@ -9,6 +9,35 @@ use InvalidArgumentException;
 
 final readonly class OwnerAttentionItem
 {
+    /** @var array<int, string> */
+    private const SOURCE_TYPES = [
+        'order_refund',
+        'repair_refund',
+        'product_price_change',
+        'repair_price_change',
+        'repair_package_price_change',
+        'payslip',
+        'salary_change',
+        'purchase_request',
+        'expense',
+        'repair_rejection',
+        'compliance_document',
+        'logistics_failure',
+    ];
+
+    /** @var array<int, string> */
+    private const COVERAGE_SOURCES = [
+        'refunds',
+        'prices',
+        'payslips',
+        'salary_changes',
+        'purchase_requests',
+        'expenses',
+        'repair_rejections',
+        'compliance',
+        'logistics',
+    ];
+
     public string $attentionKey;
 
     public function __construct(
@@ -29,7 +58,7 @@ final readonly class OwnerAttentionItem
         public string $coverageSource,
         public string $destinationUrl,
     ) {
-        if (! in_array($sourceType, ['order_refund', 'repair_refund', 'expense', 'purchase_request', 'compliance_document', 'logistics_failure'], true)) {
+        if (! in_array($sourceType, self::SOURCE_TYPES, true)) {
             throw new InvalidArgumentException('Owner attention source type is not supported.');
         }
 
@@ -50,14 +79,18 @@ final readonly class OwnerAttentionItem
             throw new InvalidArgumentException('Owner attention materiality tier is invalid.');
         }
 
-        if (! in_array($coverageSource, ['refunds', 'expenses', 'purchase_requests', 'compliance', 'logistics'], true)) {
+        if (! in_array($coverageSource, self::COVERAGE_SOURCES, true)) {
             throw new InvalidArgumentException('Owner attention coverage source is invalid.');
         }
 
         $expectedCoverage = match ($sourceType) {
             'order_refund', 'repair_refund' => 'refunds',
-            'expense' => 'expenses',
+            'product_price_change', 'repair_price_change', 'repair_package_price_change' => 'prices',
+            'payslip' => 'payslips',
+            'salary_change' => 'salary_changes',
             'purchase_request' => 'purchase_requests',
+            'expense' => 'expenses',
+            'repair_rejection' => 'repair_rejections',
             'compliance_document' => 'compliance',
             'logistics_failure' => 'logistics',
         };
@@ -84,6 +117,14 @@ final readonly class OwnerAttentionItem
         self::validateTimestamp($urgencyAt, 'urgency');
         self::validateTimestamp($actionableSince, 'actionable');
         self::validateLocalPath($destinationUrl);
+        if ($primaryBucket === 'needs_my_decision') {
+            $expectedDestination = '/shop-owner/action-center?bucket=needs_my_decision&approval='
+                .$sourceType.':'.$sourceId;
+
+            if ($destinationUrl !== $expectedDestination) {
+                throw new InvalidArgumentException('Owner attention actionable destinations must use the canonical Action Center path.');
+            }
+        }
 
         $this->attentionKey = implode(':', [$sourceType, (string) $sourceId, $category]);
     }

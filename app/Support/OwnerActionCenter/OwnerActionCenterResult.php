@@ -12,8 +12,12 @@ final readonly class OwnerActionCenterResult
     private const ADAPTER_KEYS = [
         'order_refunds',
         'repair_refunds',
+        'price_approvals',
+        'payslips',
+        'salary_changes',
         'expenses',
         'purchase_requests',
+        'repair_rejections',
         'compliance_documents',
         'failed_order_refunds',
         'failed_repair_refunds',

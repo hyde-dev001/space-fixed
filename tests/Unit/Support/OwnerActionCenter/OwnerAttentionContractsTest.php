@@ -37,7 +37,7 @@ final class OwnerAttentionContractsTest extends TestCase
             'waiting_on' => 'shop_owner',
             'owner_action_required' => true,
             'coverage_source' => 'refunds',
-            'destination_url' => '/shop-owner/refund-approvals?refund=42',
+            'destination_url' => '/shop-owner/action-center?bucket=needs_my_decision&approval=order_refund:42',
         ], $item->toArray());
 
         $this->assertArrayNotHasKey('key', $item->toArray());
@@ -62,7 +62,7 @@ final class OwnerAttentionContractsTest extends TestCase
             waitingOn: 'shop_owner',
             ownerActionRequired: true,
             coverageSource: 'refunds',
-            destinationUrl: '/shop-owner/refund-approvals?refund=42',
+            destinationUrl: '/shop-owner/action-center?bucket=needs_my_decision&approval=order_refund:42',
         );
 
         $this->assertSame('needs_my_decision', $item->primaryBucket);
@@ -325,7 +325,7 @@ final class OwnerAttentionContractsTest extends TestCase
             waitingOn: 'shop_owner',
             ownerActionRequired: true,
             coverageSource: 'refunds',
-            destinationUrl: '/shop-owner/refund-approvals?refund=42',
+            destinationUrl: '/shop-owner/action-center?bucket=needs_my_decision&approval=order_refund:42',
         );
 
         $this->assertNotSame($first->attentionKey, $second->attentionKey);
@@ -348,6 +348,56 @@ final class OwnerAttentionContractsTest extends TestCase
         $this->assertSame(2, $query->page);
         $this->assertSame(10, $query->perPage);
         $this->assertSame(20, $query->candidateLimit);
+    }
+
+    public function test_decision_queries_expose_all_seven_approval_coverages(): void
+    {
+        $this->assertSame([
+            'all',
+            'refunds',
+            'prices',
+            'payslips',
+            'salary_changes',
+            'purchase_requests',
+            'expenses',
+            'repair_rejections',
+        ], OwnerAttentionQuery::COVERAGES_BY_BUCKET['needs_my_decision']);
+
+        foreach (array_slice(OwnerAttentionQuery::COVERAGES_BY_BUCKET['needs_my_decision'], 1) as $coverage) {
+            $query = new OwnerAttentionQuery(
+                bucket: 'needs_my_decision',
+                coverage: $coverage,
+            );
+
+            $this->assertSame($coverage, $query->coverage);
+        }
+    }
+
+    public function test_approval_source_types_map_to_their_user_facing_coverages(): void
+    {
+        $sourceCoverage = [
+            'order_refund' => 'refunds',
+            'repair_refund' => 'refunds',
+            'product_price_change' => 'prices',
+            'repair_price_change' => 'prices',
+            'repair_package_price_change' => 'prices',
+            'payslip' => 'payslips',
+            'salary_change' => 'salary_changes',
+            'purchase_request' => 'purchase_requests',
+            'expense' => 'expenses',
+            'repair_rejection' => 'repair_rejections',
+        ];
+
+        foreach ($sourceCoverage as $sourceType => $coverage) {
+            $item = $this->itemForSource($sourceType, $coverage);
+
+            $this->assertSame($sourceType, $item->sourceType);
+            $this->assertSame($coverage, $item->coverageSource);
+            $this->assertSame(
+                '/shop-owner/action-center?bucket=needs_my_decision&approval='.$sourceType.':42',
+                $item->destinationUrl,
+            );
+        }
     }
 
     public function test_waiting_on_others_exposes_only_phase_three_c_coverage_families(): void
@@ -502,7 +552,7 @@ final class OwnerAttentionContractsTest extends TestCase
             waitingOn: 'shop_owner',
             ownerActionRequired: true,
             coverageSource: 'refunds',
-            destinationUrl: '/shop-owner/refund-approvals?refund=42',
+            destinationUrl: '/shop-owner/action-center?bucket=needs_my_decision&approval=order_refund:42',
         );
     }
 
@@ -529,6 +579,28 @@ final class OwnerAttentionContractsTest extends TestCase
             ownerActionRequired: $ownerActionRequired,
             coverageSource: $coverage,
             destinationUrl: '/shop-owner/expense-approvals',
+        );
+    }
+
+    private function itemForSource(string $sourceType, string $coverage): OwnerAttentionItem
+    {
+        return new OwnerAttentionItem(
+            sourceType: $sourceType,
+            sourceId: 42,
+            category: 'owner_approval',
+            primaryBucket: 'needs_my_decision',
+            module: 'finance',
+            title: 'Approval request',
+            conciseSummary: 'Review this approval.',
+            priorityTier: 'high',
+            materialityTier: 'medium',
+            comparableMonetaryExposure: 100.0,
+            urgencyAt: null,
+            actionableSince: '2026-08-15T09:00:00+08:00',
+            waitingOn: 'shop_owner',
+            ownerActionRequired: true,
+            coverageSource: $coverage,
+            destinationUrl: '/shop-owner/action-center?bucket=needs_my_decision&approval='.$sourceType.':42',
         );
     }
 }

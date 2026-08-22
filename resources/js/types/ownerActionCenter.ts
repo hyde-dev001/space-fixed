@@ -1,8 +1,12 @@
 export type OwnerActionCenterCoverage =
   | "all"
   | "refunds"
+  | "prices"
+  | "payslips"
+  | "salary_changes"
   | "expenses"
   | "purchase_requests"
+  | "repair_rejections"
   | "compliance"
   | "logistics";
 
@@ -13,16 +17,24 @@ export type OwnerAttentionBucket =
 
 export type OwnerAttentionCoverageSource =
   | "refunds"
+  | "prices"
+  | "payslips"
+  | "salary_changes"
   | "expenses"
   | "purchase_requests"
+  | "repair_rejections"
   | "compliance"
   | "logistics";
 
 export type OwnerAttentionAdapterKey =
   | "order_refunds"
   | "repair_refunds"
+  | "price_approvals"
+  | "payslips"
+  | "salary_changes"
   | "expenses"
   | "purchase_requests"
+  | "repair_rejections"
   | "compliance_documents"
   | "failed_order_refunds"
   | "failed_repair_refunds"
@@ -35,8 +47,14 @@ export type OwnerAttentionAdapterKey =
 export type OwnerAttentionSourceType =
   | "order_refund"
   | "repair_refund"
+  | "product_price_change"
+  | "repair_price_change"
+  | "repair_package_price_change"
+  | "payslip"
+  | "salary_change"
   | "expense"
   | "purchase_request"
+  | "repair_rejection"
   | "compliance_document"
   | "logistics_failure";
 

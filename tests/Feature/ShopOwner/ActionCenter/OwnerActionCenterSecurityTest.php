@@ -39,6 +39,10 @@ final class OwnerActionCenterSecurityTest extends TestCase
             'owner_action_center.coverage.refunds' => false,
             'owner_action_center.coverage.expenses' => false,
             'owner_action_center.coverage.purchase_requests' => true,
+            'owner_action_center.coverage.prices' => false,
+            'owner_action_center.coverage.payslips' => false,
+            'owner_action_center.coverage.salary_changes' => false,
+            'owner_action_center.coverage.repair_rejections' => false,
             'owner_action_center.buckets.urgent_exceptions.enabled' => false,
             'owner_action_center.buckets.urgent_exceptions.coverage.compliance' => false,
             'owner_action_center.buckets.urgent_exceptions.coverage.refunds' => false,
@@ -483,7 +487,7 @@ final class OwnerActionCenterSecurityTest extends TestCase
             waitingOn: 'shop_owner',
             ownerActionRequired: true,
             coverageSource: 'expenses',
-            destinationUrl: '/shop-owner/expense-approvals?expense=1',
+            destinationUrl: '/shop-owner/action-center?bucket=needs_my_decision&approval=expense:1',
         );
     }
 

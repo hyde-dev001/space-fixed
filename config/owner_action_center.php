@@ -8,8 +8,12 @@ return [
     'allowlisted_shop_ids' => [],
     'coverage' => [
         'refunds' => true,
+        'prices' => true,
+        'payslips' => true,
+        'salary_changes' => true,
         'expenses' => true,
         'purchase_requests' => true,
+        'repair_rejections' => true,
     ],
     'buckets' => [
         'urgent_exceptions' => [

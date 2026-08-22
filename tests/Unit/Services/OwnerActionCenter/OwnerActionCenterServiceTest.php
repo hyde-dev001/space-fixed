@@ -100,7 +100,15 @@ final class OwnerActionCenterServiceTest extends TestCase
         $this->assertSame('needs_my_decision', $decisions->bucket);
         $this->assertSame(2, $decisions->total);
         $this->assertSame(1, $decisions->page);
-        $this->assertSame(['refunds' => 0, 'expenses' => 2, 'purchase_requests' => 0], $decisions->coverageCounts);
+        $this->assertSame([
+            'refunds' => 0,
+            'prices' => 0,
+            'payslips' => 0,
+            'salary_changes' => 0,
+            'purchase_requests' => 0,
+            'expenses' => 2,
+            'repair_rejections' => 0,
+        ], $decisions->coverageCounts);
         $this->assertSame('urgent_exceptions', $exceptions->bucket);
         $this->assertSame(3, $exceptions->total);
         $this->assertSame(2, $exceptions->page);
@@ -660,6 +668,10 @@ final class OwnerActionCenterServiceTest extends TestCase
             'owner_action_center.coverage.refunds' => $coverage === 'refunds',
             'owner_action_center.coverage.expenses' => $coverage === 'expenses',
             'owner_action_center.coverage.purchase_requests' => $coverage === 'purchase_requests',
+            'owner_action_center.coverage.prices' => $coverage === 'prices',
+            'owner_action_center.coverage.payslips' => $coverage === 'payslips',
+            'owner_action_center.coverage.salary_changes' => $coverage === 'salary_changes',
+            'owner_action_center.coverage.repair_rejections' => $coverage === 'repair_rejections',
             'owner_action_center.home_limit' => 3,
         ]);
     }
@@ -759,7 +771,7 @@ final class OwnerActionCenterServiceTest extends TestCase
                 'expense' => 'expenses',
                 'purchase_request' => 'purchase_requests',
             },
-            destinationUrl: '/shop-owner/action-center?source='.$sourceType.'&id='.$sourceId,
+            destinationUrl: '/shop-owner/action-center?bucket=needs_my_decision&approval='.$sourceType.':'.$sourceId,
         );
     }
 

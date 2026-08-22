@@ -6,7 +6,6 @@ namespace Tests\Feature\ShopOwner\ActionCenter;
 
 use App\Models\Order;
 use App\Models\OrderRefund;
-use App\Models\ProcurementSettings;
 use App\Models\ShopOwner;
 use App\Models\User;
 use App\Services\OwnerActionCenter\Adapters\OrderRefundAttentionAdapter;
@@ -27,34 +26,37 @@ final class OrderRefundAttentionAdapterTest extends TestCase
         $otherOwner = ShopOwner::factory()->approved()->create([
             'registration_type' => 'company',
         ]);
-        $this->enableRefundApproval($owner, 1000);
-
         $actionable = $this->createRefund($owner, [
             'amount' => 1000,
+            'requires_owner_approval' => true,
             'status' => 'requested',
             'shop_owner_status' => 'pending',
             'finance_status' => 'approved_initial',
         ]);
         $this->createRefund($owner, [
             'amount' => 999,
+            'requires_owner_approval' => false,
             'status' => 'requested',
             'shop_owner_status' => 'pending',
             'finance_status' => 'approved_initial',
         ]);
         $this->createRefund($owner, [
             'amount' => 1000,
+            'requires_owner_approval' => true,
             'status' => 'requested',
             'shop_owner_status' => 'pending',
             'finance_status' => 'pending',
         ]);
         $this->createRefund($owner, [
             'amount' => 1000,
+            'requires_owner_approval' => true,
             'status' => 'rejected',
             'shop_owner_status' => 'pending',
             'finance_status' => 'approved_initial',
         ]);
         $this->createRefund($owner, [
             'amount' => 1000,
+            'requires_owner_approval' => true,
             'flow_type' => 'cancel_auto',
             'status' => 'requested',
             'shop_owner_status' => 'pending',
@@ -62,6 +64,7 @@ final class OrderRefundAttentionAdapterTest extends TestCase
         ]);
         $this->createRefund($otherOwner, [
             'amount' => 1000,
+            'requires_owner_approval' => true,
             'status' => 'requested',
             'shop_owner_status' => 'pending',
             'finance_status' => 'approved_initial',
@@ -77,7 +80,10 @@ final class OrderRefundAttentionAdapterTest extends TestCase
         $this->assertSame('finance', $item->module);
         $this->assertSame('order_refund', $item->sourceType);
         $this->assertSame(1000.0, $item->comparableMonetaryExposure);
-        $this->assertStringContainsString('refund_type=order&refund='.$actionable->id, $item->destinationUrl);
+        $this->assertSame(
+            '/shop-owner/action-center?bucket=needs_my_decision&approval=order_refund:'.$actionable->id,
+            $item->destinationUrl,
+        );
     }
 
     public function test_individual_queue_keeps_pending_finance_stage(): void
@@ -85,9 +91,9 @@ final class OrderRefundAttentionAdapterTest extends TestCase
         $owner = ShopOwner::factory()->approved()->create([
             'registration_type' => 'individual',
         ]);
-        $this->enableRefundApproval($owner, 1);
         $pendingFinance = $this->createRefund($owner, [
             'amount' => 1000,
+            'requires_owner_approval' => true,
             'status' => 'requested',
             'shop_owner_status' => 'pending',
             'finance_status' => 'pending',
@@ -101,12 +107,12 @@ final class OrderRefundAttentionAdapterTest extends TestCase
         ));
     }
 
-    public function test_disabled_or_not_required_owner_policy_returns_no_items_without_mutating_refunds(): void
+    public function test_live_policy_changes_do_not_hide_a_snapshotted_owner_required_refund(): void
     {
         $owner = ShopOwner::factory()->approved()->create();
-        $this->enableRefundApproval($owner, 1000);
         $notRequired = $this->createRefund($owner, [
             'amount' => 1000,
+            'requires_owner_approval' => true,
             'status' => 'requested',
             'shop_owner_status' => 'pending',
             'finance_status' => 'approved_initial',
@@ -120,20 +126,13 @@ final class OrderRefundAttentionAdapterTest extends TestCase
             'updated_at' => $notRequired->updated_at?->toISOString(),
         ];
 
-        ProcurementSettings::query()
-            ->where('shop_owner_id', $owner->id)
-            ->update([
-                'settings_json' => [
-                    'approval_pages' => [
-                        'refund_approval' => ['enabled' => false, 'limit' => null],
-                    ],
-                ],
-            ]);
-
         $result = $this->adapter()->read($owner, new OwnerAttentionQuery());
 
-        $this->assertSame(0, $result->qualifyingCount);
-        $this->assertSame([], $result->items);
+        $this->assertSame(1, $result->qualifyingCount);
+        $this->assertSame([$notRequired->id], array_map(
+            static fn ($item): int => $item->sourceId,
+            $result->items,
+        ));
         $fresh = $notRequired->fresh();
         $this->assertSame($before['status'], $fresh->status);
         $this->assertSame($before['shop_owner_status'], $fresh->shop_owner_status);
@@ -148,15 +147,16 @@ final class OrderRefundAttentionAdapterTest extends TestCase
         $owner = ShopOwner::factory()->approved()->create([
             'registration_type' => 'company',
         ]);
-        $this->enableRefundApproval($owner, 1);
         $phpRefund = $this->createRefund($owner, [
             'amount' => 1250.75,
             'currency' => 'PHP',
+            'requires_owner_approval' => true,
             'requested_at' => now()->subDay(),
         ]);
         $foreignRefund = $this->createRefund($owner, [
             'amount' => 1250.75,
             'currency' => 'USD',
+            'requires_owner_approval' => true,
             'requested_at' => now(),
         ]);
 
@@ -172,8 +172,7 @@ final class OrderRefundAttentionAdapterTest extends TestCase
         $owner = ShopOwner::factory()->approved()->create([
             'registration_type' => 'company',
         ]);
-        $this->enableRefundApproval($owner, 1);
-        $this->createRefund($owner, ['amount' => 1000]);
+        $this->createRefund($owner, ['amount' => 1000, 'requires_owner_approval' => true]);
 
         DB::enableQueryLog();
         DB::flushQueryLog();
@@ -194,13 +193,14 @@ final class OrderRefundAttentionAdapterTest extends TestCase
     public function test_candidates_are_deterministically_ordered_by_requested_time_then_id(): void
     {
         $owner = ShopOwner::factory()->approved()->create();
-        $this->enableRefundApproval($owner, 1);
         $older = $this->createRefund($owner, [
             'amount' => 1000,
+            'requires_owner_approval' => true,
             'requested_at' => now()->subDays(2),
         ]);
         $newer = $this->createRefund($owner, [
             'amount' => 1000,
+            'requires_owner_approval' => true,
             'requested_at' => now()->subDay(),
         ]);
 
@@ -215,20 +215,6 @@ final class OrderRefundAttentionAdapterTest extends TestCase
     private function adapter(): OrderRefundAttentionAdapter
     {
         return app(OrderRefundAttentionAdapter::class);
-    }
-
-    private function enableRefundApproval(ShopOwner $owner, float $limit): void
-    {
-        ProcurementSettings::query()->updateOrCreate(
-            ['shop_owner_id' => $owner->id],
-            [
-                'settings_json' => [
-                    'approval_pages' => [
-                        'refund_approval' => ['enabled' => true, 'limit' => $limit],
-                    ],
-                ],
-            ],
-        );
     }
 
     private function createRefund(ShopOwner $owner, array $overrides = []): OrderRefund
@@ -251,6 +237,7 @@ final class OrderRefundAttentionAdapterTest extends TestCase
             'return_status' => 'awaiting_approval',
             'amount' => 1000,
             'currency' => 'PHP',
+            'requires_owner_approval' => true,
             'requested_at' => now(),
         ], $overrides));
     }

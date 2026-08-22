@@ -10,10 +10,30 @@ final readonly class OwnerAttentionQuery
 {
     public const BUCKETS = ['needs_my_decision', 'urgent_exceptions', 'waiting_on_others'];
 
-    public const COVERAGES = ['all', 'refunds', 'expenses', 'purchase_requests', 'compliance', 'logistics'];
+    public const COVERAGES = [
+        'all',
+        'refunds',
+        'prices',
+        'payslips',
+        'salary_changes',
+        'purchase_requests',
+        'expenses',
+        'repair_rejections',
+        'compliance',
+        'logistics',
+    ];
 
     public const COVERAGES_BY_BUCKET = [
-        'needs_my_decision' => ['all', 'refunds', 'expenses', 'purchase_requests'],
+        'needs_my_decision' => [
+            'all',
+            'refunds',
+            'prices',
+            'payslips',
+            'salary_changes',
+            'purchase_requests',
+            'expenses',
+            'repair_rejections',
+        ],
         'urgent_exceptions' => ['all', 'compliance', 'refunds', 'logistics'],
         'waiting_on_others' => ['all', 'compliance', 'refunds', 'logistics'],
     ];

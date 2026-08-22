@@ -29,8 +29,12 @@ final class PhaseThreeCCharacterizationTest extends TestCase
             'owner_action_center.allowlisted_shop_ids' => [],
             'owner_action_center.coverage' => [
                 'refunds' => true,
+                'prices' => false,
+                'payslips' => false,
+                'salary_changes' => false,
                 'expenses' => true,
                 'purchase_requests' => true,
+                'repair_rejections' => false,
             ],
             'owner_action_center.buckets.urgent_exceptions.enabled' => true,
             'owner_action_center.buckets.urgent_exceptions.coverage' => [

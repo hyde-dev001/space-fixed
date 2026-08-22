@@ -20,8 +20,12 @@ final class OwnerActionCenterPerformanceTest extends TestCase
     private const ADAPTERS = [
         ['class' => 'App\\Services\\OwnerActionCenter\\Adapters\\OrderRefundAttentionAdapter', 'key' => 'order_refunds', 'coverage' => 'refunds', 'source' => 'order_refund'],
         ['class' => 'App\\Services\\OwnerActionCenter\\Adapters\\RepairRefundAttentionAdapter', 'key' => 'repair_refunds', 'coverage' => 'refunds', 'source' => 'repair_refund'],
+        ['class' => 'App\\Services\\OwnerActionCenter\\Adapters\\PriceApprovalAttentionAdapter', 'key' => 'price_approvals', 'coverage' => 'prices', 'source' => 'product_price_change'],
+        ['class' => 'App\\Services\\OwnerActionCenter\\Adapters\\PayslipAttentionAdapter', 'key' => 'payslips', 'coverage' => 'payslips', 'source' => 'payslip'],
+        ['class' => 'App\\Services\\OwnerActionCenter\\Adapters\\SalaryChangeAttentionAdapter', 'key' => 'salary_changes', 'coverage' => 'salary_changes', 'source' => 'salary_change'],
         ['class' => 'App\\Services\\OwnerActionCenter\\Adapters\\ExpenseAttentionAdapter', 'key' => 'expenses', 'coverage' => 'expenses', 'source' => 'expense'],
         ['class' => 'App\\Services\\OwnerActionCenter\\Adapters\\PurchaseRequestAttentionAdapter', 'key' => 'purchase_requests', 'coverage' => 'purchase_requests', 'source' => 'purchase_request'],
+        ['class' => 'App\\Services\\OwnerActionCenter\\Adapters\\RepairRejectAttentionAdapter', 'key' => 'repair_rejections', 'coverage' => 'repair_rejections', 'source' => 'repair_rejection'],
     ];
 
     private const WAITING_COMPLIANCE_ADAPTER = 'App\\Services\\OwnerActionCenter\\Adapters\\PendingComplianceRenewalAttentionAdapter';
@@ -34,6 +38,10 @@ final class OwnerActionCenterPerformanceTest extends TestCase
             'owner_action_center.coverage.refunds' => true,
             'owner_action_center.coverage.expenses' => true,
             'owner_action_center.coverage.purchase_requests' => true,
+            'owner_action_center.coverage.prices' => true,
+            'owner_action_center.coverage.payslips' => true,
+            'owner_action_center.coverage.salary_changes' => true,
+            'owner_action_center.coverage.repair_rejections' => true,
             'owner_action_center.home_limit' => 3,
         ]);
     }
@@ -80,7 +88,7 @@ final class OwnerActionCenterPerformanceTest extends TestCase
         $service->queueForActionCenter($owner, new OwnerAttentionQuery(perPage: 10));
         $manyRowReads = array_map(static fn ($adapter): int => $adapter->readCalls, $adapters);
 
-        $this->assertSame([1, 1, 1, 1], $oneRowReads);
+        $this->assertSame(array_fill(0, count(self::ADAPTERS), 1), $oneRowReads);
         $this->assertSame($oneRowReads, $manyRowReads);
     }
 
@@ -165,7 +173,7 @@ final class OwnerActionCenterPerformanceTest extends TestCase
                     waitingOn: 'shop_owner',
                     ownerActionRequired: true,
                     coverageSource: $definition['coverage'],
-                    destinationUrl: '/shop-owner/action-center?source='.$definition['coverage'],
+                    destinationUrl: '/shop-owner/action-center?bucket=needs_my_decision&approval='.$definition['source'].':'.$id,
                 );
             }
 

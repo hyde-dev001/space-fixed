@@ -79,7 +79,10 @@ final class ExpenseAttentionAdapterTest extends TestCase
         $this->assertSame('expense:'.$actionable->id.':expense_approval', $item->attentionKey);
         $this->assertSame('finance', $item->module);
         $this->assertSame((float) $actionable->amount, $item->comparableMonetaryExposure);
-        $this->assertStringContainsString('expense='.$actionable->id, $item->destinationUrl);
+        $this->assertSame(
+            '/shop-owner/action-center?bucket=needs_my_decision&approval=expense:'.$actionable->id,
+            $item->destinationUrl,
+        );
     }
 
     public function test_individual_shop_owner_has_no_expense_decision_coverage(): void

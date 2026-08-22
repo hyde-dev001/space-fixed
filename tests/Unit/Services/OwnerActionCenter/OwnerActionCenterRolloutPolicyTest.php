@@ -110,8 +110,12 @@ final class OwnerActionCenterRolloutPolicyTest extends TestCase
         $owner = $this->allowlistedCanonicalOwner();
         config([
             'owner_action_center.coverage.refunds' => false,
+            'owner_action_center.coverage.prices' => false,
+            'owner_action_center.coverage.payslips' => false,
+            'owner_action_center.coverage.salary_changes' => false,
             'owner_action_center.coverage.expenses' => false,
             'owner_action_center.coverage.purchase_requests' => false,
+            'owner_action_center.coverage.repair_rejections' => false,
         ]);
 
         $selection = app(OwnerActionCenterRolloutPolicy::class)->select($owner);
@@ -147,8 +151,12 @@ final class OwnerActionCenterRolloutPolicyTest extends TestCase
             'owner_action_center.enabled' => true,
             'owner_action_center.allowlisted_shop_ids' => [$owner->getKey()],
             'owner_action_center.coverage.refunds' => true,
+            'owner_action_center.coverage.prices' => true,
+            'owner_action_center.coverage.payslips' => true,
+            'owner_action_center.coverage.salary_changes' => true,
             'owner_action_center.coverage.expenses' => true,
             'owner_action_center.coverage.purchase_requests' => true,
+            'owner_action_center.coverage.repair_rejections' => true,
         ]);
     }
 }

@@ -44,11 +44,16 @@ final class PurchaseRequestAttentionAdapter implements OwnerAttentionAdapter
                 'total_cost',
                 'priority',
                 'status',
+                'requires_owner_approval',
                 'requested_date',
                 'created_at',
             ])
             ->where('shop_owner_id', (int) $owner->getKey())
             ->where('status', 'pending_shop_owner')
+            ->where(function ($query): void {
+                $query->whereNull('requires_owner_approval')
+                    ->orWhere('requires_owner_approval', true);
+            })
             ->orderByDesc('requested_date')
             ->orderByDesc('id');
 
@@ -80,8 +85,8 @@ final class PurchaseRequestAttentionAdapter implements OwnerAttentionAdapter
                 waitingOn: 'shop_owner',
                 ownerActionRequired: true,
                 coverageSource: $this->coverageSource(),
-                destinationUrl: route('shop-owner.purchase-request-approval', [], false)
-                    .'?purchase_request='.$request->getKey(),
+                destinationUrl: '/shop-owner/action-center?bucket=needs_my_decision&approval=purchase_request:'
+                    .$request->getKey(),
             );
         })->all();
 

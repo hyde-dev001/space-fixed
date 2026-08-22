@@ -88,8 +88,8 @@ final class ExpenseAttentionAdapter implements OwnerAttentionAdapter
                 waitingOn: 'shop_owner',
                 ownerActionRequired: true,
                 coverageSource: $this->coverageSource(),
-                destinationUrl: route('shop-owner.expense-approvals', [], false)
-                    .'?expense='.$expense->getKey(),
+                destinationUrl: '/shop-owner/action-center?bucket=needs_my_decision&approval=expense:'
+                    .$expense->getKey(),
             );
         })->all();
 

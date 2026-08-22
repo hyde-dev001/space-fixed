@@ -76,7 +76,15 @@ final class OwnerActionCenterRolloutPolicy
         }
 
         $enabled = [];
-        foreach (['refunds', 'expenses', 'purchase_requests'] as $family) {
+        foreach ([
+            'refunds',
+            'prices',
+            'payslips',
+            'salary_changes',
+            'purchase_requests',
+            'expenses',
+            'repair_rejections',
+        ] as $family) {
             if (! array_key_exists($family, $coverage) || ! is_bool($coverage[$family])) {
                 throw new UnexpectedValueException("Owner Action Center coverage [{$family}] must be boolean.");
             }

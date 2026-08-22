@@ -28,6 +28,7 @@ final class PurchaseRequestAttentionAdapterTest extends TestCase
         $requester = User::factory()->create(['shop_owner_id' => $owner->id]);
 
         $actionable = $this->createRequest($owner, $requester);
+        $this->createRequest($owner, $requester, ['requires_owner_approval' => false]);
         $this->createRequest($otherOwner, User::factory()->create(['shop_owner_id' => $otherOwner->id]));
         $this->createRequest($owner, $requester, ['status' => 'pending_finance']);
         $this->createRequest($owner, $requester, ['status' => 'rejected']);
@@ -41,7 +42,10 @@ final class PurchaseRequestAttentionAdapterTest extends TestCase
         $this->assertSame('purchase_request:'.$actionable->id.':purchase_request_approval', $item->attentionKey);
         $this->assertSame('procurement', $item->module);
         $this->assertSame((float) $actionable->total_cost, $item->comparableMonetaryExposure);
-        $this->assertStringContainsString('purchase_request='.$actionable->id, $item->destinationUrl);
+        $this->assertSame(
+            '/shop-owner/action-center?bucket=needs_my_decision&approval=purchase_request:'.$actionable->id,
+            $item->destinationUrl,
+        );
     }
 
     public function test_individual_shop_owner_has_no_purchase_request_decision_coverage(): void
@@ -127,6 +131,7 @@ final class PurchaseRequestAttentionAdapterTest extends TestCase
             'total_cost' => 1000,
             'priority' => 'high',
             'status' => 'pending_shop_owner',
+            'requires_owner_approval' => true,
             'requested_date' => now()->subDay(),
         ], $overrides));
     }

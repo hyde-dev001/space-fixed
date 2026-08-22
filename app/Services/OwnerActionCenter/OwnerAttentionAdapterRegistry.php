@@ -29,6 +29,30 @@ final class OwnerAttentionAdapterRegistry
                     'bucket' => 'needs_my_decision',
                 ],
             ],
+            'prices' => [
+                [
+                    'class' => 'App\\Services\\OwnerActionCenter\\Adapters\\PriceApprovalAttentionAdapter',
+                    'key' => 'price_approvals',
+                    'coverage' => 'prices',
+                    'bucket' => 'needs_my_decision',
+                ],
+            ],
+            'payslips' => [
+                [
+                    'class' => 'App\\Services\\OwnerActionCenter\\Adapters\\PayslipAttentionAdapter',
+                    'key' => 'payslips',
+                    'coverage' => 'payslips',
+                    'bucket' => 'needs_my_decision',
+                ],
+            ],
+            'salary_changes' => [
+                [
+                    'class' => 'App\\Services\\OwnerActionCenter\\Adapters\\SalaryChangeAttentionAdapter',
+                    'key' => 'salary_changes',
+                    'coverage' => 'salary_changes',
+                    'bucket' => 'needs_my_decision',
+                ],
+            ],
             'expenses' => [
                 [
                     'class' => 'App\\Services\\OwnerActionCenter\\Adapters\\ExpenseAttentionAdapter',
@@ -42,6 +66,14 @@ final class OwnerAttentionAdapterRegistry
                     'class' => 'App\\Services\\OwnerActionCenter\\Adapters\\PurchaseRequestAttentionAdapter',
                     'key' => 'purchase_requests',
                     'coverage' => 'purchase_requests',
+                    'bucket' => 'needs_my_decision',
+                ],
+            ],
+            'repair_rejections' => [
+                [
+                    'class' => 'App\\Services\\OwnerActionCenter\\Adapters\\RepairRejectAttentionAdapter',
+                    'key' => 'repair_rejections',
+                    'coverage' => 'repair_rejections',
                     'bucket' => 'needs_my_decision',
                 ],
             ],
