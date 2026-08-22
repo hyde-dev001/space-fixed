@@ -31,8 +31,8 @@ type LogisticsProof = {
 };
 
 type LogisticsSummary = {
-  shipment_id: number;
-  shipment_status: string;
+  shipment_id: number | null;
+  shipment_status: string | null;
   leg_id?: number | null;
   leg_type?: string | null;
   leg_status?: string | null;
@@ -1844,32 +1844,26 @@ export default function JobOrdersPage() {
     }
   };
 
-  const shippingTrackingDetails = viewOrder
-    ? {
-        eta: viewOrder.eta || null,
-        shipmentId: viewOrder.logistics?.shipment_id ?? null,
-        shipmentStatus: viewOrder.logistics?.shipment_status || null,
-        legStatus: viewOrder.logistics?.leg_status || null,
-        carrier: viewOrder.logistics?.carrier || viewOrder.carrierCompany || null,
-        riderName: viewOrder.logistics?.rider_name || viewOrder.carrierName || null,
-        riderPhone: viewOrder.logistics?.rider_phone || viewOrder.carrierPhone || null,
-        trackingNumber: viewOrder.logistics?.tracking_number || viewOrder.trackingNumber || null,
-        trackingUrl: viewOrder.logistics?.tracking_url || viewOrder.trackingLink || null,
-      }
-    : null;
-
-  const shippingTrackingRows = shippingTrackingDetails
-    ? [
-        ['ETA', shippingTrackingDetails.eta || 'Not available'],
-        ['Shipment ID', shippingTrackingDetails.shipmentId ?? 'Not available'],
-        ['Shipment status', formatLogisticsStatus(shippingTrackingDetails.shipmentStatus)],
-        ['Leg status', formatLogisticsStatus(shippingTrackingDetails.legStatus)],
-        ['Carrier', shippingTrackingDetails.carrier || 'Not available'],
-        ['Rider', shippingTrackingDetails.riderName || 'Not available'],
-        ['Rider phone', shippingTrackingDetails.riderPhone || 'Not available'],
-        ['Tracking #', shippingTrackingDetails.trackingNumber || 'Not available'],
-      ]
-    : [];
+  const legacyCustomerDeliverySummary = viewOrder && !viewOrder.logistics && (
+    viewOrder.eta
+    || viewOrder.carrierCompany
+    || viewOrder.carrierName
+    || viewOrder.carrierPhone
+    || viewOrder.trackingNumber
+    || viewOrder.trackingLink
+  ) ? {
+    shipment_id: null,
+    shipment_status: null,
+    leg_id: null,
+    leg_type: null,
+    leg_status: null,
+    carrier: viewOrder.carrierCompany || null,
+    rider_name: viewOrder.carrierName || null,
+    rider_phone: viewOrder.carrierPhone || null,
+    tracking_number: viewOrder.trackingNumber || null,
+    tracking_url: viewOrder.trackingLink || null,
+    proofs: [],
+  } : null;
 
   return (
     <AppLayoutERP>
@@ -2747,14 +2741,14 @@ export default function JobOrdersPage() {
                 )}
                 <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
                   <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Logistics</p>
-                  {!viewOrder.logistics && !viewOrder.latest_refund?.return_logistics ? (
+                  {!viewOrder.logistics && !legacyCustomerDeliverySummary && !viewOrder.latest_refund?.return_logistics ? (
                     <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-700 p-4 text-sm text-gray-500 dark:text-gray-400">
                       No logistics shipment yet.
                     </div>
                   ) : (
                     <div className="space-y-3">
                       {[
-                        { label: 'Customer delivery', summary: viewOrder.logistics, proofLabel: 'Delivery proof', returnStatus: null },
+                        { label: 'Customer delivery', summary: viewOrder.logistics || legacyCustomerDeliverySummary, proofLabel: 'Delivery proof', returnStatus: null },
                         {
                           label: 'Return to shop',
                           summary: viewOrder.latest_refund?.return_logistics,
@@ -2764,10 +2758,15 @@ export default function JobOrdersPage() {
                       ].filter((card) => card.summary).map((card) => {
                         const summary = card.summary as LogisticsSummary;
                         const rows = [
-                          ['Shipment ID', summary.shipment_id],
+                          ...(card.label === 'Customer delivery' ? [['ETA', viewOrder.eta || 'Not available']] : []),
+                          ['Shipment ID', summary.shipment_id ?? 'Not available'],
                           ['Shipment status', formatLogisticsStatus(summary.shipment_status)],
                           ...(card.returnStatus ? [['Return status', formatLogisticsStatus(card.returnStatus)]] : []),
-                          ['Leg status', summary.leg_status ? formatLogisticsStatus(summary.leg_status) : 'Leg not created yet'],
+                          ['Leg status', summary.leg_status
+                            ? formatLogisticsStatus(summary.leg_status)
+                            : summary.shipment_id
+                              ? 'Leg not created yet'
+                              : 'Not available'],
                           ['Carrier', summary.carrier || 'Not available'],
                           ['Rider', summary.rider_name || 'Not assigned'],
                           ['Rider phone', summary.rider_phone || 'Not available'],
@@ -2818,40 +2817,6 @@ export default function JobOrdersPage() {
                     </div>
                   )}
                 </div>
-                {shippingTrackingRows.length > 0 && (
-                  <section
-                    role="region"
-                    aria-label="Shipping & Tracking"
-                    className="pt-4 border-t border-gray-200 dark:border-gray-700"
-                  >
-                    <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Shipping & Tracking</p>
-                    <div className="rounded-lg bg-gray-50 p-4 text-sm text-gray-700 dark:bg-gray-900/30 dark:text-gray-300">
-                      <dl className="space-y-2">
-                        {shippingTrackingRows.map(([label, value]) => (
-                          <div key={label} className="flex items-start justify-between gap-4">
-                            <dt className="text-gray-600 dark:text-gray-400">{label}</dt>
-                            <dd className="text-right font-medium">{value}</dd>
-                          </div>
-                        ))}
-                        <div className="flex items-start justify-between gap-4">
-                          <dt className="text-gray-600 dark:text-gray-400">Tracking Link</dt>
-                          <dd className="text-right font-medium">
-                            {shippingTrackingDetails?.trackingUrl ? (
-                              <a
-                                className="text-blue-600 hover:underline dark:text-blue-400"
-                                href={shippingTrackingDetails.trackingUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                              >
-                                View tracking
-                              </a>
-                            ) : 'Not available'}
-                          </dd>
-                        </div>
-                      </dl>
-                    </div>
-                  </section>
-                )}
                 {viewOrder.delivery_cancellation && (
                   <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200">
                     <p className="font-semibold">Delivery cancelled</p>
