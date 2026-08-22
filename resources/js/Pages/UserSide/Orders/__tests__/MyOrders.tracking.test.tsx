@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import MyOrders from '../MyOrders';
 
@@ -57,6 +57,7 @@ const trackingPayload = {
 };
 
 const fetchMock = vi.fn();
+const swalFireMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@inertiajs/react', () => ({
   Head: () => null,
@@ -65,10 +66,11 @@ vi.mock('@inertiajs/react', () => ({
   usePage: () => ({ props: { orders: [order] } }),
 }));
 vi.mock('../../Shared/Navigation', () => ({ default: () => null }));
-vi.mock('../../Shared/UserModal', () => ({ default: { fire: vi.fn() } }));
+vi.mock('../../Shared/UserModal', () => ({ default: { fire: swalFireMock } }));
 
 describe('MyOrders delivery tracking', () => {
   beforeEach(() => {
+    swalFireMock.mockReset();
     Object.assign(order, {
       status: 'processing',
       payment_method: 'cash_on_delivery',
@@ -136,6 +138,90 @@ describe('MyOrders delivery tracking', () => {
       '/tracking/shipments/18',
       expect.objectContaining({ headers: { Accept: 'application/json' } }),
     );
+  });
+
+  it('submits a shop-owned return request without asking the customer for tracking details', async () => {
+    order.status = 'delivered';
+    order.refund_stage = {
+      id: 5,
+      status: 'processing',
+      shop_owner_status: 'approved',
+      finance_status: 'approved',
+      return_status: 'pending_customer_shipment',
+      can_mark_return_shipped: true,
+    };
+    swalFireMock
+      .mockResolvedValueOnce({ isConfirmed: true, value: 'shop_owned' })
+      .mockResolvedValueOnce({ isConfirmed: true, value: 'Pickup from my delivery address.' });
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({
+        refund: {
+          return_status: 'pending_staff_pickup',
+          return_source: 'staff',
+          staff_return_carrier: 'Shop-owned logistics',
+          logistics_shipment_id: 18,
+        },
+      }),
+    });
+
+    render(<MyOrders />);
+    fireEvent.click(screen.getByRole('button', { name: 'SHIP RETURNED ITEM' }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      '/orders/refunds/5/mark-shipped-return',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          delivery_method: 'shop_owned',
+          note: 'Pickup from my delivery address.',
+        }),
+      }),
+    ));
+  });
+
+  it('keeps the third-party return tracking flow', async () => {
+    order.status = 'delivered';
+    order.refund_stage = {
+      id: 5,
+      status: 'processing',
+      shop_owner_status: 'approved',
+      finance_status: 'approved',
+      return_status: 'pending_customer_shipment',
+      can_mark_return_shipped: true,
+    };
+    swalFireMock
+      .mockResolvedValueOnce({ isConfirmed: true, value: 'third_party' })
+      .mockResolvedValueOnce({ isConfirmed: true, value: 'TRK-THIRD-PARTY-001' })
+      .mockResolvedValueOnce({ isConfirmed: true, value: 'J&T' })
+      .mockResolvedValueOnce({ isConfirmed: true, value: 'Dropped off at branch.' });
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({
+        refund: {
+          return_status: 'in_transit',
+          return_source: 'customer',
+          customer_return_tracking_number: 'TRK-THIRD-PARTY-001',
+          customer_return_carrier: 'J&T',
+        },
+      }),
+    });
+
+    render(<MyOrders />);
+    fireEvent.click(screen.getByRole('button', { name: 'SHIP RETURNED ITEM' }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      '/orders/refunds/5/mark-shipped-return',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          delivery_method: 'third_party',
+          note: 'Dropped off at branch.',
+          tracking_number: 'TRK-THIRD-PARTY-001',
+          carrier: 'J&T',
+        }),
+      }),
+    ));
   });
 
   it('flags a failed attempt and links to its shipment details', () => {

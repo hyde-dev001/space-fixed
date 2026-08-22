@@ -621,10 +621,21 @@ class ShipmentLegService
                 || $proof->shipment_leg_id !== $return->id || $proof->handoff_type !== 'receive') {
                 abort(403);
             }
-            $original = ShipmentLeg::query()->lockForUpdate()->findOrFail($return->return_for_leg_id);
+            $isDirectRefundReturn = $return->shipment->source_type === 'order_refund'
+                && $return->shipment->purpose === 'refund_return';
+            if (!$isDirectRefundReturn && !$return->return_for_leg_id) {
+                abort(403);
+            }
+            $original = $isDirectRefundReturn
+                ? null
+                : ShipmentLeg::query()->lockForUpdate()->findOrFail($return->return_for_leg_id);
             if ($return->status->value === 'delivered' && $proof->review_status === 'approved') {
-                $this->completeFailedDeliveryRefundReturn($return, $original);
-                $this->completeRepairReturnRecovery($return);
+                if ($isDirectRefundReturn) {
+                    $this->completeDirectRefundReturn($return);
+                } else {
+                    $this->completeFailedDeliveryRefundReturn($return, $original);
+                    $this->completeRepairReturnRecovery($return);
+                }
 
                 return $return->fresh();
             }
@@ -633,10 +644,14 @@ class ShipmentLegService
             }
             $proof->update(['review_status' => 'approved', 'reviewed_by_type' => ShopOwner::class, 'reviewed_by_id' => $shop->id, 'reviewed_at' => now()]);
             $return->update(['status' => 'delivered', 'delivered_at' => now()]);
-            $original->update(['status' => 'cancelled', 'resolution_type' => 'returned']);
-            $this->completeFailedDeliveryRefundReturn($return, $original);
-            $return->shipment->update(['status' => 'cancelled', 'cancelled_at' => now()]);
-            $this->completeRepairReturnRecovery($return);
+            if ($isDirectRefundReturn) {
+                $this->completeDirectRefundReturn($return);
+            } else {
+                $original->update(['status' => 'cancelled', 'resolution_type' => 'returned']);
+                $this->completeFailedDeliveryRefundReturn($return, $original);
+                $return->shipment->update(['status' => 'cancelled', 'cancelled_at' => now()]);
+                $this->completeRepairReturnRecovery($return);
+            }
             $this->events->record($return->shipment, $return, ['event_type' => 'return_received', 'visibility' => 'customer', 'message' => 'The returned parcel was received by the shop.']);
 
             return $return->fresh();
@@ -1111,5 +1126,15 @@ class ShipmentLegService
             ->whereRaw('LOWER(staff_return_carrier) = ?', ['shop-owned logistics'])
             ->where('return_status', 'pending_staff_pickup')
             ->update(['return_status' => 'in_transit', 'staff_return_shipped_at' => now()]);
+    }
+
+    private function completeDirectRefundReturn(ShipmentLeg $return): void
+    {
+        $return->shipment->update([
+            'status' => 'completed',
+            'completed_at' => now(),
+            'cancelled_at' => null,
+        ]);
+        $this->completeShopOwnedReturn($return->shipment);
     }
 }

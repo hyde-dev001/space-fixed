@@ -172,6 +172,47 @@ class OrderRefundReturnInspectionTest extends TestCase
             'customer_return_tracking_number' => 'TRK-IND-001',
             'customer_return_carrier' => 'J&T',
         ]);
+        $this->assertDatabaseMissing('shipments', [
+            'source_type' => 'order_refund',
+            'source_id' => $refund->id,
+            'purpose' => 'refund_return',
+        ]);
+    }
+
+    public function test_customer_can_request_shop_owned_return_for_dispatcher_assignment(): void
+    {
+        [$refund] = $this->fixture('individual');
+        $refund->update([
+            'shop_owner_status' => 'approved',
+            'finance_status' => 'approved',
+            'return_status' => 'pending_customer_shipment',
+        ]);
+
+        $this->actingAs($refund->customer, 'user')
+            ->postJson("/orders/refunds/{$refund->id}/mark-shipped-return", [
+                'delivery_method' => 'shop_owned',
+                'note' => 'Please arrange pickup from my delivery address.',
+            ])
+            ->assertOk()
+            ->assertJsonPath('refund.return_status', 'pending_staff_pickup')
+            ->assertJsonPath('refund.return_source', 'staff')
+            ->assertJsonPath('refund.staff_return_carrier', 'Shop-owned logistics')
+            ->assertJsonPath('refund.logistics_shipment_id', fn ($value) => is_int($value));
+
+        $this->assertDatabaseHas('order_refunds', [
+            'id' => $refund->id,
+            'return_status' => 'pending_staff_pickup',
+            'return_source' => 'staff',
+            'staff_return_carrier' => 'Shop-owned logistics',
+        ]);
+        $this->assertDatabaseHas('shipments', [
+            'source_type' => 'order_refund',
+            'source_id' => $refund->id,
+            'purpose' => 'refund_return',
+        ]);
+        $this->assertDatabaseHas('shipment_legs', [
+            'leg_type' => 'return_to_shop',
+        ]);
     }
 
     private function fixture(string $registrationType = 'company'): array

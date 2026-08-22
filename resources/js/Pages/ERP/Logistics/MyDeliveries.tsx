@@ -1168,7 +1168,7 @@ function DeliveryActions({
     if (returnProof?.review_status === 'rider_confirmed') {
       return (
         <p role="status" className="rounded-xl bg-amber-50 p-3 text-sm font-semibold text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
-          Return handed to shop · waiting for staff confirmation
+          Return handed to shop · waiting for dispatcher confirmation
         </p>
       );
     }
@@ -1206,7 +1206,7 @@ function DeliveryActions({
         <div>
           <p className="text-sm font-semibold text-blue-950 dark:text-blue-100">Return handoff</p>
           <p className="text-xs text-blue-700 dark:text-blue-300">
-            At the shop, upload a clear photo of the parcel handoff. Staff will confirm receipt.
+            At the shop, upload a clear photo of the parcel handoff. The dispatcher will confirm receipt.
           </p>
         </div>
         {!returnProof && (

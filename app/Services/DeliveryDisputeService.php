@@ -41,6 +41,7 @@ class DeliveryDisputeService
 
         return in_array($status, ['delivered', 'completed'], true)
             && $order->isCancellationRefundWindowOpen()
+            && ! $this->hasBlockingRefund($order)
             && ! $this->hasActiveDispute($order);
     }
 
@@ -63,6 +64,10 @@ class DeliveryDisputeService
 
             if (! $lockedOrder->isCancellationRefundWindowOpen()) {
                 throw ValidationException::withMessages(['order' => 'The reporting window for this order has ended.']);
+            }
+
+            if ($this->hasBlockingRefund($lockedOrder)) {
+                throw ValidationException::withMessages(['order' => 'This order already has an active or completed refund workflow.']);
             }
 
             $active = $this->activeQuery((int) $lockedOrder->id)->lockForUpdate()->first();
@@ -330,6 +335,18 @@ class DeliveryDisputeService
         }
 
         return $this->activeQuery((int) $order->id)->exists();
+    }
+
+    private function hasBlockingRefund(Order $order): bool
+    {
+        if (strtolower((string) ($order->payment_status ?? 'pending')) === 'refunded') {
+            return true;
+        }
+
+        return OrderRefund::query()
+            ->where('order_id', $order->id)
+            ->whereIn('status', ['requested', 'pending_approval', 'processing', 'succeeded'])
+            ->exists();
     }
 
     private function latestRetailShipment(int $orderId): ?Shipment

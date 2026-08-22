@@ -7,6 +7,7 @@ use App\Models\DeliveryDispute;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
 use App\Models\Order;
+use App\Models\OrderRefund;
 use App\Models\ShopOwner;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -155,6 +156,37 @@ class CustomerDeliveryReceiptTest extends TestCase
 
         $this->assertSame($first, $second);
         $this->assertDatabaseCount('delivery_disputes', 1);
+    }
+
+    public function test_customer_cannot_report_again_after_refund_is_completed(): void
+    {
+        $shop = ShopOwner::factory()->create();
+        $customer = User::factory()->create();
+        $order = Order::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'customer_id' => $customer->id,
+            'status' => OrderStatus::DELIVERED,
+            'payment_status' => 'refunded',
+            'customer_receipt_status' => 'disputed',
+        ]);
+        OrderRefund::factory()->create([
+            'order_id' => $order->id,
+            'customer_id' => $customer->id,
+            'shop_owner_id' => $shop->id,
+            'status' => 'succeeded',
+            'refunded_at' => now(),
+        ]);
+
+        $this->actingAs($customer, 'user')
+            ->postJson("/orders/{$order->id}/delivery-disputes", [
+                'reason' => 'damaged',
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('order');
+
+        $this->assertDatabaseMissing('delivery_disputes', [
+            'order_id' => $order->id,
+        ]);
     }
 
     public function test_dispatcher_can_resolve_a_dispute_to_refund_without_changing_delivered_status(): void

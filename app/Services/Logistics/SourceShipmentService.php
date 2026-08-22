@@ -108,7 +108,7 @@ class SourceShipmentService
             'source_id' => (int) $refund->id,
             'purpose' => 'refund_return',
             'legs' => [[
-                'leg_type' => 'inbound',
+                'leg_type' => 'return_to_shop',
                 'origin_snapshot' => [
                     'type' => 'customer',
                     'name' => (string) ($refund->customer?->name ?? $order?->customer_name ?? 'Customer'),

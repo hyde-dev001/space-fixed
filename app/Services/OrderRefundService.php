@@ -816,6 +816,13 @@ class OrderRefundService
             ];
         }
 
+        if (strtolower(trim((string) ($shipmentData['delivery_method'] ?? ''))) === 'shop_owned') {
+            return $this->arrangeStaffReturnPickup($refund, [
+                'carrier_company' => 'Shop-owned logistics',
+                'note' => $shipmentData['note'] ?? null,
+            ]);
+        }
+
         $returnSource = strtolower((string) ($refund->return_source ?? 'customer'));
         if ($returnSource === 'staff') {
             return [

@@ -302,6 +302,51 @@ class ShipmentLegServiceTest extends TestCase
         $this->assertSame('in_transit', $refund->fresh()->return_status);
     }
 
+    public function test_dispatcher_can_confirm_direct_refund_return_receipt_without_original_leg(): void
+    {
+        $shop = ShopOwner::factory()->create();
+        $refund = OrderRefund::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'return_status' => 'pending_staff_pickup',
+            'return_source' => 'staff',
+            'staff_return_carrier' => 'Shop-owned logistics',
+        ]);
+        $shipment = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'order_refund',
+            'source_id' => $refund->id,
+            'purpose' => 'refund_return',
+            'status' => 'active',
+        ]);
+        $leg = ShipmentLeg::factory()->create([
+            'shipment_id' => $shipment->id,
+            'leg_type' => 'return_to_shop',
+            'status' => 'in_transit',
+            'return_for_leg_id' => null,
+            'requires_delivery_proof' => true,
+        ]);
+        $proof = HandoffProof::factory()->create([
+            'shipment_leg_id' => $leg->id,
+            'handoff_type' => 'receive',
+            'review_status' => 'rider_confirmed',
+        ]);
+
+        $result = app(ShipmentLegService::class)->confirmReturnReceipt($leg, $proof, $shop);
+
+        $this->assertSame('delivered', $result->fresh()->status->value);
+        $this->assertSame('completed', $shipment->fresh()->status->value);
+        $this->assertSame('in_transit', $refund->fresh()->return_status);
+        $this->assertDatabaseHas('handoff_proofs', [
+            'id' => $proof->id,
+            'review_status' => 'approved',
+        ]);
+        $this->assertDatabaseHas('delivery_events', [
+            'shipment_id' => $shipment->id,
+            'shipment_leg_id' => $leg->id,
+            'event_type' => 'return_received',
+        ]);
+    }
+
     public function test_failed_repair_pickup_waits_for_dispatcher_without_return_or_refund(): void
     {
         [$leg, $assignment] = $this->assignedRepairPickup();
