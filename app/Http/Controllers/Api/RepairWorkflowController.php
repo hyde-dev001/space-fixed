@@ -1006,6 +1006,14 @@ class RepairWorkflowController extends Controller
             
             // Find manager for escalation
             $manager = $this->findShopManager($repairRequest->shop_owner_id);
+            $shopOwner = ShopOwner::query()->find($repairRequest->shop_owner_id);
+            $requiresOwnerApproval = $shopOwner
+                ? (bool) $shopOwner->require_two_way_approval
+                    && $this->shopOwnerApprovalPolicyService->requiresOwnerApprovalForRepairReject(
+                        (int) $shopOwner->id,
+                        (float) $repairRequest->total,
+                    )
+                : true;
             $missingSkillNames = $reasonCategory === 'skills_gap'
                 ? []
                 : [];
@@ -1017,6 +1025,7 @@ class RepairWorkflowController extends Controller
                 'repairer_rejected_at' => now(),
                 'repairer_rejected_by' => $user->id,
                 'assigned_manager_id' => $manager ? $manager->id : null,
+                'requires_owner_approval' => $requiresOwnerApproval,
                 // Start a fresh manager-review cycle for this new rejection.
                 'manager_decision' => null,
                 'manager_review_notes' => null,
@@ -1190,42 +1199,49 @@ class RepairWorkflowController extends Controller
                 ], 400);
             }
             
-                $repairRequest->update([
-                    'status' => 'owner_approval_pending',
-                    'manager_decision' => 'approve_rejection',
+            $ownerApprovalRequired = $repairRequest->requires_owner_approval !== false;
+            $nextStatus = $ownerApprovalRequired ? 'owner_approval_pending' : 'manager_reviewing';
+
+            $repairRequest->update([
+                'status' => $nextStatus,
+                'manager_decision' => 'approve_rejection',
                 'manager_review_notes' => $request->notes,
                 'manager_reviewed_at' => now(),
                 'manager_reviewed_by' => $user->id,
             ]);
-            
+
             DB::commit();
 
-            try {
-                $this->notificationService->notifyRepairRejectApprovalRequest(
-                    (int) $repairRequest->shop_owner_id,
-                    [
-                        'repair_id' => (int) $repairRequest->id,
-                        'request_id' => (string) ($repairRequest->request_id ?? $repairRequest->id),
-                        'order_number' => (string) ($repairRequest->request_id ?? $repairRequest->id),
-                        'customer_name' => (string) ($repairRequest->customer_name ?? 'Customer'),
-                        'reason' => (string) ($repairRequest->repairer_rejection_reason ?? ''),
-                        'manager_notes' => (string) ($request->notes ?? ''),
-                        'manager_id' => (int) $user->id,
-                        'manager_name' => (string) ($user->name ?? trim((string) (($user->first_name ?? '') . ' ' . ($user->last_name ?? '')))),
-                        'status' => 'owner_approval_pending',
-                    ]
-                );
-            } catch (\Throwable $notificationError) {
-                \Log::warning('Could not notify shop owner for forwarded repair rejection', [
-                    'repair_request_id' => $repairRequest->id,
-                    'shop_owner_id' => $repairRequest->shop_owner_id,
-                    'error' => $notificationError->getMessage(),
-                ]);
+            if ($ownerApprovalRequired) {
+                try {
+                    $this->notificationService->notifyRepairRejectApprovalRequest(
+                        (int) $repairRequest->shop_owner_id,
+                        [
+                            'repair_id' => (int) $repairRequest->id,
+                            'request_id' => (string) ($repairRequest->request_id ?? $repairRequest->id),
+                            'order_number' => (string) ($repairRequest->request_id ?? $repairRequest->id),
+                            'customer_name' => (string) ($repairRequest->customer_name ?? 'Customer'),
+                            'reason' => (string) ($repairRequest->repairer_rejection_reason ?? ''),
+                            'manager_notes' => (string) ($request->notes ?? ''),
+                            'manager_id' => (int) $user->id,
+                            'manager_name' => (string) ($user->name ?? trim((string) (($user->first_name ?? '') . ' ' . ($user->last_name ?? '')))),
+                            'status' => $nextStatus,
+                        ]
+                    );
+                } catch (\Throwable $notificationError) {
+                    \Log::warning('Could not notify shop owner for forwarded repair rejection', [
+                        'repair_request_id' => $repairRequest->id,
+                        'shop_owner_id' => $repairRequest->shop_owner_id,
+                        'error' => $notificationError->getMessage(),
+                    ]);
+                }
             }
 
             return response()->json([
                 'success' => true,
-                'message' => 'Initial approval completed. Rejection forwarded to shop owner for review.',
+                'message' => $ownerApprovalRequired
+                    ? 'Initial approval completed. Rejection forwarded to shop owner for review.'
+                    : 'Initial approval completed. Rejection is now pending manager final review.',
                 'repair' => $repairRequest->fresh(['user', 'services', 'managerReviewedBy'])
             ]);
             
@@ -1509,6 +1525,10 @@ class RepairWorkflowController extends Controller
             ])
                 ->where('shop_owner_id', $shopOwner->id)
                 ->whereNotNull('repairer_rejected_at')
+                ->where(function ($query) {
+                    $query->whereNull('requires_owner_approval')
+                        ->orWhere('requires_owner_approval', true);
+                })
                 ->whereIn('status', ['owner_approval_pending', 'manager_reviewing', 'assigned_to_repairer', 'rejected'])
                 ->orderByDesc('repairer_rejected_at')
                 ->get();
@@ -1548,7 +1568,23 @@ class RepairWorkflowController extends Controller
 
             $repairRequest = RepairRequest::where('id', $id)
                 ->where('shop_owner_id', $shopOwner->id)
-                ->firstOrFail();
+                ->first();
+
+            if (!$repairRequest) {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Repair request not found'
+                ], 404);
+            }
+
+            if ($repairRequest->requires_owner_approval === false) {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This repair rejection does not require owner approval'
+                ], 400);
+            }
 
             if ($repairRequest->status !== 'owner_approval_pending') {
                 DB::rollBack();
@@ -1606,7 +1642,23 @@ class RepairWorkflowController extends Controller
 
             $repairRequest = RepairRequest::where('id', $id)
                 ->where('shop_owner_id', $shopOwner->id)
-                ->firstOrFail();
+                ->first();
+
+            if (!$repairRequest) {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Repair request not found'
+                ], 404);
+            }
+
+            if ($repairRequest->requires_owner_approval === false) {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This repair rejection does not require owner approval'
+                ], 400);
+            }
 
             if ($repairRequest->status !== 'owner_approval_pending') {
                 DB::rollBack();
