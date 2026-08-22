@@ -586,7 +586,7 @@ class LogisticsApiTest extends TestCase
             ->assertForbidden();
     }
 
-    public function test_same_shop_job_order_staff_can_only_fetch_refund_return_proofs(): void
+    public function test_same_shop_job_order_staff_can_fetch_refund_return_and_retail_delivery_proofs_only(): void
     {
         Storage::fake('local');
         Permission::findOrCreate('access-staff-job-orders', 'user');
@@ -636,6 +636,23 @@ class LogisticsApiTest extends TestCase
 
         $this->actingAs($staff, 'user')
             ->get("/api/logistics/proofs/{$deliveryProof->id}/file")
+            ->assertOk()
+            ->assertStreamedContent('delivery-proof');
+
+        $repairShipment = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'repair_request',
+            'purpose' => 'repair_pickup',
+        ]);
+        $repairLeg = ShipmentLeg::factory()->create(['shipment_id' => $repairShipment->id]);
+        $repairProof = HandoffProof::factory()->create([
+            'shipment_leg_id' => $repairLeg->id,
+            'file_path' => "logistics-proof/{$repairLeg->id}/repair.png",
+        ]);
+        Storage::disk('local')->put($repairProof->file_path, 'repair-proof');
+
+        $this->actingAs($staff, 'user')
+            ->get("/api/logistics/proofs/{$repairProof->id}/file")
             ->assertForbidden();
     }
 

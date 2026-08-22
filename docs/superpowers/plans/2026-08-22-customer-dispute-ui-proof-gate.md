@@ -22,6 +22,7 @@
 - [x] Restrict service resolution to disputes in `investigating` state.
 - [x] Hide unsupported resolution choices while retaining legacy backend values.
 - [x] Allow `customer_confirmed` only for `item_not_received` in both the Shipment UI and service validation.
+- [x] Allow same-shop Job Orders staff to fetch retail delivery proof files without granting access to unrelated logistics proofs.
 - [x] Show Resolve only after Start investigation is completed.
 - [x] Convert Staff Job Orders proof links into accessible modal triggers and add the proof preview modal.
 
