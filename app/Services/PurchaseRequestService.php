@@ -333,7 +333,7 @@ class PurchaseRequestService
                 title: 'Purchase Request Awaiting Approval',
                 message: "{$payload['reference']} ({$payload['product_name']}) now requires shop owner approval.",
                 data: $payload,
-                actionUrl: "/shop-owner/purchase-request-approval?purchase_request={$purchaseRequest->id}",
+                actionUrl: $this->notificationService->ownerApprovalActionUrl('purchase_request', $purchaseRequest->id),
                 priority: 'medium'
             );
 
@@ -412,7 +412,7 @@ class PurchaseRequestService
                 title: 'Purchase Request Rejected by Finance',
                 message: "{$payload['reference']} was rejected by Finance. Reason: {$reason}",
                 data: $payload,
-                actionUrl: "/shop-owner/purchase-request-approval?purchase_request={$purchaseRequest->id}",
+                    actionUrl: $this->notificationService->ownerApprovalActionUrl('purchase_request', $purchaseRequest->id),
                 priority: 'medium'
             );
         }

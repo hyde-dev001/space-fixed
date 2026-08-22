@@ -117,6 +117,11 @@ class ExpenseApprovalWorkflowTest extends TestCase
             ]);
         $first->assertStatus(200)->assertJson(['is_final' => false]);
         $this->assertSame(2, $expense->fresh()->current_approval_level);
+        $this->assertDatabaseHas('notifications', [
+            'shop_owner_id' => $this->shopOwnerAuth->id,
+            'title' => 'Expense Awaiting Your Approval',
+            'action_url' => "/shop-owner/action-center?bucket=needs_my_decision&approval=expense:{$expense->id}",
+        ]);
 
         $wrongFinance = $this->actingAs($this->financeSecond, 'user')
             ->postJson("/api/finance/expenses/{$expense->id}/approve", []);

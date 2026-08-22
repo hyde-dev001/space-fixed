@@ -16,6 +16,8 @@ use App\Http\Controllers\ShopOwner\ShopOwnerDocumentRenewalController;
 use App\Http\Controllers\ShopOwner\ShopOwnerDashboardController;
 use App\Http\Controllers\ShopOwner\ShopOwnerModuleController;
 use App\Http\Controllers\ShopOwner\ShopOwnerUpgradeRequestController;
+use App\Http\Controllers\ShopOwner\OwnerActionCenterController;
+use App\Http\Controllers\ShopOwner\OwnerActionCenterSummaryController;
 use App\Http\Controllers\ShopOwner\ShopSettingsController;
 use App\Http\Controllers\ShopOwner\UserAccessControlController;
 use App\Http\Controllers\ShopOwnerAuthController;
@@ -777,9 +779,10 @@ Route::prefix('shopOwner')->name('shopOwner.')->group(function () {
         return Inertia::render('ShopOwner/TeamManagement/suspendAccount');
     })->name('suspend-accounts');
 
-    Route::get('/refund-approvals', function () {
-        return Inertia::render('ShopOwner/Approvals/refundApproval');
-    })->name('refund-approvals');
+    Route::get('/refund-approvals', [OwnerActionCenterController::class, 'legacyRedirect'])
+        ->defaults('legacy_approval_family', 'refund')
+        ->middleware('auth:shop_owner')
+        ->name('refund-approvals');
 });
 
 // Shop Owner Protected Routes
@@ -851,9 +854,9 @@ Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')-
         })->middleware('check.registration.type:individual')->name('upload-stock-materials');
 
         Route::middleware('check.registration.type:company')->group(function () {
-            Route::get('/repair-reject-approval', function () {
-                return Inertia::render('ShopOwner/Repairs/repairRejectReview');
-            })->name('repair-reject-approval');
+            Route::get('/repair-reject-approval', [OwnerActionCenterController::class, 'legacyRedirect'])
+                ->defaults('legacy_approval_family', 'repair_rejection')
+                ->name('repair-reject-approval');
 
             Route::get('/history-rejection', function () {
                 return Inertia::render('ShopOwner/Repairs/historyRejection');
@@ -1071,32 +1074,32 @@ Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')-
         })->name('audit-logs');
     });
 
-    // REFUND APPROVALS - Available to ALL
-    Route::get('/refund-approvals', function () {
-        return Inertia::render('ShopOwner/Approvals/refundApproval');
-    })->name('refund-approvals');
+    // REFUND APPROVALS - compatibility redirect to the Action Center
+    Route::get('/refund-approvals', [OwnerActionCenterController::class, 'legacyRedirect'])
+        ->defaults('legacy_approval_family', 'refund')
+        ->name('refund-approvals');
 
     // PRICE APPROVALS - Business only (for approving staff price changes)
     Route::middleware('check.registration.type:company')->group(function () {
-        Route::get('/price-approvals', function () {
-            return Inertia::render('ShopOwner/Approvals/PriceApprovals');
-        })->name('price-approvals');
+        Route::get('/price-approvals', [OwnerActionCenterController::class, 'legacyRedirect'])
+            ->defaults('legacy_approval_family', 'price')
+            ->name('price-approvals');
 
-        Route::get('/payslip-approvals', function () {
-            return Inertia::render('ShopOwner/Approvals/PayslipApproval');
-        })->name('payslip-approvals');
+        Route::get('/payslip-approvals', [OwnerActionCenterController::class, 'legacyRedirect'])
+            ->defaults('legacy_approval_family', 'payslip')
+            ->name('payslip-approvals');
 
-        Route::get('/purchase-request-approval', function () {
-            return Inertia::render('ShopOwner/Approvals/PurchaseRequestApproval');
-        })->name('purchase-request-approval');
+        Route::get('/purchase-request-approval', [OwnerActionCenterController::class, 'legacyRedirect'])
+            ->defaults('legacy_approval_family', 'purchase')
+            ->name('purchase-request-approval');
 
-        Route::get('/expense-approvals', function () {
-            return Inertia::render('ShopOwner/Approvals/ExpenseApproval');
-        })->name('expense-approvals');
+        Route::get('/expense-approvals', [OwnerActionCenterController::class, 'legacyRedirect'])
+            ->defaults('legacy_approval_family', 'expense')
+            ->name('expense-approvals');
 
-        Route::get('/salary-adjustment-approvals', function () {
-            return Inertia::render('ShopOwner/Approvals/SalaryChangesApproval');
-        })->name('salary-adjustment-approvals');
+        Route::get('/salary-adjustment-approvals', [OwnerActionCenterController::class, 'legacyRedirect'])
+            ->defaults('legacy_approval_family', 'salary')
+            ->name('salary-adjustment-approvals');
     });
 
     // STAFF/EMPLOYEE MANAGEMENT - Business only
@@ -1140,6 +1143,8 @@ Route::get('/api/activity-logs', [\App\Http\Controllers\ActivityLogController::c
 
 // Shop Owner API Routes
 Route::middleware('auth:shop_owner')->prefix('api/shop-owner')->group(function () {
+    Route::get('action-center/summary', OwnerActionCenterSummaryController::class)
+        ->name('shop-owner.action-center.summary');
     Route::get('dashboard/stats', [\App\Http\Controllers\ShopOwner\DashboardController::class, 'getStats']);
     Route::get('dashboard/low-stock', [\App\Http\Controllers\ShopOwner\DashboardController::class, 'getLowStockAlerts']);
     Route::get('dashboard/dss-insights', [\App\Http\Controllers\ShopOwner\DssController::class, 'getInsights'])->name('api.shop_owner.dashboard.dss-insights');

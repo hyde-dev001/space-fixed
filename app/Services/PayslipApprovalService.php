@@ -247,7 +247,7 @@ class PayslipApprovalService
                 title: 'Payslip Awaiting Shop Owner Approval',
                 message: "Payroll {$payload['period']} for {$payload['employee_name']} now requires your approval.",
                 data: $payload,
-                actionUrl: '/erp/finance/payslip-approvals',
+                actionUrl: $this->notificationService->ownerApprovalActionUrl('payslip', $payslip->id),
                 priority: 'medium'
             );
 

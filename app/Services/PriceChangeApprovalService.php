@@ -241,19 +241,6 @@ class PriceChangeApprovalService
                 );
             }
 
-            // Owner-approval bypass flow: keep shop owner informed when Finance finalizes directly.
-            if ($approval->total_levels === 1 && $previousLevel === 1) {
-                $this->notificationService->sendToShopOwner(
-                    shopOwnerId: $shopOwnerId,
-                    type: NotificationType::PRICE_CHANGE_REQUEST,
-                    title: 'Price Change Finalized by Finance',
-                    message: "{$payload['product_name']} was approved and applied directly by Finance (owner approval disabled).",
-                    data: $payload,
-                    actionUrl: '/shop-owner/price-approvals',
-                    priority: 'medium'
-                );
-            }
-
             return;
         }
 
@@ -264,7 +251,7 @@ class PriceChangeApprovalService
                 title: 'Price Change Awaiting Your Approval',
                 message: "{$payload['product_name']}: ₱{$payload['old_price']} → ₱{$payload['new_price']} now needs shop owner approval.",
                 data: $payload,
-                actionUrl: '/shop-owner/price-approvals',
+                actionUrl: $this->notificationService->ownerApprovalActionUrl('product_price_change', $priceChange->id),
                 priority: 'medium'
             );
 

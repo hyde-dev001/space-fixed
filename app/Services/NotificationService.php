@@ -32,6 +32,37 @@ class NotificationService
         $this->recipientResolver ??= app(RecipientResolver::class);
     }
 
+    public function ownerApprovalActionUrl(string $sourceType, mixed $sourceId): string
+    {
+        $allowedSourceTypes = [
+            'order_refund',
+            'repair_refund',
+            'product_price_change',
+            'repair_price_change',
+            'repair_package_price_change',
+            'payslip',
+            'salary_change',
+            'purchase_request',
+            'expense',
+            'repair_rejection',
+        ];
+
+        if (! in_array($sourceType, $allowedSourceTypes, true)) {
+            return '/shop-owner/action-center';
+        }
+
+        $sourceId = filter_var($sourceId, FILTER_VALIDATE_INT, [
+            'options' => [
+                'min_range' => 1,
+                'max_range' => 9_007_199_254_740_991,
+            ],
+        ]);
+
+        return $sourceId === false
+            ? '/shop-owner/action-center'
+            : "/shop-owner/action-center?bucket=needs_my_decision&approval={$sourceType}:{$sourceId}";
+    }
+
     // ==================== CORE METHODS ====================
 
     /**
@@ -935,7 +966,7 @@ class NotificationService
             title: 'New Salary Change Request',
             message: "{$proposedBy} submitted a salary change for {$employeeName} to ₱{$newSalary}.{$dateText}",
             data: $salaryData,
-            actionUrl: '/shop-owner/salary-adjustment-approvals',
+            actionUrl: $this->ownerApprovalActionUrl('salary_change', $salaryData['salary_change_id'] ?? null),
             priority: 'high',
             groupKey: 'salary-change-request',
             requiresAction: true
@@ -1583,13 +1614,18 @@ class NotificationService
      */
     public function notifyPriceChangeRequest(int $shopOwnerId, array $requestData): ?Notification
     {
+        $sourceType = array_key_exists('package_id', $requestData)
+            ? 'repair_package_price_change'
+            : (array_key_exists('service_id', $requestData) ? 'repair_price_change' : 'product_price_change');
+        $sourceId = $requestData['package_id'] ?? $requestData['service_id'] ?? $requestData['price_change_id'] ?? $requestData['id'] ?? null;
+
         return $this->sendToShopOwner(
             shopOwnerId: $shopOwnerId,
             type: NotificationType::PRICE_CHANGE_REQUEST,
             title: 'Price Change Approval Required',
             message: "{$requestData['product_name']}: ₱{$requestData['old_price']} → ₱{$requestData['new_price']}",
             data: $requestData,
-            actionUrl: '/shop-owner/price-approvals'
+            actionUrl: $this->ownerApprovalActionUrl($sourceType, $sourceId)
         );
     }
 
@@ -1600,13 +1636,18 @@ class NotificationService
     {
         $reason = $requestData['rejection_reason'] ?? $requestData['reason'] ?? '';
         $reasonText = $reason ? " Reason: {$reason}" : '';
+        $sourceType = array_key_exists('package_id', $requestData)
+            ? 'repair_package_price_change'
+            : (array_key_exists('service_id', $requestData) ? 'repair_price_change' : 'product_price_change');
+        $sourceId = $requestData['package_id'] ?? $requestData['service_id'] ?? $requestData['price_change_id'] ?? $requestData['id'] ?? null;
+
         return $this->sendToShopOwner(
             shopOwnerId: $shopOwnerId,
             type: NotificationType::PRICE_CHANGE_REJECTED,
             title: 'Price Change Rejected',
             message: "{$requestData['product_name']} price change (₱{$requestData['old_price']} → ₱{$requestData['new_price']}) was rejected.{$reasonText}",
             data: $requestData,
-            actionUrl: '/shop-owner/price-approvals'
+            actionUrl: $this->ownerApprovalActionUrl($sourceType, $sourceId)
         );
     }
 
@@ -1634,7 +1675,12 @@ class NotificationService
             title: 'Repair Service Approval Required',
             message: "New repair service '{$serviceData['service_name']}' requires approval - ₱{$displayPrice}",
             data: $serviceData,
-            actionUrl: '/shop-owner/repair-reject-approval'
+            actionUrl: $this->ownerApprovalActionUrl(
+                array_key_exists('package_id', $serviceData)
+                    ? 'repair_package_price_change'
+                    : 'repair_price_change',
+                $serviceData['package_id'] ?? $serviceData['service_id'] ?? null,
+            )
         );
     }
 
@@ -1651,7 +1697,12 @@ class NotificationService
             title: 'Repair Service Price Change Rejected',
             message: "Repair service '{$serviceData['service_name']}' price change (₱{$serviceData['old_price']} → ₱{$serviceData['price']}) was rejected.{$reasonText}",
             data: $serviceData,
-            actionUrl: '/shop-owner/repair-reject-approval'
+            actionUrl: $this->ownerApprovalActionUrl(
+                array_key_exists('package_id', $serviceData)
+                    ? 'repair_package_price_change'
+                    : 'repair_price_change',
+                $serviceData['package_id'] ?? $serviceData['service_id'] ?? null,
+            )
         );
     }
 
@@ -1691,7 +1742,7 @@ class NotificationService
             title: 'Repair Rejection Awaiting Your Review',
             message: $message,
             data: $repairData,
-            actionUrl: '/shop-owner/repair-reject-approval',
+            actionUrl: $this->ownerApprovalActionUrl('repair_rejection', $repairData['repair_id'] ?? null),
             priority: 'high',
             groupKey: "repair-reject-owner-{$orderNumber}",
             requiresAction: true
@@ -1703,6 +1754,10 @@ class NotificationService
      */
     public function notifyRefundRequest(int $shopOwnerId, array $refundData): ?Notification
     {
+        $sourceType = ($refundData['source_type'] ?? null) === 'repair_refund'
+            ? 'repair_refund'
+            : 'order_refund';
+
         return $this->sendToResolvedShopOwnerRecipients(
             eventType: 'refund_request',
             shopOwnerId: $shopOwnerId,
@@ -1710,7 +1765,7 @@ class NotificationService
             title: 'Refund Request',
             message: "Refund request for order #{$refundData['order_number']} - ₱{$refundData['amount']}",
             data: $refundData,
-            actionUrl: '/shop-owner/refund-approvals'
+            actionUrl: $this->ownerApprovalActionUrl($sourceType, $refundData['refund_id'] ?? null)
         );
     }
 

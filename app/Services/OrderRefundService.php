@@ -1791,6 +1791,7 @@ class OrderRefundService
             'stage' => 'submitted',
             'requires_owner_approval' => $requiresOwnerApproval,
         ]);
+        $data['source_type'] = 'order_refund';
 
         if ($isIndividualRegistration && $requiresOwnerApproval) {
             $this->notificationService->notifyRefundRequest(
@@ -1838,7 +1839,6 @@ class OrderRefundService
         ]);
 
         if ($stage === 'finance' && !$requiresOwnerApproval && $previousFinanceStatus !== 'approved' && $currentFinanceStatus === 'approved') {
-            $this->notifyShopOwnerBypassInfo($refund, $data);
             $this->notifyCustomerFinalApproval($refund, $data, 'Your refund request has been approved by finance and is awaiting return shipment confirmation.');
             return;
         }
@@ -1850,7 +1850,7 @@ class OrderRefundService
                 title: 'Refund Approval Required',
                 message: "Order #{$data['order_number']} requires your refund approval.",
                 data: $data,
-                actionUrl: '/shop-owner/refund-approvals',
+                actionUrl: $this->notificationService->ownerApprovalActionUrl('order_refund', $refund->id),
                 priority: 'high',
                 requiresAction: true,
             );
@@ -1878,7 +1878,7 @@ class OrderRefundService
                 title: 'Refund Approved',
                 message: "Refund for order #{$data['order_number']} has been approved and is awaiting return shipment confirmation.",
                 data: $data,
-                actionUrl: '/shop-owner/refund-approvals',
+                actionUrl: $this->notificationService->ownerApprovalActionUrl('order_refund', $refund->id),
                 priority: 'high',
                 requiresAction: true,
             );
@@ -1921,20 +1921,7 @@ class OrderRefundService
             title: 'Refund Request Rejected',
             message: "Order #{$data['order_number']} refund request was rejected at " . ($stage === 'finance' ? 'finance' : 'shop owner') . " stage.",
             data: $data,
-            actionUrl: '/shop-owner/refund-approvals',
-            priority: 'medium',
-        );
-    }
-
-    private function notifyShopOwnerBypassInfo(OrderRefund $refund, array $data): void
-    {
-        $this->notificationService?->sendToShopOwner(
-            shopOwnerId: (int) ($refund->shop_owner_id ?? 0),
-            type: NotificationType::REFUND_REQUEST,
-            title: 'Owner Approval Bypassed By Settings',
-            message: "Refund request for order #{$data['order_number']} was finalized by finance because owner approval is disabled in shop settings.",
-            data: $data,
-            actionUrl: '/shop-owner/refund-approvals',
+            actionUrl: $this->notificationService->ownerApprovalActionUrl('order_refund', $refund->id),
             priority: 'medium',
         );
     }

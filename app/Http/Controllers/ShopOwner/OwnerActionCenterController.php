@@ -83,6 +83,21 @@ final class OwnerActionCenterController extends Controller
         ]);
     }
 
+    public function legacyRedirect(Request $request): RedirectResponse
+    {
+        $parameters = [];
+        $selection = $this->legacyApprovalSelectionFrom($request);
+
+        if ($selection !== null) {
+            $parameters = [
+                'bucket' => 'needs_my_decision',
+                'approval' => $selection['sourceType'].':'.$selection['sourceId'],
+            ];
+        }
+
+        return redirect()->route('shop-owner.shell.action-center', $parameters);
+    }
+
     private function canonicalActionCenterOwner(ShopOwner $owner): bool
     {
         return $this->rollout->select($owner)->selected
@@ -155,6 +170,107 @@ final class OwnerActionCenterController extends Controller
             'sourceType' => $matches[1],
             'sourceId' => (int) $sourceId,
         ];
+    }
+
+    /** @return array{sourceType: string, sourceId: int}|null */
+    private function legacyApprovalSelectionFrom(Request $request): ?array
+    {
+        $selection = $this->approvalSelectionFrom($request);
+        if ($selection !== null) {
+            return $selection;
+        }
+
+        $family = $request->route('legacy_approval_family');
+        if (! is_string($family)) {
+            return null;
+        }
+
+        $sourceType = $request->route('legacy_approval_source');
+        if (! is_string($sourceType)) {
+            $sourceType = match ($family) {
+                'refund' => match (strtolower(trim((string) $request->query('refund_type', '')))) {
+                    'order' => 'order_refund',
+                    'repair' => 'repair_refund',
+                    default => null,
+                },
+                'price' => $this->legacyPriceSource($request),
+                'payslip' => 'payslip',
+                'salary' => 'salary_change',
+                'purchase' => 'purchase_request',
+                'expense' => 'expense',
+                'repair_rejection' => 'repair_rejection',
+                default => null,
+            };
+        }
+
+        if (! is_string($sourceType) || ! in_array($sourceType, self::APPROVAL_SOURCE_TYPES, true)) {
+            return null;
+        }
+
+        foreach ($this->legacyApprovalIdKeys($family, $sourceType) as $key) {
+            $sourceId = $this->positiveApprovalId($request->query($key));
+            if ($sourceId !== null) {
+                return [
+                    'sourceType' => $sourceType,
+                    'sourceId' => $sourceId,
+                ];
+            }
+        }
+
+        return null;
+    }
+
+    private function legacyPriceSource(Request $request): ?string
+    {
+        if ($this->positiveApprovalId($request->query('package_id')) !== null) {
+            return 'repair_package_price_change';
+        }
+
+        if ($this->positiveApprovalId($request->query('service_id')) !== null) {
+            return 'repair_price_change';
+        }
+
+        return 'product_price_change';
+    }
+
+    /** @return array<int, string> */
+    private function legacyApprovalIdKeys(string $family, string $sourceType): array
+    {
+        return match ($family) {
+            'refund' => ['refund', 'refund_id', 'id'],
+            'price' => match ($sourceType) {
+                'repair_package_price_change' => ['package_id', 'id'],
+                'repair_price_change' => ['service_id', 'id'],
+                default => ['price_change_id', 'price_change', 'id'],
+            },
+            'payslip' => ['payslip_id', 'payroll_id', 'id'],
+            'salary' => ['salary_change_id', 'salary_change', 'id'],
+            'purchase' => ['purchase_request', 'purchase_request_id', 'id'],
+            'expense' => ['expense', 'expense_id', 'id'],
+            'repair_rejection' => ['repair_id', 'repair', 'id'],
+            default => [],
+        };
+    }
+
+    private function positiveApprovalId(mixed $value): ?int
+    {
+        if (! is_int($value) && ! is_string($value)) {
+            return null;
+        }
+
+        $value = (string) $value;
+        if (preg_match('/\A[1-9][0-9]*\z/', $value) !== 1) {
+            return null;
+        }
+
+        $sourceId = filter_var($value, FILTER_VALIDATE_INT, [
+            'options' => [
+                'min_range' => 1,
+                'max_range' => 9_007_199_254_740_991,
+            ],
+        ]);
+
+        return $sourceId === false ? null : (int) $sourceId;
     }
 
     /** @return array<string, array<string, mixed>> */

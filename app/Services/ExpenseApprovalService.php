@@ -279,7 +279,7 @@ class ExpenseApprovalService
         $shopOwnerId = (int) $approval->shop_owner_id;
         $expenseData = $this->buildExpenseNotificationData($expense, $approver, null);
         $financeActionUrl = "/finance?section=expense-tracking&expense={$expense->id}";
-        $shopOwnerActionUrl = "/shop-owner/expense-approvals?expense={$expense->id}";
+        $shopOwnerActionUrl = $this->notificationService->ownerApprovalActionUrl('expense', $expense->id);
 
         if ($result['is_final'] ?? false) {
             $requesterId = $this->resolveRequesterId($expense, $approval);

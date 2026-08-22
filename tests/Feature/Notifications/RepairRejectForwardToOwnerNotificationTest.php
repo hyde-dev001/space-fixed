@@ -56,7 +56,7 @@ class RepairRejectForwardToOwnerNotificationTest extends TestCase
             'shop_owner_id' => $shopOwner->id,
             'type' => 'repair_rejection_review',
             'title' => 'Repair Rejection Awaiting Your Review',
-            'action_url' => '/shop-owner/repair-reject-approval',
+            'action_url' => "/shop-owner/action-center?bucket=needs_my_decision&approval=repair_rejection:{$repairRequest->id}",
             'requires_action' => true,
         ]);
     }

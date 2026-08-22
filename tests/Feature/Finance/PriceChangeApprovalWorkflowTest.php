@@ -285,6 +285,10 @@ class PriceChangeApprovalWorkflowTest extends TestCase
             ->assertJsonPath('is_final', true);
 
         $this->assertSame('130.00', (string) $product->fresh()->price);
+        $this->assertDatabaseMissing('notifications', [
+            'shop_owner_id' => $this->shopOwnerAuth->id,
+            'title' => 'Price Change Finalized by Finance',
+        ]);
     }
 
     private function createWorkflowBoundPriceChange(): PriceChangeRequest

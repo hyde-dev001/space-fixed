@@ -68,6 +68,34 @@ final class OwnerActionCenterRouteTest extends TestCase
         $this->assertNotContains('erp.actor', $route->gatherMiddleware());
     }
 
+    public function test_action_center_summary_returns_only_the_bounded_decision_total_for_selected_owner(): void
+    {
+        $owner = $this->phaseThreeOwner();
+        config([
+            'owner_action_center.coverage.prices' => false,
+            'owner_action_center.coverage.payslips' => false,
+            'owner_action_center.coverage.salary_changes' => false,
+            'owner_action_center.coverage.expenses' => false,
+            'owner_action_center.coverage.purchase_requests' => false,
+            'owner_action_center.coverage.repair_rejections' => false,
+        ]);
+        $this->bindAdapter(OrderRefundAttentionAdapter::class, 'order_refunds', 'refunds', qualifyingCount: 2);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->getJson('/api/shop-owner/action-center/summary')
+            ->assertOk()
+            ->assertExactJson(['pending_count' => 2]);
+    }
+
+    public function test_action_center_summary_is_not_available_when_rollout_or_canonical_guards_fail(): void
+    {
+        $owner = ShopOwner::factory()->approved()->create();
+
+        $this->actingAs($owner, 'shop_owner')
+            ->getJson('/api/shop-owner/action-center/summary')
+            ->assertNotFound();
+    }
+
     public function test_owner_outside_phase_three_is_redirected_to_canonical_home_without_a_loop(): void
     {
         $owner = ShopOwner::factory()->approved()->create();
@@ -131,6 +159,51 @@ final class OwnerActionCenterRouteTest extends TestCase
                 ->where('approvalSelection.sourceType', 'repair_rejection')
                 ->where('approvalSelection.sourceId', 123)
                 ->where('approvalSelectionError', null));
+    }
+
+    public function test_legacy_owner_approval_routes_redirect_to_typed_action_center_selections(): void
+    {
+        $owner = $this->phaseThreeOwner();
+
+        $cases = [
+            ['shop-owner.refund-approvals', ['refund_type' => 'order', 'refund' => '11'], 'order_refund:11'],
+            ['shop-owner.price-approvals', ['id' => '12'], 'product_price_change:12'],
+            ['shop-owner.payslip-approvals', ['payroll_id' => '13'], 'payslip:13'],
+            ['shop-owner.salary-adjustment-approvals', ['salary_change_id' => '14'], 'salary_change:14'],
+            ['shop-owner.purchase-request-approval', ['purchase_request' => '15'], 'purchase_request:15'],
+            ['shop-owner.expense-approvals', ['expense' => '16'], 'expense:16'],
+            ['shop-owner.repair-reject-approval', ['repair_id' => '17'], 'repair_rejection:17'],
+        ];
+
+        foreach ($cases as [$routeName, $query, $approval]) {
+            $this->actingAs($owner, 'shop_owner')
+                ->get(route($routeName, $query))
+                ->assertRedirect(route('shop-owner.shell.action-center', [
+                    'bucket' => 'needs_my_decision',
+                    'approval' => $approval,
+                ]));
+        }
+    }
+
+    public function test_legacy_owner_approval_routes_discard_malformed_selection_without_disclosure(): void
+    {
+        $owner = $this->phaseThreeOwner();
+
+        foreach ([
+            ['shop-owner.refund-approvals', ['refund_type' => 'order', 'refund' => '0']],
+            ['shop-owner.price-approvals', ['id' => '1 OR 1=1']],
+            ['shop-owner.payslip-approvals', ['payroll_id' => '9007199254740992']],
+            ['shop-owner.salary-adjustment-approvals', ['salary_change_id' => '']],
+            ['shop-owner.purchase-request-approval', ['purchase_request' => 'abc']],
+            ['shop-owner.expense-approvals', ['expense' => '-4']],
+            ['shop-owner.repair-reject-approval', ['repair_id' => '0']],
+        ] as [$routeName, $query]) {
+            $response = $this->actingAs($owner, 'shop_owner')
+                ->get(route($routeName, $query));
+
+            $response->assertRedirect(route('shop-owner.shell.action-center'));
+            $this->assertStringNotContainsString('approval=', (string) $response->headers->get('Location'));
+        }
     }
 
     public function test_new_approval_detail_reads_are_tenant_scoped_and_keep_completed_context(): void
@@ -627,13 +700,20 @@ final class OwnerActionCenterRouteTest extends TestCase
         ]);
     }
 
-    private function bindAdapter(string $class, string $key, string $coverage, ?Throwable $failure = null): void
+    private function bindAdapter(
+        string $class,
+        string $key,
+        string $coverage,
+        ?Throwable $failure = null,
+        int $qualifyingCount = 0,
+    ): void
     {
-        $adapter = new class($key, $coverage, $failure) implements OwnerAttentionAdapter {
+        $adapter = new class($key, $coverage, $failure, $qualifyingCount) implements OwnerAttentionAdapter {
             public function __construct(
                 private readonly string $key,
                 private readonly string $coverage,
                 private readonly ?Throwable $failure,
+                private readonly int $qualifyingCount,
             ) {}
 
             public function adapterKey(): string
@@ -657,7 +737,7 @@ final class OwnerActionCenterRouteTest extends TestCase
                     throw $this->failure;
                 }
 
-                return new OwnerAttentionAdapterResult([], 0);
+                return new OwnerAttentionAdapterResult([], $this->qualifyingCount);
             }
         };
 

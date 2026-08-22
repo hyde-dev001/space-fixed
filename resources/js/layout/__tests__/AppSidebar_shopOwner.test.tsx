@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import AppSidebarShopOwner from '../AppSidebar_shopOwner';
 
@@ -21,6 +21,31 @@ const state = vi.hoisted(() => ({
       pageOrder?: number | null;
     }>;
   } | null,
+  ownerShell: {
+    presentation: 'canonical',
+    selection_reason: 'always_on',
+    context: 'company',
+    groups: Array<{
+      key: string,
+      label: string,
+      order: number,
+      default_expanded: boolean,
+      items: Array<{
+        key: string,
+        label: string,
+        canonical_url: string,
+        available: boolean,
+        unavailable_reason: null,
+        management_url: null,
+        active_matching: string[],
+      }>,
+    }>,
+    compatibility: {
+      show_erp_fallback: false,
+      erp_workspace_url: null,
+      fallback_url: null,
+    },
+  } | undefined,
   shopOwner: {
     registration_type: 'individual',
     business_type: 'both',
@@ -42,6 +67,7 @@ vi.mock('@inertiajs/react', () => ({
       shopModuleEnforcementEnabled: state.moduleEnforcementEnabled,
       erpUrls: state.erpUrls,
       activeModule: state.activeModule,
+      ownerShell: state.ownerShell,
     },
   }),
   Link: ({ href, children, ...props }: React.PropsWithChildren<{ href: string }>) => (
@@ -92,6 +118,35 @@ beforeEach(() => {
   state.moduleEnforcementEnabled = undefined;
   state.erpUrls = { portal: '/shop-owner/dashboard', workspace: null };
   state.activeModule = null;
+  state.ownerShell = {
+    presentation: 'canonical',
+    selection_reason: 'always_on',
+    context: 'company',
+    groups: [{
+      key: 'home',
+      label: 'Home',
+      order: 0,
+      default_expanded: true,
+      items: [{
+        key: 'action-center',
+        label: 'Action Center',
+        canonical_url: '/shop-owner/action-center',
+        available: true,
+        unavailable_reason: null,
+        management_url: null,
+        active_matching: ['/shop-owner/action-center'],
+      }],
+    }],
+    compatibility: {
+      show_erp_fallback: false,
+      erp_workspace_url: null,
+      fallback_url: null,
+    },
+  };
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+    ok: true,
+    json: async () => ({ pending_count: 0 }),
+  }));
 });
 
 it('hides disabled owner modules while keeping core dashboard visible', () => {
@@ -129,15 +184,41 @@ it('renders individual owner operational pages with business and module access',
   expect(screen.getByRole('link', { name: 'Riders' })).toBeInTheDocument();
 });
 
-it('keeps the existing owner primary entries when no ownerShell metadata is provided', () => {
+it('uses one Action Center entry instead of the Approval Pages group', () => {
   render(<AppSidebarShopOwner />);
 
   expect(screen.getByRole('link', { name: /^Dashboard$/i })).toBeInTheDocument();
   expect(screen.getByRole('link', { name: /Assist Center/i })).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Approval Pages' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: /^Action Center$/i })).toHaveAttribute(
+    'href',
+    '/shop-owner/action-center',
+  );
+  expect(screen.queryByRole('button', { name: 'Approval Pages' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: /Refund Approval|Price Approvals|Payslip Approval|Salary Adjustment Approval|Purchase Request Approval|Expense Approvals|Repair Reject Approval/i })).not.toBeInTheDocument();
 });
 
-it('shows individual owners the supported refund approval page without company modules', () => {
+it('shows an accessible pending-count badge only when the bounded summary is positive', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+    ok: true,
+    json: async () => ({ pending_count: 3 }),
+  }));
+
+  render(<AppSidebarShopOwner />);
+
+  await waitFor(() => expect(screen.getByRole('status', { name: '3 pending approvals' })).toBeInTheDocument());
+  expect(screen.getByRole('status', { name: '3 pending approvals' })).toHaveTextContent('3');
+});
+
+it('does not show a badge when the summary is zero or unavailable', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('summary unavailable')));
+
+  render(<AppSidebarShopOwner />);
+
+  await waitFor(() => expect(screen.getByRole('link', { name: /^Action Center$/i })).toBeInTheDocument());
+  expect(screen.queryByRole('status')).not.toBeInTheDocument();
+});
+
+it('shows individual owners the Action Center without company modules', () => {
   state.shopModules = accessible({
     finance: false,
     procurement: false,
@@ -146,17 +227,11 @@ it('shows individual owners the supported refund approval page without company m
   });
   render(<AppSidebarShopOwner />);
 
-  fireEvent.click(screen.getByRole('button', { name: 'Approval Pages' }));
-
-  expect(screen.getByRole('link', { name: 'Refund Approval' })).toHaveAttribute(
+  expect(screen.getByRole('link', { name: /^Action Center$/i })).toHaveAttribute(
     'href',
-    '/shop-owner.refund-approvals',
+    '/shop-owner/action-center',
   );
-  expect(screen.queryByRole('link', { name: 'Price Approvals' })).not.toBeInTheDocument();
-  expect(screen.queryByRole('link', { name: 'Payslip Approval' })).not.toBeInTheDocument();
-  expect(screen.queryByRole('link', { name: 'Purchase Request Approval' })).not.toBeInTheDocument();
-  expect(screen.queryByRole('link', { name: 'Expense Approvals' })).not.toBeInTheDocument();
-  expect(screen.queryByRole('link', { name: 'Salary Adjustment Approval' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Approval Pages' })).not.toBeInTheDocument();
 });
 
 it('removes Employee Modules and standalone Logistics for a shop owner', () => {
@@ -203,9 +278,8 @@ it('uses the top-level module state when the nested auth state is unavailable', 
   expect(screen.queryByRole('link', { name: 'CRM' })).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: 'Customers' })).not.toBeInTheDocument();
 
-  fireEvent.click(screen.getByRole('button', { name: 'Approval Pages' }));
-  expect(screen.getByRole('link', { name: 'Refund Approval' })).toBeInTheDocument();
-  expect(screen.getByRole('link', { name: 'Purchase Request Approval' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: /^Action Center$/i })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Approval Pages' })).not.toBeInTheDocument();
 });
 
 it('shows one capability-controlled ERP Workspace entry for a company owner', () => {
@@ -308,7 +382,7 @@ it('does not keep a stale module scope on a normal shop owner portal page', () =
   render(<AppSidebarShopOwner />);
 
   expect(screen.getByRole('link', { name: /^Dashboard$/i })).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Approval Pages' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: /^Action Center$/i })).toBeInTheDocument();
   expect(screen.queryByText('Retail Operations', { exact: true })).not.toBeInTheDocument();
 });
 
@@ -351,9 +425,7 @@ it('keeps supported refund approval visible when every module is unavailable', (
 
   render(<AppSidebarShopOwner />);
 
-  expect(screen.getByRole('button', { name: 'Approval Pages' })).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: 'Approval Pages' }));
-  expect(screen.getByRole('link', { name: 'Refund Approval' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: /^Action Center$/i })).toBeInTheDocument();
   expect(screen.queryByText('Employee Modules', { exact: true })).not.toBeInTheDocument();
   expect(screen.queryByText('Customer Management', { exact: true })).not.toBeInTheDocument();
 });

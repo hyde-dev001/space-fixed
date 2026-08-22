@@ -13,6 +13,7 @@ use App\Models\SuspensionRequest;
 use App\Models\Supplier;
 use App\Models\SupplierOrder;
 use App\Models\HR\SalaryChange;
+use App\Services\NotificationService;
 use App\Models\User;
 use App\Services\HR\SalaryChangeApprovalService;
 use App\Services\RepairOnlineRefundWorkflowService;
@@ -276,6 +277,82 @@ class NotificationCriticalFlowsTest extends TestCase
     }
 
     #[Test]
+    public function owner_approval_notifications_use_typed_action_center_destinations(): void
+    {
+        $shopOwner = $this->createShopOwner();
+        $notificationService = app(NotificationService::class);
+
+        $notificationService->notifyRefundRequest($shopOwner->id, [
+            'refund_id' => 101,
+            'source_type' => 'order_refund',
+            'order_number' => 'ORD-101',
+            'amount' => '100.00',
+        ]);
+        $notificationService->notifyPriceChangeRequest($shopOwner->id, [
+            'price_change_id' => 102,
+            'product_name' => 'Action Center Shoe',
+            'old_price' => '100.00',
+            'new_price' => '120.00',
+        ]);
+        $notificationService->notifyRepairServiceRequest($shopOwner->id, [
+            'service_id' => 103,
+            'service_name' => 'Repair Service',
+            'price' => '500.00',
+        ]);
+        $notificationService->notifySalaryChangeSubmittedToShopOwner($shopOwner->id, [
+            'salary_change_id' => 104,
+            'employee_name' => 'Action Center Employee',
+            'proposed_by_name' => 'HR',
+            'new_salary' => '25000.00',
+        ]);
+        $notificationService->notifyRepairRejectApprovalRequest($shopOwner->id, [
+            'repair_id' => 105,
+            'request_id' => 'REP-105',
+        ]);
+
+        $expectedUrls = [
+            'Refund Request' => '/shop-owner/action-center?bucket=needs_my_decision&approval=order_refund:101',
+            'Price Change Approval Required' => '/shop-owner/action-center?bucket=needs_my_decision&approval=product_price_change:102',
+            'Repair Service Approval Required' => '/shop-owner/action-center?bucket=needs_my_decision&approval=repair_price_change:103',
+            'New Salary Change Request' => '/shop-owner/action-center?bucket=needs_my_decision&approval=salary_change:104',
+            'Repair Rejection Awaiting Your Review' => '/shop-owner/action-center?bucket=needs_my_decision&approval=repair_rejection:105',
+        ];
+
+        foreach ($expectedUrls as $title => $actionUrl) {
+            $this->assertDatabaseHas('notifications', [
+                'shop_owner_id' => $shopOwner->id,
+                'title' => $title,
+                'action_url' => $actionUrl,
+            ]);
+        }
+    }
+
+    #[Test]
+    public function owner_approval_action_url_rejects_unknown_or_unsafe_sources(): void
+    {
+        $notificationService = app(NotificationService::class);
+
+        foreach ([
+            ['unknown', 1],
+            ['payslip', 0],
+            ['expense', '9007199254740992'],
+        ] as [$sourceType, $sourceId]) {
+            $this->assertSame('/shop-owner/action-center', $notificationService->ownerApprovalActionUrl($sourceType, $sourceId));
+        }
+
+        foreach ([
+            ['payslip', 201],
+            ['purchase_request', 202],
+            ['expense', 203],
+        ] as [$sourceType, $sourceId]) {
+            $this->assertSame(
+                "/shop-owner/action-center?bucket=needs_my_decision&approval={$sourceType}:{$sourceId}",
+                $notificationService->ownerApprovalActionUrl($sourceType, $sourceId),
+            );
+        }
+    }
+
+    #[Test]
     public function repair_refund_finance_approve_emits_customer_and_owner_notifications(): void
     {
         $fixture = $this->createRepairRefundFixture('pos');
@@ -301,6 +378,7 @@ class NotificationCriticalFlowsTest extends TestCase
         $this->assertDatabaseHas('notifications', [
             'shop_owner_id' => $fixture['shop_owner']->id,
             'title' => 'Repair Refund Approved By Finance',
+            'action_url' => "/shop-owner/action-center?bucket=needs_my_decision&approval=repair_refund:{$fixture['refund']->id}",
         ]);
     }
 
@@ -328,6 +406,7 @@ class NotificationCriticalFlowsTest extends TestCase
             'shop_owner_id' => $fixture['shop_owner']->id,
             'title' => 'Repair Refund Requires Review',
             'type' => 'refund_request',
+            'action_url' => "/shop-owner/action-center?bucket=needs_my_decision&approval=repair_refund:{$fixture['refund']->id}",
         ]);
     }
 

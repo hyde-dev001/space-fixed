@@ -99,6 +99,11 @@ class PayslipApprovalWorkflowTest extends TestCase
                 'approval_level' => 2,
             ]);
         $this->assertApprovalStage($payslip, 2, 4, 'shop_owner');
+        $this->assertDatabaseHas('notifications', [
+            'shop_owner_id' => $this->shopOwnerAuth->id,
+            'title' => 'Payslip Awaiting Shop Owner Approval',
+            'action_url' => "/shop-owner/action-center?bucket=needs_my_decision&approval=payslip:{$payslip->id}",
+        ]);
 
         // Wrong actor at level 2: finance checker cannot approve owner stage
         $wrongRole = $this->actingAs($this->financeFirst, 'user')

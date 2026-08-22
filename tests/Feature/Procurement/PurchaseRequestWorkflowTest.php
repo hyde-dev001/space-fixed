@@ -72,7 +72,7 @@ class PurchaseRequestWorkflowTest extends TestCase
         $this->assertSame($this->finance->id, $purchaseRequest->fresh()->reviewed_by);
         $this->assertDatabaseHas('notifications', [
             'shop_owner_id' => $this->shopOwner->id,
-            'action_url' => "/shop-owner/purchase-request-approval?purchase_request={$purchaseRequest->id}",
+            'action_url' => "/shop-owner/action-center?bucket=needs_my_decision&approval=purchase_request:{$purchaseRequest->id}",
         ]);
 
         $this->actingAs($this->shopOwner, 'shop_owner')

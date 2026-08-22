@@ -14,6 +14,7 @@ import {
 import { useSidebar } from "../context/SidebarContext";
 import type { ShopModuleKey } from "../types/shopModules";
 import { canRenderShopModule } from "../utils/shopModuleAccess";
+import { readCanonicalOwnerShell } from "./ownerShellMetadata";
 
 type NavItem = {
   name: string;
@@ -143,16 +144,8 @@ const approvalWorkflowItems: NavItem[] = [
         <path d="M7 4h10a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" />
       </svg>
     ),
-    name: "Approval Pages",
-    subItems: [
-      { name: "Refund Approval", route: "shop-owner.refund-approvals" },
-      { name: "Price Approvals", route: "shop-owner.price-approvals", moduleKey: "finance" },
-      { name: "Payslip Approval", route: "shop-owner.payslip-approvals", moduleKey: "finance" },
-      { name: "Salary Adjustment Approval", route: "shop-owner.salary-adjustment-approvals", moduleKey: "finance" },
-      { name: "Purchase Request Approval", route: "shop-owner.purchase-request-approval", moduleKey: "procurement" },
-      { name: "Expense Approvals", route: "shop-owner.expense-approvals", moduleKey: "finance" },
-      { name: "Repair Reject Approval", route: "shop-owner.repair-reject-approval", moduleKey: "repair_operations" },
-    ],
+    name: "Action Center",
+    path: "/shop-owner/action-center",
   },
 ];
 
@@ -252,6 +245,12 @@ const AppSidebar_shopOwner: React.FC<AppSidebarShopOwnerProps> = ({ activeModule
   const { isExpanded, isMobileOpen, isHovered, setIsHovered, openSubmenu, toggleSubmenu } = useSidebar();
   const { url, props } = usePage();
   const auth = (props as any).auth;
+  const canonicalOwnerShell = readCanonicalOwnerShell((props as any)?.ownerShell);
+  const actionCenterAvailable = canonicalOwnerShell === null
+    ? (props as any)?.ownerShell === undefined
+    : canonicalOwnerShell.groups.some((group) => group.items.some((item) => (
+      item.key === "action-center" && item.available
+    )));
   const shopOwner = auth?.shop_owner || auth?.user?.shop_owner || (props as any)?.shop_owner;
   const authModuleStates = auth?.shopModules;
   const sharedModuleStates = (props as any)?.moduleStates;
@@ -312,6 +311,43 @@ const AppSidebar_shopOwner: React.FC<AppSidebarShopOwnerProps> = ({ activeModule
   );
   const subMenuRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [openModuleGroup, setOpenModuleGroup] = useState<string | null>(null);
+  const [pendingActionCount, setPendingActionCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!actionCenterAvailable || typeof fetch !== "function") {
+      return;
+    }
+
+    let active = true;
+    fetch("/api/shop-owner/action-center/summary", {
+      credentials: "include",
+      headers: { Accept: "application/json" },
+    })
+      .then((response) => response.ok ? response.json() : null)
+      .then((payload: unknown) => {
+        if (!active || typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+          return;
+        }
+
+        const count = (payload as { pending_count?: unknown }).pending_count;
+        setPendingActionCount(
+          typeof count === "number" && Number.isSafeInteger(count) && count > 0
+            ? count
+            : null,
+        );
+      })
+      .catch(() => {
+        if (active) {
+          setPendingActionCount(null);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [actionCenterAvailable]);
+
+  const visibleApprovalWorkflowItems = actionCenterAvailable ? approvalWorkflowItems : [];
 
   // Check if menu item should be visible based on shop owner's registration and business type
   const isModuleVisible = useCallback((menuItem: { moduleKey?: ShopModuleKey }) => {
@@ -319,26 +355,8 @@ const AppSidebar_shopOwner: React.FC<AppSidebarShopOwnerProps> = ({ activeModule
   }, [shopModules, moduleEnforcementEnabled]);
 
   const isSubItemVisible = useCallback((subItem: { route: string; moduleKey?: ShopModuleKey }) => {
-    if (!isModuleVisible(subItem)) {
-      return false;
-    }
-
-    if (!shopOwner) {
-      return subItem.route !== 'shop-owner.repair-reject-approval';
-    }
-
-    const rawSubItemBusinessType = String(shopOwner.business_type || '').toLowerCase();
-    const subItemBusinessType = rawSubItemBusinessType.includes('both') ? 'both' : rawSubItemBusinessType;
-    const isCompanySubItem = shopOwner.is_company === true || shopOwner.registration_type?.toLowerCase() === 'company';
-    const canManageStaffSubItem = shopOwner.can_manage_staff === true;
-
-    if (subItem.route === 'shop-owner.repair-reject-approval') {
-      return (isCompanySubItem || canManageStaffSubItem)
-        && (subItemBusinessType === 'repair' || subItemBusinessType === 'both');
-    }
-
-    return true;
-  }, [isModuleVisible, shopOwner]);
+    return isModuleVisible(subItem);
+  }, [isModuleVisible]);
 
   const isMenuItemVisible = useCallback((menuItem: NavItem) => {
     if (!isModuleVisible(menuItem)) {
@@ -376,9 +394,6 @@ const AppSidebar_shopOwner: React.FC<AppSidebarShopOwnerProps> = ({ activeModule
     const companyOnlyRoutes = [
       'shopOwner.user-access-control',
       'shop-owner.audit-logs',
-      'shop-owner.price-approvals',
-      'shop-owner.salary-adjustment-approvals',
-      'shop-owner.purchase-request-approval',
       'shopOwner.suspend-accounts'
     ];
 
@@ -417,9 +432,6 @@ const AppSidebar_shopOwner: React.FC<AppSidebarShopOwnerProps> = ({ activeModule
   const isActive = useCallback(
     (routeName: string) => {
       try {
-        if (routeName === "shop-owner.repair-reject-approval" && url.startsWith("/shop-owner/history-rejection")) {
-          return true;
-        }
         // Prefer Ziggy's router check when available: route() -> Router.current(name)
         try {
           if (typeof route === "function") {
@@ -629,7 +641,7 @@ const AppSidebar_shopOwner: React.FC<AppSidebarShopOwnerProps> = ({ activeModule
       const items = menuType === "main"
         ? mainMenuItems
         : menuType === "approval"
-          ? approvalWorkflowItems
+          ? visibleApprovalWorkflowItems
           : menuType === "operations"
             ? individualOperationsItems
             : individualCustomerManagementItems;
@@ -650,7 +662,7 @@ const AppSidebar_shopOwner: React.FC<AppSidebarShopOwnerProps> = ({ activeModule
     if (submenuMatched && matchedKey && openSubmenu !== matchedKey) {
       toggleSubmenu(matchedKey);
     }
-  }, [url, isActive, mainMenuItems]);
+  }, [url, isActive, mainMenuItems, visibleApprovalWorkflowItems]);
 
   useEffect(() => {
     if (openSubmenu !== null) {
@@ -741,6 +753,15 @@ const AppSidebar_shopOwner: React.FC<AppSidebarShopOwnerProps> = ({ activeModule
                 </span>
                 {(isExpanded || isHovered || isMobileOpen) && (
                   <span className="menu-item-text">{nav.name}</span>
+                )}
+                {nav.path === "/shop-owner/action-center" && pendingActionCount !== null && (
+                  <span
+                    role="status"
+                    aria-label={`${pendingActionCount} pending approvals`}
+                    className="ml-auto inline-flex min-w-6 items-center justify-center rounded-full bg-brand-100 px-1.5 py-0.5 text-xs font-semibold text-brand-700"
+                  >
+                    {pendingActionCount}
+                  </span>
                 )}
               </Link>
             )
@@ -904,7 +925,7 @@ const AppSidebar_shopOwner: React.FC<AppSidebarShopOwnerProps> = ({ activeModule
                     </div>
                   )}
 
-                  {hasVisibleMenuItems(approvalWorkflowItems) && (
+                  {hasVisibleMenuItems(visibleApprovalWorkflowItems) && (
                     <div>
                       <h2
                         className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${!isExpanded && !isHovered
@@ -918,7 +939,7 @@ const AppSidebar_shopOwner: React.FC<AppSidebarShopOwnerProps> = ({ activeModule
                           <HorizontaLDots className="size-6" />
                         )}
                       </h2>
-                      {renderMenuItems(approvalWorkflowItems, "approval")}
+                      {renderMenuItems(visibleApprovalWorkflowItems, "approval")}
                     </div>
                   )}
                 </>

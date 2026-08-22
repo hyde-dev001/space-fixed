@@ -571,7 +571,7 @@ class RepairPosRefundService
                 actionUrl: '/my-repairs',
                 ownerTitle: 'Repair Refund Approved By Finance',
                 ownerMessage: "Repair refund {$refund->refund_no} was approved by finance.",
-                ownerActionUrl: '/shop-owner/refund-approvals',
+                ownerActionUrl: $this->notificationService->ownerApprovalActionUrl('repair_refund', $refund->id),
                 includeOwner: $requiresOwnerApproval,
             );
 
@@ -1301,7 +1301,7 @@ class RepairPosRefundService
             $resolvedOwnerMessage = trim((string) $ownerMessage) !== '' ? trim((string) $ownerMessage) : $message;
             $resolvedOwnerActionUrl = trim((string) $ownerActionUrl) !== ''
                 ? trim((string) $ownerActionUrl)
-                : '/shop-owner/refund-approvals';
+                : $this->notificationService->ownerApprovalActionUrl('repair_refund', $refund->id);
 
             Notification::create([
                 'shop_owner_id' => (int) $refund->shop_owner_id,
@@ -1363,6 +1363,7 @@ class RepairPosRefundService
                 'amount' => number_format($requestedAmount, 2, '.', ''),
                 'workflow_source' => $workflowSource,
                 'status' => (string) ($refund->status ?? 'requested'),
+                'source_type' => 'repair_refund',
             ]);
 
             // Governance notifications must still be visible even if preference resolution returns null.
@@ -1380,8 +1381,9 @@ class RepairPosRefundService
                         'amount' => number_format($requestedAmount, 2, '.', ''),
                         'workflow_source' => (string) ($refund->workflow_source ?? 'pos'),
                         'status' => (string) ($refund->status ?? 'requested'),
+                        'source_type' => 'repair_refund',
                     ],
-                    'action_url' => '/shop-owner/refund-approvals',
+                    'action_url' => $this->notificationService->ownerApprovalActionUrl('repair_refund', $refund->id),
                     'shop_id' => (int) $refund->shop_owner_id,
                 ]);
             }

@@ -45,7 +45,7 @@ class RepairOnlineRefundWorkflowService
                     'refund_no' => (string) $refund->refund_no,
                     'repairer_status' => 'approved',
                 ],
-                actionUrl: '/shop-owner/refund-approvals',
+                actionUrl: $this->notificationService->ownerApprovalActionUrl('repair_refund', $refund->id),
                 priority: 'high',
                 requiresAction: true,
             );
@@ -121,7 +121,7 @@ class RepairOnlineRefundWorkflowService
                     'repairer_status' => 'rejected',
                     'reason' => trim($reason),
                 ],
-                actionUrl: '/shop-owner/refund-approvals',
+                actionUrl: $this->notificationService->ownerApprovalActionUrl('repair_refund', $refund->id),
                 priority: 'high',
                 requiresAction: true,
             );
@@ -137,7 +137,7 @@ class RepairOnlineRefundWorkflowService
                     'repairer_status' => 'rejected',
                     'reason' => trim($reason),
                 ],
-                actionUrl: '/shop-owner/refund-approvals',
+                actionUrl: $this->notificationService->ownerApprovalActionUrl('repair_refund', $refund->id),
                 priority: 'high',
                 requiresAction: true,
             );

@@ -27,7 +27,6 @@ final class OwnerErpPageContractTest extends TestCase
             'registration_type' => 'company',
             'business_type' => 'both',
         ]);
-
         $this->actingAs($owner, 'shop_owner')
             ->get('/shop-owner/erp/workspace')
             ->assertInertia(fn (Assert $page) => $page
@@ -508,6 +507,12 @@ final class OwnerErpPageContractTest extends TestCase
             'registration_type' => 'company',
             'business_type' => 'both',
         ]);
+        config([
+            'owner_shell.enabled' => true,
+            'owner_shell.allowlisted_shop_ids' => [$owner->id],
+            'owner_action_center.enabled' => true,
+            'owner_action_center.allowlisted_shop_ids' => [$owner->id],
+        ]);
 
         foreach (['hr_employees', 'finance', 'inventory', 'procurement', 'logistics'] as $moduleKey) {
             ShopOwnerModule::factory()->create([
@@ -529,9 +534,6 @@ final class OwnerErpPageContractTest extends TestCase
             ['/shop-owner/erp/finance/invoices', 'ERP/Finance/Finance'],
             ['/shop-owner/erp/finance/create-invoice', 'ERP/Finance/Finance'],
             ['/shop-owner/erp/finance/expenses', 'ERP/Finance/Finance'],
-            ['/shop-owner/erp/finance/repair-pricing', 'ShopOwner/Approvals/PriceApprovals'],
-            ['/shop-owner/erp/finance/shoe-pricing', 'ShopOwner/Approvals/PriceApprovals'],
-            ['/shop-owner/erp/finance/purchase-request-review', 'ShopOwner/Approvals/PurchaseRequestApproval'],
             ['/shop-owner/erp/inventory/upload-stocks', 'ERP/inventory/UploadInventory'],
             ['/shop-owner/erp/inventory/stock-request', 'ERP/inventory/StockRequest'],
             ['/shop-owner/erp/inventory/request-material-approval', 'ERP/inventory/RequestApproval'],
@@ -550,6 +552,16 @@ final class OwnerErpPageContractTest extends TestCase
                 ->assertInertia(fn (Assert $page) => $page
                     ->component($component, false)
                     ->where('navigationMode', 'module'));
+        }
+
+        foreach ([
+            '/shop-owner/erp/finance/repair-pricing',
+            '/shop-owner/erp/finance/shoe-pricing',
+            '/shop-owner/erp/finance/purchase-request-review',
+        ] as $uri) {
+            $this->actingAs($owner, 'shop_owner')
+                ->get($uri)
+                ->assertRedirect(route('shop-owner.shell.action-center'));
         }
     }
 
@@ -831,6 +843,12 @@ final class OwnerErpPageContractTest extends TestCase
             'registration_type' => 'company',
             'business_type' => 'both',
         ]);
+        config([
+            'owner_shell.enabled' => true,
+            'owner_shell.allowlisted_shop_ids' => [$owner->id],
+            'owner_action_center.enabled' => true,
+            'owner_action_center.allowlisted_shop_ids' => [$owner->id],
+        ]);
 
         foreach (['hr_employees', 'finance', 'inventory', 'procurement'] as $moduleKey) {
             ShopOwnerModule::factory()->create([
@@ -845,13 +863,6 @@ final class OwnerErpPageContractTest extends TestCase
             ['/shop-owner/erp/hr/employee-directory', 'ERP/HR/HR'],
             ['/shop-owner/erp/hr/suspend-accounts', 'ShopOwner/TeamManagement/suspendAccount'],
             ['/shop-owner/erp/finance/audit-logs', 'ERP/Finance/AuditLogs'],
-            ['/shop-owner/erp/finance/expense-approvals', 'ShopOwner/Approvals/ExpenseApproval'],
-            ['/shop-owner/erp/finance/refund-approvals', 'ShopOwner/Approvals/refundApproval'],
-            ['/shop-owner/erp/finance/repair-pricing', 'ShopOwner/Approvals/PriceApprovals'],
-            ['/shop-owner/erp/finance/shoe-pricing', 'ShopOwner/Approvals/PriceApprovals'],
-            ['/shop-owner/erp/finance/purchase-request-review', 'ShopOwner/Approvals/PurchaseRequestApproval'],
-            ['/shop-owner/erp/finance/payslip-approvals', 'ShopOwner/Approvals/PayslipApproval'],
-            ['/shop-owner/erp/finance/salary-adjustment-approvals', 'ShopOwner/Approvals/SalaryChangesApproval'],
             ['/shop-owner/erp/manager/reports', 'ERP/Manager/Reports'],
             ['/shop-owner/erp/manager/audit-logs', 'ERP/Manager/AuditLogs'],
             ['/shop-owner/erp/inventory/inventory-dashboard', 'ERP/inventory/InventoryDashboard'],
@@ -859,7 +870,6 @@ final class OwnerErpPageContractTest extends TestCase
             ['/shop-owner/erp/inventory/stock-movement', 'ERP/inventory/StockMovement'],
             ['/shop-owner/erp/inventory/overview', 'ShopOwner/Products/product management/InventoryOverview'],
             ['/shop-owner/erp/procurement/suppliers-management', 'ERP/Procurement/SuppliersManagement'],
-            ['/shop-owner/erp/procurement/purchase-request-approval', 'ShopOwner/Approvals/PurchaseRequestApproval'],
         ];
 
         foreach ($pages as [$uri, $component]) {
@@ -867,6 +877,21 @@ final class OwnerErpPageContractTest extends TestCase
                 ->get($uri)
                 ->assertOk()
                 ->assertInertia(fn (Assert $page) => $page->component($component, false));
+        }
+
+        foreach ([
+            '/shop-owner/erp/finance/expense-approvals',
+            '/shop-owner/erp/finance/refund-approvals',
+            '/shop-owner/erp/finance/repair-pricing',
+            '/shop-owner/erp/finance/shoe-pricing',
+            '/shop-owner/erp/finance/purchase-request-review',
+            '/shop-owner/erp/finance/payslip-approvals',
+            '/shop-owner/erp/finance/salary-adjustment-approvals',
+            '/shop-owner/erp/procurement/purchase-request-approval',
+        ] as $uri) {
+            $this->actingAs($owner, 'shop_owner')
+                ->get($uri)
+                ->assertRedirect(route('shop-owner.shell.action-center'));
         }
     }
 
