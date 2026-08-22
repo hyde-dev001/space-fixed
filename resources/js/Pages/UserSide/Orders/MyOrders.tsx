@@ -107,6 +107,18 @@ type Order = {
   delivery_window?: 'morning' | 'afternoon' | null;
   eta?: string;
   pickup_enabled?: boolean;
+  customer_receipt_status?: 'pending' | 'confirmed' | 'disputed' | string;
+  customer_received_at?: string | null;
+  customer_receipt_disputed_at?: string | null;
+  can_confirm_receipt?: boolean;
+  can_report_delivery_issue?: boolean;
+  active_delivery_dispute?: {
+    id: number;
+    status: string;
+    reason: string;
+    notes?: string | null;
+    reported_at?: string | null;
+  } | null;
   refund_stage?: {
     id: number;
     logistics_shipment_id?: number | null;
@@ -426,7 +438,10 @@ const MyOrders: React.FC = () => {
         throw new Error(data.message || 'Failed to confirm delivery');
       }
 
-      // Update local state
+      const data = await response.json();
+
+      // Update local state from the server response. A shop-owned early receipt
+      // acknowledgement must not locally promote the order to delivered.
       setOrders(prev => 
         prev.map(order => {
           if (order.id !== orderId) return order;
@@ -434,17 +449,22 @@ const MyOrders: React.FC = () => {
           const nowPassed = isDeadlinePassed(order);
           return {
             ...order,
-            status: 'delivered',
+            status: data.order_status || order.status,
+            customer_receipt_status: data.receipt_status || 'confirmed',
+            customer_received_at: data.customer_received_at || new Date().toISOString(),
+            can_confirm_receipt: false,
             // Recompute locally so REFUND activates immediately without a full page refresh.
-            can_request_refund: !nowPassed,
+            can_request_refund: data.order_status === 'delivered' ? !nowPassed : order.can_request_refund,
           };
         })
       );
 
       Swal.fire({
         icon: 'success',
-        title: 'Delivery Confirmed!',
-        text: 'Thank you for confirming your order delivery.',
+        title: 'Order Received',
+        text: data.order_status === 'delivered'
+          ? 'Thank you for confirming your order delivery.'
+          : 'Your receipt was recorded. Official delivery status is still waiting for dispatcher approval.',
         confirmButtonColor: '#000000',
       });
     } catch (error) {
@@ -453,6 +473,164 @@ const MyOrders: React.FC = () => {
         icon: 'error',
         title: 'Failed',
         text: error instanceof Error ? error.message : 'Unable to confirm delivery. Please try again.',
+        confirmButtonColor: '#000000',
+      });
+    }
+  };
+
+  const reportDeliveryIssue = async (orderId: number) => {
+    const reason = await Swal.fire({
+      title: 'Report Order',
+      input: 'select',
+      inputOptions: {
+        item_not_received: 'Hindi natanggap ang item',
+        damaged: 'Damaged ang item',
+        incomplete: 'Incomplete ang order',
+        wrong_item: 'Wrong item ang natanggap',
+        other: 'Other',
+      },
+      inputPlaceholder: 'Piliin ang problema',
+      inputValidator: (value) => value ? undefined : 'Piliin muna ang dahilan.',
+      showCancelButton: true,
+      confirmButtonText: 'Continue',
+      cancelButtonText: 'Cancel',
+    });
+    if (!reason.isConfirmed) return;
+
+    const note = await Swal.fire({
+      title: 'Report details',
+      input: 'textarea',
+      inputPlaceholder: 'Ilagay ang karagdagang detalye (optional)...',
+      showCancelButton: true,
+      confirmButtonText: 'Submit Report',
+      cancelButtonText: 'Cancel',
+    });
+    if (!note.isConfirmed) return;
+
+    try {
+      const response = await fetch(`/orders/${orderId}/delivery-disputes`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+        },
+        body: JSON.stringify({ reason: reason.value, notes: String(note.value ?? '').trim() || null }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Hindi naisumite ang report.');
+
+      setOrders((prev) => prev.map((order) => order.id === orderId ? {
+        ...order,
+        customer_receipt_status: 'disputed',
+        can_confirm_receipt: false,
+        can_report_delivery_issue: false,
+        active_delivery_dispute: data.dispute ? {
+          id: Number(data.dispute.id),
+          status: String(data.dispute.status),
+          reason: String(data.dispute.reason),
+          reported_at: data.dispute.reported_at || new Date().toISOString(),
+        } : order.active_delivery_dispute,
+      } : order));
+
+      Swal.fire({
+        icon: 'success',
+        title: 'Report Submitted',
+        text: 'Naisumite na ang report at susuriin ito ng dispatcher.',
+        confirmButtonColor: '#000000',
+      });
+    } catch (error) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Failed',
+        text: error instanceof Error ? error.message : 'Hindi naisumite ang report. Subukan ulit.',
+        confirmButtonColor: '#000000',
+      });
+    }
+  };
+
+  const markReturnShipped = async (order: Order) => {
+    const stage = order.refund_stage;
+    if (!stage?.can_mark_return_shipped) return;
+
+    const tracking = await Swal.fire({
+      title: 'Ship the returned item',
+      text: 'Ilagay ang tracking number ng parcel na ibinabalik mo.',
+      input: 'text',
+      inputPlaceholder: 'Tracking number',
+      inputValidator: (value) => value.trim() ? undefined : 'Required ang tracking number.',
+      showCancelButton: true,
+      confirmButtonText: 'Continue',
+      cancelButtonText: 'Cancel',
+    });
+    if (!tracking.isConfirmed) return;
+
+    const carrier = await Swal.fire({
+      title: 'Return carrier',
+      text: 'Anong courier ang gagamitin mo sa pagbalik ng item?',
+      input: 'text',
+      inputPlaceholder: 'Hal. J&T, LBC, Ninja Van',
+      inputValidator: (value) => value.trim() ? undefined : 'Required ang carrier.',
+      showCancelButton: true,
+      confirmButtonText: 'Continue',
+      cancelButtonText: 'Cancel',
+    });
+    if (!carrier.isConfirmed) return;
+
+    const note = await Swal.fire({
+      title: 'Return note',
+      input: 'textarea',
+      inputPlaceholder: 'Optional na detalye tungkol sa return...',
+      showCancelButton: true,
+      confirmButtonText: 'Submit Return Shipment',
+      cancelButtonText: 'Cancel',
+    });
+    if (!note.isConfirmed) return;
+
+    try {
+      const response = await fetch(`/orders/refunds/${stage.id}/mark-shipped-return`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+        },
+        body: JSON.stringify({
+          tracking_number: String(tracking.value).trim(),
+          carrier: String(carrier.value).trim(),
+          note: String(note.value ?? '').trim() || null,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Hindi ma-update ang return shipment.');
+
+      setOrders((prev) => prev.map((currentOrder) => currentOrder.id === order.id ? {
+        ...currentOrder,
+        refund_stage: currentOrder.refund_stage ? {
+          ...currentOrder.refund_stage,
+          return_status: String(data.refund?.return_status || 'in_transit'),
+          return_source: String(data.refund?.return_source || 'customer'),
+          customer_return_tracking_number: data.refund?.customer_return_tracking_number || String(tracking.value).trim(),
+          customer_return_carrier: data.refund?.customer_return_carrier || String(carrier.value).trim(),
+          customer_return_tracking_link: data.refund?.customer_return_tracking_link || null,
+          customer_return_shipped_at: data.refund?.customer_return_shipped_at || new Date().toISOString(),
+          can_mark_return_shipped: false,
+        } : currentOrder.refund_stage,
+      } : currentOrder));
+
+      Swal.fire({
+        icon: 'success',
+        title: 'Return Shipment Submitted',
+        text: 'Na-record na ang return. Hintayin ang staff inspection bago ma-release ang refund.',
+        confirmButtonColor: '#000000',
+      });
+    } catch (error) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Failed',
+        text: error instanceof Error ? error.message : 'Hindi ma-update ang return shipment. Subukan ulit.',
         confirmButtonColor: '#000000',
       });
     }
@@ -2068,18 +2246,47 @@ const MyOrders: React.FC = () => {
                             VIEW REASON DETAILS
                           </button>
                         )}
-                        {(order.status === 'shipped' || order.status === 'to_ship') && (
+                        {order.can_confirm_receipt === true && (
                           <button
                             onClick={() => confirmDelivery(order.id)}
-                            disabled={!order.pickup_enabled}
                             className={`${actionButtonBaseClass} ${
-                              order.pickup_enabled
-                                ? actionButtonPrimaryClass
-                                : actionButtonDisabledClass
+                              actionButtonPrimaryClass
                             }`}
-                            title={order.pickup_enabled ? 'Confirm you have received your order' : 'Waiting for shop to activate receive'}
+                            title={order.delivery_status === 'awaiting_proof_approval'
+                              ? 'Confirm receipt while dispatcher reviews the delivery proof'
+                              : 'Confirm you have received your order'}
                           >
-                            {order.pickup_enabled ? 'RECEIVED' : 'RECEIVED'}
+                            ORDER RECEIVED
+                          </button>
+                        )}
+                        {order.customer_receipt_status === 'confirmed' && (
+                          <span className="inline-flex items-center justify-center rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold tracking-wide text-emerald-700">
+                            RECEIPT CONFIRMED
+                          </span>
+                        )}
+                        {order.active_delivery_dispute && (
+                          <span className="inline-flex items-center justify-center rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold tracking-wide text-rose-700">
+                            REPORT {order.active_delivery_dispute.status === 'open' ? 'SUBMITTED' : 'UNDER INVESTIGATION'}
+                          </span>
+                        )}
+                        {order.can_report_delivery_issue === true && (
+                          <button
+                            type="button"
+                            onClick={() => void reportDeliveryIssue(order.id)}
+                            className={`${actionButtonBaseClass} ${actionButtonDangerClass}`}
+                            title="Report a problem with this delivered order"
+                          >
+                            REPORT ORDER
+                          </button>
+                        )}
+                        {order.refund_stage?.can_mark_return_shipped === true && (
+                          <button
+                            type="button"
+                            onClick={() => void markReturnShipped(order)}
+                            className={`${actionButtonBaseClass} ${actionButtonPrimaryClass}`}
+                            title="Submit the tracking details for your return shipment"
+                          >
+                            SHIP RETURNED ITEM
                           </button>
                         )}
                         {['delivered', 'completed'].includes(order.status) && (

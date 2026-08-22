@@ -63,6 +63,16 @@ type Order = {
   paymentStatus: string;
   paymentMethod?: string;
   status: "pending" | "processing" | "shipped" | "delivered" | "cancelled" | "refund";
+  customerReceiptStatus?: 'pending' | 'confirmed' | 'disputed' | string;
+  customerReceivedAt?: string | null;
+  customerReceiptDisputedAt?: string | null;
+  activeDeliveryDispute?: {
+    id: number;
+    status: string;
+    reason: string;
+    notes?: string | null;
+    reported_at?: string | null;
+  } | null;
   cancellation_reason?: string | null;
   cancellation_note?: string | null;
   cancellation_other_reason_note?: string | null;
@@ -514,6 +524,10 @@ export default function JobOrdersPage() {
       paymentStatus: order.payment_status || 'pending',
       paymentMethod: order.payment_method || '',
       status: (order.status === 'completed' ? 'delivered' : order.status) as Order['status'],
+      customerReceiptStatus: order.customer_receipt_status || 'pending',
+      customerReceivedAt: order.customer_received_at || null,
+      customerReceiptDisputedAt: order.customer_receipt_disputed_at || null,
+      activeDeliveryDispute: order.active_delivery_dispute || null,
       cancellation_reason: order.cancellation_reason || null,
       cancellation_note: order.cancellation_note || null,
       cancellation_other_reason_note: order.cancellation_other_reason_note || null,
@@ -2110,6 +2124,19 @@ export default function JobOrdersPage() {
                             <span className="size-1.5 rounded-full bg-current opacity-70" aria-hidden="true" />
                             {formatStatusLabel(order.status)}
                           </span>
+                          {order.customerReceiptStatus === 'disputed' ? (
+                            <span className="inline-flex items-center rounded-full bg-rose-100 px-2.5 py-1 text-xs font-semibold text-rose-700 dark:bg-rose-900/30 dark:text-rose-300">
+                              Customer Dispute
+                            </span>
+                          ) : order.customerReceiptStatus === 'confirmed' ? (
+                            <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
+                              Receipt Confirmed
+                            </span>
+                          ) : order.status === 'delivered' ? (
+                            <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                              Receipt Pending
+                            </span>
+                          ) : null}
                         </div>
                       </td>
                       <td className="box-border px-4 py-4 align-top">
@@ -2535,6 +2562,27 @@ export default function JobOrdersPage() {
                     <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Address</p>
                     <p className="text-sm text-gray-900 dark:text-white">{viewOrder.shippingAddress}</p>
                   </div>
+                </div>
+
+                <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-900/30">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Delivery awareness</p>
+                      <p className="mt-1 text-sm font-semibold text-gray-900 dark:text-white">Official status: {formatStatusLabel(viewOrder.status)}</p>
+                    </div>
+                    {viewOrder.customerReceiptStatus === 'disputed' ? (
+                      <span className="rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-700 dark:bg-rose-900/30 dark:text-rose-300">Customer Dispute</span>
+                    ) : viewOrder.customerReceiptStatus === 'confirmed' ? (
+                      <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">Receipt Confirmed</span>
+                    ) : viewOrder.status === 'delivered' ? (
+                      <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">Receipt Pending</span>
+                    ) : null}
+                  </div>
+                  {viewOrder.activeDeliveryDispute && (
+                    <p className="mt-2 text-xs text-rose-700 dark:text-rose-300">
+                      Report reason: {viewOrder.activeDeliveryDispute.reason.replace(/_/g, ' ')} ({viewOrder.activeDeliveryDispute.status})
+                    </p>
+                  )}
                 </div>
 
                 <div className="pt-4 border-t border-gray-200 dark:border-gray-700">

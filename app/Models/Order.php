@@ -27,6 +27,9 @@ class Order extends Model
         'vat_amount',
         'vat_rate',
         'status',
+        'customer_receipt_status',
+        'customer_received_at',
+        'customer_receipt_disputed_at',
         'customer_name',
         'customer_email',
         'customer_phone',
@@ -82,6 +85,8 @@ class Order extends Model
         'invoice_generated' => 'boolean',
         'pickup_enabled' => 'boolean',
         'pickup_enabled_at' => 'datetime',
+        'customer_received_at' => 'datetime',
+        'customer_receipt_disputed_at' => 'datetime',
         'payment_link_created_at' => 'datetime',
         'payment_expires_at' => 'datetime',
         'payment_failed_at' => 'datetime',
@@ -177,6 +182,11 @@ class Order extends Model
     public function refunds(): HasMany
     {
         return $this->hasMany(OrderRefund::class);
+    }
+
+    public function deliveryDisputes(): HasMany
+    {
+        return $this->hasMany(DeliveryDispute::class);
     }
 
     /**

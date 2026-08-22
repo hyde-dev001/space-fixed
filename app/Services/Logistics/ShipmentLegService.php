@@ -1096,7 +1096,7 @@ class ShipmentLegService
             ->whereKey($shipment->source_id)
             ->whereRaw('LOWER(carrier_company) = ?', ['shop-owned logistics'])
             ->where('status', 'shipped')
-            ->update(['status' => 'completed']);
+            ->update(['status' => 'delivered']);
     }
 
     private function completeShopOwnedReturn($shipment): void

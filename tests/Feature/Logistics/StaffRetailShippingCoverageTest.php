@@ -135,7 +135,7 @@ class StaffRetailShippingCoverageTest extends TestCase
         $this->assertSame('delivered', $this->order->fresh()->status->value);
     }
 
-    public function test_normalized_shop_owned_carrier_is_persisted_canonically_and_auto_completes(): void
+    public function test_normalized_shop_owned_carrier_is_persisted_canonically_and_auto_marks_delivered(): void
     {
         $this->actingAs($this->staff, 'user')
             ->patchJson("/api/staff/orders/{$this->order->id}/status", [
@@ -156,7 +156,7 @@ class StaffRetailShippingCoverageTest extends TestCase
 
         app(ShipmentLegService::class)->markDelivered($leg->fresh());
 
-        $this->assertSame('completed', $this->order->fresh()->status->value);
+        $this->assertSame('delivered', $this->order->fresh()->status->value);
     }
 
     public function test_outside_coverage_does_not_block_complete_third_party_shipping(): void

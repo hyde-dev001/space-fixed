@@ -133,6 +133,9 @@ Route::get('/payment-failed', function () {
 })->name('payment-failed');
 Route::get('/my-orders', [OrderController::class, 'index'])->name('my-orders');
 Route::post('/orders/confirm-delivery', [OrderController::class, 'confirmDelivery'])->name('orders.confirm-delivery');
+Route::post('/orders/{order}/delivery-disputes', [OrderController::class, 'reportDeliveryIssue'])
+    ->middleware('auth:user')
+    ->name('orders.delivery-disputes.store');
 Route::post('/orders/cancel', [OrderController::class, 'cancel'])->middleware('auth:user')->name('orders.cancel');
 Route::post('/orders/request-refund', [OrderController::class, 'requestRefund'])->middleware('auth:user')->name('orders.request-refund');
 Route::post('/orders/refunds/{id}/mark-shipped-return', [OrderController::class, 'markRefundReturnShipped'])->middleware('auth:user')->name('orders.refunds.mark-shipped-return');
@@ -467,6 +470,8 @@ Route::prefix('api/logistics')->middleware(['auth:user,shop_owner'])->group(func
         ->name('logistics.api.shipments.index');
     Route::get('/shipments/{shipment}', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'show'])
         ->name('logistics.api.shipments.show');
+    Route::post('/delivery-disputes/{dispute}/investigate', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'investigateDispute']);
+    Route::post('/delivery-disputes/{dispute}/resolve', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'resolveDispute']);
     Route::post('/legs/{leg}/assign', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'assign']);
     Route::post('/legs/{leg}/accept', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'acceptOffer']);
     Route::post('/legs/{leg}/reject', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'rejectOffer']);
