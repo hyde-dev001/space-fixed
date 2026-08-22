@@ -221,10 +221,17 @@ class LogisticsApiTest extends TestCase
             'proof_file' => $this->fakeAttemptPhoto('proof.png'),
         ], ['Accept' => 'application/json'])->assertCreated()->json('proof');
         $this->assertSame('awaiting_proof_approval', $leg->fresh()->status->value);
+        $this->actingAs(User::findOrFail($order->customer_id), 'user')
+            ->postJson('/orders/confirm-delivery', ['order_id' => $order->id])
+            ->assertOk()
+            ->assertJsonPath('order_status', 'shipped')
+            ->assertJsonPath('receipt_status', 'confirmed');
+        $this->assertSame('shipped', $order->fresh()->status->value);
         $this->actingAs($rider, 'user')->postJson("/api/logistics/legs/{$leg->id}/delivered")->assertUnprocessable();
         $this->actingAs($approver, 'user')->postJson("/api/logistics/proofs/{$proof['id']}/approve")->assertOk();
         $this->assertSame('delivered', $leg->fresh()->status->value);
-        $this->assertSame('completed', $order->fresh()->status->value);
+        $this->assertSame('delivered', $order->fresh()->status->value);
+        $this->assertSame('confirmed', $order->fresh()->customer_receipt_status);
         $this->assertDatabaseHas('handoff_proofs', ['id' => $proof['id'], 'review_status' => 'approved']);
     }
 

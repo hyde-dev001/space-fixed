@@ -78,9 +78,105 @@ class OrderRefundReturnInspectionTest extends TestCase
         $this->assertSame(6, (int) $product->fresh()->stock_quantity);
     }
 
-    private function fixture(): array
+    public function test_individual_return_cannot_be_received_without_complete_inspection(): void
     {
-        $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
+        [$refund, $staff, $line, $product] = $this->fixture('individual');
+
+        $result = app(OrderRefundService::class)->confirmReturnReceived(
+            $refund,
+            $staff->id,
+            lineDispositions: [],
+        );
+
+        $this->assertSame('invalid_state', $result['result']);
+        $this->assertSame('in_transit', $refund->fresh()->return_status);
+
+        $result = app(OrderRefundService::class)->confirmReturnReceived(
+            $refund->fresh(),
+            $staff->id,
+            lineDispositions: [$this->disposition($line->order_item_id)],
+        );
+
+        $this->assertSame('received', $result['result']);
+        $this->assertDatabaseHas('order_refund_items', [
+            'id' => $line->id,
+            'inspection_disposition' => 'resellable',
+            'inventory_action' => 'restock',
+        ]);
+        $this->assertSame(6, (int) $product->fresh()->stock_quantity);
+    }
+
+    public function test_individual_damaged_return_is_written_off_without_restocking(): void
+    {
+        [$refund, $staff, $line, $product] = $this->fixture('individual');
+        $startingStock = (int) $product->stock_quantity;
+
+        $result = app(OrderRefundService::class)->confirmReturnReceived(
+            $refund,
+            $staff->id,
+            lineDispositions: [[
+                ...$this->disposition($line->order_item_id),
+                'inspection_disposition' => 'damaged',
+            ]],
+        );
+
+        $this->assertSame('received', $result['result']);
+        $this->assertDatabaseHas('order_refund_items', [
+            'id' => $line->id,
+            'inspection_disposition' => 'damaged',
+            'inventory_action' => 'write_off',
+        ]);
+        $this->assertSame($startingStock, (int) $product->fresh()->stock_quantity);
+    }
+
+    public function test_individual_return_cannot_be_confirmed_before_customer_submits_shipment(): void
+    {
+        [$refund, $staff] = $this->fixture('individual');
+        $refund->update([
+            'shop_owner_status' => 'approved',
+            'finance_status' => 'approved',
+            'return_status' => 'pending_customer_shipment',
+        ]);
+
+        $result = app(OrderRefundService::class)->confirmReturnReceived(
+            $refund->fresh(),
+            $staff->id,
+            lineDispositions: [],
+        );
+
+        $this->assertSame('invalid_state', $result['result']);
+        $this->assertSame('pending_customer_shipment', $refund->fresh()->return_status);
+    }
+
+    public function test_customer_can_submit_individual_return_shipment_details_after_approval(): void
+    {
+        [$refund] = $this->fixture('individual');
+        $refund->update([
+            'shop_owner_status' => 'approved',
+            'finance_status' => 'approved',
+            'return_status' => 'pending_customer_shipment',
+        ]);
+
+        $this->actingAs($refund->customer, 'user')
+            ->postJson("/orders/refunds/{$refund->id}/mark-shipped-return", [
+                'tracking_number' => 'TRK-IND-001',
+                'carrier' => 'J&T',
+            ])
+            ->assertOk()
+            ->assertJsonPath('refund.return_status', 'in_transit')
+            ->assertJsonPath('refund.customer_return_tracking_number', 'TRK-IND-001');
+
+        $this->assertDatabaseHas('order_refunds', [
+            'id' => $refund->id,
+            'return_status' => 'in_transit',
+            'customer_return_tracking_number' => 'TRK-IND-001',
+            'customer_return_carrier' => 'J&T',
+        ]);
+    }
+
+    private function fixture(string $registrationType = 'company'): array
+    {
+        $shop = ShopOwner::factory()->create(['registration_type' => $registrationType]);
         $customer = User::factory()->create();
         $staff = User::factory()->create(['shop_owner_id' => $shop->id, 'role' => 'STAFF']);
         $product = Product::create([

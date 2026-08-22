@@ -224,6 +224,16 @@ export type LogisticsShipment = {
   source_id: number;
   source_summary?: LogisticsSourceSummary | null;
   order_summary?: LogisticsOrderSummary | null;
+  customer_disputes?: Array<{
+    id: number;
+    status: string;
+    reason: string;
+    notes?: string | null;
+    reported_at?: string | null;
+    resolution?: string | null;
+    resolution_note?: string | null;
+    resolved_at?: string | null;
+  }>;
   created_at?: string | null;
   legs?: TrackingShipmentLeg[];
 };

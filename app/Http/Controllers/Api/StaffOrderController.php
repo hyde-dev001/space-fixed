@@ -63,6 +63,7 @@ class StaffOrderController extends Controller
             'customer',
             'address',
             'shopOwner.logisticsSetting',
+            'deliveryDisputes' => fn ($disputeQuery) => $disputeQuery->latest('id'),
             'refunds' => function ($refundQuery) use ($includeRefundItems) {
                 if ($includeRefundItems) {
                     $refundQuery->with('items.orderItem');
@@ -120,6 +121,8 @@ class StaffOrderController extends Controller
                 : null;
             $latestRefund = $order->refunds->first();
             $cancelledShipment = $deliveryCancellations->get($order->id);
+            $activeDispute = $order->deliveryDisputes
+                ->first(fn ($dispute) => in_array((string) $dispute->status, ['open', 'investigating'], true));
 
             $latestRefundItems = [];
             if ($includeRefundItems && $latestRefund) {
@@ -158,6 +161,16 @@ class StaffOrderController extends Controller
                 'vat_rate' => $vatRate,
                 'grand_total' => $itemSubtotal + $shippingFee + ($vatAmount ?? 0.0),
                 'status' => $order->status,
+                'customer_receipt_status' => (string) ($order->customer_receipt_status ?? 'pending'),
+                'customer_received_at' => optional($order->customer_received_at)->toISOString(),
+                'customer_receipt_disputed_at' => optional($order->customer_receipt_disputed_at)->toISOString(),
+                'active_delivery_dispute' => $activeDispute ? [
+                    'id' => (int) $activeDispute->id,
+                    'status' => (string) $activeDispute->status,
+                    'reason' => (string) $activeDispute->reason,
+                    'notes' => $activeDispute->notes,
+                    'reported_at' => optional($activeDispute->reported_at)->toISOString(),
+                ] : null,
                 'cancellation_reason' => $order->cancellation_reason,
                 'cancellation_note' => $order->cancellation_note,
                 'cancellation_other_reason_note' => $order->cancellation_other_reason_note,
@@ -237,6 +250,7 @@ class StaffOrderController extends Controller
             'customer',
             'address',
             'shopOwner.logisticsSetting',
+            'deliveryDisputes' => fn ($disputeQuery) => $disputeQuery->latest('id'),
             'refunds' => function ($refundQuery) use ($includeRefundItems) {
                 if ($includeRefundItems) {
                     $refundQuery->with('items.orderItem');
@@ -261,6 +275,8 @@ class StaffOrderController extends Controller
             ? round((float) $order->vat_rate, 2)
             : null;
         $latestRefund = $order->refunds->first();
+        $activeDispute = $order->deliveryDisputes
+            ->first(fn ($dispute) => in_array((string) $dispute->status, ['open', 'investigating'], true));
         $latestRefundItems = [];
         if ($includeRefundItems && $latestRefund) {
             $latestRefundItems = $latestRefund->items
@@ -314,6 +330,16 @@ class StaffOrderController extends Controller
             'vat_rate' => $vatRate,
             'grand_total' => $itemSubtotal + $shippingFee + ($vatAmount ?? 0.0),
             'status' => $order->status,
+            'customer_receipt_status' => (string) ($order->customer_receipt_status ?? 'pending'),
+            'customer_received_at' => optional($order->customer_received_at)->toISOString(),
+            'customer_receipt_disputed_at' => optional($order->customer_receipt_disputed_at)->toISOString(),
+            'active_delivery_dispute' => $activeDispute ? [
+                'id' => (int) $activeDispute->id,
+                'status' => (string) $activeDispute->status,
+                'reason' => (string) $activeDispute->reason,
+                'notes' => $activeDispute->notes,
+                'reported_at' => optional($activeDispute->reported_at)->toISOString(),
+            ] : null,
             'cancellation_reason' => $order->cancellation_reason,
             'cancellation_note' => $order->cancellation_note,
             'cancellation_other_reason_note' => $order->cancellation_other_reason_note,
@@ -683,7 +709,7 @@ class StaffOrderController extends Controller
     {
         $validated = $request->validate([
             'return_notes' => 'nullable|string|max:1000',
-            'line_dispositions' => 'nullable|array',
+            'line_dispositions' => 'required|array|min:1',
             'line_dispositions.*.order_item_id' => 'required|integer|min:1',
             'line_dispositions.*.approved_qty' => 'required|integer|min:1',
             'line_dispositions.*.inspection_disposition' => 'required|string|in:resellable,damaged',

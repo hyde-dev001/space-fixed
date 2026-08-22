@@ -951,7 +951,9 @@ class OrderRefundService
             ];
         }
 
-        if (!in_array((string) ($refund->return_status ?? 'awaiting_approval'), ['pending_customer_shipment', 'pending_staff_pickup', 'in_transit'], true)) {
+        $returnStatus = (string) ($refund->return_status ?? 'awaiting_approval');
+        $isStaffPickup = (string) ($refund->return_source ?? '') === 'staff';
+        if ($returnStatus !== 'in_transit' && !($isStaffPickup && $returnStatus === 'pending_staff_pickup')) {
             return [
                 'result' => 'invalid_state',
                 'message' => 'Return cannot be confirmed in the current state.',
@@ -959,95 +961,41 @@ class OrderRefundService
             ];
         }
 
-        if (!empty($lineDispositions) && Schema::hasTable('order_refund_items')) {
-            try {
-                $dispositionByOrderItemId = collect($lineDispositions)
-                    ->filter(fn ($line) => is_array($line))
-                    ->mapWithKeys(function (array $line) {
-                        $orderItemId = (int) ($line['order_item_id'] ?? 0);
-                        $disposition = strtolower(trim((string) ($line['inspection_disposition'] ?? '')));
+        return $this->confirmIndividualReturnReceived($refund, $staffId, $notes, $lineDispositions);
+    }
 
-                        if ($orderItemId <= 0 || !in_array($disposition, ['resellable', 'damaged'], true)) {
-                            return [];
-                        }
+    private function confirmIndividualReturnReceived(
+        OrderRefund $refund,
+        ?int $staffId,
+        ?string $notes,
+        ?array $lineDispositions,
+    ): array {
+        // Keep the legacy in-memory/fallback path usable when the inspection table has
+        // not been installed yet. Persisted application returns always use inspection.
+        if (! $refund->exists || ! Schema::hasTable('order_refund_items')) {
+            $this->updateOrderRefundCompat($refund, [
+                'return_status' => 'received',
+                'return_confirmed_at' => now(),
+                'return_confirmed_by_staff_id' => $staffId,
+                'return_notes' => $notes ?? $refund->return_notes,
+                'staff_return_shipped_at' => $refund->staff_return_shipped_at ?? now(),
+            ]);
 
-                        return [$orderItemId => $disposition];
-                    });
-
-                if ($dispositionByOrderItemId->isNotEmpty()) {
-                    $refund->loadMissing('items', 'order.items');
-
-                    $existingLinesByOrderItemId = $refund->items
-                        ->filter(fn ($line) => (int) ($line->order_item_id ?? 0) > 0)
-                        ->keyBy(fn ($line) => (int) ($line->order_item_id ?? 0));
-
-                    $orderItemsById = collect($refund->order?->items ?? [])
-                        ->filter(fn ($item) => (int) ($item->id ?? 0) > 0)
-                        ->keyBy(fn ($item) => (int) ($item->id ?? 0));
-
-                    foreach ($dispositionByOrderItemId as $orderItemId => $disposition) {
-                        $orderItemId = (int) $orderItemId;
-                        if ($orderItemId <= 0) {
-                            continue;
-                        }
-
-                        $existingLine = $existingLinesByOrderItemId->get($orderItemId);
-                        if ($existingLine) {
-                            $existingLine->inspection_disposition = $disposition;
-                            $existingLine->save();
-                            continue;
-                        }
-
-                        $orderItem = $orderItemsById->get($orderItemId);
-                        $productId = (int) ($orderItem?->product_id ?? 0);
-
-                        if (!$orderItem || $productId <= 0) {
-                            continue;
-                        }
-
-                        $qty = max(1, (int) ($orderItem->quantity ?? 1));
-                        $unitPrice = (float) ($orderItem->price ?? 0);
-                        if ($unitPrice <= 0) {
-                            $unitPrice = round((float) ($orderItem->subtotal ?? 0) / $qty, 2);
-                        }
-
-                        $createdLine = $refund->items()->create([
-                            'order_item_id' => $orderItemId,
-                            'product_id' => $productId,
-                            'product_variant_id' => null,
-                            'requested_qty' => $qty,
-                            'approved_qty' => $qty,
-                            // Keep legacy/full-refund payout amount unchanged; this row is for disposition inventory handling.
-                            'unit_price_snapshot' => round(max($unitPrice, 0), 2),
-                            'line_amount' => 0,
-                            'inspection_disposition' => $disposition,
-                            'inventory_action' => 'pending',
-                        ]);
-
-                        $existingLinesByOrderItemId->put($orderItemId, $createdLine);
-                    }
-                }
-            } catch (\Throwable $lineDispositionError) {
-                Log::warning('Unable to persist return inspection dispositions before confirming return', [
-                    'refund_id' => (int) ($refund->id ?? 0),
-                    'error' => $lineDispositionError->getMessage(),
-                ]);
-            }
+            return [
+                'result' => 'received',
+                'message' => 'Product return has been confirmed as received.',
+                'refund' => $refund->fresh(),
+            ];
         }
 
-        $this->updateOrderRefundCompat($refund, [
-            'return_status' => 'received',
-            'return_confirmed_at' => now(),
-            'return_confirmed_by_staff_id' => $staffId,
-            'return_notes' => $notes ?? $refund->return_notes,
-            'staff_return_shipped_at' => $refund->staff_return_shipped_at ?? now(),
-        ]);
-
-        return [
-            'result' => 'received',
-            'message' => 'Product return has been confirmed as received.',
-            'refund' => $refund->fresh(),
-        ];
+        return $this->confirmPersistedReturnReceived(
+            refund: $refund,
+            staffId: $staffId,
+            notes: $notes,
+            lineDispositions: $lineDispositions,
+            allowPendingStaffPickup: true,
+            invalidStateMessage: 'Return cannot be confirmed in the current state.',
+        );
     }
 
     private function confirmCompanyReturnReceived(
@@ -1056,10 +1004,31 @@ class OrderRefundService
         ?string $notes,
         ?array $lineDispositions,
     ): array {
-        return DB::transaction(function () use ($refund, $staffId, $notes, $lineDispositions) {
+        return $this->confirmPersistedReturnReceived(
+            refund: $refund,
+            staffId: $staffId,
+            notes: $notes,
+            lineDispositions: $lineDispositions,
+            allowPendingStaffPickup: false,
+            invalidStateMessage: 'Wait for the returned parcel before completing the Staff inspection.',
+        );
+    }
+
+    private function confirmPersistedReturnReceived(
+        OrderRefund $refund,
+        ?int $staffId,
+        ?string $notes,
+        ?array $lineDispositions,
+        bool $allowPendingStaffPickup,
+        string $invalidStateMessage,
+    ): array {
+        return DB::transaction(function () use ($refund, $staffId, $notes, $lineDispositions, $allowPendingStaffPickup, $invalidStateMessage) {
             $refund = OrderRefund::query()->with('order.items')->lockForUpdate()->findOrFail($refund->id);
-            if ((string) $refund->return_status !== 'in_transit') {
-                return $this->invalidReturnReceipt($refund, 'Wait for the returned parcel before completing the Staff inspection.');
+            $returnStatus = (string) ($refund->return_status ?? 'awaiting_approval');
+            $isStaffPickup = (string) ($refund->return_source ?? '') === 'staff';
+            $staffPickupAllowed = $allowPendingStaffPickup && $isStaffPickup && $returnStatus === 'pending_staff_pickup';
+            if ($returnStatus !== 'in_transit' && ! $staffPickupAllowed) {
+                return $this->invalidReturnReceipt($refund, $invalidStateMessage);
             }
 
             $lines = $refund->items()->lockForUpdate()->get();
@@ -1076,7 +1045,7 @@ class OrderRefundService
                 return $this->invalidReturnReceipt($refund, 'Every refund item must be inspected exactly once.');
             }
 
-            $submittedById = $submitted->keyBy(fn ($line) => (int) $line['order_item_id']);
+            $submittedById = $submitted->keyBy(fn ($line) => (int) ($line['order_item_id'] ?? 0));
             $linesByOrderItemId = $lines->keyBy(fn ($line) => (int) $line->order_item_id);
             $validatedLines = [];
             foreach ($expectedOrderItemIds as $orderItemId) {
@@ -1105,7 +1074,10 @@ class OrderRefundService
                 $disposition = $validatedLine['disposition'];
 
                 if ($line) {
-                    $line->update(['inspection_disposition' => $disposition]);
+                    $line->update([
+                        'approved_qty' => $approvedQty,
+                        'inspection_disposition' => $disposition,
+                    ]);
                 } else {
                     $unitPrice = round((float) ($orderItem->price ?? 0), 2);
                     $line = $refund->items()->create([

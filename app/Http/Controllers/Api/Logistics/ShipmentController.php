@@ -10,6 +10,7 @@ use App\Models\Logistics\HandoffProof;
 use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
+use App\Models\DeliveryDispute;
 use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use App\Models\User;
@@ -20,6 +21,7 @@ use App\Services\Logistics\ProofService;
 use App\Services\Logistics\RiderActiveWorkGuard;
 use App\Services\Logistics\ShipmentLegService;
 use App\Services\RepairDeliveryService;
+use App\Services\DeliveryDisputeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -52,6 +54,37 @@ class ShipmentController extends Controller
         return response()->json([
             'shipment' => $shipment->load(['legs.proofs', 'legs.assignments.riderProfile', 'events']),
         ]);
+    }
+
+    public function investigateDispute(DeliveryDispute $dispute, DeliveryDisputeService $disputes): JsonResponse
+    {
+        $shop = $this->authorizedShop('resolve-logistics-exceptions');
+        $this->abortUnlessTenant($dispute->shop_owner_id, $shop);
+
+        $actor = Auth::guard('user')->user() ?? $shop;
+
+        return response()->json([
+            'dispute' => $disputes->investigate($dispute, $actor),
+        ]);
+    }
+
+    public function resolveDispute(Request $request, DeliveryDispute $dispute, DeliveryDisputeService $disputes): JsonResponse
+    {
+        $validated = $request->validate([
+            'resolution' => ['required', 'string', Rule::in(DeliveryDisputeService::RESOLUTIONS)],
+            'resolution_note' => ['nullable', 'string', 'max:2000'],
+        ]);
+        $shop = $this->authorizedShop('resolve-logistics-exceptions');
+        $this->abortUnlessTenant($dispute->shop_owner_id, $shop);
+
+        $actor = Auth::guard('user')->user() ?? $shop;
+
+        return response()->json($disputes->resolve(
+            $dispute,
+            $actor,
+            (string) $validated['resolution'],
+            $validated['resolution_note'] ?? null,
+        ));
     }
 
     public function assign(

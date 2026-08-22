@@ -1066,7 +1066,7 @@ export default function JobOrdersPage() {
               .filter((line) => line.order_item_id > 0 && line.approved_qty > 0)
           : []);
 
-    let lineDispositionsPayload: Array<{ order_item_id: number; inspection_disposition: 'resellable' | 'damaged' }> = [];
+    let lineDispositionsPayload: Array<{ order_item_id: number; approved_qty: number; inspection_disposition: 'resellable' | 'damaged' }> = [];
 
     if (refundLines.length > 0) {
       const result = await Swal.fire({
@@ -1100,7 +1100,7 @@ export default function JobOrdersPage() {
         confirmButtonColor: '#2563eb',
         focusConfirm: false,
         preConfirm: () => {
-          const lineDispositions: Array<{ order_item_id: number; inspection_disposition: 'resellable' | 'damaged' }> = [];
+          const lineDispositions: Array<{ order_item_id: number; approved_qty: number; inspection_disposition: 'resellable' | 'damaged' }> = [];
 
           for (let index = 0; index < refundLines.length; index += 1) {
             const line = refundLines[index];
@@ -1114,6 +1114,7 @@ export default function JobOrdersPage() {
 
             lineDispositions.push({
               order_item_id: line.order_item_id,
+              approved_qty: line.approved_qty,
               inspection_disposition: disposition,
             });
           }

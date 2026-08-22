@@ -574,8 +574,9 @@ class OrderController extends Controller
     {
         $validated = $request->validate([
             'return_notes' => 'nullable|string|max:1000',
-            'line_dispositions' => 'nullable|array',
+            'line_dispositions' => 'required|array|min:1',
             'line_dispositions.*.order_item_id' => 'required|integer|min:1',
+            'line_dispositions.*.approved_qty' => 'required|integer|min:1',
             'line_dispositions.*.inspection_disposition' => 'required|string|in:resellable,damaged',
         ]);
 
@@ -621,7 +622,7 @@ class OrderController extends Controller
             refund: $refund,
             staffId: null,
             notes: $validated['return_notes'] ?? null,
-            lineDispositions: $validated['line_dispositions'] ?? null,
+            lineDispositions: $validated['line_dispositions'],
         );
 
         if (($result['result'] ?? null) === 'invalid_state') {

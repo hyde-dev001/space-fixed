@@ -37,6 +37,7 @@ const statusOptions = [
   ['requested', 'Requested'],
   ['active', 'Active'],
   ['awaiting_proof_approval', 'Awaiting Proof Approval'],
+  ['customer_disputes', 'Customer Disputes'],
   ['failed_attempts', 'Failed attempts'],
   ['failed_pickups', 'Failed pickups'],
   ['completed', 'Completed'],
@@ -114,7 +115,7 @@ const toast = (icon: 'success' | 'error' | 'warning', title: string) => Swal.fir
 });
 
 export default function Shipments({ children }: React.PropsWithChildren) {
-  const { shipments, filters, assignableRiders, canAssign: serverCanAssign, canUpdateStatus: serverCanUpdateStatus, canRecordProof: serverCanRecordProof, canApproveProof: serverCanApproveProof, riderMode, maxDeliveryAttempts = 2, availableModules = [], showModuleFilter = false, today, auth, erpCapabilities } = usePage<{
+  const { shipments, filters, assignableRiders, canAssign: serverCanAssign, canUpdateStatus: serverCanUpdateStatus, canRecordProof: serverCanRecordProof, canApproveProof: serverCanApproveProof, canResolveDisputes: serverCanResolveDisputes, riderMode, maxDeliveryAttempts = 2, availableModules = [], showModuleFilter = false, today, auth, erpCapabilities } = usePage<{
     shipments: PaginatedResponse<LogisticsShipment>;
     filters: ShipmentFilters;
     assignableRiders: Array<{ id: number; name: string; phone?: string | null }>;
@@ -122,6 +123,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
     canUpdateStatus: boolean;
     canRecordProof: boolean;
     canApproveProof: boolean;
+    canResolveDisputes: boolean;
     riderMode: boolean;
     maxDeliveryAttempts?: number;
     availableModules?: LogisticsModule[];
@@ -135,6 +137,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
   const canUpdateStatus = !ownerMode && serverCanUpdateStatus;
   const canRecordProof = !ownerMode && serverCanRecordProof;
   const canApproveProof = !ownerMode && serverCanApproveProof;
+  const canResolveDisputes = !ownerMode && serverCanResolveDisputes;
   const [selectedShipmentId, setSelectedShipmentId] = useState<number | null>(null);
   const [selectedProofUrl, setSelectedProofUrl] = useState<string | null>(null);
   const returnFocusRef = useRef<HTMLButtonElement | null>(null);
@@ -263,6 +266,45 @@ export default function Shipments({ children }: React.PropsWithChildren) {
       cancelButtonText: 'Back',
     });
     if (result.isConfirmed) await act(`/api/logistics/proofs/${proofId}/reject`, { rejection_reason: result.value.trim() });
+  };
+
+  const investigateCustomerDispute = async (disputeId: number) => {
+    await act(`/api/logistics/delivery-disputes/${disputeId}/investigate`);
+  };
+
+  const resolveCustomerDispute = async (disputeId: number) => {
+    const resolution = await Swal.fire({
+      title: 'Resolve customer dispute',
+      input: 'select',
+      inputOptions: {
+        customer_confirmed: 'Customer confirmed',
+        refund_required: 'Refund required',
+        replacement_required: 'Replacement required',
+        return_required: 'Return required',
+        report_rejected: 'Reject report',
+      },
+      inputPlaceholder: 'Choose a resolution',
+      inputValidator: (value) => value ? undefined : 'Choose a resolution.',
+      showCancelButton: true,
+      confirmButtonText: 'Continue',
+      cancelButtonText: 'Back',
+    });
+    if (!resolution.isConfirmed) return;
+
+    const note = await Swal.fire({
+      title: 'Resolution note',
+      input: 'textarea',
+      inputPlaceholder: 'Explain the investigation result or next step...',
+      showCancelButton: true,
+      confirmButtonText: 'Save resolution',
+      cancelButtonText: 'Back',
+    });
+    if (!note.isConfirmed) return;
+
+    await act(`/api/logistics/delivery-disputes/${disputeId}/resolve`, {
+      resolution: String(resolution.value),
+      resolution_note: String(note.value ?? '').trim(),
+    });
   };
 
   const resolveFailedPickup = async (legId: number, action: 'retry' | 'cancel') => {
@@ -581,6 +623,11 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                     <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">
                       {logisticsModuleLabel(logisticsModuleForSourceType(shipment.source_type))}
                     </span>
+                    {shipment.customer_disputes?.some((dispute) => ['open', 'investigating'].includes(dispute.status)) && (
+                      <span className="rounded-full bg-rose-100 px-2 py-1 text-xs font-semibold text-rose-700 dark:bg-rose-900/30 dark:text-rose-300">
+                        Customer dispute
+                      </span>
+                    )}
                     <span className="min-w-0 break-words text-sm font-medium text-gray-600 dark:text-gray-300">
                       {shipment.source_type === 'order' && shipment.order_summary?.order_number
                         ? `Order ${shipment.order_summary.order_number}`
@@ -664,7 +711,26 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                     </button>
                   </header>
                   <div className="min-h-0 flex-1 overflow-y-auto border-t border-gray-100 bg-gray-50 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] dark:border-gray-700 dark:bg-gray-900/40 sm:p-6 sm:pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
-                  {shipment.source_type === 'order' && <RetailOrderSummary summary={shipment.order_summary} expanded />}
+                    {shipment.source_type === 'order' && <RetailOrderSummary summary={shipment.order_summary} expanded />}
+                    {shipment.customer_disputes?.map((dispute) => (
+                      <section key={dispute.id} className="mt-4 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-950 dark:border-rose-900/60 dark:bg-rose-950/20 dark:text-rose-100">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <p className="font-semibold">Customer dispute #{dispute.id} · {label(dispute.status)}</p>
+                            <p className="mt-1">Reason: {label(dispute.reason)}</p>
+                            {dispute.notes && <p className="mt-1">Customer note: {dispute.notes}</p>}
+                            {dispute.reported_at && <p className="mt-1 text-xs opacity-80">Reported: {formatDateTime(dispute.reported_at)}</p>}
+                          </div>
+                          {!ownerMode && !riderMode && canResolveDisputes && ['open', 'investigating'].includes(dispute.status) && (
+                            <div className="flex flex-wrap gap-2">
+                              {dispute.status === 'open' && <button type="button" onClick={() => void investigateCustomerDispute(dispute.id)} className="rounded-lg border border-rose-700 px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-100 dark:text-rose-300 dark:hover:bg-rose-900/40">Start investigation</button>}
+                              <button type="button" onClick={() => void resolveCustomerDispute(dispute.id)} className="rounded-lg bg-rose-700 px-3 py-2 text-xs font-semibold text-white hover:bg-rose-800">Resolve</button>
+                            </div>
+                          )}
+                        </div>
+                        {dispute.resolution && <p className="mt-2 font-semibold">Resolution: {label(dispute.resolution)}</p>}
+                      </section>
+                    ))}
                   <div className="mt-4 space-y-4 sm:mt-5">
                     {(shipment.legs ?? []).map((leg) => {
                             const recipient = contact(leg);

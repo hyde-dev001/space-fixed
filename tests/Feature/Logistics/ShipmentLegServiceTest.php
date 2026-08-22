@@ -242,7 +242,7 @@ class ShipmentLegServiceTest extends TestCase
         $this->assertNotNull($shipment->fresh()->cancelled_at);
     }
 
-    public function test_completed_shop_owned_delivery_completes_its_order(): void
+    public function test_completed_shop_owned_delivery_marks_its_order_delivered(): void
     {
         $shop = ShopOwner::factory()->create();
         $order = Order::factory()->create([
@@ -264,7 +264,7 @@ class ShipmentLegServiceTest extends TestCase
 
         app(ShipmentLegService::class)->markDelivered($leg);
 
-        $this->assertSame('completed', $order->fresh()->status->value);
+        $this->assertSame('delivered', $order->fresh()->status->value);
     }
 
     public function test_completed_third_party_delivery_keeps_order_shipped_for_staff_activation(): void

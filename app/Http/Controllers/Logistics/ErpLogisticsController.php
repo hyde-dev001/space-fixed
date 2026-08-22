@@ -7,6 +7,7 @@ use App\Models\Logistics\DeliveryAssignment;
 use App\Models\Logistics\DeliveryBatch;
 use App\Models\Logistics\DeliveryAttempt;
 use App\Models\Logistics\DeliveryIncident;
+use App\Models\DeliveryDispute;
 use App\Models\Logistics\HandoffProof;
 use App\Models\Logistics\LogisticsSetting;
 use App\Models\Logistics\RiderProfile;
@@ -73,7 +74,7 @@ class ErpLogisticsController extends Controller
             'search' => ['nullable', 'string', 'max:100'],
         ])['search'] ?? ''));
         [$module, $availableModules] = $this->logisticsModuleFilter($shop, (string) $request->query('module', 'all'));
-        $status = in_array($request->query('status'), ['all', 'incomplete', 'requested', 'active', 'completed', 'cancelled', 'awaiting_proof_approval', 'failed_attempts', 'failed_pickups'], true)
+        $status = in_array($request->query('status'), ['all', 'incomplete', 'requested', 'active', 'completed', 'cancelled', 'awaiting_proof_approval', 'customer_disputes', 'failed_attempts', 'failed_pickups'], true)
             ? $request->query('status') : 'all';
         $purpose = $request->query('purpose', 'all');
         $deliveryWindow = in_array($request->query('window'), ['morning', 'afternoon'], true)
@@ -82,7 +83,7 @@ class ErpLogisticsController extends Controller
 
         return Inertia::render('ERP/Logistics/Shipments', [
             'shipments' => tap(Shipment::query()
-                ->with(['legs' => function ($query) use ($user, $isDispatcher) {
+                ->with(['deliveryDisputes', 'legs' => function ($query) use ($user, $isDispatcher) {
                     $query->with([
                         'assignments.riderProfile',
                         'proofs',
@@ -124,6 +125,8 @@ class ErpLogisticsController extends Controller
                 })
                 ->when($status === 'awaiting_proof_approval', fn ($query) => $query
                     ->whereHas('legs', fn ($legs) => $legs->where('status', 'awaiting_proof_approval')))
+                ->when($status === 'customer_disputes', fn ($query) => $query
+                    ->whereHas('deliveryDisputes', fn ($disputes) => $disputes->whereIn('status', ['open', 'investigating'])))
                 ->when($status === 'failed_attempts', fn ($query) => $query
                     ->whereHas('legs.attempts', fn ($attempts) => $attempts
                         ->where('attempt_type', 'delivery')->where('status', 'failed')))
@@ -171,6 +174,7 @@ class ErpLogisticsController extends Controller
             'canUpdateStatus' => false,
             'canRecordProof' => false,
             'canApproveProof' => ! $ownerMode && $user && ($user->can('approve-proof-of-delivery') || $user->can('assign-logistics-deliveries')),
+            'canResolveDisputes' => ! $ownerMode && $user && $user->can('resolve-logistics-exceptions'),
             'riderMode' => false,
             'maxDeliveryAttempts' => $maxDeliveryAttempts,
             'assignableRiders' => $canAssign
@@ -1019,6 +1023,22 @@ class ErpLogisticsController extends Controller
 
     private function attachShipmentSummaries(iterable $shipments, int $shopOwnerId): void
     {
+        collect($shipments)
+            ->filter(fn ($shipment) => $shipment instanceof Shipment)
+            ->each(function (Shipment $shipment): void {
+                $shipment->setAttribute('customer_disputes', $shipment->relationLoaded('deliveryDisputes')
+                    ? $shipment->deliveryDisputes->map(fn (DeliveryDispute $dispute) => [
+                        'id' => (int) $dispute->id,
+                        'status' => (string) $dispute->status,
+                        'reason' => (string) $dispute->reason,
+                        'notes' => $dispute->notes,
+                        'reported_at' => optional($dispute->reported_at)->toISOString(),
+                        'resolution' => $dispute->resolution,
+                        'resolution_note' => $dispute->resolution_note,
+                        'resolved_at' => optional($dispute->resolved_at)->toISOString(),
+                    ])->values()->all()
+                    : []);
+            });
         $this->attachRepairSourceSummaries($shipments, $shopOwnerId);
         $this->attachRetailOrderSummaries($shipments, $shopOwnerId);
     }
