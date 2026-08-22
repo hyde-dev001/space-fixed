@@ -305,65 +305,9 @@ class RepairServiceController extends Controller
         // Determine baseline current price for workflow.
         // If a record is already in review and old_price exists, old_price is the authoritative current price.
         $baselineCurrentPrice = $this->resolveBaselineCurrentPrice($service);
-        $isIndividualShop = $this->isIndividualRegistrationShop((int) $service->shop_owner_id);
 
         // Check if price is being changed against baseline current price
         $isPriceChange = $request->filled('price') && (float)$request->price !== $baselineCurrentPrice;
-
-        if ($isPriceChange && $isIndividualShop) {
-            $updateData = $request->only(['name', 'category', 'price', 'duration', 'description']);
-
-            if ($request->filled('status')) {
-                $updateData['status'] = $normalizedInputStatus ?? $request->status;
-            } elseif (in_array($service->status, ['Under Review', 'Pending Owner Approval', 'Pending Finance Final Approval', 'Rejected'], true)) {
-                $updateData['status'] = 'Active';
-            }
-
-            if ($request->filled('reason')) {
-                $updateData['change_reason'] = $request->reason;
-            }
-
-            $updateData['updated_by'] = $this->resolveUpdaterUserId();
-
-            // Individual shops do not need price-approval workflow metadata.
-            $updateData['old_price'] = null;
-            $updateData['finance_notes'] = null;
-            $updateData['finance_reviewed_by'] = null;
-            $updateData['finance_reviewed_at'] = null;
-            $updateData['owner_reviewed_by'] = null;
-            $updateData['owner_reviewed_at'] = null;
-            $updateData['rejection_reason'] = null;
-
-            $service->update($updateData);
-
-            if ($request->has('material_templates')) {
-                try {
-                    $this->syncMaterialTemplates($service, (array) $request->input('material_templates', []));
-                } catch (ValidationException $e) {
-                    return response()->json([
-                        'success' => false,
-                        'errors' => $e->errors(),
-                    ], 422);
-                }
-            }
-
-            activity()
-                ->causedBy(Auth::guard('user')->user() ?? Auth::guard('shop_owner')->user())
-                ->performedOn($service)
-                ->withProperties([
-                    'service_name' => $service->name,
-                    'old_price' => $baselineCurrentPrice,
-                    'new_price' => (float) $service->price,
-                    'updated_fields' => array_keys($updateData),
-                ])
-                ->log('Repair service price updated immediately for individual shop owner');
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Service updated successfully',
-                'data' => $service,
-            ]);
-        }
 
         if ($isPriceChange) {
             $proposedPrice = (float) $request->price;
@@ -390,6 +334,8 @@ class RepairServiceController extends Controller
                 'owner_reviewed_by' => null,
                 'owner_reviewed_at' => null,
                 'rejection_reason' => null,
+                'approval_workflow_version' => $requiresOwnerApproval ? 'repair_finance_owner_finance' : 'repair_finance_only',
+                'current_approval_level' => 1,
             ]);
             
             // Store the proposed price in finance_notes as temporary storage for approval workflow
@@ -603,7 +549,7 @@ class RepairServiceController extends Controller
             $proposedPrice = ($service->status === 'Under Review' || $service->status === 'Pending Owner Approval' || $service->status === 'Pending Finance Final Approval' || ($service->status === 'Rejected' && $service->finance_reviewed_at))
                 ? $this->resolveProposedPrice($service)
                 : (float)$service->price;
-            $requiresOwnerApproval = $this->requiresOwnerApprovalForService($service, is_numeric($proposedPrice) ? (float) $proposedPrice : null);
+            $requiresOwnerApproval = $this->requiresOwnerApprovalForService($service);
 
             return [
                 'id' => $service->id,
@@ -784,7 +730,7 @@ class RepairServiceController extends Controller
             ], 422);
         }
 
-        $requiresOwnerApproval = $this->requiresOwnerApprovalForService($service, (float) $proposedPrice);
+        $requiresOwnerApproval = $this->requiresOwnerApprovalForService($service);
 
         if ($requiresOwnerApproval) {
             $service->update([
@@ -1276,6 +1222,13 @@ class RepairServiceController extends Controller
                 ], 404);
             }
 
+            if (!$this->requiresOwnerApprovalForService($service)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Owner approval is not required for this request.',
+                ], 400);
+            }
+
             $proposedPrice = $service->finance_notes;
 
             $service->update([
@@ -1308,6 +1261,13 @@ class RepairServiceController extends Controller
         // prefer service first to avoid ID collisions with packages.
         $service = RepairService::find($id);
         if ($service) {
+            if (!$this->requiresOwnerApprovalForService($service)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Owner approval is not required for this request.',
+                ], 400);
+            }
+
             $proposedPrice = $service->finance_notes;
 
             $service->update([
@@ -1391,6 +1351,17 @@ class RepairServiceController extends Controller
             ], 422);
         }
 
+        $expectedStatus = $this->requiresOwnerApprovalForService($service)
+            ? 'Pending Finance Final Approval'
+            : 'Under Review';
+
+        if ($service->status !== $expectedStatus) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Service price change is not awaiting final Finance approval.',
+            ], 409);
+        }
+
         // Apply the proposed price from finance_notes
         $proposedPrice = $this->resolveProposedPrice($service);
 
@@ -1453,6 +1424,17 @@ class RepairServiceController extends Controller
                 'success' => false,
                 'errors' => $validator->errors(),
             ], 422);
+        }
+
+        $expectedStatus = $this->requiresOwnerApprovalForPackage($package)
+            ? 'owner_approved'
+            : 'pending_finance';
+
+        if ($package->approval_status !== $expectedStatus) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Package price change is not awaiting final Finance approval.',
+            ], 409);
         }
 
         $package->update([
@@ -1552,15 +1534,6 @@ class RepairServiceController extends Controller
         return null;
     }
 
-    private function isIndividualRegistrationShop(int $shopOwnerId): bool
-    {
-        $shopOwner = ShopOwner::query()
-            ->select('id', 'registration_type')
-            ->find($shopOwnerId);
-
-        return (bool) ($shopOwner && $shopOwner->isIndividual());
-    }
-
     private function resolveUpdaterUserId(): ?int
     {
         // repair_services.updated_by is a foreign key to users.id
@@ -1644,28 +1617,14 @@ class RepairServiceController extends Controller
         return (string) ($service->description ?? 'Price update request');
     }
 
-    private function requiresOwnerApprovalForService(RepairService $service, ?float $proposedPrice = null): bool
+    private function requiresOwnerApprovalForService(RepairService $service): bool
     {
-        $currentPrice = (float) ($service->old_price ?? $service->price);
-        $targetPrice = $proposedPrice ?? $this->resolveProposedPrice($service) ?? (float) $service->price;
-
-        return $this->shopOwnerApprovalPolicyService->requiresOwnerApprovalForPriceChange(
-            (int) $service->shop_owner_id,
-            $currentPrice,
-            (float) $targetPrice
-        );
+        return $service->approval_workflow_version !== 'repair_finance_only';
     }
 
     private function requiresOwnerApprovalForPackage(RepairPackage $package): bool
     {
-        $currentPrice = (float) ($package->old_package_price ?? $package->package_price);
-        $proposedPrice = (float) $package->package_price;
-
-        return $this->shopOwnerApprovalPolicyService->requiresOwnerApprovalForPriceChange(
-            (int) $package->shop_owner_id,
-            $currentPrice,
-            $proposedPrice
-        );
+        return $package->approval_workflow_version !== 'repair_finance_only';
     }
 
     /**
@@ -1695,6 +1654,13 @@ class RepairServiceController extends Controller
                     'success' => false,
                     'message' => 'Service not found',
                 ], 404);
+            }
+
+            if (!$this->requiresOwnerApprovalForService($service)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Owner approval is not required for this request.',
+                ], 400);
             }
 
             $validator = Validator::make($request->all(), [
@@ -1757,6 +1723,13 @@ class RepairServiceController extends Controller
         // prefer service first to avoid ID collisions with packages.
         $service = RepairService::find($id);
         if ($service) {
+            if (!$this->requiresOwnerApprovalForService($service)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Owner approval is not required for this request.',
+                ], 400);
+            }
+
             $validator = Validator::make($request->all(), [
                 'reason' => 'required|string',
             ]);
@@ -1826,6 +1799,13 @@ class RepairServiceController extends Controller
 
     private function ownerApprovePackage(RepairPackage $package)
     {
+        if (!$this->requiresOwnerApprovalForPackage($package)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Owner approval is not required for this request.',
+            ], 400);
+        }
+
         if (!in_array($package->approval_status, ['finance_approved', 'pending_owner'], true)) {
             return response()->json([
                 'success' => false,
@@ -1860,6 +1840,13 @@ class RepairServiceController extends Controller
 
     private function ownerRejectPackage(Request $request, RepairPackage $package)
     {
+        if (!$this->requiresOwnerApprovalForPackage($package)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Owner approval is not required for this request.',
+            ], 400);
+        }
+
         $validator = Validator::make($request->all(), [
             'reason' => 'required|string',
         ]);

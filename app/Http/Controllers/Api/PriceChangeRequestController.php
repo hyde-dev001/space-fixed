@@ -406,19 +406,13 @@ class PriceChangeRequestController extends Controller
         // Create approval workflow if missing (for old requests created before the fix)
         if (!$priceChangeRequest->approval_id) {
             try {
-                $requiresOwnerApproval = $this->shopOwnerApprovalPolicyService->requiresOwnerApprovalForPriceChange(
-                    (int) $priceChangeRequest->shop_owner_id,
-                    (float) $priceChangeRequest->current_price,
-                    (float) $priceChangeRequest->proposed_price
-                );
-                
                 $shopOwnerUser = $this->resolveShopOwnerApproverUser((int) $priceChangeRequest->shop_owner_id);
                 if ($shopOwnerUser) {
                     $this->priceChangeApprovalService->createPriceChangeApproval(
                         $priceChangeRequest,
                         $shopOwnerUser,
                         $actor,
-                        $requiresOwnerApproval
+                        true
                     );
                     // Refresh to get the newly created approval
                     $priceChangeRequest->refresh();

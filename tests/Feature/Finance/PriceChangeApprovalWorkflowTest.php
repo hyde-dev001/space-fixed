@@ -4,6 +4,7 @@ namespace Tests\Feature\Finance;
 
 use App\Models\Approval;
 use App\Models\PriceChangeRequest;
+use App\Models\ProcurementSettings;
 use App\Models\Product;
 use App\Models\ShopOwner;
 use App\Models\User;
@@ -190,6 +191,100 @@ class PriceChangeApprovalWorkflowTest extends TestCase
         $approval = Approval::findOrFail($priceChange->approval_id);
         $this->assertSame(2, (int) $approval->current_level);
         $this->assertSame('shop_owner', (string) $approval->current_approver_role);
+    }
+
+    public function test_product_price_workflow_keeps_the_submission_role_map_after_settings_change(): void
+    {
+        $product = Product::create([
+            'shop_owner_id' => $this->shopOwnerAuth->id,
+            'name' => 'Snapshot Product ' . random_int(1000, 9999),
+            'slug' => 'snapshot-product-' . uniqid(),
+            'description' => 'Price snapshot test product',
+            'price' => 100,
+            'category' => 'shoes',
+            'stock_quantity' => 10,
+            'is_active' => true,
+        ]);
+
+        $settings = ProcurementSettings::getForShopOwner($this->shopOwnerAuth->id);
+        $settingsJson = $settings->settings_json;
+        $settingsJson['approval_pages']['price_approval']['enabled'] = true;
+        $settings->update(['settings_json' => $settingsJson]);
+
+        $response = $this->actingAs($this->requester, 'user')
+            ->postJson("/api/products/{$product->id}/request-price-change", [
+                'product_name' => $product->name,
+                'current_price' => 100,
+                'proposed_price' => 130,
+                'reason' => 'Snapshot role-map test',
+            ]);
+
+        $response->assertStatus(201);
+
+        $priceChange = PriceChangeRequest::query()->latest('id')->firstOrFail();
+        $approval = Approval::findOrFail($priceChange->approval_id);
+        $this->assertSame(['1' => 'finance', '2' => 'shop_owner', '3' => 'finance'], $approval->approval_roles);
+
+        $settingsJson['approval_pages']['price_approval']['enabled'] = false;
+        $settings->update(['settings_json' => $settingsJson]);
+
+        $this->actingAs($this->financeFirst, 'user')
+            ->postJson("/api/finance/price-changes/{$priceChange->id}/approve", [
+                'notes' => 'Live setting changed after submission',
+            ])
+            ->assertStatus(200)
+            ->assertJsonPath('is_final', false)
+            ->assertJsonPath('approval_level', 2);
+
+        $priceChange->refresh();
+        $this->assertSame(2, $priceChange->current_approval_level);
+        $this->assertSame('finance_approved', $priceChange->status->value ?? $priceChange->status);
+    }
+
+    public function test_product_price_workflow_uses_finance_only_map_when_owner_approval_is_disabled(): void
+    {
+        $product = Product::create([
+            'shop_owner_id' => $this->shopOwnerAuth->id,
+            'name' => 'Finance Only Product ' . random_int(1000, 9999),
+            'slug' => 'finance-only-product-' . uniqid(),
+            'description' => 'Finance-only price test product',
+            'price' => 100,
+            'category' => 'shoes',
+            'stock_quantity' => 10,
+            'is_active' => true,
+        ]);
+
+        $settings = ProcurementSettings::getForShopOwner($this->shopOwnerAuth->id);
+        $settingsJson = $settings->settings_json;
+        $settingsJson['approval_pages']['price_approval']['enabled'] = false;
+        $settings->update(['settings_json' => $settingsJson]);
+
+        $response = $this->actingAs($this->requester, 'user')
+            ->postJson("/api/products/{$product->id}/request-price-change", [
+                'product_name' => $product->name,
+                'current_price' => 100,
+                'proposed_price' => 130,
+                'reason' => 'Finance-only role-map test',
+            ]);
+
+        $response->assertStatus(201);
+
+        $priceChange = PriceChangeRequest::query()->latest('id')->firstOrFail();
+        $approval = Approval::findOrFail($priceChange->approval_id);
+        $this->assertSame(['1' => 'finance'], $approval->approval_roles);
+
+        $this->actingAs($this->shopOwnerAuth, 'shop_owner')
+            ->postJson("/api/shop-owner/price-changes/{$priceChange->id}/approve")
+            ->assertStatus(400);
+
+        $this->actingAs($this->financeFirst, 'user')
+            ->postJson("/api/finance/price-changes/{$priceChange->id}/approve", [
+                'notes' => 'Finance-only final approval',
+            ])
+            ->assertStatus(200)
+            ->assertJsonPath('is_final', true);
+
+        $this->assertSame('130.00', (string) $product->fresh()->price);
     }
 
     private function createWorkflowBoundPriceChange(): PriceChangeRequest
