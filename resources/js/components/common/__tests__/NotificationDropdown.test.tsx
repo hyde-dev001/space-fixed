@@ -1,5 +1,5 @@
 import React from 'react';
-import { render } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import NotificationDropdown from '../NotificationDropdown';
 
@@ -17,6 +17,15 @@ vi.mock('../../../hooks/useNotifications', () => ({
       message: 'Shipment leg delivered.',
       is_read: false,
       created_at: '2026-08-11T08:00:00.000Z',
+    }, {
+      id: 2,
+      type: 'logistics_exception',
+      title: 'Customer Delivery Report',
+      message: 'A customer reported a delivery issue for order #ORD-123.',
+      data: { order_id: 42, order_number: 'ORD-123' },
+      action_url: '/erp/logistics/shipments?status=customer_disputes',
+      is_read: false,
+      created_at: '2026-08-11T09:00:00.000Z',
     }],
     isLoading: false,
   }),
@@ -25,7 +34,9 @@ vi.mock('../../../hooks/useNotifications', () => ({
 }));
 
 vi.mock('../NotificationItem', () => ({
-  default: () => <div data-testid="notification-item" />,
+  default: ({ linkHref, notification }: { linkHref?: string; notification?: { title?: string } }) => (
+    <a href={linkHref} data-testid="notification-item">{notification?.title}</a>
+  ),
 }));
 
 vi.mock('../ThemeToggleButton', () => ({
@@ -55,5 +66,18 @@ describe('NotificationDropdown customer palette', () => {
     expect(shopOwnerPanel).toHaveClass('dark:bg-gray-900');
     expect(shopOwnerPanel).toHaveClass('dark:border-gray-700');
     expect(shopOwnerPanel.querySelector('[aria-label="Toggle theme"]')).toBeNull();
+  });
+
+  it('keeps customer delivery reports on the dispatcher shipment page', () => {
+    render(<NotificationDropdown basePath="/api/staff/notifications" onClose={vi.fn()} />);
+
+    expect(screen.getByRole('link', { name: 'Delivered' })).toHaveAttribute(
+      'href',
+      '/erp/staff/job-orders-repair?highlightRepair=1',
+    );
+    expect(screen.getByRole('link', { name: 'Customer Delivery Report' })).toHaveAttribute(
+      'href',
+      '/erp/logistics/shipments?status=customer_disputes',
+    );
   });
 });
