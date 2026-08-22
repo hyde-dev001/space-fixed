@@ -46,7 +46,18 @@ final class ShopSettingsBusinessScalingPayloadTest extends TestCase
             'source_status' => 'uploaded',
         ]);
 
-        $page = $this->settingsPage($owner)['props']['shop_settings']['business_scaling'];
+        $settings = $this->settingsPage($owner)['props']['shop_settings'];
+        $page = $settings['business_scaling'];
+        $approvalPages = $settings['approval_pages'];
+        $this->assertSame([
+            'refund_approval',
+            'price_approval',
+            'payslip_approval',
+            'salary_adjustment_approval',
+            'purchase_request_approval',
+            'expense_approval',
+            'repair_reject_approval',
+        ], array_keys($approvalPages));
 
         $this->assertSame('individual', $page['current']['registration_type']);
         $this->assertSame('retail', $page['current']['business_type']);

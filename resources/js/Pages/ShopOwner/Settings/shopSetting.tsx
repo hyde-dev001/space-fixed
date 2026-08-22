@@ -14,13 +14,15 @@ const GEOLOCATION_LOOKUP_TIMEOUT_MS = 10_000;
 
 type ApprovalSetting = {
 	enabled: boolean;
-	limit: number | null;
 };
 
 type ApprovalPages = {
 	refund_approval: ApprovalSetting;
 	price_approval: ApprovalSetting;
+	payslip_approval: ApprovalSetting;
+	salary_adjustment_approval: ApprovalSetting;
 	purchase_request_approval: ApprovalSetting;
+	expense_approval: ApprovalSetting;
 	repair_reject_approval: ApprovalSetting;
 };
 
@@ -98,7 +100,6 @@ type ApprovalItemConfig = {
 	key: keyof ApprovalPages;
 	title: string;
 	description: string;
-	helper: string;
 };
 
 const ToggleSwitch: React.FC<{
@@ -131,20 +132,37 @@ const APPROVAL_ITEMS: ApprovalItemConfig[] = [
 	{
 		key: 'refund_approval',
 		title: 'Refund Approval',
-		description: 'Require approval for customer refunds above your configured amount.',
-		helper: 'When enabled, refunds at or above this amount must be approved before processing.',
+		description: 'Include the Shop Owner decision stage before a refund can continue.',
 	},
 	{
 		key: 'price_approval',
 		title: 'Price Approvals',
-		description: 'Require approval for all staff-initiated price changes.',
-		helper: 'When enabled, every staff-initiated price change requires owner approval. No amount limit is applied.',
+		description: 'Include the Shop Owner decision stage for staff-initiated price changes.',
+	},
+	{
+		key: 'payslip_approval',
+		title: 'Payslip Approval',
+		description: 'Include the Shop Owner decision stage before payroll can be finalized.',
+	},
+	{
+		key: 'salary_adjustment_approval',
+		title: 'Salary Adjustment Approval',
+		description: 'Include the Shop Owner decision stage for proposed salary changes.',
 	},
 	{
 		key: 'purchase_request_approval',
 		title: 'Purchase Request Approval',
-		description: 'Require approval for purchase requests that exceed your threshold.',
-		helper: 'When disabled, owner approval is skipped and finance checks continue to apply.',
+		description: 'Include the Shop Owner decision stage before Finance can release a request.',
+	},
+	{
+		key: 'expense_approval',
+		title: 'Expense Approvals',
+		description: 'Include the Shop Owner decision stage for manual expense approvals.',
+	},
+	{
+		key: 'repair_reject_approval',
+		title: 'Repair Reject Approval',
+		description: 'Include the Shop Owner decision stage before Manager final review.',
 	},
 ];
 
@@ -421,7 +439,7 @@ const ShopSetting: React.FC = () => {
 	const [savingPolicyDraft, setSavingPolicyDraft] = useState(false);
 	const [publishingPolicy, setPublishingPolicy] = useState(false);
 	const showWideRepairPaymentPolicy = isIndividual && hasRepairSignal;
-	const showWideApprovalLimits = !isIndividual && hasRetailSignal && !hasRepairSignal;
+	const showWideApprovalWorkflow = !isIndividual && hasRetailSignal && !hasRepairSignal;
 	const requiredSectionKeys = requiredPolicySectionKeys(shop_settings.business_type);
 	const [deletedBasePolicySectionKeys, setDeletedBasePolicySectionKeys] = useState<string[]>([]);
 	const activeRequiredSectionKeys = requiredSectionKeys.filter((key) => !deletedBasePolicySectionKeys.includes(key));
@@ -1895,31 +1913,12 @@ const ShopSetting: React.FC = () => {
 		const nextApprovalPages: ApprovalPages = {
 			...approvalPages,
 			[key]: {
-				...approvalPages[key],
 				enabled,
-				limit: enabled ? approvalPages[key].limit : null,
 			},
 		};
 
 		setApprovalPages(nextApprovalPages);
 		saveSettings(nextApprovalPages);
-	};
-
-	const handleLimitChange = (key: keyof ApprovalPages, value: string) => {
-		const parsed = Number(value);
-		const nextLimit = value.trim() === '' || Number.isNaN(parsed) ? null : parsed;
-
-		setApprovalPages((prev) => ({
-			...prev,
-			[key]: {
-				...prev[key],
-				limit: nextLimit,
-			},
-		}));
-	};
-
-	const handleSaveLimit = (key: keyof ApprovalPages) => {
-		saveSettings({ ...approvalPages, [key]: { ...approvalPages[key] } });
 	};
 
 	useEffect(() => {
@@ -3088,18 +3087,19 @@ const ShopSetting: React.FC = () => {
 						id="settings-section-payments-approvals"
 						ref={setSettingsSectionRef('payments-approvals')}
 						tabIndex={-1}
-						className={`scroll-mt-6 rounded-2xl border border-gray-200 bg-white shadow-sm outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-4 lg:order-2 ${showWideApprovalLimits ? 'lg:col-span-12' : 'lg:col-span-7'}`}
+						className={`scroll-mt-6 rounded-2xl border border-gray-200 bg-white shadow-sm outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-4 lg:order-2 ${showWideApprovalWorkflow ? 'lg:col-span-12' : 'lg:col-span-7'}`}
 					>
 						<div className="border-b border-gray-200 p-6">
-							<h2 className="text-xl font-semibold text-gray-900">Approval Limits</h2>
-							<p className="mt-1 text-sm text-gray-600">Enable approvals per workflow and define the minimum amount that requires owner action.</p>
+							<h2 className="text-xl font-semibold text-gray-900">Approval Workflow</h2>
+							<p className="mt-1 text-sm text-gray-600">Choose which approval workflows include a Shop Owner decision stage.</p>
 						</div>
 
 						<div className="divide-y divide-gray-100 p-6">
+							<p className="mb-3 rounded-lg border border-blue-100 bg-blue-50/50 px-4 py-3 text-sm text-blue-900">
+								Changes apply to newly submitted requests. In-progress approvals keep their current workflow.
+							</p>
 							{APPROVAL_ITEMS.map((item) => {
 								const itemData = approvalPages[item.key];
-								const errorKey = `approval_pages.${item.key}.limit`;
-								const isPriceApproval = item.key === 'price_approval';
 
 								return (
 									<div key={item.key} className="py-4 first:pt-0 last:pb-0">
@@ -3115,41 +3115,6 @@ const ShopSetting: React.FC = () => {
 												ariaLabel={`${itemData.enabled ? 'Disable' : 'Enable'} ${item.title}`}
 											/>
 										</div>
-
-										{itemData.enabled && !isPriceApproval && (
-											<div className="mt-4 rounded-lg border border-blue-100 bg-blue-50/40 p-4">
-												<p className="mb-3 text-sm text-gray-700">{item.helper}</p>
-												{!isPriceApproval && (
-													<>
-														<div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-															<div className="flex w-full items-center rounded-lg border border-gray-300 bg-white px-3 sm:max-w-xs">
-																<span className="text-sm font-medium text-gray-500">PHP</span>
-																<input
-																	type="number"
-																	min={0}
-																	step="0.01"
-																	value={itemData.limit ?? ''}
-																	onChange={(event) => handleLimitChange(item.key, event.target.value)}
-																	aria-label={`${item.title} limit in PHP`}
-																	title={`${item.title} limit in PHP`}
-																	placeholder="5000.00"
-																	className="w-full border-0 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-0"
-																/>
-															</div>
-															<button
-																type="button"
-																onClick={() => handleSaveLimit(item.key)}
-																disabled={processing}
-																className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-															>
-																{processing ? 'Saving...' : 'Save Limit'}
-															</button>
-														</div>
-														{errors[errorKey] && <p className="mt-2 text-xs text-red-600">{errors[errorKey]}</p>}
-													</>
-												)}
-											</div>
-										)}
 									</div>
 								);
 							})}
