@@ -6,9 +6,12 @@ use App\Models\Order;
 use App\Models\Product;
 use App\Models\PromoCampaign;
 use App\Models\ShopOwner;
+use App\Models\ShopOwnerModule;
 use App\Models\User;
+use App\Models\UserAddress;
 use App\Models\VoucherClaim;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -21,6 +24,42 @@ class CheckoutPromoPricingTest extends TestCase
         return ShopOwner::factory()->approved()->create([
             'business_type' => 'both',
             'paymongo_secret_key' => 'sk_test_checkout_promo_pricing',
+        ]);
+    }
+
+    private function createLogisticsShopOwner(): ShopOwner
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
+            'business_type' => 'both',
+            'paymongo_secret_key' => 'sk_test_checkout_shipping_voucher',
+            'shop_latitude' => 14.5995,
+            'shop_longitude' => 120.9842,
+        ]);
+
+        ShopOwnerModule::create([
+            'shop_owner_id' => $shopOwner->id,
+            'module_key' => 'logistics',
+            'enabled' => true,
+        ]);
+
+        return $shopOwner;
+    }
+
+    private function createCustomerAddress(User $customer): UserAddress
+    {
+        return UserAddress::create([
+            'user_id' => $customer->id,
+            'name' => 'Shipping Voucher Customer',
+            'phone' => '09170000000',
+            'region' => 'NCR',
+            'province' => 'Metro Manila',
+            'city' => 'Manila',
+            'barangay' => 'Barangay 1',
+            'postal_code' => '1000',
+            'address_line' => '123 Shipping Voucher Street',
+            'latitude' => 14.6000,
+            'longitude' => 120.9845,
         ]);
     }
 
@@ -190,5 +229,262 @@ class CheckoutPromoPricingTest extends TestCase
 
         $voucher->refresh();
         $this->assertSame(1, (int) $voucher->used_count);
+    }
+
+    #[Test]
+    public function promo_preview_applies_shipping_voucher_to_raw_shipping_fee_only(): void
+    {
+        $shopOwner = $this->createLogisticsShopOwner();
+        /** @var User $customer */
+        $customer = User::factory()->createOne();
+        $address = $this->createCustomerAddress($customer);
+
+        $product = Product::create([
+            'shop_owner_id' => $shopOwner->id,
+            'name' => 'Shipping Promo Sneaker',
+            'slug' => 'shipping-promo-sneaker-' . random_int(1000, 9999),
+            'description' => 'Shipping voucher preview product',
+            'price' => 2000,
+            'stock_quantity' => 10,
+            'is_active' => true,
+            'is_featured' => false,
+        ]);
+
+        $voucher = PromoCampaign::create([
+            'shop_owner_id' => $shopOwner->id,
+            'kind' => 'voucher',
+            'discount_target' => 'shipping',
+            'scope' => 'shop_wide',
+            'name' => 'Half Shipping',
+            'code' => 'SHIP50',
+            'discount_mode' => 'percentage',
+            'value' => 50,
+            'min_spend' => 1234,
+            'usage_limit' => null,
+            'used_count' => 0,
+            'start_at' => now()->subHour(),
+            'end_at' => now()->addDay(),
+            'status' => 'active',
+            'stacking_mode' => 'combinable',
+        ]);
+
+        VoucherClaim::create([
+            'promo_campaign_id' => $voucher->id,
+            'user_id' => $customer->id,
+            'shop_owner_id' => $shopOwner->id,
+            'status' => 'claimed',
+            'claimed_at' => now()->subMinutes(10),
+        ]);
+
+        $response = $this->actingAs($customer, 'user')
+            ->postJson('/api/checkout/promo-preview', [
+                'items' => [['pid' => $product->id, 'qty' => 1, 'price' => 2000]],
+                'shipping_fee' => 100,
+                'address_id' => $address->id,
+                'shipping_latitude' => 14.6000,
+                'shipping_longitude' => 120.9845,
+                'voucher_campaign_id' => $voucher->id,
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.raw_shipping_fee', 100)
+            ->assertJsonPath('data.shipping_voucher_discount', 50)
+            ->assertJsonPath('data.discounted_shipping_fee', 50)
+            ->assertJsonPath('data.applied_voucher.target', 'shipping')
+            ->assertJsonPath('data.voucher_discount', 0)
+            ->assertJsonPath('data.final_subtotal', 2000);
+    }
+
+    #[Test]
+    public function create_order_caps_fixed_shipping_voucher_and_persists_free_shipping(): void
+    {
+        $shopOwner = $this->createLogisticsShopOwner();
+        /** @var User $customer */
+        $customer = User::factory()->createOne();
+        $address = $this->createCustomerAddress($customer);
+
+        $product = Product::create([
+            'shop_owner_id' => $shopOwner->id,
+            'name' => 'Free Shipping Sneaker',
+            'slug' => 'free-shipping-sneaker-' . random_int(1000, 9999),
+            'description' => 'Free shipping order product',
+            'price' => 1000,
+            'stock_quantity' => 5,
+            'is_active' => true,
+            'is_featured' => false,
+        ]);
+
+        $voucher = PromoCampaign::create([
+            'shop_owner_id' => $shopOwner->id,
+            'kind' => 'voucher',
+            'discount_target' => 'shipping',
+            'scope' => 'shop_wide',
+            'name' => 'Free Shipping',
+            'code' => 'FREESHIP',
+            'discount_mode' => 'fixed',
+            'value' => 500,
+            'min_spend' => 999,
+            'usage_limit' => null,
+            'used_count' => 0,
+            'start_at' => now()->subHour(),
+            'end_at' => now()->addDay(),
+            'status' => 'active',
+            'stacking_mode' => 'combinable',
+        ]);
+
+        VoucherClaim::create([
+            'promo_campaign_id' => $voucher->id,
+            'user_id' => $customer->id,
+            'shop_owner_id' => $shopOwner->id,
+            'status' => 'claimed',
+            'claimed_at' => now()->subMinutes(5),
+        ]);
+
+        $response = $this->actingAs($customer, 'user')
+            ->postJson('/api/checkout/create-order', [
+                'items' => [[
+                    'id' => 'free-shipping-item',
+                    'pid' => $product->id,
+                    'qty' => 1,
+                    'name' => $product->name,
+                    'price' => 1000,
+                    'size' => null,
+                    'color' => null,
+                    'image' => null,
+                ]],
+                'total_amount' => 1000,
+                'shipping_fee' => 100,
+                'customer_name' => 'Shipping Voucher Customer',
+                'customer_email' => $customer->email,
+                'customer_phone' => '09170000000',
+                'shipping_address' => '123 Shipping Voucher Street, Manila',
+                'address_id' => $address->id,
+                'shipping_region' => 'NCR',
+                'shipping_province' => 'Metro Manila',
+                'shipping_city' => 'Manila',
+                'shipping_barangay' => 'Barangay 1',
+                'shipping_postal_code' => '1000',
+                'shipping_address_line' => '123 Shipping Voucher Street',
+                'payment_method' => 'cod',
+                'voucher_campaign_id' => $voucher->id,
+            ]);
+
+        $response->assertOk()->assertJsonPath('success', true);
+
+        $order = Order::query()->findOrFail((int) $response->json('order.id'));
+        $this->assertSame('0.00', number_format((float) $order->shipping_fee, 2, '.', ''));
+        $this->assertSame('0.00', number_format((float) $response->json('order.total') - (float) $order->total_amount - (float) $order->vat_amount, 2, '.', ''));
+        $this->assertDatabaseHas('voucher_claims', [
+            'promo_campaign_id' => $voucher->id,
+            'user_id' => $customer->id,
+            'status' => 'redeemed',
+        ]);
+    }
+
+    #[Test]
+    public function shipping_voucher_does_not_apply_without_shop_logistics(): void
+    {
+        $shopOwner = $this->createRetailShopOwner();
+        /** @var User $customer */
+        $customer = User::factory()->createOne();
+        $address = $this->createCustomerAddress($customer);
+        $product = Product::create([
+            'shop_owner_id' => $shopOwner->id,
+            'name' => 'Third Party Shipping Sneaker',
+            'slug' => 'third-party-shipping-sneaker-' . random_int(1000, 9999),
+            'description' => 'No own logistics product',
+            'price' => 1000,
+            'stock_quantity' => 5,
+            'is_active' => true,
+            'is_featured' => false,
+        ]);
+        $voucher = PromoCampaign::create([
+            'shop_owner_id' => $shopOwner->id,
+            'kind' => 'voucher',
+            'discount_target' => 'shipping',
+            'scope' => 'shop_wide',
+            'name' => 'Unavailable Shipping Voucher',
+            'code' => 'NOLOGI',
+            'discount_mode' => 'percentage',
+            'value' => 50,
+            'min_spend' => 0,
+            'usage_limit' => null,
+            'used_count' => 0,
+            'start_at' => now()->subHour(),
+            'end_at' => now()->addDay(),
+            'status' => 'active',
+            'stacking_mode' => 'combinable',
+        ]);
+        VoucherClaim::create([
+            'promo_campaign_id' => $voucher->id,
+            'user_id' => $customer->id,
+            'shop_owner_id' => $shopOwner->id,
+            'status' => 'claimed',
+            'claimed_at' => now(),
+        ]);
+
+        $response = $this->actingAs($customer, 'user')
+            ->postJson('/api/checkout/promo-preview', [
+                'items' => [['pid' => $product->id, 'qty' => 1, 'price' => 1000]],
+                'shipping_fee' => 100,
+                'address_id' => $address->id,
+                'shipping_latitude' => 14.6000,
+                'shipping_longitude' => 120.9845,
+                'voucher_campaign_id' => $voucher->id,
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.shipping_voucher_discount', 0)
+            ->assertJsonPath('data.discounted_shipping_fee', 100)
+            ->assertJsonPath('data.applied_voucher', null)
+            ->assertJsonPath('data.voucher_discount', 0)
+            ->assertJsonPath('data.shipping_voucher_error', 'Shipping vouchers require accessible Shop-owned Logistics.');
+    }
+
+    #[Test]
+    public function retry_payment_keeps_persisted_free_shipping_fee(): void
+    {
+        Http::fake([
+            'https://api.paymongo.com/v1/checkout_sessions' => Http::response([
+                'data' => [
+                    'id' => 'cs_free_shipping_retry',
+                    'attributes' => ['checkout_url' => 'https://paymongo.test/free-shipping'],
+                ],
+            ], 200),
+        ]);
+
+        $shopOwner = $this->createLogisticsShopOwner();
+        /** @var User $customer */
+        $customer = User::factory()->createOne();
+        $order = Order::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'customer_id' => $customer->id,
+            'total_amount' => 892.86,
+            'vat_amount' => 107.14,
+            'vat_rate' => 12,
+            'shipping_fee' => 0,
+            'payment_status' => 'pending',
+            'status' => 'pending',
+            'payment_method' => 'paymongo',
+        ]);
+
+        $response = $this->actingAs($customer, 'user')
+            ->postJson('/api/orders/' . $order->id . '/retry-payment-session', [
+                'shipping_fee' => 100,
+                'subtotal_amount' => 1000,
+            ]);
+
+        $response->assertOk()->assertJsonPath('success', true);
+        $order->refresh();
+        $this->assertSame('0.00', number_format((float) $order->shipping_fee, 2, '.', ''));
+
+        Http::assertSent(function ($request): bool {
+            $lineItems = $request->data()['data']['attributes']['line_items'] ?? [];
+
+            return collect($lineItems)->doesntContain(
+                fn (array $lineItem): bool => ($lineItem['name'] ?? null) === 'Shipping Fee'
+                    && (int) ($lineItem['amount'] ?? 0) > 0,
+            );
+        });
     }
 }
