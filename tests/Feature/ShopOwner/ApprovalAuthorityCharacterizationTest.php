@@ -117,6 +117,7 @@ class ApprovalAuthorityCharacterizationTest extends TestCase
             'effective_date' => now()->toDateString(),
             'reason' => 'Characterize the existing approval authority',
             'status' => SalaryChange::STATUS_PENDING,
+            'requires_owner_approval' => false,
         ]);
 
         return [$change, $proposer, $reviewer, $employee];

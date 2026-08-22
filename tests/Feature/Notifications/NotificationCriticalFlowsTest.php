@@ -235,6 +235,47 @@ class NotificationCriticalFlowsTest extends TestCase
     }
 
     #[Test]
+    public function salary_change_submission_does_not_notify_owner_when_owner_stage_is_disabled(): void
+    {
+        $shopOwner = $this->createShopOwner(['registration_type' => 'company']);
+
+        $employee = Employee::factory()->active()->create([
+            'shop_owner_id' => $shopOwner->id,
+        ]);
+
+        $proposer = User::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+        ]);
+
+        $change = SalaryChange::query()->create([
+            'employee_id' => $employee->id,
+            'shop_owner_id' => $shopOwner->id,
+            'proposed_by' => $proposer->id,
+            'previous_salary' => 20000,
+            'new_salary' => 22000,
+            'change_percent' => 10,
+            'change_type' => SalaryChange::TYPE_MAJOR,
+            'effective_date' => now()->addDay()->toDateString(),
+            'reason' => 'Non-owner review path',
+            'status' => SalaryChange::STATUS_PENDING,
+            'requires_owner_approval' => false,
+        ]);
+
+        app(SalaryChangeApprovalService::class)->notifySalaryChangeSubmitted(
+            $change->fresh(),
+            $employee,
+            $proposer,
+            $change->reason
+        );
+
+        $this->assertDatabaseMissing('notifications', [
+            'shop_owner_id' => $shopOwner->id,
+            'title' => 'New Salary Change Request',
+            'type' => 'salary_change_submitted',
+        ]);
+    }
+
+    #[Test]
     public function repair_refund_finance_approve_emits_customer_and_owner_notifications(): void
     {
         $fixture = $this->createRepairRefundFixture('pos');
