@@ -95,7 +95,8 @@ class PurchaseRequestController extends Controller
         $purchaseRequest = PurchaseRequest::where('shop_owner_id', $shopOwner->id)
             ->findOrFail($id);
 
-        if ($purchaseRequest->status !== 'pending_shop_owner') {
+        if ($purchaseRequest->status !== 'pending_shop_owner'
+            || $purchaseRequest->requires_owner_approval === false) {
             return response()->json([
                 'message' => 'Only requests pending shop owner approval can be approved.',
                 'current_status' => $purchaseRequest->status,
@@ -148,7 +149,8 @@ class PurchaseRequestController extends Controller
         $purchaseRequest = PurchaseRequest::where('shop_owner_id', $shopOwner->id)
             ->findOrFail($id);
 
-        if ($purchaseRequest->status !== 'pending_shop_owner') {
+        if ($purchaseRequest->status !== 'pending_shop_owner'
+            || $purchaseRequest->requires_owner_approval === false) {
             return response()->json([
                 'message' => 'This request cannot be rejected in its current state.',
                 'current_status' => $purchaseRequest->status,
