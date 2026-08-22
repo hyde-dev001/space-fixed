@@ -13,21 +13,27 @@ class PayslipApprovalService
 {
     public function __construct(
         private ApprovalService $approvalService,
-        private NotificationService $notificationService
+        private NotificationService $notificationService,
+        private ShopOwnerApprovalPolicyService $approvalPolicyService
     ) {}
 
     /**
-     * Create a 4-step approval workflow for a payslip
-     * Finance (1) → Shop Owner (2) → Finance (3) → Finance Final (4)
+     * Create the snapshotted approval workflow for a payslip.
      */
     public function createPayslipApproval(Payroll $payslip, User $shopOwner, User $generatedBy): Approval
     {
-        $approvalRoles = [
-            '1' => 'finance',           // Finance checks first
-            '2' => 'shop_owner',        // Shop owner reviews
-            '3' => 'finance',           // Finance double-checks
-            '4' => 'finance_final'      // Finance Manager final approval
-        ];
+        $approvalRoles = $this->approvalPolicyService->requiresOwnerApprovalForPayslip((int) $payslip->shop_owner_id)
+            ? [
+                '1' => 'finance',
+                '2' => 'shop_owner',
+                '3' => 'finance',
+                '4' => 'finance_final',
+            ]
+            : [
+                '1' => 'finance',
+                '2' => 'finance',
+                '3' => 'finance_final',
+            ];
 
         // Create polymorphic approval record
         $approval = $this->approvalService->createApproval(
@@ -80,22 +86,12 @@ class PayslipApprovalService
             ];
         }
 
-        $previousLevel = (int) $approval->current_level;
-
         // Use ApprovalService to transition
         $result = $this->approvalService->approve($approval, $approver, $comments);
 
         if (!$result['success']) {
             return $result;
         }
-
-        // Keep intermediate statuses compatible with current payroll status enum
-        $statusMapping = [
-            1 => 'pending',
-            2 => 'pending',
-            3 => 'pending',
-            4 => 'approved'
-        ];
 
         if ($result['is_final'] ?? false) {
             // Final approval - payslip is ready for disbursement
@@ -112,7 +108,7 @@ class PayslipApprovalService
             $nextLevel = $approval->current_level;
             $payslip->update([
                 'current_approval_level' => $nextLevel,
-                'status' => $statusMapping[$nextLevel] ?? 'pending',
+                'status' => 'pending',
                 'approval_status' => 'pending'
             ]);
 
@@ -125,12 +121,12 @@ class PayslipApprovalService
                     'approval_notes' => $comments
                 ]);
             } elseif ($nextLevel === 3) {
-                // After Shop Owner level 2 - prepare for Finance secondary
+                // After the second decision - prepare for any remaining stage
                 $payslip->update([
                     'final_approved_by' => null,  // Clear final, waiting for level 3
                 ]);
             } elseif ($nextLevel === 4) {
-                // After Finance level 3 - prepare for Finance Manager final
+                // After the secondary Finance decision - prepare for final Finance
                 $payslip->update([
                     'payout_reference' => null,  // Clear previous payout state
                 ]);
@@ -141,7 +137,6 @@ class PayslipApprovalService
             payslip: $payslip,
             approval: $approval,
             approver: $approver,
-            previousLevel: $previousLevel,
             comments: $comments,
             result: $result
         );
@@ -211,7 +206,6 @@ class PayslipApprovalService
         Payroll $payslip,
         Approval $approval,
         User $approver,
-        int $previousLevel,
         ?string $comments,
         array $result
     ): void {
@@ -244,7 +238,9 @@ class PayslipApprovalService
             return;
         }
 
-        if ($previousLevel === 1) {
+        $nextRole = $approval->current_approver_role;
+
+        if ($nextRole === 'shop_owner') {
             $this->notificationService->sendToShopOwner(
                 shopOwnerId: $shopOwnerId,
                 type: NotificationType::PAYROLL_GENERATED,
@@ -258,13 +254,13 @@ class PayslipApprovalService
             return;
         }
 
-        if (in_array($previousLevel, [2, 3], true)) {
-            $title = $previousLevel === 2
-                ? 'Payslip Returned To Finance'
-                : 'Payslip Awaiting Final Finance Approval';
-            $message = $previousLevel === 2
-                ? "Payroll {$payload['period']} for {$payload['employee_name']} was approved by shop owner and is back to Finance."
-                : "Payroll {$payload['period']} for {$payload['employee_name']} now needs final Finance approval.";
+        if (in_array($nextRole, ['finance', 'finance_final'], true)) {
+            $title = $nextRole === 'finance_final'
+                ? 'Payslip Awaiting Final Finance Approval'
+                : 'Payslip Returned To Finance';
+            $message = $nextRole === 'finance_final'
+                ? "Payroll {$payload['period']} for {$payload['employee_name']} now needs final Finance approval."
+                : "Payroll {$payload['period']} for {$payload['employee_name']} now requires another Finance review.";
 
             $this->notificationService->sendToErpRole(
                 roleName: 'Finance',
@@ -402,7 +398,7 @@ class PayslipApprovalService
     }
 
     /**
-     * Migrate existing payslips from 2-step to 4-step workflow
+     * Migrate existing payslips from the legacy workflow
      * Useful for bulk migration of in-flight approvals
      */
     public function migrateToNewWorkflow(Payroll $payslip, User $shopOwner): bool
@@ -415,19 +411,21 @@ class PayslipApprovalService
         try {
             $generatedBy = User::find($payslip->generated_by ?? $shopOwner->id) ?? $shopOwner;
             
-            // Create new 4-step approval
+            // Create a new snapshotted approval. Existing legacy records keep
+            // their legacy controller path until this explicit migration runs.
             $this->createPayslipApproval($payslip, $shopOwner, $generatedBy);
 
-            // If payslip was already partially approved in old workflow, 
-            // fast-track to appropriate level
+            // If Finance already checked the legacy record, fast-track to the
+            // second stored stage, whatever role that stage requires.
             if ($payslip->approval_status === 'approved' && $payslip->approved_by) {
-                // Finance already checked - create 2nd level approval for shop owner
                 $approval = $payslip->approval()->first();
                 if ($approval) {
+                    $nextLevel = 2;
                     $approval->update([
-                        'current_level' => 2,
-                        'current_approver_role' => 'shop_owner'
+                        'current_level' => $nextLevel,
+                        'current_approver_role' => $approval->getApproverRoleForLevel($nextLevel),
                     ]);
+                    $payslip->update(['current_approval_level' => $nextLevel]);
                 }
             }
 

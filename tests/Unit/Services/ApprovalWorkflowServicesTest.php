@@ -9,6 +9,7 @@ use App\Models\Finance\Expense;
 use App\Models\HR\Payroll;
 use App\Models\PriceChangeRequest;
 use App\Models\Product;
+use App\Models\ProcurementSettings;
 use App\Models\ShopOwner;
 use App\Models\User;
 use App\Services\ApprovalService;
@@ -141,6 +142,42 @@ class ApprovalWorkflowServicesTest extends TestCase
         $payroll->refresh();
         $this->assertEquals('approved', $payroll->status);
         $this->assertEquals('approved', $payroll->approval_status);
+    }
+
+    public function test_payslip_approval_service_uses_the_disabled_policy_role_map(): void
+    {
+        $service = app(PayslipApprovalService::class);
+        $payroll = $this->createPayroll();
+        $settings = ProcurementSettings::getForShopOwner($this->shopOwnerRecord->id);
+        $settingsJson = $settings->settings_json;
+        $settingsJson['approval_pages']['payslip_approval']['enabled'] = false;
+        $settings->update(['settings_json' => $settingsJson]);
+
+        $approval = $service->createPayslipApproval($payroll, $this->shopOwnerUser, $this->requester);
+
+        $this->assertSame(3, (int) $approval->total_levels);
+        $this->assertSame([
+            '1' => 'finance',
+            '2' => 'finance',
+            '3' => 'finance_final',
+        ], $approval->approval_roles);
+        $this->assertSame('finance', $approval->current_approver_role);
+
+        $first = $service->approvePayslip($payroll->fresh(), $this->financeUser, 'first finance review');
+        $this->assertTrue($first['success']);
+        $this->assertFalse($first['is_final']);
+        $this->assertSame(2, (int) $approval->fresh()->current_level);
+        $this->assertSame('finance', $approval->fresh()->current_approver_role);
+
+        $second = $service->approvePayslip($payroll->fresh(), $this->financeSecondUser, 'second finance review');
+        $this->assertTrue($second['success']);
+        $this->assertFalse($second['is_final']);
+        $this->assertSame(3, (int) $approval->fresh()->current_level);
+        $this->assertSame('finance_final', $approval->fresh()->current_approver_role);
+
+        $final = $service->approvePayslip($payroll->fresh(), $this->financeFinalUser, 'final finance review');
+        $this->assertTrue($final['success']);
+        $this->assertTrue($final['is_final']);
     }
 
     public function test_price_change_service_creates_workflow_and_finance_can_approve_level_one(): void
