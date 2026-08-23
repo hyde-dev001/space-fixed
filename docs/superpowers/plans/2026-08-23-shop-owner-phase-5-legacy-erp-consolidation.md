@@ -16,6 +16,15 @@
 
 Before every commit, run `git status --short`, stage only the exact files named by the current task or completed evidence matrix, then run `git diff --cached --name-status` and `git diff --cached --check`. Stop if any unrelated file is staged.
 
+## Task 1 evidence execution boundary
+
+Task 1 is frozen in the completed [capability retirement matrix](../../architecture/shop-owner-phase-5-capability-retirement-matrix.md), [maker/checker matrix](../../architecture/shop-owner-phase-5-maker-checker-matrix.md), and [owner-operation audit matrix](../../architecture/shop-owner-phase-5-owner-operation-audit-matrix.md). This note constrains execution only; it does not change the approved goal or acceptance criteria.
+
+- Every `STOP_FOCUSED_DESIGN` row is a hard fail-closed boundary. Tasks 2–6 may classify or consolidate only surfaces proven owner-readable by the evidence and must not expose a STOP row.
+- Tasks 7–11 must not add maker fields, owner submission/correction actions, or audit instrumentation for STOP families until focused design/characterization updates the evidence.
+- `N/A_NO_OWNER_INITIATION` retains its existing meaning: no owner initiation is inferred, added, or substituted with a redirect.
+- Current stop categories are unsupported owner-readable data surfaces; salary owner self-proposer Action Center exposure; the owner audit-export guard mismatch; uncharacterized correction transitions; and missing dedicated denied-maker audit implementation. These are evidence gaps, not authorization to invent fixes.
+
 ---
 
 ## File structure and responsibility map
