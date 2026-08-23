@@ -8,23 +8,36 @@ const paymentSource = readFileSync(
 );
 
 describe('payment desktop voucher layout', () => {
-  it('places the voucher picker before the desktop checkout grid at full width', () => {
+  it('places a compact voucher picker below Phone at the payment-form width', () => {
+    const phoneFieldIndex = paymentSource.indexOf('{/* Phone */}');
     const voucherSectionIndex = paymentSource.indexOf('data-testid="desktop-voucher-section"');
-    const desktopGridIndex = paymentSource.indexOf('<div className="hidden xl:grid grid-cols-1 md:grid-cols-3 gap-6 items-start">');
+    const deliveryPersistenceIndex = paymentSource.indexOf('{/* Delivery address persistence */}');
 
+    expect(phoneFieldIndex).toBeGreaterThan(-1);
     expect(voucherSectionIndex).toBeGreaterThan(-1);
-    expect(desktopGridIndex).toBeGreaterThan(voucherSectionIndex);
+    expect(deliveryPersistenceIndex).toBeGreaterThan(voucherSectionIndex);
+    expect(voucherSectionIndex).toBeGreaterThan(phoneFieldIndex);
 
-    const desktopVoucherSection = paymentSource.slice(voucherSectionIndex, desktopGridIndex);
+    const phoneFieldSource = paymentSource.slice(phoneFieldIndex, voucherSectionIndex);
+    const desktopVoucherSection = paymentSource.slice(voucherSectionIndex, deliveryPersistenceIndex);
+
+    expect(phoneFieldSource).toContain('className="w-full px-4 py-3');
+    expect(desktopVoucherSection).toContain('className="mt-4 w-full rounded-lg');
     expect(desktopVoucherSection).toContain('data-testid="desktop-voucher-suggestions"');
     expect(desktopVoucherSection).toContain('absolute left-0 right-0 top-full');
     expect(desktopVoucherSection).toContain('handleApplyVoucherCode');
     expect(desktopVoucherSection).toContain('handleClearVoucherSelection');
     expect(desktopVoucherSection).toContain('data-testid="voucher-suggestion-card"');
-    expect(desktopVoucherSection).toContain('min-h-[20rem]');
+    expect(desktopVoucherSection).toContain('min-h-[10rem]');
+    expect(desktopVoucherSection).toContain('grid-cols-[4.5rem_minmax(0,1fr)_7rem]');
+    expect(desktopVoucherSection).toContain('w-28');
+    expect(desktopVoucherSection).toContain('h-12');
     expect(desktopVoucherSection).toContain('rounded-full bg-[#111111]');
     expect(desktopVoucherSection).toContain('handleUseVoucher');
     expect(desktopVoucherSection).toContain('handleClaimVoucher');
+    expect(desktopVoucherSection).not.toContain('min-h-[20rem]');
+    expect(desktopVoucherSection).not.toContain('w-64');
+    expect(desktopVoucherSection).not.toContain('w-48');
     expect(desktopVoucherSection).not.toContain('shadow-sm');
     expect(desktopVoucherSection).not.toContain('shadow-xl');
     expect(desktopVoucherSection).not.toContain('shadow-md');
