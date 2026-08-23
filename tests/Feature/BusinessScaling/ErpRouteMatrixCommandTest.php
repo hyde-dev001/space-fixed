@@ -22,6 +22,7 @@ final class ErpRouteMatrixCommandTest extends TestCase
         );
         $this->assertStringContainsString('Generated review artifact; not a policy source.', $output);
         $this->assertStringContainsString('GET | `erp.hr`', $output);
+        $this->assertStringContainsString('GET | `shop-owner.erp.finance.invoices` | allowed', $output);
     }
 
     public function test_matrix_command_fails_when_a_configured_route_is_not_loaded(): void

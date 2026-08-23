@@ -142,11 +142,8 @@ final class ErpWorkspaceNavigationService
 
         foreach ($this->catalog->all() as $routeName => $entry) {
             $routeName = (string) $routeName;
-            if (($entry['classification'] ?? null) !== 'module'
-                || ($entry['audience'] ?? null) !== 'shop_owner'
-                || ($entry['owner_access'] ?? null) !== 'allowed'
-                || ($entry['navigation_group'] ?? null) !== $moduleKey
-                || ($entry['navigation_visible'] ?? true) === false
+            if (($entry['navigation_group'] ?? null) !== $moduleKey
+                || ! $this->catalog->hasOwnerReadablePageContract($routeName)
                 || ! str_starts_with($routeName, 'shop-owner.erp.')
                 || str_starts_with($routeName, 'shop-owner.erp.api.')
                 || ! Route::has($routeName)) {

@@ -45,4 +45,73 @@ final class ErpRouteCatalogTest extends TestCase
         $this->assertSame(20, $attendance['navigation_page_group_order']);
         $this->assertSame(30, $attendance['navigation_order']);
     }
+
+    public function test_owner_readable_pages_require_a_complete_catalog_contract(): void
+    {
+        $catalog = app(ErpRouteCatalog::class);
+        $invoicePage = $catalog->entry('shop-owner.erp.finance.invoices');
+
+        $this->assertIsArray($invoicePage);
+        $this->assertSame('shop_owner', $invoicePage['actor_guard']);
+        $this->assertSame('allowed', $invoicePage['owner_access']);
+        $this->assertSame('finance', $invoicePage['navigation_group']);
+        $this->assertSame('Invoices', $invoicePage['navigation_label']);
+        $this->assertFalse($catalog->hasOwnerReadablePageContract('shop-owner.erp.finance.invoices'));
+
+        $this->assertTrue($catalog->hasOwnerReadablePageContract('shop-owner.erp.retail.products'));
+        $this->assertTrue($catalog->hasOwnerReadablePageContract('shop-owner.erp.retail.orders'));
+        $this->assertFalse($catalog->hasOwnerReadablePageContract('shop-owner.erp.retail.dashboard'));
+        $this->assertTrue($catalog->hasOwnerReadablePageContract('shop-owner.erp.crm.dashboard'));
+
+        $this->assertSame('denied', $catalog->entry('shop_owner.products.store')['owner_access']);
+        $this->assertSame('denied', $catalog->entry('shop_owner.orders.update-status')['owner_access']);
+    }
+
+    public function test_owner_readable_page_contract_fails_closed_for_missing_denied_or_unclassified_data_surfaces(): void
+    {
+        $routes = config('shop_modules.routes');
+
+        foreach (['missing', 'denied', 'unclassified'] as $case) {
+            $configuredRoutes = $routes;
+            $configuredRoutes['shop-owner.erp.crm.dashboard']['supporting_routes'] = ['testing.owner-data-surface'];
+
+            if ($case !== 'missing') {
+                $configuredRoutes['testing.owner-data-surface'] = $routes['shop-owner.erp.api.crm.dashboard-stats'];
+
+                if ($case === 'denied') {
+                    $configuredRoutes['testing.owner-data-surface']['owner_access'] = 'denied';
+                }
+
+                if ($case === 'unclassified') {
+                    unset($configuredRoutes['testing.owner-data-surface']['classification']);
+                }
+            }
+
+            config(['shop_modules.routes' => $configuredRoutes]);
+
+            $this->assertFalse(
+                app(ErpRouteCatalog::class)->hasOwnerReadablePageContract('shop-owner.erp.crm.dashboard'),
+                $case,
+            );
+        }
+
+        config(['shop_modules.routes' => $routes]);
+    }
+
+    public function test_owner_readable_page_contract_ignores_non_get_mutation_support(): void
+    {
+        $routes = config('shop_modules.routes');
+        $configuredRoutes = $routes;
+        $configuredRoutes['shop-owner.erp.crm.dashboard']['supporting_routes'][] = 'testing.owner-mutation';
+        $configuredRoutes['testing.owner-mutation'] = $routes['shop-owner.erp.api.crm.dashboard-stats'];
+        $configuredRoutes['testing.owner-mutation']['methods'] = ['POST'];
+        $configuredRoutes['testing.owner-mutation']['owner_access'] = 'denied';
+        config(['shop_modules.routes' => $configuredRoutes]);
+
+        $this->assertTrue(
+            app(ErpRouteCatalog::class)->hasOwnerReadablePageContract('shop-owner.erp.crm.dashboard'),
+        );
+
+        config(['shop_modules.routes' => $routes]);
+    }
 }

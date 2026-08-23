@@ -1258,6 +1258,7 @@ $ownerHrAuditRoute['owner_access'] = 'allowed';
 $ownerHrAuditRoute['owner_denial_reason'] = null;
 $ownerHrAuditRoute['paired_route'] = 'erp.hr.audit-logs';
 $ownerHrAuditRoute['supporting_routes'] = ['shop-owner.erp.api.hr.audit-logs'];
+$ownerHrAuditRoute['navigation_visible'] = false;
 $routes['shop-owner.erp.hr.audit-logs'] = $ownerHrAuditRoute;
 
 $ownerReadApiPairs = [
@@ -1337,6 +1338,7 @@ $retailProductsRoute['supporting_routes'] = [
 ];
 $retailProductsRoute['navigation_label'] = 'Products';
 $retailProductsRoute['navigation_order'] = 20;
+$retailProductsRoute['navigation_visible'] = true;
 $routes['shop-owner.erp.retail.products'] = $retailProductsRoute;
 
 if (isset($routes['shop-owner.erp.staff.repair-dashboard'])) {
@@ -1352,7 +1354,7 @@ $ownerOperationalPageRoute = static function (
     ?string $navigationPageGroup = null,
     ?string $navigationPageGroupLabel = null,
     ?int $navigationPageGroupOrder = null,
-    bool $navigationVisible = true,
+    bool $navigationVisible = false,
 ) use ($routeEntry, $modules): array {
     $route = $routeEntry(
         modules: $modules,
@@ -1389,6 +1391,7 @@ $retailOwnerPages = [
     'shop-owner.erp.retail.orders' => [
         'label' => 'Orders',
         'order' => 20,
+        'visible' => true,
         'supporting_routes' => [
             'shop_owner.orders.index',
             'shop_owner.orders.show',
@@ -1424,6 +1427,7 @@ foreach ($retailOwnerPages as $routeName => $page) {
         navigationLabel: $page['label'],
         navigationOrder: $page['order'],
         supportingRoutes: $page['supporting_routes'],
+        navigationVisible: $page['visible'] ?? false,
     );
 }
 
@@ -1747,9 +1751,9 @@ foreach ($ownerModulePageGroups as $moduleKey => $pages) {
 }
 
 $existingOwnerPageMetadata = [
-    'shop-owner.erp.crm.dashboard' => ['label' => 'Dashboard', 'order' => 10],
-    'shop-owner.erp.crm.customers' => ['label' => 'Customers', 'order' => 20],
-    'shop-owner.erp.crm.customer-reviews' => ['label' => 'Customer Reviews', 'order' => 30],
+    'shop-owner.erp.crm.dashboard' => ['label' => 'Dashboard', 'order' => 10, 'visible' => true],
+    'shop-owner.erp.crm.customers' => ['label' => 'Customers', 'order' => 20, 'visible' => true],
+    'shop-owner.erp.crm.customer-reviews' => ['label' => 'Customer Reviews', 'order' => 30, 'visible' => true],
     'shop-owner.erp.staff.customers' => ['label' => 'Customer Directory', 'order' => 40],
     'shop-owner.erp.inventory.inventory-dashboard' => ['label' => 'Dashboard', 'order' => 10],
     'shop-owner.erp.inventory.product-inventory' => ['label' => 'Product Inventory', 'order' => 30],
@@ -1758,8 +1762,8 @@ $existingOwnerPageMetadata = [
     'shop-owner.erp.procurement.suppliers-management' => ['label' => 'Suppliers Management', 'order' => 40],
     'shop-owner.erp.hr.audit-logs' => ['label' => 'Audit Logs', 'order' => 100],
     'shop-owner.erp.finance.audit-logs' => ['label' => 'Audit Logs', 'order' => 110],
-    'shop-owner.erp.logistics.dashboard' => ['label' => 'Dashboard', 'order' => 10],
-    'shop-owner.erp.logistics.shipments' => ['label' => 'Shipments', 'order' => 20],
+    'shop-owner.erp.logistics.dashboard' => ['label' => 'Dashboard', 'order' => 10, 'visible' => true],
+    'shop-owner.erp.logistics.shipments' => ['label' => 'Shipments', 'order' => 20, 'visible' => true],
     'shop-owner.erp.logistics.riders' => ['label' => 'Riders', 'order' => 40],
     'shop-owner.erp.staff.repair-dashboard' => ['label' => 'Repair Dashboard', 'order' => 10],
 ];
@@ -1768,6 +1772,7 @@ foreach ($existingOwnerPageMetadata as $routeName => $metadata) {
     if (isset($routes[$routeName])) {
         $routes[$routeName]['navigation_label'] = $metadata['label'];
         $routes[$routeName]['navigation_order'] = $metadata['order'];
+        $routes[$routeName]['navigation_visible'] = $metadata['visible'] ?? false;
     }
 }
 
@@ -1850,6 +1855,27 @@ foreach ($repairOwnerPages as $routeName => $page) {
 }
 
 $ownerOperationalApiRouteGroups = [
+    [
+        'page_route' => 'shop-owner.erp.retail.products',
+        'risk_tier' => 'normal',
+        'domain_rule' => 'Owner product reads remain scoped to the authenticated retail shop and module gate.',
+        'routes' => [
+            'shop_owner.products.index',
+            'shop_owner.products.show',
+            'shop_owner.products.variants',
+            'shop_owner.products.color-variants.index',
+            'shop_owner.products.showroom-entitlement',
+        ],
+    ],
+    [
+        'page_route' => 'shop-owner.erp.retail.orders',
+        'risk_tier' => 'normal',
+        'domain_rule' => 'Owner order reads remain scoped to the authenticated retail shop and module gate.',
+        'routes' => [
+            'shop_owner.orders.index',
+            'shop_owner.orders.show',
+        ],
+    ],
     [
         'page_route' => 'shop-owner.erp.finance.invoices',
         'risk_tier' => 'financial',

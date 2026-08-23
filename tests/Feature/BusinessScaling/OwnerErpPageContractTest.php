@@ -7,6 +7,7 @@ namespace Tests\Feature\BusinessScaling;
 use App\Models\ShopOwner;
 use App\Models\ShopOwnerModule;
 use App\Models\User;
+use App\Services\ErpRouteCatalog;
 use App\Services\ErpWorkspaceNavigationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Collection;
@@ -155,57 +156,82 @@ final class OwnerErpPageContractTest extends TestCase
         $pages = app(ErpWorkspaceNavigationService::class)->forKey('crm')['pages'];
         $routeNames = array_column($pages, 'routeName');
 
-        $this->assertContains('shop-owner.erp.staff.customers', $routeNames);
+        $this->assertContains('shop-owner.erp.crm.customers', $routeNames);
+        $this->assertNotContains('shop-owner.erp.staff.customers', $routeNames);
         $this->assertNotContains('shop-owner.erp.api.crm.dashboard-stats', $routeNames);
     }
 
-    public function test_owner_catalog_declares_the_approved_retail_hr_and_finance_navigation_contract(): void
+    public function test_owner_module_navigation_excludes_pages_without_a_complete_owner_readability_contract(): void
     {
+        $routes = config('shop_modules.routes');
+        $routes['shop-owner.erp.crm.dashboard']['supporting_routes'] = ['testing.missing-owner-data-surface'];
+        config(['shop_modules.routes' => $routes]);
+
         $navigation = app(ErpWorkspaceNavigationService::class);
+        $financeRoutes = array_column($navigation->forKey('finance')['pages'], 'routeName');
+        $crmRoutes = array_column($navigation->forKey('crm')['pages'], 'routeName');
 
-        $retailPages = $navigation->forKey('retail_operations')['pages'];
-        $retailDashboard = collect($retailPages)->firstWhere('routeName', 'shop-owner.erp.retail.dashboard');
+        $this->assertNotContains('shop-owner.erp.crm.dashboard', $crmRoutes);
+        $this->assertNotContains('shop-owner.erp.finance.invoices', $financeRoutes);
+        $this->assertNotContains('shop-owner.erp.finance.create-invoice', $financeRoutes);
+        $this->assertNotContains('shop-owner.erp.finance.audit-logs', $financeRoutes);
+        $this->assertNotContains('shop-owner.erp.finance.expense-approvals', $financeRoutes);
 
-        $this->assertNotNull($retailDashboard);
-        $this->assertSame('Retail Dashboard', $retailDashboard['label']);
+    }
 
-        $hrPages = collect($navigation->forKey('hr_employees')['pages'])->keyBy('routeName');
-        foreach ([
-            'shop-owner.erp.hr.payroll-view',
-            'shop-owner.erp.hr.payroll-generate',
-            'shop-owner.erp.hr.salary-changes',
-        ] as $routeName) {
-            $this->assertArrayHasKey($routeName, $hrPages->all());
-            $this->assertSame('payroll', $hrPages[$routeName]['groupKey']);
-            $this->assertSame('Payroll', $hrPages[$routeName]['groupLabel']);
+    public function test_owner_catalog_keeps_only_task_one_proven_readable_pages_navigable(): void
+    {
+        $catalog = app(ErpRouteCatalog::class);
+
+        foreach (app(ErpWorkspaceNavigationService::class)->definitions() as $module) {
+            foreach ($module['pages'] as $page) {
+                $this->assertTrue($catalog->hasOwnerReadablePageContract($page['routeName']));
+            }
         }
 
-        $this->assertSame('attendance-monitoring', $hrPages['shop-owner.erp.hr.attendance']['groupKey']);
-        $this->assertSame('Attendance Monitoring', $hrPages['shop-owner.erp.hr.attendance']['groupLabel']);
+        $expectedReadablePages = [
+            'retail_operations' => [
+                'shop-owner.erp.retail.products',
+                'shop-owner.erp.retail.orders',
+            ],
+            'crm' => [
+                'shop-owner.erp.crm.dashboard',
+                'shop-owner.erp.crm.customers',
+                'shop-owner.erp.crm.customer-reviews',
+            ],
+            'logistics' => [
+                'shop-owner.erp.logistics.dashboard',
+                'shop-owner.erp.logistics.shipments',
+            ],
+        ];
 
-        $financePages = collect($navigation->forKey('finance')['pages'])->keyBy('routeName');
-        foreach ([
-            'shop-owner.erp.finance.expense-approvals',
-            'shop-owner.erp.finance.repair-pricing',
-            'shop-owner.erp.finance.shoe-pricing',
-            'shop-owner.erp.finance.purchase-request-review',
-            'shop-owner.erp.finance.refund-approvals',
-            'shop-owner.erp.finance.payslip-approvals',
-            'shop-owner.erp.finance.salary-adjustment-approvals',
-        ] as $routeName) {
-            $this->assertArrayHasKey($routeName, $financePages->all());
-            $this->assertSame('approvals', $financePages[$routeName]['groupKey']);
-            $this->assertSame('Approvals', $financePages[$routeName]['groupLabel']);
+        foreach ($expectedReadablePages as $moduleKey => $routeNames) {
+            $this->assertSame(
+                $routeNames,
+                array_column(app(ErpWorkspaceNavigationService::class)->forKey($moduleKey)['pages'], 'routeName'),
+                $moduleKey,
+            );
         }
 
+        $allNavigableRoutes = collect(app(ErpWorkspaceNavigationService::class)->definitions())
+            ->flatMap(fn (array $module): array => array_column($module['pages'], 'routeName'))
+            ->all();
+
         foreach ([
-            'shop-owner.erp.finance.dashboard',
+            'shop-owner.erp.retail.dashboard',
+            'shop-owner.erp.retail.point-of-sale',
+            'shop-owner.erp.retail.discounts',
+            'shop-owner.erp.repair.job-orders',
+            'shop-owner.erp.crm.customer-support',
+            'shop-owner.erp.logistics.riders',
+            'shop-owner.erp.logistics.batches',
+            'shop-owner.erp.logistics.settings',
             'shop-owner.erp.finance.invoices',
-            'shop-owner.erp.finance.expenses',
+            'shop-owner.erp.finance.create-invoice',
+            'shop-owner.erp.finance.expense-approvals',
             'shop-owner.erp.finance.audit-logs',
         ] as $routeName) {
-            $this->assertArrayHasKey($routeName, $financePages->all());
-            $this->assertNull($financePages[$routeName]['groupKey']);
+            $this->assertNotContains($routeName, $allNavigableRoutes);
         }
     }
 
@@ -225,59 +251,13 @@ final class OwnerErpPageContractTest extends TestCase
                 'key' => 'retail_operations',
                 'slug' => 'retail',
                 'pages' => [
-                    'shop-owner.erp.retail.dashboard',
                     'shop-owner.erp.retail.products',
                     'shop-owner.erp.retail.orders',
-                    'shop-owner.erp.retail.point-of-sale',
-                    'shop-owner.erp.retail.discounts',
                 ],
             ],
-            [
-                'key' => 'repair_operations',
-                'slug' => 'repair',
-                'pages' => [
-                    'shop-owner.erp.staff.repair-dashboard',
-                    'shop-owner.erp.repair.job-orders',
-                    'shop-owner.erp.repair.warranty-queue',
-                    'shop-owner.erp.repair.services',
-                    'shop-owner.erp.repair.stock-materials',
-                    'shop-owner.erp.repair.point-of-sale',
-                    'shop-owner.erp.repair.support',
-                ],
-            ],
-            [
-                'key' => 'hr_employees',
-                'slug' => 'hr',
-                'pages' => [
-                    'shop-owner.erp.hr.dashboard',
-                    'shop-owner.erp.hr.employee-directory',
-                    'shop-owner.erp.hr.attendance',
-                    'shop-owner.erp.hr.leave-approvals',
-                    'shop-owner.erp.hr.overtime-approvals',
-                    'shop-owner.erp.hr.payroll-view',
-                    'shop-owner.erp.hr.payroll-generate',
-                    'shop-owner.erp.hr.salary-changes',
-                    'shop-owner.erp.hr.suspend-accounts',
-                    'shop-owner.erp.hr.audit-logs',
-                ],
-            ],
-            [
-                'key' => 'finance',
-                'slug' => 'finance',
-                'pages' => [
-                    'shop-owner.erp.finance.dashboard',
-                    'shop-owner.erp.finance.invoices',
-                    'shop-owner.erp.finance.expenses',
-                    'shop-owner.erp.finance.expense-approvals',
-                    'shop-owner.erp.finance.repair-pricing',
-                    'shop-owner.erp.finance.shoe-pricing',
-                    'shop-owner.erp.finance.purchase-request-review',
-                    'shop-owner.erp.finance.refund-approvals',
-                    'shop-owner.erp.finance.payslip-approvals',
-                    'shop-owner.erp.finance.salary-adjustment-approvals',
-                    'shop-owner.erp.finance.audit-logs',
-                ],
-            ],
+            ['key' => 'repair_operations', 'slug' => 'repair', 'pages' => []],
+            ['key' => 'hr_employees', 'slug' => 'hr', 'pages' => []],
+            ['key' => 'finance', 'slug' => 'finance', 'pages' => []],
             [
                 'key' => 'crm',
                 'slug' => 'crm',
@@ -285,44 +265,16 @@ final class OwnerErpPageContractTest extends TestCase
                     'shop-owner.erp.crm.dashboard',
                     'shop-owner.erp.crm.customers',
                     'shop-owner.erp.crm.customer-reviews',
-                    'shop-owner.erp.staff.customers',
-                    'shop-owner.erp.crm.customer-support',
                 ],
             ],
-            [
-                'key' => 'inventory',
-                'slug' => 'inventory',
-                'pages' => [
-                    'shop-owner.erp.inventory.inventory-dashboard',
-                    'shop-owner.erp.inventory.upload-stocks',
-                    'shop-owner.erp.inventory.product-inventory',
-                    'shop-owner.erp.inventory.stock-movement',
-                    'shop-owner.erp.inventory.stock-request',
-                    'shop-owner.erp.inventory.request-material-approval',
-                    'shop-owner.erp.inventory.supplier-order-monitoring',
-                    'shop-owner.erp.inventory.overview',
-                ],
-            ],
-            [
-                'key' => 'procurement',
-                'slug' => 'procurement',
-                'pages' => [
-                    'shop-owner.erp.procurement.purchase-request',
-                    'shop-owner.erp.procurement.purchase-orders',
-                    'shop-owner.erp.procurement.stock-request-approval',
-                    'shop-owner.erp.procurement.suppliers-management',
-                    'shop-owner.erp.procurement.purchase-request-approval',
-                ],
-            ],
+            ['key' => 'inventory', 'slug' => 'inventory', 'pages' => []],
+            ['key' => 'procurement', 'slug' => 'procurement', 'pages' => []],
             [
                 'key' => 'logistics',
                 'slug' => 'logistics',
                 'pages' => [
                     'shop-owner.erp.logistics.dashboard',
                     'shop-owner.erp.logistics.shipments',
-                    'shop-owner.erp.logistics.batches',
-                    'shop-owner.erp.logistics.riders',
-                    'shop-owner.erp.logistics.settings',
                 ],
             ],
         ];
@@ -359,54 +311,18 @@ final class OwnerErpPageContractTest extends TestCase
     public function test_owner_module_catalog_includes_the_existing_operational_erp_pages(): void
     {
         $expectedPages = [
-            'hr_employees' => [
-                'shop-owner.erp.hr.dashboard',
-                'shop-owner.erp.hr.employee-directory',
-                'shop-owner.erp.hr.attendance',
-                'shop-owner.erp.hr.leave-approvals',
-                'shop-owner.erp.hr.overtime-approvals',
-                'shop-owner.erp.hr.payroll-view',
-                'shop-owner.erp.hr.payroll-generate',
-                'shop-owner.erp.hr.salary-changes',
-                'shop-owner.erp.hr.suspend-accounts',
-                'shop-owner.erp.hr.audit-logs',
+            'retail_operations' => [
+                'shop-owner.erp.retail.products',
+                'shop-owner.erp.retail.orders',
             ],
-            'finance' => [
-                'shop-owner.erp.finance.dashboard',
-                'shop-owner.erp.finance.invoices',
-                'shop-owner.erp.finance.expenses',
-                'shop-owner.erp.finance.expense-approvals',
-                'shop-owner.erp.finance.repair-pricing',
-                'shop-owner.erp.finance.shoe-pricing',
-                'shop-owner.erp.finance.purchase-request-review',
-                'shop-owner.erp.finance.refund-approvals',
-                'shop-owner.erp.finance.payslip-approvals',
-                'shop-owner.erp.finance.salary-adjustment-approvals',
-                'shop-owner.erp.finance.audit-logs',
-            ],
-            'inventory' => [
-                'shop-owner.erp.inventory.inventory-dashboard',
-                'shop-owner.erp.inventory.upload-stocks',
-                'shop-owner.erp.inventory.product-inventory',
-                'shop-owner.erp.inventory.stock-movement',
-                'shop-owner.erp.inventory.stock-request',
-                'shop-owner.erp.inventory.request-material-approval',
-                'shop-owner.erp.inventory.supplier-order-monitoring',
-                'shop-owner.erp.inventory.overview',
-            ],
-            'procurement' => [
-                'shop-owner.erp.procurement.purchase-request',
-                'shop-owner.erp.procurement.purchase-orders',
-                'shop-owner.erp.procurement.stock-request-approval',
-                'shop-owner.erp.procurement.suppliers-management',
-                'shop-owner.erp.procurement.purchase-request-approval',
+            'crm' => [
+                'shop-owner.erp.crm.dashboard',
+                'shop-owner.erp.crm.customers',
+                'shop-owner.erp.crm.customer-reviews',
             ],
             'logistics' => [
                 'shop-owner.erp.logistics.dashboard',
                 'shop-owner.erp.logistics.shipments',
-                'shop-owner.erp.logistics.batches',
-                'shop-owner.erp.logistics.riders',
-                'shop-owner.erp.logistics.settings',
             ],
         ];
 
@@ -943,15 +859,7 @@ final class OwnerErpPageContractTest extends TestCase
             'enabled' => true,
         ]);
 
-        $expectedPages = [
-            'shop-owner.erp.staff.repair-dashboard',
-            'shop-owner.erp.repair.job-orders',
-            'shop-owner.erp.repair.warranty-queue',
-            'shop-owner.erp.repair.services',
-            'shop-owner.erp.repair.stock-materials',
-            'shop-owner.erp.repair.point-of-sale',
-            'shop-owner.erp.repair.support',
-        ];
+        $expectedPages = [];
 
         $this->assertSame(
             $expectedPages,

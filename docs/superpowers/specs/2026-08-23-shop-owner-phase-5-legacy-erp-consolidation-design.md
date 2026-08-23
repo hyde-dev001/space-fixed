@@ -276,7 +276,7 @@ Task 1 is frozen in the completed [capability retirement matrix](../../architect
 - Every `STOP_FOCUSED_DESIGN` row is a hard fail-closed boundary. Tasks 2–6 may classify or consolidate only surfaces proven owner-readable by the evidence and must not expose a STOP row.
 - Tasks 7–11 must not add maker fields, owner submission/correction actions, or audit instrumentation for STOP families until focused design/characterization updates the evidence.
 - `N/A_NO_OWNER_INITIATION` retains its existing meaning: no owner initiation is inferred, added, or substituted with a redirect.
-- Current stop categories are unsupported owner-readable data surfaces; salary owner self-proposer Action Center exposure; the owner audit-export guard mismatch; uncharacterized correction transitions; and missing dedicated denied-maker audit implementation. These are evidence gaps, not authorization to invent fixes.
+- Current stop categories are unsupported owner-readable data surfaces, including the Retail Dashboard's unnamed `GET /api/shop-owner/dashboard/stats` initial fetch; salary owner self-proposer Action Center exposure; the owner audit-export guard mismatch; uncharacterized correction transitions; and missing dedicated denied-maker audit implementation. These are evidence gaps, not authorization to invent fixes.
 
 ## Failure handling
 

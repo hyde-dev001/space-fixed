@@ -57,6 +57,50 @@ final class ErpRouteCatalog
         return self::capabilityKey($method, (string) $employeeRoute);
     }
 
+    public function hasOwnerReadablePageContract(string $routeName): bool
+    {
+        $entry = $this->entry($routeName);
+
+        if ($entry === null
+            || ($entry['classification'] ?? null) !== 'module'
+            || ($entry['audience'] ?? null) !== 'shop_owner'
+            || ($entry['actor_guard'] ?? null) !== 'shop_owner'
+            || ($entry['owner_access'] ?? null) !== 'allowed'
+            || ! is_string($entry['navigation_group'] ?? null)
+            || ($entry['navigation_visible'] ?? null) !== true
+            || ! is_array($entry['supporting_routes'] ?? null)
+            || $entry['supporting_routes'] === []) {
+            return false;
+        }
+
+        $hasRequiredReadSurface = false;
+
+        foreach ($entry['supporting_routes'] as $supportingRouteName) {
+            $supportingRoute = is_string($supportingRouteName)
+                ? $this->entry($supportingRouteName)
+                : null;
+
+            if ($supportingRoute === null) {
+                return false;
+            }
+
+            if (! in_array('GET', $supportingRoute['methods'] ?? [], true)) {
+                continue;
+            }
+
+            $hasRequiredReadSurface = true;
+
+            if (! in_array($supportingRoute['classification'] ?? null, ['core', 'module'], true)
+                || ($supportingRoute['audience'] ?? null) !== 'shop_owner'
+                || ($supportingRoute['actor_guard'] ?? null) !== 'shop_owner'
+                || ($supportingRoute['owner_access'] ?? null) !== 'allowed') {
+                return false;
+            }
+        }
+
+        return $hasRequiredReadSurface;
+    }
+
     public function employeeRule(string $routeName): string
     {
         $route = RouteFacade::getRoutes()->getByName($routeName);
