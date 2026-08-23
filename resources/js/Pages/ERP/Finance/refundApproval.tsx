@@ -298,6 +298,7 @@ interface RefundRequest {
 	requiresOwnerApproval?: boolean;
 	approvalStage?: string;
 	returnStatus?: string;
+	canExecutePayout?: boolean;
 	refundExecutedAt?: string | null;
 	refundedAt?: string | null;
 	rejectionReason?: string;
@@ -417,6 +418,10 @@ export const canFinanceAuthorizeRefund = (request: RefundRequest): boolean => {
 };
 
 export const canExecuteRefundPayout = (request: RefundRequest): boolean => {
+	if (typeof request.canExecutePayout === "boolean") {
+		return request.canExecutePayout;
+	}
+
 	const rawStatus = String(request.rawStatus || "").toLowerCase();
 	const financeStatus = String(request.financeStatus || "").toLowerCase();
 	const shopOwnerStatus = String(request.shopOwnerStatus || "").toLowerCase();
@@ -556,8 +561,8 @@ type ChangeType = "increase" | "decrease";
 interface MetricCardProps {
 	title: string;
 	value: number | string;
-	change: number;
-	changeType: ChangeType;
+	change?: number;
+	changeType?: ChangeType;
 	icon: ComponentType<{ className?: string }>;
 	color: MetricColor;
 	description: string;
@@ -585,16 +590,18 @@ const MetricCard = ({ title, value, change, changeType, icon: Icon, color, descr
 					<div className={`flex items-center justify-center w-14 h-14 bg-gradient-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
 						<Icon className="text-white size-7 drop-shadow-sm" />
 					</div>
-					<div
-						className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${
-							changeType === "increase"
-								? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-								: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-						}`}
-					>
-						{changeType === "increase" ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" />}
-						{Math.abs(change)}%
-					</div>
+					{typeof change === "number" && changeType && (
+						<div
+							className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${
+								changeType === "increase"
+									? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+									: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+								}`}
+						>
+							{changeType === "increase" ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" />}
+							{Math.abs(change)}%
+						</div>
+					)}
 				</div>
 				<div className="space-y-2">
 					<p className="text-sm font-medium text-gray-600 dark:text-gray-400">{title}</p>
@@ -824,6 +831,7 @@ export default function RefundApproval() {
 
 	const pendingCount = requests.filter((r) => r.status === "Pending").length;
 	const approvedCount = requests.filter((r) => r.status === "Approved").length;
+	const executablePayoutCount = requests.filter(canExecuteRefundPayout).length;
 	const rejectedCount = requests.filter((r) => r.status === "Rejected").length;
 
 	const handleViewClick = (request: RefundRequest) => {
@@ -1309,7 +1317,7 @@ export default function RefundApproval() {
 					</div>
 				</div>
 
-				<div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+				<div className="grid grid-cols-1 md:grid-cols-4 gap-6">
 					<MetricCard
 						title="Pending Approvals"
 						value={pendingCount}
@@ -1327,6 +1335,13 @@ export default function RefundApproval() {
 						icon={CheckIcon}
 						color="success"
 						description="This month"
+					/>
+					<MetricCard
+						title="Executable Payouts"
+						value={executablePayoutCount}
+						icon={ArrowUpIcon}
+						color="info"
+						description="Ready for Finance to release"
 					/>
 					<MetricCard
 						title="Rejected"
@@ -1477,17 +1492,24 @@ export default function RefundApproval() {
 										<td className="py-4 text-gray-700 dark:text-gray-300">{request.refundMethod}</td>
 										<td className="py-4 text-gray-700 dark:text-gray-300">{request.requestedBy}</td>
 										<td className="py-4">
-											<span
-												className={`px-2 py-1 rounded-full text-xs font-semibold ${
-													request.status === "Pending"
-														? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300"
-														: request.status === "Approved"
-														? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300"
-														: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
-												}`}
-											>
-												{request.status}
-											</span>
+											<div className="flex flex-wrap items-center gap-2">
+												<span
+													className={`px-2 py-1 rounded-full text-xs font-semibold ${
+														request.status === "Pending"
+															? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300"
+															: request.status === "Approved"
+															? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300"
+															: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
+													}`}
+												>
+													{request.status}
+												</span>
+												{canExecuteRefundPayout(request) && (
+													<span className="px-2 py-1 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300">
+														Payout Ready
+													</span>
+												)}
+											</div>
 										</td>
 										<td className="py-4 text-right">
 											<div className="inline-flex items-center gap-2">

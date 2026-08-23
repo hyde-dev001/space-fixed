@@ -76,6 +76,9 @@ describe("Finance canonical retail refund payout", () => {
     expect(screen.getByText("₱2,499.00")).toBeInTheDocument();
     expect(screen.queryByText("₱2,607.00")).not.toBeInTheDocument();
 
+    expect(screen.getByText("Executable Payouts")).toBeInTheDocument();
+    expect(screen.getByText("Payout Ready")).toBeInTheDocument();
+
     fireEvent.click(viewButton);
     expect(await screen.findByRole("heading", { name: "Refund Request Details" })).toBeInTheDocument();
     expect(screen.getAllByText("₱2,499.00").length).toBeGreaterThanOrEqual(2);

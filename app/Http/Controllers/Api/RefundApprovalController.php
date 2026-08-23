@@ -421,6 +421,7 @@ class RefundApprovalController extends Controller
             'requiresOwnerApproval' => $requiresOwnerApproval,
             'approvalStage' => $approvalStage,
             'returnStatus' => (string) ($refund->return_status ?? 'awaiting_approval'),
+            'canExecutePayout' => $this->orderRefundService->canExecuteApprovedRefund($refund),
             'returnSource' => (string) ($refund->return_source ?? 'customer'),
             'refundExecutedAt' => optional($refund->refund_executed_at)->toDateTimeString(),
             'refundedAt' => optional($refund->refunded_at)->toDateTimeString(),

@@ -502,6 +502,10 @@ class RepairRefundWorkflowController extends Controller
             default => 'Approved',
         };
 
+        $canExecutePayout = $financeStatus === 'approved'
+            && in_array($shopOwnerStatus, ['approved', 'skipped'], true)
+            && !in_array($status, ['processing', 'succeeded', 'failed', 'rejected', 'cancelled'], true);
+
         $evidenceSnapshot = is_array($refund->evidence_snapshot) ? $refund->evidence_snapshot : [];
         $evidenceCandidates = [];
 
@@ -589,6 +593,7 @@ class RepairRefundWorkflowController extends Controller
             'requiresOwnerApproval' => $requiresOwnerApproval,
             'approvalStage' => $approvalStage,
             'returnStatus' => 'received',
+            'canExecutePayout' => $canExecutePayout,
             'refundExecutedAt' => optional($refund->executed_at)->toDateTimeString(),
             'refundedAt' => optional($refund->executed_at)->toDateTimeString(),
             'rejectionReason' => (string) ($refund->failure_reason ?? ''),
