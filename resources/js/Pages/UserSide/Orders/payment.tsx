@@ -3412,7 +3412,7 @@ const Payment: React.FC = () => {
                                 setIsVoucherSuggestionOpen(false);
                               }
                             }}
-                            className="absolute left-0 right-0 top-full z-30 mt-2 max-h-[min(32rem,calc(100vh-12rem))] overflow-y-auto rounded-xl border border-gray-200 bg-white p-2 shadow-md"
+                            className="absolute left-1/2 top-full z-30 mt-2 w-[min(72rem,calc(100vw-1rem))] -translate-x-1/2 max-h-[min(32rem,calc(100vh-12rem))] overflow-y-auto rounded-xl border border-gray-200 bg-white p-2 shadow-md lg:left-auto lg:right-0 lg:translate-x-0"
                           >
                             <div className="space-y-2">
                               {filteredVoucherCodeSuggestions.length > 0 ? (
@@ -3442,25 +3442,26 @@ const Payment: React.FC = () => {
                                           handleUseVoucher(voucher);
                                         }
                                       }}
-                                      className={`relative grid grid-cols-[5.5rem_minmax(0,1fr)_auto] items-stretch overflow-hidden rounded-lg border text-left transition-colors focus:outline-none focus:ring-2 focus:ring-gray-900/20 sm:grid-cols-[9rem_minmax(0,1fr)_8rem] ${
+                                      className={`relative overflow-hidden rounded-lg border text-left transition-colors focus:outline-none focus:ring-2 focus:ring-gray-900/20 ${
                                         selectedVoucherCampaignId === voucher.id
                                           ? 'border-gray-900 bg-gray-50'
                                           : 'border-gray-200 bg-white hover:border-gray-400'
                                       }`}
                                     >
-                                      <div className="flex min-h-[10rem] flex-col items-center justify-center border-r border-dashed border-gray-200 bg-gray-50 px-2 py-3 text-center sm:min-h-[11rem] sm:px-3">
-                                        <div
-                                          className="flex h-14 w-14 items-center justify-center rounded-full border border-gray-200 bg-white text-xl font-semibold text-gray-900 sm:h-20 sm:w-20 sm:text-2xl"
-                                          aria-hidden="true"
-                                        >
-                                          %
+                                      <div className="grid grid-cols-[5.5rem_minmax(0,1fr)_auto] items-stretch sm:grid-cols-[9rem_minmax(0,1fr)_8rem]">
+                                        <div className="flex min-h-[10rem] flex-col items-center justify-center border-r border-dashed border-gray-200 bg-gray-50 px-2 py-3 text-center sm:min-h-[11rem] sm:px-3">
+                                          <div
+                                            className="flex h-14 w-14 items-center justify-center rounded-full border border-gray-200 bg-white text-xl font-semibold text-gray-900 sm:h-20 sm:w-20 sm:text-2xl"
+                                            aria-hidden="true"
+                                          >
+                                            %
+                                          </div>
+                                          <span className="mt-2 rounded-md bg-[#d30005] px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-white sm:text-xs">
+                                            {voucher.target === 'shipping' ? 'Shipping' : 'Shop'}
+                                          </span>
                                         </div>
-                                        <span className="mt-2 rounded-md bg-[#d30005] px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-white sm:text-xs">
-                                          {voucher.target === 'shipping' ? 'Shipping' : 'Shop'}
-                                        </span>
-                                      </div>
 
-                                      <div className="min-w-0 px-3 py-3 sm:px-5 sm:py-4">
+                                        <div className="min-w-0 px-3 py-3 sm:px-5 sm:py-4">
                                         <div className="flex flex-wrap items-start justify-between gap-2">
                                           <div className="min-w-0">
                                             <p className="truncate text-sm font-semibold text-black">{displayName}</p>
@@ -3506,9 +3507,9 @@ const Payment: React.FC = () => {
                                         <p className={`mt-2 text-xs font-medium ${voucherEligibilityClass(voucher.eligibility)}`}>
                                           {voucher.eligibility_message}
                                         </p>
-                                      </div>
+                                        </div>
 
-                                      <div className="flex min-w-0 flex-col items-stretch justify-center gap-2 border-l border-gray-100 px-2 py-3 sm:items-end sm:px-4">
+                                        <div className="flex min-w-0 flex-col items-stretch justify-center gap-2 border-l border-gray-100 px-2 py-3 sm:items-end sm:px-4">
                                         {isClaiming ? (
                                           <button type="button" disabled className="min-h-11 w-full whitespace-nowrap rounded-md bg-gray-200 px-2 text-[11px] font-semibold text-gray-500 sm:w-auto sm:px-3 sm:text-xs">
                                             Claiming…
@@ -3534,7 +3535,14 @@ const Payment: React.FC = () => {
                                             {voucher.claim_status === 'redeemed' ? 'Already used' : voucher.claim_status === 'claimed' ? 'Claimed' : 'Not available'}
                                           </span>
                                         )}
+                                        </div>
                                       </div>
+
+                                      {minimumSpend > 0 && remainingSpend > 0 && (
+                                        <div className="border-t border-gray-200 px-4 py-3 text-base font-medium text-gray-900 sm:px-8 sm:text-lg">
+                                          Add {formatVoucherMoney(remainingSpend)}, to get {formatVoucherBenefit(voucher).replace(/\s+(shipping|items)$/i, '')}
+                                        </div>
+                                      )}
                                     </div>
                                   );
                                 })
