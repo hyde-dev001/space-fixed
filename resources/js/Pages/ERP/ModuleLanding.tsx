@@ -13,6 +13,10 @@ type ActiveModule = {
   slug: string;
   label: string;
   description: string;
+  overview: {
+    label: string;
+    url: string;
+  };
   pages: ModulePage[];
 };
 
@@ -52,44 +56,15 @@ const ModuleLanding: React.FC = () => {
           </div>
         </section>
 
-        <section aria-labelledby="erp-module-pages-title" className="space-y-4">
-          <div>
+        <section aria-labelledby="erp-module-pages-title" className="rounded-2xl border border-gray-200 bg-white p-6 shadow-theme-sm dark:border-gray-800 dark:bg-gray-900 sm:p-8">
+          <div className="space-y-2">
             <h2 id="erp-module-pages-title" className="text-xl font-semibold text-gray-900 dark:text-white">
-              {module.label} pages
+              Available pages
             </h2>
             <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              Open an operational page for this module.
+              {module.pages.length} {module.pages.length === 1 ? 'page' : 'pages'} available in the module navigation.
             </p>
           </div>
-
-          {module.pages.length > 0 ? (
-            <div className="grid gap-4 md:grid-cols-2">
-              {module.pages.map((page) => (
-                <Link
-                  key={page.routeName}
-                  href={page.url}
-                  className="group flex items-center justify-between rounded-xl border border-gray-200 bg-white p-5 transition hover:-translate-y-0.5 hover:border-gray-900 hover:shadow-theme-sm focus:outline-none focus:ring-2 focus:ring-black/40 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-400"
-                >
-                  <span className="flex items-center gap-4">
-                    <span aria-hidden="true" className="flex h-10 w-10 items-center justify-center rounded-xl bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-white">
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                        <rect x="4" y="4" width="16" height="16" rx="3" />
-                        <path d="M8 9h8M8 13h5M8 17h3" strokeLinecap="round" />
-                      </svg>
-                    </span>
-                    <span className="font-semibold text-gray-900 dark:text-white">{page.label}</span>
-                  </span>
-                  <span aria-hidden="true" className="text-lg text-gray-900 transition-transform group-hover:translate-x-1 dark:text-white">
-                    →
-                  </span>
-                </Link>
-              ))}
-            </div>
-          ) : (
-            <p className="rounded-xl border border-dashed border-gray-300 p-5 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
-              No pages are available for this module yet.
-            </p>
-          )}
         </section>
       </main>
     </AppLayoutERP>

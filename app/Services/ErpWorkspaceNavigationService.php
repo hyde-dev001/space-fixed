@@ -6,6 +6,7 @@ namespace App\Services;
 
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
+use RuntimeException;
 
 final class ErpWorkspaceNavigationService
 {
@@ -58,7 +59,7 @@ final class ErpWorkspaceNavigationService
     public function __construct(private readonly ErpRouteCatalog $catalog) {}
 
     /**
-     * @return array<string, array{slug: string, label: string, description: string, pages: array<int, array{label: string, routeName: string, url: string, groupKey: string|null, groupLabel: string|null, groupOrder: int|null, pageOrder: int}>}>
+     * @return array<string, array{slug: string, label: string, description: string, overview: array{label: string, url: string}, pages: array<int, array{label: string, routeName: string, url: string, groupKey: string|null, groupLabel: string|null, groupOrder: int|null, pageOrder: int}>}>
      */
     public function definitions(): array
     {
@@ -84,7 +85,7 @@ final class ErpWorkspaceNavigationService
     }
 
     /**
-     * @return array{key: string, slug: string, label: string, description: string, pages: array<int, array{label: string, routeName: string, url: string, groupKey: string|null, groupLabel: string|null, groupOrder: int|null, pageOrder: int}>}|null
+     * @return array{key: string, slug: string, label: string, description: string, overview: array{label: string, url: string}, pages: array<int, array{label: string, routeName: string, url: string, groupKey: string|null, groupLabel: string|null, groupOrder: int|null, pageOrder: int}>}|null
      */
     public function forKey(string $moduleKey): ?array
     {
@@ -94,7 +95,7 @@ final class ErpWorkspaceNavigationService
     }
 
     /**
-     * @return array{key: string, slug: string, label: string, description: string, pages: array<int, array{label: string, routeName: string, url: string, groupKey: string|null, groupLabel: string|null, groupOrder: int|null, pageOrder: int}>}|null
+     * @return array{key: string, slug: string, label: string, description: string, overview: array{label: string, url: string}, pages: array<int, array{label: string, routeName: string, url: string, groupKey: string|null, groupLabel: string|null, groupOrder: int|null, pageOrder: int}>}|null
      */
     public function forSlug(string $slug): ?array
     {
@@ -120,7 +121,7 @@ final class ErpWorkspaceNavigationService
 
     /**
      * @param  array{slug: string, label: string, description: string}  $definition
-     * @return array{key: string, slug: string, label: string, description: string, pages: array<int, array{label: string, routeName: string, url: string, groupKey: string|null, groupLabel: string|null, groupOrder: int|null, pageOrder: int}>}
+     * @return array{key: string, slug: string, label: string, description: string, overview: array{label: string, url: string}, pages: array<int, array{label: string, routeName: string, url: string, groupKey: string|null, groupLabel: string|null, groupOrder: int|null, pageOrder: int}>}
      */
     private function payload(string $moduleKey, array $definition): array
     {
@@ -129,8 +130,31 @@ final class ErpWorkspaceNavigationService
             'slug' => $definition['slug'],
             'label' => $definition['label'],
             'description' => $definition['description'],
+            'overview' => [
+                'label' => 'Overview',
+                'url' => route($this->canonicalModuleRoute($moduleKey)),
+            ],
             'pages' => $this->pagesForKey($moduleKey),
         ];
+    }
+
+    private function canonicalModuleRoute(string $moduleKey): string
+    {
+        foreach ($this->catalog->all() as $routeName => $entry) {
+            if (! str_starts_with((string) $routeName, 'shop-owner.shell.')
+                || ($entry['classification'] ?? null) !== 'module'
+                || ($entry['audience'] ?? null) !== 'shop_owner'
+                || ($entry['owner_access'] ?? null) !== 'allowed'
+                || ($entry['mode'] ?? null) !== 'single'
+                || ($entry['module_keys'] ?? null) !== [$moduleKey]
+                || ! Route::has((string) $routeName)) {
+                continue;
+            }
+
+            return (string) $routeName;
+        }
+
+        throw new RuntimeException("Canonical module route is missing for {$moduleKey}.");
     }
 
     /**

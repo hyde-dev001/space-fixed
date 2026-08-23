@@ -220,6 +220,8 @@ git commit -m "feat: classify canonical owner module surfaces"
 
 ### Task 3: Make Overview the canonical landing and local tabs the module navigator
 
+**Execution note:** Finance Overview may be a canonical landing only when its current read contract is proven. Task 1/2 evidence marks `finance.invoices` as `STOP_FOCUSED_DESIGN` and `finance.expenses` as conditional/unproven, so neither is a Task 3 local tab and no Finance read API is added. Use already-proven CRM Overview, Customers, and Customer Reviews (or Logistics Overview and Shipments) for the local-tab contract tests.
+
 **Files:**
 - Modify: `app/Http/Controllers/Erp/WorkspaceController.php`
 - Modify: `app/Services/ErpWorkspaceNavigationService.php`
@@ -232,7 +234,7 @@ git commit -m "feat: classify canonical owner module surfaces"
 
 - [ ] **Step 1: Write failing route and component tests**
 
-Prove that `/shop-owner/oversee/finance` returns `activeModule`, an explicit Overview item, and owner-readable local pages; prove the tabs render Overview, Invoices, and Expenses without rendering approval/audit/create-only links.
+Prove that `/shop-owner/operate/customers` returns `activeModule`, an explicit Overview item, and the proven CRM local pages; prove the tabs render Overview, Customers, and Customer Reviews without rendering Finance STOP/conditional, approval, audit, or create-only links. Assert the Finance landing keeps its unproven local pages absent.
 
 - [ ] **Step 2: Run tests to verify failure**
 

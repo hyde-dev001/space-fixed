@@ -6,14 +6,14 @@ import ModuleLanding from '../ModuleLanding';
 const state = vi.hoisted(() => ({
   props: {
     activeModule: {
-      key: 'logistics',
-      slug: 'logistics',
-      label: 'Logistics',
-      description: 'Manage shipments and delivery operations for your shop.',
+      key: 'crm',
+      slug: 'crm',
+      label: 'Customers',
+      description: 'Manage customers and customer relationships for your shop.',
+      overview: { label: 'Overview', url: '/shop-owner/operate/customers' },
       pages: [
-        { label: 'Dashboard', routeName: 'shop-owner.erp.logistics.dashboard', url: '/shop-owner/erp/logistics/dashboard' },
-        { label: 'Shipments', routeName: 'shop-owner.erp.logistics.shipments', url: '/shop-owner/erp/logistics/shipments' },
-        { label: 'Riders', routeName: 'shop-owner.erp.logistics.riders', url: '/shop-owner/erp/logistics/riders' },
+        { label: 'Customers', routeName: 'shop-owner.erp.crm.customers', url: '/shop-owner/erp/crm/customers' },
+        { label: 'Customer Reviews', routeName: 'shop-owner.erp.crm.customer-reviews', url: '/shop-owner/erp/crm/customer-reviews' },
       ],
     },
     urls: {
@@ -36,14 +36,14 @@ vi.mock('../../../layout/AppLayout_ERP', () => ({
 beforeEach(() => {
   state.props = {
     activeModule: {
-      key: 'logistics',
-      slug: 'logistics',
-      label: 'Logistics',
-      description: 'Manage shipments and delivery operations for your shop.',
+      key: 'crm',
+      slug: 'crm',
+      label: 'Customers',
+      description: 'Manage customers and customer relationships for your shop.',
+      overview: { label: 'Overview', url: '/shop-owner/operate/customers' },
       pages: [
-        { label: 'Dashboard', routeName: 'shop-owner.erp.logistics.dashboard', url: '/shop-owner/erp/logistics/dashboard' },
-        { label: 'Shipments', routeName: 'shop-owner.erp.logistics.shipments', url: '/shop-owner/erp/logistics/shipments' },
-        { label: 'Riders', routeName: 'shop-owner.erp.logistics.riders', url: '/shop-owner/erp/logistics/riders' },
+        { label: 'Customers', routeName: 'shop-owner.erp.crm.customers', url: '/shop-owner/erp/crm/customers' },
+        { label: 'Customer Reviews', routeName: 'shop-owner.erp.crm.customer-reviews', url: '/shop-owner/erp/crm/customer-reviews' },
       ],
     },
     urls: {
@@ -52,24 +52,16 @@ beforeEach(() => {
   };
 });
 
-it('renders the selected module and only its server-provided pages', () => {
+it('renders the selected module and summarizes only its server-provided pages', () => {
   render(<ModuleLanding />);
 
-  expect(screen.getByRole('heading', { name: 'Logistics' })).toBeInTheDocument();
-  expect(screen.getByText('Manage shipments and delivery operations for your shop.')).toBeInTheDocument();
-  expect(screen.getByRole('link', { name: 'Dashboard' })).toHaveAttribute(
-    'href',
-    '/shop-owner/erp/logistics/dashboard',
-  );
-  expect(screen.getByRole('link', { name: 'Shipments' })).toHaveAttribute(
-    'href',
-    '/shop-owner/erp/logistics/shipments',
-  );
-  expect(screen.getByRole('link', { name: 'Riders' })).toHaveAttribute(
-    'href',
-    '/shop-owner/erp/logistics/riders',
-  );
-  expect(screen.queryByText('Finance')).not.toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Customers' })).toBeInTheDocument();
+  expect(screen.getByText('Manage customers and customer relationships for your shop.')).toBeInTheDocument();
+  expect(screen.getByText('2 pages available in the module navigation.')).toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Customers' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Customer Reviews' })).not.toBeInTheDocument();
+  expect(screen.queryByText('Invoices')).not.toBeInTheDocument();
+  expect(screen.queryByText('Expenses')).not.toBeInTheDocument();
 });
 
 it('returns to the ERP module picker', () => {

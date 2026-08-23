@@ -7,9 +7,13 @@ namespace Tests\Feature\ShopOwner\CanonicalShell;
 use App\Http\Controllers\Erp\ReadPageController;
 use App\Http\Controllers\Erp\WorkspaceController;
 use App\Http\Middleware\EnsureOwnerErpWorkspaceEnabled;
+use App\Models\ShopOwner;
+use App\Models\ShopOwnerModule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Collection;
 use Illuminate\Routing\Route;
 use Illuminate\Support\Facades\Route as RouteFacade;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 final class CanonicalOwnerRouteContractTest extends TestCase
@@ -57,6 +61,59 @@ final class CanonicalOwnerRouteContractTest extends TestCase
         foreach (array_keys($this->operationalRoutes()) as $name) {
             $this->assertTrue(RouteFacade::has($name), "Canonical route {$name} disappeared with flags off.");
         }
+    }
+
+    public function test_canonical_customers_route_exposes_the_overview_and_only_owner_readable_local_pages(): void
+    {
+        config('shop_modules.enforcement_enabled', true);
+        $owner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
+            'business_type' => 'both',
+        ]);
+        ShopOwnerModule::factory()->create([
+            'shop_owner_id' => $owner->id,
+            'module_key' => 'crm',
+            'enabled' => true,
+        ]);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->get('/shop-owner/operate/customers')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('ERP/ModuleLanding', false)
+                ->where('activeModule.key', 'crm')
+                ->where('activeModule.overview.label', 'Overview')
+                ->where('activeModule.overview.url', route('shop-owner.shell.operate.customers'))
+                ->where('activeModule.pages', fn (Collection $pages): bool => $pages
+                    ->pluck('routeName')
+                    ->all() === [
+                        'shop-owner.erp.crm.dashboard',
+                        'shop-owner.erp.crm.customers',
+                        'shop-owner.erp.crm.customer-reviews',
+                    ])
+            );
+    }
+
+    public function test_canonical_finance_route_keeps_unproven_local_pages_out_of_the_payload(): void
+    {
+        config('shop_modules.enforcement_enabled', true);
+        $owner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
+            'business_type' => 'both',
+        ]);
+        ShopOwnerModule::factory()->create([
+            'shop_owner_id' => $owner->id,
+            'module_key' => 'finance',
+            'enabled' => true,
+        ]);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->get('/shop-owner/oversee/finance')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('activeModule.overview.url', route('shop-owner.shell.oversee.finance'))
+                ->has('activeModule.pages', 0)
+            );
     }
 
     /**

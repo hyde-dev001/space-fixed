@@ -86,7 +86,7 @@ Clicking a module opens its canonical landing destination, labeled **Overview**,
 
 Examples:
 
-- Finance: Overview, Invoices, Expenses.
+- Finance: Overview; Invoices and Expenses only after their owner-readable contracts are proven.
 - Workforce: Overview, Employees, Attendance, Leave, Overtime, Payroll, Salary Adjustments.
 - Inventory: Overview, Product Inventory, Stock Movement, Stock Requests, Material Requests, Supplier Orders.
 - Procurement: Overview, Purchase Requests, Purchase Orders, Suppliers.
@@ -94,6 +94,10 @@ Examples:
 - Retail, Repair, Customers, and Payments use the same Overview-plus-local-pages pattern.
 
 The implementation must complete a repository-backed page inventory before finalizing labels or removing duplicates. Existing useful pages are mapped to one canonical destination; they are not removed merely because the example list omits them.
+
+### Task 3 execution note
+
+Finance Overview may be a canonical landing only when its current read contract is proven. Task 1/2 evidence marks `finance.invoices` as `STOP_FOCUSED_DESIGN` and `finance.expenses` as conditional/unproven, so Task 3 must not render either as a local tab or invent Finance read APIs. Local-tab contract tests use already-proven owner-readable pages instead: CRM Overview, Customers, and Customer Reviews (or Logistics Overview and Shipments).
 
 ### Parent-page actions
 
