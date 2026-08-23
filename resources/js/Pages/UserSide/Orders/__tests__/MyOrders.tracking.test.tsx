@@ -332,6 +332,48 @@ describe('MyOrders delivery tracking', () => {
     expect(await screen.findByText(/REPORT SUBMITTED/)).toBeInTheDocument();
   });
 
+  it('submits an item-not-received report without media evidence', async () => {
+    Object.assign(order, {
+      status: 'delivered',
+      payment_method: 'cash_on_delivery',
+      customer_receipt_status: 'pending',
+      can_report_delivery_issue: true,
+      active_delivery_dispute: null,
+      refund_stage: null,
+    });
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: vi.fn(() => Promise.resolve({
+        dispute: {
+          id: 92,
+          status: 'open',
+          reason: 'item_not_received',
+          reported_at: '2026-07-18T10:00:00Z',
+        },
+      })),
+    });
+
+    render(<MyOrders />);
+    fireEvent.click(screen.getByRole('button', { name: 'REPORT ORDER', exact: true }));
+    fireEvent.change(screen.getByLabelText('Report reason'), { target: { value: 'item_not_received' } });
+
+    expect(screen.getByText('Ilagay ang detalye ng hindi natanggap na item para ma-verify ng dispatcher.')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Report evidence files')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Submit Report', exact: true })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Submit Report', exact: true }));
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/orders/7/delivery-disputes',
+      expect.objectContaining({ method: 'POST', body: expect.any(FormData) }),
+    );
+    const request = fetchMock.mock.calls.find(([url]) => url === '/orders/7/delivery-disputes');
+    const formData = request?.[1]?.body as FormData;
+    expect(formData.get('reason')).toBe('item_not_received');
+    expect(formData.getAll('media[]')).toHaveLength(0);
+    expect(formData.get('media[0]')).toBeNull();
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Report Order' })).not.toBeInTheDocument());
+  });
+
   it('keeps the direct refund action visible for third-party delivery', () => {
     Object.assign(order, {
       status: 'delivered',

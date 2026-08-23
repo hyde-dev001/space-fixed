@@ -614,7 +614,7 @@ class OrderController extends Controller
         $validated = $request->validate([
             'reason' => ['required', 'string', 'in:' . implode(',', DeliveryDisputeService::REASONS)],
             'notes' => ['nullable', 'string', 'max:2000'],
-            'media' => ['required', 'array', 'size:6'],
+            'media' => ['nullable', 'array', 'size:6'],
             'media.*' => ['required', 'file', 'mimes:jpg,jpeg,png,webp,mp4,mov,avi,mkv,webm'],
         ]);
 
@@ -624,8 +624,13 @@ class OrderController extends Controller
         }
 
         $mediaFiles = $request->file('media', []);
-        $this->deliveryDisputeEvidenceService->validateFiles($mediaFiles);
-        $storedEvidence = $this->deliveryDisputeEvidenceService->store($mediaFiles, (int) $order->id);
+        $requiresEvidence = $validated['reason'] !== 'item_not_received';
+        if ($requiresEvidence || ! empty($mediaFiles)) {
+            $this->deliveryDisputeEvidenceService->validateFiles($mediaFiles);
+        }
+        $storedEvidence = empty($mediaFiles)
+            ? []
+            : $this->deliveryDisputeEvidenceService->store($mediaFiles, (int) $order->id);
 
         try {
             $result = $this->deliveryDisputeService->report(

@@ -1,0 +1,5 @@
+<<<<<<<< HEAD:public/build/assets/supplierApi-DFmtijb7.js
+import{c as t}from"./app-BcQjQHsn.js";const a="/api/erp/procurement/suppliers",r=e=>e.data??e,p={async getAll(e,s=a){return(await t.get(s,{params:e})).data},async getById(e){const s=await t.get(`${a}/${e}`);return r(s.data)},async create(e){const s=await t.post(a,e);return r(s.data)},async update(e,s){const n=await t.put(`${a}/${e}`,s);return r(n.data)},async delete(e){return(await t.delete(`${a}/${e}`)).data},async restore(e){return(await t.post(`${a}/${e}/restore`)).data}};export{p as s};
+========
+import{c as t}from"./app-BAJ1ZrYm.js";const a="/api/erp/procurement/suppliers",r=e=>e.data??e,p={async getAll(e,s=a){return(await t.get(s,{params:e})).data},async getById(e){const s=await t.get(`${a}/${e}`);return r(s.data)},async create(e){const s=await t.post(a,e);return r(s.data)},async update(e,s){const n=await t.put(`${a}/${e}`,s);return r(n.data)},async delete(e){return(await t.delete(`${a}/${e}`)).data},async restore(e){return(await t.post(`${a}/${e}/restore`)).data}};export{p as s};
+>>>>>>>> 936ad3751 (fix: exempt item not received reports from media proof):public/build/assets/supplierApi-7W_Ft6CP.js

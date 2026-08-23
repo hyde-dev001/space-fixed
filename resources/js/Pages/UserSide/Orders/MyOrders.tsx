@@ -501,6 +501,8 @@ const MyOrders: React.FC = () => {
   };
 
   const isReportMediaRequirementMet = (): boolean => {
+    if (reportReason === 'item_not_received') return reportMedia.length === 0;
+
     const videos = reportMedia.filter((file) => isAllowedRefundVideoFile(file));
     const images = reportMedia.filter((file) => isAllowedRefundImageFile(file));
 
@@ -2701,7 +2703,9 @@ const MyOrders: React.FC = () => {
               <div className="px-6 py-4 border-b shrink-0">
                 <h3 id="report-order-title" className="text-xl font-semibold">Report Order</h3>
                 <p className="text-sm text-gray-500 mt-1">
-                  I-upload ang proof ng pagbukas ng parcel para ma-verify ng dispatcher.
+                  {reportReason === 'item_not_received'
+                    ? 'Ilagay ang detalye ng hindi natanggap na item para ma-verify ng dispatcher.'
+                    : 'I-upload ang proof ng pagbukas ng parcel para ma-verify ng dispatcher.'}
                 </p>
               </div>
               <div className="px-6 py-5 overflow-y-auto flex-1 space-y-5">
@@ -2713,7 +2717,11 @@ const MyOrders: React.FC = () => {
                     id="report-reason"
                     aria-label="Report reason"
                     value={reportReason}
-                    onChange={(event) => setReportReason(event.target.value)}
+                    onChange={(event) => {
+                      const reason = event.target.value;
+                      setReportReason(reason);
+                      if (reason === 'item_not_received') setReportMedia([]);
+                    }}
                     className="w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-gray-400 focus:outline-none"
                   >
                     <option value="">Piliin ang problema</option>
@@ -2725,56 +2733,62 @@ const MyOrders: React.FC = () => {
                   </select>
                 </div>
 
-                <div>
-                  <div className="flex items-center justify-between gap-3 mb-2">
-                    <label htmlFor="report-evidence-files" className="block text-sm font-medium text-gray-700">
-                      Proof of opening the parcel <span className="text-red-500">*</span>
-                    </label>
-                    <span className="text-xs text-gray-500">
-                      {reportMedia.filter((file) => isAllowedRefundImageFile(file)).length}/5 images · {reportMedia.filter((file) => isAllowedRefundVideoFile(file)).length}/1 video
-                    </span>
+                {reportReason === 'item_not_received' ? (
+                  <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+                    Para sa item na hindi natanggap, hindi kailangan ang larawan o video. Iimbestigahan ng dispatcher ang delivery records at proof ng rider.
                   </div>
-                  <p className="text-xs text-gray-600 mb-3">
-                    Required: exactly 5 JPG/PNG/WEBP images and 1 MP4/MOV/AVI/MKV/WEBM opening-parcel video. Images max 20MB each; video max 256MB.
-                  </p>
-                  <input
-                    id="report-evidence-files"
-                    aria-label="Report evidence files"
-                    type="file"
-                    accept={REFUND_MEDIA_ACCEPT}
-                    multiple
-                    onChange={handleReportMediaUpload}
-                    className="sr-only"
-                  />
-                  <label
-                    htmlFor="report-evidence-files"
-                    className="flex cursor-pointer items-center justify-center rounded-lg border-2 border-dashed border-gray-300 px-4 py-5 text-sm font-medium text-gray-600 hover:border-gray-500 hover:bg-gray-50"
-                  >
-                    Add photos and opening video
-                  </label>
-                  {reportMedia.length > 0 && (
-                    <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                      {reportMedia.map((file, index) => (
-                        <div key={`${file.name}-${index}`} className="flex items-center justify-between gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-                          <div className="min-w-0">
-                            <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
-                              {isAllowedRefundVideoFile(file) ? 'Video' : 'Image'} {index + 1}
-                            </p>
-                            <p className="truncate text-xs text-gray-700" title={file.name}>{file.name}</p>
-                          </div>
-                          <button
-                            type="button"
-                            aria-label={`Remove report evidence ${index + 1}`}
-                            onClick={() => removeReportMedia(index)}
-                            className="shrink-0 text-lg leading-none text-gray-500 hover:text-red-600"
-                          >
-                            ×
-                          </button>
-                        </div>
-                      ))}
+                ) : (
+                  <div>
+                    <div className="flex items-center justify-between gap-3 mb-2">
+                      <label htmlFor="report-evidence-files" className="block text-sm font-medium text-gray-700">
+                        Proof of opening the parcel <span className="text-red-500">*</span>
+                      </label>
+                      <span className="text-xs text-gray-500">
+                        {reportMedia.filter((file) => isAllowedRefundImageFile(file)).length}/5 images · {reportMedia.filter((file) => isAllowedRefundVideoFile(file)).length}/1 video
+                      </span>
                     </div>
-                  )}
-                </div>
+                    <p className="text-xs text-gray-600 mb-3">
+                      Required: exactly 5 JPG/PNG/WEBP images and 1 MP4/MOV/AVI/MKV/WEBM opening-parcel video. Images max 20MB each; video max 256MB.
+                    </p>
+                    <input
+                      id="report-evidence-files"
+                      aria-label="Report evidence files"
+                      type="file"
+                      accept={REFUND_MEDIA_ACCEPT}
+                      multiple
+                      onChange={handleReportMediaUpload}
+                      className="sr-only"
+                    />
+                    <label
+                      htmlFor="report-evidence-files"
+                      className="flex cursor-pointer items-center justify-center rounded-lg border-2 border-dashed border-gray-300 px-4 py-5 text-sm font-medium text-gray-600 hover:border-gray-500 hover:bg-gray-50"
+                    >
+                      Add photos and opening video
+                    </label>
+                    {reportMedia.length > 0 && (
+                      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                        {reportMedia.map((file, index) => (
+                          <div key={`${file.name}-${index}`} className="flex items-center justify-between gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                            <div className="min-w-0">
+                              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                                {isAllowedRefundVideoFile(file) ? 'Video' : 'Image'} {index + 1}
+                              </p>
+                              <p className="truncate text-xs text-gray-700" title={file.name}>{file.name}</p>
+                            </div>
+                            <button
+                              type="button"
+                              aria-label={`Remove report evidence ${index + 1}`}
+                              onClick={() => removeReportMedia(index)}
+                              className="shrink-0 text-lg leading-none text-gray-500 hover:text-red-600"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <div>
                   <label htmlFor="report-note" className="block text-sm font-medium text-gray-700 mb-2">
