@@ -2418,7 +2418,7 @@ const Payment: React.FC = () => {
       {!isPremiumPayment && <div className="hidden xl:block"><Navigation /></div>}
 
       <main className={`flex-1 ${!isPremiumPayment ? 'xl:pt-28' : ''}`}>
-        <div className="max-w-6xl mx-auto py-0 xl:py-10 px-4 xl:px-4 text-black">
+        <div className="max-w-7xl mx-auto py-0 xl:py-10 px-4 xl:px-8 text-black">
           {paymentRecovery && (
             <div className="mx-4 xl:mx-0 mb-4 rounded-lg border border-amber-300 bg-amber-50 p-4">
               <p className="text-sm font-medium text-amber-900 mb-2">
@@ -2959,6 +2959,241 @@ const Payment: React.FC = () => {
             ), document.body)}
           </div>
 
+          <section
+            data-testid="desktop-voucher-section"
+            className="hidden xl:block mb-12 rounded-xl border border-[#cacacb] bg-white p-6 shadow-none"
+          >
+            {isPromoPreviewLoading ? (
+              <div className="flex min-h-20 items-center justify-center rounded-none bg-[#f5f5f5] px-4 py-6">
+                <p className="text-sm text-[#707072]">Checking claimed vouchers...</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div>
+                  <label htmlFor="desktop-voucher-code" className="block text-sm font-medium uppercase tracking-wide text-[#111111]">
+                    Voucher
+                  </label>
+                  <p className="mt-1 text-base text-[#707072]">Type a voucher code or choose from suggestions.</p>
+                </div>
+
+                <div ref={voucherInputContainerRef} className="relative">
+                  <div className="flex items-stretch">
+                    <input
+                      type="text"
+                      id="desktop-voucher-code"
+                      aria-label="Voucher code"
+                      aria-expanded={showVoucherSuggestionDropdown}
+                      value={voucherCodeInput}
+                      onFocus={() => setIsVoucherSuggestionOpen(true)}
+                      onClick={() => setIsVoucherSuggestionOpen(true)}
+                      onChange={(e) => {
+                        const nextVoucherCode = e.target.value.toUpperCase();
+                        const normalizedNextVoucherCode = normalizeVoucherCode(nextVoucherCode);
+
+                        setSelectedVoucherCampaignId(null);
+                        setHasVoucherInputInteraction(true);
+                        setVoucherCodeInput(nextVoucherCode);
+
+                        if (normalizedNextVoucherCode === '') {
+                          setAppliedVoucherCode('');
+                          setIsVoucherSelectionEnabled(false);
+                        }
+
+                        setIsVoucherSuggestionOpen(true);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleApplyVoucherCode();
+                        }
+
+                        if (e.key === 'Escape') {
+                          setIsVoucherSuggestionOpen(false);
+                        }
+                      }}
+                      placeholder="Enter voucher code"
+                      className="h-12 min-w-0 flex-1 rounded-l-3xl rounded-r-none border border-[#cacacb] bg-[#f5f5f5] px-5 text-lg text-[#111111] outline-none transition focus:border-[#111111] focus:bg-white focus:ring-2 focus:ring-[#f5f5f5]"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={handleApplyVoucherCode}
+                      className="min-h-12 w-44 shrink-0 rounded-r-3xl rounded-l-none bg-[#111111] px-6 py-3 text-base font-medium text-white transition-colors hover:bg-black focus:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] focus-visible:ring-offset-2"
+                    >
+                      Apply
+                    </button>
+                  </div>
+
+                  {showVoucherSuggestionDropdown && (
+                    <div
+                      data-testid="desktop-voucher-suggestions"
+                      role="listbox"
+                      aria-label="Voucher suggestions"
+                      onKeyDown={(event) => {
+                        if (event.key === 'Escape') {
+                          event.preventDefault();
+                          setIsVoucherSuggestionOpen(false);
+                        }
+                      }}
+                      className="hide-scrollbar absolute left-0 right-0 top-full z-40 mt-4 max-h-[70vh] overflow-y-auto rounded-none border border-[#cacacb] bg-white p-4 shadow-none"
+                    >
+                      {filteredVoucherCodeSuggestions.length > 0 ? (
+                        <div className="space-y-6">
+                          {filteredVoucherCodeSuggestions.map((voucher) => {
+                            const displayName = voucher.name || voucher.code || 'Voucher';
+                            const displayCode = normalizeVoucherCode(String(voucher.code || voucher.name || ''));
+                            const isEligible = voucher.eligibility === 'eligible';
+                            const canUseVoucher = voucher.claim_status === 'claimed' && isEligible;
+                            const isClaiming = claimingVoucherCampaignId === voucher.id;
+                            const minimumSpend = toFiniteNumber(voucher.min_spend);
+                            const eligibleSubtotal = toFiniteNumber(voucher.eligible_subtotal);
+                            const remainingSpend = toFiniteNumber(voucher.remaining_spend);
+                            const spendProgress = minimumSpend > 0
+                              ? Math.min(100, (eligibleSubtotal / minimumSpend) * 100)
+                              : 100;
+
+                            return (
+                              <div
+                                key={voucher.id}
+                                data-testid="voucher-suggestion-card"
+                                role="option"
+                                tabIndex={voucher.claim_status === 'redeemed' ? -1 : 0}
+                                aria-selected={selectedVoucherCampaignId === voucher.id}
+                                aria-disabled={!canUseVoucher && !voucher.can_claim}
+                                onKeyDown={(event) => {
+                                  if ((event.key === 'Enter' || event.key === ' ') && canUseVoucher) {
+                                    event.preventDefault();
+                                    handleUseVoucher(voucher);
+                                  }
+                                }}
+                                className={'group relative overflow-hidden rounded-none border text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] focus-visible:ring-offset-2 ' + (selectedVoucherCampaignId === voucher.id ? 'border-[#111111] bg-[#f5f5f5]' : 'border-[#cacacb] bg-white hover:border-[#111111]')}
+                              >
+                                <div className="flex min-h-[20rem] items-stretch">
+                                  <div className="flex w-64 shrink-0 flex-col items-center justify-center border-r border-dashed border-[#cacacb] bg-[#f5f5f5] px-6 text-center">
+                                    <div className="flex h-32 w-32 items-center justify-center rounded-full border border-[#cacacb] bg-white text-5xl font-bold text-[#111111]" aria-hidden="true">
+                                      %
+                                    </div>
+                                    <span className="mt-4 rounded-full bg-[#111111] px-4 py-2 text-sm font-medium uppercase tracking-wide text-white">
+                                      {voucher.target === 'shipping' ? 'Shipping' : 'Voucher'}
+                                    </span>
+                                  </div>
+
+                                  <div className="min-w-0 flex-1 px-8 py-8">
+                                    <div className="flex flex-wrap items-start justify-between gap-4">
+                                      <div className="min-w-0 flex-1">
+                                        <p className="truncate text-2xl font-medium leading-tight text-[#111111]">{displayName}</p>
+                                        {displayCode && normalizeVoucherCode(displayName) !== displayCode && (
+                                          <p className="mt-2 truncate font-mono text-base font-medium tracking-wide text-[#707072]">{displayCode}</p>
+                                        )}
+                                      </div>
+                                      <span className={voucherClaimStatusClass(voucher.claim_status) + ' shrink-0 rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-wide'}>
+                                        {voucherClaimStatusLabel(voucher.claim_status)}
+                                      </span>
+                                    </div>
+
+                                    <p className="mt-6 text-3xl font-medium leading-tight text-[#111111]">
+                                      {formatVoucherBenefit(voucher)}
+                                    </p>
+
+                                    {minimumSpend > 0 && (
+                                      <>
+                                        <p className="mt-3 text-xl text-[#111111]">
+                                          Min. spend {formatVoucherMoney(minimumSpend)}
+                                        </p>
+                                        <div className="mt-4 border-y border-dashed border-[#e5e5e5] py-3">
+                                          <div className="flex items-center justify-between gap-4 text-sm text-[#707072]">
+                                            <span>{formatVoucherMoney(eligibleSubtotal)} eligible</span>
+                                            <span>{remainingSpend > 0 ? formatVoucherMoney(remainingSpend) + ' more' : 'Requirement met'}</span>
+                                          </div>
+                                          <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#e5e5e5]" aria-hidden="true">
+                                            <div className="h-full rounded-full bg-[#d30005]" style={{ width: String(spendProgress) + '%' }} />
+                                          </div>
+                                        </div>
+                                        <p className={(remainingSpend > 0 ? 'text-amber-700' : 'text-emerald-700') + ' mt-3 text-base font-medium'}>
+                                          {remainingSpend > 0 ? 'Add ' + formatVoucherMoney(remainingSpend) + ' more to unlock this voucher.' : 'Eligible for this order.'}
+                                        </p>
+                                      </>
+                                    )}
+
+                                    <div className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-1 text-base text-[#707072]">
+                                      <span>{voucher.target === 'shipping' ? 'Shipping' : 'Items'}</span>
+                                      <span aria-hidden="true">·</span>
+                                      <span>{voucher.scope === 'shop_wide' ? 'Shop-wide' : 'Selected products'}</span>
+                                      <span aria-hidden="true">·</span>
+                                      <span>T&amp;C apply</span>
+                                    </div>
+
+                                    <p className={voucherEligibilityClass(voucher.eligibility) + ' mt-3 text-base font-medium'}>
+                                      {voucher.eligibility_message}
+                                    </p>
+                                  </div>
+
+                                  <div className="flex w-48 shrink-0 flex-col items-center justify-center border-l border-[#cacacb] px-6">
+                                    {isClaiming ? (
+                                      <button type="button" disabled className="min-h-12 w-full rounded-full bg-[#f5f5f5] px-4 py-3 text-base font-medium text-[#707072]">
+                                        Claiming…
+                                      </button>
+                                    ) : canUseVoucher ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleUseVoucher(voucher)}
+                                        className="inline-flex min-h-12 w-full items-center justify-center rounded-full bg-[#111111] px-4 py-3 text-base font-medium text-white transition-colors hover:bg-black focus:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] focus-visible:ring-offset-2"
+                                      >
+                                        Use voucher
+                                      </button>
+                                    ) : voucher.claim_status === 'claimable' && voucher.can_claim ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => void handleClaimVoucher(voucher, isEligible)}
+                                        className="inline-flex min-h-12 w-full items-center justify-center rounded-full bg-[#111111] px-4 py-3 text-base font-medium text-white transition-colors hover:bg-black focus:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] focus-visible:ring-offset-2"
+                                      >
+                                        {isEligible ? 'Claim & use' : 'Claim for later'}
+                                      </button>
+                                    ) : (
+                                      <span className="text-center text-base font-medium text-[#707072]">
+                                        {voucher.claim_status === 'redeemed' ? 'Already used' : voucher.claim_status === 'claimed' ? 'Claimed' : 'Not available'}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {minimumSpend > 0 && remainingSpend > 0 && (
+                                  <div className="border-t border-[#cacacb] px-8 py-4 text-lg font-medium text-[#111111]">
+                                    {'Add ' + formatVoucherMoney(remainingSpend) + ', to get ' + formatVoucherBenefit(voucher).replace(/\s+(shipping|items)$/i, '')}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="px-3 py-6 text-base text-center text-[#707072]">No matching vouchers</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {(selectedVoucherCampaignId !== null || appliedVoucherCode) && (
+                  <button
+                    type="button"
+                    onClick={handleClearVoucherSelection}
+                    className="inline-flex min-h-11 items-center rounded-full bg-[#f5f5f5] px-4 py-2 text-sm font-medium text-[#111111] transition-colors hover:bg-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] focus-visible:ring-offset-2"
+                  >
+                    Clear voucher selection
+                  </button>
+                )}
+
+                {voucherErrorMessage && (
+                  <p role="alert" className="text-sm font-medium text-red-700">{voucherErrorMessage}</p>
+                )}
+
+                {voucherClaimError && (
+                  <p role="alert" className="text-sm font-medium text-red-700">{voucherClaimError}</p>
+                )}
+              </div>
+            )}
+          </section>
+
           <div className="hidden xl:grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
             {/* Left: Payment Form (span 2 on md) */}
             <div className="md:col-span-2">
@@ -3344,237 +3579,6 @@ const Payment: React.FC = () => {
                       </div>
                     </div>
                   ))}
-                </div>
-
-                {/* Auto-applied voucher */}
-                <div className="mb-4 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm">
-                  {isPromoPreviewLoading ? (
-                    <p className="text-gray-600">Checking claimed vouchers...</p>
-                  ) : (
-                    <div className="space-y-2">
-                      <label className="block text-xs font-semibold uppercase tracking-wide text-gray-700">
-                        Voucher
-                      </label>
-                      <p className="text-xs text-gray-600">Type a voucher code or choose from suggestions.</p>
-                      <div ref={voucherInputContainerRef} className="relative">
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="text"
-                            aria-label="Voucher code"
-                            aria-expanded={showVoucherSuggestionDropdown}
-                            value={voucherCodeInput}
-                            onFocus={() => setIsVoucherSuggestionOpen(true)}
-                            onClick={() => setIsVoucherSuggestionOpen(true)}
-                            onChange={(e) => {
-                              const nextVoucherCode = e.target.value.toUpperCase();
-                              const normalizedNextVoucherCode = normalizeVoucherCode(nextVoucherCode);
-
-                              setSelectedVoucherCampaignId(null);
-                              setHasVoucherInputInteraction(true);
-                              setVoucherCodeInput(nextVoucherCode);
-
-                              if (normalizedNextVoucherCode === '') {
-                                setAppliedVoucherCode('');
-                                setIsVoucherSelectionEnabled(false);
-                              }
-
-                              setIsVoucherSuggestionOpen(true);
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                e.preventDefault();
-                                handleApplyVoucherCode();
-                              }
-
-                              if (e.key === 'Escape') {
-                                setIsVoucherSuggestionOpen(false);
-                              }
-                            }}
-                            placeholder="Enter voucher code"
-                            className="min-w-0 flex-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-black"
-                          />
-                          <button
-                            type="button"
-                            onClick={handleApplyVoucherCode}
-                            className="min-h-11 shrink-0 rounded-md bg-gray-900 px-3 py-2 text-xs font-semibold text-white hover:bg-black focus:outline-none focus:ring-2 focus:ring-gray-900/20"
-                          >
-                            Apply
-                          </button>
-                        </div>
-
-                        {showVoucherSuggestionDropdown && (
-                          <div
-                            role="listbox"
-                            aria-label="Voucher suggestions"
-                            onKeyDown={(event) => {
-                              if (event.key === 'Escape') {
-                                event.preventDefault();
-                                setIsVoucherSuggestionOpen(false);
-                              }
-                            }}
-                            className="absolute left-0 right-0 top-full z-30 mt-2 max-h-[min(32rem,calc(100vh-12rem))] overflow-y-auto rounded-xl border border-gray-200 bg-white p-2 shadow-md"
-                          >
-                            <div className="space-y-2">
-                              {filteredVoucherCodeSuggestions.length > 0 ? (
-                                filteredVoucherCodeSuggestions.map((voucher) => {
-                                  const displayName = voucher.name || voucher.code || 'Voucher';
-                                  const displayCode = normalizeVoucherCode(String(voucher.code || voucher.name || ''));
-                                  const isEligible = voucher.eligibility === 'eligible';
-                                  const canUseVoucher = voucher.claim_status === 'claimed' && isEligible;
-                                  const isClaiming = claimingVoucherCampaignId === voucher.id;
-                                  const minimumSpend = toFiniteNumber(voucher.min_spend);
-                                  const eligibleSubtotal = toFiniteNumber(voucher.eligible_subtotal);
-                                  const remainingSpend = toFiniteNumber(voucher.remaining_spend);
-                                  const spendProgress = minimumSpend > 0
-                                    ? Math.min(100, (eligibleSubtotal / minimumSpend) * 100)
-                                    : 100;
-
-                                  return (
-                                    <div
-                                      key={voucher.id}
-                                      role="option"
-                                      tabIndex={voucher.claim_status === 'redeemed' ? -1 : 0}
-                                      aria-selected={selectedVoucherCampaignId === voucher.id}
-                                      aria-disabled={!canUseVoucher && !voucher.can_claim}
-                                      onKeyDown={(event) => {
-                                        if ((event.key === 'Enter' || event.key === ' ') && canUseVoucher) {
-                                          event.preventDefault();
-                                          handleUseVoucher(voucher);
-                                        }
-                                      }}
-                                      className={`relative overflow-hidden rounded-lg border text-left transition-colors focus:outline-none focus:ring-2 focus:ring-gray-900/20 ${
-                                        selectedVoucherCampaignId === voucher.id
-                                          ? 'border-gray-900 bg-gray-50'
-                                          : 'border-gray-200 bg-white hover:border-gray-400'
-                                      }`}
-                                    >
-                                      <div className="grid grid-cols-[4.5rem_minmax(0,1fr)_5.5rem] items-stretch">
-                                        <div className="flex min-h-[10rem] flex-col items-center justify-center border-r border-dashed border-gray-200 bg-gray-50 px-2 py-3 text-center">
-                                          <div
-                                            className="flex h-14 w-14 items-center justify-center rounded-full border border-gray-200 bg-white text-xl font-semibold text-gray-900 sm:h-20 sm:w-20 sm:text-2xl"
-                                            aria-hidden="true"
-                                          >
-                                            %
-                                          </div>
-                                          <span className="mt-2 rounded-md bg-[#d30005] px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-white sm:text-xs">
-                                            {voucher.target === 'shipping' ? 'Shipping' : 'Shop'}
-                                          </span>
-                                        </div>
-
-                                        <div className="min-w-0 px-2.5 py-3">
-                                        <div className="flex flex-wrap items-start justify-between gap-2">
-                                          <div className="min-w-0">
-                                            <p className="truncate text-sm font-semibold text-black">{displayName}</p>
-                                            {displayCode && normalizeVoucherCode(displayName) !== displayCode && (
-                                              <p className="mt-0.5 truncate font-mono text-[11px] font-semibold tracking-wide text-gray-500">{displayCode}</p>
-                                            )}
-                                          </div>
-                                          <span className={`shrink-0 rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-wide ${voucherClaimStatusClass(voucher.claim_status)}`}>
-                                            {voucherClaimStatusLabel(voucher.claim_status)}
-                                          </span>
-                                        </div>
-
-                                        <p className="mt-2 text-lg font-semibold leading-tight text-gray-900">
-                                          {formatVoucherBenefit(voucher)}
-                                        </p>
-
-                                        {minimumSpend > 0 && (
-                                          <>
-                                            <p className="mt-1 text-sm text-gray-700">Min. spend {formatVoucherMoney(minimumSpend)}</p>
-                                            <div className="mt-2 rounded-md bg-gray-50 px-2.5 py-2">
-                                              <div className="flex items-center justify-between gap-2 text-[11px] text-gray-600">
-                                                <span>{formatVoucherMoney(eligibleSubtotal)} eligible</span>
-                                                <span>{remainingSpend > 0 ? `${formatVoucherMoney(remainingSpend)} more` : 'Requirement met'}</span>
-                                              </div>
-                                              <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-gray-200" aria-hidden="true">
-                                                <div className="h-full rounded-full bg-[#d30005]" style={{ width: `${spendProgress}%` }} />
-                                              </div>
-                                            </div>
-                                            <p className={`mt-2 text-xs font-medium ${remainingSpend > 0 ? 'text-amber-700' : 'text-emerald-700'}`}>
-                                              {remainingSpend > 0 ? `Add ${formatVoucherMoney(remainingSpend)} more to unlock this voucher.` : 'Eligible for this order.'}
-                                            </p>
-                                          </>
-                                        )}
-
-                                        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500">
-                                          <span>{voucher.target === 'shipping' ? 'Shipping' : 'Items'}</span>
-                                          <span aria-hidden="true">·</span>
-                                          <span>{voucher.scope === 'shop_wide' ? 'Shop-wide' : 'Selected products'}</span>
-                                          <span aria-hidden="true">·</span>
-                                          <span>T&amp;C apply</span>
-                                        </div>
-
-                                        <p className={`mt-2 text-xs font-medium ${voucherEligibilityClass(voucher.eligibility)}`}>
-                                          {voucher.eligibility_message}
-                                        </p>
-                                        </div>
-
-                                        <div className="flex min-w-0 flex-col items-stretch justify-center gap-2 border-l border-gray-100 px-2 py-3">
-                                        {isClaiming ? (
-                                            <button type="button" disabled className="min-h-11 w-full whitespace-nowrap rounded-md bg-gray-200 px-1 text-[11px] font-semibold text-gray-500">
-                                            Claiming…
-                                          </button>
-                                        ) : canUseVoucher ? (
-                                          <button
-                                            type="button"
-                                            onClick={() => handleUseVoucher(voucher)}
-                                              className="min-h-11 w-full whitespace-nowrap rounded-md bg-[#d30005] px-1 text-[11px] font-semibold text-white hover:bg-[#780700] focus:outline-none focus:ring-2 focus:ring-[#d30005]/30"
-                                          >
-                                            Use voucher
-                                          </button>
-                                        ) : voucher.claim_status === 'claimable' && voucher.can_claim ? (
-                                          <button
-                                            type="button"
-                                            onClick={() => void handleClaimVoucher(voucher, isEligible)}
-                                              className="min-h-11 w-full whitespace-nowrap rounded-md bg-[#d30005] px-1 text-[11px] font-semibold text-white hover:bg-[#780700] focus:outline-none focus:ring-2 focus:ring-[#d30005]/30"
-                                          >
-                                            {isEligible ? 'Claim & use' : 'Claim for later'}
-                                          </button>
-                                        ) : (
-                                          <span className="text-right text-[11px] font-semibold text-gray-500">
-                                            {voucher.claim_status === 'redeemed' ? 'Already used' : voucher.claim_status === 'claimed' ? 'Claimed' : 'Not available'}
-                                          </span>
-                                        )}
-                                        </div>
-                                      </div>
-
-                                      {minimumSpend > 0 && remainingSpend > 0 && (
-                                        <div className="border-t border-gray-200 px-4 py-3 text-base font-medium text-gray-900 sm:px-8 sm:text-lg">
-                                          Add {formatVoucherMoney(remainingSpend)}, to get {formatVoucherBenefit(voucher).replace(/\s+(shipping|items)$/i, '')}
-                                        </div>
-                                      )}
-                                    </div>
-                                  );
-                                })
-                              ) : (
-                                <div className="rounded-lg border border-dashed border-gray-200 px-3 py-4 text-center text-sm text-gray-500">
-                                  No matching vouchers
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
-                      {(selectedVoucherCampaignId !== null || appliedVoucherCode) && (
-                        <button
-                          type="button"
-                          onClick={handleClearVoucherSelection}
-                          className="text-xs font-medium text-gray-700 underline hover:text-black"
-                        >
-                          Clear voucher selection
-                        </button>
-                      )}
-
-                      {voucherErrorMessage && (
-                        <p className="text-xs font-medium text-red-600">{voucherErrorMessage}</p>
-                      )}
-
-                      {voucherClaimError && (
-                        <p role="alert" className="text-xs font-medium text-red-600">{voucherClaimError}</p>
-                      )}
-                    </div>
-                  )}
                 </div>
 
                 {/* Summary */}
