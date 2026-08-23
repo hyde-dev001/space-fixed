@@ -605,7 +605,7 @@ const MyOrders: React.FC = () => {
             .find((entry) => Array.isArray(entry) && entry.length > 0) as string[] | undefined;
           if (firstErrorList?.[0]) throw new Error(firstErrorList[0]);
         }
-        throw new Error(data?.message || 'Hindi naisumite ang report.');
+        throw new Error(data?.message || 'The report could not be submitted.');
       }
 
       setOrders((previous) => previous.map((order) => order.id === reportOrderId ? {
@@ -626,14 +626,14 @@ const MyOrders: React.FC = () => {
       Swal.fire({
         icon: 'success',
         title: 'Report Submitted',
-        text: 'Naisumite na ang report at susuriin ito ng dispatcher.',
+        text: 'The report was submitted and will be reviewed by the dispatcher.',
         confirmButtonColor: '#000000',
       });
     } catch (error) {
       Swal.fire({
         icon: 'error',
         title: 'Failed',
-        text: error instanceof Error ? error.message : 'Hindi naisumite ang report. Subukan ulit.',
+        text: error instanceof Error ? error.message : 'The report could not be submitted. Please try again.',
         confirmButtonColor: '#000000',
       });
     } finally {
@@ -2704,14 +2704,14 @@ const MyOrders: React.FC = () => {
                 <h3 id="report-order-title" className="text-xl font-semibold">Report Order</h3>
                 <p className="text-sm text-gray-500 mt-1">
                   {reportReason === 'item_not_received'
-                    ? 'Ilagay ang detalye ng hindi natanggap na item para ma-verify ng dispatcher.'
-                    : 'I-upload ang proof ng pagbukas ng parcel para ma-verify ng dispatcher.'}
+                    ? 'Provide details about the item you did not receive so the dispatcher can verify it.'
+                    : 'Upload proof of opening the parcel so the dispatcher can verify it.'}
                 </p>
               </div>
               <div className="px-6 py-5 overflow-y-auto flex-1 space-y-5">
                 <div>
                   <label htmlFor="report-reason" className="block text-sm font-medium text-gray-700 mb-2">
-                    Piliin ang problema <span className="text-red-500">*</span>
+                    Choose a problem <span className="text-red-500">*</span>
                   </label>
                   <select
                     id="report-reason"
@@ -2724,18 +2724,18 @@ const MyOrders: React.FC = () => {
                     }}
                     className="w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-gray-400 focus:outline-none"
                   >
-                    <option value="">Piliin ang problema</option>
-                    <option value="item_not_received">Hindi natanggap ang item</option>
-                    <option value="damaged">Damaged ang item</option>
-                    <option value="incomplete">Incomplete ang order</option>
-                    <option value="wrong_item">Wrong item ang natanggap</option>
+                    <option value="">Choose a problem</option>
+                    <option value="item_not_received">Item not received</option>
+                    <option value="damaged">Damaged item</option>
+                    <option value="incomplete">Incomplete order</option>
+                    <option value="wrong_item">Wrong item received</option>
                     <option value="other">Other</option>
                   </select>
                 </div>
 
                 {reportReason === 'item_not_received' ? (
                   <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-                    Para sa item na hindi natanggap, hindi kailangan ang larawan o video. Iimbestigahan ng dispatcher ang delivery records at proof ng rider.
+                    For an item that was not received, photos or video are not required. The dispatcher will investigate the delivery records and rider proof.
                   </div>
                 ) : (
                   <div>
@@ -2792,7 +2792,7 @@ const MyOrders: React.FC = () => {
 
                 <div>
                   <label htmlFor="report-note" className="block text-sm font-medium text-gray-700 mb-2">
-                    Karagdagang detalye (optional)
+                    Additional details (optional)
                   </label>
                   <textarea
                     id="report-note"
@@ -2802,7 +2802,7 @@ const MyOrders: React.FC = () => {
                     className="w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-gray-400 focus:outline-none resize-none"
                     rows={4}
                     maxLength={2000}
-                    placeholder="Ilagay ang karagdagang detalye tungkol sa problema..."
+                    placeholder="Enter additional details about the problem..."
                   />
                 </div>
               </div>

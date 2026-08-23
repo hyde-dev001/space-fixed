@@ -355,9 +355,17 @@ describe('MyOrders delivery tracking', () => {
 
     render(<MyOrders />);
     fireEvent.click(screen.getByRole('button', { name: 'REPORT ORDER', exact: true }));
+    expect(screen.getByRole('option', { name: 'Choose a problem' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Item not received' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Damaged item' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Incomplete order' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Wrong item received' })).toBeInTheDocument();
+    expect(screen.getByText('Additional details (optional)')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Enter additional details about the problem...')).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Report reason'), { target: { value: 'item_not_received' } });
 
-    expect(screen.getByText('Ilagay ang detalye ng hindi natanggap na item para ma-verify ng dispatcher.')).toBeInTheDocument();
+    expect(screen.getByText('Provide details about the item you did not receive so the dispatcher can verify it.')).toBeInTheDocument();
+    expect(screen.getByText('For an item that was not received, photos or video are not required. The dispatcher will investigate the delivery records and rider proof.')).toBeInTheDocument();
     expect(screen.queryByLabelText('Report evidence files')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Submit Report', exact: true })).toBeEnabled();
     fireEvent.click(screen.getByRole('button', { name: 'Submit Report', exact: true }));
