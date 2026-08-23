@@ -59,7 +59,7 @@ final class ErpWorkspaceNavigationService
     public function __construct(private readonly ErpRouteCatalog $catalog) {}
 
     /**
-     * @return array<string, array{slug: string, label: string, description: string, overview: array{label: string, url: string}, pages: array<int, array{label: string, routeName: string, url: string, groupKey: string|null, groupLabel: string|null, groupOrder: int|null, pageOrder: int}>}>
+     * @return array<string, array{slug: string, label: string, description: string, pages: array<int, array{label: string, routeName: string, url: string, groupKey: string|null, groupLabel: string|null, groupOrder: int|null, pageOrder: int}>}>
      */
     public function definitions(): array
     {

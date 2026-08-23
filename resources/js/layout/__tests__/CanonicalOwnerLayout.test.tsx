@@ -9,10 +9,15 @@ import AppLayoutERP from "../AppLayout_ERP";
 const state = vi.hoisted(() => ({
   ownerShell: null as OwnerShellMetadata | null,
   auth: {} as Record<string, unknown>,
+  activeModule: null as null | Record<string, unknown>,
+  url: "/shop-owner/home",
 }));
 
 vi.mock("@inertiajs/react", () => ({
-  usePage: () => ({ url: "/shop-owner/home", props: { auth: state.auth, ownerShell: state.ownerShell } }),
+  usePage: () => ({
+    url: state.url,
+    props: { auth: state.auth, ownerShell: state.ownerShell, activeModule: state.activeModule },
+  }),
   Link: ({ href, children, ...props }: React.PropsWithChildren<{ href: string }>) => (
     <a href={href} {...props}>{children}</a>
   ),
@@ -74,6 +79,8 @@ const metadata: OwnerShellMetadata = {
 beforeEach(() => {
   state.ownerShell = metadata;
   state.auth = {};
+  state.activeModule = null;
+  state.url = "/shop-owner/home";
   Object.defineProperty(window, "innerWidth", {
     configurable: true,
     writable: true,
@@ -85,6 +92,8 @@ beforeEach(() => {
 afterEach(() => {
   state.ownerShell = null;
   state.auth = {};
+  state.activeModule = null;
+  state.url = "/shop-owner/home";
 });
 
 it("restores focus to the mobile menu trigger after the canonical drawer closes", async () => {
@@ -159,6 +168,21 @@ it("selects the canonical frame for owner-mode ERP pages", () => {
   expect(screen.queryByTestId("existing-erp-sidebar")).not.toBeInTheDocument();
 });
 
+it("renders local tabs from the server-provided active module for owner ERP pages", () => {
+  state.auth = { erpActor: { type: "shop_owner", ownerMode: true } };
+  state.url = "/shop-owner/erp/crm/customers";
+  state.activeModule = {
+    label: "Customers",
+    overview: { label: "Overview", url: "/shop-owner/operate/customers" },
+    pages: [{ label: "Customers", url: "/shop-owner/erp/crm/customers" }],
+  };
+
+  render(<AppLayoutERP><div>owner ERP page</div></AppLayoutERP>);
+
+  expect(screen.getByRole("navigation", { name: "Customers navigation" })).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Customers" })).toHaveAttribute("aria-current", "page");
+});
+
 it("keeps the existing ERP frame for owner-mode pages on existing presentation", () => {
   state.ownerShell = null;
   state.auth = { erpActor: { type: "shop_owner", ownerMode: true } };
@@ -174,6 +198,20 @@ it("never selects the owner frame for employee ERP pages", () => {
 
   expect(screen.getByTestId("existing-erp-sidebar")).toBeInTheDocument();
   expect(screen.queryByTestId("canonical-owner-frame")).not.toBeInTheDocument();
+});
+
+it("does not render owner local tabs for employee ERP pages with the same module payload", () => {
+  state.auth = { erpActor: { type: "employee", ownerMode: false } };
+  state.url = "/shop-owner/erp/crm/customers";
+  state.activeModule = {
+    label: "Customers",
+    overview: { label: "Overview", url: "/shop-owner/operate/customers" },
+    pages: [{ label: "Customers", url: "/shop-owner/erp/crm/customers" }],
+  };
+
+  render(<AppLayoutERP><div>employee ERP page</div></AppLayoutERP>);
+
+  expect(screen.queryByRole("navigation", { name: "Customers navigation" })).not.toBeInTheDocument();
 });
 
 it("keeps the existing frame when canonical metadata is incomplete", () => {
