@@ -114,4 +114,19 @@ final class ErpRouteCatalogTest extends TestCase
 
         config(['shop_modules.routes' => $routes]);
     }
+
+    public function test_owner_readable_page_contract_fails_closed_for_an_unregistered_get_support(): void
+    {
+        $routes = config('shop_modules.routes');
+        $configuredRoutes = $routes;
+        $configuredRoutes['shop-owner.erp.crm.dashboard']['supporting_routes'] = ['testing.unregistered-owner-read'];
+        $configuredRoutes['testing.unregistered-owner-read'] = $routes['shop-owner.erp.api.crm.dashboard-stats'];
+        config(['shop_modules.routes' => $configuredRoutes]);
+
+        $this->assertFalse(
+            app(ErpRouteCatalog::class)->hasOwnerReadablePageContract('shop-owner.erp.crm.dashboard'),
+        );
+
+        config(['shop_modules.routes' => $routes]);
+    }
 }

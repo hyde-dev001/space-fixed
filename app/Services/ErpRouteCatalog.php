@@ -90,7 +90,11 @@ final class ErpRouteCatalog
 
             $hasRequiredReadSurface = true;
 
-            if (! in_array($supportingRoute['classification'] ?? null, ['core', 'module'], true)
+            $loadedSupportingRoute = RouteFacade::getRoutes()->getByName($supportingRouteName);
+
+            if (! $loadedSupportingRoute instanceof Route
+                || ! in_array('GET', $loadedSupportingRoute->methods(), true)
+                || ! in_array($supportingRoute['classification'] ?? null, ['core', 'module'], true)
                 || ($supportingRoute['audience'] ?? null) !== 'shop_owner'
                 || ($supportingRoute['actor_guard'] ?? null) !== 'shop_owner'
                 || ($supportingRoute['owner_access'] ?? null) !== 'allowed') {
