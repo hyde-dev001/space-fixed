@@ -2,38 +2,42 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Move the desktop voucher picker out of the narrow order-summary sidebar into a full-width card layout that matches the supplied reference proportions while preserving all voucher and payment behavior.
+**Goal:** Move the desktop voucher picker below the Phone field into a compact Shopee-like card layout that matches the payment form width while preserving all voucher and payment behavior.
 
-**Architecture:** Keep the existing `Payment` component state, handlers, promo-preview request, and create-order payload unchanged. Replace only the desktop voucher JSX: render one full-width section before the desktop checkout grid, then remove the old sidebar form. Use the existing `AvailableVoucherOption` fields for wide horizontal suggestion cards.
+**Architecture:** Keep the existing `Payment` component state, handlers, promo-preview request, and create-order payload unchanged. Replace only the desktop voucher JSX: render one compact `w-full` section immediately after the desktop Phone field, then remove the old oversized/top-level form. Use the existing `AvailableVoucherOption` fields for compact horizontal suggestion cards.
 
 **Tech Stack:** Laravel 12, Inertia 2, React 18, TypeScript 5.7, Vite 7, Tailwind CSS 4, Vitest 3, pnpm.
 
 ## Global Constraints
 
-- Modify only `resources/js/Pages/UserSide/Orders/payment.tsx` and add the focused frontend regression test; do not change backend, routes, database, payment gateway, dependencies, or unrelated working-tree files.
+- Modify only `resources/js/Pages/UserSide/Orders/payment.tsx`, the focused frontend regression tests, and the design/plan notes; do not change backend, routes, database, payment gateway, dependencies, or unrelated working-tree files.
 - Preserve `selectedVoucherCampaignId`, `voucherCodeInput`, `appliedVoucherCode`, `isVoucherSelectionEnabled`, `handleApplyVoucherCode`, and `handleClearVoucherSelection` behavior.
-- Keep the new voucher section desktop-only (`hidden xl:block`) so the existing mobile checkout branch is unchanged.
+- Keep the new voucher section desktop-only (`xl` branch) so the existing mobile checkout branch is unchanged.
 - Use existing Tailwind classes and existing API fields; do not add a package or invent expiry, logo, usage, or maximum-discount data.
-- Verify with the focused Vitest test, `pnpm run build`, and `git diff --check`.
+- Verify with the focused Vitest tests, the frontend build, and `git diff --check`.
+
+## Follow-up revision (2026-08-23)
+
+The final approved layout supersedes the earlier full-width example below: the desktop voucher section belongs immediately after the Phone field inside the left payment form, uses `w-full` to match that field, and uses compact `4.5rem / flexible / 7rem` suggestion-card columns. The mobile checkout branch and all voucher/payment handlers remain unchanged.
 
 ## File Map
 
-- Create: `resources/js/Pages/UserSide/Orders/__tests__/paymentVoucherLayout.test.ts` — source-level regression checks for placement, width-oriented card structure, preserved handlers, and removal from the sidebar.
-- Modify: `resources/js/Pages/UserSide/Orders/payment.tsx:2802-3300` — move and restyle the desktop voucher picker only.
+- Create: `resources/js/Pages/UserSide/Orders/__tests__/paymentVoucherLayout.test.ts` — source-level regression checks for placement, matching form width, compact card structure, preserved handlers, and removal from the sidebar.
+- Modify: `resources/js/Pages/UserSide/Orders/payment.tsx:2802-3450` — move and restyle the desktop voucher picker only.
 - Create: `docs/superpowers/specs/2026-08-23-payment-voucher-layout-design.md` — approved design, already committed as `20026389a`.
 
-### Task 1: Add the failing layout regression test
+### Task 1: Update the layout regression test
 
 **Files:**
 - Create: `resources/js/Pages/UserSide/Orders/__tests__/paymentVoucherLayout.test.ts`
 
 **Interfaces:**
 - Consumes: the current source text of `resources/js/Pages/UserSide/Orders/payment.tsx`.
-- Produces: a failing contract for the full-width desktop section and card layout that the implementation must satisfy.
+- Produces: a contract for the compact desktop section placement, matching form width, and card layout.
 
 - [ ] **Step 1: Write the failing test**
 
-Create the test with the following content:
+Update the test to assert that the voucher section appears after the desktop Phone field and before the delivery-address persistence block, uses `w-full`, and uses compact card rails instead of the previous oversized dimensions.
 
 ```ts
 import { readFileSync } from 'node:fs';
@@ -88,11 +92,11 @@ Expected result: the test command exits non-zero because the current `payment.ts
 
 **Interfaces:**
 - Consumes: existing promo preview state, voucher filtering values, and voucher event handlers in `Payment`.
-- Produces: one desktop full-width voucher input/card section before the desktop checkout grid; the existing order summary retains only calculated totals and discount display.
+- Produces: one compact desktop voucher input/card section below Phone and at the payment-form width; the existing order summary retains only calculated totals and discount display.
 
-- [ ] **Step 1: Add the full-width desktop section before the checkout grid**
+- [ ] **Step 1: Render the compact desktop section below Phone**
 
-Immediately before the existing `hidden xl:grid` desktop checkout wrapper, add this JSX structure. Keep the existing input event handlers and state updates exactly as shown so the promo flow remains unchanged:
+Immediately after the desktop Phone field, keep the compact `data-testid="desktop-voucher-section"` JSX structure. Keep the existing input event handlers and state updates exactly as shown so the promo flow remains unchanged. The section must use `w-full`, 48px controls, and compact `4.5rem / flexible / 7rem` card columns.
 
 ```tsx
           <section
