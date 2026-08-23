@@ -269,6 +269,77 @@ final class OrderRefundServiceStageWorkflowTest extends TestCase
     }
 
     #[Test]
+    public function completed_return_notifies_finance_that_payout_is_ready(): void
+    {
+        $this->notificationService
+            ->expects($this->once())
+            ->method('sendToErpRole')
+            ->with(
+                'Finance',
+                202,
+                NotificationType::REFUND_REQUEST,
+                'Refund Payout Ready',
+                $this->stringContains('payout'),
+                $this->callback(fn ($data): bool => is_array($data)
+                    && ($data['refund_id'] ?? null) === 5001
+                    && ($data['return_status'] ?? null) === 'received'),
+                '/finance?section=refund-approvals',
+                'high',
+                'refund-payout-ready:order:5001',
+                true,
+            );
+
+        $refund = $this->makeRefund([
+            'shop_owner_status' => 'approved',
+            'finance_status' => 'approved',
+            'return_status' => 'in_transit',
+            'status' => 'pending_approval',
+        ]);
+        $refund->setAttribute('id', 5001);
+        $refund->setAttribute('shop_owner_id', 202);
+
+        $result = $this->service->confirmReturnReceived($refund, staffId: 77, notes: 'Box inspected and complete');
+
+        $this->assertSame('received', $result['result']);
+    }
+
+    #[Test]
+    public function final_finance_approval_notifies_finance_when_return_was_already_received(): void
+    {
+        $this->notificationService
+            ->expects($this->once())
+            ->method('sendToErpRole')
+            ->with(
+                'Finance',
+                202,
+                NotificationType::REFUND_REQUEST,
+                'Refund Payout Ready',
+                $this->stringContains('payout'),
+                $this->callback(fn ($data): bool => is_array($data)
+                    && ($data['refund_id'] ?? null) === 5001
+                    && ($data['return_status'] ?? null) === 'received'),
+                '/finance?section=refund-approvals',
+                'high',
+                'refund-payout-ready:order:5001',
+                true,
+            );
+
+        $refund = $this->makeRefund([
+            'shop_owner_status' => 'approved',
+            'finance_status' => 'approved_initial',
+            'return_status' => 'received',
+            'status' => 'pending_approval',
+        ]);
+        $refund->setAttribute('id', 5001);
+        $refund->setAttribute('shop_owner_id', 202);
+
+        $result = $this->service->approveRequestedRefund($refund, stage: 'finance', processedBy: 77);
+
+        $this->assertSame('approved', $result['result']);
+        $this->assertSame('approved', $refund->finance_status);
+    }
+
+    #[Test]
     public function staff_can_confirm_return_received_after_shipment(): void
     {
         $refund = $this->makeRefund([

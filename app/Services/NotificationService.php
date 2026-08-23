@@ -813,7 +813,9 @@ class NotificationService
         string $message,
         ?array $data = null,
         ?string $actionUrl = null,
-        string $priority = 'medium'
+        string $priority = 'medium',
+        ?string $groupKey = null,
+        bool $requiresAction = false,
     ): void {
         $users = User::where('shop_owner_id', $shopId)
             ->whereHas('roles', fn ($q) => $q->where('name', $roleName))
@@ -821,7 +823,25 @@ class NotificationService
 
         foreach ($users as $user) {
             try {
-                $this->sendToUser($user->id, $type, $title, $message, $data, $actionUrl, $shopId, $priority);
+                if ($groupKey !== null && Notification::query()
+                    ->forUser((int) $user->id)
+                    ->byGroup($groupKey)
+                    ->exists()) {
+                    continue;
+                }
+
+                $this->sendToUser(
+                    userId: (int) $user->id,
+                    type: $type,
+                    title: $title,
+                    message: $message,
+                    data: $data,
+                    actionUrl: $actionUrl,
+                    shopId: $shopId,
+                    priority: $priority,
+                    groupKey: $groupKey,
+                    requiresAction: $requiresAction,
+                );
             } catch (\Exception $e) {
                 Log::error("Failed to send ERP role notification to user #{$user->id}", [
                     'role' => $roleName,

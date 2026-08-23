@@ -63,7 +63,7 @@ class DeliveryDisputeService
         if (! $this->isShopOwnedDelivery($order)) {
             throw ValidationException::withMessages(['order' => 'Delivery reports are only available for shop-owned logistics orders.']);
         }
-        if (! $this->hasValidEvidenceMedia($evidenceMedia)) {
+        if ($reason !== 'item_not_received' && ! $this->hasValidEvidenceMedia($evidenceMedia)) {
             throw ValidationException::withMessages(['media' => 'Upload exactly 5 images and 1 opening-parcel video.']);
         }
 

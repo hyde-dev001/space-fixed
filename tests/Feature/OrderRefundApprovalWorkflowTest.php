@@ -83,6 +83,41 @@ class OrderRefundApprovalWorkflowTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_finance_index_marks_only_eligible_refunds_as_executable(): void
+    {
+        [$shop, , $refund] = $this->fixture();
+        $refund->update([
+            'status' => 'pending_approval',
+            'shop_owner_status' => 'approved',
+            'finance_status' => 'approved',
+            'return_status' => 'received',
+        ]);
+
+        $waitingRefund = OrderRefund::factory()->create([
+            'order_id' => $refund->order_id,
+            'customer_id' => $refund->customer_id,
+            'shop_owner_id' => $shop->id,
+            'flow_type' => 'request_approval',
+            'status' => 'pending_approval',
+            'shop_owner_status' => 'approved',
+            'finance_status' => 'approved',
+            'return_status' => 'in_transit',
+        ]);
+
+        $finance = User::factory()->create(['shop_owner_id' => $shop->id, 'role' => 'Finance']);
+        $permission = Permission::findOrCreate('access-refund-approval', 'user');
+        $finance->givePermissionTo($permission);
+
+        $response = $this->actingAs($finance, 'user')
+            ->getJson('/api/finance/refunds?status=All');
+
+        $response->assertOk();
+        $rows = collect($response->json('data'))->keyBy('id');
+
+        $this->assertTrue((bool) data_get($rows->get($refund->id), 'canExecutePayout'));
+        $this->assertFalse((bool) data_get($rows->get($waitingRefund->id), 'canExecutePayout'));
+    }
+
     private function fixture(): array
     {
         $shop = ShopOwner::factory()->create(['registration_type' => 'company']);

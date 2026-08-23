@@ -69,6 +69,26 @@ class CustomerDeliveryDisputeEvidenceTest extends TestCase
         $this->assertDatabaseCount('delivery_disputes', 0);
     }
 
+    public function test_item_not_received_report_does_not_require_media_evidence(): void
+    {
+        [$order, $customer] = $this->deliveredShopOwnedOrder();
+
+        $response = $this->actingAs($customer, 'user')
+            ->post("/orders/{$order->id}/delivery-disputes", [
+                'reason' => 'item_not_received',
+                'notes' => 'The parcel was marked delivered, but I did not receive the item.',
+            ], ['Accept' => 'application/json']);
+
+        $response->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('dispute.status', 'open')
+            ->assertJsonPath('dispute.reason', 'item_not_received');
+
+        $dispute = DeliveryDispute::query()->firstOrFail();
+
+        $this->assertSame([], $dispute->evidence_media);
+    }
+
     public function test_third_party_order_cannot_use_the_shop_owned_report_endpoint(): void
     {
         [$order, $customer] = $this->deliveredShopOwnedOrder('Third-party Logistics');

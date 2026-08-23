@@ -474,6 +474,7 @@ class OrderRefundService
         ];
         $previousFinanceStatus = (string) ($refund->finance_status ?? 'pending');
         $previousShopOwnerStatus = (string) ($refund->shop_owner_status ?? 'pending');
+        $wasPayoutExecutable = $this->canExecuteApprovedRefund($refund);
 
         if ($stageNormalized === 'finance' && $financeShippingDecisionRequired) {
             $fullAmount = round((float) ($refund->amount ?? 0), 2);
@@ -672,6 +673,11 @@ class OrderRefundService
             $previousFinanceStatus,
             $previousShopOwnerStatus,
         );
+
+        $resolvedRefund = $freshRefund ?? $refund;
+        if (!$wasPayoutExecutable && $this->canExecuteApprovedRefund($resolvedRefund)) {
+            $this->notifyFinancePayoutReady($resolvedRefund);
+        }
 
         $nextMessage = 'Refund approval recorded.';
         if ($stageNormalized === 'finance') {
@@ -988,6 +994,8 @@ class OrderRefundService
                 'staff_return_shipped_at' => $refund->staff_return_shipped_at ?? now(),
             ]);
 
+            $this->notifyFinancePayoutReady($refund->fresh() ?? $refund);
+
             return [
                 'result' => 'received',
                 'message' => 'Product return has been confirmed as received.',
@@ -1116,10 +1124,13 @@ class OrderRefundService
                 'staff_return_shipped_at' => $refund->staff_return_shipped_at ?? now(),
             ]);
 
+            $resolvedRefund = $refund->fresh() ?? $refund;
+            DB::afterCommit(fn () => $this->notifyFinancePayoutReady($resolvedRefund));
+
             return [
                 'result' => 'received',
                 'message' => 'Every returned item was inspected. Finance may now release the refund.',
-                'refund' => $refund->fresh(),
+                'refund' => $resolvedRefund,
             ];
         });
     }
@@ -1185,13 +1196,31 @@ class OrderRefundService
                 'staff_return_shipped_at' => $refund->staff_return_shipped_at ?? now(),
             ]);
 
-            return ['result' => 'received', 'message' => 'Product return has been received and inventory disposition applied.', 'refund' => $refund->fresh()];
+            $resolvedRefund = $refund->fresh() ?? $refund;
+            DB::afterCommit(fn () => $this->notifyFinancePayoutReady($resolvedRefund));
+
+            return ['result' => 'received', 'message' => 'Product return has been received and inventory disposition applied.', 'refund' => $resolvedRefund];
         });
     }
 
     private function invalidReturnReceipt(OrderRefund $refund, string $message): array
     {
         return ['result' => 'invalid_state', 'message' => $message, 'refund' => $refund];
+    }
+
+    public function canExecuteApprovedRefund(OrderRefund $refund): bool
+    {
+        return (string) ($refund->shop_owner_status ?? 'pending') === 'approved'
+            && (string) ($refund->finance_status ?? 'pending') === 'approved'
+            && (string) ($refund->return_status ?? 'awaiting_approval') === 'received'
+            && !in_array((string) ($refund->status ?? ''), [
+                'processing',
+                'succeeded',
+                'failed',
+                'rejected',
+                'completed',
+                'paid',
+            ], true);
     }
 
     public function executeApprovedRefund(OrderRefund $refund, ?int $processedBy = null, ?string $executionNote = null): array
@@ -1696,6 +1725,35 @@ class OrderRefundService
             ],
             actionUrl: '/my-orders?tab=return_refund',
             shopId: (int) ($refund->shop_owner_id ?? 0),
+        );
+    }
+
+    private function notifyFinancePayoutReady(OrderRefund $refund): void
+    {
+        if (!$this->canExecuteApprovedRefund($refund)) {
+            return;
+        }
+
+        $refund->loadMissing('order');
+        $orderNumber = (string) ($refund->order?->order_number ?? ('#' . (int) ($refund->order_id ?? 0)));
+        $payoutAmount = $this->resolvePayoutAmount($refund, $refund->order);
+        $data = $this->buildRefundNotificationData($refund, [
+            'stage' => 'payout_ready',
+            'can_execute_payout' => true,
+            'payout_amount' => number_format($payoutAmount, 2, '.', ''),
+        ]);
+
+        $this->notificationService->sendToErpRole(
+            roleName: 'Finance',
+            shopId: (int) ($refund->shop_owner_id ?? 0),
+            type: NotificationType::REFUND_REQUEST,
+            title: 'Refund Payout Ready',
+            message: "Refund payout for order #{$orderNumber} is ready for execution.",
+            data: $data,
+            actionUrl: '/finance?section=refund-approvals',
+            priority: 'high',
+            groupKey: 'refund-payout-ready:order:' . (int) ($refund->id ?? 0),
+            requiresAction: true,
         );
     }
 
