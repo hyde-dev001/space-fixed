@@ -30,8 +30,8 @@ The previous desktop voucher picker was rendered as a large full-width panel abo
 ## Responsive behavior
 
 - The compact section is rendered only in the existing desktop branch (`xl` and above), avoiding changes to the mobile checkout flow.
-- The voucher input uses a 48px control row with an Apply button that remains reachable and keyboard accessible.
-- Cards use a compact internal layout with a `4.5rem` identity rail, flexible details, and a `7rem` action rail. Long names/codes may wrap, and no fixed viewport width or horizontal scrolling is introduced.
+- The voucher input uses a compact 44px control row with an Apply button that remains reachable and keyboard accessible.
+- Cards use a compact internal layout with a `3.5rem` identity rail, flexible details, and a `6rem` action rail. Long names/codes may wrap, and no fixed viewport width or horizontal scrolling is introduced.
 
 ## Accessibility and safety
 
@@ -43,7 +43,7 @@ The previous desktop voucher picker was rendered as a large full-width panel abo
 
 - On desktop, the voucher section appears directly below Phone and is the same width as the Phone input.
 - The compact card structure visually follows Shopee-like proportions: separated left identity area, flexible details area, and right action area.
-- The old oversized full-width top panel is not rendered, and cards do not use the previous `min-h-[20rem]`/wide rail sizing.
+- The old oversized full-width top panel is not rendered, and cards do not use the previous `min-h-[10rem]`/`min-h-[20rem]` wide sizing.
 - Voucher search/filter, selection, manual Apply, Clear, loading, empty, and error states still work.
 - The promo preview request and checkout payload retain their current voucher fields and behavior.
 - Mobile layout remains unchanged.

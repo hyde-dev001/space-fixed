@@ -22,19 +22,20 @@ describe('payment desktop voucher layout', () => {
     const desktopVoucherSection = paymentSource.slice(voucherSectionIndex, deliveryPersistenceIndex);
 
     expect(phoneFieldSource).toContain('className="w-full px-4 py-3');
-    expect(desktopVoucherSection).toContain('className="mt-4 w-full rounded-lg');
+    expect(desktopVoucherSection).toContain('className="mt-3 w-full rounded-lg');
     expect(desktopVoucherSection).toContain('data-testid="desktop-voucher-suggestions"');
     expect(desktopVoucherSection).toContain('absolute left-0 right-0 top-full');
     expect(desktopVoucherSection).toContain('handleApplyVoucherCode');
     expect(desktopVoucherSection).toContain('handleClearVoucherSelection');
     expect(desktopVoucherSection).toContain('data-testid="voucher-suggestion-card"');
-    expect(desktopVoucherSection).toContain('min-h-[10rem]');
-    expect(desktopVoucherSection).toContain('grid-cols-[4.5rem_minmax(0,1fr)_7rem]');
-    expect(desktopVoucherSection).toContain('w-28');
-    expect(desktopVoucherSection).toContain('h-12');
+    expect(desktopVoucherSection).toContain('min-h-[8rem]');
+    expect(desktopVoucherSection).toContain('grid-cols-[3.5rem_minmax(0,1fr)_6rem]');
+    expect(desktopVoucherSection).toContain('w-20');
+    expect(desktopVoucherSection).toContain('h-11');
     expect(desktopVoucherSection).toContain('rounded-full bg-[#111111]');
     expect(desktopVoucherSection).toContain('handleUseVoucher');
     expect(desktopVoucherSection).toContain('handleClaimVoucher');
+    expect(desktopVoucherSection).not.toContain('min-h-[10rem]');
     expect(desktopVoucherSection).not.toContain('min-h-[20rem]');
     expect(desktopVoucherSection).not.toContain('w-64');
     expect(desktopVoucherSection).not.toContain('w-48');
