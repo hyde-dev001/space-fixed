@@ -351,7 +351,7 @@ export default function CustomerAddressMapPicker({
           />
         </div>
         <button
-          className="min-h-11 rounded-lg bg-blue-600 px-4 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+          className="min-h-11 rounded-xl bg-blue-600 px-4 text-white transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
           disabled={disabled || searching}
           type="submit"
         >

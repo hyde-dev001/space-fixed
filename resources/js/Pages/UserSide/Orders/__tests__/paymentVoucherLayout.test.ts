@@ -22,7 +22,7 @@ describe('payment desktop voucher layout', () => {
     const desktopVoucherSection = paymentSource.slice(voucherSectionIndex, deliveryPersistenceIndex);
 
     expect(phoneFieldSource).toContain('className="w-full px-4 py-3');
-    expect(desktopVoucherSection).toContain('className="mt-2 w-full rounded-lg');
+    expect(desktopVoucherSection).toContain('className="mt-2 w-full rounded-xl');
     expect(desktopVoucherSection).toContain('data-testid="desktop-voucher-suggestions"');
     expect(desktopVoucherSection).toContain('absolute left-0 right-0 top-full');
     expect(desktopVoucherSection).toContain('handleApplyVoucherCode');
@@ -34,7 +34,8 @@ describe('payment desktop voucher layout', () => {
     expect(desktopVoucherSection).toContain('text-lg font-semibold');
     expect(desktopVoucherSection).toContain('text-xs font-medium text-white');
     expect(desktopVoucherSection).toContain('h-11');
-    expect(desktopVoucherSection).toContain('rounded-full bg-[#111111]');
+    expect(desktopVoucherSection).toContain('rounded-xl bg-gray-900');
+    expect(desktopVoucherSection).toContain('hover:bg-gray-800');
     expect(desktopVoucherSection).toContain('handleUseVoucher');
     expect(desktopVoucherSection).toContain('handleClaimVoucher');
     expect(desktopVoucherSection).not.toContain('min-h-[10rem]');
@@ -46,6 +47,16 @@ describe('payment desktop voucher layout', () => {
     expect(desktopVoucherSection).not.toContain('shadow-sm');
     expect(desktopVoucherSection).not.toContain('shadow-xl');
     expect(desktopVoucherSection).not.toContain('shadow-md');
+  });
+
+  it('keeps the voucher controls mounted while the promo preview refreshes', () => {
+    const voucherSectionIndex = paymentSource.indexOf('data-testid="desktop-voucher-section"');
+    const deliveryPersistenceIndex = paymentSource.indexOf('{/* Delivery address persistence */}');
+    const desktopVoucherSection = paymentSource.slice(voucherSectionIndex, deliveryPersistenceIndex);
+
+    expect(desktopVoucherSection).toContain('data-testid="desktop-voucher-loading"');
+    expect(desktopVoucherSection).toContain('isPromoPreviewLoading &&');
+    expect(desktopVoucherSection).not.toContain('{isPromoPreviewLoading ? (');
   });
 
   it('does not keep the voucher input inside the narrow order-summary sidebar', () => {

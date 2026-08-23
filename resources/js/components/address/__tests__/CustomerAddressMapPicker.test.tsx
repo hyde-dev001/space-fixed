@@ -375,6 +375,11 @@ describe('CustomerAddressMapPicker', () => {
   it('keeps the location action readable on the light address form', () => {
     render(<CustomerAddressMapPicker value={null} onChange={vi.fn()} />);
 
+    expect(screen.getByRole('button', { name: 'Search' })).toHaveClass(
+      'rounded-xl',
+      'bg-blue-600',
+      'hover:bg-blue-700',
+    );
     expect(screen.getByRole('button', { name: 'Use My Location' })).toHaveClass(
       'border-slate-300',
       'bg-white',
