@@ -5,6 +5,7 @@ import { useFinanceApi } from "../../../hooks/useFinanceApi";
 import { useInvoices } from "../../../hooks/useFinanceQueries";
 import { MoneyIcon } from "../../../components/common/MoneyIcon";
 import { getApprovalStatusBadge } from "./InlineApprovalUtils";
+import { canUseErpCapability } from "../../../utils/erpCapabilities";
 import Swal from "sweetalert2";
 
 // Loading Spinner Component
@@ -293,6 +294,10 @@ const Invoice: React.FC = () => {
   const user = page.props.auth?.user as any;
   const auth = page.props.auth as any;
   const ownerMode = page.props.ownerMode === true || auth?.erpActor?.ownerMode === true;
+  const canCreateInvoice = !ownerMode && canUseErpCapability(
+    page.props.erpCapabilities,
+    'GET:finance.create-invoice',
+  );
   const api = useFinanceApi();
   
   const [selectedTab, setSelectedTab] = useState<TabFilter>("all");
@@ -877,7 +882,7 @@ const Invoice: React.FC = () => {
   };
 
   const handleCreateInvoice = () => {
-    router.visit(ownerMode ? '/shop-owner/erp/finance/create-invoice' : '/finance?section=create-invoice');
+    router.visit('/finance?section=create-invoice');
   };
 
   return (
@@ -893,13 +898,16 @@ const Invoice: React.FC = () => {
               <p className="text-gray-600 dark:text-gray-400 mt-2">Your most recent invoices list</p>
             </div>
             <div className="flex gap-3">
-              <button
-                onClick={handleCreateInvoice}
-                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200 shadow-sm"
-          >
-            <PlusIcon className="size-5 mr-2" />
-            Create Invoice
-          </button>
+              {canCreateInvoice && (
+                <button
+                  type="button"
+                  onClick={handleCreateInvoice}
+                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200 shadow-sm"
+                >
+                  <PlusIcon className="size-5 mr-2" />
+                  Create Invoice
+                </button>
+              )}
         </div>
       </div>
 
