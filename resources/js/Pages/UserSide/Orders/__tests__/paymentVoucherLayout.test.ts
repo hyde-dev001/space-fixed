@@ -21,6 +21,13 @@ describe('payment desktop voucher layout', () => {
     expect(desktopVoucherSection).toContain('handleApplyVoucherCode');
     expect(desktopVoucherSection).toContain('handleClearVoucherSelection');
     expect(desktopVoucherSection).toContain('data-testid="voucher-suggestion-card"');
+    expect(desktopVoucherSection).toContain('min-h-[20rem]');
+    expect(desktopVoucherSection).toContain('rounded-full bg-[#111111]');
+    expect(desktopVoucherSection).toContain('handleUseVoucher');
+    expect(desktopVoucherSection).toContain('handleClaimVoucher');
+    expect(desktopVoucherSection).not.toContain('shadow-sm');
+    expect(desktopVoucherSection).not.toContain('shadow-xl');
+    expect(desktopVoucherSection).not.toContain('shadow-md');
   });
 
   it('does not keep the voucher input inside the narrow order-summary sidebar', () => {
