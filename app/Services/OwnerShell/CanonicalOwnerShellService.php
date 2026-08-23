@@ -131,8 +131,13 @@ final class CanonicalOwnerShellService
 
         $states = $this->moduleAccess->statesFor($owner);
         $groups = [
-            $this->homeGroup($owner),
+            $this->homeGroup(),
         ];
+
+        $actionCenter = $this->actionCenterGroup($owner);
+        if ($actionCenter !== null) {
+            $groups[] = $actionCenter;
+        }
 
         $operate = $this->moduleGroup(
             'operate',
@@ -178,7 +183,7 @@ final class CanonicalOwnerShellService
         );
     }
 
-    private function homeGroup(ShopOwner $owner): OwnerShellGroup
+    private function homeGroup(): OwnerShellGroup
     {
         $homeUrl = $this->canonicalUrl('shop-owner.shell.home');
         $activeMatching = [
@@ -200,9 +205,29 @@ final class CanonicalOwnerShellService
             $activeMatching,
         )];
 
-        if ($this->ownerActionCenterRollout->select($owner)->selected) {
-            $actionCenterUrl = $this->canonicalUrl('shop-owner.shell.action-center');
-            $items[] = new OwnerShellItem(
+        return new OwnerShellGroup(
+            'home',
+            'Home',
+            0,
+            true,
+            $items,
+        );
+    }
+
+    private function actionCenterGroup(ShopOwner $owner): ?OwnerShellGroup
+    {
+        if (! $this->ownerActionCenterRollout->select($owner)->selected) {
+            return null;
+        }
+
+        $actionCenterUrl = $this->canonicalUrl('shop-owner.shell.action-center');
+
+        return new OwnerShellGroup(
+            'action-center',
+            'Action Center',
+            5,
+            true,
+            [new OwnerShellItem(
                 'action-center',
                 'Action Center',
                 $actionCenterUrl,
@@ -210,15 +235,7 @@ final class CanonicalOwnerShellService
                 null,
                 null,
                 [$actionCenterUrl],
-            );
-        }
-
-        return new OwnerShellGroup(
-            'home',
-            'Home',
-            0,
-            true,
-            $items,
+            )],
         );
     }
 

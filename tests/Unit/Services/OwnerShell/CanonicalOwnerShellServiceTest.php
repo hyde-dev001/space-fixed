@@ -42,7 +42,7 @@ final class CanonicalOwnerShellServiceTest extends TestCase
     public function test_individual_owner_emphasizes_operate_and_omits_ineligible_destinations(): void
     {
         $owner = $this->owner('individual', 'retail');
-        $this->enableModules($owner, ['retail_operations', 'logistics']);
+        $this->enableModules($owner, ['retail_operations', 'logistics', 'finance']);
         config(['owner_shell.allowlisted_shop_ids' => [$owner->getKey()]]);
 
         $metadata = app(CanonicalOwnerShellService::class)->forOwner($owner)->toArray();
@@ -50,7 +50,7 @@ final class CanonicalOwnerShellServiceTest extends TestCase
 
         $this->assertSame('canonical', $metadata['presentation']);
         $this->assertSame('individual', $metadata['context']);
-        $this->assertSame(['home', 'operate', 'oversee', 'reports'], array_column($metadata['groups'], 'key'));
+        $this->assertSame(['home', 'action-center', 'operate', 'oversee', 'reports'], array_column($metadata['groups'], 'key'));
         $this->assertTrue($groups['operate']['default_expanded']);
         $this->assertFalse($groups['oversee']['default_expanded']);
         $this->assertSame(['retail', 'payments'], array_column($groups['operate']['items'], 'key'));
@@ -77,7 +77,7 @@ final class CanonicalOwnerShellServiceTest extends TestCase
         $metadata = app(CanonicalOwnerShellService::class)->forOwner($owner)->toArray();
         $groups = collect($metadata['groups'])->keyBy('key');
 
-        $this->assertSame(['home', 'oversee', 'operate', 'reports'], array_column($metadata['groups'], 'key'));
+        $this->assertSame(['home', 'action-center', 'oversee', 'operate', 'reports'], array_column($metadata['groups'], 'key'));
         $this->assertTrue($groups['oversee']['default_expanded']);
         $this->assertFalse($groups['operate']['default_expanded']);
         $this->assertSame(
@@ -116,7 +116,7 @@ final class CanonicalOwnerShellServiceTest extends TestCase
 
         $metadata = app(CanonicalOwnerShellService::class)->forOwner($owner)->toArray();
 
-        $this->assertSame(['home', 'reports'], array_column($metadata['groups'], 'key'));
+        $this->assertSame(['home', 'action-center', 'reports'], array_column($metadata['groups'], 'key'));
     }
 
     public function test_reports_and_audit_are_distinct_and_business_settings_is_not_in_the_sidebar(): void
@@ -147,7 +147,7 @@ final class CanonicalOwnerShellServiceTest extends TestCase
         $this->assertArrayNotHasKey('operate', $retailGroups->all());
     }
 
-    public function test_selected_phase_three_owner_gets_one_action_center_item_in_the_home_group(): void
+    public function test_selected_phase_three_owner_gets_a_separate_action_center_group(): void
     {
         $owner = $this->owner('company', 'both');
         config([
@@ -156,12 +156,13 @@ final class CanonicalOwnerShellServiceTest extends TestCase
             'owner_action_center.allowlisted_shop_ids' => [$owner->getKey()],
         ]);
 
-        $home = collect(app(CanonicalOwnerShellService::class)->forOwner($owner)->toArray()['groups'])
-            ->firstWhere('key', 'home');
+        $groups = collect(app(CanonicalOwnerShellService::class)->forOwner($owner)->toArray()['groups'])->keyBy('key');
 
-        $this->assertSame(['home', 'action-center'], array_column($home['items'], 'key'));
-        $this->assertSame('/shop-owner/action-center', $home['items'][1]['canonical_url']);
-        $this->assertSame(['/shop-owner/action-center'], $home['items'][1]['active_matching']);
+        $this->assertSame(['home', 'action-center', 'reports'], array_keys($groups->all()));
+        $this->assertSame(['home'], array_column($groups['home']['items'], 'key'));
+        $this->assertSame(['action-center'], array_column($groups['action-center']['items'], 'key'));
+        $this->assertSame('/shop-owner/action-center', $groups['action-center']['items'][0]['canonical_url']);
+        $this->assertSame(['/shop-owner/action-center'], $groups['action-center']['items'][0]['active_matching']);
     }
 
     public function test_canonical_destinations_do_not_change_when_erp_workspace_flag_changes(): void

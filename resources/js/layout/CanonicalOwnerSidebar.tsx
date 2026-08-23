@@ -60,7 +60,7 @@ const CanonicalOwnerSidebar: React.FC<CanonicalOwnerSidebarProps> = ({ metadata 
   const page = usePage();
   const currentPath = normalizePath(String(page.url || "/"));
   const groups = useMemo<OwnerShellGroup[]>(
-    () => metadata.groups
+    () => [...metadata.groups]
       .filter((group) => group.key !== "settings")
       .sort((left, right) => left.order - right.order),
     [metadata.groups],

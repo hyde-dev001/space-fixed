@@ -51,6 +51,13 @@ const metadata = (overrides: Partial<OwnerShellMetadata> = {}): OwnerShellMetada
       items: [item({ key: "home", label: "Home", canonical_url: "/shop-owner/home", active_matching: ["/shop-owner/home", "/shop-owner/dashboard"] })],
     },
     {
+      key: "action-center",
+      label: "Action Center",
+      order: 5,
+      default_expanded: true,
+      items: [item({ key: "action-center", label: "Action Center", canonical_url: "/shop-owner/action-center", active_matching: ["/shop-owner/action-center"] })],
+    },
+    {
       key: "operate",
       label: "Operate",
       order: 10,
@@ -112,6 +119,7 @@ it("orders and expands the primary group for an individual owner", () => {
   const groups = screen.getAllByRole("button").filter((button) => button.hasAttribute("data-group-key"));
   expect(groups.map((group) => group.getAttribute("data-group-key"))).toEqual([
     "home",
+    "action-center",
     "operate",
     "oversee",
     "reports",
@@ -137,6 +145,7 @@ it("puts Oversee first and expanded for a company owner", () => {
   const groups = screen.getAllByRole("button").filter((button) => button.hasAttribute("data-group-key"));
   expect(groups.map((group) => group.getAttribute("data-group-key"))).toEqual([
     "home",
+    "action-center",
     "oversee",
     "operate",
     "reports",
@@ -180,6 +189,23 @@ it("uses canonical URLs for Home, Reports, Audit, and Settings", () => {
   expect(screen.getByRole("link", { name: "Reports" })).toHaveAttribute("href", "/shop-owner/reports");
   expect(screen.getByRole("link", { name: "Audit" })).toHaveAttribute("href", "/shop-owner/audit");
   expect(screen.queryByRole("link", { name: "Profile" })).not.toBeInTheDocument();
+});
+
+it("keeps Action Center separate and does not expand module links into local pages", () => {
+  render(<CanonicalOwnerSidebar metadata={metadata()} />);
+
+  expect(screen.getByTestId("canonical-owner-group-action-center")).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Action Center" })).toHaveAttribute(
+    "href",
+    "/shop-owner/action-center",
+  );
+
+  const operateItems = screen.getByRole("list", { name: "Operate" });
+  expect(within(operateItems).getAllByRole("link")).toHaveLength(1);
+  expect(within(operateItems).getByRole("link", { name: "Retail" })).toHaveAttribute(
+    "href",
+    "/shop-owner/operate/retail",
+  );
 });
 
 it("matches one canonical item when a compatibility URL is active", () => {

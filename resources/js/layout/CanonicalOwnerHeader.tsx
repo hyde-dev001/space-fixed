@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, usePage } from "@inertiajs/react";
+import { route } from "ziggy-js";
 import { useSidebar } from "../context/SidebarContext";
 import { ThemeToggleButton } from "../components/common/ThemeToggleButton";
 import NotificationBell from "../components/common/NotificationBell";
@@ -17,10 +18,11 @@ const CanonicalOwnerHeader: React.FC<CanonicalOwnerHeaderProps> = ({ menuButtonR
   const auth = (props.auth && typeof props.auth === "object" ? props.auth : {}) as Record<string, unknown>;
   const erpActor = auth.erpActor as ErpActor | undefined;
   const erpUrls = props.erpUrls as Partial<ErpUrls> | undefined;
+  const canonicalSettingsUrl = route("shop-owner.shell.settings.profile");
   const canonicalOwnerUrls: Partial<ErpUrls> = {
     ...(erpUrls ?? {}),
-    profile: "/shop-owner/settings/profile",
-    settings: "/shop-owner/settings/profile",
+    profile: canonicalSettingsUrl,
+    settings: canonicalSettingsUrl,
   };
   const [isApplicationMenuOpen, setApplicationMenuOpen] = useState(false);
   const { isExpanded, isMobileOpen, toggleSidebar, toggleMobileSidebar } = useSidebar();

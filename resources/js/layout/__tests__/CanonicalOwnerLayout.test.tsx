@@ -13,6 +13,10 @@ const state = vi.hoisted(() => ({
   url: "/shop-owner/home",
 }));
 
+const routeMock = vi.hoisted(() => vi.fn((name: string) => (
+  name === "shop-owner.shell.settings.profile" ? "/shop-owner/settings/profile" : `/${name}`
+)));
+
 vi.mock("@inertiajs/react", () => ({
   usePage: () => ({
     url: state.url,
@@ -22,6 +26,8 @@ vi.mock("@inertiajs/react", () => ({
     <a href={href} {...props}>{children}</a>
   ),
 }));
+
+vi.mock("ziggy-js", () => ({ route: routeMock }));
 
 vi.mock("../CanonicalOwnerSidebar", () => ({
   default: () => <aside data-testid="canonical-owner-sidebar" />,
@@ -149,6 +155,7 @@ it("keeps canonical shell branding and profile links on canonical destinations",
     "data-settings-url",
     "/shop-owner/settings/profile",
   );
+  expect(routeMock).toHaveBeenCalledWith("shop-owner.shell.settings.profile");
 });
 
 it("keeps the existing Shop Owner frame when canonical metadata is absent", () => {
