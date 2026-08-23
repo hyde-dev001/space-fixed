@@ -129,4 +129,21 @@ final class ErpRouteCatalogTest extends TestCase
 
         config(['shop_modules.routes' => $routes]);
     }
+
+    public function test_owner_readable_page_contract_fails_closed_when_a_configured_get_support_is_patch_only(): void
+    {
+        $routes = config('shop_modules.routes');
+        $configuredRoutes = $routes;
+        $configuredRoutes['shop-owner.erp.crm.dashboard']['supporting_routes'] = ['shop_owner.orders.update-status'];
+        $configuredRoutes['shop_owner.orders.update-status']['methods'] = ['GET'];
+        $configuredRoutes['shop_owner.orders.update-status']['owner_access'] = 'allowed';
+        $configuredRoutes['shop_owner.orders.update-status']['owner_denial_reason'] = null;
+        config(['shop_modules.routes' => $configuredRoutes]);
+
+        $this->assertFalse(
+            app(ErpRouteCatalog::class)->hasOwnerReadablePageContract('shop-owner.erp.crm.dashboard'),
+        );
+
+        config(['shop_modules.routes' => $routes]);
+    }
 }
