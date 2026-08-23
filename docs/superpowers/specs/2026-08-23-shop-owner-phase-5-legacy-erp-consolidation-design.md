@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-23
 
-**Status:** Approved design; three written-review passes completed and findings resolved; pending user review
+**Status:** Approved design and written-spec review; pending final user review
 
 ## Goal
 
@@ -16,10 +16,11 @@ Phase 5 delivers:
 
 - one canonical Shop Owner shell under the existing `/shop-owner/*` route family;
 - direct module access from a grouped sidebar, without a separate ERP module-picker portal;
-- one canonical Overview and one local page-navigation contract per module;
+- explicit owner-readability classification for every local subpage and data surface; module visibility alone grants no data access;
+- one canonical module landing destination labeled **Overview** and one local page-navigation contract per module, without requiring a new dashboard;
 - creation and generation actions inside their parent record pages;
-- one Action Center for owner-required approvals and material exceptions;
-- one Audit area that includes material owner activity in Oversee and Overview modules;
+- one Action Center for **Needs My Decision**, **Waiting on Others**, and material exceptions, with **Needs Correction** kept as a separate correction surface and the badge counting **Needs My Decision** only;
+- one Audit area that includes material owner activity from all canonical owner surfaces;
 - Settings access through the existing header/account menu instead of a sidebar item;
 - safe consolidation and staged retirement of duplicate routes and entry points;
 - persisted maker identity and backend self-approval protection for every owner-accessible approval workflow.
@@ -77,11 +78,11 @@ Only eligible, enabled modules are shown. Disabled but eligible modules remain m
 
 Business Settings does not appear in the sidebar. The existing header/account menu remains the canonical entry to Settings.
 
-The Action Center badge preserves the Phase 4 contract: it counts only the current **Needs My Decision** items. Material exceptions and maker/checker conflicts that the owner cannot approve do not increase this badge. Badge and Needs My Decision list qualification must remain identical.
+The Action Center badge preserves the Phase 4 contract: it counts only the current **Needs My Decision** items. **Waiting on Others**, material exceptions, and maker/checker conflicts in **Needs Correction** do not increase this badge. Badge and Needs My Decision list qualification must remain identical.
 
 ## Module navigation and page ownership
 
-Clicking a module opens its canonical **Overview** directly. Module-specific pages appear as tabs or local navigation inside that module rather than expanding the global sidebar. The URL remains deep-linkable and refresh-safe.
+Clicking a module opens its canonical landing destination, labeled **Overview**, directly. Overview establishes the module context and gives the owner a useful starting surface. It may reuse an existing summary, list, or landing page; Phase 5 does not require creating a new dashboard, metric cards, charts, or duplicate aggregate queries. Module-specific pages appear as tabs or local navigation inside that module rather than expanding the global sidebar. The URL remains deep-linkable and refresh-safe.
 
 Examples:
 
@@ -107,9 +108,11 @@ An action does not receive a separate global sidebar entry unless it is a durabl
 
 ## Access versus action boundary
 
-Module visibility is not mutation authorization.
+Module visibility does not imply that every subpage or data surface is owner-readable, and it is not mutation authorization.
 
-The Shop Owner may open and inspect every eligible, enabled module for their shop. Existing owner-authorized actions remain available. A new owner write action is exposed only after all of the following are characterized and tested:
+The Shop Owner may open the canonical landing for every eligible, enabled module in their shop. Each local subpage, record type, report, export, sensitive field set, and aggregate data surface must be classified as owner-readable, conditionally readable, or unavailable using the existing server-authoritative capability and tenant rules. An unclassified surface is not exposed merely because its parent module is visible.
+
+Existing owner-authorized actions remain available. A new owner write action is exposed only after all of the following are characterized and tested:
 
 1. the authoritative domain service or controller;
 2. the exact owner capability and tenant boundary;
@@ -127,7 +130,9 @@ Canonical owner routes, middleware, controllers, and Form Requests resolve the `
 
 ## Centralized approvals
 
-Action Center is the sole primary discovery page for Shop Owner approvals. Finance, Workforce, Procurement, Repair, and other modules may show record status and a contextual link to the canonical Action Center detail, but they do not recreate separate owner approval queues.
+Action Center is the sole primary discovery page for Shop Owner approvals. It includes **Needs My Decision** for actions currently requiring the owner and **Waiting on Others** for submitted or ongoing work whose current responsibility belongs to another existing actor. Finance, Workforce, Procurement, Repair, and other modules may show record status and a contextual link to the canonical Action Center detail, but they do not recreate separate owner approval queues.
+
+**Needs Correction** remains a distinct correction surface rather than an approval queue or a Waiting on Others bucket. It contains records whose persisted state or maker/checker conflict prevents a valid owner decision and exposes only a separately characterized corrective action.
 
 The seven Phase 4 approval families remain authoritative:
 
@@ -195,7 +200,7 @@ Before enabling this resolution for a family, characterize the existing transiti
 
 ## Canonical Audit
 
-The canonical Audit area includes material actions performed by the Shop Owner from all canonical module pages, including Oversee and Overview surfaces.
+The canonical Audit area includes material actions performed by the Shop Owner from all canonical owner surfaces, including Home, Action Center, Operate, Oversee, Reports, Settings, module Overview pages, local module pages, and canonical record details.
 
 Record:
 
@@ -280,9 +285,11 @@ Earlier designs that require the ERP Workspace to remain the permanent owner mod
 
 - Only eligible, enabled modules appear in the sidebar.
 - Disabled eligible modules are managed through Settings; Settings is absent from the sidebar.
-- Module links open Overview directly and local pages remain deep-linkable.
+- Module links open the canonical Overview landing directly; Overview may reuse an existing useful page and does not require a newly built dashboard.
+- Every local subpage and data surface has an explicit owner-readability classification; module visibility alone never authorizes its data.
 - Parent-page actions are not duplicated as sidebar destinations.
-- The sidebar badge and Needs My Decision list use the same qualification and exclude material exceptions and Needs Correction records.
+- Action Center includes Needs My Decision and Waiting on Others, while Needs Correction remains a separate correction surface.
+- The sidebar badge and Needs My Decision list use the same qualification and exclude Waiting on Others, material exceptions, and Needs Correction records.
 - Employee ERP navigation remains unchanged.
 - Cross-shop, ineligible, disabled, and employee-only direct requests are denied.
 - When owner and employee sessions coexist, canonical owner routes and Form Requests resolve the `shop_owner` actor and tenant and never fall through to the employee guard.
@@ -307,6 +314,12 @@ For every owner-accessible approval workflow, including owner creation paths tha
 
 The seven families are Refund, Price, Payslip, Salary Adjustment, Purchase Request, Expense, and Repair Reject. A family with no owner-accessible initiation action is marked not applicable with repository evidence rather than receiving speculative fields or endpoints.
 
+### Audit coverage
+
+- Material owner actions from every canonical owner surface use the canonical tenant-scoped Audit contract.
+- Routine page loads and tab changes remain excluded.
+- Successful mutations, denied sensitive attempts, maker/checker conflicts, and characterized corrective actions retain their required safe audit evidence.
+
 ### Route retirement coverage
 
 - Safe GET redirects preserve expected context and cannot loop.
@@ -324,10 +337,10 @@ Run the narrowest family and route tests after each coherent change, followed by
 Phase 5 is complete only when:
 
 1. the canonical owner shell is the single primary navigation experience;
-2. every eligible, enabled module has a canonical Overview and classified local pages;
-3. Action Center is the single owner approval discovery page;
-4. canonical Audit includes material owner module actions;
-5. owner module visibility does not grant uncharacterized mutations;
+2. every eligible, enabled module has a canonical Overview landing and explicitly classified local pages and data surfaces, without requiring a new dashboard;
+3. Action Center is the single owner approval discovery page, includes Waiting on Others, keeps Needs Correction distinct, and counts only Needs My Decision in its badge;
+4. canonical Audit includes material owner actions from all canonical owner surfaces;
+5. owner module visibility grants neither unclassified read access nor uncharacterized mutations;
 6. every exposed approval-creating owner action enforces persisted, immutable maker identity;
 7. no owner can approve or reject their own record;
 8. every OFF route uses a proven existing authority;
