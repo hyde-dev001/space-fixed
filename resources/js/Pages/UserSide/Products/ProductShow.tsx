@@ -1537,10 +1537,11 @@ const ProductShow: React.FC = () => {
                     <button
                       key={option.key}
                       onClick={() => setSelectedSize(option.value)}
+                      aria-pressed={isSameSize(selectedSize, option.value)}
                       className={`rounded-md border bg-white px-3 py-2.5 text-[15px] font-medium text-black transition-colors ${
                         isSameSize(selectedSize, option.value)
-                          ? 'border-black shadow-[inset_0_0_0_1px_rgba(17,24,39,0.85)]'
-                          : 'border-gray-300 hover:border-gray-500'
+                          ? 'border-black shadow-[inset_0_0_0_1px_rgba(17,24,39,0.85)] dark:border-blue-300 dark:bg-blue-900/50 dark:text-white dark:shadow-[inset_0_0_0_1px_rgba(147,197,253,0.9)]'
+                          : 'border-gray-300 hover:border-gray-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 dark:hover:border-gray-400'
                       }`}
                     >
                       {option.label}
