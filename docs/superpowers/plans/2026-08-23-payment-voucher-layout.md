@@ -328,3 +328,10 @@ git commit -m "fix: widen desktop payment voucher picker"
 ```
 
 The existing unrelated working-tree changes must remain unstaged and uncommitted.
+
+## Follow-up refinement
+
+- [x] Keep voucher controls mounted during promo-preview refresh and expose a small inline loading status.
+- [x] Align voucher panel/card/action radii with the page's `rounded-xl` treatment.
+- [x] Match Apply and Use voucher colors to Pay Now, and update map Search to the primary blue hover treatment.
+- [x] Add focused regression coverage for refresh persistence and action classes.

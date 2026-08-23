@@ -48,3 +48,11 @@ The previous desktop voucher picker was rendered as a large full-width panel abo
 - The promo preview request and checkout payload retain their current voucher fields and behavior.
 - Mobile layout remains unchanged.
 - Focused frontend tests, the frontend build, and `git diff --check` pass.
+
+## Follow-up refinement (2026-08-23)
+
+- Keep the voucher controls mounted while `/api/checkout/promo-preview` refreshes; show the loading state inline so a hard refresh does not temporarily remove the input and suggestions area.
+- Use the page's `rounded-xl` treatment for the voucher section, suggestion cards, and voucher actions.
+- Match the Pay Now action colors for Apply and Use voucher (`bg-gray-900` with `hover:bg-gray-800`).
+- Match the primary blue action treatment for the address Search button (`bg-blue-600` with `hover:bg-blue-700`).
+- Preserve all promo-preview, voucher-selection, checkout-payload, and payment calculations.
