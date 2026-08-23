@@ -43,11 +43,16 @@ describe('payment shipping voucher integration', () => {
     expect(paymentSource).toContain('role="listbox"');
     expect(paymentSource).toContain('aria-expanded={showVoucherSuggestionDropdown}');
     expect(paymentSource).toContain('max-h-[min(32rem,calc(100vh-12rem))]');
-    expect(paymentSource).toContain('left-0 right-0 top-full');
+    expect(paymentSource).toContain('left-1/2 top-full');
+    expect(paymentSource).toContain('-translate-x-1/2');
+    expect(paymentSource).toContain('w-[min(72rem,calc(100vw-1rem))]');
     expect(paymentSource).toContain('overflow-y-auto');
     expect(paymentSource).toContain('grid-cols-[5.5rem_minmax(0,1fr)_auto]');
     expect(paymentSource).toContain('border-r border-dashed');
     expect(paymentSource).toContain('Add ${formatVoucherMoney(remainingSpend)} more to unlock this voucher.');
+    expect(paymentSource).toContain('border-t border-gray-200 px-4 py-3');
+    expect(paymentSource).toContain('Add {formatVoucherMoney(remainingSpend)}, to get');
+    expect(paymentSource).not.toContain('className="absolute left-0 right-0 top-full');
     expect(paymentSource).not.toContain('overflow-x-auto');
     expect(paymentSource).not.toContain('snap-x');
     expect(paymentSource).not.toContain('min-w-[250px]');
