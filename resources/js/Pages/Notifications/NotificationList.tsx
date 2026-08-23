@@ -178,9 +178,7 @@ const NotificationList: React.FC<NotificationListProps> = ({
       const isRepairNotification =
         type.includes('repair') ||
         data.repair_id ||
-        data.repair_request_id ||
-        data.request_id ||
-        data.order_number;
+        data.repair_request_id;
 
       if (isRepairNotification) {
         const repairHighlight = getStaffRepairHighlightValue();

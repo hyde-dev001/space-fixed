@@ -58,12 +58,13 @@ const trackingPayload = {
 
 const fetchMock = vi.fn();
 const swalFireMock = vi.hoisted(() => vi.fn());
+const pageProps = { props: { orders: [order] } };
 
 vi.mock('@inertiajs/react', () => ({
   Head: () => null,
   Link: ({ href, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => <a href={href} {...props}>{children}</a>,
   router: { reload: vi.fn(), visit: vi.fn() },
-  usePage: () => ({ props: { orders: [order] } }),
+  usePage: () => pageProps,
 }));
 vi.mock('../../Shared/Navigation', () => ({ default: () => null }));
 vi.mock('../../Shared/UserModal', () => ({ default: { fire: swalFireMock } }));
@@ -253,6 +254,8 @@ describe('MyOrders delivery tracking', () => {
 
   it('reveals the online-payment refund explanation on keyboard focus', () => {
     order.status = 'completed';
+    order.carrier_company = 'Third-party Logistics';
+    order.is_shop_owned_delivery = false;
 
     render(<MyOrders />);
 
@@ -271,5 +274,78 @@ describe('MyOrders delivery tracking', () => {
     );
     fireEvent.mouseLeave(eligibilityTrigger);
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+  });
+
+  it('requires report evidence and hides the direct refund action for shop-owned delivery', async () => {
+    Object.assign(order, {
+      status: 'delivered',
+      payment_method: 'cash_on_delivery',
+      customer_receipt_status: 'pending',
+      can_report_delivery_issue: true,
+      active_delivery_dispute: null,
+      refund_stage: null,
+    });
+    const reportResponse = {
+      ok: true,
+      json: vi.fn(() => Promise.resolve({
+        dispute: {
+          id: 91,
+          status: 'open',
+          reason: 'damaged',
+          reported_at: '2026-07-18T10:00:00Z',
+        },
+      })),
+    };
+    fetchMock.mockResolvedValueOnce(reportResponse);
+
+    render(<MyOrders />);
+    expect(screen.queryByRole('button', { name: 'REFUND', exact: true })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'REPORT ORDER', exact: true }));
+    expect(screen.getByRole('dialog', { name: 'Report Order' })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Report reason'), { target: { value: 'damaged' } });
+    const files = [
+      new File(['1'], 'proof-1.jpg', { type: 'image/jpeg' }),
+      new File(['2'], 'proof-2.jpg', { type: 'image/jpeg' }),
+      new File(['3'], 'proof-3.jpg', { type: 'image/jpeg' }),
+      new File(['4'], 'proof-4.jpg', { type: 'image/jpeg' }),
+      new File(['5'], 'proof-5.jpg', { type: 'image/jpeg' }),
+      new File(['video'], 'opening.mp4', { type: 'video/mp4' }),
+    ];
+    fireEvent.change(screen.getByLabelText('Report evidence files'), { target: { files } });
+
+    expect(screen.getByRole('button', { name: 'Submit Report', exact: true })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Submit Report', exact: true }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      '/orders/7/delivery-disputes',
+      expect.objectContaining({ method: 'POST', body: expect.any(FormData) }),
+    ));
+    const request = fetchMock.mock.calls.find(([url]) => url === '/orders/7/delivery-disputes');
+    const formData = request?.[1]?.body as FormData;
+    expect(formData.get('reason')).toBe('damaged');
+    expect(formData.getAll('media[]')).toHaveLength(0);
+    expect(formData.get('media[0]')).toBe(files[0]);
+    expect(formData.get('media[5]')).toBe(files[5]);
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Report Order' })).not.toBeInTheDocument());
+    expect(swalFireMock).toHaveBeenCalledWith(expect.objectContaining({ title: 'Report Submitted' }));
+    expect(await screen.findByText(/REPORT SUBMITTED/)).toBeInTheDocument();
+  });
+
+  it('keeps the direct refund action visible for third-party delivery', () => {
+    Object.assign(order, {
+      status: 'delivered',
+      payment_method: 'paymongo_card',
+      payment_status: 'paid',
+      carrier_company: 'Third-party Logistics',
+      is_shop_owned_delivery: false,
+      can_report_delivery_issue: false,
+      refund_stage: null,
+    });
+
+    render(<MyOrders />);
+
+    expect(screen.getByRole('button', { name: 'REFUND', exact: true })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'REPORT ORDER', exact: true })).not.toBeInTheDocument();
   });
 });

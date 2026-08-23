@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { render } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import CustomerNotifications from '../CustomerNotifications';
 import NotificationList from '../NotificationList';
 
@@ -23,12 +23,21 @@ vi.mock('../../../hooks/useNotifications', () => ({
         data: { order_id: 42 },
         is_read: false,
         created_at: '2026-08-11T08:00:00.000Z',
+      }, {
+        id: 2,
+        type: 'logistics_exception',
+        title: 'Customer Delivery Report',
+        message: 'A customer reported a delivery issue for order #ORD-123.',
+        data: { order_id: 42, order_number: 'ORD-123' },
+        action_url: '/erp/logistics/shipments?status=customer_disputes',
+        is_read: false,
+        created_at: '2026-08-11T09:00:00.000Z',
       }],
-      total: 1,
-      unread_count: 1,
+      total: 2,
+      unread_count: 2,
       last_page: 1,
       from: 1,
-      to: 1,
+      to: 2,
     },
     isLoading: false,
     error: null,
@@ -62,5 +71,22 @@ describe('CustomerNotifications', () => {
     const page = container.querySelector('.min-h-screen');
 
     expect(page).toHaveClass('dark:bg-gray-950');
+  });
+
+  it('keeps customer delivery reports on the dispatcher shipment page', () => {
+    const originalLocation = Object.getOwnPropertyDescriptor(window, 'location');
+    const location = { href: '/erp/notifications' };
+    Object.defineProperty(window, 'location', { configurable: true, value: location });
+
+    try {
+      render(<NotificationList basePath="/api/staff/notifications" />);
+      fireEvent.click(screen.getByRole('heading', { name: 'Customer Delivery Report' }));
+
+      expect(location.href).toBe('/erp/logistics/shipments?status=customer_disputes');
+    } finally {
+      if (originalLocation) {
+        Object.defineProperty(window, 'location', originalLocation);
+      }
+    }
   });
 });

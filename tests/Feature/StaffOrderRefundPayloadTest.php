@@ -11,6 +11,7 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\OrderRefund;
 use App\Models\OrderRefundItem;
+use App\Models\DeliveryDispute;
 use App\Models\Product;
 use App\Models\ShopOwner;
 use App\Models\User;
@@ -18,12 +19,20 @@ use App\Services\Logistics\SourceShipmentService;
 use App\Services\OrderRefundService;
 use App\Services\PaymongoRefundService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
 class StaffOrderRefundPayloadTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        Storage::fake('local');
+    }
 
     public function test_staff_list_show_and_finance_share_refund_payout_evidence_and_return_logistics(): void
     {
@@ -59,6 +68,26 @@ class StaffOrderRefundPayloadTest extends TestCase
             'line_amount' => 2499,
             'inspection_disposition' => 'resellable',
             'inventory_action' => 'pending',
+        ]);
+        $evidencePath = "delivery-dispute-evidence/order-{$order->id}/opening.jpg";
+        Storage::disk('local')->put($evidencePath, 'customer-report-proof');
+        $dispute = DeliveryDispute::create([
+            'shop_owner_id' => $shop->id,
+            'order_id' => $order->id,
+            'order_refund_id' => $refund->id,
+            'customer_id' => $order->customer_id,
+            'status' => 'resolved',
+            'reason' => 'damaged',
+            'reported_at' => now(),
+            'resolution' => 'refund_required',
+            'evidence_media' => [[
+                'id' => 'customer-proof-1',
+                'path' => $evidencePath,
+                'kind' => 'image',
+                'mime_type' => 'image/jpeg',
+                'original_name' => 'opening.jpg',
+                'size' => 22,
+            ]],
         ]);
 
         $shipment = app(SourceShipmentService::class)->ensureRefundReturnShipment($refund);
@@ -98,6 +127,12 @@ class StaffOrderRefundPayloadTest extends TestCase
         foreach ([$list->json('0.latest_refund'), $show->json('latest_refund')] as $payload) {
             $this->assertSame(2499, $payload['payout_amount_value']);
             $this->assertSame(['/storage/refunds/customer-evidence.jpg'], $payload['evidence_media']);
+            $this->assertSame('customer-proof-1', $payload['customer_dispute_evidence'][0]['id']);
+            $this->assertSame('image', $payload['customer_dispute_evidence'][0]['kind']);
+            $this->assertSame(
+                "/api/logistics/delivery-disputes/{$dispute->id}/evidence/customer-proof-1",
+                parse_url($payload['customer_dispute_evidence'][0]['url'], PHP_URL_PATH),
+            );
             $this->assertSame($shipment->id, $payload['return_logistics']['shipment_id']);
             $this->assertSame('return_to_shop', $payload['return_logistics']['leg_type']);
             $this->assertSame('Shop-owned logistics', $payload['return_logistics']['carrier']);

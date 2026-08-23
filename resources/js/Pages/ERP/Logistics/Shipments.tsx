@@ -718,6 +718,38 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                             <p className="mt-1">Reason: {label(dispute.reason)}</p>
                             {dispute.notes && <p className="mt-1">Customer note: {dispute.notes}</p>}
                             {dispute.reported_at && <p className="mt-1 text-xs opacity-80">Reported: {formatDateTime(dispute.reported_at)}</p>}
+                            {!!dispute.evidence?.length && (
+                              <div className="mt-3">
+                                <p className="mb-2 text-xs font-semibold uppercase tracking-wide opacity-80">Customer proof</p>
+                                <div className="flex flex-wrap gap-2">
+                                  {dispute.evidence.map((media) => media.kind === 'video' ? (
+                                    <video
+                                      key={media.id}
+                                      controls
+                                      preload="metadata"
+                                      src={media.url}
+                                      aria-label={media.original_name || 'Customer opening-parcel video'}
+                                      className="h-28 w-48 rounded-lg border border-rose-200 bg-black object-contain"
+                                    />
+                                  ) : (
+                                    <button
+                                      key={media.id}
+                                      type="button"
+                                      aria-label={`View customer proof ${media.original_name || media.id}`}
+                                      onClick={(event) => openProof(media.url, event.currentTarget)}
+                                      className="block h-28 w-28 overflow-hidden rounded-lg border border-rose-200 bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
+                                    >
+                                      <img
+                                        src={media.url}
+                                        alt={media.original_name || 'Customer delivery proof'}
+                                        loading="lazy"
+                                        className="h-full w-full object-cover"
+                                      />
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                           </div>
                           {!ownerMode && !riderMode && canResolveDisputes && ['open', 'investigating'].includes(dispute.status) && (
                             <div className="flex flex-wrap gap-2">

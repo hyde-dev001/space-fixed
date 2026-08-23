@@ -233,6 +233,13 @@ export type LogisticsShipment = {
     resolution?: string | null;
     resolution_note?: string | null;
     resolved_at?: string | null;
+    evidence?: Array<{
+      id: string;
+      kind: 'image' | 'video';
+      mime_type?: string | null;
+      original_name?: string | null;
+      url: string;
+    }>;
   }>;
   created_at?: string | null;
   legs?: TrackingShipmentLeg[];

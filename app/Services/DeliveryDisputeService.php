@@ -39,24 +39,44 @@ class DeliveryDisputeService
     {
         $status = $this->orderStatus($order);
 
-        return in_array($status, ['delivered', 'completed'], true)
+        return $this->isShopOwnedDelivery($order)
+            && in_array($status, ['delivered', 'completed'], true)
             && $order->isCancellationRefundWindowOpen()
             && ! $this->hasBlockingRefund($order)
             && ! $this->hasActiveDispute($order);
     }
 
-    public function report(Order $order, int $customerId, string $reason, ?string $notes = null): array
+    /**
+     * @param array<int, array<string, mixed>> $evidenceMedia
+     */
+    public function report(
+        Order $order,
+        int $customerId,
+        string $reason,
+        ?string $notes = null,
+        array $evidenceMedia = [],
+    ): array
     {
         if (! in_array($reason, self::REASONS, true)) {
             throw ValidationException::withMessages(['reason' => 'Choose a valid delivery issue reason.']);
         }
+        if (! $this->isShopOwnedDelivery($order)) {
+            throw ValidationException::withMessages(['order' => 'Delivery reports are only available for shop-owned logistics orders.']);
+        }
+        if (! $this->hasValidEvidenceMedia($evidenceMedia)) {
+            throw ValidationException::withMessages(['media' => 'Upload exactly 5 images and 1 opening-parcel video.']);
+        }
 
-        return DB::transaction(function () use ($order, $customerId, $reason, $notes): array {
+        return DB::transaction(function () use ($order, $customerId, $reason, $notes, $evidenceMedia): array {
             $lockedOrder = Order::query()
                 ->whereKey($order->id)
                 ->where('customer_id', $customerId)
                 ->lockForUpdate()
                 ->firstOrFail();
+
+            if (! $this->isShopOwnedDelivery($lockedOrder)) {
+                throw ValidationException::withMessages(['order' => 'Delivery reports are only available for shop-owned logistics orders.']);
+            }
 
             if (! in_array($this->orderStatus($lockedOrder), ['delivered', 'completed'], true)) {
                 throw ValidationException::withMessages(['order' => 'Only delivered orders can be reported.']);
@@ -86,6 +106,7 @@ class DeliveryDisputeService
                 'status' => 'open',
                 'reason' => $reason,
                 'notes' => $notes,
+                'evidence_media' => array_values($evidenceMedia),
                 'reported_at' => now(),
             ]);
 
@@ -365,5 +386,45 @@ class DeliveryDisputeService
         return $order->status instanceof \App\Enums\OrderStatus
             ? $order->status->value
             : (string) $order->status;
+    }
+
+    private function isShopOwnedDelivery(Order $order): bool
+    {
+        return strtolower(trim((string) $order->carrier_company)) === 'shop-owned logistics';
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $evidenceMedia
+     */
+    private function hasValidEvidenceMedia(array $evidenceMedia): bool
+    {
+        if (count($evidenceMedia) !== 6) {
+            return false;
+        }
+
+        $imageCount = 0;
+        $videoCount = 0;
+
+        foreach ($evidenceMedia as $media) {
+            if (! is_array($media)
+                || ! isset($media['id'], $media['path'], $media['kind'], $media['mime_type'], $media['original_name'], $media['size'])
+                || ! is_string($media['id'])
+                || ! is_string($media['path'])
+                || ! str_starts_with($media['path'], 'delivery-dispute-evidence/')
+                || str_contains($media['path'], '..')
+                || str_contains($media['path'], '\\')) {
+                return false;
+            }
+
+            if ($media['kind'] === 'video') {
+                $videoCount++;
+            } elseif ($media['kind'] === 'image') {
+                $imageCount++;
+            } else {
+                return false;
+            }
+        }
+
+        return $imageCount === 5 && $videoCount === 1;
     }
 }

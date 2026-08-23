@@ -22,6 +22,7 @@ class DeliveryDispute extends Model
         'status',
         'reason',
         'notes',
+        'evidence_media',
         'reported_at',
         'investigated_at',
         'investigated_by_type',
@@ -35,6 +36,7 @@ class DeliveryDispute extends Model
 
     protected $casts = [
         'reported_at' => 'datetime',
+        'evidence_media' => 'array',
         'investigated_at' => 'datetime',
         'resolved_at' => 'datetime',
     ];
