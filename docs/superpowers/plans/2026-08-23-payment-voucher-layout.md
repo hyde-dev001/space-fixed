@@ -18,7 +18,7 @@
 
 ## Follow-up revision (2026-08-23)
 
-The final approved layout supersedes the earlier full-width example below: the desktop voucher section belongs immediately after the Phone field inside the left payment form, uses `w-full` to match that field, and uses compact `3.5rem / flexible / 6rem` suggestion-card columns with reduced typography and spacing. The mobile checkout branch and all voucher/payment handlers remain unchanged.
+The final approved layout supersedes the earlier full-width example below: the desktop voucher section belongs immediately after the Phone field inside the left payment form, uses `w-full` to match that field, and uses compact `3.25rem / flexible / 6.5rem` suggestion-card columns with inline secondary details, readable primary/action text, and reduced vertical spacing. The mobile checkout branch and all voucher/payment handlers remain unchanged.
 
 ## File Map
 
@@ -96,7 +96,7 @@ Expected result: the test command exits non-zero because the current `payment.ts
 
 - [ ] **Step 1: Render the compact desktop section below Phone**
 
-Immediately after the desktop Phone field, keep the compact `data-testid="desktop-voucher-section"` JSX structure. Keep the existing input event handlers and state updates exactly as shown so the promo flow remains unchanged. The section must use `w-full`, 44px controls, reduced text/spacing, and compact `3.5rem / flexible / 6rem` card columns.
+Immediately after the desktop Phone field, keep the compact `data-testid="desktop-voucher-section"` JSX structure. Keep the existing input event handlers and state updates exactly as shown so the promo flow remains unchanged. The section must use `w-full`, 44px controls, readable primary/action text, inline secondary details, reduced vertical spacing, and compact `3.25rem / flexible / 6.5rem` card columns.
 
 ```tsx
           <section

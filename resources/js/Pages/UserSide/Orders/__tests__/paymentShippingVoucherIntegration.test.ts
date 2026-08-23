@@ -45,9 +45,9 @@ describe('payment shipping voucher integration', () => {
     expect(paymentSource).toContain('data-testid="desktop-voucher-suggestions"');
     expect(paymentSource).toContain('absolute left-0 right-0 top-full');
     expect(paymentSource).toContain('overflow-y-auto');
-    expect(paymentSource).toContain('min-h-[8rem]');
-    expect(paymentSource).toContain('grid-cols-[3.5rem_minmax(0,1fr)_6rem]');
-    expect(paymentSource).toContain('w-20');
+    expect(paymentSource).toContain('min-h-[7rem]');
+    expect(paymentSource).toContain('grid-cols-[3.25rem_minmax(0,1fr)_6.5rem]');
+    expect(paymentSource).toContain('w-24');
     expect(paymentSource).toContain('h-11');
     expect(paymentSource).toContain('border-r border-dashed');
     expect(paymentSource).toContain("'Add ' + formatVoucherMoney(remainingSpend) + ' more to unlock this voucher.'");
@@ -61,6 +61,7 @@ describe('payment shipping voucher integration', () => {
     expect(paymentSource).not.toContain('min-w-[250px]');
     expect(paymentSource).not.toContain('min-h-[10rem]');
     expect(paymentSource).not.toContain('min-h-[20rem]');
+    expect(paymentSource).not.toContain('min-h-[8rem]');
     expect(paymentSource).toContain('/api/products/${voucher.claim_product_id}/vouchers/${voucher.id}/claim');
     expect(paymentSource).toContain("'X-CSRF-TOKEN'");
   });
