@@ -71,6 +71,41 @@ afterEach(() => {
 });
 
 describe('staff order shipping coverage integration', () => {
+  it('shows order details before processing a pending order', async () => {
+    const pendingOrder = { ...makeOrder(1), status: 'pending' };
+    mockPage.props.initialOrders = [pendingOrder];
+    const fetchMock = vi.fn((input: string, init?: RequestInit) => {
+      if (input === '/api/staff/orders') {
+        return Promise.resolve(jsonResponse(200, [pendingOrder]));
+      }
+      if (input === '/api/csrf-token') {
+        return Promise.resolve(jsonResponse(200, { csrf_token: 'token' }));
+      }
+      if (init?.method === 'PATCH') {
+        return Promise.resolve(jsonResponse(200, { success: true }));
+      }
+      throw new Error(`Unexpected fetch: ${input}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(React.createElement(JobOrdersPage));
+    fireEvent.click(await screen.findByTitle('Start processing'));
+
+    expect(await screen.findByRole('heading', { name: 'Order Details' })).toBeInTheDocument();
+    const orderDetailsModal = screen.getByRole('heading', { name: 'Order Details' }).closest('.relative') as HTMLElement;
+    expect(within(orderDetailsModal).getByText('Customer 1')).toBeInTheDocument();
+    expect(within(orderDetailsModal).getByRole('button', { name: 'Process Order' })).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalledWith('/api/csrf-token', expect.anything());
+    expect(mockSwalFire).not.toHaveBeenCalled();
+
+    fireEvent.click(within(orderDetailsModal).getByRole('button', { name: 'Process Order' }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      '/api/staff/orders/1/status',
+      expect.objectContaining({ method: 'PATCH' }),
+    ));
+  });
+
   it('hides receive activation for shipped shop-owned orders but keeps it for third-party orders', async () => {
     const shopOwnedOrder = { ...makeOrder(31), status: 'shipped', carrier_company: 'Shop-owned logistics' };
     const thirdPartyOrder = { ...makeOrder(32), status: 'shipped', carrier_company: 'J&T' };
