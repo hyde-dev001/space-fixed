@@ -27,7 +27,7 @@
 **Interfaces:**
 - Produces `getRegistrationAddressFields(result: unknown): { businessAddress: string; postalCode: string } | null` for the registration page.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add a test that imports `getRegistrationAddressFields` and expects a Nominatim response with `address.postcode: '4114'` to produce `postalCode: '4114'`, while a response without a postcode produces an empty `postalCode` and keeps the display name.
 
@@ -51,7 +51,7 @@ it('maps reverse-geocoded postal codes for registration', () => {
 });
 ```
 
-- [ ] **Step 2: Run the focused test and verify it fails**
+- [x] **Step 2: Run the focused test and verify it fails**
 
 Run:
 
@@ -71,7 +71,7 @@ Expected: the test fails because `getRegistrationAddressFields` does not exist y
 - Consumes the raw JSON returned by `/api/address/geocode`.
 - Produces `{ businessAddress, postalCode }` or `null` when no display name exists.
 
-- [ ] **Step 1: Add the minimal mapper**
+- [x] **Step 1: Add the minimal mapper**
 
 Implement:
 
@@ -97,7 +97,7 @@ export const getRegistrationAddressFields = (result: unknown): {
 };
 ```
 
-- [ ] **Step 2: Apply the mapper in the GPS handler**
+- [x] **Step 2: Apply the mapper in the GPS handler**
 
 Import `getRegistrationAddressFields`, then replace the duplicated raw `data.display_name` update in `handleUseMyGPS` with:
 
@@ -114,11 +114,11 @@ if (addressFields) {
 }
 ```
 
-- [ ] **Step 3: Apply the same mapper in the map save handler**
+- [x] **Step 3: Apply the same mapper in the map save handler**
 
 Use the same update block in `handleSaveAddress`, preserving the existing fallback error behavior when no display name is returned.
 
-- [ ] **Step 4: Run the focused test and verify it passes**
+- [x] **Step 4: Run the focused test and verify it passes**
 
 Run the same Vitest command from Task 1. Expected: the registration address tests pass.
 
@@ -127,14 +127,14 @@ Run the same Vitest command from Task 1. Expected: the registration address test
 **Files:**
 - Include in commit: `resources/js/Pages/UserSide/Auth/registrationAddress.ts`, `resources/js/Pages/UserSide/Auth/ShopOwnerRegistration.tsx`, its focused test, the approved design/plan docs, and generated `public/build` changes.
 
-- [ ] **Step 1: Run relevant frontend tests**
+- [x] **Step 1: Run relevant frontend tests**
 
 ```powershell
 node.exe node_modules/vitest/vitest.mjs run resources/js/Pages/UserSide/Auth/__tests__/registrationAddress.test.ts --pool=threads --maxWorkers=1 --minWorkers=1 --reporter=dot
 node.exe node_modules/vitest/vitest.mjs run --pool=threads --maxWorkers=1 --minWorkers=1 --reporter=dot
 ```
 
-- [ ] **Step 2: Build production assets and check the diff**
+- [x] **Step 2: Build production assets and check the diff**
 
 ```powershell
 node.exe node_modules/vite/bin/vite.js build --logLevel error
@@ -143,7 +143,7 @@ git diff --check
 
 Expected: Vite exits with code 0 and `git diff --check` prints no errors.
 
-- [ ] **Step 3: Review scope and commit only intended files**
+- [x] **Step 3: Review scope and commit only intended files**
 
 ```powershell
 git diff --name-only

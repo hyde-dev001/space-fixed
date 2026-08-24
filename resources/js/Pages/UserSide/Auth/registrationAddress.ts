@@ -9,6 +9,26 @@ export type RegistrationAddress = {
   longitude: number;
 };
 
+export const getRegistrationAddressFields = (result: unknown): {
+  businessAddress: string;
+  postalCode: string;
+} | null => {
+  const payload = result as {
+    display_name?: unknown;
+    address?: { postcode?: unknown };
+  } | null;
+  const businessAddress = typeof payload?.display_name === 'string'
+    ? payload.display_name
+    : '';
+  if (!businessAddress) return null;
+
+  const postalCode = typeof payload?.address?.postcode === 'string'
+    ? payload.address.postcode.replace(/\D/g, '')
+    : '';
+
+  return { businessAddress, postalCode };
+};
+
 export const parsePhilippineAddress = (result: any): RegistrationAddress | null => {
   const latitude = Number(result?.lat);
   const longitude = Number(result?.lon);

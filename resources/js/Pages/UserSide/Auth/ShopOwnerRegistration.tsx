@@ -17,6 +17,7 @@ import {
 } from './registrationDocumentPayload';
 import RegistrationDocumentMetadataFields from '@/components/form/RegistrationDocumentMetadataFields';
 import { GPS_POSITION_OPTIONS, getCurrentPositionWithTimeout } from '@/utils/geolocation';
+import { getRegistrationAddressFields } from './registrationAddress';
 
 const CAVITE_CENTER = {
   lat: '14.28140000',
@@ -603,10 +604,15 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
         );
         if (!res.ok) throw new Error('Address lookup failed');
         const data = await res.json();
-        if (data.display_name) {
-          setGeoAddress(data.display_name);
-          setFormData(prev => ({ ...prev, businessAddress: data.display_name }));
-          setSelectedCity(inferCaviteCity(data.display_name));
+        const addressFields = getRegistrationAddressFields(data);
+        if (addressFields) {
+          setGeoAddress(addressFields.businessAddress);
+          setFormData(previous => ({
+            ...previous,
+            businessAddress: addressFields.businessAddress,
+            postalCode: addressFields.postalCode || previous.postalCode,
+          }));
+          setSelectedCity(inferCaviteCity(addressFields.businessAddress));
         }
       } catch {
         // Keep coordinates even if reverse geocoding fails.
@@ -632,10 +638,15 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
       );
       if (!res.ok) throw new Error('Address lookup failed');
       const data = await res.json();
-      if (data.display_name) {
-        setGeoAddress(data.display_name);
-        setFormData(prev => ({ ...prev, businessAddress: data.display_name }));
-        setSelectedCity(inferCaviteCity(data.display_name));
+      const addressFields = getRegistrationAddressFields(data);
+      if (addressFields) {
+        setGeoAddress(addressFields.businessAddress);
+        setFormData(previous => ({
+          ...previous,
+          businessAddress: addressFields.businessAddress,
+          postalCode: addressFields.postalCode || previous.postalCode,
+        }));
+        setSelectedCity(inferCaviteCity(addressFields.businessAddress));
       } else {
         setGeoError('Could not find an address for this location. Please type the address manually.');
       }
