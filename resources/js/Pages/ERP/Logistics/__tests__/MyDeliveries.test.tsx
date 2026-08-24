@@ -133,6 +133,12 @@ const workItem = (
   ...overrides,
 });
 
+const choosePickerOption = (label: string, option: string) => {
+  fireEvent.click(screen.getByLabelText(label));
+  const picker = screen.getByRole('dialog', { name: label });
+  fireEvent.click(within(picker).getByRole('option', { name: option }));
+};
+
 beforeEach(() => {
   mocks.props.deliveryData = {
     offers: [],
@@ -290,7 +296,7 @@ describe('MyDeliveries task-first hierarchy', () => {
     expect(screen.getByLabelText('Business type')).toHaveClass('min-h-12', 'text-base', 'xl:min-h-11', 'xl:text-sm');
   });
 
-  it('opens the arrival reason picker in an accessible modal on compact viewports', async () => {
+  it('keeps the compact arrival picker open until an explicit picker action', async () => {
     mocks.arrive.mockRejectedValueOnce({
       response: {
         status: 422,
@@ -309,13 +315,19 @@ describe('MyDeliveries task-first hierarchy', () => {
     await waitFor(() => expect(screen.getByLabelText('Arrival reason')).toBeVisible());
     expect(screen.getByText(/Outside geofence/)).toBeVisible();
 
-    fireEvent.pointerDown(screen.getByLabelText('Arrival reason'));
+    fireEvent.click(screen.getByLabelText('Arrival reason'));
 
     const picker = screen.getByRole('dialog', { name: 'Arrival reason' });
     expect(picker).toBeVisible();
     expect(picker.parentElement).toHaveClass('z-[100001]');
+    expect(screen.queryByRole('combobox', { name: 'Arrival reason' })).not.toBeInTheDocument();
+
+    fireEvent.pointerDown(picker.parentElement as HTMLElement);
+    expect(screen.getByRole('dialog', { name: 'Arrival reason' })).toBeVisible();
+
     fireEvent.click(within(picker).getByRole('option', { name: 'GPS location is inaccurate' }));
     expect(screen.getByLabelText('Arrival reason')).toHaveValue('gps_inaccurate');
+    expect(screen.queryByRole('dialog', { name: 'Arrival reason' })).not.toBeInTheDocument();
   });
 
   it('opens the incident form in a modal while keeping its picker native on desktop viewports', () => {
@@ -432,24 +444,32 @@ describe('MyDeliveries rider interactions', () => {
     await waitFor(() => expect(mocks.markPickedUp).toHaveBeenCalledTimes(1));
   });
 
-  it('accepts an offer and asks for a reason only after Decline is selected', async () => {
+  it('opens a batch decline modal with common reasons and an editable reason', async () => {
     mocks.props.deliveryData.offers = [
       workItem('batch', 'offered', [leg(1, 1)], { group: 'offer' }),
     ];
 
     render(<MyDeliveries />);
 
-    expect(screen.queryByLabelText('Decline reason')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Accept batch' }));
-    await waitFor(() => expect(mocks.acceptBatch).toHaveBeenCalledWith(7));
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Accept batch' })).toBeEnabled());
+    const offerCard = screen.getByText('New assignment').closest('article');
+    expect(offerCard).toHaveClass('bg-white', 'border-slate-950');
+    expect(offerCard).not.toHaveClass('bg-amber-50', 'border-amber-300');
 
     fireEvent.click(screen.getByRole('button', { name: 'Decline batch' }));
-    fireEvent.change(screen.getByLabelText('Decline reason'), { target: { value: 'Schedule conflict' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm decline' }));
+    const dialog = screen.getByRole('dialog', { name: 'Decline batch' });
+    expect(within(dialog).getByText('Common reasons')).toBeVisible();
 
-    expect(mocks.rejectBatch).toHaveBeenCalledWith(7, 'Schedule conflict');
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Confirm decline' })).toBeEnabled());
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Schedule conflict' }));
+    const reason = within(dialog).getByLabelText('Decline reason');
+    expect(reason).toHaveValue('Schedule conflict');
+
+    fireEvent.change(reason, { target: { value: 'Schedule conflict - route changed' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm decline' }));
+
+    await waitFor(() => expect(mocks.rejectBatch).toHaveBeenCalledWith(
+      7,
+      'Schedule conflict - route changed',
+    ));
   });
 
   it('accepts or declines a standalone delivery offer through its leg endpoints', async () => {
@@ -464,11 +484,16 @@ describe('MyDeliveries rider interactions', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Accept delivery' })).toBeEnabled());
 
     fireEvent.click(screen.getByRole('button', { name: 'Decline delivery' }));
-    fireEvent.change(screen.getByLabelText('Decline reason'), { target: { value: 'Schedule conflict' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm decline' }));
+    const dialog = screen.getByRole('dialog', { name: 'Decline delivery' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Safety concern' }));
+    const reason = within(dialog).getByLabelText('Decline reason');
+    fireEvent.change(reason, { target: { value: 'Safety concern near the pickup route' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm decline' }));
 
-    await waitFor(() => expect(mocks.rejectLeg).toHaveBeenCalledWith(9, 'Schedule conflict'));
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Confirm decline' })).toBeEnabled());
+    await waitFor(() => expect(mocks.rejectLeg).toHaveBeenCalledWith(
+      9,
+      'Safety concern near the pickup route',
+    ));
   });
 
   it('starts an accepted batch from Up Next', async () => {
@@ -578,6 +603,9 @@ describe('MyDeliveries rider interactions', () => {
     render(<MyDeliveries />);
     fireEvent.click(screen.getByRole('button', { name: 'Failed pickup' }));
 
+    const reason = screen.getByLabelText('Failed pickup reason');
+    fireEvent.click(reason);
+    const reasonPicker = screen.getByRole('dialog', { name: 'Failed pickup reason' });
     for (const option of [
       'Customer unavailable / not home',
       'Customer requested reschedule',
@@ -588,24 +616,21 @@ describe('MyDeliveries rider interactions', () => {
       'Vehicle or rider problem',
       'Other',
     ]) {
-      expect(screen.getByRole('option', { name: option })).toBeInTheDocument();
+      expect(within(reasonPicker).getByRole('option', { name: option })).toBeInTheDocument();
     }
+
+    fireEvent.click(within(reasonPicker).getByRole('option', { name: 'Customer unavailable / not home' }));
 
     const photo = screen.getByLabelText('Failed pickup photo');
     expect(photo).toHaveAttribute('accept', 'image/*');
     expect(photo).toHaveAttribute('capture', 'environment');
-    fireEvent.change(screen.getByLabelText('Failed pickup reason'), {
-      target: { value: 'customer_unavailable' },
-    });
     expect(screen.getByRole('button', { name: 'Submit failed pickup' })).toBeDisabled();
     fireEvent.change(photo, {
       target: { files: [new File(['door'], 'door.jpg', { type: 'image/jpeg' })] },
     });
     expect(screen.getByRole('button', { name: 'Submit failed pickup' })).toBeEnabled();
 
-    fireEvent.change(screen.getByLabelText('Failed pickup reason'), {
-      target: { value: 'other' },
-    });
+    choosePickerOption('Failed pickup reason', 'Other');
     expect(screen.getByRole('button', { name: 'Submit failed pickup' })).toBeDisabled();
     fireEvent.change(screen.getByLabelText('Failed pickup notes'), {
       target: { value: 'Customer asked the rider to return tomorrow.' },
@@ -646,9 +671,7 @@ describe('MyDeliveries rider interactions', () => {
     });
     const view = render(<MyDeliveries />);
     fireEvent.click(screen.getByRole('button', { name: 'Failed pickup' }));
-    fireEvent.change(screen.getByLabelText('Failed pickup reason'), {
-      target: { value: 'customer_unavailable' },
-    });
+    choosePickerOption('Failed pickup reason', 'Customer unavailable / not home');
     const photo = new File(['door'], 'door.jpg', { type: 'image/jpeg' });
     fireEvent.change(screen.getByLabelText('Failed pickup photo'), { target: { files: [photo] } });
     const submit = screen.getByRole('button', { name: 'Submit failed pickup' });
@@ -697,9 +720,7 @@ describe('MyDeliveries rider interactions', () => {
     });
     const view = render(<MyDeliveries />);
     fireEvent.click(screen.getByRole('button', { name: 'Failed pickup' }));
-    fireEvent.change(screen.getByLabelText('Failed pickup reason'), {
-      target: { value: 'customer_unavailable' },
-    });
+    choosePickerOption('Failed pickup reason', 'Customer unavailable / not home');
     fireEvent.change(screen.getByLabelText('Failed pickup photo'), {
       target: { files: [new File(['door'], 'door.jpg', { type: 'image/jpeg' })] },
     });
@@ -729,9 +750,7 @@ describe('MyDeliveries rider interactions', () => {
     }], { group: 'upcoming', business_types: ['repair'], business_label: 'Repair pickup' });
     render(<MyDeliveries />);
     fireEvent.click(screen.getByRole('button', { name: 'Failed pickup' }));
-    fireEvent.change(screen.getByLabelText('Failed pickup reason'), {
-      target: { value: 'customer_unavailable' },
-    });
+    choosePickerOption('Failed pickup reason', 'Customer unavailable / not home');
     fireEvent.change(screen.getByLabelText('Failed pickup photo'), {
       target: { files: [new File(['door'], 'door.jpg', { type: 'image/jpeg' })] },
     });
@@ -785,9 +804,7 @@ describe('MyDeliveries rider interactions', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Report issue' }));
-    fireEvent.change(screen.getByLabelText('Issue reason'), {
-      target: { value: 'recipient_unavailable' },
-    });
+    choosePickerOption('Issue reason', 'Recipient unavailable');
     fireEvent.change(screen.getByLabelText('Issue photo'), { target: { files: [proof] } });
     fireEvent.click(screen.getByRole('button', { name: 'Submit issue' }));
 
@@ -813,6 +830,9 @@ describe('MyDeliveries rider interactions', () => {
     expect(screen.getByRole('link', { name: 'Directions' })).toHaveClass('border-slate-300', 'text-slate-950');
     expect(screen.getByRole('link', { name: 'Directions' })).not.toHaveClass('border-blue-300', 'text-blue-700');
 
+    const reason = screen.getByLabelText('Issue reason');
+    fireEvent.click(reason);
+    const reasonPicker = screen.getByRole('dialog', { name: 'Issue reason' });
     for (const option of [
       'Recipient unavailable',
       'Wrong or incomplete address',
@@ -822,23 +842,20 @@ describe('MyDeliveries rider interactions', () => {
       'Vehicle or delivery problem',
       'Other',
     ]) {
-      expect(screen.getByRole('option', { name: option })).toBeInTheDocument();
+      expect(within(reasonPicker).getByRole('option', { name: option })).toBeInTheDocument();
     }
 
-    const reason = screen.getByLabelText('Issue reason');
     const photo = screen.getByLabelText('Issue photo');
     const notes = screen.getByLabelText('Issue notes');
     const issueDetails = screen.getByLabelText('Delivery issue details');
     expect(within(issueDetails).getByText('No photo selected')).toBeVisible();
     expect(within(issueDetails).getByRole('button', { name: 'Upload photo' })).toBeVisible();
-    fireEvent.pointerDown(reason);
-    const reasonPicker = screen.getByRole('dialog', { name: 'Issue reason' });
     fireEvent.click(within(reasonPicker).getByRole('option', { name: 'Recipient unavailable' }));
     expect(reason).toHaveValue('recipient_unavailable');
     expect(photo).toBeRequired();
     expect(notes).not.toBeRequired();
 
-    fireEvent.change(reason, { target: { value: 'unsafe_location' } });
+    choosePickerOption('Issue reason', 'Unsafe location');
     expect(photo).not.toBeRequired();
     expect(notes).toBeRequired();
     const issuePhoto = new File(['issue'], 'issue.jpg', { type: 'image/jpeg' });
@@ -1100,7 +1117,7 @@ describe('MyDeliveries rider interactions', () => {
     fireEvent.click(screen.getByRole('button', { name: "I've arrived" }));
     await waitFor(() => expect(screen.getByLabelText('Arrival reason')).toBeVisible());
 
-    fireEvent.change(screen.getByLabelText('Arrival reason'), { target: { value: 'other' } });
+    choosePickerOption('Arrival reason', 'Other');
     expect(screen.getByRole('button', { name: 'Continue with reason' })).toBeDisabled();
     fireEvent.change(screen.getByLabelText('Arrival notes'), { target: { value: 'Customer met at gate' } });
     fireEvent.click(screen.getByRole('button', { name: 'Continue with reason' }));
@@ -1148,7 +1165,7 @@ describe('MyDeliveries rider interactions', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Report incident' }));
     const incidentType = screen.getByLabelText('Incident type');
-    fireEvent.pointerDown(incidentType);
+    fireEvent.click(incidentType);
     const incidentPicker = screen.getByRole('dialog', { name: 'Incident type' });
     fireEvent.click(within(incidentPicker).getByRole('option', { name: 'Vehicle or route problem' }));
     expect(incidentType).toHaveValue('vehicle_problem');

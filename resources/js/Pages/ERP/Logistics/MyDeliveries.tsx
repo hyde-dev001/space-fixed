@@ -68,9 +68,9 @@ function CompactModalPicker({
   className?: string;
 }) {
   const [isOpen, setIsOpen] = useState(false);
-  const pickerRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
-  const modalIsOpen = isOpen && isCompactViewport();
+  const compact = isCompactViewport();
+  const modalIsOpen = isOpen && compact;
   const listboxId = `${pickerId}-options`;
   const dialogId = `${pickerId}-dialog`;
   const pickerOptions: readonly PickerOption[] = [['', placeholder] as const, ...options];
@@ -82,11 +82,6 @@ function CompactModalPicker({
     const previouslyFocused = document.activeElement as HTMLElement | null;
     const previousOverflow = document.body.style.overflow;
 
-    const closeOnOutsidePress = (event: PointerEvent) => {
-      if (!pickerRef.current?.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    };
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setIsOpen(false);
     };
@@ -94,14 +89,12 @@ function CompactModalPicker({
       if (!isCompactViewport()) setIsOpen(false);
     };
 
-    document.addEventListener('pointerdown', closeOnOutsidePress);
     document.addEventListener('keydown', closeOnEscape);
     window.addEventListener('resize', closeOnResize);
     document.body.style.overflow = 'hidden';
     closeButtonRef.current?.focus();
 
     return () => {
-      document.removeEventListener('pointerdown', closeOnOutsidePress);
       document.removeEventListener('keydown', closeOnEscape);
       window.removeEventListener('resize', closeOnResize);
       document.body.style.overflow = previousOverflow;
@@ -115,55 +108,46 @@ function CompactModalPicker({
   };
 
   return (
-    <div ref={pickerRef} className="relative mt-1">
-      <select
-        id={pickerId}
-        aria-label={label}
-        aria-controls={modalIsOpen ? dialogId : undefined}
-        aria-expanded={modalIsOpen}
-        value={value}
-        onChange={(event) => choose(event.target.value)}
-        onPointerDown={(event) => {
-          if (!isCompactViewport()) return;
-          event.preventDefault();
-          event.stopPropagation();
-          setIsOpen(true);
-        }}
-        onKeyDown={(event) => {
-          if (!isCompactViewport()) return;
-          if (event.key === 'Escape') {
-            event.preventDefault();
-            setIsOpen(false);
-          } else if (event.key === 'Enter' || event.key === ' ' || event.key === 'ArrowDown') {
-            event.preventDefault();
-            setIsOpen(true);
-          }
-        }}
-        className={`min-h-12 w-full appearance-none rounded-2xl border border-slate-300 bg-white px-4 pr-11 text-base text-slate-950 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-slate-700 dark:bg-slate-950 dark:text-white xl:min-h-11 xl:appearance-auto xl:rounded-xl xl:px-3 xl:pr-3 xl:text-sm ${className}`}
-      >
-        {pickerOptions.map(([option, optionLabel]) => (
-          <option key={option || 'empty'} value={option}>{optionLabel}</option>
-        ))}
-      </select>
-      <svg
-        aria-hidden="true"
-        className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-950 xl:hidden dark:text-white"
-        viewBox="0 0 20 20"
-        fill="none"
-      >
-        <path d="m5 7.5 5 5 5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
+    <div className="relative mt-1">
+      {compact ? (
+        <button
+          type="button"
+          id={pickerId}
+          aria-label={label}
+          value={value}
+          aria-haspopup="listbox"
+          aria-controls={modalIsOpen ? dialogId : undefined}
+          aria-expanded={modalIsOpen}
+          onClick={() => setIsOpen(true)}
+          className={`flex min-h-12 w-full items-center justify-between rounded-2xl border border-slate-300 bg-white px-4 text-left text-base text-slate-950 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-slate-700 dark:bg-slate-950 dark:text-white ${className}`}
+        >
+          <span>{selectedLabel}</span>
+          <svg aria-hidden="true" className="h-4 w-4 shrink-0" viewBox="0 0 20 20" fill="none">
+            <path d="m5 7.5 5 5 5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+      ) : (
+        <select
+          id={pickerId}
+          aria-label={label}
+          value={value}
+          onChange={(event) => choose(event.target.value)}
+          className={`min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-950 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-slate-700 dark:bg-slate-950 dark:text-white ${className}`}
+        >
+          {pickerOptions.map(([option, optionLabel]) => (
+            <option key={option || 'empty'} value={option}>{optionLabel}</option>
+          ))}
+        </select>
+      )}
       {modalIsOpen && (
         <div
           className="fixed inset-0 z-[100001] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-[2px]"
-          onPointerDown={() => setIsOpen(false)}
         >
           <div
             id={dialogId}
             role="dialog"
             aria-modal="true"
             aria-labelledby={`${dialogId}-title`}
-            onPointerDown={(event) => event.stopPropagation()}
             className="flex max-h-[calc(100dvh-2rem)] w-full max-w-md flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white text-slate-950 shadow-2xl dark:border-slate-700 dark:bg-slate-950 dark:text-white"
           >
             <header className="flex items-start justify-between gap-4 border-b border-slate-200 p-5 dark:border-slate-700">
@@ -494,6 +478,14 @@ const incidentTypes = [
   ['vehicle_problem', 'Vehicle or route problem'],
   ['customer_dispute', 'Customer dispute'],
   ['other', 'Other incident'],
+] as const;
+
+const declineReasons = [
+  'Schedule conflict',
+  'Too far from my current location',
+  'Vehicle or equipment problem',
+  'Safety concern',
+  'Already handling another delivery',
 ] as const;
 
 const currentPosition = () => {
@@ -1531,14 +1523,24 @@ function OfferCard({
   const offerLabel = isBatch ? 'batch' : 'delivery';
   const acceptKey = `offer-accept:${item.key}`;
   const declineKey = `offer-decline:${item.key}`;
+  const openDeclineModal = () => {
+    setReason('');
+    setDeclining(true);
+  };
+  const declineAction = () => isBatch
+    ? logisticsApi.rejectBatch(item.id, reason.trim())
+    : logisticsApi.rejectLeg(item.id, reason.trim());
+  const declineCancelClass = 'min-h-12 w-full touch-manipulation rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-950 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-white sm:w-auto';
+  const declineSubmitClass = 'min-h-12 w-full touch-manipulation rounded-xl bg-slate-950 px-4 text-sm font-bold text-white transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-slate-950 sm:w-auto';
 
   return (
-    <article className="rounded-2xl border border-amber-300 bg-amber-50 p-5 dark:border-amber-800 dark:bg-amber-950/30 xl:p-4">
+    <>
+    <article className="rounded-2xl border border-slate-950 bg-white p-5 text-slate-950 dark:border-white dark:bg-slate-950 dark:text-white xl:p-4">
       <div className="flex flex-col items-start gap-3 xl:flex-row xl:justify-between">
         <div>
-          <p className="text-xs font-bold uppercase tracking-wide text-amber-800 dark:text-amber-200">New assignment</p>
+          <p className="text-xs font-bold uppercase tracking-wide text-slate-950 dark:text-white">New assignment</p>
           <h3 className="mt-1 font-bold text-slate-950 dark:text-white">{itemTitle(item)}</h3>
-          <p className="mt-1 text-sm text-slate-700 dark:text-slate-200">
+          <p className="mt-1 text-sm text-slate-950 dark:text-white">
             {scheduleText(item)} · {deliveryCount(item)}
           </p>
         </div>
@@ -1564,39 +1566,75 @@ function OfferCard({
         <button
           type="button"
           disabled={!online}
-          onClick={() => setDeclining((current) => !current)}
-          className="min-h-12 touch-manipulation rounded-xl border border-amber-500 px-4 text-sm font-bold text-amber-900 transition-colors focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 disabled:opacity-50 dark:text-amber-100 xl:min-h-11"
+          onClick={openDeclineModal}
+          className="min-h-12 touch-manipulation rounded-xl border border-slate-950 bg-white px-4 text-sm font-bold text-slate-950 transition-colors hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white dark:bg-slate-950 dark:text-white dark:hover:bg-slate-900 dark:focus:ring-white xl:min-h-11"
         >
           Decline {offerLabel}
         </button>
       </div>
-      {declining && (
-        <div className="mt-3 space-y-2">
-          <label className="block text-sm font-semibold text-amber-950 dark:text-amber-100">
-            Decline reason
-            <input
-              type="text"
-              aria-label="Decline reason"
-              value={reason}
-              onChange={(event) => setReason(event.target.value)}
-              className="mt-1 min-h-11 w-full rounded-xl border border-amber-300 bg-white px-3 dark:bg-slate-900"
-            />
-          </label>
+    </article>
+    <DeliveryActionModal
+      modalId={`decline-${item.key}`}
+      open={declining}
+      title={`Decline ${offerLabel}`}
+      description={`Tell dispatch why you cannot take this ${offerLabel}.`}
+      onClose={() => setDeclining(false)}
+    >
+      <div className="space-y-5">
+        <fieldset>
+          <legend className="text-sm font-bold text-slate-950 dark:text-white">Common reasons</legend>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            {declineReasons.map((option) => (
+              <button
+                key={option}
+                type="button"
+                aria-pressed={reason === option}
+                onClick={() => setReason(option)}
+                className={`min-h-12 rounded-xl border px-3 text-left text-sm font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:focus:ring-white ${
+                  reason === option
+                    ? 'border-slate-950 bg-slate-950 text-white dark:border-white dark:bg-white dark:text-slate-950'
+                    : 'border-slate-300 bg-white text-slate-950 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:hover:bg-slate-900'
+                }`}
+              >
+                {option}
+              </button>
+            ))}
+          </div>
+        </fieldset>
+
+        <label htmlFor={`decline-reason-${item.key}`} className="block text-sm font-semibold text-slate-950 dark:text-white">
+          Decline reason
+          <textarea
+            id={`decline-reason-${item.key}`}
+            aria-label="Decline reason"
+            rows={4}
+            maxLength={1000}
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            placeholder="Choose a common reason or enter your own."
+            className="mt-2 w-full resize-y rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm text-slate-950 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+          />
+          <span className="mt-1 block text-xs font-normal text-slate-500 dark:text-slate-400">
+            {reason.length}/1000 characters
+          </span>
+        </label>
+
+        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <button type="button" onClick={() => setDeclining(false)} className={declineCancelClass}>
+            Cancel
+          </button>
           <button
             type="button"
             disabled={!online || !reason.trim() || pendingAction !== null}
-            onClick={() =>
-              runAction(declineKey, () => isBatch
-                ? logisticsApi.rejectBatch(item.id, reason.trim())
-                : logisticsApi.rejectLeg(item.id, reason.trim()))
-            }
-            className="min-h-11 w-full rounded-xl bg-amber-700 px-4 text-sm font-bold text-white disabled:opacity-50"
+            onClick={() => runAction(declineKey, declineAction)}
+            className={declineSubmitClass}
           >
             Confirm decline
           </button>
         </div>
-      )}
-    </article>
+      </div>
+    </DeliveryActionModal>
+    </>
   );
 }
 
