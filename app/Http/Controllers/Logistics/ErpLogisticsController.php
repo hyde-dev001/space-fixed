@@ -79,7 +79,8 @@ class ErpLogisticsController extends Controller
         $purpose = $request->query('purpose', 'all');
         $deliveryWindow = in_array($request->query('window'), ['morning', 'afternoon'], true)
             ? $request->query('window') : 'all';
-        $maxDeliveryAttempts = (int) LogisticsSetting::firstOrCreate(['shop_owner_id' => $shopOwnerId])->max_delivery_attempts;
+        $settings = LogisticsSetting::firstOrCreate(['shop_owner_id' => $shopOwnerId]);
+        $maxDeliveryAttempts = (int) $settings->max_delivery_attempts;
 
         return Inertia::render('ERP/Logistics/Shipments', [
             'shipments' => tap(Shipment::query()
@@ -169,6 +170,10 @@ class ErpLogisticsController extends Controller
             ],
             'availableModules' => $availableModules,
             'showModuleFilter' => count($availableModules) > 1,
+            'logisticsSchedule' => [
+                'operating_days' => array_values($settings->operating_days ?? []),
+                'blackout_dates' => array_values($settings->blackout_dates ?? []),
+            ],
             'today' => now(config('app.shop_timezone', 'Asia/Manila'))->toDateString(),
             'canAssign' => $canAssign,
             'canUpdateStatus' => false,
@@ -884,6 +889,11 @@ class ErpLogisticsController extends Controller
             'dailyRiderCapacity' => (int) $settings->daily_rider_capacity,
             'maxDeliveryAttempts' => (int) $settings->max_delivery_attempts,
             'filters' => ['module' => $module, 'date' => $deliveryDate, 'window' => $deliveryWindow],
+            'today' => now(config('app.shop_timezone', 'Asia/Manila'))->toDateString(),
+            'logisticsSchedule' => [
+                'operating_days' => array_values($settings->operating_days ?? []),
+                'blackout_dates' => array_values($settings->blackout_dates ?? []),
+            ],
             'availableModules' => $availableModules,
             'showModuleFilter' => count($availableModules) > 1,
         ]);

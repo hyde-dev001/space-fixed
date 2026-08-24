@@ -26,6 +26,7 @@ class BatchDispatchService
     {
         DB::transaction(function () use ($shop, $date, $window, $legIds) {
             $shop = ShopOwner::query()->whereKey($shop->id)->lockForUpdate()->firstOrFail();
+            $this->assertOperatingDeliveryDate($shop, $date);
             $legs = ShipmentLeg::query()->with('shipment')->whereIn('id', $legIds)->orderBy('id')->lockForUpdate()->get();
             if ($legs->count() !== count(array_unique($legIds)) || $legs->contains(fn ($leg) => $leg->shipment->shop_owner_id !== $shop->id || $leg->delivery_batch_id
                 || ! in_array($leg->status->value, ['pending', 'assigned'], true) || $leg->schedule_status === 'scheduled')) {
@@ -34,12 +35,6 @@ class BatchDispatchService
             $modules = $legs->map(fn ($leg) => Shipment::moduleForSourceType((string) $leg->shipment->source_type));
             if ($modules->contains(null) || $modules->contains(fn ($module) => ! in_array($module, $shop->logisticsModules(), true))) {
                 throw ValidationException::withMessages(['legs' => 'This shop cannot schedule one or more delivery modules.']);
-            }
-            $deliveryDate = Carbon::parse($date)->startOfDay();
-            $settings = $shop->logisticsSetting()->firstOrCreate([]);
-            if (! in_array($deliveryDate->dayOfWeekIso, $settings->operating_days, true)
-                || in_array($deliveryDate->toDateString(), $settings->blackout_dates, true)) {
-                throw ValidationException::withMessages(['delivery_date' => 'Choose an operating day that is not a blackout date.']);
             }
             foreach ($legs as $leg) {
                 $leg->update([
@@ -54,6 +49,7 @@ class BatchDispatchService
     {
         return DB::transaction(function () use ($shop, $date, $window, $legIds, $overrideReason) {
             $shop = ShopOwner::query()->whereKey($shop->id)->lockForUpdate()->firstOrFail();
+            $this->assertOperatingDeliveryDate($shop, $date);
             $legs = ShipmentLeg::query()->with('shipment')->whereIn('id', $legIds)->orderBy('id')->lockForUpdate()->get();
             if ($legs->count() !== count(array_unique($legIds)) || $legs->contains(fn ($leg) => $leg->shipment->shop_owner_id !== $shop->id || $leg->delivery_batch_id
                 || $leg->status->value !== 'pending' || $leg->schedule_status !== 'scheduled'
@@ -367,6 +363,17 @@ class BatchDispatchService
 
         if (! in_array($modules->first(), $shop->logisticsModules(), true)) {
             throw ValidationException::withMessages(['legs' => 'This shop cannot dispatch that delivery module.']);
+        }
+    }
+
+    private function assertOperatingDeliveryDate(ShopOwner $shop, string $date): void
+    {
+        $deliveryDate = Carbon::parse($date)->startOfDay();
+        $settings = $shop->logisticsSetting()->firstOrCreate([]);
+
+        if (! in_array($deliveryDate->dayOfWeekIso, $settings->operating_days ?? [], true)
+            || in_array($deliveryDate->toDateString(), $settings->blackout_dates ?? [], true)) {
+            throw ValidationException::withMessages(['delivery_date' => 'Choose an operating day that is not a blackout date.']);
         }
     }
 

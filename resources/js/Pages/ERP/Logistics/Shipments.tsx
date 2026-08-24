@@ -18,6 +18,7 @@ import {
   logisticsSourceLabel,
   type LogisticsModule,
   type LogisticsIncident,
+  type LogisticsSchedule,
   type LogisticsShipment,
   type PaginatedResponse,
   type TrackingShipmentLeg,
@@ -115,7 +116,7 @@ const toast = (icon: 'success' | 'error' | 'warning', title: string) => Swal.fir
 });
 
 export default function Shipments({ children }: React.PropsWithChildren) {
-  const { shipments, filters, assignableRiders, canAssign: serverCanAssign, canUpdateStatus: serverCanUpdateStatus, canRecordProof: serverCanRecordProof, canApproveProof: serverCanApproveProof, canResolveDisputes: serverCanResolveDisputes, riderMode, maxDeliveryAttempts = 2, availableModules = [], showModuleFilter = false, today, auth, erpCapabilities } = usePage<{
+  const { shipments, filters, assignableRiders, canAssign: serverCanAssign, canUpdateStatus: serverCanUpdateStatus, canRecordProof: serverCanRecordProof, canApproveProof: serverCanApproveProof, canResolveDisputes: serverCanResolveDisputes, riderMode, maxDeliveryAttempts = 2, availableModules = [], showModuleFilter = false, today, logisticsSchedule, auth, erpCapabilities } = usePage<{
     shipments: PaginatedResponse<LogisticsShipment>;
     filters: ShipmentFilters;
     assignableRiders: Array<{ id: number; name: string; phone?: string | null }>;
@@ -129,6 +130,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
     availableModules?: LogisticsModule[];
     showModuleFilter?: boolean;
     today: string;
+    logisticsSchedule?: LogisticsSchedule;
     auth?: { erpActor?: { ownerMode?: boolean } };
     erpCapabilities?: ErpCapabilities;
   }>().props;
@@ -785,6 +787,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                               && !hasReturnLeg
                               && Boolean(activeAssignment);
                             const returnProof = leg.proofs?.find((proof) => proof.handoff_type === 'receive');
+                            const latestProof = [...(leg.proofs ?? [])].reverse().find((proof) => ['delivery', 'receive'].includes(proof.handoff_type) && proof.proof_url);
                             const canReportIssue = !ownerMode && riderMode && !isReturnToShop && ['in_transit', 'delivery_attempted'].includes(leg.status);
                             const canScheduleLeg = canAssign && !riderMode && !leg.scheduled_delivery_date && leg.delivery_batch_id == null && ['pending', 'assigned'].includes(leg.status);
                             const schedule = deliverySchedules[leg.id] ?? { date: '', window: 'morning' };
@@ -899,7 +902,9 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                   )}
                                 </div>
                                 <div className="flex min-w-0 flex-col gap-3 rounded-2xl border border-gray-200 bg-gray-50/70 p-4 dark:border-gray-700 dark:bg-gray-900/40 lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0">
-                                  <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Assignment and progress</h3>
+                                  {!riderMode && <div data-testid="shipment-proof-preview" className="relative flex h-48 w-full items-center justify-center overflow-hidden rounded-xl border border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-gray-900">
+                                    {latestProof?.proof_url ? <><img src={latestProof.proof_url} alt="Uploaded delivery proof" loading="lazy" className="h-full w-full object-cover" /><div className="absolute inset-0 flex items-center justify-center bg-black/15 transition-colors hover:bg-black/25"><button type="button" aria-label="View delivery proof" onClick={(event) => openProof(latestProof.proof_url!, event.currentTarget)} className="min-h-11 cursor-pointer rounded-lg bg-black/65 px-4 py-2 text-sm font-semibold text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-black/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">View</button></div></> : <p className="text-sm font-semibold text-gray-500 dark:text-gray-300">Waiting for rider</p>}
+                                  </div>}
                                   {canAssign && !riderMode && isFailedPickup && (
                                     <div className="grid gap-2 sm:grid-cols-2">
                                       <button type="button" onClick={() => void resolveFailedPickup(leg.id, 'retry')} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white">Reschedule Pickup</button>
@@ -936,7 +941,6 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                   {riderMode && isReturnToShop && returnProof?.review_status === 'rider_confirmed' && <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">Awaiting shop receipt confirmation</p>}
                                   {!riderMode && leg.proofs?.filter((proof) => ['delivery', 'receive'].includes(proof.handoff_type)).map((proof) => (
                                     <div key={proof.id} className="space-y-2">
-                                      {proof.proof_url && <div className="relative h-48 w-full overflow-hidden rounded-xl border border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-gray-900"><img src={proof.proof_url} alt="Uploaded delivery proof" loading="lazy" className="h-full w-full object-cover" /><div className="absolute inset-0 flex items-center justify-center bg-black/15 transition-colors hover:bg-black/25"><button type="button" aria-label="View delivery proof" onClick={(event) => openProof(proof.proof_url!, event.currentTarget)} className="min-h-11 cursor-pointer rounded-lg bg-black/65 px-4 py-2 text-sm font-semibold text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-black/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">View</button></div></div>}
                                       <div className="flex flex-wrap gap-2">
                                         {canApproveProof && leg.status === 'awaiting_proof_approval' && proof.review_status === 'pending' && <><button type="button" onClick={() => void confirmAct(`/api/logistics/proofs/${proof.id}/approve`, 'Confirm delivery?', 'This will complete the delivery.')} className="rounded-lg bg-green-600 px-3 py-2 text-sm font-semibold text-white">Confirm delivery</button><button type="button" onClick={() => void rejectProof(proof.id)} className="rounded-lg border border-red-600 px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50">Reject proof</button></>}
                                         {canApproveProof && isReturnToShop && proof.handoff_type === 'receive' && proof.review_status === 'rider_confirmed' && <button type="button" onClick={() => void confirmAct(`/api/logistics/legs/${leg.id}/return-proofs/${proof.id}/receipt`, 'Confirm return received?', 'Confirm the physical parcel handoff. Item inspection continues in the refund workflow.')} className="rounded-lg bg-green-600 px-3 py-2 text-sm font-semibold text-white">Confirm return received</button>}
@@ -1012,6 +1016,8 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                         <DeliveryDatePicker
                                           value={schedule.date}
                                           minDate={today}
+                                          operatingDays={logisticsSchedule?.operating_days}
+                                          blackoutDates={logisticsSchedule?.blackout_dates}
                                           calendarId={`delivery-date-calendar-${leg.id}`}
                                           insideModal
                                           onChange={(value) => setDeliverySchedules({ ...deliverySchedules, [leg.id]: { ...schedule, date: value } })}
@@ -1021,7 +1027,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                       <label className="block text-xs font-semibold text-gray-700 dark:text-gray-200">Delivery window<select aria-label="Delivery window" value={schedule.window} onChange={(event) => setDeliverySchedules({ ...deliverySchedules, [leg.id]: { ...schedule, window: event.target.value } })} className="mt-1 min-h-11 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-white lg:rounded-lg"><option value="">Choose a window</option><option value="morning">Morning</option><option value="afternoon">Afternoon</option></select></label>
                                     </div>
                                     {activeAssignment ? (
-                                      <><p className="rounded-xl bg-white px-3 py-2 text-sm font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-200">Assigned to {activeAssignment.rider_profile?.name ?? 'rider'}</p><button type="button" disabled={!schedule.date || !schedule.window || assigningLegId === leg.id} onClick={() => void scheduleLeg(leg.id, false)} className="min-h-11 w-full rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 lg:w-auto lg:rounded-lg">Save schedule</button></>
+                                      <button type="button" disabled={!schedule.date || !schedule.window || assigningLegId === leg.id} onClick={() => void scheduleLeg(leg.id, false)} className="min-h-11 w-full rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 lg:w-auto lg:rounded-lg">Save schedule</button>
                                     ) : (
                                       <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
                                         <label className="block min-w-0 flex-1 text-xs font-semibold text-gray-700 dark:text-gray-200">Available rider
@@ -1040,9 +1046,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                     )}
                                   </div>
                                 )}
-                                {!canScheduleLeg && (activeAssignment ? (
-                                  <p className="text-sm font-medium text-gray-700 dark:text-gray-200">Assigned to {activeAssignment.rider_profile?.name ?? 'rider'}</p>
-                                ) : canAssignLeg ? (
+                                {!canScheduleLeg && (activeAssignment ? null : canAssignLeg ? (
                                   <div className="flex flex-col gap-2 sm:flex-row">
                                     <select
                                       value={selectedRiders[leg.id] ?? ''}

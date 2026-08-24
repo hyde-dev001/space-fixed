@@ -89,6 +89,28 @@ class BatchDispatchServiceTest extends TestCase
         }
     }
 
+    public function test_create_draft_rejects_a_shop_closed_delivery_date(): void
+    {
+        $shop = ShopOwner::factory()->create(['business_type' => 'retail']);
+        LogisticsSetting::create([
+            'shop_owner_id' => $shop->id,
+            'operating_days' => [1, 2, 3, 4, 5],
+            'blackout_dates' => ['2026-07-17'],
+        ]);
+        $legs = ShipmentLeg::factory()->count(2)->create([
+            'shipment_id' => Shipment::factory()->create(['shop_owner_id' => $shop->id, 'source_type' => 'order'])->id,
+            'scheduled_delivery_date' => '2026-07-17',
+            'delivery_window' => 'morning',
+            'schedule_status' => 'scheduled',
+            'status' => 'pending',
+        ]);
+
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('Choose an operating day that is not a blackout date.');
+
+        app(BatchDispatchService::class)->createDraft($shop, '2026-07-17', 'morning', $legs->pluck('id')->all());
+    }
+
     public function test_draft_offer_accept_and_start_preserve_individual_leg_state(): void
     {
         $shop = ShopOwner::factory()->create(['registration_type' => 'company', 'business_type' => 'retail']);

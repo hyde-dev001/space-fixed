@@ -5,6 +5,7 @@ import {
   logisticsModuleLabel,
   logisticsSourceLabel,
   type LogisticsModule,
+  type LogisticsSchedule,
   type TrackingShipmentLeg,
 } from '@/types/logistics';
 import RetailOrderSummary from './RetailOrderSummary';
@@ -20,6 +21,7 @@ type Props = {
   search: string;
   date: string;
   today: string;
+  logisticsSchedule?: LogisticsSchedule;
   window: string;
   status: string;
   onSearchChange: (value: string) => void;
@@ -36,6 +38,7 @@ type Props = {
 export default function AvailableDeliveriesPanel({
   rows, totalRows, selectedIds, selectedModule, collapsed, search, date, today, window, status, loading = false,
   onSearchChange, onCollapse, onExpand, onDateChange, onWindowChange, onStatusChange,
+  logisticsSchedule,
   onToggle, onSelectAll, onClearFilters,
 }: Props) {
   const allSelected = rows.length > 0 && rows.every((leg) => selectedIds.includes(leg.id));
@@ -67,7 +70,7 @@ export default function AvailableDeliveriesPanel({
         <input aria-label="Search deliveries" value={search} onChange={(event) => onSearchChange(event.target.value)} placeholder="Order, customer, phone, address, or product" className="min-h-11 w-full rounded-xl border border-gray-300 py-2 pl-10 pr-3 text-sm" />
       </label>
       <div data-testid="batch-filter-grid" className="mt-3 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        <DeliveryDatePicker value={date} minDate={today} onChange={onDateChange} />
+        <DeliveryDatePicker value={date} minDate={today} operatingDays={logisticsSchedule?.operating_days} blackoutDates={logisticsSchedule?.blackout_dates} onChange={onDateChange} />
         <select aria-label="Delivery window" value={window} onChange={(event) => onWindowChange(event.target.value)} className="min-h-11 rounded-xl border border-gray-300 px-3 text-sm">
           <option value="morning">Morning</option>
           <option value="afternoon">Afternoon</option>

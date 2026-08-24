@@ -118,6 +118,41 @@ it('keeps the delivery date calendar visible inside the shipment modal', () => {
   expect(screen.getByRole('button', { name: 'Open delivery date picker' })).toHaveTextContent('07/22/2026');
 });
 
+it('applies shop operating days and blackout dates inside the shipment date picker', () => {
+  setDispatcherLeg({
+    ...defaultProps().shipments.data[0].legs[0],
+    status: 'pending',
+    scheduled_delivery_date: null,
+    delivery_batch_id: null,
+    assignments: [],
+  });
+  mocks.props.logisticsSchedule = { operating_days: [1, 2, 3, 4, 5], blackout_dates: ['2026-07-23'] };
+  render(<Shipments />);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Open delivery date picker' }));
+
+  expect(screen.getByRole('button', { name: 'Select July 22, 2026' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Select July 23, 2026' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Select July 25, 2026' })).toBeDisabled();
+});
+
+it('shows a centered rider-waiting state instead of assignment progress when proof is unavailable', () => {
+  setDispatcherLeg({
+    ...defaultProps().shipments.data[0].legs[0],
+    status: 'pending',
+    assignments: [],
+    proofs: [],
+  });
+  render(<Shipments />);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+
+  expect(screen.queryByText('Assignment and progress')).not.toBeInTheDocument();
+  expect(screen.getByTestId('shipment-proof-preview')).toHaveTextContent('Waiting for rider');
+  expect(screen.getByTestId('shipment-proof-preview')).toHaveClass('items-center', 'justify-center');
+});
+
 it('closes the selected shipment modal with Escape without changing the shipment list', () => {
   render(<Shipments />);
   const open = screen.getByRole('button', { name: 'Open delivery' });

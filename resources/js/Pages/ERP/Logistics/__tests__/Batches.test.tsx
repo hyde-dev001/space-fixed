@@ -149,6 +149,22 @@ it('disables past dates in the delivery date calendar', () => {
   expect(screen.getByRole('button', { name: 'Select August 15, 2026' })).toBeEnabled();
 });
 
+it('disables shop-closed weekdays and blackout dates in the delivery date calendar', () => {
+  mocks.props = {
+    ...mocks.props,
+    today: '2026-08-13',
+    logisticsSchedule: { operating_days: [1, 2, 3, 4, 5], blackout_dates: ['2026-08-17'] },
+  };
+  render(<Batches />);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Open delivery date picker' }));
+
+  expect(screen.getByRole('button', { name: 'Select August 14, 2026' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Select August 15, 2026' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Select August 17, 2026' })).toBeDisabled();
+  expect(screen.getByText('Shop-closed dates are unavailable.')).toBeInTheDocument();
+});
+
 it('selects and clears a delivery date from the calendar', () => {
   mocks.props = { ...mocks.props, today: '2026-08-13' };
   render(<Batches />);
