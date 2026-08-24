@@ -296,7 +296,7 @@ describe('MyDeliveries task-first hierarchy', () => {
     expect(screen.getByLabelText('Business type')).toHaveClass('min-h-12', 'text-base', 'xl:min-h-11', 'xl:text-sm');
   });
 
-  it('keeps the compact arrival picker open until an explicit picker action', async () => {
+  it('closes the compact arrival picker after a reason is selected', async () => {
     mocks.arrive.mockRejectedValueOnce({
       response: {
         status: 422,
@@ -314,6 +314,7 @@ describe('MyDeliveries task-first hierarchy', () => {
     fireEvent.click(screen.getByRole('button', { name: "I've arrived" }));
     await waitFor(() => expect(screen.getByLabelText('Arrival reason')).toBeVisible());
     expect(screen.getByText(/Outside geofence/)).toBeVisible();
+    expect(screen.getByLabelText('Arrival reason').closest('label')).toBeNull();
 
     fireEvent.click(screen.getByLabelText('Arrival reason'));
 
@@ -1058,8 +1059,8 @@ describe('MyDeliveries rider interactions', () => {
     });
     render(<MyDeliveries />);
 
-    fireEvent.click(screen.getByRole('button', { name: "I've arrived" }));
-    fireEvent.click(screen.getByRole('button', { name: "I've arrived" }));
+    fireEvent.click(screen.getByRole('button', { name: 'Pick up at shop' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Pick up at shop' }));
 
     await waitFor(() => expect(mocks.arrive).toHaveBeenCalledTimes(1));
     expect(mocks.confirm).not.toHaveBeenCalled();
@@ -1086,7 +1087,8 @@ describe('MyDeliveries rider interactions', () => {
     ]);
     const view = render(<MyDeliveries />);
 
-    expect(screen.getAllByRole('button', { name: "I've arrived" })).toHaveLength(2);
+    expect(screen.getByRole('button', { name: 'Pick up at shop' })).toBeVisible();
+    expect(screen.getByRole('button', { name: "I've arrived" })).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Confirm pickup' })).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Delivery proof')).not.toBeInTheDocument();
 
@@ -1140,7 +1142,7 @@ describe('MyDeliveries rider interactions', () => {
     });
     render(<MyDeliveries />);
 
-    fireEvent.click(screen.getByRole('button', { name: "I've arrived" }));
+    fireEvent.click(screen.getByRole('button', { name: 'Pick up at shop' }));
 
     await waitFor(() => expect(screen.getByLabelText('Arrival reason')).toBeVisible());
     expect(mocks.arrive).not.toHaveBeenCalled();

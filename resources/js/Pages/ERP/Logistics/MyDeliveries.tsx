@@ -103,8 +103,8 @@ function CompactModalPicker({
   }, [modalIsOpen]);
 
   const choose = (nextValue: string) => {
-    onChange(nextValue);
     setIsOpen(false);
+    onChange(nextValue);
   };
 
   return (
@@ -846,8 +846,13 @@ function DeliveryActions({
         aria-label={isRepairPickup ? 'Failed pickup details' : 'Delivery issue details'}
         className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 text-slate-950 dark:border-slate-700 dark:bg-slate-950 dark:text-white sm:p-5"
       >
-        <label className="block text-sm font-semibold">
-          {isRepairPickup ? 'Failed pickup reason' : 'Issue reason'}
+        <div className="block text-sm font-semibold">
+          <label
+            className="block"
+            htmlFor={`${isRepairPickup ? 'failed-pickup' : 'delivery-issue'}-reason-${delivery.id}`}
+          >
+            {isRepairPickup ? 'Failed pickup reason' : 'Issue reason'}
+          </label>
           <CompactModalPicker
             pickerId={`${isRepairPickup ? 'failed-pickup' : 'delivery-issue'}-reason-${delivery.id}`}
             label={isRepairPickup ? 'Failed pickup reason' : 'Issue reason'}
@@ -856,7 +861,7 @@ function DeliveryActions({
             options={issueOptions}
             placeholder="Choose a reason"
           />
-        </label>
+        </div>
         <label className="block text-sm font-semibold">
           {isRepairPickup ? 'Failed pickup notes' : 'Notes'} {requiresIssueNotes ? '(required)' : '(optional)'}
           <textarea
@@ -911,8 +916,10 @@ function DeliveryActions({
         aria-label="Delivery incident details"
         className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 text-slate-950 dark:border-slate-700 dark:bg-slate-950 dark:text-white sm:p-5"
       >
-        <label className="block text-sm font-semibold">
-          Incident type
+        <div className="block text-sm font-semibold">
+          <label className="block" htmlFor={`delivery-incident-type-${delivery.id}`}>
+            Incident type
+          </label>
           <CompactModalPicker
             pickerId={`delivery-incident-type-${delivery.id}`}
             label="Incident type"
@@ -921,7 +928,7 @@ function DeliveryActions({
             options={incidentTypes}
             placeholder="Choose an incident"
           />
-        </label>
+        </div>
         <label className="block text-sm font-semibold">
           What happened?
           <textarea
@@ -957,6 +964,7 @@ function DeliveryActions({
       ? 'dropoff'
       : null;
   const arrival = arrivalPhase ? delivery.arrivals?.[arrivalPhase] : undefined;
+  const arrivalActionLabel = arrivalPhase === 'pickup' ? 'Pick up at shop' : "I've arrived";
   const arrivalKey = `arrival:${delivery.id}`;
   const recordArrival = () => {
     if (!arrivalPhase) return;
@@ -1012,7 +1020,7 @@ function DeliveryActions({
         onClick={recordArrival}
         className={buttonClass}
       >
-        I've arrived
+        {arrivalActionLabel}
       </button>
       {!online && (
         <p role="status" className="text-center text-sm font-semibold text-amber-700 dark:text-amber-300">
@@ -1026,8 +1034,10 @@ function DeliveryActions({
               ? `${arrivalResult}. Choose a reason to continue.`
               : 'Location could not be verified. Choose a reason to continue.'}
           </p>
-          <label className="block text-sm font-semibold">
-            Arrival reason
+          <div className="block text-sm font-semibold">
+            <label className="block" htmlFor={`arrival-reason-${delivery.id}`}>
+              Arrival reason
+            </label>
             <CompactModalPicker
               pickerId={`arrival-reason-${delivery.id}`}
               label="Arrival reason"
@@ -1037,7 +1047,7 @@ function DeliveryActions({
               placeholder="Choose a reason"
               className="xl:border-amber-300 xl:focus:ring-amber-500 xl:dark:border-amber-800 xl:dark:bg-slate-900"
             />
-          </label>
+          </div>
           <label className="block text-sm font-semibold">
             Arrival notes {arrivalReason === 'other' ? '(required)' : '(optional)'}
             <textarea
