@@ -1,5 +1,10 @@
 export type LogisticsModule = 'retail' | 'repair';
 
+export type LogisticsSchedule = {
+  operating_days: number[];
+  blackout_dates: string[];
+};
+
 export const logisticsModuleForSourceType = (sourceType?: string | null): LogisticsModule | null => {
   if (sourceType === 'order' || sourceType === 'order_refund') return 'retail';
   if (sourceType === 'repair_request') return 'repair';
@@ -277,6 +282,7 @@ export type DeliveryBatch = {
 
 export type DeliveryBatchPageProps = {
   today?: string;
+  logisticsSchedule?: LogisticsSchedule;
   batches: DeliveryBatch[];
   pool: TrackingShipmentLeg[];
   unscheduled: TrackingShipmentLeg[];

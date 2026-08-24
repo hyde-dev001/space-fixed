@@ -5,6 +5,8 @@ type Props = {
   value: string;
   minDate: string;
   onChange: (value: string) => void;
+  operatingDays?: number[];
+  blackoutDates?: string[];
   disabled?: boolean;
   calendarId?: string;
   insideModal?: boolean;
@@ -36,7 +38,7 @@ const todayFallback = () => {
   return `${value('year')}-${value('month')}-${value('day')}`;
 };
 
-export default function DeliveryDatePicker({ value, minDate, onChange, disabled = false, calendarId = 'delivery-date-calendar', insideModal = false }: Props) {
+export default function DeliveryDatePicker({ value, minDate, onChange, operatingDays = [], blackoutDates = [], disabled = false, calendarId = 'delivery-date-calendar', insideModal = false }: Props) {
   const minimum = minDate || todayFallback();
   const minimumDate = parseDate(minimum) ?? firstOfMonth(new Date());
   const initialMonth = firstOfMonth(parseDate(value) ?? minimumDate);
@@ -83,15 +85,25 @@ export default function DeliveryDatePicker({ value, minDate, onChange, disabled 
   const calendarClassName = insideModal
     ? 'fixed left-1/2 top-1/2 z-[100000] max-h-[calc(100dvh-2rem)] w-[min(28rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl border border-gray-200 bg-white p-4 shadow-xl dark:border-gray-700 dark:bg-gray-800'
     : 'absolute left-1/2 top-full z-30 mt-2 w-[min(28rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-2xl border border-gray-200 bg-white p-4 shadow-xl dark:border-gray-700 dark:bg-gray-800 xl:left-0 xl:translate-x-0';
+  const isShopClosed = (date: Date) => (operatingDays.length > 0 && !operatingDays.includes(date.getUTCDay() || 7)) || blackoutDates.includes(dateKey(date));
+  const isUnavailable = (date: Date) => dateKey(date) < minimum || isShopClosed(date);
   const chooseDate = (date: Date) => {
     const nextValue = dateKey(date);
-    if (nextValue < minimum) return;
+    if (isUnavailable(date)) return;
     onChange(nextValue);
     setOpen(false);
   };
+  const updateInputValue = (nextValue: string) => {
+    if (!nextValue) {
+      onChange('');
+      return;
+    }
+    const nextDate = parseDate(nextValue);
+    if (nextDate && !isShopClosed(nextDate)) onChange(nextValue);
+  };
 
   return <div ref={rootRef} className="relative min-w-0">
-    <input aria-label="Delivery date" tabIndex={-1} value={value} onChange={(event) => onChange(event.target.value)} className="sr-only" />
+    <input aria-label="Delivery date" tabIndex={-1} value={value} onChange={(event) => updateInputValue(event.target.value)} className="sr-only" />
     <button
       type="button"
       aria-label="Open delivery date picker"
@@ -123,20 +135,26 @@ export default function DeliveryDatePicker({ value, minDate, onChange, disabled 
           if (!day) return <span key={`empty-${index}`} aria-hidden="true" className="min-h-10" />;
           const valueForDay = dateKey(day);
           const isPast = valueForDay < minimum;
+          const isShopClosedDate = isShopClosed(day);
+          const unavailable = isUnavailable(day);
           const isSelected = valueForDay === value;
           return <button
             key={valueForDay}
             type="button"
             aria-label={`Select ${dateFormatter.format(day)}`}
-            disabled={isPast}
+            disabled={unavailable}
+            title={isPast ? 'Past date' : isShopClosedDate ? 'Shop closed' : undefined}
             aria-pressed={isSelected}
             onClick={() => chooseDate(day)}
-            className={`min-h-10 rounded-lg border text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-blue-500 ${isSelected ? 'border-blue-600 bg-blue-600 text-white shadow-sm' : isPast ? 'cursor-not-allowed border-gray-100 bg-gray-100 text-gray-400 dark:border-gray-700 dark:bg-gray-700 dark:text-gray-500' : 'border-gray-200 text-gray-700 hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700'}`}
+            className={`min-h-10 rounded-lg border text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-blue-500 ${isSelected ? 'border-blue-600 bg-blue-600 text-white shadow-sm' : unavailable ? 'cursor-not-allowed border-gray-100 bg-gray-100 text-gray-400 dark:border-gray-700 dark:bg-gray-700 dark:text-gray-500' : 'border-gray-200 text-gray-700 hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700'}`}
           >{day.getUTCDate()}</button>;
         })}
       </div>
       <div className="mt-4 flex items-center justify-between gap-3 border-t border-gray-100 pt-3 dark:border-gray-700">
-        <span className="text-xs text-gray-500">Past dates are unavailable.</span>
+        <div className="flex flex-col gap-1 text-xs text-gray-500">
+          <span>Past dates are unavailable.</span>
+          <span>Shop-closed dates are unavailable.</span>
+        </div>
         <button type="button" aria-label="Clear date" disabled={!value} onClick={() => { onChange(''); setOpen(false); }} className="text-xs font-bold text-blue-600 hover:text-blue-700 disabled:cursor-not-allowed disabled:text-gray-400">Clear date</button>
       </div>
     </div>}
