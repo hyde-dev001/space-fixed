@@ -13,7 +13,7 @@ const state = vi.hoisted(() => ({
   moduleEnforcementEnabled: undefined as boolean | undefined,
   erpActor: null as null | { type: string; ownerMode: boolean },
   erpCapabilities: {} as Record<string, unknown>,
-  erpUrls: { workspace: null as string | null },
+  erpUrls: { portal: null as string | null | undefined, workspace: null as string | null },
   activeModule: null as null | {
     key: string;
     slug: string;
@@ -53,6 +53,8 @@ vi.mock('@inertiajs/react', () => ({
 vi.mock('ziggy-js', () => ({
   route: (name: string) => {
     if (name === 'landing') return '/';
+    if (name === 'erp.time-in') return '/erp/time-in';
+    if (name === 'shop-owner.dashboard') return '/shop-owner.dashboard';
     const ownerSubmenuPaths: Record<string, string> = {
       'shop-owner.logistics.dashboard': '/shop-owner/logistics',
       'shop-owner.logistics.shipments': '/shop-owner/logistics/shipments',
@@ -92,7 +94,7 @@ beforeEach(() => {
   state.moduleEnforcementEnabled = undefined;
   state.erpActor = null;
   state.erpCapabilities = {};
-  state.erpUrls = { workspace: null };
+  state.erpUrls = { portal: null, workspace: null };
   state.activeModule = null;
   state.shopOwner = {
     registration_type: 'company',
@@ -131,6 +133,7 @@ it('keeps supplier orders under Inventory without showing Procurement pages', ()
 
   const { container } = render(<AppSidebarERP />);
 
+  expect(screen.getByRole('link', { name: 'SoleSpace' })).toHaveAttribute('href', '/erp/time-in');
   expect(container.querySelector('aside')).toHaveClass('xl:mt-0', 'xl:translate-x-0');
   expect(screen.getByRole('link', { name: /supplier orders/i })).toBeInTheDocument();
   expect(screen.queryByRole('link', { name: /purchase requests/i })).not.toBeInTheDocument();

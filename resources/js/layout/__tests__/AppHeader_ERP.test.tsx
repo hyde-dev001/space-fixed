@@ -15,6 +15,15 @@ vi.mock('@inertiajs/react', () => ({
   ),
 }));
 
+vi.mock('ziggy-js', () => ({
+  route: (name: string) => {
+    if (name === 'landing') return '/';
+    if (name === 'erp.time-in') return '/erp/time-in';
+    if (name === 'shop-owner.dashboard') return '/shop-owner/dashboard';
+    return `/${name}`;
+  },
+}));
+
 vi.mock('../../context/SidebarContext', () => ({
   useSidebar: () => ({
     isMobileOpen: false,
@@ -94,6 +103,7 @@ it('hides the center owner identity pill while keeping the account dropdown', ()
   expect(screen.getByRole('banner')).toHaveClass('xl:border-b');
   const compactBrand = screen.getByRole('link', { name: 'SoleSpace' });
   expect(compactBrand).toHaveClass('xl:hidden');
+  expect(compactBrand).toHaveAttribute('href', '/shop-owner/dashboard');
   expect(compactBrand.querySelector('svg')).not.toBeInTheDocument();
   expect(screen.queryByText('TailAdmin')).not.toBeInTheDocument();
   expect(screen.queryByText('North Star Shoes')).not.toBeInTheDocument();
@@ -133,6 +143,7 @@ it('keeps employee identity and notification selection in employee mode', () => 
 
   render(<AppHeaderERP />);
 
+  expect(screen.getByRole('link', { name: 'SoleSpace' })).toHaveAttribute('href', '/erp/time-in');
   expect(screen.getByTestId('user-dropdown')).toBeInTheDocument();
   expect(screen.queryByTestId('shop-owner-dropdown')).not.toBeInTheDocument();
   expect(screen.queryByText('Owner mode')).not.toBeInTheDocument();
