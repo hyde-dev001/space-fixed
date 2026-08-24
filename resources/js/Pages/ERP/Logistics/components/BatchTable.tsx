@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Activity, AlertTriangle, Eye, MoreHorizontal, Pencil, RotateCcw, Send } from 'lucide-react';
 import { logisticsModuleLabel, type DeliveryBatch, type DeliveryBatchStatus } from '@/types/logistics';
@@ -46,12 +46,47 @@ function FloatingActions({ batch, onReview, onCancel }: Pick<Props, 'onReview' |
   const [position, setPosition] = useState({ top: 0, left: 0 });
 
   const close = () => setOpen(false);
+  const positionMenu = useCallback(() => {
+    const trigger = triggerRef.current;
+    if (!trigger) return;
+
+    const triggerRect = trigger.getBoundingClientRect();
+    const menuWidth = menuRef.current?.offsetWidth || 176;
+    const menuHeight = menuRef.current?.offsetHeight || 0;
+    const viewportPadding = 8;
+    const belowTop = triggerRect.bottom + viewportPadding;
+    const maxTop = Math.max(viewportPadding, window.innerHeight - menuHeight - viewportPadding);
+    const top = menuHeight > 0 && belowTop > maxTop
+      ? Math.max(viewportPadding, triggerRect.top - menuHeight - viewportPadding)
+      : belowTop;
+    const maxLeft = Math.max(viewportPadding, window.innerWidth - menuWidth - viewportPadding);
+
+    setPosition({
+      top,
+      left: Math.min(maxLeft, Math.max(viewportPadding, triggerRect.right - menuWidth)),
+    });
+  }, []);
+
   const toggle = () => {
     if (!triggerRef.current) return;
     const rect = triggerRef.current.getBoundingClientRect();
     setPosition({ top: rect.bottom + 8, left: Math.max(8, rect.right - 176) });
     setOpen((value) => !value);
   };
+
+  useLayoutEffect(() => {
+    if (!open) return;
+
+    positionMenu();
+    const handleViewportChange = () => positionMenu();
+    window.addEventListener('resize', handleViewportChange);
+    document.addEventListener('scroll', handleViewportChange, true);
+
+    return () => {
+      window.removeEventListener('resize', handleViewportChange);
+      document.removeEventListener('scroll', handleViewportChange, true);
+    };
+  }, [open, positionMenu]);
 
   useEffect(() => {
     if (!open) return;
@@ -71,7 +106,7 @@ function FloatingActions({ batch, onReview, onCancel }: Pick<Props, 'onReview' |
   }, [open]);
 
   const menu = open && typeof document !== 'undefined' ? createPortal(
-    <div ref={menuRef} role="menu" aria-label={`Actions for batch ${batch.id}`} className="fixed z-[100] w-44 rounded-lg border border-gray-200 bg-white p-1 shadow-xl dark:border-gray-700 dark:bg-gray-800" style={{ top: position.top, left: position.left }}>
+    <div ref={menuRef} role="menu" aria-label={`Actions for batch ${batch.id}`} className="fixed z-[100] max-h-[calc(100dvh-1rem)] w-44 overflow-y-auto rounded-lg border border-gray-200 bg-white p-1 shadow-xl dark:border-gray-700 dark:bg-gray-800" style={{ top: position.top, left: position.left }}>
       {batch.status === 'draft' && onReview && <button type="button" role="menuitem" onClick={() => { close(); onReview(batch.id); }} className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700">Review &amp; Offer</button>}
       {['draft', 'offered', 'accepted'].includes(batch.status) && onCancel && <button type="button" role="menuitem" onClick={() => { close(); onCancel(batch.id); }} className="block w-full rounded px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30">Cancel batch</button>}
     </div>,
