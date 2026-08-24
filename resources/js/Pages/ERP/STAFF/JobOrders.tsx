@@ -1262,6 +1262,8 @@ export default function JobOrdersPage() {
       setOrders((prev) =>
         prev.map((o) => (o.id === order.id ? { ...o, status: "processing", processedAt: new Date().toLocaleString() } : o))
       );
+      setIsViewModalOpen(false);
+      setViewOrder(null);
 
       await Swal.fire({
         title: "Order processed",
@@ -2226,7 +2228,7 @@ export default function JobOrdersPage() {
                           {order.status === "pending" && (
                             <button
                               type="button"
-                              onClick={() => handleProcessOrder(order)}
+                              onClick={() => handleViewOrder(order)}
                               className="p-2 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition-colors"
                               title="Start processing"
                               aria-label="Start processing"
@@ -2862,6 +2864,16 @@ export default function JobOrdersPage() {
               </div>
 
               <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex gap-3">
+                {viewOrder.status === "pending" && (
+                  <button
+                    type="button"
+                    onClick={() => handleProcessOrder(viewOrder)}
+                    aria-label="Process Order"
+                    className="px-4 py-2 border border-blue-600 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
+                  >
+                    Process Order
+                  </button>
+                )}
                 {canConfirmReturnReceived(viewOrder) && (
                   <button
                     onClick={() => handleConfirmReturnReceived(viewOrder)}
