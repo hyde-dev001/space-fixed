@@ -39,7 +39,7 @@ vi.mock('../../components/common/NotificationBell', () => ({
 }));
 
 vi.mock('../../components/common/ThemeToggleButton', () => ({
-  ThemeToggleButton: () => <div data-testid="theme-toggle" />,
+  ThemeToggleButton: () => <button type="button" aria-label="Toggle theme" data-testid="theme-toggle" />,
 }));
 
 vi.mock('../../components/header/UserDropdown', () => ({
@@ -113,6 +113,7 @@ it('hides the center owner identity pill while keeping the account dropdown', ()
   expect(screen.getByTestId('shop-owner-dropdown')).toBeInTheDocument();
   expect(screen.getByTestId('shop-owner-dropdown')).toHaveAttribute('data-profile-url', '/shop-owner/shop-profile');
   expect(screen.getByTestId('shop-owner-dropdown')).toHaveAttribute('data-logout-url', '/shop-owner/logout');
+  expect(screen.getByTestId('theme-toggle').parentElement).toHaveClass('hidden', 'xl:contents');
 });
 
 it('keeps employee identity and notification selection in employee mode', () => {
@@ -165,18 +166,22 @@ it('opens the compact application menu as a non-modal dropdown and keeps notific
   expect(trigger).toHaveAttribute('aria-expanded', 'true');
   expect(trigger).toHaveAttribute('aria-haspopup', 'true');
   expect(screen.getByText('Alerts & notifications').parentElement).toHaveClass('xl:hidden');
-  expect(screen.getByText('Appearance')).toBeInTheDocument();
-  expect(screen.getByTestId('inline-shop-owner-dropdown')).toBeInTheDocument();
-  expect(
-    screen.getByText('Appearance').compareDocumentPosition(screen.getByTestId('inline-shop-owner-dropdown')) &
-      Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
+  const menu = screen.getByRole('region', { name: 'Application menu' });
+  const title = within(menu).getByRole('heading', { name: 'Application menu' });
+  const menuHeader = title.parentElement?.parentElement;
+  expect(menuHeader).not.toBeNull();
+  expect(within(menuHeader as HTMLElement).getByTestId('theme-toggle')).toBeInTheDocument();
+  expect(screen.getAllByTestId('theme-toggle')).toHaveLength(2);
+  expect(within(menu).queryByText('Appearance')).not.toBeInTheDocument();
+  expect(within(menu).queryByText('Account')).not.toBeInTheDocument();
+  expect(within(menu).queryByTestId('inline-shop-owner-dropdown')).not.toBeInTheDocument();
+  expect(within(menu).queryByText('Shop Profile')).not.toBeInTheDocument();
+  expect(within(menu).queryByText('Sign Out')).not.toBeInTheDocument();
+  expect(screen.getByTestId('shop-owner-dropdown')).toBeInTheDocument();
   const compactActions = screen.getByRole('region', { name: 'Application menu' }).querySelector<HTMLElement>('.grid');
   expect(compactActions).not.toBeNull();
   expect(compactActions).toHaveClass('grid-cols-1');
   expect(compactActions).not.toHaveClass('sm:grid-cols-2');
-  expect(screen.getByText('Shop Profile')).toBeInTheDocument();
-  expect(screen.getByText('Sign Out')).toBeInTheDocument();
   expect(document.body.style.overflow).toBe('');
 
   fireEvent.keyDown(document, { key: 'Escape' });
@@ -197,7 +202,7 @@ it('closes the compact application menu when clicking outside the dropdown', () 
   expect(screen.queryByRole('region', { name: 'Application menu' })).not.toBeInTheDocument();
 });
 
-it('renders regular account actions directly inside the compact menu', () => {
+it('keeps duplicate account actions out of the compact application menu', () => {
   state.url = '/erp/staff/dashboard';
   state.props = {
     auth: {
@@ -212,8 +217,8 @@ it('renders regular account actions directly inside the compact menu', () => {
   fireEvent.click(screen.getByRole('button', { name: 'Toggle Application Menu' }));
 
   const menu = screen.getByRole('region', { name: 'Application menu' });
-  expect(within(menu).getByTestId('inline-user-dropdown')).toBeInTheDocument();
-  expect(within(menu).getByText('Profile & Password')).toBeInTheDocument();
-  expect(within(menu).getByText('Sign Out')).toBeInTheDocument();
-  expect(screen.getAllByTestId('user-dropdown')).toHaveLength(1);
+  expect(within(menu).queryByTestId('inline-user-dropdown')).not.toBeInTheDocument();
+  expect(within(menu).queryByText('Profile & Password')).not.toBeInTheDocument();
+  expect(within(menu).queryByText('Sign Out')).not.toBeInTheDocument();
+  expect(screen.getByTestId('user-dropdown')).toBeInTheDocument();
 });
