@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, usePage } from "@inertiajs/react";
+import { route } from "ziggy-js";
 import { useSidebar } from "../context/SidebarContext";
 import { ThemeToggleButton } from "../components/common/ThemeToggleButton";
 import UserDropdown from "../components/header/UserDropdown";
@@ -14,6 +15,11 @@ const AppHeader_ERP: React.FC = () => {
   const erpActor = auth?.erpActor as ErpActor | undefined;
   const erpUrls = (page.props as any).erpUrls as Partial<ErpUrls> | undefined;
   const ownerMode = erpActor?.type === "shop_owner" && erpActor.ownerMode === true;
+  const homeHref = ownerMode
+    ? (typeof erpUrls?.portal === "string" ? erpUrls.portal : route("shop-owner.dashboard"))
+    : erpActor?.type === "employee"
+      ? route("erp.time-in")
+      : route("landing");
   const [isApplicationMenuOpen, setApplicationMenuOpen] = useState(false);
   const applicationMenuRef = useRef<HTMLDivElement>(null);
   const applicationMenuTriggerRef = useRef<HTMLButtonElement>(null);
@@ -150,7 +156,7 @@ const AppHeader_ERP: React.FC = () => {
             )}
           </button>
 
-          <Link href={route("landing")} className="inline-flex items-center gap-2 xl:hidden" aria-label="SoleSpace">
+          <Link href={homeHref} className="inline-flex items-center gap-2 xl:hidden" aria-label="SoleSpace">
             <span className="text-xl font-bold tracking-tight text-gray-900 dark:text-white">SoleSpace</span>
           </Link>
 

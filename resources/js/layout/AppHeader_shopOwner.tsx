@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "@inertiajs/react";
+import { route } from "ziggy-js";
 import { useSidebar } from "../context/SidebarContext";
 import { ThemeToggleButton } from "../components/common/ThemeToggleButton";
 import NotificationCenter from "../components/header/NotificationCenter";
@@ -83,7 +84,7 @@ const AppHeader_shopOwner: React.FC = () => {
             {/* Cross Icon */}
           </button>
 
-          <Link href={route("landing")} className="lg:hidden">
+          <Link href={route("shop-owner.dashboard")} className="lg:hidden">
             <img
               className="dark:hidden"
               src="/images/logo/logo.svg"

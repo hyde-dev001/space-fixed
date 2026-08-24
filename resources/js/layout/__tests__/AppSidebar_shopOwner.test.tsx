@@ -8,7 +8,7 @@ const state = vi.hoisted(() => ({
   shopModules: {} as Record<string, unknown> | undefined,
   moduleStates: {} as Record<string, unknown>,
   moduleEnforcementEnabled: undefined as boolean | undefined,
-  erpUrls: { workspace: null as string | null },
+  erpUrls: { portal: null as string | null | undefined, workspace: null as string | null },
   activeModule: null as {
     label: string;
     pages: Array<{
@@ -90,13 +90,14 @@ beforeEach(() => {
   state.shopModules = accessible({ logistics: false, repair_operations: false });
   state.moduleStates = state.shopModules;
   state.moduleEnforcementEnabled = undefined;
-  state.erpUrls = { workspace: null };
+  state.erpUrls = { portal: '/shop-owner/dashboard', workspace: null };
   state.activeModule = null;
 });
 
 it('hides disabled owner modules while keeping core dashboard visible', () => {
   render(<AppSidebarShopOwner />);
 
+  expect(screen.getByRole('link', { name: 'SoleSpace' })).toHaveAttribute('href', '/shop-owner/dashboard');
   expect(document.querySelector('a[href="/shop-owner.dashboard"]')).toBeInTheDocument();
   expect(screen.queryByText('Employee Modules', { exact: true })).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: /^Logistics$/i })).not.toBeInTheDocument();

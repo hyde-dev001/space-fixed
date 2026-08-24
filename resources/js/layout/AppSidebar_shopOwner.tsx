@@ -164,7 +164,10 @@ const AppSidebar_shopOwner: React.FC<AppSidebarShopOwnerProps> = ({ activeModule
   const moduleEnforcementEnabled = auth?.shopModuleEnforcementEnabled
     ?? (props as any)?.shopModuleEnforcementEnabled
     ?? Boolean(shopModules);
-  const erpUrls = (props as any)?.erpUrls as { workspace?: string | null } | undefined;
+  const erpUrls = (props as any)?.erpUrls as { portal?: string | null; workspace?: string | null } | undefined;
+  const ownerPortalUrl = typeof erpUrls?.portal === "string"
+    ? erpUrls.portal
+    : route("shop-owner.dashboard");
   const isCompanyAccount = shopOwner?.is_company === true
     || shopOwner?.registration_type?.toLowerCase() === "company";
   const ownerWorkspaceUrl = isCompanyAccount && typeof erpUrls?.workspace === "string"
@@ -670,8 +673,8 @@ const AppSidebar_shopOwner: React.FC<AppSidebarShopOwnerProps> = ({ activeModule
         className={`py-8 flex ${!isExpanded && !isHovered ? "lg:justify-center" : "justify-start"
           }`}
       >
-                <Link
-          href={route("landing")}
+        <Link
+          href={ownerPortalUrl}
           prefetch={SIDEBAR_PREFETCH}
           cacheFor={SIDEBAR_PREFETCH_CACHE}
           className="flex items-center gap-2 hover:scale-105 transition-transform duration-200"
