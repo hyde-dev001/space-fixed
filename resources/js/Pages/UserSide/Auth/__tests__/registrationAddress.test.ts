@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parsePhilippineAddress } from '../registrationAddress';
+import { getRegistrationAddressFields, parsePhilippineAddress } from '../registrationAddress';
 
 describe('parsePhilippineAddress', () => {
   it('maps a Philippine Nominatim result to shipping fields', () => {
@@ -34,5 +34,25 @@ describe('parsePhilippineAddress', () => {
       lat: '10.2', lon: '123.7',
       address: { state: 'Central Visayas', village: 'Mountain Barangay', country_code: 'ph' },
     })).toBeNull();
+  });
+});
+
+describe('getRegistrationAddressFields', () => {
+  it('maps reverse-geocoded postal codes for registration', () => {
+    expect(getRegistrationAddressFields({
+      display_name: 'Vibrant Street, Dasmarinas, Cavite',
+      address: { postcode: '4114' },
+    })).toEqual({
+      businessAddress: 'Vibrant Street, Dasmarinas, Cavite',
+      postalCode: '4114',
+    });
+
+    expect(getRegistrationAddressFields({
+      display_name: 'Vibrant Street, Dasmarinas, Cavite',
+      address: {},
+    })).toEqual({
+      businessAddress: 'Vibrant Street, Dasmarinas, Cavite',
+      postalCode: '',
+    });
   });
 });
