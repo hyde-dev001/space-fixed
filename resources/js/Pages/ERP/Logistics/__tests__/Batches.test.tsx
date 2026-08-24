@@ -648,6 +648,41 @@ const batchForStatus = (id: number, status: string) => ({
   legs: [{ ...unscheduledLeg, id: id * 10, status: status === 'completed' ? 'delivered' : 'pending', stop_sequence: 1, scheduled_delivery_date: '2026-07-15', delivery_window: 'morning' }],
 });
 
+it('keeps bottom-edge batch actions visible inside the viewport', async () => {
+  mocks.props.batches = [batchForStatus(1, 'draft')];
+  render(<Batches />);
+
+  const trigger = getCompactBatchButton('More actions for batch 1');
+  vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue({
+    top: 100,
+    right: 300,
+    bottom: 145,
+    left: 260,
+    width: 40,
+    height: 45,
+    x: 260,
+    y: 100,
+    toJSON: () => ({}),
+  });
+  const previousInnerHeight = Object.getOwnPropertyDescriptor(window, 'innerHeight');
+  Object.defineProperty(window, 'innerHeight', { configurable: true, value: 160 });
+
+  try {
+    fireEvent.click(trigger);
+    const menu = screen.getByRole('menu', { name: 'Actions for batch 1' });
+    Object.defineProperty(menu, 'offsetHeight', { configurable: true, value: 82 });
+    fireEvent(window, new Event('resize'));
+
+    await waitFor(() => {
+      const menuTop = Number.parseFloat(menu.style.top);
+      expect(menuTop).toBeLessThan(100);
+      expect(menuTop + menu.offsetHeight).toBeLessThanOrEqual(window.innerHeight - 8);
+    });
+  } finally {
+    if (previousInnerHeight) Object.defineProperty(window, 'innerHeight', previousInnerHeight);
+  }
+});
+
 it('collapses available deliveries while editing and reopens it for a new batch', () => {
   mocks.props.batches = [batchForStatus(1, 'draft')];
   render(<Batches />);
