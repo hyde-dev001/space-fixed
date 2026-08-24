@@ -153,7 +153,7 @@ git diff --cached --check
 git commit -m "fix: autofill registration postal code from GPS"
 ```
 
-- [ ] **Step 4: Rebase and push the feature branch**
+- [x] **Step 4: Rebase and push the feature branch**
 
 ```powershell
 git fetch origin --prune
