@@ -89,6 +89,20 @@ export type CustomerDeliveryProof = {
   status: 'Delivered';
 };
 
+export type RiderProgressState =
+  | 'active'
+  | 'proof_submitted'
+  | 'proof_action_required'
+  | 'rider_released';
+
+export type ProofReviewSummary = {
+  state: string;
+  proof_id?: number | null;
+  replaces_proof_id?: number | null;
+  rejection_reason?: string | null;
+  replacement_allowed?: boolean;
+};
+
 export type TrackingShipmentLeg = {
   id: number;
   delivery_batch_id?: number | null;
@@ -96,6 +110,8 @@ export type TrackingShipmentLeg = {
   sequence: number;
   leg_type: string;
   status: string;
+  rider_progress_state?: RiderProgressState;
+  proof_review?: ProofReviewSummary | null;
   resolution_type?: string | null;
   resolution_reason?: string | null;
   failed_attempt_count?: number;
@@ -146,6 +162,11 @@ export type TrackingShipmentLeg = {
     proof_type: string;
     proof_url?: string | null;
     review_status?: string;
+    rejection_reason?: string | null;
+    replaces_proof_id?: number | null;
+    recorded_at?: string | null;
+    reviewed_at?: string | null;
+    reviewed_by_id?: number | null;
   }>;
   attempts?: Array<{
     id: number;
@@ -321,12 +342,16 @@ export type RiderDeliveryWorkItem = {
 
 export type RiderDeliveryIssue = {
   item_type: 'issue';
+  issue_type?: 'delivery_attempt' | 'proof_correction';
   key: string;
   id: number;
   delivery_id: number;
   parent_key: string;
   business_types: Array<Exclude<RiderDeliveryBusiness, 'all'>>;
   reason?: string | null;
+  proof_id?: number | null;
+  replaces_proof_id?: number | null;
+  replacement_allowed?: boolean;
   attempted_at?: string | null;
   delivery_date?: string | null;
 };

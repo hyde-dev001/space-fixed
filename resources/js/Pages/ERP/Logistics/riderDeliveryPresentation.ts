@@ -3,6 +3,7 @@ import type {
   RiderDeliveryBusiness,
   RiderDeliveryIssue,
   RiderDeliveryWorkItem,
+  RiderProgressState,
   TrackingShipmentLeg,
 } from '@/types/logistics';
 
@@ -31,6 +32,10 @@ const actionableStatuses = new Set([
   'in_transit',
 ]);
 
+const riderCanProgress = (delivery: TrackingShipmentLeg) =>
+  delivery.rider_progress_state === undefined
+  || delivery.rider_progress_state === 'active';
+
 export const orderedDeliveries = (deliveries: TrackingShipmentLeg[]) =>
   [...deliveries].sort(
     (a, b) =>
@@ -52,9 +57,19 @@ export const completedProgress = (deliveries: TrackingShipmentLeg[]) => {
 
 export const nextActionableDelivery = (deliveries: TrackingShipmentLeg[]) =>
   orderedDeliveries(deliveries).find((delivery) =>
-    actionableStatuses.has(delivery.status)
-    || (delivery.status === 'needs_resolution' && delivery.resolution_type === 'retry'),
+    riderCanProgress(delivery)
+    && (
+      actionableStatuses.has(delivery.status)
+      || (delivery.status === 'needs_resolution' && delivery.resolution_type === 'retry')
+    ),
   );
+
+export const riderProgressLabel = (state?: RiderProgressState) => ({
+  active: 'Active delivery',
+  proof_submitted: 'Submitted for dispatcher review',
+  proof_action_required: 'Proof correction required',
+  rider_released: 'Rider released',
+}[state ?? 'active'] ?? 'Active delivery');
 
 export const riderResolutionInstruction = (delivery: TrackingShipmentLeg) => {
   if (delivery.resolution_type === 'retry') {
@@ -95,6 +110,9 @@ export const deliveryStatusLabel = (status: string) => {
     in_transit: 'Delivering',
     delivery_attempted: 'Needs attention',
     awaiting_proof_approval: 'Waiting for proof approval',
+    proof_submitted: 'Submitted for dispatcher review',
+    proof_action_required: 'Proof correction required',
+    proof_correction_required: 'Proof correction required',
     needs_resolution: 'Resolution required',
     delivered: 'Delivered',
     completed: 'Completed',

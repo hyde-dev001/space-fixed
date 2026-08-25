@@ -38,6 +38,7 @@ const statusOptions = [
   ['requested', 'Requested'],
   ['active', 'Active'],
   ['awaiting_proof_approval', 'Awaiting Proof Approval'],
+  ['proof_correction_required', 'Proof Correction Required'],
   ['customer_disputes', 'Customer Disputes'],
   ['failed_attempts', 'Failed attempts'],
   ['failed_pickups', 'Failed pickups'],
@@ -52,6 +53,7 @@ const riderStatusOptions = [
   ['in_transit', 'In Transit'],
   ['delivery_attempted', 'Delivery Attempted'],
   ['awaiting_proof_approval', 'Awaiting Proof Approval'],
+  ['proof_correction_required', 'Proof Correction Required'],
   ['delivered', 'Delivered'],
   ['cancelled', 'Cancelled'],
 ];
@@ -608,9 +610,10 @@ export default function Shipments({ children }: React.PropsWithChildren) {
             const pickupRescheduled = pickupAttempt && !failedPickup;
             const failed = legs.some((leg) => leg.attempts?.[0]?.status === 'failed');
             const awaitingProof = legs.some((leg) => leg.status === 'awaiting_proof_approval');
+            const proofCorrectionRequired = legs.some((leg) => leg.status === 'proof_correction_required');
             const overdue = legs.some((leg) => Boolean(leg.scheduled_delivery_date)
               && leg.scheduled_delivery_date!.slice(0, 10) < today
-              && !['delivered', 'cancelled'].includes(leg.status));
+              && !['delivered', 'cancelled', 'proof_correction_required'].includes(leg.status));
             const selected = selectedShipmentId === shipment.id;
 
             return <article key={shipment.id} className="min-w-0 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
@@ -657,6 +660,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                         ? <span className="rounded-full bg-blue-100 px-2 py-1 text-xs font-semibold text-blue-800">Pickup rescheduled</span>
                       : failed && <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800">Failed attempt</span>}
                     {awaitingProof && <span className="rounded-full bg-purple-100 px-2 py-1 text-xs font-semibold text-purple-700">Awaiting proof</span>}
+                    {proofCorrectionRequired && <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800">Proof correction required</span>}
                   </div>
                 </div>
                 <button
@@ -795,7 +799,10 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                             const requiresIssuePhoto = photoIssueReasons.has(issueForm.reason_code);
                             const requiresIssueNotes = noteIssueReasons.has(issueForm.reason_code);
                             const resolutionInstruction = riderResolutionInstruction(leg);
-                            const canSubmitProof = canRecordProof && !isReturnToShop && leg.status === 'in_transit';
+                            const canSubmitProof = canRecordProof
+                              && !isReturnToShop
+                              && leg.status === 'in_transit'
+                              && (leg.rider_progress_state === undefined || leg.rider_progress_state === 'active');
                             const canSubmitReturnHandoff = riderMode && canRecordProof && isReturnToShop && leg.status === 'in_transit' && !returnProof;
                             const showOutcomeChoice = canSubmitProof && canReportIssue;
                             const deliveryOutcome = deliveryOutcomes[leg.id];
@@ -941,6 +948,15 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                   {riderMode && isReturnToShop && returnProof?.review_status === 'rider_confirmed' && <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">Awaiting shop receipt confirmation</p>}
                                   {!riderMode && leg.proofs?.filter((proof) => ['delivery', 'receive'].includes(proof.handoff_type)).map((proof) => (
                                     <div key={proof.id} className="space-y-2">
+                                      <div className="space-y-1 text-xs text-gray-600 dark:text-gray-300">
+                                        <p className="font-semibold text-gray-900 dark:text-white">
+                                          {label(proof.handoff_type)} proof #{proof.id} · {label(proof.review_status ?? 'pending')}
+                                          {proof.replaces_proof_id ? ` · replaces proof #${proof.replaces_proof_id}` : ''}
+                                        </p>
+                                        {proof.recorded_at && <p>Submitted {formatDateTime(proof.recorded_at)}</p>}
+                                        {proof.reviewed_at && <p>Reviewed {formatDateTime(proof.reviewed_at)}{proof.reviewed_by_id ? ` by user #${proof.reviewed_by_id}` : ''}</p>}
+                                        {proof.rejection_reason && <p className="font-medium text-red-700 dark:text-red-300">Rejection reason: {proof.rejection_reason}</p>}
+                                      </div>
                                       <div className="flex flex-wrap gap-2">
                                         {canApproveProof && leg.status === 'awaiting_proof_approval' && proof.review_status === 'pending' && <><button type="button" onClick={() => void confirmAct(`/api/logistics/proofs/${proof.id}/approve`, 'Confirm delivery?', 'This will complete the delivery.')} className="rounded-lg bg-green-600 px-3 py-2 text-sm font-semibold text-white">Confirm delivery</button><button type="button" onClick={() => void rejectProof(proof.id)} className="rounded-lg border border-red-600 px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50">Reject proof</button></>}
                                         {canApproveProof && isReturnToShop && proof.handoff_type === 'receive' && proof.review_status === 'rider_confirmed' && <button type="button" onClick={() => void confirmAct(`/api/logistics/legs/${leg.id}/return-proofs/${proof.id}/receipt`, 'Confirm return received?', 'Confirm the physical parcel handoff. Item inspection continues in the refund workflow.')} className="rounded-lg bg-green-600 px-3 py-2 text-sm font-semibold text-white">Confirm return received</button>}
@@ -1072,7 +1088,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                               </div>
                             );
                     })}
-                    {canAssign && assignableRiders.length === 0 && (shipment.legs ?? []).some((leg) => !leg.assignments?.some((assignment) => ['assigned', 'accepted'].includes(assignment.status)) && !['delivered', 'cancelled'].includes(leg.status)) && <p className="text-sm text-amber-700">No active available riders. Create or make a logistics rider available first.</p>}
+                    {canAssign && assignableRiders.length === 0 && (shipment.legs ?? []).some((leg) => !leg.assignments?.some((assignment) => ['assigned', 'accepted'].includes(assignment.status)) && !['delivered', 'cancelled', 'proof_correction_required'].includes(leg.status)) && <p className="text-sm text-amber-700">No active available riders. Create or make a logistics rider available first.</p>}
                     {assignmentError && <p className="text-sm text-red-600">{assignmentError}</p>}
                     {actionError && <p className="text-sm text-red-600">{actionError}</p>}
                   </div>

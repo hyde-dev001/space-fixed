@@ -86,6 +86,14 @@ describe('ShipmentTracking', () => {
     expect(screen.getByText('Your item was handed over and the delivery proof is being verified.')).toBeInTheDocument();
   });
 
+  it('keeps proof correction internal and customer-safe', () => {
+    shipment.legs[0].status = 'proof_correction_required';
+    render(<ShipmentTracking />);
+
+    expect(screen.getAllByText('Delivered — confirmation in progress').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Proof correction required')).not.toBeInTheDocument();
+  });
+
   it('shows an unresolved failed attempt reason, time, and proof', () => {
     shipment.legs[0].latest_failed_attempt = {
       id: 9,

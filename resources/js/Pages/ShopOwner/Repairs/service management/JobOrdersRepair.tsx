@@ -25,6 +25,8 @@ type IntakeHandoff = {
   leg_id?: number | null;
   leg_status?: string | null;
   proof_status?: string | null;
+  proof_review_state?: string | null;
+  proof_correction_required?: boolean;
   can_confirm_receipt?: boolean;
   blocked_reason?: string | null;
   scheduled_delivery_date?: string | null;
@@ -42,6 +44,8 @@ type ReturnHandoff = {
   shipment_status?: string | null;
   leg_status?: string | null;
   proof_status?: string | null;
+  proof_review_state?: string | null;
+  proof_correction_required?: boolean;
   external_tracking?: {
     carrier?: string | null;
     tracking_number?: string | null;
@@ -2131,6 +2135,7 @@ export default function JobOrdersRepair() {
 
   const formatLogisticsStatus = (status?: string | null) => {
     if (!status) return "Not available";
+    if (status === "proof_correction_required") return "Proof correction required";
     return status
       .replace(/_/g, " ")
       .replace(/\b\w/g, (letter) => letter.toUpperCase());
