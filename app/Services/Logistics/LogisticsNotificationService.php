@@ -206,7 +206,10 @@ class LogisticsNotificationService
             'shipment_id' => $event->shipment_id,
             'shipment_leg_id' => $event->shipment_leg_id,
             'event_type' => $event->event_type,
-        ];
+        ] + array_filter([
+            'proof_id' => $event->metadata['proof_id'] ?? null,
+            'replaces_proof_id' => $event->metadata['replaces_proof_id'] ?? null,
+        ], fn ($value) => $value !== null);
     }
 
     private function requiresAction(string $eventType): bool
