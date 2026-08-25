@@ -152,7 +152,7 @@ it('keeps employee identity and notification selection in employee mode', () => 
   expect(screen.getAllByTestId('notification-bell')[0]).toHaveAttribute('data-base-path', '/api/staff/notifications');
 });
 
-it('opens the compact application menu as a non-modal dropdown and keeps notifications outside it', async () => {
+it('opens the compact application menu with direct account actions and keeps notifications outside it', async () => {
   render(<AppHeaderERP />);
 
   const trigger = screen.getByRole('button', { name: 'Toggle Application Menu' });
@@ -174,12 +174,12 @@ it('opens the compact application menu as a non-modal dropdown and keeps notific
   expect(screen.getAllByTestId('theme-toggle')).toHaveLength(2);
   expect(within(menu).queryByText('Appearance')).not.toBeInTheDocument();
   expect(within(menu).queryByText('Account')).not.toBeInTheDocument();
-  expect(within(menu).queryByTestId('inline-shop-owner-dropdown')).not.toBeInTheDocument();
-  expect(within(menu).queryByText('Shop Profile')).not.toBeInTheDocument();
-  expect(within(menu).queryByText('Sign Out')).not.toBeInTheDocument();
-  const compactAccount = within(menu).getByTestId('shop-owner-dropdown');
+  const compactAccount = within(menu).getByTestId('inline-shop-owner-dropdown');
   expect(compactAccount).toBeInTheDocument();
-  expect(compactAccount.parentElement).not.toHaveClass('hidden');
+  expect(compactAccount.parentElement).toHaveClass('xl:hidden');
+  expect(within(menu).getByText('Shop Profile')).toBeInTheDocument();
+  expect(within(menu).getByText('Sign Out')).toBeInTheDocument();
+  expect(screen.getByTestId('shop-owner-dropdown').parentElement).toHaveClass('hidden', 'xl:contents');
   const compactActions = screen.getByRole('region', { name: 'Application menu' }).querySelector<HTMLElement>('.grid');
   expect(compactActions).not.toBeNull();
   expect(compactActions).toHaveClass('grid-cols-1');
@@ -204,7 +204,7 @@ it('closes the compact application menu when clicking outside the dropdown', () 
   expect(screen.queryByRole('region', { name: 'Application menu' })).not.toBeInTheDocument();
 });
 
-it('keeps duplicate account actions out of the compact application menu', () => {
+it('shows employee account actions immediately in the compact application menu', () => {
   state.url = '/erp/staff/dashboard';
   state.props = {
     auth: {
@@ -219,10 +219,10 @@ it('keeps duplicate account actions out of the compact application menu', () => 
   fireEvent.click(screen.getByRole('button', { name: 'Toggle Application Menu' }));
 
   const menu = screen.getByRole('region', { name: 'Application menu' });
-  expect(within(menu).queryByTestId('inline-user-dropdown')).not.toBeInTheDocument();
-  expect(within(menu).queryByText('Profile & Password')).not.toBeInTheDocument();
-  expect(within(menu).queryByText('Sign Out')).not.toBeInTheDocument();
-  const compactAccount = within(menu).getByTestId('user-dropdown');
+  const compactAccount = within(menu).getByTestId('inline-user-dropdown');
   expect(compactAccount).toBeInTheDocument();
-  expect(compactAccount.parentElement).not.toHaveClass('hidden');
+  expect(compactAccount.parentElement).toHaveClass('xl:hidden');
+  expect(within(menu).getByText('Profile & Password')).toBeInTheDocument();
+  expect(within(menu).getByText('Sign Out')).toBeInTheDocument();
+  expect(screen.getByTestId('user-dropdown').parentElement).toHaveClass('hidden', 'xl:contents');
 });
