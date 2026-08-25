@@ -100,17 +100,33 @@ it('hides disabled owner modules while keeping core dashboard visible', () => {
   expect(screen.getByRole('link', { name: 'SoleSpace' })).toHaveAttribute('href', '/shop-owner/dashboard');
   expect(document.querySelector('a[href="/shop-owner.dashboard"]')).toBeInTheDocument();
   expect(screen.queryByText('Employee Modules', { exact: true })).not.toBeInTheDocument();
-  expect(screen.queryByRole('link', { name: /^Logistics$/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /^Logistics$/i })).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: 'Job Orders Repair' })).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: 'Shipments' })).not.toBeInTheDocument();
 });
 
-it('does not render module-specific pages in the normal owner portal', () => {
+it('renders individual owner operational pages with business and module access', () => {
   state.shopModules = accessible({ logistics: true, repair_operations: true });
   render(<AppSidebarShopOwner />);
 
-  expect(screen.queryByRole('link', { name: 'Job Orders Repair' })).not.toBeInTheDocument();
-  expect(screen.queryByRole('link', { name: /^Logistics$/i })).not.toBeInTheDocument();
+  expect(screen.getByText('Repair & Sales')).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Job Orders Retail' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Job Orders Repair' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Product Management' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Cashier' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Services Management' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Stock Management' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Warranty Queue' })).toBeInTheDocument();
+  expect(screen.getByText('Customer Management')).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Customer Support' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Repair Support' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Customers' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Customer Reviews' })).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', { name: /^Logistics$/i }));
+
+  expect(screen.getByRole('link', { name: 'Shipments' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Riders' })).toBeInTheDocument();
 });
 
 it('removes Employee Modules and standalone Logistics for a shop owner', () => {
@@ -135,7 +151,7 @@ it('removes Employee Modules and standalone Logistics for a shop owner', () => {
   expect(screen.queryByRole('link', { name: 'Inventory' })).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: 'Procurement' })).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: 'CRM' })).not.toBeInTheDocument();
-  expect(screen.queryByRole('link', { name: /^Logistics$/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /^Logistics$/i })).not.toBeInTheDocument();
 });
 
 it('uses the top-level module state when the nested auth state is unavailable', () => {

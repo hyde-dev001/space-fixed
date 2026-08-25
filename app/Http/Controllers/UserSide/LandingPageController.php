@@ -1269,6 +1269,16 @@ class LandingPageController extends Controller
             return 60;
         }
 
+        $planLimit = (int) ($subscription->premiumPlan?->showroom_slot_limit ?? 0);
+        if ($planLimit > 0) {
+            return $planLimit;
+        }
+
+        $subscriptionLimit = (int) ($subscription->showroom_slot_limit ?? 0);
+        if ($subscriptionLimit > 0) {
+            return $subscriptionLimit;
+        }
+
         $planCode = strtolower(trim((string) $subscription->plan_code));
         if (str_contains($planCode, 'basic')) {
             return 48;
@@ -1289,16 +1299,6 @@ class LandingPageController extends Controller
         }
         if (str_contains($planName, 'pro')) {
             return 60;
-        }
-
-        $planLimit = (int) ($subscription->premiumPlan?->showroom_slot_limit ?? 0);
-        if ($planLimit > 0) {
-            return $planLimit;
-        }
-
-        $subscriptionLimit = (int) ($subscription->showroom_slot_limit ?? 0);
-        if ($subscriptionLimit > 0) {
-            return $subscriptionLimit;
         }
 
         return 60;
