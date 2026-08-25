@@ -236,7 +236,7 @@ const AppHeader_ERP: React.FC = () => {
           aria-describedby={isApplicationMenuOpen ? "application-menu-description" : undefined}
           className={`${isApplicationMenuOpen
             ? "absolute right-3 top-[calc(100%+0.5rem)] z-[99999] flex max-h-[calc(100dvh-5.5rem)] w-[min(22rem,calc(100vw-1.5rem))] flex-col overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-xl ring-1 ring-black/5 dark:border-gray-700 dark:bg-gray-900 dark:ring-white/10 sm:right-4 sm:w-[min(24rem,calc(100vw-2rem))] sm:max-h-[calc(100dvh-6.5rem)]"
-            : "hidden"} items-center justify-between gap-4 xl:static xl:flex xl:max-h-none xl:w-auto xl:max-w-none xl:flex-row xl:overflow-visible xl:rounded-none xl:border-0 xl:bg-transparent xl:p-0 xl:shadow-none xl:ring-0`}
+            : "hidden"} items-center justify-between gap-0 xl:static xl:flex xl:max-h-none xl:w-auto xl:max-w-none xl:flex-row xl:gap-4 xl:overflow-visible xl:rounded-none xl:border-0 xl:bg-transparent xl:p-0 xl:shadow-none xl:ring-0`}
         >
           {isApplicationMenuOpen && (
             <div className="w-full shrink-0 border-b border-gray-200 bg-white px-4 py-4 dark:border-gray-800 dark:bg-gray-900 sm:px-5 sm:py-4 xl:hidden">
@@ -251,9 +251,9 @@ const AppHeader_ERP: React.FC = () => {
               </div>
             </div>
           )}
-          <div className="flex min-h-0 w-full flex-1 flex-col gap-4 overflow-y-auto bg-gray-50/70 p-4 dark:bg-gray-950/30 sm:gap-3 sm:p-5 xl:w-auto xl:flex-none xl:flex-row xl:items-center xl:gap-4 xl:overflow-visible xl:bg-transparent xl:p-0">
+          <div className="flex min-h-0 w-full flex-1 flex-col gap-0 overflow-y-auto bg-gray-50/70 p-0 dark:bg-gray-950/30 sm:gap-0 sm:p-0 xl:w-auto xl:flex-none xl:flex-row xl:items-center xl:gap-4 xl:overflow-visible xl:bg-transparent xl:p-0">
             {/* Right Side Actions */}
-            <div className="grid w-full grid-cols-1 gap-3 xl:flex xl:w-auto xl:items-center xl:gap-4">
+            <div className="grid w-full grid-cols-1 gap-0 xl:flex xl:w-auto xl:items-center xl:gap-4">
               <div className="hidden items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:shadow-none xl:contents">
                 <div className="min-w-0 xl:hidden">
                   <p className="text-sm font-semibold text-gray-900 dark:text-white">Alerts &amp; notifications</p>
@@ -268,7 +268,7 @@ const AppHeader_ERP: React.FC = () => {
               <div className="hidden items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:shadow-none xl:contents">
                 <ThemeToggleButton />
               </div>
-              <div className="w-full overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900 xl:hidden">
+              <div className="w-full overflow-hidden rounded-none border-0 bg-white dark:bg-gray-900 xl:hidden">
                 {renderAccountMenu(true)}
               </div>
               <div className="hidden items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm sm:col-span-2 dark:border-gray-800 dark:bg-gray-900 dark:shadow-none xl:contents">

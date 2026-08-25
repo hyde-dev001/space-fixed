@@ -176,13 +176,15 @@ it('opens the compact application menu with direct account actions and keeps not
   expect(within(menu).queryByText('Account')).not.toBeInTheDocument();
   const compactAccount = within(menu).getByTestId('inline-shop-owner-dropdown');
   expect(compactAccount).toBeInTheDocument();
-  expect(compactAccount.parentElement).toHaveClass('xl:hidden');
+  expect(compactAccount.parentElement).toHaveClass('border-0', 'rounded-none', 'xl:hidden');
   expect(within(menu).getByText('Shop Profile')).toBeInTheDocument();
   expect(within(menu).getByText('Sign Out')).toBeInTheDocument();
   expect(screen.getByTestId('shop-owner-dropdown').parentElement).toHaveClass('hidden', 'xl:contents');
   const compactActions = screen.getByRole('region', { name: 'Application menu' }).querySelector<HTMLElement>('.grid');
   expect(compactActions).not.toBeNull();
-  expect(compactActions).toHaveClass('grid-cols-1');
+  expect(menu).toHaveClass('gap-0', 'xl:gap-4');
+  expect(compactActions?.parentElement).toHaveClass('gap-0', 'p-0', 'sm:gap-0', 'sm:p-0');
+  expect(compactActions).toHaveClass('grid-cols-1', 'gap-0', 'xl:gap-4');
   expect(compactActions).not.toHaveClass('sm:grid-cols-2');
   expect(document.body.style.overflow).toBe('');
 
