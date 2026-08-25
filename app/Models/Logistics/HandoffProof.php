@@ -5,6 +5,7 @@ namespace App\Models\Logistics;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class HandoffProof extends Model
 {
@@ -16,6 +17,7 @@ class HandoffProof extends Model
 
     protected $fillable = [
         'shipment_leg_id',
+        'replaces_proof_id',
         'idempotency_key',
         'handoff_type',
         'proof_type',
@@ -41,5 +43,15 @@ class HandoffProof extends Model
     public function leg(): BelongsTo
     {
         return $this->belongsTo(ShipmentLeg::class, 'shipment_leg_id');
+    }
+
+    public function replacedProof(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'replaces_proof_id');
+    }
+
+    public function replacements(): HasMany
+    {
+        return $this->hasMany(self::class, 'replaces_proof_id');
     }
 }

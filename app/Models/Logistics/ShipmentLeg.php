@@ -2,6 +2,7 @@
 
 namespace App\Models\Logistics;
 
+use App\Enums\Logistics\RiderProgressState;
 use App\Enums\Logistics\ShipmentLegStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -19,6 +20,7 @@ class ShipmentLeg extends Model
         'sequence',
         'leg_type',
         'status',
+        'rider_progress_state',
         'origin_snapshot',
         'destination_snapshot',
         'tracking_number',
@@ -41,6 +43,7 @@ class ShipmentLeg extends Model
 
     protected $casts = [
         'status' => ShipmentLegStatus::class,
+        'rider_progress_state' => RiderProgressState::class,
         'origin_snapshot' => 'array',
         'destination_snapshot' => 'array',
         'scheduled_pickup_at' => 'datetime',
@@ -53,6 +56,10 @@ class ShipmentLeg extends Model
         'distance_km' => 'decimal:2',
         'estimated_at' => 'datetime',
         'stop_sequence' => 'integer', 'attempt_number' => 'integer', 'out_for_delivery_at' => 'datetime', 'urgent_at' => 'datetime',
+    ];
+
+    protected $attributes = [
+        'rider_progress_state' => RiderProgressState::ACTIVE->value,
     ];
 
     public function shipment(): BelongsTo
