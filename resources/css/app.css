@@ -52,6 +52,14 @@ layer(base);
   color: #1e293b !important;
 }
 
+/* Keep the main metric icon outlines as light as the dashboard icons. */
+.metrics-card > div:first-child > svg,
+.metrics-card :is([class*="bg-gradient-to-br"], [class*="bg-linear-to-br"]) > svg,
+[class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"] :is([class*="bg-gradient-to-br"], [class*="bg-linear-to-br"]) > svg,
+[class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"] :is([class*="bg-gradient-to-br"], [class*="bg-linear-to-br"]) > svg {
+  stroke-width: 1.5 !important;
+}
+
 .metrics-card > [class*="absolute"][class*="inset-0"],
 [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"] > [class*="absolute"][class*="inset-0"],
 [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"] > [class*="absolute"][class*="inset-0"] {
