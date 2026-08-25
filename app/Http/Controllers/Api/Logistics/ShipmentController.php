@@ -16,8 +16,8 @@ use App\Models\ShopOwner;
 use App\Models\User;
 use App\Services\Logistics\ArrivalService;
 use App\Services\Logistics\AssignmentService;
-use App\Services\Logistics\DeliveryEventService;
 use App\Services\Logistics\ProofService;
+use App\Services\Logistics\ProofReviewService;
 use App\Services\Logistics\ShipmentLegService;
 use App\Services\RepairDeliveryService;
 use App\Services\DeliveryDisputeService;
@@ -242,29 +242,19 @@ class ShipmentController extends Controller
         return response()->json(['leg' => $legs->markDelivered($leg, $this->riderProfileIfAssigned($leg))]);
     }
 
-    public function approveProof(HandoffProof $proof, ShipmentLegService $legs): JsonResponse
+    public function approveProof(HandoffProof $proof, ProofReviewService $reviews): JsonResponse
     {
         $shop = $this->authorizedShopForProofApproval();
         $proof->loadMissing('leg.shipment');
         $this->abortUnlessTenant($proof->leg->shipment->shop_owner_id, $shop);
         abort_unless(Auth::guard('shop_owner')->check() || $this->canApproveProof(Auth::guard('user')->user()), 403);
-        abort_unless($proof->review_status === 'pending', 422);
-
         $actor = Auth::guard('user')->user() ?? $shop;
-        $leg = DB::transaction(function () use ($proof, $actor, $legs) {
-            $locked = HandoffProof::query()->with('leg')->lockForUpdate()->findOrFail($proof->id);
-            abort_unless($locked->review_status === 'pending', 422);
-            abort_unless(in_array($locked->handoff_type, ['delivery', 'receive'], true), 422);
-            abort_unless($locked->leg->status->value === 'awaiting_proof_approval', 422);
-            $locked->update(['review_status' => 'approved', 'reviewed_by_type' => $actor::class, 'reviewed_by_id' => $actor->id, 'reviewed_at' => now()]);
+        $result = $reviews->approve($proof, $actor);
 
-            return $legs->markDelivered($locked->leg);
-        });
-
-        return response()->json(['leg' => $leg]);
+        return response()->json(['leg' => $result['leg']]);
     }
 
-    public function rejectProof(Request $request, HandoffProof $proof, DeliveryEventService $events): JsonResponse
+    public function rejectProof(Request $request, HandoffProof $proof, ProofReviewService $reviews): JsonResponse
     {
         $reason = $request->validate([
             'rejection_reason' => ['required', 'string', 'min:3', 'max:1000'],
@@ -275,33 +265,9 @@ class ShipmentController extends Controller
         abort_unless(Auth::guard('shop_owner')->check() || $this->canApproveProof(Auth::guard('user')->user()), 403);
 
         $actor = Auth::guard('user')->user() ?? $shop;
-        [$leg, $proof] = DB::transaction(function () use ($proof, $actor, $reason, $events) {
-            $locked = HandoffProof::query()->with('leg.shipment')->lockForUpdate()->findOrFail($proof->id);
-            abort_unless($locked->review_status === 'pending', 422);
-            abort_unless(in_array($locked->handoff_type, ['delivery', 'receive'], true), 422);
-            abort_unless($locked->leg->status->value === 'awaiting_proof_approval', 422);
+        $result = $reviews->reject($proof, $actor, $reason);
 
-            $locked->update([
-                'review_status' => 'rejected',
-                'rejection_reason' => $reason,
-                'reviewed_by_type' => $actor::class,
-                'reviewed_by_id' => $actor->id,
-                'reviewed_at' => now(),
-            ]);
-            $locked->leg->update(['status' => 'in_transit']);
-            $riderProfileId = $locked->leg->assignments()->whereIn('status', ['assigned', 'accepted'])->value('rider_profile_id');
-            $events->record($locked->leg->shipment, $locked->leg, [
-                'event_type' => 'proof_rejected',
-                'message' => 'Delivery proof rejected. Submit a replacement proof.',
-                'metadata' => ['rider_profile_id' => $riderProfileId, 'rejection_reason' => $reason],
-                'created_by_type' => $actor::class,
-                'created_by_id' => $actor->id,
-            ]);
-
-            return [$locked->leg->fresh(), $locked->fresh()];
-        });
-
-        return response()->json(['leg' => $leg, 'proof' => $proof]);
+        return response()->json(['leg' => $result['leg'], 'proof' => $result['proof']]);
     }
 
     public function attempts(Request $request, ShipmentLeg $leg, ShipmentLegService $legs): JsonResponse

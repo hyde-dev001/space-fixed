@@ -157,6 +157,85 @@ class ProofReviewFlowTest extends TestCase
         $this->assertSame(1, $leg->fresh()->proofs()->count());
     }
 
+    public function test_dispatcher_can_approve_after_rider_progression_and_release_the_leg(): void
+    {
+        [$shop, $rider, $leg] = $this->riderLeg(withArrival: true);
+        Storage::fake('local');
+
+        $proof = $this->actingAs($rider, 'user')->post(
+            "/api/logistics/legs/{$leg->id}/proof",
+            [
+                'handoff_type' => 'delivery',
+                'proof_type' => 'photo',
+                'idempotency_key' => '66666666-6666-4666-8666-666666666666',
+                'proof_file' => $this->photo('approval.png'),
+            ],
+            ['Accept' => 'application/json']
+        )->assertCreated()->json('proof');
+
+        $this->actingAs($shop, 'shop_owner')
+            ->postJson("/api/logistics/proofs/{$proof['id']}/approve")
+            ->assertOk();
+        $this->actingAs($shop, 'shop_owner')
+            ->postJson("/api/logistics/proofs/{$proof['id']}/approve")
+            ->assertOk();
+
+        $freshLeg = $leg->fresh();
+        $this->assertSame('delivered', $freshLeg->status->value);
+        $this->assertSame(RiderProgressState::RIDER_RELEASED, $freshLeg->rider_progress_state);
+        $this->assertSame('approved', $freshLeg->proofs()->findOrFail($proof['id'])->review_status);
+        $this->assertSame(1, $freshLeg->events()->where('event_type', 'proof_required')->count());
+        $this->assertSame(1, $freshLeg->events()->where('event_type', 'proof_approved')->count());
+        $this->assertSame(1, $freshLeg->events()->where('event_type', 'delivered')->count());
+        $this->assertDatabaseHas('delivery_events', [
+            'shipment_leg_id' => $leg->id,
+            'event_type' => 'proof_approved',
+        ]);
+    }
+
+    public function test_rejecting_delivery_proof_only_creates_a_correction_requirement(): void
+    {
+        [$shop, $rider, $leg] = $this->riderLeg(withArrival: true);
+        Storage::fake('local');
+        $originalAttemptNumber = $leg->fresh()->attempt_number;
+        $originalResolution = $leg->resolution_type;
+        $originalScheduledDate = $leg->scheduled_delivery_date;
+
+        $proof = $this->actingAs($rider, 'user')->post(
+            "/api/logistics/legs/{$leg->id}/proof",
+            [
+                'handoff_type' => 'delivery',
+                'proof_type' => 'photo',
+                'idempotency_key' => '77777777-7777-4777-8777-777777777777',
+                'proof_file' => $this->photo('rejection.png'),
+            ],
+            ['Accept' => 'application/json']
+        )->assertCreated()->json('proof');
+
+        $this->actingAs($shop, 'shop_owner')
+            ->postJson("/api/logistics/proofs/{$proof['id']}/reject", [
+                'rejection_reason' => 'The recipient is not identifiable in the image.',
+            ])
+            ->assertOk();
+        $this->actingAs($shop, 'shop_owner')
+            ->postJson("/api/logistics/proofs/{$proof['id']}/reject", [
+                'rejection_reason' => 'A different reason must not overwrite the review.',
+            ])
+            ->assertOk();
+
+        $freshLeg = $leg->fresh();
+        $freshProof = $freshLeg->proofs()->findOrFail($proof['id']);
+        $this->assertSame('proof_correction_required', $freshLeg->status->value);
+        $this->assertSame(RiderProgressState::PROOF_ACTION_REQUIRED, $freshLeg->rider_progress_state);
+        $this->assertSame('rejected', $freshProof->review_status);
+        $this->assertSame('The recipient is not identifiable in the image.', $freshProof->rejection_reason);
+        $this->assertSame($originalAttemptNumber, $freshLeg->attempt_number);
+        $this->assertSame($originalResolution, $freshLeg->resolution_type);
+        $this->assertSame($originalScheduledDate, $freshLeg->scheduled_delivery_date);
+        $this->assertSame(0, $freshLeg->attempts()->count());
+        $this->assertSame(1, $freshLeg->events()->where('event_type', 'proof_rejected')->count());
+    }
+
     private function riderLeg(bool $withArrival, bool $includeProfile = false): array
     {
         Permission::findOrCreate('record-logistics-proof', 'user');

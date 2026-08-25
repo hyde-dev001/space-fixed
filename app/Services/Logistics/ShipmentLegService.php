@@ -2,6 +2,7 @@
 
 namespace App\Services\Logistics;
 
+use App\Enums\Logistics\RiderProgressState;
 use App\Models\Logistics\DeliveryAssignment;
 use App\Models\Logistics\DeliveryAttempt;
 use App\Models\Logistics\DeliveryBatch;
@@ -260,6 +261,10 @@ class ShipmentLegService
         return DB::transaction(function () use ($leg, $rider) {
             $leg = ShipmentLeg::query()->with('shipment')->lockForUpdate()->findOrFail($leg->id);
             if ($leg->status->value === 'delivered') {
+                if ($leg->rider_progress_state !== RiderProgressState::RIDER_RELEASED) {
+                    $leg->update(['rider_progress_state' => RiderProgressState::RIDER_RELEASED]);
+                }
+
                 return $leg;
             }
             if ($rider) {
@@ -275,7 +280,10 @@ class ShipmentLegService
                 throw ValidationException::withMessages(['proof' => 'Delivery proof is required before marking this leg delivered.']);
             }
 
-            $delivered = $this->transition($leg, 'delivered', ['delivered_at' => now()], 'delivered', 'Shipment leg delivered.');
+            $delivered = $this->transition($leg, 'delivered', [
+                'delivered_at' => now(),
+                'rider_progress_state' => RiderProgressState::RIDER_RELEASED,
+            ], 'delivered', 'Shipment leg delivered.');
             $this->reconcileBatchState($delivered->delivery_batch_id);
 
             return $delivered;
