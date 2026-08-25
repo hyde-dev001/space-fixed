@@ -2,6 +2,7 @@
 
 namespace App\Services\Logistics;
 
+use App\Enums\Logistics\RiderProgressState;
 use App\Models\Logistics\DeliveryBatch;
 use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\ShipmentLeg;
@@ -9,20 +10,17 @@ use Illuminate\Validation\ValidationException;
 
 final class RiderActiveWorkGuard
 {
-    private const ACTIVE_LEG_STATUSES = [
+    private const ACTIVE_STANDALONE_STATUSES = [
         'picked_up',
         'in_transit',
         'delivery_attempted',
-        'awaiting_proof_approval',
     ];
 
     public function assertCanStartBatch(RiderProfile $rider, DeliveryBatch $batch): void
     {
         RiderProfile::query()->whereKey($rider->id)->lockForUpdate()->firstOrFail();
 
-        $hasBatch = DeliveryBatch::query()
-            ->where('rider_profile_id', $rider->id)
-            ->where('status', 'in_progress')
+        $hasBatch = $this->activeBatchQuery($rider)
             ->whereKeyNot($batch->id)
             ->exists();
 
@@ -35,10 +33,7 @@ final class RiderActiveWorkGuard
     {
         RiderProfile::query()->whereKey($rider->id)->lockForUpdate()->firstOrFail();
 
-        $hasBatch = DeliveryBatch::query()
-            ->where('rider_profile_id', $rider->id)
-            ->where('status', 'in_progress')
-            ->exists();
+        $hasBatch = $this->activeBatchQuery($rider)->exists();
 
         $hasStandalone = $this->activeStandaloneQuery($rider)
             ->whereKeyNot($leg->id)
@@ -51,16 +46,30 @@ final class RiderActiveWorkGuard
     {
         RiderProfile::query()->whereKey($rider->id)->lockForUpdate()->firstOrFail();
 
-        $candidates = DeliveryBatch::query()
-            ->where('rider_profile_id', $rider->id)
-            ->where('status', 'in_progress')
-            ->get(['id', 'started_at'])
-            ->map(fn (DeliveryBatch $batch) => [
-                'key' => "batch:{$batch->id}",
-                'started_at' => $batch->started_at?->format('Y-m-d H:i:s.u') ?? '9999-12-31',
-                'kind' => 'batch',
-                'id' => $batch->id,
-            ])
+        if ($leg->rider_progress_state !== RiderProgressState::ACTIVE) {
+            $this->reject(true);
+        }
+
+        $batchCandidates = $this->activeBatchQuery($rider)
+            ->get(['id', 'rider_profile_id', 'started_at'])
+            ->map(function (DeliveryBatch $batch): ?array {
+                $next = $this->firstActiveBatchLeg($batch->id, (int) $batch->rider_profile_id);
+                if (! $next) {
+                    return null;
+                }
+
+                return [
+                    'key' => "batch:{$batch->id}",
+                    'started_at' => $batch->started_at?->format('Y-m-d H:i:s.u') ?? '9999-12-31',
+                    'kind' => 'batch',
+                    'id' => $batch->id,
+                    'next_leg_id' => $next->id,
+                ];
+            })
+            ->filter()
+            ->values();
+
+        $candidates = $batchCandidates
             ->concat(
                 $this->activeStandaloneQuery($rider)
                     ->with('latestAssignment')
@@ -75,6 +84,7 @@ final class RiderActiveWorkGuard
                         )?->format('Y-m-d H:i:s.u') ?? '9999-12-31',
                         'kind' => 'single',
                         'id' => $activeLeg->id,
+                        'next_leg_id' => $activeLeg->id,
                     ])
             )
             ->sortBy(fn (array $item) => [$item['started_at'], $item['kind'], $item['id']])
@@ -82,6 +92,13 @@ final class RiderActiveWorkGuard
 
         if ($candidates->isEmpty()) {
             return;
+        }
+
+        if ($leg->delivery_batch_id) {
+            $next = $this->firstActiveBatchLeg($leg->delivery_batch_id, $rider->id);
+            if (! $next || (int) $next->id !== (int) $leg->id) {
+                $this->reject(true);
+            }
         }
 
         $targetKey = $leg->delivery_batch_id
@@ -98,10 +115,39 @@ final class RiderActiveWorkGuard
     {
         return ShipmentLeg::query()
             ->whereNull('delivery_batch_id')
-            ->whereIn('status', self::ACTIVE_LEG_STATUSES)
+            ->where('rider_progress_state', RiderProgressState::ACTIVE->value)
+            ->whereIn('status', self::ACTIVE_STANDALONE_STATUSES)
             ->whereHas('latestAssignment', fn ($query) => $query
                 ->where('rider_profile_id', $rider->id)
                 ->whereIn('status', ['assigned', 'accepted']));
+    }
+
+    private function activeBatchQuery(RiderProfile $rider)
+    {
+        return DeliveryBatch::query()
+            ->where('rider_profile_id', $rider->id)
+            ->where('status', 'in_progress')
+            ->whereHas('legs', fn ($query) => $query
+                ->where('rider_progress_state', RiderProgressState::ACTIVE->value)
+                ->whereNotIn('status', ['delivered', 'cancelled', 'failed'])
+                ->whereHas('latestAssignment', fn ($assignments) => $assignments
+                    ->where('rider_profile_id', $rider->id)
+                    ->whereIn('status', ['assigned', 'accepted'])));
+    }
+
+    private function firstActiveBatchLeg(int $batchId, int $riderId): ?ShipmentLeg
+    {
+        return ShipmentLeg::query()
+            ->where('delivery_batch_id', $batchId)
+            ->where('rider_progress_state', RiderProgressState::ACTIVE->value)
+            ->whereNotIn('status', ['delivered', 'cancelled', 'failed'])
+            ->whereHas('latestAssignment', fn ($query) => $query
+                ->where('rider_profile_id', $riderId)
+                ->whereIn('status', ['assigned', 'accepted']))
+            ->orderByRaw('stop_sequence IS NULL')
+            ->orderBy('stop_sequence')
+            ->orderBy('id')
+            ->first();
     }
 
     private function custodyHoldQuery(RiderProfile $rider)

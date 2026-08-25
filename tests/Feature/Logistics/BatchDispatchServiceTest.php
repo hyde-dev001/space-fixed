@@ -502,10 +502,21 @@ class BatchDispatchServiceTest extends TestCase
     {
         [$shop, $legs, $service] = $this->draftFixture();
         $rider = RiderProfile::factory()->create(['shop_owner_id' => $shop->id]);
-        DeliveryBatch::factory()->create([
+        $otherBatch = DeliveryBatch::factory()->create([
             'shop_owner_id' => $shop->id,
             'rider_profile_id' => $rider->id,
             'status' => 'in_progress',
+        ]);
+        $otherLeg = ShipmentLeg::factory()->create([
+            'shipment_id' => Shipment::factory()->create(['shop_owner_id' => $shop->id])->id,
+            'delivery_batch_id' => $otherBatch->id,
+            'stop_sequence' => 1,
+            'status' => 'in_transit',
+        ]);
+        DeliveryAssignment::factory()->create([
+            'shipment_leg_id' => $otherLeg->id,
+            'rider_profile_id' => $rider->id,
+            'status' => 'accepted',
         ]);
         $batch = $service->accept(
             $service->offer($service->createDraft($shop, '2026-07-15', 'morning', $legs->pluck('id')->all()), $rider, $shop),

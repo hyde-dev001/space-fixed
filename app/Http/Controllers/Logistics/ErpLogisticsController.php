@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Logistics;
 
 use App\Http\Controllers\Controller;
+use App\Enums\Logistics\RiderProgressState;
 use App\Models\Logistics\DeliveryAssignment;
 use App\Models\Logistics\DeliveryBatch;
 use App\Models\Logistics\DeliveryAttempt;
@@ -386,10 +387,17 @@ class ErpLogisticsController extends Controller
             ->sortByDesc('id')
             ->first();
         $isCurrentRider = (int) $batch->rider_profile_id === $rider->id;
+        $hasActiveRiderStop = $batch->legs->contains(fn (ShipmentLeg $leg) =>
+            $leg->rider_progress_state === RiderProgressState::ACTIVE
+            && ! in_array($leg->status->value, ['delivered', 'cancelled', 'failed'], true)
+            && $leg->assignments
+                ->where('rider_profile_id', $rider->id)
+                ->contains(fn (DeliveryAssignment $assignment) => in_array($assignment->status, ['assigned', 'accepted'], true))
+        );
         $group = $isCurrentRider ? match ($batch->status) {
             'offered' => 'offer',
             'accepted' => 'upcoming',
-            'in_progress' => 'current',
+            'in_progress' => $hasActiveRiderStop ? 'current' : 'history',
             'completed', 'cancelled' => 'history',
             default => null,
         } : ($rejected ? 'history' : null);
@@ -398,7 +406,9 @@ class ErpLogisticsController extends Controller
             return null;
         }
 
-        $status = $isCurrentRider ? $batch->status : 'declined';
+        $status = $isCurrentRider
+            ? ($batch->status === 'in_progress' && ! $hasActiveRiderStop ? 'review_pending' : $batch->status)
+            : 'declined';
         $deliveries = $batch->legs->map(fn (ShipmentLeg $leg) => $this->deliveryPayload($leg))->values();
         $businessTypes = $this->businessTypes($batch->legs->pluck('shipment.purpose'));
 
@@ -443,6 +453,7 @@ class ErpLogisticsController extends Controller
             && (int) $latestAssignment->rider_profile_id === $rider->id
             && in_array($latestAssignment->status, ['assigned', 'accepted'], true);
         $legStatus = $leg->status->value;
+        $riderProgressState = $leg->rider_progress_state;
 
         if (! $isCurrentRider) {
             $group = 'history';
@@ -457,6 +468,13 @@ class ErpLogisticsController extends Controller
             && in_array($legStatus, ['assigned', 'pickup_scheduled'], true)) {
             $group = 'offer';
             $status = 'offered';
+        } elseif ($riderProgressState !== RiderProgressState::ACTIVE) {
+            $group = 'history';
+            $status = match ($riderProgressState) {
+                RiderProgressState::PROOF_SUBMITTED => 'review_pending',
+                RiderProgressState::PROOF_ACTION_REQUIRED => 'proof_action_required',
+                default => $legStatus,
+            };
         } else {
             $group = match ($legStatus) {
                 'assigned', 'pickup_scheduled' => 'upcoming',

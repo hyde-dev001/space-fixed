@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Logistics;
 
+use App\Enums\Logistics\RiderProgressState;
 use App\Models\Logistics\DeliveryAssignment;
 use App\Models\Logistics\DeliveryBatch;
 use App\Models\Logistics\RiderProfile;
@@ -280,6 +281,80 @@ class RiderMyDeliveriesPageTest extends TestCase
         $this->assertSame("single:{$leg->id}", $props['current']['key']);
         $this->assertSame('needs_resolution', $delivery['status']);
         $this->assertNull($delivery['resolution_type']);
+    }
+
+    public function test_review_only_batch_is_not_current_work_while_business_batch_stays_in_progress(): void
+    {
+        [$batch, $first] = $this->batchWithLeg(
+            'in_progress',
+            'retail_delivery',
+            ['started_at' => '2026-07-29 08:00:00'],
+            [
+                'status' => 'awaiting_proof_approval',
+                'rider_progress_state' => RiderProgressState::PROOF_SUBMITTED,
+            ],
+        );
+        $this->assign($first, $this->rider, 'accepted');
+        [, $second] = $this->shipmentWithLeg('retail_delivery', [
+            'delivery_batch_id' => $batch->id,
+            'stop_sequence' => 2,
+            'status' => 'proof_correction_required',
+            'rider_progress_state' => RiderProgressState::PROOF_ACTION_REQUIRED,
+        ]);
+        $this->assign($second, $this->rider, 'accepted');
+
+        $props = $this->deliveryData('?tab=history');
+
+        $this->assertNull($props['current']);
+        $this->assertFalse($props['has_active_conflict']);
+        $item = collect($props['list']['data'])->firstWhere('key', "batch:{$batch->id}");
+        $this->assertSame('review_pending', $item['status']);
+        $this->assertSame('history', $item['group']);
+    }
+
+    public function test_batch_with_a_later_active_stop_remains_current_after_first_proof_submission(): void
+    {
+        [$batch, $first] = $this->batchWithLeg(
+            'in_progress',
+            'retail_delivery',
+            ['started_at' => '2026-07-29 08:00:00'],
+            [
+                'status' => 'awaiting_proof_approval',
+                'rider_progress_state' => RiderProgressState::PROOF_SUBMITTED,
+            ],
+        );
+        $this->assign($first, $this->rider, 'accepted');
+        [, $next] = $this->shipmentWithLeg('retail_delivery', [
+            'delivery_batch_id' => $batch->id,
+            'stop_sequence' => 2,
+            'status' => 'in_transit',
+            'rider_progress_state' => RiderProgressState::ACTIVE,
+        ]);
+        $this->assign($next, $this->rider, 'accepted');
+
+        $props = $this->deliveryData();
+
+        $this->assertSame("batch:{$batch->id}", $props['current']['key']);
+        $this->assertSame(
+            RiderProgressState::ACTIVE->value,
+            collect($props['current']['deliveries'])->firstWhere('id', $next->id)['rider_progress_state'],
+        );
+    }
+
+    public function test_submitted_standalone_proof_is_history_instead_of_current_work(): void
+    {
+        [, $leg] = $this->shipmentWithLeg('retail_delivery', [
+            'status' => 'awaiting_proof_approval',
+            'rider_progress_state' => RiderProgressState::PROOF_SUBMITTED,
+        ]);
+        $this->assign($leg, $this->rider, 'accepted');
+
+        $props = $this->deliveryData('?tab=history');
+
+        $this->assertNull($props['current']);
+        $item = collect($props['list']['data'])->firstWhere('key', "single:{$leg->id}");
+        $this->assertSame('history', $item['group']);
+        $this->assertSame(RiderProgressState::PROOF_SUBMITTED->value, $item['deliveries'][0]['rider_progress_state']);
     }
 
     private function deliveryData(string $query = ''): array
