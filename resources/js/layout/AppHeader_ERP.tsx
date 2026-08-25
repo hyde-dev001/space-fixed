@@ -268,7 +268,7 @@ const AppHeader_ERP: React.FC = () => {
               <div className="hidden items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:shadow-none xl:contents">
                 <ThemeToggleButton />
               </div>
-              <div className="hidden items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm sm:col-span-2 dark:border-gray-800 dark:bg-gray-900 dark:shadow-none xl:contents">
+              <div className="flex items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm sm:col-span-2 dark:border-gray-800 dark:bg-gray-900 dark:shadow-none xl:contents">
                 {renderAccountMenu()}
               </div>
             </div>

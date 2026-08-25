@@ -177,7 +177,9 @@ it('opens the compact application menu as a non-modal dropdown and keeps notific
   expect(within(menu).queryByTestId('inline-shop-owner-dropdown')).not.toBeInTheDocument();
   expect(within(menu).queryByText('Shop Profile')).not.toBeInTheDocument();
   expect(within(menu).queryByText('Sign Out')).not.toBeInTheDocument();
-  expect(screen.getByTestId('shop-owner-dropdown')).toBeInTheDocument();
+  const compactAccount = within(menu).getByTestId('shop-owner-dropdown');
+  expect(compactAccount).toBeInTheDocument();
+  expect(compactAccount.parentElement).not.toHaveClass('hidden');
   const compactActions = screen.getByRole('region', { name: 'Application menu' }).querySelector<HTMLElement>('.grid');
   expect(compactActions).not.toBeNull();
   expect(compactActions).toHaveClass('grid-cols-1');
@@ -220,5 +222,7 @@ it('keeps duplicate account actions out of the compact application menu', () => 
   expect(within(menu).queryByTestId('inline-user-dropdown')).not.toBeInTheDocument();
   expect(within(menu).queryByText('Profile & Password')).not.toBeInTheDocument();
   expect(within(menu).queryByText('Sign Out')).not.toBeInTheDocument();
-  expect(screen.getByTestId('user-dropdown')).toBeInTheDocument();
+  const compactAccount = within(menu).getByTestId('user-dropdown');
+  expect(compactAccount).toBeInTheDocument();
+  expect(compactAccount.parentElement).not.toHaveClass('hidden');
 });
