@@ -2115,7 +2115,7 @@ const UserAccessControl: React.FC = () => {
     <Layout>
       <Head title="User Access Control" />
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-        <div className="max-w-7xl mx-auto p-6">
+        <div className="w-full">
           {/* Header */}
           <div className="mb-8">
             <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-2">User Access Control</h1>

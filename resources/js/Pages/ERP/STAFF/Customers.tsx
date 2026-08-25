@@ -203,8 +203,8 @@ export default function CustomersPage() {
       <Head title="Customers - Solespace ERP" />
       {error && <ErrorModal message={error} onClose={() => setError(null)} />}
 
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
-        <div className="max-w-7xl mx-auto">
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+        <div className="w-full">
           {/* Header */}
           <div className="mb-8">
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
