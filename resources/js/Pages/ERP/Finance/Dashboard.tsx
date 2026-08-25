@@ -39,7 +39,7 @@ class FinanceSummaryError extends Error {
 const formatMoney = (value: Money | undefined): string => `₱${value ?? '0.00'}`;
 
 const MetricCard = ({ title, value, description }: { title: string; value: Money; description: string }) => (
-    <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
+    <div className="metrics-card rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
         <p className="text-sm font-medium text-gray-600 dark:text-gray-400">{title}</p>
         <h2 className="mt-3 text-3xl font-bold text-gray-900 dark:text-white">{formatMoney(value)}</h2>
         <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">{description}</p>

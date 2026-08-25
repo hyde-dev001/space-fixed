@@ -6,6 +6,58 @@ layer(base);
 /* Flatpickr CSS */
 @import 'flatpickr/dist/flatpickr.min.css';
 
+/* Shared metrics-card treatment. EcommerceMetrics is the canonical source;
+   these selectors keep legacy, page-local metric cards visually consistent. */
+.metrics-card,
+[class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"],
+[class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"] {
+  border-color: #e2e8f0 !important;
+  border-radius: 1rem !important;
+  box-shadow: none !important;
+  transition: border-color 180ms ease, box-shadow 180ms ease !important;
+}
+
+.metrics-card:hover,
+[class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"]:hover,
+[class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"]:hover {
+  border-color: #cbd5e1 !important;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06) !important;
+  transform: none !important;
+}
+
+.metrics-card > div:first-child,
+[class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"] > div:first-child,
+[class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"] > div:first-child {
+  background-image: none !important;
+}
+
+.metrics-card [class*="bg-gradient-to-br"],
+.metrics-card [class*="bg-linear-to-br"],
+[class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"] [class*="bg-gradient-to-br"],
+[class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"] [class*="bg-linear-to-br"],
+[class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"] [class*="bg-gradient-to-br"],
+[class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"] [class*="bg-linear-to-br"] {
+  background-image: none !important;
+  background-color: #f1f5f9 !important;
+  box-shadow: none !important;
+  color: #1e293b !important;
+  transform: none !important;
+}
+
+.metrics-card > [class*="absolute"][class*="inset-0"],
+[class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"] > [class*="absolute"][class*="inset-0"],
+[class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"] > [class*="absolute"][class*="inset-0"] {
+  display: none !important;
+}
+
+.dark .metrics-card [class*="bg-gradient-to-br"],
+.dark .metrics-card [class*="bg-linear-to-br"],
+.dark [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"] [class*="bg-gradient-to-br"],
+.dark [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"] [class*="bg-linear-to-br"] {
+  background-color: #1e293b !important;
+  color: #f8fafc !important;
+}
+
 /* Hide viewport scrollbar UI on UserSide pages while keeping scroll behavior */
 html.userside-hide-scrollbar,
 body.userside-hide-scrollbar {
