@@ -18,7 +18,6 @@ use App\Services\Logistics\ArrivalService;
 use App\Services\Logistics\AssignmentService;
 use App\Services\Logistics\DeliveryEventService;
 use App\Services\Logistics\ProofService;
-use App\Services\Logistics\RiderActiveWorkGuard;
 use App\Services\Logistics\ShipmentLegService;
 use App\Services\RepairDeliveryService;
 use App\Services\DeliveryDisputeService;
@@ -31,8 +30,6 @@ use Illuminate\Validation\Rule;
 
 class ShipmentController extends Controller
 {
-    public function __construct(private RiderActiveWorkGuard $activeWork) {}
-
     public function index(): JsonResponse
     {
         $shop = $this->authorizedShop('view-logistics-shipments');
@@ -143,9 +140,6 @@ class ShipmentController extends Controller
         if ($user && ! $backOffice && ! $rider) {
             abort(403);
         }
-        if ($rider) {
-            $this->activeWork->assertCanAdvanceLeg($rider, $leg);
-        }
         $storedPath = $request->file('proof_file')
             ?->store("logistics-proof/{$leg->id}", 'local');
         if ($storedPath) {
@@ -155,7 +149,7 @@ class ShipmentController extends Controller
         try {
             $proof = $proofs->recordProof($leg, $payload, $rider);
             if ($storedPath && $proof->file_path !== $storedPath) {
-                Storage::disk('local')->delete($storedPath);
+                $this->cleanupStoredProof($storedPath);
             }
 
             $proof->setAttribute('proof_url', $this->proofUrl($proof));
@@ -163,7 +157,7 @@ class ShipmentController extends Controller
             return response()->json(['proof' => $proof], $proof->wasRecentlyCreated ? 201 : 200);
         } catch (\Throwable $exception) {
             if ($storedPath) {
-                Storage::disk('local')->delete($storedPath);
+                $this->cleanupStoredProof($storedPath);
             }
             throw $exception;
         }
@@ -738,5 +732,16 @@ class ShipmentController extends Controller
         }
 
         return null;
+    }
+
+    private function cleanupStoredProof(string $path): void
+    {
+        $disk = Storage::disk('local');
+        $disk->delete($path);
+
+        $directory = str_replace('\\', '/', dirname($path));
+        if ($directory !== '.' && $disk->allFiles($directory) === []) {
+            $disk->deleteDirectory($directory);
+        }
     }
 }
