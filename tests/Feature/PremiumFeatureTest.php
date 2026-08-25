@@ -251,6 +251,29 @@ class PremiumFeatureTest extends TestCase
     }
 
     /** @test */
+    public function virtual_showroom_preserves_a_configured_150_slot_limit_for_a_premium_subscription(): void
+    {
+        $shopOwner = $this->createShopOwner();
+        $plan = $this->createPlan([
+            'plan_code' => 'premium',
+            'name' => 'Premium',
+            'showroom_slot_limit' => 150,
+        ]);
+
+        $subscription = $this->createActiveSubscription($shopOwner, $plan, [
+            'showroom_slot_limit' => 150,
+        ]);
+
+        $response = $this->get('/shop-profile/' . $shopOwner->id . '/virtual-showroom');
+
+        $response->assertOk();
+
+        $page = $this->extractInertiaPageData($response->getContent());
+
+        $this->assertSame(150, $page['props']['shop']['showroom_slot_limit'] ?? null);
+    }
+
+    /** @test */
     public function settings_page_exposes_real_premium_status_data(): void
     {
         Carbon::setTestNow('2026-03-15 08:00:00');

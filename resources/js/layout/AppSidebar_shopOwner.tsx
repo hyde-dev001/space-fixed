@@ -61,6 +61,25 @@ const navItems: NavItem[] = [
   },
   {
     icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 7h11v10H3z"></path>
+        <path d="M14 10h4l3 3v4h-7z"></path>
+        <circle cx="7" cy="19" r="2"></circle>
+        <circle cx="17" cy="19" r="2"></circle>
+      </svg>
+    ),
+    name: "Logistics",
+    route: "shop-owner.logistics.dashboard",
+    path: "/shop-owner/logistics",
+    moduleKey: "logistics",
+    subItems: [
+      { name: "Dashboard", route: "shop-owner.logistics.dashboard", moduleKey: "logistics" },
+      { name: "Shipments", route: "shop-owner.logistics.shipments", moduleKey: "logistics" },
+      { name: "Riders", route: "shop-owner.logistics.riders", moduleKey: "logistics" },
+    ],
+  },
+  {
+    icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
       </svg>
@@ -137,7 +156,90 @@ const approvalWorkflowItems: NavItem[] = [
   },
 ];
 
-type MenuType = "main" | "approval";
+const individualOperationsItems: NavItem[] = [
+  {
+    icon: <CalenderIcon className="w-5 h-5" />,
+    name: "Job Orders Retail",
+    route: "shop-owner.job-orders-retail",
+    path: "/shop-owner/job-orders-retail",
+    moduleKey: "retail_operations",
+  },
+  {
+    icon: <CalenderIcon className="w-5 h-5" />,
+    name: "Job Orders Repair",
+    route: "shop-owner.job-orders-repair",
+    path: "/shop-owner/job-orders-repair",
+    moduleKey: "repair_operations",
+  },
+  {
+    icon: <CheckLineIcon className="w-5 h-5" />,
+    name: "Warranty Queue",
+    route: "shop-owner.warranty-queue",
+    path: "/shop-owner/warranty-queue",
+    moduleKey: "repair_operations",
+  },
+  {
+    icon: <BoxIcon className="w-5 h-5" />,
+    name: "Product Management",
+    route: "shop-owner.product-uploder",
+    path: "/shop-owner/product-uploder",
+    moduleKey: "retail_operations",
+  },
+  {
+    icon: <BoxIcon className="w-5 h-5" />,
+    name: "Cashier",
+    route: "shop-owner.point-of-sale",
+    path: "/shop-owner/point-of-sale",
+    moduleKey: "retail_operations",
+  },
+  {
+    icon: <BoxIcon className="w-5 h-5" />,
+    name: "Services Management",
+    route: "shop-owner.upload-services",
+    path: "/shop-owner/upload-services",
+    moduleKey: "repair_operations",
+  },
+  {
+    icon: <BoxIcon className="w-5 h-5" />,
+    name: "Stock Management",
+    route: "shop-owner.upload-stock-materials",
+    path: "/shop-owner/upload-stock-materials",
+    moduleKey: "repair_operations",
+  },
+];
+
+const individualCustomerManagementItems: NavItem[] = [
+  {
+    icon: <CheckLineIcon className="w-5 h-5" />,
+    name: "Customer Support",
+    route: "shop-owner.customer-support",
+    path: "/shop-owner/customer-support",
+    moduleKey: "crm",
+  },
+  {
+    icon: <CheckLineIcon className="w-5 h-5" />,
+    name: "Repair Support",
+    route: "shop-owner.repair-support",
+    path: "/shop-owner/repair-support",
+    moduleKey: "repair_operations",
+  },
+  {
+    icon: <UserCircleIcon className="w-5 h-5" />,
+    name: "Customers",
+    route: "shop-owner.customers",
+    path: "/shop-owner/customers",
+    moduleKey: "crm",
+  },
+  {
+    icon: <CheckLineIcon className="w-5 h-5" />,
+    name: "Customer Reviews",
+    route: "shop-owner.customer-reviews",
+    path: "/shop-owner/customer-reviews",
+    moduleKey: "crm",
+  },
+];
+
+type MenuType = "main" | "approval" | "operations" | "customer";
 const SIDEBAR_PREFETCH: Array<"hover"> = ["hover"];
 const SIDEBAR_PREFETCH_CACHE = "30s";
 
@@ -170,6 +272,8 @@ const AppSidebar_shopOwner: React.FC<AppSidebarShopOwnerProps> = ({ activeModule
     : route("shop-owner.dashboard");
   const isCompanyAccount = shopOwner?.is_company === true
     || shopOwner?.registration_type?.toLowerCase() === "company";
+  const isIndividualAccount = shopOwner?.registration_type?.toLowerCase() === "individual"
+    && !isCompanyAccount;
   const ownerWorkspaceUrl = isCompanyAccount && typeof erpUrls?.workspace === "string"
     ? erpUrls.workspace
     : null;
@@ -191,6 +295,16 @@ const AppSidebar_shopOwner: React.FC<AppSidebarShopOwnerProps> = ({ activeModule
         ...navItems.slice(1),
       ]
     : navItems, [ownerWorkspaceUrl]);
+  const rawBusinessType = shopOwner?.business_type?.toLowerCase();
+  const businessType = rawBusinessType?.includes("both") ? "both" : rawBusinessType;
+  const individualAccountSectionLabel =
+    businessType === "repair"
+      ? "Repair"
+      : businessType === "retail"
+        ? "Sales"
+        : businessType === "both"
+          ? "Repair & Sales"
+          : "Sales";
   const businessAccountSectionLabel = "Approval Workflow";
 
   const [subMenuHeight, setSubMenuHeight] = useState<Record<string, number>>(
@@ -235,7 +349,8 @@ const AppSidebar_shopOwner: React.FC<AppSidebarShopOwnerProps> = ({ activeModule
 
     const rawBusinessType = shopOwner.business_type?.toLowerCase();
     const itemBusinessType = rawBusinessType?.includes('both') ? 'both' : rawBusinessType;
-    const isCompany = shopOwner.is_company === true;
+    const isCompany = shopOwner.is_company === true
+      || shopOwner.registration_type?.toLowerCase() === 'company';
     const canManageStaff = shopOwner.can_manage_staff === true;
 
     if (menuItem.route === 'shop-owner.dss-insights') {
@@ -244,6 +359,18 @@ const AppSidebar_shopOwner: React.FC<AppSidebarShopOwnerProps> = ({ activeModule
 
     if (menuItem.route === 'shop-owner.vouchers-discount') {
       return itemBusinessType === 'retail' || itemBusinessType === 'both';
+    }
+
+    if (menuItem.route === 'shop-owner.logistics.dashboard') {
+      return !isCompany && !canManageStaff;
+    }
+
+    if (menuItem.moduleKey === 'retail_operations') {
+      return itemBusinessType === 'retail' || itemBusinessType === 'both';
+    }
+
+    if (menuItem.moduleKey === 'repair_operations') {
+      return itemBusinessType === 'repair' || itemBusinessType === 'both';
     }
 
     const companyOnlyRoutes = [
@@ -257,6 +384,23 @@ const AppSidebar_shopOwner: React.FC<AppSidebarShopOwnerProps> = ({ activeModule
 
     if (menuItem.route && companyOnlyRoutes.includes(menuItem.route)) {
       return isCompany || canManageStaff;
+    }
+
+    const individualOnlyOperationalRoutes = [
+      'shop-owner.warranty-queue',
+      'shop-owner.upload-stock-materials',
+    ];
+
+    if (menuItem.route && individualOnlyOperationalRoutes.includes(menuItem.route)) {
+      return !isCompany && !canManageStaff;
+    }
+
+    if (menuItem.route === 'shop-owner.customer-support') {
+      return !isCompany && (itemBusinessType === 'retail' || itemBusinessType === 'both');
+    }
+
+    if (menuItem.route === 'shop-owner.repair-support') {
+      return !isCompany && (itemBusinessType === 'repair' || itemBusinessType === 'both');
     }
 
     return true;
@@ -481,8 +625,14 @@ const AppSidebar_shopOwner: React.FC<AppSidebarShopOwnerProps> = ({ activeModule
     let submenuMatched = false;
     let matchedKey: string | null = null;
 
-    (["main", "approval"] as const).forEach((menuType) => {
-      const items = menuType === "main" ? mainMenuItems : approvalWorkflowItems;
+    (["main", "approval", "operations", "customer"] as const).forEach((menuType) => {
+      const items = menuType === "main"
+        ? mainMenuItems
+        : menuType === "approval"
+          ? approvalWorkflowItems
+          : menuType === "operations"
+            ? individualOperationsItems
+            : individualCustomerManagementItems;
       items.forEach((nav, index) => {
         if (nav.subItems) {
           nav.subItems.forEach((subItem) => {
@@ -717,6 +867,42 @@ const AppSidebar_shopOwner: React.FC<AppSidebarShopOwnerProps> = ({ activeModule
               ) : (
                 <>
                   {renderMenuItems(mainMenuItems, "main")}
+
+                  {isIndividualAccount && hasVisibleMenuItems(individualOperationsItems) && (
+                    <div>
+                      <h2
+                        className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${!isExpanded && !isHovered
+                            ? "lg:justify-center"
+                            : "justify-start"
+                          }`}
+                      >
+                        {isExpanded || isHovered || isMobileOpen ? (
+                          individualAccountSectionLabel
+                        ) : (
+                          <HorizontaLDots className="size-6" />
+                        )}
+                      </h2>
+                      {renderMenuItems(individualOperationsItems, "operations")}
+                    </div>
+                  )}
+
+                  {isIndividualAccount && hasVisibleMenuItems(individualCustomerManagementItems) && (
+                    <div>
+                      <h2
+                        className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${!isExpanded && !isHovered
+                            ? "lg:justify-center"
+                            : "justify-start"
+                          }`}
+                      >
+                        {isExpanded || isHovered || isMobileOpen ? (
+                          "Customer Management"
+                        ) : (
+                          <HorizontaLDots className="size-6" />
+                        )}
+                      </h2>
+                      {renderMenuItems(individualCustomerManagementItems, "customer")}
+                    </div>
+                  )}
 
                   {hasVisibleMenuItems(approvalWorkflowItems) && (
                     <div>
