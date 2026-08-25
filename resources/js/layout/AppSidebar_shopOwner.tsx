@@ -145,7 +145,7 @@ const approvalWorkflowItems: NavItem[] = [
     ),
     name: "Approval Pages",
     subItems: [
-      { name: "Refund Approval", route: "shop-owner.refund-approvals", moduleKey: "finance" },
+      { name: "Refund Approval", route: "shop-owner.refund-approvals" },
       { name: "Price Approvals", route: "shop-owner.price-approvals", moduleKey: "finance" },
       { name: "Payslip Approval", route: "shop-owner.payslip-approvals", moduleKey: "finance" },
       { name: "Salary Adjustment Approval", route: "shop-owner.salary-adjustment-approvals", moduleKey: "finance" },
