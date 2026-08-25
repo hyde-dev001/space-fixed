@@ -1266,6 +1266,32 @@ class LogisticsPageAccessTest extends TestCase
         $this->assertSame('awaiting_proof_approval', $response->viewData('page')['props']['filters']['status']);
     }
 
+    public function test_dispatcher_can_filter_shipments_requiring_proof_correction(): void
+    {
+        $this->seed(RolesAndPermissionsSeeder::class);
+        $shop = ShopOwner::factory()->create(['business_type' => 'both']);
+        $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $dispatcher->assignRole('Logistics Dispatcher');
+        $correction = Shipment::factory()->create(['shop_owner_id' => $shop->id, 'status' => 'active']);
+        ShipmentLeg::factory()->create([
+            'shipment_id' => $correction->id,
+            'status' => 'proof_correction_required',
+            'rider_progress_state' => 'proof_action_required',
+        ]);
+        $other = Shipment::factory()->create(['shop_owner_id' => $shop->id, 'status' => 'active']);
+        ShipmentLeg::factory()->create([
+            'shipment_id' => $other->id,
+            'status' => 'awaiting_proof_approval',
+        ]);
+
+        $response = $this->actingAs($dispatcher, 'user')
+            ->get('/erp/logistics/shipments?status=proof_correction_required')
+            ->assertOk();
+
+        $this->assertSame([$correction->id], collect($response->viewData('page')['props']['shipments']['data'])->pluck('id')->all());
+        $this->assertSame('proof_correction_required', $response->viewData('page')['props']['filters']['status']);
+    }
+
     public function test_dispatcher_completed_delivery_includes_viewable_delivery_proof(): void
     {
         $this->seed(RolesAndPermissionsSeeder::class);

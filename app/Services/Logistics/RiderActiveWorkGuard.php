@@ -46,7 +46,8 @@ final class RiderActiveWorkGuard
     {
         RiderProfile::query()->whereKey($rider->id)->lockForUpdate()->firstOrFail();
 
-        if ($leg->rider_progress_state !== RiderProgressState::ACTIVE) {
+        if ($leg->rider_progress_state !== RiderProgressState::ACTIVE
+            || $leg->status->value === 'proof_correction_required') {
             $this->reject(true);
         }
 
@@ -129,7 +130,7 @@ final class RiderActiveWorkGuard
             ->where('status', 'in_progress')
             ->whereHas('legs', fn ($query) => $query
                 ->where('rider_progress_state', RiderProgressState::ACTIVE->value)
-                ->whereNotIn('status', ['delivered', 'cancelled', 'failed'])
+                ->whereNotIn('status', ['delivered', 'cancelled', 'failed', 'proof_correction_required'])
                 ->whereHas('latestAssignment', fn ($assignments) => $assignments
                     ->where('rider_profile_id', $rider->id)
                     ->whereIn('status', ['assigned', 'accepted'])));
@@ -140,7 +141,7 @@ final class RiderActiveWorkGuard
         return ShipmentLeg::query()
             ->where('delivery_batch_id', $batchId)
             ->where('rider_progress_state', RiderProgressState::ACTIVE->value)
-            ->whereNotIn('status', ['delivered', 'cancelled', 'failed'])
+            ->whereNotIn('status', ['delivered', 'cancelled', 'failed', 'proof_correction_required'])
             ->whereHas('latestAssignment', fn ($query) => $query
                 ->where('rider_profile_id', $riderId)
                 ->whereIn('status', ['assigned', 'accepted']))

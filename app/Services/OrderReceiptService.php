@@ -30,7 +30,8 @@ class OrderReceiptService
 
             $isShopOwned = $this->isShopOwned($lockedOrder);
             $currentLegStatus = $this->currentLegStatus((int) $lockedOrder->id);
-            $isEarlyShopOwnedReceipt = $isShopOwned && $currentLegStatus === 'awaiting_proof_approval';
+            $isEarlyShopOwnedReceipt = $isShopOwned
+                && in_array($currentLegStatus, ['awaiting_proof_approval', 'proof_correction_required'], true);
             $isDeliveredShopOwnedReceipt = $isShopOwned && $this->orderStatus($lockedOrder) === OrderStatus::DELIVERED->value;
             $isLegacyThirdPartyReceipt = ! $isShopOwned
                 && $this->orderStatus($lockedOrder) === OrderStatus::SHIPPED->value;
@@ -76,7 +77,11 @@ class OrderReceiptService
         }
 
         return $this->orderStatus($order) === OrderStatus::DELIVERED->value
-            || ($currentLegStatus ?? $this->currentLegStatus((int) $order->id)) === 'awaiting_proof_approval';
+            || in_array(
+                $currentLegStatus ?? $this->currentLegStatus((int) $order->id),
+                ['awaiting_proof_approval', 'proof_correction_required'],
+                true,
+            );
     }
 
     public function isShopOwned(Order $order): bool

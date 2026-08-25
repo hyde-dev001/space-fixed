@@ -141,7 +141,7 @@ class OrderController extends Controller
                     'status' => $currentLeg?->status?->value ?? $shipment->status->value,
                     'tracking_number' => $currentLeg?->tracking_number,
                     'delivery_has_failed_attempt' => (bool) ($latestAttempt
-                        && !in_array($currentLeg->status->value, ['awaiting_proof_approval', 'delivered'], true)),
+                        && !in_array($currentLeg->status->value, ['awaiting_proof_approval', 'proof_correction_required', 'delivered'], true)),
                     'delivery_scheduled_date' => optional($currentLeg?->scheduled_delivery_date)->toDateString(),
                     'delivery_window' => $currentLeg?->delivery_window,
                     'rider_name' => $assignment?->riderProfile?->name,

@@ -5,6 +5,7 @@ namespace Tests\Feature\Logistics;
 use App\Enums\Logistics\RiderProgressState;
 use App\Models\Logistics\DeliveryAssignment;
 use App\Models\Logistics\DeliveryBatch;
+use App\Models\Logistics\HandoffProof;
 use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
@@ -355,6 +356,30 @@ class RiderMyDeliveriesPageTest extends TestCase
         $item = collect($props['list']['data'])->firstWhere('key', "single:{$leg->id}");
         $this->assertSame('history', $item['group']);
         $this->assertSame(RiderProgressState::PROOF_SUBMITTED->value, $item['deliveries'][0]['rider_progress_state']);
+    }
+
+    public function test_rejected_delivery_proof_is_an_issue_with_replacement_metadata(): void
+    {
+        [, $leg] = $this->shipmentWithLeg('retail_delivery', [
+            'status' => 'proof_correction_required',
+            'rider_progress_state' => RiderProgressState::PROOF_ACTION_REQUIRED,
+        ]);
+        $this->assign($leg, $this->rider, 'accepted');
+        $proof = HandoffProof::factory()->create([
+            'shipment_leg_id' => $leg->id,
+            'handoff_type' => 'delivery',
+            'review_status' => 'rejected',
+            'rejection_reason' => 'The delivery image is not readable.',
+        ]);
+
+        $props = $this->deliveryData('?tab=issues');
+        $issue = $props['list']['data'][0];
+
+        $this->assertSame('proof_correction', $issue['issue_type']);
+        $this->assertSame($leg->id, $issue['delivery_id']);
+        $this->assertSame($proof->id, $issue['proof_id']);
+        $this->assertTrue($issue['replacement_allowed']);
+        $this->assertSame('The delivery image is not readable.', $issue['reason']);
     }
 
     private function deliveryData(string $query = ''): array

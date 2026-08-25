@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\Logistics\RiderProgressState;
 use App\Models\Logistics\DeliveryBatch;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
@@ -716,6 +717,7 @@ final class RepairDeliveryService
                 $batchId = $activeLeg->delivery_batch_id;
                 $activeLeg->update([
                     'status' => 'cancelled',
+                    'rider_progress_state' => RiderProgressState::RIDER_RELEASED,
                     'delivery_batch_id' => null,
                     'stop_sequence' => null,
                 ]);
@@ -806,6 +808,8 @@ final class RepairDeliveryService
                 'leg' => null,
                 'proof' => null,
                 'approved' => false,
+                'proof_review_state' => null,
+                'proof_correction_required' => false,
                 'events' => collect(),
             ];
         $canConfirm = in_array((string) $repair->status, ['pending', 'repairer_accepted'], true)
@@ -819,6 +823,8 @@ final class RepairDeliveryService
             $blockedReason = 'Initial payment must be settled before physical receipt.';
         } elseif ($method === 'shop_pickup' && ! $state['shipment']) {
             $blockedReason = 'Waiting for the shop pickup to be dispatched.';
+        } elseif ($method === 'shop_pickup' && $state['proof_correction_required']) {
+            $blockedReason = 'The delivery proof was rejected. A replacement proof is required before physical receipt.';
         } elseif ($method === 'shop_pickup' && ! $state['approved']) {
             $blockedReason = 'Waiting for Dispatcher approval of the rider delivery proof.';
         }
@@ -829,6 +835,8 @@ final class RepairDeliveryService
             'leg_id' => $state['leg']?->id,
             'leg_status' => $state['leg']?->status?->value,
             'proof_status' => $state['proof']?->review_status,
+            'proof_review_state' => $state['proof_review_state'],
+            'proof_correction_required' => $state['proof_correction_required'],
             'can_confirm_receipt' => $canConfirm,
             'blocked_reason' => $blockedReason,
             'scheduled_delivery_date' => $state['leg']?->scheduled_delivery_date?->toDateString(),
@@ -864,6 +872,8 @@ final class RepairDeliveryService
                 'leg' => null,
                 'proof' => null,
                 'approved' => false,
+                'proof_review_state' => null,
+                'proof_correction_required' => false,
                 'events' => collect(),
             ];
         $expectedStatuses = $method === 'walk_in'
@@ -892,6 +902,8 @@ final class RepairDeliveryService
             $blockedReason = 'Final payment must be settled before release.';
         } elseif ($method === 'shop_delivery' && ! $state['shipment']) {
             $blockedReason = 'Waiting for the shop return delivery to be dispatched.';
+        } elseif ($method === 'shop_delivery' && $state['proof_correction_required']) {
+            $blockedReason = 'The delivery proof was rejected. A replacement proof is required before release.';
         } elseif ($method === 'shop_delivery' && ! $state['approved']) {
             $blockedReason = 'Waiting for Dispatcher approval of the rider delivery proof.';
         }
@@ -916,6 +928,8 @@ final class RepairDeliveryService
             'leg_id' => $state['leg']?->id,
             'leg_status' => $state['leg']?->status?->value,
             'proof_status' => $state['proof']?->review_status,
+            'proof_review_state' => $state['proof_review_state'],
+            'proof_correction_required' => $state['proof_correction_required'],
             'cancellation_target' => $this->cancellationTarget($repair, 'return', $state['leg']),
             'events' => $state['events']->map(fn ($event): array => [
                 'id' => $event->id,
@@ -1293,13 +1307,22 @@ final class RepairDeliveryService
             ->first();
         $proof = $leg?->proofs
             ->whereIn('handoff_type', ['delivery', 'receive'])
-            ->sortByDesc('id')
+            ->sort(function ($left, $right): int {
+                $recordedAt = strcmp(
+                    $right->recorded_at?->format('Y-m-d H:i:s.u') ?? '',
+                    $left->recorded_at?->format('Y-m-d H:i:s.u') ?? '',
+                );
+
+                return $recordedAt !== 0 ? $recordedAt : $right->id <=> $left->id;
+            })
             ->first();
 
         return [
             'shipment' => $shipment,
             'leg' => $leg,
             'proof' => $proof,
+            'proof_review_state' => $proof?->review_status,
+            'proof_correction_required' => $leg?->status?->value === 'proof_correction_required',
             'approved' => $shipment?->status?->value === 'completed'
                 && $leg?->status?->value === 'delivered'
                 && $proof?->review_status === 'approved',

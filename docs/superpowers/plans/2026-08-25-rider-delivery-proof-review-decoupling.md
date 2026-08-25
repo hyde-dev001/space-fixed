@@ -121,7 +121,7 @@
 - Exposes `ShipmentLeg::$casts['rider_progress_state']` and
   `HandoffProof::replacedProof()` / `HandoffProof::replacements()`.
 
-- [ ] **Step 1: Write failing schema and model tests**
+- [x] **Step 1: Write failing schema and model tests**
 
 Add tests named like:
 
@@ -155,7 +155,7 @@ public function test_rider_progress_state_is_cast_and_proof_chain_is_linked(): v
 }
 ```
 
-- [ ] **Step 2: Run the focused tests and verify they fail for missing schema/state**
+- [x] **Step 2: Run the focused tests and verify they fail for missing schema/state**
 
 Run:
 
@@ -165,14 +165,14 @@ php artisan test tests/Feature/Logistics/RiderProofReviewStateTest.php
 
 Expected: FAIL because the enum case, columns, casts, and relationships do not yet exist.
 
-- [ ] **Step 3: Implement the minimal persistence contract**
+- [x] **Step 3: Implement the minimal persistence contract**
 
 Implement only the enum, enum case, model casts/relationships/fillable fields,
 and migrations. Keep the state column as a string-backed enum rather than a
 database enum. Use restrictive deletion behavior for a proof with replacements;
 do not add a cascade that can erase the audit chain.
 
-- [ ] **Step 4: Run the focused tests and schema regression**
+- [x] **Step 4: Run the focused tests and schema regression**
 
 Run:
 
@@ -182,7 +182,7 @@ php artisan test tests/Feature/Logistics/RiderProofReviewStateTest.php tests/Fea
 
 Expected: PASS, including existing schema assertions.
 
-- [ ] **Step 5: Commit the persistence contract**
+- [x] **Step 5: Commit the persistence contract**
 
 ```powershell
 git add app/Enums/Logistics/RiderProgressState.php app/Enums/Logistics/ShipmentLegStatus.php app/Models/Logistics/ShipmentLeg.php app/Models/Logistics/HandoffProof.php database/migrations/2026_08_25_000001_add_rider_progress_state_to_shipment_legs.php database/migrations/2026_08_25_000002_add_replacement_link_to_handoff_proofs.php tests/Feature/Logistics/RiderProofReviewStateTest.php
@@ -204,7 +204,7 @@ git commit -m "feat: add rider proof review state persistence"
 - Emits a stable reconciliation marker/log for an approved proof on a stale
   awaiting leg, without approving proofs or completing business records.
 
-- [ ] **Step 1: Write failing mapping tests**
+- [x] **Step 1: Write failing mapping tests**
 
 Cover these fixtures and assertions:
 
@@ -225,7 +225,7 @@ Cover these fixtures and assertions:
 Use tied `recorded_at` values with different IDs to prove the ordering is
 deterministic.
 
-- [ ] **Step 2: Run the backfill tests and verify they fail**
+- [x] **Step 2: Run the backfill tests and verify they fail**
 
 ```powershell
 php artisan test tests/Feature/Logistics/RiderProgressBackfillTest.php
@@ -233,7 +233,7 @@ php artisan test tests/Feature/Logistics/RiderProgressBackfillTest.php
 
 Expected: FAIL because the command and mapping logic do not exist.
 
-- [ ] **Step 3: Implement the command in stable chunks**
+- [x] **Step 3: Implement the command in stable chunks**
 
 Process legs in ascending primary-key order. For each locked leg:
 
@@ -258,7 +258,7 @@ Make updates idempotent, avoid file/proof mutations, and report mapping counts.
 Use the existing `DeliveryEvent` or structured logging convention for the stale
 marker without dispatching a customer or rider notification for the marker.
 
-- [ ] **Step 4: Run the mapping tests and a dry command invocation**
+- [x] **Step 4: Run the mapping tests and a dry command invocation**
 
 ```powershell
 php artisan test tests/Feature/Logistics/RiderProgressBackfillTest.php
@@ -268,7 +268,7 @@ php artisan logistics:backfill-rider-progress-state --help
 Expected: PASS; the command prints its options without changing data when only
 `--help` is supplied.
 
-- [ ] **Step 5: Commit the deterministic backfill**
+- [x] **Step 5: Commit the deterministic backfill**
 
 ```powershell
 git add app/Console/Commands/BackfillRiderProgressState.php tests/Feature/Logistics/RiderProgressBackfillTest.php
@@ -293,7 +293,7 @@ git commit -m "feat: backfill rider proof progress states"
 - Existing notification grouping remains idempotent; proof notifications add
   the relevant proof/replacement IDs to their data.
 
-- [ ] **Step 1: Write commit/rollback notification tests**
+- [x] **Step 1: Write commit/rollback notification tests**
 
 Add tests that:
 
@@ -307,7 +307,7 @@ Add tests that:
 - Record the same event twice/replay the callback and assert the existing
   `group_key` deduplication remains stable.
 
-- [ ] **Step 2: Run the notification tests and verify the pre-change failure**
+- [x] **Step 2: Run the notification tests and verify the pre-change failure**
 
 ```powershell
 php artisan test tests/Feature/Logistics/LogisticsNotificationTest.php tests/Feature/Logistics/LogisticsNotificationDeduplicationTest.php
@@ -316,7 +316,7 @@ php artisan test tests/Feature/Logistics/LogisticsNotificationTest.php tests/Fea
 Expected: the new transaction timing assertions fail because notification
 creation is currently synchronous inside `DeliveryEventService::record()`.
 
-- [ ] **Step 3: Defer notification dispatch after commit**
+- [x] **Step 3: Defer notification dispatch after commit**
 
 Persist the event in the current transaction, capture only its ID, and use
 Laravel `DB::afterCommit()` or an after-commit queued job to call
@@ -324,7 +324,7 @@ Laravel `DB::afterCommit()` or an after-commit queued job to call
 an uncommitted model graph. Keep customer-visible event rows transactional and
 do not notify customers for internal proof rejection details.
 
-- [ ] **Step 4: Run notification and privacy regressions**
+- [x] **Step 4: Run notification and privacy regressions**
 
 ```powershell
 php artisan test tests/Feature/Logistics/LogisticsNotificationTest.php tests/Feature/Logistics/LogisticsNotificationDeduplicationTest.php tests/Feature/Logistics/LogisticsAuditPrivacyTest.php
@@ -332,7 +332,7 @@ php artisan test tests/Feature/Logistics/LogisticsNotificationTest.php tests/Fea
 
 Expected: PASS, with no notification emitted from a rolled-back transaction.
 
-- [ ] **Step 5: Commit commit-safe event dispatch**
+- [x] **Step 5: Commit commit-safe event dispatch**
 
 ```powershell
 git add app/Services/Logistics/DeliveryEventService.php app/Services/Logistics/LogisticsNotificationService.php tests/Feature/Logistics/LogisticsNotificationTest.php tests/Feature/Logistics/LogisticsNotificationDeduplicationTest.php
@@ -360,7 +360,7 @@ git commit -m "fix: defer logistics notifications until commit"
   proof, changes the leg to `awaiting_proof_approval` / `proof_submitted`, and
   does not require a new arrival or active-work position.
 
-- [ ] **Step 1: Write failing submission/replacement tests**
+- [x] **Step 1: Write failing submission/replacement tests**
 
 Cover:
 
@@ -380,7 +380,7 @@ Cover:
 - Two concurrent replacement submissions produce at most one pending
   replacement under the locked leg.
 
-- [ ] **Step 2: Run the focused API tests and verify they fail**
+- [x] **Step 2: Run the focused API tests and verify they fail**
 
 ```powershell
 php artisan test tests/Feature/Logistics/ProofReviewFlowTest.php tests/Feature/Logistics/LogisticsApiTest.php --filter="proof|POD|delivery"
@@ -389,7 +389,7 @@ php artisan test tests/Feature/Logistics/ProofReviewFlowTest.php tests/Feature/L
 Expected: FAIL because there is no state update, replacement field, or
 replacement validation.
 
-- [ ] **Step 3: Implement the two submission modes**
+- [x] **Step 3: Implement the two submission modes**
 
 Inside the existing leg transaction:
 
@@ -408,7 +408,7 @@ Inside the existing leg transaction:
 Do not use the active-work guard for the replacement mode; retain tenant,
 assignment, proof-chain, authorization, and concurrency checks.
 
-- [ ] **Step 4: Run focused API, concurrency, and idempotency tests**
+- [x] **Step 4: Run focused API, concurrency, and idempotency tests**
 
 ```powershell
 php artisan test tests/Feature/Logistics/ProofReviewFlowTest.php tests/Feature/Logistics/LogisticsApiTest.php tests/Feature/Logistics/LogisticsConcurrencyTest.php
@@ -417,7 +417,7 @@ php artisan test tests/Feature/Logistics/ProofReviewFlowTest.php tests/Feature/L
 Expected: PASS for initial/replacement behavior and existing idempotent proof
 replay behavior.
 
-- [ ] **Step 5: Commit submission behavior**
+- [x] **Step 5: Commit submission behavior**
 
 ```powershell
 git add app/Services/Logistics/ProofService.php app/Http/Controllers/Api/Logistics/ShipmentController.php app/Http/Controllers/Logistics/ErpLogisticsController.php tests/Feature/Logistics/ProofReviewFlowTest.php tests/Feature/Logistics/LogisticsApiTest.php tests/Feature/Logistics/LogisticsConcurrencyTest.php
@@ -447,7 +447,7 @@ git commit -m "feat: release rider after delivery proof submission"
 - Shared controller endpoints branch by `handoff_type`; return `receive`
   proofs continue through their existing workflow.
 
-- [ ] **Step 1: Write failing review tests**
+- [x] **Step 1: Write failing review tests**
 
 Cover:
 
@@ -464,7 +464,7 @@ Cover:
   final review state.
 - Return-to-shop receive approval/rejection behavior remains unchanged.
 
-- [ ] **Step 2: Run review tests and verify the current rejection regression**
+- [x] **Step 2: Run review tests and verify the current rejection regression**
 
 ```powershell
 php artisan test tests/Feature/Logistics/ProofReviewFlowTest.php tests/Feature/Logistics/LogisticsApiTest.php tests/Feature/Logistics/ReturnToShopTest.php --filter="proof|approval|reject|return"
@@ -473,7 +473,7 @@ php artisan test tests/Feature/Logistics/ProofReviewFlowTest.php tests/Feature/L
 Expected: the rejection test fails because the current controller writes
 `in_transit`, and approval relies on the rider-oriented service boundary.
 
-- [ ] **Step 3: Implement `ProofReviewService` and explicit service calls**
+- [x] **Step 3: Implement `ProofReviewService` and explicit service calls**
 
 Lock the proof and leg in one transaction. Validate that the proof is the
 current pending delivery proof before changing review metadata. Use an explicit
@@ -486,7 +486,7 @@ internal audit event. Do not touch attempts, assignment custody, arrival data,
 resolution fields, or schedule fields. Any future revisit must enter the
 existing explicit failed-attempt/incident resolution operation.
 
-- [ ] **Step 4: Run focused review, return, and privacy tests**
+- [x] **Step 4: Run focused review, return, and privacy tests**
 
 ```powershell
 php artisan test tests/Feature/Logistics/ProofReviewFlowTest.php tests/Feature/Logistics/LogisticsApiTest.php tests/Feature/Logistics/ReturnToShopTest.php tests/Feature/Logistics/LogisticsAuditPrivacyTest.php
@@ -494,7 +494,7 @@ php artisan test tests/Feature/Logistics/ProofReviewFlowTest.php tests/Feature/L
 
 Expected: PASS, with no customer-visible rejection reason or unapproved proof.
 
-- [ ] **Step 5: Commit dispatcher review behavior**
+- [x] **Step 5: Commit dispatcher review behavior**
 
 ```powershell
 git add app/Services/Logistics/ProofReviewService.php app/Http/Controllers/Api/Logistics/ShipmentController.php app/Services/Logistics/ShipmentLegService.php tests/Feature/Logistics/ProofReviewFlowTest.php tests/Feature/Logistics/LogisticsApiTest.php tests/Feature/Logistics/ReturnToShopTest.php
@@ -527,7 +527,7 @@ git commit -m "feat: make proof review asynchronous for riders"
 - Replacement proof submission bypasses active ordering but keeps its explicit
   authorization path.
 
-- [ ] **Step 1: Write failing active-work and batch tests**
+- [x] **Step 1: Write failing active-work and batch tests**
 
 Add tests for:
 
@@ -545,7 +545,7 @@ Add tests for:
 - Concurrent progression observes the committed rider state and does not
   allow two active candidates.
 
-- [ ] **Step 2: Run focused progression tests and verify they fail**
+- [x] **Step 2: Run focused progression tests and verify they fail**
 
 ```powershell
 php artisan test tests/Feature/Logistics/RiderProgressionTest.php tests/Feature/Logistics/DeliveryExecutionTest.php tests/Feature/Logistics/LogisticsConcurrencyTest.php tests/Feature/Logistics/RiderMyDeliveriesPageTest.php
@@ -554,7 +554,7 @@ php artisan test tests/Feature/Logistics/RiderProgressionTest.php tests/Feature/
 Expected: FAIL because the current guard blocks on batch status and treats
 `awaiting_proof_approval` as active.
 
-- [ ] **Step 3: Replace status-only active-work candidates**
+- [x] **Step 3: Replace status-only active-work candidates**
 
 Update `RiderActiveWorkGuard` so:
 
@@ -573,7 +573,7 @@ are `active`, delivery proof submission is `proof_submitted`, correction is
 `proof_action_required`, and delivered/cancelled/failed terminal outcomes are
 `rider_released`.
 
-- [ ] **Step 4: Run progression, batch, and page-access tests**
+- [x] **Step 4: Run progression, batch, and page-access tests**
 
 ```powershell
 php artisan test tests/Feature/Logistics/RiderProgressionTest.php tests/Feature/Logistics/DeliveryExecutionTest.php tests/Feature/Logistics/LogisticsConcurrencyTest.php tests/Feature/Logistics/RiderMyDeliveriesPageTest.php
@@ -581,7 +581,7 @@ php artisan test tests/Feature/Logistics/RiderProgressionTest.php tests/Feature/
 
 Expected: PASS, including existing active-work/custody regression coverage.
 
-- [ ] **Step 5: Commit state-driven progression**
+- [x] **Step 5: Commit state-driven progression**
 
 ```powershell
 git add app/Services/Logistics/RiderActiveWorkGuard.php app/Services/Logistics/BatchDispatchService.php app/Services/Logistics/ShipmentLegService.php app/Http/Controllers/Logistics/ErpLogisticsController.php tests/Feature/Logistics/RiderProgressionTest.php tests/Feature/Logistics/DeliveryExecutionTest.php tests/Feature/Logistics/LogisticsConcurrencyTest.php tests/Feature/Logistics/RiderMyDeliveriesPageTest.php
@@ -612,7 +612,7 @@ git commit -m "feat: derive rider blocking from progress state"
 - Capacity counters may account for already-consumed work, but no capacity
   query may be reused as active rider blocking.
 
-- [ ] **Step 1: Add negative consumer tests before changing branches**
+- [x] **Step 1: Add negative consumer tests before changing branches**
 
 Test that a correction-required leg:
 
@@ -631,7 +631,7 @@ Use existing tests where fixtures already exist:
 `DeliveryScheduleServiceTest`, `OverdueDeliveryMonitorTest`, and
 `DeliveryExecutionTest`.
 
-- [ ] **Step 2: Run the consumer tests and verify old status branches fail**
+- [x] **Step 2: Run the consumer tests and verify old status branches fail**
 
 ```powershell
 php artisan test tests/Feature/Logistics/ShipmentLegStatusConsumerTest.php tests/Feature/Logistics/ShipmentLegServiceTest.php tests/Feature/Logistics/AssignmentServiceTest.php tests/Feature/Logistics/DeliveryArrivalTest.php tests/Feature/Logistics/DeliveryScheduleServiceTest.php tests/Feature/Logistics/OverdueDeliveryMonitorTest.php
@@ -641,7 +641,7 @@ Expected: FAIL where the new status is currently accepted by broad
 `status != cancelled`/terminal-only branches or omitted from allow-list
 regressions.
 
-- [ ] **Step 3: Apply explicit allow-list and projection rules**
+- [x] **Step 3: Apply explicit allow-list and projection rules**
 
 Use positive allow-lists for transitions and fresh work. Keep correction
 outside normal transit and failed-attempt paths. Add a separate proof-review
@@ -653,7 +653,7 @@ Do not add a generic `default` branch that treats the new status as active
 transit. For every changed branch, document whether the status is active work,
 review-only, terminal, customer-safe confirmation-in-progress, or unavailable.
 
-- [ ] **Step 4: Run the consumer and existing logistics suites**
+- [x] **Step 4: Run the consumer and existing logistics suites**
 
 ```powershell
 php artisan test tests/Feature/Logistics/ShipmentLegStatusConsumerTest.php tests/Feature/Logistics/ShipmentLegServiceTest.php tests/Feature/Logistics/AssignmentServiceTest.php tests/Feature/Logistics/DeliveryArrivalTest.php tests/Feature/Logistics/DeliveryScheduleServiceTest.php tests/Feature/Logistics/OverdueDeliveryMonitorTest.php tests/Feature/Logistics/DeliveryExecutionTest.php
@@ -662,7 +662,7 @@ php artisan test tests/Feature/Logistics/ShipmentLegStatusConsumerTest.php tests
 Expected: PASS with correction-required excluded from accidental transit,
 completion, scheduling, and monitoring behavior.
 
-- [ ] **Step 5: Commit backend consumer audit**
+- [x] **Step 5: Commit backend consumer audit**
 
 ```powershell
 git add app/Services/Logistics/ShipmentLegService.php app/Services/Logistics/AssignmentService.php app/Services/Logistics/ArrivalService.php app/Services/Logistics/DeliveryScheduleService.php app/Services/Logistics/BatchSuggestionService.php app/Services/Logistics/BatchDispatchService.php app/Console/Commands/MonitorOverdueDeliveries.php app/Http/Controllers/Logistics/ErpLogisticsController.php app/Services/Logistics/SourceShipmentService.php tests/Feature/Logistics/ShipmentLegStatusConsumerTest.php tests/Feature/Logistics/ShipmentLegServiceTest.php tests/Feature/Logistics/AssignmentServiceTest.php tests/Feature/Logistics/DeliveryArrivalTest.php tests/Feature/Logistics/DeliveryScheduleServiceTest.php tests/Feature/Logistics/OverdueDeliveryMonitorTest.php
@@ -693,7 +693,7 @@ git commit -m "fix: classify proof correction legs safely"
 - Repair/staff workflows remain approval-gated and label correction-required as
   review/correction, not delivered or a new redelivery.
 
-- [ ] **Step 1: Add failing projection/privacy tests**
+- [x] **Step 1: Add failing projection/privacy tests**
 
 Cover:
 
@@ -711,7 +711,7 @@ Cover:
 - Staff order views may show internal correction state but never expose an
   unapproved proof file.
 
-- [ ] **Step 2: Run focused projection tests and verify failures**
+- [x] **Step 2: Run focused projection tests and verify failures**
 
 ```powershell
 php artisan test tests/Feature/Logistics/CustomerTrackingTest.php tests/Feature/Logistics/LogisticsAuditPrivacyTest.php tests/Feature/Repair/RepairDeliveryReconciliationTest.php tests/Feature/Logistics/StaffRetailShippingCoverageTest.php
@@ -720,7 +720,7 @@ php artisan test tests/Feature/Logistics/CustomerTrackingTest.php tests/Feature/
 Expected: FAIL because customer/order/repair code currently recognizes only
 `awaiting_proof_approval` and may serialize the new status raw.
 
-- [ ] **Step 3: Implement safe status projection**
+- [x] **Step 3: Implement safe status projection**
 
 Add one local status mapping at each existing projection boundary rather than
 leaking the internal enum into customer payloads. Treat correction-required as
@@ -728,7 +728,7 @@ confirmation-in-progress for receipt eligibility, but preserve approved-proof
 and delivered-leg requirements for business completion. Update repair/staff
 copy and status labels without creating a new physical delivery path.
 
-- [ ] **Step 4: Run projection, privacy, and repair tests**
+- [x] **Step 4: Run projection, privacy, and repair tests**
 
 ```powershell
 php artisan test tests/Feature/Logistics/CustomerTrackingTest.php tests/Feature/Logistics/LogisticsAuditPrivacyTest.php tests/Feature/Repair/RepairDeliveryReconciliationTest.php tests/Feature/Logistics/StaffRetailShippingCoverageTest.php tests/Feature/Logistics/ReturnToShopTest.php
@@ -737,7 +737,7 @@ php artisan test tests/Feature/Logistics/CustomerTrackingTest.php tests/Feature/
 Expected: PASS, including approved-only customer proof access and existing
 repair return behavior.
 
-- [ ] **Step 5: Commit customer/order/repair projections**
+- [x] **Step 5: Commit customer/order/repair projections**
 
 ```powershell
 git add app/Services/Logistics/CustomerTrackingService.php app/Http/Controllers/Logistics/CustomerTrackingController.php app/Services/OrderReceiptService.php app/Http/Controllers/UserSide/OrderController.php app/Services/RepairDeliveryService.php app/Http/Controllers/Api/StaffOrderController.php resources/js/Pages/ERP/STAFF/JobOrders.tsx tests/Feature/Logistics/CustomerTrackingTest.php tests/Feature/Logistics/LogisticsAuditPrivacyTest.php tests/Feature/Repair/RepairDeliveryReconciliationTest.php tests/Feature/Logistics/StaffRetailShippingCoverageTest.php tests/Feature/Logistics/ReturnToShopTest.php
@@ -770,7 +770,7 @@ git commit -m "fix: keep proof correction status customer-safe"
 - Customer panel maps correction-required to the existing safe confirmation
   label and never renders proof-review internals.
 
-- [ ] **Step 1: Write failing frontend tests**
+- [x] **Step 1: Write failing frontend tests**
 
 Add/update tests for:
 
@@ -787,7 +787,7 @@ Add/update tests for:
 - Customer tracking uses the safe confirmation label for correction-required
   and still hides rejection details/unapproved proofs.
 
-- [ ] **Step 2: Run focused Vitest tests and verify the old UI fails**
+- [x] **Step 2: Run focused Vitest tests and verify the old UI fails**
 
 ```powershell
 pnpm exec vitest run --pool=threads --maxWorkers=1 --minWorkers=1 resources/js/Pages/ERP/Logistics/__tests__/myDeliveries.test.ts resources/js/Pages/ERP/Logistics/__tests__/MyDeliveries.test.tsx resources/js/Pages/ERP/Logistics/__tests__/Shipments.test.tsx resources/js/components/logistics/__tests__/ShipmentTrackingModal.test.tsx
@@ -796,7 +796,7 @@ pnpm exec vitest run --pool=threads --maxWorkers=1 --minWorkers=1 resources/js/P
 Expected: FAIL because the current rider helpers treat awaiting proof as
 actionable/current and do not expose a replacement action or rider state.
 
-- [ ] **Step 3: Implement typed state-driven presentation**
+- [x] **Step 3: Implement typed state-driven presentation**
 
 Update `logistics.ts` and backend payload assumptions first. Then:
 
@@ -813,7 +813,7 @@ Update `logistics.ts` and backend payload assumptions first. Then:
 Use existing components and Tailwind patterns. Do not add a new review page or
 new frontend state library.
 
-- [ ] **Step 4: Run focused and full frontend tests**
+- [x] **Step 4: Run focused and full frontend tests**
 
 ```powershell
 pnpm exec vitest run --pool=threads --maxWorkers=1 --minWorkers=1 resources/js/Pages/ERP/Logistics/__tests__/myDeliveries.test.ts resources/js/Pages/ERP/Logistics/__tests__/MyDeliveries.test.tsx resources/js/Pages/ERP/Logistics/__tests__/Shipments.test.tsx resources/js/components/logistics/__tests__/ShipmentTrackingModal.test.tsx
@@ -822,7 +822,7 @@ pnpm run test:frontend
 
 Expected: PASS with no new frontend failures.
 
-- [ ] **Step 5: Commit frontend progression and review UI**
+- [x] **Step 5: Commit frontend progression and review UI**
 
 ```powershell
 git add resources/js/types/logistics.ts resources/js/Pages/ERP/Logistics/riderDeliveryPresentation.ts resources/js/Pages/ERP/Logistics/MyDeliveries.tsx resources/js/Pages/ERP/Logistics/Shipments.tsx resources/js/components/logistics/ShipmentTrackingPanel.tsx resources/js/Pages/ERP/Logistics/components/BatchStopRow.tsx resources/js/Pages/ERP/Logistics/__tests__/myDeliveries.test.ts resources/js/Pages/ERP/Logistics/__tests__/MyDeliveries.test.tsx resources/js/Pages/ERP/Logistics/__tests__/Shipments.test.tsx resources/js/components/logistics/__tests__/ShipmentTrackingModal.test.tsx
@@ -843,7 +843,7 @@ git commit -m "feat: show non-blocking proof review actions to riders"
 - Private proof authorization, tenant isolation, idempotency, file cleanup,
   and replacement lineage remain intact.
 
-- [ ] **Step 1: Run the repository-wide status search**
+- [x] **Step 1: Run the repository-wide status search**
 
 ```powershell
 rg -n --glob '*.php' --glob '*.tsx' --glob '*.ts' "ShipmentLegStatus|proof_correction_required|awaiting_proof_approval|in_transit|delivery_attempted|needs_resolution|status->value" app resources tests database
@@ -855,7 +855,7 @@ review, correction-only, terminal, customer-safe projection, scheduling, or
 unrelated status. Add a focused test for any missed correction branch instead
 of broadening a default branch.
 
-- [ ] **Step 2: Run security and concurrency tests**
+- [x] **Step 2: Run security and concurrency tests**
 
 ```powershell
 php artisan test tests/Feature/Logistics/RiderTenantAuthorizationTest.php tests/Feature/Logistics/LogisticsConcurrencyTest.php tests/Feature/Logistics/LogisticsAuditPrivacyTest.php tests/Feature/Logistics/MoveHandoffProofsToPrivateTest.php
@@ -865,14 +865,14 @@ Expected: PASS. Verify unauthorized riders cannot replay another rider's
 idempotency key, attach a replacement from another leg/tenant, read private
 proof files, or correct a leg after assignment/tenant authorization is gone.
 
-- [ ] **Step 3: Run a simplification and standards pass**
+- [x] **Step 3: Run a simplification and standards pass**
 
 Use `@ponytail` and the repository Laravel/TypeScript review checklists to
 remove duplicate status arrays, dead branches, unused imports, speculative
 abstractions, or a second notification path. Keep the state transition logic
 in the smallest existing service boundaries that satisfy the spec.
 
-- [ ] **Step 4: Run the focused backend suite after audit fixes**
+- [x] **Step 4: Run the focused backend suite after audit fixes**
 
 ```powershell
 php artisan test tests/Feature/Logistics/ProofReviewFlowTest.php tests/Feature/Logistics/RiderProgressionTest.php tests/Feature/Logistics/ShipmentLegStatusConsumerTest.php tests/Feature/Logistics/LogisticsNotificationTest.php tests/Feature/Logistics/CustomerTrackingTest.php
@@ -894,7 +894,7 @@ composer test
 Expected: the complete PHPUnit suite passes. If a failure is unrelated to the
 change, record the exact test and evidence rather than marking it passed.
 
-- [ ] **Step 2: Run the full frontend suite and production build**
+- [x] **Step 2: Run the full frontend suite and production build**
 
 ```powershell
 pnpm run test:frontend
@@ -905,7 +905,7 @@ Expected: Vitest and Vite complete successfully. No TypeScript compiler or
 linting result may be reported because the repository does not define those
 scripts/configuration.
 
-- [ ] **Step 3: Run diff hygiene and inspect the final diff**
+- [x] **Step 3: Run diff hygiene and inspect the final diff**
 
 ```powershell
 git diff --check
@@ -917,7 +917,7 @@ git diff --name-only
 Confirm there are no `.env`, `vendor/`, `node_modules/`, unrelated worktree,
 or generated-file changes outside the repository’s normal build policy.
 
-- [ ] **Step 4: Perform the final review stack**
+- [x] **Step 4: Perform the final review stack**
 
 Record results for:
 
@@ -935,7 +935,7 @@ Record results for:
 8. Dead-code and reuse audit.
 9. Verification-before-completion evidence.
 
-- [ ] **Step 5: Commit the final implementation changes**
+- [x] **Step 5: Commit the final implementation changes**
 
 Stage only files belonging to the implementation and tests. Do not push or
 create a pull request in this plan.

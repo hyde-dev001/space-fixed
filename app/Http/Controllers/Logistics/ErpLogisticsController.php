@@ -75,7 +75,7 @@ class ErpLogisticsController extends Controller
             'search' => ['nullable', 'string', 'max:100'],
         ])['search'] ?? ''));
         [$module, $availableModules] = $this->logisticsModuleFilter($shop, (string) $request->query('module', 'all'));
-        $status = in_array($request->query('status'), ['all', 'incomplete', 'requested', 'active', 'completed', 'cancelled', 'awaiting_proof_approval', 'customer_disputes', 'failed_attempts', 'failed_pickups'], true)
+        $status = in_array($request->query('status'), ['all', 'incomplete', 'requested', 'active', 'completed', 'cancelled', 'awaiting_proof_approval', 'proof_correction_required', 'customer_disputes', 'failed_attempts', 'failed_pickups'], true)
             ? $request->query('status') : 'all';
         $purpose = $request->query('purpose', 'all');
         $deliveryWindow = in_array($request->query('window'), ['morning', 'afternoon'], true)
@@ -127,6 +127,8 @@ class ErpLogisticsController extends Controller
                 })
                 ->when($status === 'awaiting_proof_approval', fn ($query) => $query
                     ->whereHas('legs', fn ($legs) => $legs->where('status', 'awaiting_proof_approval')))
+                ->when($status === 'proof_correction_required', fn ($query) => $query
+                    ->whereHas('legs', fn ($legs) => $legs->where('status', 'proof_correction_required')))
                 ->when($status === 'customer_disputes', fn ($query) => $query
                     ->whereHas('deliveryDisputes', fn ($disputes) => $disputes->whereIn('status', ['open', 'investigating'])))
                 ->when($status === 'failed_attempts', fn ($query) => $query
@@ -389,7 +391,7 @@ class ErpLogisticsController extends Controller
         $isCurrentRider = (int) $batch->rider_profile_id === $rider->id;
         $hasActiveRiderStop = $batch->legs->contains(fn (ShipmentLeg $leg) =>
             $leg->rider_progress_state === RiderProgressState::ACTIVE
-            && ! in_array($leg->status->value, ['delivered', 'cancelled', 'failed'], true)
+            && ! in_array($leg->status->value, ['delivered', 'cancelled', 'failed', 'proof_correction_required'], true)
             && $leg->assignments
                 ->where('rider_profile_id', $rider->id)
                 ->contains(fn (DeliveryAssignment $assignment) => in_array($assignment->status, ['assigned', 'accepted'], true))
@@ -480,7 +482,7 @@ class ErpLogisticsController extends Controller
                 'assigned', 'pickup_scheduled' => 'upcoming',
                 'picked_up', 'in_transit', 'delivery_attempted', 'awaiting_proof_approval' => 'current',
                 'needs_resolution' => in_array($leg->resolution_type, [null, 'retry'], true) ? 'current' : null,
-                'delivered', 'cancelled' => 'history',
+                'delivered', 'cancelled', 'proof_correction_required' => 'history',
                 default => null,
             };
             $status = $legStatus;
@@ -537,6 +539,43 @@ class ErpLogisticsController extends Controller
         return $batchLegs->concat($standaloneLegs)
             ->map(function (array $record) use ($rider) {
                 [$leg, $parentKey] = $record;
+
+                if ($leg->rider_progress_state === RiderProgressState::PROOF_ACTION_REQUIRED
+                    && $leg->status->value === 'proof_correction_required') {
+                    $proof = $this->latestDeliveryProof($leg);
+                    $assignment = $leg->assignments
+                        ->where('rider_profile_id', $rider->id)
+                        ->sortByDesc('id')
+                        ->first();
+                    $assignmentActive = $assignment
+                        && in_array($assignment->status, ['assigned', 'accepted'], true);
+
+                    if ($proof && $proof->review_status === 'rejected' && $assignment) {
+                        $businessTypes = $this->businessTypes([$leg->shipment?->purpose]);
+                        $deliveries = collect([$this->deliveryPayload($leg)]);
+
+                        return [
+                            'item_type' => 'issue',
+                            'issue_type' => 'proof_correction',
+                            'key' => "proof-correction:{$leg->id}:{$proof->id}",
+                            'id' => $proof->id,
+                            'delivery_id' => $leg->id,
+                            'parent_key' => $parentKey,
+                            'business_types' => $businessTypes,
+                            'reason' => $proof->rejection_reason,
+                            'proof_id' => $proof->id,
+                            'replaces_proof_id' => $proof->replaces_proof_id,
+                            'replacement_allowed' => $assignmentActive,
+                            'attempted_at' => $proof->recorded_at?->toISOString(),
+                            'delivery_date' => $leg->scheduled_delivery_date?->toDateString(),
+                            'search_text' => $this->workSearchText(
+                                "{$parentKey} proof correction {$leg->id} {$proof->rejection_reason}",
+                                $deliveries,
+                            ),
+                        ];
+                    }
+                }
+
                 if ($leg->status->value !== 'delivery_attempted' || filled($leg->resolution_type)) {
                     return null;
                 }
@@ -555,6 +594,7 @@ class ErpLogisticsController extends Controller
 
                 return [
                     'item_type' => 'issue',
+                    'issue_type' => 'delivery_attempt',
                     'key' => "issue:{$attempt->id}",
                     'id' => $attempt->id,
                     'delivery_id' => $leg->id,
@@ -573,11 +613,31 @@ class ErpLogisticsController extends Controller
             ->values();
     }
 
+    private function latestDeliveryProof(ShipmentLeg $leg): ?HandoffProof
+    {
+        if (! $leg->relationLoaded('proofs')) {
+            return null;
+        }
+
+        return $leg->proofs
+            ->filter(fn (HandoffProof $proof): bool => $proof->handoff_type === 'delivery')
+            ->sort(function (HandoffProof $left, HandoffProof $right): int {
+                $recordedAt = strcmp(
+                    $right->recorded_at?->format('Y-m-d H:i:s.u') ?? '',
+                    $left->recorded_at?->format('Y-m-d H:i:s.u') ?? '',
+                );
+
+                return $recordedAt !== 0 ? $recordedAt : $right->id <=> $left->id;
+            })
+            ->first();
+    }
+
     private function deliveryPayload(ShipmentLeg $leg): array
     {
         $payload = $leg->toArray();
         unset($payload['events']);
         $payload['status'] = $leg->status->value;
+        $payload['rider_progress_state'] = $leg->rider_progress_state->value;
         $payload['failed_attempt_count'] = $leg->attempts->count();
         $payload['arrivals'] = $this->arrivalPayload($leg);
         $payload['proofs'] = $leg->relationLoaded('proofs')
@@ -587,6 +647,20 @@ class ErpLogisticsController extends Controller
                 return $proof->toArray();
             })->values()->all()
             : [];
+        $currentDeliveryProof = $this->latestDeliveryProof($leg);
+        $replacementAllowed = $leg->assignments
+            ->contains(fn (DeliveryAssignment $assignment): bool => in_array($assignment->status, ['assigned', 'accepted'], true));
+        $payload['proof_review'] = $currentDeliveryProof ? [
+            'state' => $currentDeliveryProof->review_status,
+            'proof_id' => $currentDeliveryProof->id,
+            'replaces_proof_id' => $currentDeliveryProof->replaces_proof_id,
+            'rejection_reason' => $currentDeliveryProof->review_status === 'rejected'
+                ? $currentDeliveryProof->rejection_reason
+                : null,
+            'replacement_allowed' => $leg->status->value === 'proof_correction_required'
+                && $currentDeliveryProof->review_status === 'rejected'
+                && $replacementAllowed,
+        ] : null;
         $payload['incidents'] = $leg->relationLoaded('incidents')
             ? $leg->incidents->map(fn (DeliveryIncident $incident) => $this->incidentPayload($incident))->values()->all()
             : [];
@@ -958,8 +1032,8 @@ class ErpLogisticsController extends Controller
             'active' => (clone $query)->where('status', 'active')->count(),
             'completed' => (clone $query)->where('status', 'completed')->count(),
             'cancelled' => (clone $query)->where('status', 'cancelled')->count(),
-            'due_today' => (clone $legs)->whereDate('scheduled_delivery_date', today())->whereNotIn('status', ['delivered', 'cancelled'])->count(),
-            'overdue' => (clone $legs)->whereDate('scheduled_delivery_date', '<', today())->whereNotIn('status', ['delivered', 'cancelled'])->count(),
+            'due_today' => (clone $legs)->whereDate('scheduled_delivery_date', today())->whereNotIn('status', ['delivered', 'cancelled', 'proof_correction_required'])->count(),
+            'overdue' => (clone $legs)->whereDate('scheduled_delivery_date', '<', today())->whereNotIn('status', ['delivered', 'cancelled', 'proof_correction_required'])->count(),
             'failed_attempts' => $failed,
             'unassigned' => (clone $legs)->where('status', 'pending')->whereDoesntHave('assignments', fn ($q) => $q->whereIn('status', ['assigned', 'accepted']))->count(),
             'rider_workload' => DeliveryAssignment::query()->whereIn('status', ['assigned', 'accepted'])->whereHas('leg.shipment', fn ($q) => $q->where('shop_owner_id', $shopOwnerId))->count(),

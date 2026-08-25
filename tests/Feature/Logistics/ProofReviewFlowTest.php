@@ -9,9 +9,11 @@ use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
 use App\Models\ShopOwner;
 use App\Models\User;
+use App\Services\Logistics\ProofReviewService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
@@ -157,6 +159,30 @@ class ProofReviewFlowTest extends TestCase
         $this->assertSame(1, $leg->fresh()->proofs()->count());
     }
 
+    public function test_a_leg_cannot_have_two_pending_delivery_proofs_even_if_its_progress_state_is_stale(): void
+    {
+        [$shop, $rider, $leg] = $this->riderLeg(withArrival: true);
+        Storage::fake('local');
+        HandoffProof::factory()->create([
+            'shipment_leg_id' => $leg->id,
+            'handoff_type' => 'delivery',
+            'review_status' => 'pending',
+        ]);
+
+        $this->actingAs($rider, 'user')->post(
+            "/api/logistics/legs/{$leg->id}/proof",
+            [
+                'handoff_type' => 'delivery',
+                'proof_type' => 'photo',
+                'idempotency_key' => '88888888-8888-4888-8888-888888888888',
+                'proof_file' => $this->photo('duplicate-pending.png'),
+            ],
+            ['Accept' => 'application/json']
+        )->assertUnprocessable();
+
+        $this->assertSame(1, $leg->fresh()->proofs()->count());
+    }
+
     public function test_dispatcher_can_approve_after_rider_progression_and_release_the_leg(): void
     {
         [$shop, $rider, $leg] = $this->riderLeg(withArrival: true);
@@ -234,6 +260,29 @@ class ProofReviewFlowTest extends TestCase
         $this->assertSame($originalScheduledDate, $freshLeg->scheduled_delivery_date);
         $this->assertSame(0, $freshLeg->attempts()->count());
         $this->assertSame(1, $freshLeg->events()->where('event_type', 'proof_rejected')->count());
+    }
+
+    public function test_generic_delivery_proof_approval_does_not_complete_a_receive_leg(): void
+    {
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
+        $leg = ShipmentLeg::factory()->create([
+            'leg_type' => 'return_to_shop',
+            'status' => 'awaiting_proof_approval',
+        ]);
+        $proof = HandoffProof::factory()->create([
+            'shipment_leg_id' => $leg->id,
+            'handoff_type' => 'receive',
+            'review_status' => 'pending',
+        ]);
+
+        try {
+            app(ProofReviewService::class)->approve($proof, $shop);
+            $this->fail('A receive proof entered the delivery approval flow.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('proof', $exception->errors());
+        }
+
+        $this->assertSame('awaiting_proof_approval', $leg->fresh()->status->value);
     }
 
     private function riderLeg(bool $withArrival, bool $includeProfile = false): array

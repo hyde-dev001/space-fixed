@@ -211,6 +211,35 @@ class StaffOrderRefundPayloadTest extends TestCase
             ->assertJsonPath('latest_refund.return_logistics.proofs', []);
     }
 
+    public function test_staff_payload_exposes_only_approved_proofs_for_a_delivered_leg(): void
+    {
+        [$shop, $staff, , $order] = $this->refundFixture();
+        $shipment = app(SourceShipmentService::class)->ensureRetailOrderShipment($order);
+        $shipment->update(['status' => 'completed']);
+        $leg = $shipment->legs()->firstOrFail();
+        $leg->update(['status' => 'delivered']);
+        HandoffProof::factory()->create([
+            'shipment_leg_id' => $leg->id,
+            'handoff_type' => 'delivery',
+            'file_path' => 'logistics-proof/pending.jpg',
+            'review_status' => 'pending',
+        ]);
+        HandoffProof::factory()->create([
+            'shipment_leg_id' => $leg->id,
+            'handoff_type' => 'delivery',
+            'file_path' => 'logistics-proof/rejected.jpg',
+            'review_status' => 'rejected',
+        ]);
+
+        foreach ([
+            $this->actingAs($staff, 'user')->getJson('/api/staff/orders')->assertOk()->json('0.logistics'),
+            $this->actingAs($staff, 'user')->getJson("/api/staff/orders/{$order->id}")->assertOk()->json('logistics'),
+        ] as $payload) {
+            $this->assertSame('delivered', $payload['leg_status']);
+            $this->assertSame([], $payload['proofs']);
+        }
+    }
+
     public function test_staff_payload_ignores_another_shops_shipment_for_same_order_id(): void
     {
         [, $staff, , $order] = $this->refundFixture();

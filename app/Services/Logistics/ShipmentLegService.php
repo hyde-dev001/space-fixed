@@ -307,7 +307,10 @@ class ShipmentLegService
                     'status' => 'cancelled',
                     'cancelled_at' => now(),
                 ]));
-            $leg->update(['status' => 'cancelled']);
+            $leg->update([
+                'status' => 'cancelled',
+                'rider_progress_state' => RiderProgressState::RIDER_RELEASED,
+            ]);
             $this->syncShipmentStatus($leg);
             $this->reconcileBatchState($leg->delivery_batch_id);
 
@@ -364,6 +367,7 @@ class ShipmentLegService
                 ]));
             $leg->update([
                 'status' => 'cancelled',
+                'rider_progress_state' => RiderProgressState::RIDER_RELEASED,
                 'failed_at' => $leg->failed_at ?? now(),
                 'delivery_batch_id' => null,
                 'stop_sequence' => null,
@@ -638,6 +642,12 @@ class ShipmentLegService
                 ? null
                 : ShipmentLeg::query()->lockForUpdate()->findOrFail($return->return_for_leg_id);
             if ($return->status->value === 'delivered' && $proof->review_status === 'approved') {
+                if ($return->rider_progress_state !== RiderProgressState::RIDER_RELEASED) {
+                    $return->update(['rider_progress_state' => RiderProgressState::RIDER_RELEASED]);
+                }
+                if ($original && $original->rider_progress_state !== RiderProgressState::RIDER_RELEASED) {
+                    $original->update(['rider_progress_state' => RiderProgressState::RIDER_RELEASED]);
+                }
                 if ($isDirectRefundReturn) {
                     $this->completeDirectRefundReturn($return);
                 } else {
@@ -651,11 +661,19 @@ class ShipmentLegService
                 abort(403);
             }
             $proof->update(['review_status' => 'approved', 'reviewed_by_type' => ShopOwner::class, 'reviewed_by_id' => $shop->id, 'reviewed_at' => now()]);
-            $return->update(['status' => 'delivered', 'delivered_at' => now()]);
+            $return->update([
+                'status' => 'delivered',
+                'rider_progress_state' => RiderProgressState::RIDER_RELEASED,
+                'delivered_at' => now(),
+            ]);
             if ($isDirectRefundReturn) {
                 $this->completeDirectRefundReturn($return);
             } else {
-                $original->update(['status' => 'cancelled', 'resolution_type' => 'returned']);
+                $original->update([
+                    'status' => 'cancelled',
+                    'rider_progress_state' => RiderProgressState::RIDER_RELEASED,
+                    'resolution_type' => 'returned',
+                ]);
                 $this->completeFailedDeliveryRefundReturn($return, $original);
                 $return->shipment->update(['status' => 'cancelled', 'cancelled_at' => now()]);
                 $this->completeRepairReturnRecovery($return);
@@ -860,6 +878,9 @@ class ShipmentLegService
             if ($isPickup) {
                 $leg->update([
                     'status' => $terminalPickup ? 'cancelled' : 'needs_resolution',
+                    'rider_progress_state' => $terminalPickup
+                        ? RiderProgressState::RIDER_RELEASED
+                        : RiderProgressState::ACTIVE,
                     'failed_at' => now(),
                     'delivery_batch_id' => null,
                     'stop_sequence' => null,

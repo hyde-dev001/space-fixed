@@ -95,6 +95,10 @@ class ProofService
                     }
                 }
 
+                if ($data['handoff_type'] === 'delivery') {
+                    $this->assertNoPendingDeliveryProof($leg);
+                }
+
                 $this->assertCanRecord($leg, $data['handoff_type']);
             }
 
@@ -139,9 +143,10 @@ class ProofService
         }
 
         return $leg->proofs()
-            ->whereIn('handoff_type', ['delivery', 'receive'])
-            ->where('review_status', 'approved')
-            ->exists();
+            ->where('handoff_type', 'delivery')
+            ->orderByDesc('recorded_at')
+            ->orderByDesc('id')
+            ->value('review_status') === 'approved';
     }
 
     private function assertCanRecord(ShipmentLeg $leg, string $handoffType): void
@@ -217,6 +222,19 @@ class ProofService
         if ($hasPendingProof) {
             throw ValidationException::withMessages([
                 'replaces_proof_id' => 'A delivery proof is already awaiting review.',
+            ]);
+        }
+    }
+
+    private function assertNoPendingDeliveryProof(ShipmentLeg $leg): void
+    {
+        if ($leg->proofs()
+            ->where('handoff_type', 'delivery')
+            ->where('review_status', 'pending')
+            ->lockForUpdate()
+            ->exists()) {
+            throw ValidationException::withMessages([
+                'proof' => 'A delivery proof is already awaiting review.',
             ]);
         }
     }

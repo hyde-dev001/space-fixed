@@ -25,6 +25,12 @@ class ProofReviewService
             [$leg, $lockedProof] = $this->lockProofAndLeg($proof->id);
             $this->assertSupportedHandoff($lockedProof);
 
+            if ($lockedProof->handoff_type === 'receive') {
+                throw ValidationException::withMessages([
+                    'proof' => 'Return handoff proofs must be confirmed through the return receipt workflow.',
+                ]);
+            }
+
             if ($lockedProof->handoff_type === 'delivery') {
                 $this->assertCurrentDeliveryProof($leg, $lockedProof);
             }
