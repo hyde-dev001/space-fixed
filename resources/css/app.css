@@ -44,6 +44,14 @@ layer(base);
   transform: none !important;
 }
 
+/* Legacy cards set text-white directly on the SVG, so the container color
+   alone cannot override it. Keep the icon itself dark on the light tile. */
+.metrics-card :is([class*="bg-gradient-to-br"], [class*="bg-linear-to-br"]) > svg,
+[class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"] :is([class*="bg-gradient-to-br"], [class*="bg-linear-to-br"]) > svg,
+[class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"] :is([class*="bg-gradient-to-br"], [class*="bg-linear-to-br"]) > svg {
+  color: #1e293b !important;
+}
+
 .metrics-card > [class*="absolute"][class*="inset-0"],
 [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"] > [class*="absolute"][class*="inset-0"],
 [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"] > [class*="absolute"][class*="inset-0"] {
