@@ -29,7 +29,7 @@ const ModuleLanding: React.FC = () => {
 
   return (
     <AppLayoutERP>
-      <main className="mx-auto max-w-6xl space-y-8" aria-labelledby="erp-module-title">
+      <main className="w-full space-y-8" aria-labelledby="erp-module-title">
         <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-theme-sm dark:border-gray-800 dark:bg-gray-900 sm:p-8">
           <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-2xl space-y-3">

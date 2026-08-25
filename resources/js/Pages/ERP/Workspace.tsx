@@ -87,7 +87,7 @@ const Workspace: React.FC = () => {
 
   return (
     <AppLayoutERP>
-      <main className="mx-auto max-w-6xl space-y-8 lg:max-w-7xl lg:space-y-10" aria-labelledby="erp-workspace-title">
+      <main className="w-full space-y-8 lg:space-y-10" aria-labelledby="erp-workspace-title">
         <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-theme-sm dark:border-gray-800 dark:bg-gray-900 sm:p-8 lg:rounded-3xl lg:border-gray-200/80 lg:p-10">
           <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between lg:gap-10">
             <div className="max-w-2xl space-y-3 lg:max-w-3xl">
