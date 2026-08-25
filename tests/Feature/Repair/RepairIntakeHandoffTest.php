@@ -233,6 +233,29 @@ class RepairIntakeHandoffTest extends TestCase
             ->assertJsonPath('data.0.intake_handoff.events.0.event_type', 'proof_required');
     }
 
+    public function test_rejected_pickup_proof_is_reported_as_correction_required(): void
+    {
+        [$repair, $repairer] = $this->repairFixture('shop_pickup');
+        [$shipment, $leg] = $this->pickupShipment($repair, 'active', 'proof_correction_required');
+        HandoffProof::factory()->create([
+            'shipment_leg_id' => $leg->id,
+            'handoff_type' => 'delivery',
+            'review_status' => 'rejected',
+            'rejection_reason' => 'The delivery image is not readable.',
+        ]);
+
+        $this->actingAs($repairer, 'user')
+            ->getJson('/api/repairer/repairs')
+            ->assertOk()
+            ->assertJsonPath('data.0.intake_handoff.leg_status', 'proof_correction_required')
+            ->assertJsonPath('data.0.intake_handoff.proof_review_state', 'rejected')
+            ->assertJsonPath('data.0.intake_handoff.proof_correction_required', true)
+            ->assertJsonPath('data.0.intake_handoff.can_confirm_receipt', false)
+            ->assertJsonPath('data.0.intake_handoff.blocked_reason', 'The delivery proof was rejected. A replacement proof is required before physical receipt.');
+
+        $this->assertSame('active', $shipment->fresh()->status->value);
+    }
+
     public function test_job_order_handoff_queries_do_not_grow_per_repair(): void
     {
         $shop = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);

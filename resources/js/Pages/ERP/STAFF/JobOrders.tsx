@@ -189,6 +189,8 @@ const getShopOwnedCoverageMessage = (coverage: Order['shopOwnedCoverage']): stri
 const formatLogisticsStatus = (status: string | null | undefined): string => {
   if (!status) return 'Not available';
 
+  if (status === 'proof_correction_required') return 'Proof correction required';
+
   return status.replaceAll('_', ' ').replace(/^./, (character) => character.toUpperCase());
 };
 

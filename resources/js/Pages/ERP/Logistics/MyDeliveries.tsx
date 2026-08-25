@@ -19,6 +19,7 @@ import {
   deliveryStatusLabel,
   nextActionableDelivery,
   orderedDeliveries,
+  riderProgressLabel,
   riderResolutionInstruction,
 } from './riderDeliveryPresentation';
 
@@ -541,7 +542,7 @@ const retryDateText = (value?: string | null) => value
 function StatusChip({ status, label }: { status: string; label?: string }) {
   const symbol = ['delivered', 'completed'].includes(status)
     ? '✓'
-    : ['cancelled', 'declined', 'delivery_attempted'].includes(status)
+    : ['cancelled', 'declined', 'delivery_attempted', 'proof_action_required', 'proof_correction_required'].includes(status)
       ? '!'
       : '•';
 
@@ -624,7 +625,14 @@ function DeliverySequence({ item }: { item: RiderDeliveryWorkItem }) {
       {orderedDeliveries(item.deliveries).map((delivery, index) => {
         const contact = deliveryContact(delivery);
         const sequence = delivery.stop_sequence ?? index + 1;
-        const symbol = delivery.status === 'delivered' ? '✓' : delivery.status === 'delivery_attempted' ? '!' : sequence;
+        const symbol = delivery.status === 'delivered'
+          ? '✓'
+          : ['delivery_attempted', 'proof_correction_required'].includes(delivery.status)
+            || delivery.rider_progress_state === 'proof_action_required'
+            ? '!'
+            : delivery.rider_progress_state === 'proof_submitted'
+              ? '•'
+              : sequence;
 
         return (
           <li key={delivery.id} className="flex gap-3 rounded-xl bg-slate-50 p-3 dark:bg-slate-800">
@@ -636,7 +644,12 @@ function DeliverySequence({ item }: { item: RiderDeliveryWorkItem }) {
                 <p className="font-semibold text-slate-950 dark:text-white">
                   Delivery #{delivery.id} · Stop {sequence}
                 </p>
-                <StatusChip status={delivery.status} />
+                <StatusChip
+                  status={delivery.status}
+                  label={delivery.rider_progress_state
+                    ? riderProgressLabel(delivery.rider_progress_state)
+                    : undefined}
+                />
               </div>
               <ResolutionNotice delivery={delivery} />
               <p className="mt-1 truncate text-sm text-slate-600 dark:text-slate-300">
@@ -1320,6 +1333,85 @@ function DeliveryActions({
   );
 }
 
+function ProofCorrectionAction({
+  issue,
+  online,
+  pendingAction,
+  canRecordProof,
+  runAction,
+}: {
+  issue: RiderDeliveryIssue;
+  online: boolean;
+  pendingAction: string | null;
+  canRecordProof: boolean;
+  runAction: ActionRunner;
+}) {
+  const [proofFile, setProofFile] = useState<File | null>(null);
+  const idempotencyKey = useRef<string | null>(null);
+  const proofId = issue.proof_id ?? issue.id;
+  const key = `proof-replacement:${issue.delivery_id}:${proofId}`;
+
+  const submitReplacement = () => {
+    if (!proofFile || !issue.replacement_allowed || !proofId) return;
+
+    const form = new FormData();
+    form.append('handoff_type', 'delivery');
+    form.append('proof_type', 'photo');
+    form.append('proof_file', proofFile);
+    form.append('idempotency_key', idempotencyKey.current ?? (idempotencyKey.current = crypto.randomUUID()));
+    form.append('replaces_proof_id', String(proofId));
+    runAction(key, () => logisticsApi.recordProof(issue.delivery_id, form), {
+      title: `Replace proof for delivery #${issue.delivery_id}?`,
+      text: 'This creates a new proof record linked to the rejected submission.',
+      confirmButtonText: 'Submit replacement',
+    });
+  };
+
+  return (
+    <div className="mt-4 space-y-3 rounded-xl border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/30">
+      <p className="text-sm font-bold text-amber-950 dark:text-amber-100">Replace delivery proof</p>
+      {issue.reason && (
+        <p className="text-sm text-amber-900 dark:text-amber-200">
+          Dispatcher note: {issue.reason}
+        </p>
+      )}
+      {canRecordProof && issue.replacement_allowed ? (
+        <>
+          <DeliveryPhotoUpload
+            inputId={`replacement-proof-photo-${issue.delivery_id}-${proofId}`}
+            inputLabel="Replacement delivery proof"
+            label="Replacement proof"
+            file={proofFile}
+            onChange={(file) => {
+              idempotencyKey.current = null;
+              setProofFile(file);
+            }}
+          />
+          <button
+            type="button"
+            disabled={!online || !proofFile || pendingAction !== null}
+            onClick={submitReplacement}
+            className="min-h-12 w-full touch-manipulation rounded-xl bg-blue-600 px-4 text-sm font-bold text-white transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 xl:min-h-11"
+          >
+            Submit replacement proof
+          </button>
+          {!online && (
+            <p role="status" className="text-center text-xs font-semibold text-amber-800 dark:text-amber-200">
+              Retry after reconnect
+            </p>
+          )}
+        </>
+      ) : (
+        <p role="status" className="text-sm text-amber-900 dark:text-amber-200">
+          {issue.replacement_allowed === false
+            ? 'This delivery is no longer assigned for correction. Contact dispatch.'
+            : 'This proof is awaiting dispatcher review.'}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function CurrentDeliveryCard({
   item,
   showSequence,
@@ -1422,13 +1514,23 @@ function CurrentDeliveryCard({
             </>
           ) : (
             <div className="rounded-xl bg-slate-50 p-4 dark:bg-slate-800">
-              <p className="font-semibold text-slate-900 dark:text-white">
-                {item.deliveries.some(({ status }) => status === 'awaiting_proof_approval')
-                  ? 'Waiting for proof approval'
-                  : 'No rider action needed right now'}
-              </p>
+              {item.deliveries.some(({ rider_progress_state }) => rider_progress_state === 'proof_action_required') ? (
+                <p className="font-semibold text-slate-900 dark:text-white">Proof correction required</p>
+              ) : item.deliveries.some(({ rider_progress_state, status }) =>
+                rider_progress_state === 'proof_submitted'
+                || (rider_progress_state === undefined && status === 'awaiting_proof_approval')) ? (
+                <p className="font-semibold text-slate-900 dark:text-white">Delivery submitted successfully</p>
+              ) : (
+                <p className="font-semibold text-slate-900 dark:text-white">No rider action needed right now</p>
+              )}
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                This page will update when the delivery is ready to continue.
+                {item.deliveries.some(({ rider_progress_state }) => rider_progress_state === 'proof_action_required')
+                  ? 'Upload replacement proof from the Issues tab. This does not start a redelivery.'
+                  : item.deliveries.some(({ rider_progress_state, status }) =>
+                    rider_progress_state === 'proof_submitted'
+                    || (rider_progress_state === undefined && status === 'awaiting_proof_approval'))
+                    ? 'Proof is awaiting dispatcher review. You can continue with other eligible deliveries.'
+                    : 'This page will update when the delivery is ready to continue.'}
               </p>
             </div>
           )}
@@ -1686,17 +1788,42 @@ function OfferRegion({
   );
 }
 
-function CompactListItem({ item }: { item: RiderDeliveryWorkItem | RiderDeliveryIssue }) {
+function CompactListItem({
+  item,
+  online,
+  pendingAction,
+  canRecordProof,
+  runAction,
+}: {
+  item: RiderDeliveryWorkItem | RiderDeliveryIssue;
+  online: boolean;
+  pendingAction: string | null;
+  canRecordProof: boolean;
+  runAction: ActionRunner;
+}) {
   if (item.item_type === 'issue') {
+    const correction = item.issue_type === 'proof_correction';
+
     return (
       <article className="rounded-xl border border-amber-300 bg-white p-5 dark:border-amber-800 dark:bg-slate-900 xl:p-4">
         <div className="flex flex-col items-start gap-3 xl:flex-row xl:justify-between">
           <div>
-            <p className="font-bold text-slate-950 dark:text-white">Issue · Delivery #{item.delivery_id}</p>
+            <p className="font-bold text-slate-950 dark:text-white">
+              {correction ? 'Proof correction' : 'Issue'} · Delivery #{item.delivery_id}
+            </p>
             <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{item.parent_key.replace(':', ' #')}</p>
           </div>
-          <StatusChip status="delivery_attempted" />
+          <StatusChip status={correction ? 'proof_action_required' : 'delivery_attempted'} />
         </div>
+        {correction ? (
+          <ProofCorrectionAction
+            issue={item}
+            online={online}
+            pendingAction={pendingAction}
+            canRecordProof={canRecordProof}
+            runAction={runAction}
+          />
+        ) : null}
       </article>
     );
   }
@@ -1724,9 +1851,17 @@ function CompactListItem({ item }: { item: RiderDeliveryWorkItem | RiderDelivery
 function DeliveryLists({
   deliveryData,
   navigate,
+  online,
+  pendingAction,
+  canRecordProof,
+  runAction,
 }: {
   deliveryData: RiderDeliveryPageData;
   navigate: (patch: Partial<RiderDeliveryPageData['filters']>, page?: number) => void;
+  online: boolean;
+  pendingAction: string | null;
+  canRecordProof: boolean;
+  runAction: ActionRunner;
 }) {
   const [search, setSearch] = useState(deliveryData.filters.search);
   useEffect(() => setSearch(deliveryData.filters.search), [deliveryData.filters.search]);
@@ -1831,7 +1966,16 @@ function DeliveryLists({
 
       <div className="space-y-4 xl:space-y-3">
         {deliveryData.list.data.length ? (
-          deliveryData.list.data.map((item) => <CompactListItem key={item.key} item={item} />)
+          deliveryData.list.data.map((item) => (
+            <CompactListItem
+              key={item.key}
+              item={item}
+              online={online}
+              pendingAction={pendingAction}
+              canRecordProof={canRecordProof}
+              runAction={runAction}
+            />
+          ))
         ) : (
           <div className="rounded-xl border border-dashed border-slate-300 bg-white p-5 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
             {emptyMessage}
@@ -2032,7 +2176,14 @@ export default function MyDeliveries() {
             {actionError}
           </div>
         )}
-        <DeliveryLists deliveryData={deliveryData} navigate={navigate} />
+        <DeliveryLists
+          deliveryData={deliveryData}
+          navigate={navigate}
+          online={online}
+          pendingAction={pendingAction}
+          canRecordProof={canRecordProof}
+          runAction={runAction}
+        />
       </div>
     </AppLayoutERP>
   );

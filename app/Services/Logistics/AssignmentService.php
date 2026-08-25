@@ -57,7 +57,7 @@ class AssignmentService
                 ]);
             }
 
-            if (in_array($leg->status->value, ['needs_resolution', 'delivered', 'cancelled'], true)) {
+            if (in_array($leg->status->value, ['needs_resolution', 'proof_correction_required', 'delivered', 'cancelled'], true)) {
                 throw ValidationException::withMessages(['shipment_leg_id' => 'Only retryable delivery legs can be assigned.']);
             }
 
@@ -97,6 +97,11 @@ class AssignmentService
 
         return DB::transaction(function () use ($leg, $rider, $accepted, $reason) {
             $leg = ShipmentLeg::query()->with('shipment')->lockForUpdate()->findOrFail($leg->id);
+            if ($leg->status->value === 'proof_correction_required') {
+                throw ValidationException::withMessages([
+                    'shipment_leg_id' => 'Proof-correction deliveries cannot be accepted as new work.',
+                ]);
+            }
             if ($leg->delivery_batch_id) {
                 throw ValidationException::withMessages(['shipment_leg_id' => 'Batch offers must be answered as a batch.']);
             }

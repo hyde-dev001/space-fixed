@@ -436,7 +436,6 @@ class StaffOrderController extends Controller
                 $shipment,
                 ['inbound', 'return_to_shop'],
                 $this->refundLogisticsFallback($refund),
-                true,
             ),
         ];
     }
@@ -499,7 +498,6 @@ class StaffOrderController extends Controller
         ?Shipment $shipment,
         array $legTypes,
         array $fallback = [],
-        bool $proofsOnlyWhenDelivered = false,
     ): ?array {
         if (! $shipment) {
             return null;
@@ -513,9 +511,10 @@ class StaffOrderController extends Controller
             ->whereIn('status', ['assigned', 'accepted', 'completed'])
             ->sortByDesc('id')
             ->first();
-        $proofs = $leg && (! $proofsOnlyWhenDelivered || $leg->status->value === 'delivered')
+        $proofs = $leg && $leg->status->value === 'delivered'
             ? $leg->proofs
-                ->filter(fn ($proof) => trim((string) ($proof->file_path ?? '')) !== '')
+                ->filter(fn ($proof) => $proof->review_status === 'approved'
+                    && trim((string) ($proof->file_path ?? '')) !== '')
                 ->map(fn ($proof) => [
                     'id' => (int) $proof->id,
                     'handoff_type' => $proof->handoff_type,

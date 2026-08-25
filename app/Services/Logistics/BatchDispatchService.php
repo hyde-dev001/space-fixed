@@ -186,11 +186,11 @@ class BatchDispatchService
                 $batchId = ShipmentLeg::query()->whereKey($leg->id)->value('delivery_batch_id');
                 if (! $batchId) {
                     $changed = ShipmentLeg::query()->whereKey($leg->id)->whereNull('delivery_batch_id')
-                        ->whereNotIn('status', ['delivered', 'cancelled'])
+                        ->whereNotIn('status', ['delivered', 'cancelled', 'proof_correction_required'])
                         ->update(['urgent_at' => $urgent ? now() : null]);
                     $fresh = ShipmentLeg::query()->findOrFail($leg->id);
                     if ($changed || (! $fresh->delivery_batch_id
-                        && ! in_array($fresh->status->value, ['delivered', 'cancelled'], true)
+                        && ! in_array($fresh->status->value, ['delivered', 'cancelled', 'proof_correction_required'], true)
                         && (bool) $fresh->urgent_at === $urgent)) {
                         return $fresh;
                     }
@@ -200,8 +200,8 @@ class BatchDispatchService
 
                 $batch = DeliveryBatch::query()->lockForUpdate()->find($batchId);
                 $lockedLeg = ShipmentLeg::query()->lockForUpdate()->findOrFail($leg->id);
-                if (in_array($lockedLeg->status->value, ['delivered', 'cancelled'], true)) {
-                    throw ValidationException::withMessages(['leg' => 'Delivered or cancelled stops can no longer be changed.']);
+                if (in_array($lockedLeg->status->value, ['delivered', 'cancelled', 'proof_correction_required'], true)) {
+                    throw ValidationException::withMessages(['leg' => 'Delivered, cancelled, or proof-correction stops can no longer be changed.']);
                 }
                 $lockedLeg->update(['urgent_at' => $urgent ? now() : null]);
                 if ($batch?->status === 'draft' && $lockedLeg->delivery_batch_id === $batch->id) {
@@ -216,8 +216,8 @@ class BatchDispatchService
         }
 
         $leg = ShipmentLeg::query()->findOrFail($leg->id);
-        if (in_array($leg->status->value, ['delivered', 'cancelled'], true)) {
-            throw ValidationException::withMessages(['leg' => 'Delivered or cancelled stops can no longer be changed.']);
+        if (in_array($leg->status->value, ['delivered', 'cancelled', 'proof_correction_required'], true)) {
+            throw ValidationException::withMessages(['leg' => 'Delivered, cancelled, or proof-correction stops can no longer be changed.']);
         }
         throw ValidationException::withMessages(['leg' => 'Stop changed while urgency was being updated. Please try again.']);
     }
@@ -306,7 +306,7 @@ class BatchDispatchService
             ]);
             $batch->legs()->each(function ($leg) {
                 $leg->assignments()->whereIn('status', ['assigned', 'accepted'])->update(['status' => 'cancelled', 'cancelled_at' => now()]);
-                if (! in_array($leg->status->value, ['delivered', 'cancelled'], true)) {
+                if (! in_array($leg->status->value, ['delivered', 'cancelled', 'proof_correction_required'], true)) {
                     $leg->update(['delivery_batch_id' => null, 'stop_sequence' => null, 'status' => 'pending']);
                 }
             });
@@ -352,6 +352,12 @@ class BatchDispatchService
 
     private function validateBatchComposition($legs, ShopOwner $shop): void
     {
+        if ($legs->contains(fn ($leg) => $leg->status->value === 'proof_correction_required')) {
+            throw ValidationException::withMessages([
+                'legs' => 'Proof-correction stops cannot be batched as ordinary delivery work.',
+            ]);
+        }
+
         if ($legs->count() < 2) {
             throw ValidationException::withMessages(['legs' => 'A batch requires at least two deliveries.']);
         }

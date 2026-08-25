@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Logistics;
 
+use App\Enums\Logistics\RiderProgressState;
 use App\Models\Logistics\DeliveryAssignment;
 use App\Models\Logistics\DeliveryBatch;
 use App\Models\Logistics\DeliveryEvent;
@@ -109,6 +110,30 @@ class ShipmentLegServiceTest extends TestCase
         $this->assertSame('delivered', $leg->fresh()->status->value);
     }
 
+    public function test_newer_pending_delivery_proof_blocks_an_older_approved_proof(): void
+    {
+        $leg = ShipmentLeg::factory()->create([
+            'status' => 'awaiting_proof_approval',
+            'requires_delivery_proof' => true,
+        ]);
+        HandoffProof::factory()->create([
+            'shipment_leg_id' => $leg->id,
+            'handoff_type' => 'delivery',
+            'review_status' => 'approved',
+            'recorded_at' => now()->subMinute(),
+        ]);
+        HandoffProof::factory()->create([
+            'shipment_leg_id' => $leg->id,
+            'handoff_type' => 'delivery',
+            'review_status' => 'pending',
+            'recorded_at' => now(),
+        ]);
+
+        $this->expectException(ValidationException::class);
+
+        app(ShipmentLegService::class)->markDelivered($leg);
+    }
+
     public function test_repeating_delivered_transition_returns_the_leg_without_duplicate_events(): void
     {
         $leg = ShipmentLeg::factory()->create([
@@ -140,13 +165,25 @@ class ShipmentLegServiceTest extends TestCase
         app(ShipmentLegService::class)->markInTransit($leg);
     }
 
-    public function test_rider_cannot_start_a_standalone_delivery_while_a_batch_is_active(): void
+    public function test_rider_cannot_start_a_standalone_delivery_while_a_batch_has_active_work(): void
     {
         $rider = RiderProfile::factory()->create();
-        DeliveryBatch::factory()->create([
+        $batch = DeliveryBatch::factory()->create([
             'shop_owner_id' => $rider->shop_owner_id,
             'rider_profile_id' => $rider->id,
             'status' => 'in_progress',
+        ]);
+        $batchLeg = ShipmentLeg::factory()->create([
+            'shipment_id' => Shipment::factory()->create(['shop_owner_id' => $rider->shop_owner_id])->id,
+            'delivery_batch_id' => $batch->id,
+            'status' => 'in_transit',
+            'rider_progress_state' => RiderProgressState::ACTIVE,
+            'stop_sequence' => 1,
+        ]);
+        DeliveryAssignment::factory()->create([
+            'shipment_leg_id' => $batchLeg->id,
+            'rider_profile_id' => $rider->id,
+            'status' => 'accepted',
         ]);
         $leg = $this->standaloneLegFor($rider);
 

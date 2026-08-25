@@ -6,7 +6,7 @@ const titleCase = (value: string) =>
   value.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 
 const awaitingConfirmationLabel = 'Delivered \u2014 confirmation in progress';
-const customerStatus = (status: string) => status === 'awaiting_proof_approval'
+const customerStatus = (status: string) => ['awaiting_proof_approval', 'proof_correction_required'].includes(status)
   ? awaitingConfirmationLabel
   : titleCase(status);
 
@@ -158,7 +158,7 @@ export default function ShipmentTrackingPanel({
   const itemLabel = isReturn ? 'Return' : isRepair ? 'Repair Delivery' : 'Shipment';
   const trackingNumber = isReturn ? `RET-${shipment.id}` : (currentLeg?.tracking_number || `SHP-${shipment.id}`);
   const trackingUrl = isReturn ? `/tracking/shipments/${shipment.id}` : currentLeg?.tracking_url;
-  const awaitingConfirmation = currentLeg?.status === 'awaiting_proof_approval';
+  const awaitingConfirmation = ['awaiting_proof_approval', 'proof_correction_required'].includes(currentLeg?.status ?? '');
   const closeProof = () => {
     setSelectedProof(null);
     queueMicrotask(() => proofOpener.current?.focus());
@@ -239,7 +239,7 @@ export default function ShipmentTrackingPanel({
           const attempt = leg.latest_failed_attempt!;
           const isPickupFailure = attempt.attempt_type === 'pickup';
           const isActiveFailure = leg.id === currentLeg?.id
-            && !['awaiting_proof_approval', 'delivered'].includes(leg.status);
+            && !['awaiting_proof_approval', 'proof_correction_required', 'delivered'].includes(leg.status);
           const proofUnavailable = !attempt.proof_url || failedProofIds.includes(attempt.id);
 
           return (

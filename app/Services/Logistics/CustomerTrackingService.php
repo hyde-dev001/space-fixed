@@ -84,7 +84,9 @@ class CustomerTrackingService
                     'id' => $leg->id,
                     'sequence' => $leg->sequence,
                     'leg_type' => $leg->leg_type,
-                    'status' => $leg->status->value,
+                    'status' => $leg->status->value === 'proof_correction_required'
+                        ? 'awaiting_proof_approval'
+                        : $leg->status->value,
                     'origin_snapshot' => $this->safeSnapshot($leg->origin_snapshot),
                     'destination_snapshot' => $this->safeSnapshot($leg->destination_snapshot),
                     'tracking_number' => $leg->tracking_number,

@@ -928,6 +928,9 @@ const MyOrders: React.FC = () => {
   const formatDeliveryStatus = (status?: string | null): string => {
     const normalized = String(status || '').trim();
     if (!normalized) return 'Awaiting dispatch';
+    if (normalized === 'awaiting_proof_approval' || normalized === 'proof_correction_required') {
+      return 'Delivered — confirmation in progress';
+    }
 
     return normalized
       .replace(/[_-]+/g, ' ')
@@ -2400,7 +2403,7 @@ const MyOrders: React.FC = () => {
                             className={`${actionButtonBaseClass} ${
                               actionButtonPrimaryClass
                             }`}
-                            title={order.delivery_status === 'awaiting_proof_approval'
+                            title={['awaiting_proof_approval', 'proof_correction_required'].includes(order.delivery_status ?? '')
                               ? 'Confirm receipt while dispatcher reviews the delivery proof'
                               : 'Confirm you have received your order'}
                           >

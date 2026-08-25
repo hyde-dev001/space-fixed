@@ -22,7 +22,12 @@ class RecordHandoffProofRequest extends FormRequest
         return [
             'handoff_type' => ['required', 'in:pickup,delivery,receive'],
             'proof_type' => ['required', 'in:photo,signature,qr,staff_confirmation,customer_confirmation,courier_receipt,tracking_confirmation'],
-            'idempotency_key' => ['nullable', 'uuid'],
+            'idempotency_key' => [
+                Rule::requiredIf(fn () => filled($this->input('replaces_proof_id'))),
+                'nullable',
+                'uuid',
+            ],
+            'replaces_proof_id' => ['nullable', 'integer'],
             'proof_file' => [
                 Rule::requiredIf(fn () => $this->input('proof_type') === 'photo'),
                 'nullable',

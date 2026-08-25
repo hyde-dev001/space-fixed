@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Logistics;
 
+use App\Enums\Logistics\RiderProgressState;
 use App\Models\Logistics\DeliveryEvent;
 use App\Models\Logistics\DeliveryAssignment;
 use App\Models\Logistics\HandoffProof;
@@ -696,7 +697,8 @@ class LogisticsApiTest extends TestCase
             'review_status' => 'rejected',
             'rejection_reason' => 'Photo does not show the recipient.',
         ]);
-        $this->assertSame('in_transit', $leg->fresh()->status->value);
+        $this->assertSame('proof_correction_required', $leg->fresh()->status->value);
+        $this->assertSame(RiderProgressState::PROOF_ACTION_REQUIRED, $leg->fresh()->rider_progress_state);
         $this->assertDatabaseHas('delivery_events', [
             'shipment_leg_id' => $leg->id,
             'event_type' => 'proof_rejected',

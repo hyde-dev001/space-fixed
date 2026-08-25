@@ -24,6 +24,16 @@ describe('rider delivery presentation rules', () => {
     ] as any)?.id).toBe(3);
   });
 
+  it('uses rider progress state instead of business status for active work', () => {
+    expect(nextActionableDelivery([
+      { id: 1, status: 'in_transit', rider_progress_state: 'proof_submitted', stop_sequence: 1 },
+      { id: 2, status: 'in_transit', rider_progress_state: 'active', stop_sequence: 2 },
+    ] as any)?.id).toBe(2);
+    expect(nextActionableDelivery([
+      { id: 1, status: 'proof_correction_required', rider_progress_state: 'proof_action_required' },
+    ] as any)).toBeUndefined();
+  });
+
   it('treats a scheduled pickup as the next rider action', () => {
     expect(nextActionableDelivery([
       { id: 1, status: 'pickup_scheduled', stop_sequence: 1 },
@@ -48,6 +58,7 @@ describe('rider delivery presentation rules', () => {
 
   it('formats system statuses as rider-friendly text', () => {
     expect(deliveryStatusLabel('awaiting_proof_approval')).toBe('Waiting for proof approval');
+    expect(deliveryStatusLabel('proof_correction_required')).toBe('Proof correction required');
   });
 
   it('formats verified and exception arrivals without relying on color', () => {

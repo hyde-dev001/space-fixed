@@ -94,6 +94,33 @@ class LogisticsNotificationTest extends TestCase
         ]);
     }
 
+    public function test_proof_notification_preserves_proof_chain_identifiers(): void
+    {
+        $this->seed(RolesAndPermissionsSeeder::class);
+        $shop = ShopOwner::factory()->create();
+        $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $dispatcher->assignRole('Logistics Dispatcher');
+        $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
+        $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id]);
+
+        app(DeliveryEventService::class)->record($shipment, $leg, [
+            'event_type' => 'proof_required',
+            'visibility' => 'internal',
+            'metadata' => [
+                'proof_id' => 17,
+                'replaces_proof_id' => 9,
+            ],
+        ]);
+
+        $notification = Notification::query()
+            ->where('user_id', $dispatcher->id)
+            ->where('type', 'logistics_proof_required')
+            ->sole();
+
+        $this->assertSame(17, $notification->data['proof_id']);
+        $this->assertSame(9, $notification->data['replaces_proof_id']);
+    }
+
     public function test_dispatcher_is_notified_when_a_delivery_attempt_fails(): void
     {
         $this->seed(RolesAndPermissionsSeeder::class);

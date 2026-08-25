@@ -556,6 +556,36 @@ it('lets dispatcher reject pending delivery proof with a reason', async () => {
   ));
 });
 
+it('shows rejected proof lineage without offering another review decision', () => {
+  setDispatcherLeg({
+    id: 2,
+    leg_type: 'outbound',
+    status: 'proof_correction_required',
+    assignments: [{ id: 3, status: 'accepted' }],
+    proofs: [{
+      id: 17,
+      handoff_type: 'delivery',
+      review_status: 'rejected',
+      rejection_reason: 'Photo does not show the recipient.',
+      replaces_proof_id: 11,
+      recorded_at: '2026-07-20T10:00:00Z',
+      reviewed_at: '2026-07-20T10:05:00Z',
+      reviewed_by_id: 42,
+      proof_url: '/api/logistics/proofs/17/file',
+    }],
+    attempts: [],
+  });
+  mocks.props.canApproveProof = true;
+
+  render(<Shipments />);
+  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+
+  expect(screen.getByText('Delivery proof #17 · Rejected · replaces proof #11')).toBeInTheDocument();
+  expect(screen.getByText('Rejection reason: Photo does not show the recipient.')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Confirm delivery' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Reject proof' })).not.toBeInTheDocument();
+});
+
 it('opens a completed delivery proof in an in-page image modal and restores focus', async () => {
   setDispatcherLeg({
     id: 2,
