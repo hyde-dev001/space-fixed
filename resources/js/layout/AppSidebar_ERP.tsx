@@ -1872,11 +1872,11 @@ const EmployeeSidebarERP: React.FC = () => {
       >
         <Link href={route("erp.time-in")} className="flex items-center gap-2 hover:scale-105 transition-transform duration-200">
           {isExpanded || isHovered || isMobileOpen ? (
-            <span className="text-xl font-bold tracking-tight text-white">
+            <span className="text-xl font-bold tracking-tight text-black">
               SoleSpace
             </span>
           ) : (
-            <span className="text-lg font-bold tracking-tight text-white">SS</span>
+            <span className="text-lg font-bold tracking-tight text-black">SS</span>
           )}
         </Link>
       </div>
