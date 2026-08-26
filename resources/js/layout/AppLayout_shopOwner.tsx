@@ -14,7 +14,7 @@ const LayoutContent: React.FC<{ children: ReactNode; fullBleed?: boolean; hideHe
   const { isExpanded, isHovered, isMobileOpen } = useSidebar();
 
   return (
-    <div className="min-h-screen xl:flex">
+    <div className="erp-theme min-h-screen bg-white text-gray-900 xl:flex dark:bg-[#0f0f10] dark:text-gray-100">
       <div>
         <AppSidebar_shopOwner />
         <Backdrop />
