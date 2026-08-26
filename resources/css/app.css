@@ -1593,29 +1593,46 @@ html.userside-dark #app .userside-auth-ghost:hover {
 /* Keep native select interaction states neutral across browsers. Native
    option popovers remain OS-controlled in some browsers, but these styles
    cover the selected option and field focus where the browser allows it. */
-#app select:focus {
+html:not(.dark) #app select:focus {
   border-color: #111111 !important;
   outline-color: #111111 !important;
   --tw-ring-color: rgb(17 17 17 / 0.16) !important;
 }
 
-#app select option:checked {
+html:not(.dark) #app select option {
+  background-color: #ffffff !important;
+  color: #111111 !important;
+}
+
+html:not(.dark) #app select option:checked,
+html:not(.dark) #app select option:checked:hover {
   background-color: #111111 !important;
   color: #ffffff !important;
 }
 
-#app select option:hover {
+html:not(.dark) #app select option:hover {
   background-color: #f3f4f6 !important;
   color: #111111 !important;
 }
 
 /* Apply the same selection language to accessible custom dropdowns. */
-#app [role='option'][aria-selected='true'] {
+html:not(.dark) #app [role='combobox']:focus-within > div {
+  border-color: #111111 !important;
+  --tw-ring-color: rgb(17 17 17 / 0.16) !important;
+}
+
+html:not(.dark) #app [role='option'] {
+  background-color: #ffffff !important;
+  color: #111111 !important;
+}
+
+html:not(.dark) #app [role='option'][aria-selected='true'] {
   background-color: #111111 !important;
   color: #ffffff !important;
 }
 
-#app [role='option']:not([aria-selected='true']):hover {
+html:not(.dark) #app [role='option']:not([aria-selected='true']):hover,
+html:not(.dark) #app [role='option'][data-highlighted='true']:not([aria-selected='true']) {
   background-color: #f3f4f6 !important;
   color: #111111 !important;
 }
