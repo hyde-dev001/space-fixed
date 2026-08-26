@@ -393,7 +393,7 @@ const AppSidebar: React.FC = () => {
 
   return (
     <aside
-      className={`fixed mt-16 flex flex-col lg:mt-0 top-0 px-5 left-0 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-900 h-screen transition-all duration-300 ease-in-out z-50 border-r border-gray-200
+      className={`erp-sidebar fixed mt-16 flex flex-col lg:mt-0 top-0 px-5 left-0 h-screen transition-all duration-300 ease-in-out z-50 border-r
         ${
           isExpanded || isMobileOpen
             ? "w-[290px]"
@@ -415,12 +415,12 @@ const AppSidebar: React.FC = () => {
           {isExpanded || isHovered || isMobileOpen ? (
             <>
               <ShootingStarIcon className="w-6 h-6 text-yellow-500 animate-pulse" />
-              <span className="text-xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+              <span className="text-xl font-bold tracking-tight text-gray-900">
                 SoleSpace
               </span>
             </>
           ) : (
-            <span className="text-lg font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+            <span className="text-lg font-bold tracking-tight text-gray-900">
               SS
             </span>
           )}

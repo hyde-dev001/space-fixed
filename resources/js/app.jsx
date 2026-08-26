@@ -109,6 +109,6 @@ createInertiaApp({
         dismissAppLoader();
     },
     progress: {
-        color: '#465fff',
+        color: '#111111',
     },
 });
