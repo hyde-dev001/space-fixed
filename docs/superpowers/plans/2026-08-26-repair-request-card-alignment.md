@@ -65,5 +65,5 @@
 ## Follow-up visual refinements
 
 - [x] Increase the workload meter spacing to `mt-12` so it sits substantially lower within the aligned card.
-- [x] Replace currency glyphs and dollar-named page icons with one reusable outline banknote-and-coin `MoneyIcon` that contains no currency symbol.
+- [x] Replace currency glyphs and dollar-named page icons with one reusable outline stacked-coins `MoneyIcon` that contains no currency symbol.
 - [x] Extend focused regression coverage to every currency-card consumer and the shared money icon artwork.

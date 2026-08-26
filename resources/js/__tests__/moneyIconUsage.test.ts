@@ -16,10 +16,12 @@ const moneyIconConsumers = [
 ];
 
 describe('Shared money icon usage', () => {
-  it('draws a neutral banknote icon without a currency glyph', () => {
+  it('draws a neutral stacked-coins icon without a currency glyph', () => {
     expect(moneyIconSource).toContain('export const MoneyIcon');
-    expect(moneyIconSource).toContain('<rect x="3" y="5" width="18" height="14" rx="2" />');
-    expect(moneyIconSource).toContain('<circle cx="12" cy="12" r="3" />');
+    expect(moneyIconSource).toContain('<ellipse cx="12" cy="6.5" rx="6.5" ry="2.5" />');
+    expect(moneyIconSource).toContain('<path d="M5.5 6.5v3c0 1.38 2.91 2.5 6.5 2.5s6.5-1.12 6.5-2.5v-3" />');
+    expect(moneyIconSource).not.toContain('<rect');
+    expect(moneyIconSource).not.toContain('<circle');
     expect(moneyIconSource).not.toMatch(/[$₱]|CurrencyDollarIcon|DollarIcon|PesoIcon/);
   });
 
