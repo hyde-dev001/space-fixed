@@ -16,13 +16,13 @@ Existing unrelated working-tree changes, especially the Logistics controller/tes
 
 - Canvas: white.
 - Primary chrome: near-black (`#111111`) and white.
-- Sidebar: solid black with white selected content and muted gray inactive content.
+- Sidebar: white with a black selected state and black inactive content.
 - Main text: near-black; secondary text: charcoal and neutral gray.
 - Surfaces: white and soft gray (`#f5f5f5`).
 - Borders and outlines: neutral gray hairlines; no decorative blue outlines.
 - Primary buttons and active controls: black background with white text.
 - Secondary controls: white or soft gray with black text and neutral borders.
-- Logo and wordmark: black on light surfaces and white on the black sidebar; blue logo outlines become monochrome.
+- Logo and wordmark: black on the light sidebar and white on the charcoal dark-mode sidebar; blue logo outlines become monochrome.
 - Module cards: neutral border and surfaces; module icon tile, icon, “Open module” text, and arrow use black/gray rather than blue.
 - Icons: retain the existing icon family and meaning; only presentation colors change unless a shared icon component requires a consistent monochrome default.
 - Status colors remain semantic: green for success/ready, red for errors/danger, and amber for warnings/pending. They must not be used as general decorative chrome.
@@ -31,8 +31,8 @@ Existing unrelated working-tree changes, especially the Logistics controller/tes
 ### Dark Mode
 
 - Canvas: near-black (`#0f0f10`) with charcoal surfaces (`#18181b`) and neutral hairline borders.
-- Sidebar: black remains the anchor surface; selected items use white text and a neutral gray/white indicator, never blue.
-- Text: white primary text, light gray secondary text, and medium gray metadata.
+- Sidebar: white is the light-mode rail; selected items use a black surface with white text and icons, while inactive items use black text and neutral hover. Dark mode inverts the rail and active state for contrast.
+- Text: black primary text on light surfaces, white primary text on dark surfaces, and neutral gray metadata.
 - Buttons: primary buttons remain black with white text and a visible neutral border; secondary buttons use charcoal/white with black-or-white text according to contrast. No button may become indistinguishable from its surrounding surface.
 - Logo: white on dark surfaces and black on light surfaces; any blue outline becomes the matching monochrome foreground.
 - Status colors remain semantic in dark mode, using accessible darker backgrounds with light green/red/amber text or borders.
@@ -76,7 +76,7 @@ The exact file list will be confirmed during implementation by tracing shared us
 
 ## Acceptance Criteria
 
-1. All listed role workspaces render with a white main canvas and black sidebar/chrome where the shared shell is used.
+1. All listed role workspaces render with a white main canvas, white light-mode sidebar, black active navigation state, and monochrome black logo where the shared shell is used.
 2. SoleSpace logo/wordmark and its visible outlines no longer use light blue or blue decorative accents.
 3. Module landing cards match the supplied direction: neutral outline, black icon/text, and black “Open module” action.
 4. Shared settings, notification, profile, dropdown, form, table, modal, and header surfaces use the same monochrome tokens.

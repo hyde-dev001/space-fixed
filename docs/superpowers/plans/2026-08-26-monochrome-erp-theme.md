@@ -72,11 +72,11 @@ Expected: existing tests pass; update only assertions describing the approved vi
 
 **Interfaces:**
 - Consumes: Task 1 neutral tokens and existing sidebar/header props and navigation data.
-- Produces: black sidebar, monochrome logo/wordmark, neutral navigation icons, and neutral header controls for every shared ERP/shop-owner page.
+- Produces: white light-mode sidebar with a black active state, monochrome black logo/wordmark, neutral navigation icons, and neutral header controls for every shared ERP/shop-owner page.
 
 - [ ] **Step 1: Replace sidebar surface and logo styling**
 
-In both sidebar components, change the sidebar surface to the approved black anchor treatment, replace blue/purple gradient wordmarks with monochrome wordmark text or existing official logo assets, and set icon/text active states to white/neutral. Preserve navigation structure, collapsed behavior, and route links.
+In both sidebar components, change the sidebar surface to white in light mode with a black active state, replace blue/purple gradient wordmarks with monochrome black wordmark text or existing official logo assets, and provide a dark-mode inversion for contrast. Preserve navigation structure, collapsed behavior, and route links.
 
 - [ ] **Step 2: Replace header control accents**
 
@@ -149,7 +149,7 @@ Classify each result as shared chrome, semantic/status color, data visualization
 
 - [ ] **Step 2: Verify representative page families**
 
-Use local browser tooling when runnable and inspect ERP workspace/module landing, one manager/staff dashboard, one finance/HR/inventory/procurement page with a modal or table action, one logistics dispatcher page, one shop-owner retail/repair page, and notifications/settings/profile. Confirm light/dark mode, black sidebar, monochrome logo, black buttons inside and outside modals, readable status badges, and visible focus states.
+Use local browser tooling when runnable and inspect ERP workspace/module landing, one manager/staff dashboard, one finance/HR/inventory/procurement page with a modal or table action, one logistics dispatcher page, one shop-owner retail/repair page, and notifications/settings/profile. Confirm light/dark mode, white light-mode sidebar with black active state, monochrome logo, black buttons inside and outside modals, readable status badges, and visible focus states.
 
 - [ ] **Step 3: Run full frontend verification**
 
