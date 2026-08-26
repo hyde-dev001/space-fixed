@@ -115,7 +115,7 @@ const AppHeader_ERP: React.FC = () => {
   }, []);
 
   return (
-    <header className="relative sticky top-0 z-99999 flex w-full bg-white/80 backdrop-blur-md dark:bg-gray-900/80 xl:border-b xl:border-gray-200 xl:dark:border-gray-800">
+    <header className="erp-header relative sticky top-0 z-99999 flex w-full bg-white/80 backdrop-blur-md dark:bg-gray-900/80 xl:border-b xl:border-gray-200 xl:dark:border-gray-800">
       <div className="flex flex-col items-center justify-between grow xl:flex-row xl:px-6">
         <div className="flex items-center justify-between w-full gap-2 px-3 py-3 border-b border-gray-200 dark:border-gray-800 sm:gap-4 xl:justify-normal xl:border-b-0 xl:px-0 xl:py-4">
           <button

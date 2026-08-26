@@ -1627,6 +1627,43 @@ html.dark .swal2-cancel.user-swal2-cancel:hover {
   border-color: #000000 !important;
 }
 
+/* Keep the shared top navbar on its original neutral controls; page actions remain monochrome. */
+.erp-theme .erp-header :is(button, [role='button']) {
+  background-color: transparent !important;
+  color: #374151 !important;
+  border-color: transparent !important;
+}
+
+.erp-theme .erp-header :is(button, [role='button'])[class*='border-gray-'] {
+  border-color: #e5e7eb !important;
+}
+
+.erp-theme .erp-header :is(button, [role='button'])[class*='bg-gray-50'] {
+  background-color: #f9fafb !important;
+}
+
+.dark .erp-theme .erp-header :is(button, [role='button']) {
+  color: #d1d5db !important;
+}
+
+.dark .erp-theme .erp-header :is(button, [role='button'])[class*='border-gray-'] {
+  border-color: #374151 !important;
+}
+
+.dark .erp-theme .erp-header :is(button, [role='button'])[class*='bg-gray-50'] {
+  background-color: #1f2937 !important;
+}
+
+/* Button labels and icon glyphs must stay white on black page/action controls. */
+.erp-theme :is(button, [role='button']):not(.erp-header *):not(.erp-sidebar *) * {
+  color: #ffffff !important;
+}
+
+.erp-theme :is(button, [role='button']):not(.erp-header *):not(.erp-sidebar *) svg {
+  color: #ffffff !important;
+  stroke: currentColor !important;
+}
+
 /* Legacy page actions inherit the same monochrome treatment without changing status badges. */
 .erp-theme :is(button, a, [role='button'])[class*='bg-blue-'],
 .erp-theme :is(button, a, [role='button'])[class*='bg-indigo-'],
