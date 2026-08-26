@@ -135,7 +135,7 @@ export const getShopOwnerNavigation = (access: ShopOwnerAccess): NavigationItem[
             path: '/shop-owner/upgrade',
             icon: '⬆️',
             visible: access.registrationType === 'individual',
-            className: 'bg-black text-white rounded-lg mt-2 hover:bg-gray-900',
+            className: 'bg-blue-500 text-white rounded-lg mt-2 hover:bg-blue-600',
         },
     ];
 
@@ -158,7 +158,7 @@ export const getQuickActions = (access: ShopOwnerAccess) => {
             label: 'Add Product',
             icon: '➕',
             path: '/shop-owner/products/add',
-            color: 'bg-black',
+            color: 'bg-blue-500',
         });
     }
 
@@ -168,7 +168,7 @@ export const getQuickActions = (access: ShopOwnerAccess) => {
             label: 'Add Service',
             icon: '➕',
             path: '/shop-owner/services/add',
-            color: 'bg-black',
+            color: 'bg-green-500',
         });
     }
 
@@ -177,7 +177,7 @@ export const getQuickActions = (access: ShopOwnerAccess) => {
         label: 'View Orders',
         icon: '📋',
         path: '/shop-owner/orders',
-            color: 'bg-black',
+        color: 'bg-purple-500',
     });
 
     // Customer Messages (Always)
@@ -185,7 +185,7 @@ export const getQuickActions = (access: ShopOwnerAccess) => {
         label: 'Messages',
         icon: '💬',
         path: '/shop-owner/customers/messages',
-            color: 'bg-black',
+        color: 'bg-orange-500',
     });
 
     return actions;
