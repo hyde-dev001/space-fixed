@@ -55,9 +55,9 @@
 **Files:**
 - Commit only the intended source, test, plan, and generated build files.
 
-- [ ] Temporarily preserve unrelated local edits if needed.
-- [ ] Fetch and rebase onto `origin/solespace-b`.
-- [ ] Commit the layout fix and fresh build with focused messages.
-- [ ] Restore unrelated local edits without staging them.
-- [ ] Push `fix/darkmode-selected-size` (using `--force-with-lease` only if the rebase makes a normal push non-fast-forward).
-- [ ] Verify the remote feature ref equals local HEAD.
+- [x] Temporarily preserve unrelated local edits if needed.
+- [x] Fetch and rebase onto `origin/solespace-b`.
+- [x] Commit the layout fix and fresh build with focused messages.
+- [x] Restore unrelated local edits without staging them.
+- [x] Push `fix/darkmode-selected-size` (using `--force-with-lease` only if the rebase makes a normal push non-fast-forward).
+- [x] Verify the remote feature ref equals local HEAD.
