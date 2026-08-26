@@ -614,8 +614,8 @@ html.userside-dark #app .userside-address-modal textarea {
 html.userside-dark #app .userside-address-modal input:focus,
 html.userside-dark #app .userside-address-modal select:focus,
 html.userside-dark #app .userside-address-modal textarea:focus {
-  border-color: #7da2ff !important;
-  box-shadow: 0 0 0 3px rgba(125, 162, 255, 0.18) !important;
+  border-color: #111111 !important;
+  box-shadow: 0 0 0 3px rgba(17, 17, 17, 0.18) !important;
 }
 
 html.userside-dark #app .userside-tracking-modal__surface {
@@ -763,8 +763,8 @@ html.userside-dark #app .userside-auth-page input:not([type="checkbox"]):focus,
 html.userside-dark #app .userside-auth-page select:focus,
 html.userside-dark #app .userside-auth-page textarea:focus,
 html.userside-dark #app .userside-auth-input:focus {
-  border-color: #8aa8ff !important;
-  box-shadow: 0 0 0 3px rgba(70, 95, 255, 0.2) !important;
+  border-color: #111111 !important;
+  box-shadow: 0 0 0 3px rgba(17, 17, 17, 0.2) !important;
 }
 
 html.userside-dark #app .userside-auth-page input[type="checkbox"] {
@@ -1587,6 +1587,36 @@ html.userside-dark #app .userside-auth-ghost:hover {
 .erp-theme :is(a, [role='tab'])[class*='text-blue-'],
 .erp-theme :is(a, [role='tab'])[class*='text-indigo-'],
 .erp-theme :is(a, [role='tab'])[class*='text-purple-'] {
+  color: #111111 !important;
+}
+
+/* Keep native select interaction states neutral across browsers. Native
+   option popovers remain OS-controlled in some browsers, but these styles
+   cover the selected option and field focus where the browser allows it. */
+#app select:focus {
+  border-color: #111111 !important;
+  outline-color: #111111 !important;
+  --tw-ring-color: rgb(17 17 17 / 0.16) !important;
+}
+
+#app select option:checked {
+  background-color: #111111 !important;
+  color: #ffffff !important;
+}
+
+#app select option:hover {
+  background-color: #f3f4f6 !important;
+  color: #111111 !important;
+}
+
+/* Apply the same selection language to accessible custom dropdowns. */
+#app [role='option'][aria-selected='true'] {
+  background-color: #111111 !important;
+  color: #ffffff !important;
+}
+
+#app [role='option']:not([aria-selected='true']):hover {
+  background-color: #f3f4f6 !important;
   color: #111111 !important;
 }
 
