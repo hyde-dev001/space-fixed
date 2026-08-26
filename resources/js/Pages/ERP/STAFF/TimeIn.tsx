@@ -1837,7 +1837,7 @@ export default function TimeIn() {
                             <div className="mb-6 flex items-start justify-between gap-4">
                                 <div>
                                 <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-                                    <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/30">
+                                    <div className="p-2 rounded-lg bg-gray-100 text-gray-900 dark:bg-blue-900/30">
                                         <LeaveIcon />
                                     </div>
                                     Request Leave
