@@ -807,25 +807,25 @@ const DssInsights: React.FC = () => {
                   <div className="grid grid-cols-4 gap-2 text-[11px]">
                     <button
                       onClick={() => setRecFilter("all")}
-                      className={`erp-filter-control ${recFilter === "all" ? "is-active" : ""} rounded-md border px-2 py-1 font-medium`}
+                      className={`rounded-md border px-2 py-1 font-medium ${recFilter === "all" ? "border-black bg-black text-white" : "border-gray-300 text-gray-700 dark:border-gray-700 dark:text-gray-300"}`}
                     >
                       All ({recommendationStats.total})
                     </button>
                     <button
                       onClick={() => setRecFilter("critical")}
-                      className={`erp-filter-control ${recFilter === "critical" ? "is-active" : ""} rounded-md border px-2 py-1 font-medium`}
+                      className={`rounded-md border px-2 py-1 font-medium ${recFilter === "critical" ? "border-black bg-black text-white" : "border-gray-300 text-gray-700 dark:border-gray-700 dark:text-gray-300"}`}
                     >
                       Critical ({recommendationStats.critical})
                     </button>
                     <button
                       onClick={() => setRecFilter("warning")}
-                      className={`erp-filter-control ${recFilter === "warning" ? "is-active" : ""} rounded-md border px-2 py-1 font-medium`}
+                      className={`rounded-md border px-2 py-1 font-medium ${recFilter === "warning" ? "border-black bg-black text-white" : "border-gray-300 text-gray-700 dark:border-gray-700 dark:text-gray-300"}`}
                     >
                       Warning ({recommendationStats.warning})
                     </button>
                     <button
                       onClick={() => setRecFilter("info")}
-                      className={`erp-filter-control ${recFilter === "info" ? "is-active" : ""} rounded-md border px-2 py-1 font-medium`}
+                      className={`rounded-md border px-2 py-1 font-medium ${recFilter === "info" ? "border-black bg-black text-white" : "border-gray-300 text-gray-700 dark:border-gray-700 dark:text-gray-300"}`}
                     >
                       Info ({recommendationStats.info})
                     </button>
@@ -1040,9 +1040,9 @@ const DssInsights: React.FC = () => {
         {isRepair && (
           <button
             onClick={() => setTab("workload")}
-            className={`erp-filter-control ${tab === "workload" ? "is-active" : ""} px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
               tab === "workload"
-                ? "bg-black text-white dark:bg-white dark:text-black"
+                ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
                 : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
             }`}
           >
@@ -1052,9 +1052,9 @@ const DssInsights: React.FC = () => {
         {isRepair && (
           <button
             onClick={() => setTab("revenue")}
-            className={`erp-filter-control ${tab === "revenue" ? "is-active" : ""} px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
               tab === "revenue"
-                ? "bg-black text-white dark:bg-white dark:text-black"
+                ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
                 : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
             }`}
           >
@@ -1064,9 +1064,9 @@ const DssInsights: React.FC = () => {
         {isRetail && (
           <button
             onClick={() => setTab("retail")}
-            className={`erp-filter-control ${tab === "retail" ? "is-active" : ""} px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
               tab === "retail"
-                ? "bg-black text-white dark:bg-white dark:text-black"
+                ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
                 : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
             }`}
           >
@@ -1075,9 +1075,9 @@ const DssInsights: React.FC = () => {
         )}
         <button
           onClick={() => setTab("trend")}
-          className={`erp-filter-control ${tab === "trend" ? "is-active" : ""} px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
             tab === "trend"
-              ? "bg-black text-white dark:bg-white dark:text-black"
+              ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
               : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
           }`}
         >
@@ -1107,20 +1107,20 @@ const DssInsights: React.FC = () => {
                 <div className="flex items-center gap-0.5 rounded-lg bg-gray-100 p-0.5 dark:bg-gray-900">
                   <button
                     onClick={() => setWorkloadWindow(7)}
-                    className={`erp-filter-control ${workloadWindow === 7 ? "is-active" : ""} px-3 py-2 rounded-md text-theme-sm font-medium ${
+                    className={`px-3 py-2 rounded-md text-theme-sm font-medium ${
                       workloadWindow === 7
-                        ? "bg-black text-white shadow-theme-xs dark:bg-white dark:text-black"
-                        : "bg-white text-gray-900 hover:bg-gray-50 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800"
+                        ? "bg-white text-gray-900 shadow-theme-xs dark:bg-gray-800 dark:text-white"
+                        : "text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
                     }`}
                   >
                     Last 7 Days
                   </button>
                   <button
                     onClick={() => setWorkloadWindow(14)}
-                    className={`erp-filter-control ${workloadWindow === 14 ? "is-active" : ""} px-3 py-2 rounded-md text-theme-sm font-medium ${
+                    className={`px-3 py-2 rounded-md text-theme-sm font-medium ${
                       workloadWindow === 14
-                        ? "bg-black text-white shadow-theme-xs dark:bg-white dark:text-black"
-                        : "bg-white text-gray-900 hover:bg-gray-50 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800"
+                        ? "bg-white text-gray-900 shadow-theme-xs dark:bg-gray-800 dark:text-white"
+                        : "text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
                     }`}
                   >
                     Last 14 Days

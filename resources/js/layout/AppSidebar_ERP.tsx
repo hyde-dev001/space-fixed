@@ -1720,14 +1720,22 @@ const EmployeeSidebarERP: React.FC = () => {
               {subItems ? (
                 <button
                   onClick={() => handleSubmenuToggle(index, menuType)}
-                  className={`menu-item group menu-item-inactive cursor-pointer ${
+                  className={`menu-item group ${
+                    isMenuActive(nav) || openSubmenu === `${menuType}-${index}`
+                      ? "menu-item-active"
+                      : "menu-item-inactive"
+                  } cursor-pointer ${
                     !isExpanded && !isHovered
                       ? "xl:justify-center"
                       : "xl:justify-start"
                   }`}
                 >
                   <span
-                    className="menu-item-icon-size w-6 h-6 menu-item-icon-inactive"
+                    className={`menu-item-icon-size w-6 h-6 ${
+                      isMenuActive(nav) || openSubmenu === `${menuType}-${index}`
+                        ? "menu-item-icon-active"
+                        : "menu-item-icon-inactive"
+                    }`}
                   >
                     {nav.icon}
                   </span>
