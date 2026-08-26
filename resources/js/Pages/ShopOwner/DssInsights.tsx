@@ -6,6 +6,7 @@ import axios from "axios";
 import BarChartOne from "../../components/charts/bar/BarChartOne";
 import Chart from "react-apexcharts";
 import { ApexOptions } from "apexcharts";
+import { MoneyIcon } from "../../components/common/MoneyIcon";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -217,12 +218,6 @@ const CartIcon = ({ className = "" }: { className?: string }) => (
 const ClockMetricIcon = ({ className = "" }: { className?: string }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-  </svg>
-);
-
-const PesoIcon = ({ className = "" }: { className?: string }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M8 4v16M8 5h4a4 4 0 110 8H8M4 10h10M4 13h8" />
   </svg>
 );
 
@@ -489,7 +484,7 @@ function UtilizationOverviewCard({
           </span>
         </div>
 
-        <div className="relative mt-4">
+        <div className="relative mt-12">
           <div className="max-h-[280px]">
             <Chart options={options} series={series} type="radialBar" height={280} />
           </div>
@@ -989,7 +984,7 @@ const DssInsights: React.FC = () => {
             label="Avg. Order Value"
             value={data?.retail_sales ? fmt(data.retail_sales.avg_order_value) : "–"}
             sub={data?.retail_sales ? `${data.retail_sales.unique_customers} unique customers` : undefined}
-            icon={PesoIcon}
+            icon={MoneyIcon}
             color="success"
           />
         )}
@@ -1011,7 +1006,7 @@ const DssInsights: React.FC = () => {
                 ? "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400"
                 : "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400"
             }
-            icon={PesoIcon}
+            icon={MoneyIcon}
             color="success"
           />
         )}
@@ -1033,7 +1028,7 @@ const DssInsights: React.FC = () => {
                 ? "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400"
                 : "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400"
             }
-            icon={PesoIcon}
+            icon={MoneyIcon}
             color="success"
           />
         )}
@@ -1242,14 +1237,14 @@ const DssInsights: React.FC = () => {
           {data?.services && (
             <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
               <SummaryStatCard
-                icon={PesoIcon}
+                icon={MoneyIcon}
                 label={`Period Revenue (${period}d)`}
                 value={fmt(data.services.period_revenue)}
                 sub="Completed paid repairs"
               />
 
               <SummaryStatCard
-                icon={PesoIcon}
+                icon={MoneyIcon}
                 label="This Month"
                 value={fmt(data.services.this_month_revenue)}
                 sub="Current month total"
@@ -1281,7 +1276,7 @@ const DssInsights: React.FC = () => {
 
               {data?.packages && (
                 <SummaryStatCard
-                  icon={PesoIcon}
+                  icon={MoneyIcon}
                   label="Package Revenue (This Month)"
                   value={fmt(data.packages.this_month_revenue)}
                   sub="Completed paid package repairs"
@@ -1456,7 +1451,7 @@ const DssInsights: React.FC = () => {
                   ? `${data.retail_sales.completed_orders} completed orders`
                   : undefined
               }
-              icon={PesoIcon}
+              icon={MoneyIcon}
               color="success"
             />
 

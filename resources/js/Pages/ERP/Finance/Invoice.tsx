@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { usePage, router } from '@inertiajs/react';
 import { useFinanceApi } from "../../../hooks/useFinanceApi";
 import { useInvoices } from "../../../hooks/useFinanceQueries";
+import { MoneyIcon } from "../../../components/common/MoneyIcon";
 import { getApprovalStatusBadge } from "./InlineApprovalUtils";
 import Swal from "sweetalert2";
 
@@ -91,12 +92,6 @@ const XCircleIcon: React.FC<{ className?: string }> = ({ className }) => (
 const DocumentIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-  </svg>
-);
-
-const CurrencyDollarIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
   </svg>
 );
 
@@ -934,7 +929,7 @@ const Invoice: React.FC = () => {
         <MetricCard
           title="Net Revenue (Excl. VAT)"
           value={`₱${stats.totalRevenue.toLocaleString()}`}
-          icon={CurrencyDollarIcon}
+          icon={MoneyIcon}
           color="success"
           description="From paid invoices before VAT"
         />

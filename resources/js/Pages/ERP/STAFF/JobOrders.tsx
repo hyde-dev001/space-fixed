@@ -6,6 +6,7 @@ import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import ErrorModal from "../../../components/common/ErrorModal";
 import { Modal } from "../../../components/ui/modal";
 import { calculateRetailRevenue } from "../../../utils/deliveryRevenue";
+import { MoneyIcon } from "../../../components/common/MoneyIcon";
 import axios from "axios";
 
 const SHOP_OWNED_LOGISTICS = "Shop-owned logistics";
@@ -312,12 +313,6 @@ const ClockIcon: React.FC<{ className?: string }> = ({ className }) => (
 const CheckCircleIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-  </svg>
-);
-
-const CurrencyDollarIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
   </svg>
 );
 
@@ -1934,7 +1929,7 @@ export default function JobOrdersPage() {
           <MetricCard
             title="Net Revenue (Excl. VAT)"
             value={`₱${stats.totalRevenue.toLocaleString()}`}
-            icon={CurrencyDollarIcon}
+            icon={MoneyIcon}
             color="success"
             description="Products + paid shop-owned delivery, excl. VAT"
           />

@@ -6,7 +6,6 @@ import { route } from "ziggy-js";
 import {
   CheckLineIcon,
   HorizontaLDots,
-  CurrencyDollarIcon,
 } from "../icons";
 import { useSidebar } from "../context/SidebarContext";
 import type { ShopModuleKey } from "../types/shopModules";

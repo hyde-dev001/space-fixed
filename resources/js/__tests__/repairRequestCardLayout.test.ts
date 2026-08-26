@@ -19,9 +19,6 @@ const dailyChartMarker = dssInsights.indexOf(
   workloadGridStart,
 );
 const workloadGridSource = dssInsights.slice(workloadGridStart, dailyChartMarker);
-const pesoIconStart = dssInsights.indexOf('const PesoIcon');
-const boxMetricIconStart = dssInsights.indexOf('const BoxMetricIcon', pesoIconStart);
-const pesoIconSource = dssInsights.slice(pesoIconStart, boxMetricIconStart);
 
 describe('Repair Request card layout', () => {
   it('stretches the outer card while keeping the meter panel natural-height', () => {
@@ -39,11 +36,12 @@ describe('Repair Request card layout', () => {
   });
 
   it('keeps the meter below the header with intentional spacing', () => {
-    expect(utilizationSource).toContain('<div className="relative mt-4">');
+    expect(utilizationSource).toContain('<div className="relative mt-12">');
   });
 
-  it('renders the peso icon with Philippine peso strokes instead of a plain P', () => {
-    expect(pesoIconSource).toContain('M4 10h10');
-    expect(pesoIconSource).toContain('M4 13h8');
+  it('uses the shared money icon for revenue metrics instead of a local currency glyph', () => {
+    expect(dssInsights).toContain('import { MoneyIcon } from "../../components/common/MoneyIcon";');
+    expect(dssInsights).toContain('icon={MoneyIcon}');
+    expect(dssInsights).not.toContain('const PesoIcon');
   });
 });
