@@ -244,20 +244,21 @@ body.userside-hide-scrollbar::-webkit-scrollbar {
   --color-current: currentColor;
   --color-transparent: transparent;
   --color-white: #ffffff;
-  --color-black: #101828;
+  --color-black: #111111;
 
-  --color-brand-25: #f2f7ff;
-  --color-brand-50: #ecf3ff;
-  --color-brand-100: #dde9ff;
-  --color-brand-200: #c2d6ff;
-  --color-brand-300: #9cb9ff;
-  --color-brand-400: #7592ff;
-  --color-brand-500: #465fff;
-  --color-brand-600: #3641f5;
-  --color-brand-700: #2a31d8;
-  --color-brand-800: #252dae;
-  --color-brand-900: #262e89;
-  --color-brand-950: #161950;
+  /* Shared ERP chrome uses the monochrome SoleSpace palette. */
+  --color-brand-25: #fafafa;
+  --color-brand-50: #f5f5f5;
+  --color-brand-100: #e5e5e5;
+  --color-brand-200: #d4d4d4;
+  --color-brand-300: #a3a3a3;
+  --color-brand-400: #737373;
+  --color-brand-500: #111111;
+  --color-brand-600: #000000;
+  --color-brand-700: #000000;
+  --color-brand-800: #171717;
+  --color-brand-900: #262626;
+  --color-brand-950: #0a0a0a;
 
   --color-blue-light-25: #f5fbff;
   --color-blue-light-50: #f0f9ff;
@@ -1166,14 +1167,14 @@ html.userside-dark #app .userside-auth-ghost:hover {
 }
 
 .swal2-confirm.user-swal2-confirm {
-  background-color: #001339 !important;
+  background-color: #111111 !important;
   color: #ffffff !important;
-  border-color: #001339 !important;
+  border-color: #111111 !important;
 }
 
 .swal2-confirm.user-swal2-confirm:hover {
-  background-color: #031d56 !important;
-  border-color: #031d56 !important;
+  background-color: #000000 !important;
+  border-color: #000000 !important;
 }
 
 .swal2-cancel.user-swal2-cancel {
@@ -1183,14 +1184,62 @@ html.userside-dark #app .userside-auth-ghost:hover {
 }
 
 .swal2-cancel.user-swal2-cancel:hover {
-  background-color: #cfd4db !important;
-  border-color: #cfd4db !important;
+  background-color: #e5e5e5 !important;
+  border-color: #e5e5e5 !important;
 }
 
 .swal2-confirm.user-swal2-confirm:focus-visible,
 .swal2-cancel.user-swal2-cancel:focus-visible {
   outline: none !important;
   box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.2) !important;
+}
+
+html.dark .swal2-popup.user-swal2-popup {
+  background: #18181b !important;
+  border: 1px solid #3f3f46 !important;
+  box-shadow: 0 26px 80px -42px rgba(0, 0, 0, 0.85) !important;
+}
+
+html.dark .swal2-title.user-swal2-title,
+html.dark .swal2-html-container.user-swal2-text,
+html.dark .swal2-html-container.user-swal2-text .user-swal2-summary-label,
+html.dark .swal2-html-container.user-swal2-text .user-swal2-summary-value,
+html.dark .swal2-html-container.user-swal2-text .user-swal2-summary-total {
+  color: #f5f5f5 !important;
+}
+
+html.dark .swal2-html-container.user-swal2-text .user-swal2-summary-intro {
+  color: #d4d4d4 !important;
+}
+
+html.dark .swal2-html-container.user-swal2-text .user-swal2-summary-total {
+  border-top-color: #3f3f46;
+}
+
+html.dark .swal2-actions.user-swal2-actions button {
+  border-color: #52525b !important;
+}
+
+html.dark .swal2-confirm.user-swal2-confirm {
+  background-color: #000000 !important;
+  color: #ffffff !important;
+  border-color: #a3a3a3 !important;
+}
+
+html.dark .swal2-confirm.user-swal2-confirm:hover {
+  background-color: #111111 !important;
+  border-color: #d4d4d4 !important;
+}
+
+html.dark .swal2-cancel.user-swal2-cancel {
+  background-color: #27272a !important;
+  color: #f5f5f5 !important;
+  border-color: #52525b !important;
+}
+
+html.dark .swal2-cancel.user-swal2-cancel:hover {
+  background-color: #3f3f46 !important;
+  border-color: #737373 !important;
 }
 
 .swal2-popup.user-swal2-popup.user-terms-modal-popup {
@@ -1482,6 +1531,125 @@ html.userside-dark #app .userside-auth-ghost:hover {
 
 @utility menu-dropdown-badge-inactive {
   @apply bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400;
+}
+
+/* ERP and shop-owner navigation keep a consistent black luxury rail in both themes. */
+.erp-sidebar {
+  background: #111111;
+  border-color: #262626;
+  color: #f5f5f5;
+}
+
+.erp-sidebar .menu-item-active,
+.erp-sidebar .menu-dropdown-item-active {
+  background: #ffffff;
+  color: #111111;
+}
+
+.erp-sidebar .menu-item-inactive,
+.erp-sidebar .menu-dropdown-item-inactive {
+  color: #a3a3a3;
+}
+
+.erp-sidebar .menu-item-inactive:hover,
+.erp-sidebar .menu-dropdown-item-inactive:hover,
+.erp-sidebar .menu-item-inactive.group:hover {
+  background: #262626;
+  color: #ffffff;
+}
+
+.erp-sidebar .menu-item-icon-active,
+.erp-sidebar .menu-item-icon-inactive,
+.erp-sidebar .menu-item-inactive.group:hover .menu-item-icon-inactive {
+  color: currentColor;
+}
+
+.erp-sidebar .menu-dropdown-badge-active {
+  background: #e5e5e5;
+  color: #111111;
+}
+
+.erp-sidebar .menu-dropdown-badge-inactive {
+  background: #262626;
+  color: #a3a3a3;
+}
+
+.erp-sidebar [class*='text-brand-'] {
+  color: currentColor !important;
+}
+
+.erp-sidebar [class*='border-brand-'] {
+  border-color: #ffffff !important;
+}
+
+/* Legacy page actions inherit the same monochrome treatment without changing status badges. */
+.erp-theme :is(button, a, [role='button'])[class*='bg-blue-'],
+.erp-theme :is(button, a, [role='button'])[class*='bg-indigo-'],
+.erp-theme :is(button, a, [role='button'])[class*='bg-purple-'],
+.erp-theme :is(button, a, [role='button'])[class*='bg-green-'],
+.erp-theme :is(button, a, [role='button'])[class*='bg-orange-'],
+.erp-theme :is(button, a, [role='button'])[class*='bg-red-'],
+.erp-theme :is(button, a, [role='button'])[class*='bg-yellow-'],
+.erp-theme :is(button, a, [role='button'])[class*='bg-amber-'] {
+  background-color: #111111 !important;
+  color: #ffffff !important;
+  border-color: #111111 !important;
+}
+
+.erp-theme :is(button, a, [role='button']):is(:hover, :focus-visible)[class*='bg-blue-'],
+.erp-theme :is(button, a, [role='button']):is(:hover, :focus-visible)[class*='bg-indigo-'],
+.erp-theme :is(button, a, [role='button']):is(:hover, :focus-visible)[class*='bg-purple-'],
+.erp-theme :is(button, a, [role='button']):is(:hover, :focus-visible)[class*='bg-green-'],
+.erp-theme :is(button, a, [role='button']):is(:hover, :focus-visible)[class*='bg-orange-'],
+.erp-theme :is(button, a, [role='button']):is(:hover, :focus-visible)[class*='bg-red-'],
+.erp-theme :is(button, a, [role='button']):is(:hover, :focus-visible)[class*='bg-yellow-'],
+.erp-theme :is(button, a, [role='button']):is(:hover, :focus-visible)[class*='bg-amber-'] {
+  background-color: #000000 !important;
+  border-color: #000000 !important;
+}
+
+.erp-theme :is(button, a, [role='button'])[class*='border-blue-'],
+.erp-theme :is(button, a, [role='button'])[class*='border-indigo-'],
+.erp-theme :is(button, a, [role='button'])[class*='border-purple-'] {
+  border-color: #111111 !important;
+}
+
+.erp-theme :is(button, a, [role='button'])[class*='text-blue-'],
+.erp-theme :is(button, a, [role='button'])[class*='text-indigo-'],
+.erp-theme :is(button, a, [role='button'])[class*='text-purple-'],
+.erp-theme :is(button, a, [role='button'])[class*='text-green-'],
+.erp-theme :is(button, a, [role='button'])[class*='text-orange-'],
+.erp-theme :is(button, a, [role='button'])[class*='text-red-'],
+.erp-theme :is(button, a, [role='button'])[class*='text-yellow-'],
+.erp-theme :is(button, a, [role='button'])[class*='text-amber-'] {
+  color: #111111 !important;
+}
+
+.dark .erp-theme :is(button, a, [role='button'])[class*='text-blue-'],
+.dark .erp-theme :is(button, a, [role='button'])[class*='text-indigo-'],
+.dark .erp-theme :is(button, a, [role='button'])[class*='text-purple-'],
+.dark .erp-theme :is(button, a, [role='button'])[class*='text-green-'],
+.dark .erp-theme :is(button, a, [role='button'])[class*='text-orange-'],
+.dark .erp-theme :is(button, a, [role='button'])[class*='text-red-'],
+.dark .erp-theme :is(button, a, [role='button'])[class*='text-yellow-'],
+.dark .erp-theme :is(button, a, [role='button'])[class*='text-amber-'] {
+  color: #ffffff !important;
+}
+
+.erp-theme :is(input, select, textarea)[class*='focus:ring-blue-']:focus,
+.erp-theme :is(input, select, textarea)[class*='focus:ring-indigo-']:focus,
+.erp-theme :is(input, select, textarea)[class*='focus:ring-purple-']:focus,
+.erp-theme :is(input, select, textarea)[class*='focus:ring-brand-']:focus {
+  --tw-ring-color: #111111 !important;
+  border-color: #111111 !important;
+}
+
+.dark .erp-theme :is(input, select, textarea)[class*='focus:ring-blue-']:focus,
+.dark .erp-theme :is(input, select, textarea)[class*='focus:ring-indigo-']:focus,
+.dark .erp-theme :is(input, select, textarea)[class*='focus:ring-purple-']:focus,
+.dark .erp-theme :is(input, select, textarea)[class*='focus:ring-brand-']:focus {
+  --tw-ring-color: #ffffff !important;
+  border-color: #ffffff !important;
 }
 
 @utility no-scrollbar {
