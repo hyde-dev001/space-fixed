@@ -61,3 +61,9 @@
 - [x] Restore unrelated local edits without staging them.
 - [x] Push `fix/darkmode-selected-size` (using `--force-with-lease` only if the rebase makes a normal push non-fast-forward).
 - [x] Verify the remote feature ref equals local HEAD.
+
+## Follow-up visual refinements
+
+- [x] Add intentional spacing above the workload meter so it sits lower within the aligned card.
+- [x] Replace the revenue-card glyph that read as a plain `P` with the existing reusable SVG icon using Philippine peso strokes.
+- [x] Extend the focused regression contract for the meter spacing and peso SVG path.
