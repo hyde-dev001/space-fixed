@@ -222,7 +222,7 @@ const ClockMetricIcon = ({ className = "" }: { className?: string }) => (
 
 const PesoIcon = ({ className = "" }: { className?: string }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5h4a4 4 0 110 8H9m0-8v14m0-6h7" />
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M8 4v16M8 5h4a4 4 0 110 8H8M4 10h10M4 13h8" />
   </svg>
 );
 
@@ -489,7 +489,7 @@ function UtilizationOverviewCard({
           </span>
         </div>
 
-        <div className="relative">
+        <div className="relative mt-4">
           <div className="max-h-[280px]">
             <Chart options={options} series={series} type="radialBar" height={280} />
           </div>
