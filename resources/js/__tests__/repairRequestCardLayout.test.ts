@@ -21,15 +21,17 @@ const dailyChartMarker = dssInsights.indexOf(
 const workloadGridSource = dssInsights.slice(workloadGridStart, dailyChartMarker);
 
 describe('Repair Request card layout', () => {
-  it('keeps the utilization card at its natural height', () => {
-    expect(utilizationSource).not.toContain('overflow-hidden h-full flex flex-col');
+  it('stretches the outer card while keeping the meter panel natural-height', () => {
+    expect(utilizationSource).toContain('overflow-hidden h-full flex flex-col');
     expect(utilizationSource).not.toContain('sm:pt-6 flex-1');
+    expect(utilizationSource).toContain('<div className="flex flex-1 flex-col">');
   });
 
-  it('top-aligns the workload cards without forcing the utilization card height', () => {
+  it('lets the workload cards share the row height without adding call-site height overrides', () => {
     expect(workloadGridSource).toContain(
-      'grid grid-cols-1 lg:grid-cols-3 items-start gap-5',
+      'grid grid-cols-1 lg:grid-cols-3 items-stretch gap-5',
     );
+    expect(workloadGridSource).not.toContain('items-start');
     expect(workloadGridSource).not.toContain('className="h-full"');
   });
 });
