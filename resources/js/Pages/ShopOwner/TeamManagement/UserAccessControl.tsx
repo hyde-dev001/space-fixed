@@ -1823,7 +1823,7 @@ const UserAccessControl: React.FC = () => {
                       <TableRow key={employee.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
                         <TableCell className="px-6 py-4">
                           <div className="flex items-center space-x-3">
-                            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-semibold">
+                            <div className="w-10 h-10 bg-gray-950 rounded-full flex items-center justify-center text-white font-semibold">
                               {employee.name.charAt(0).toUpperCase()}
                             </div>
                             <div>
@@ -2000,7 +2000,7 @@ const UserAccessControl: React.FC = () => {
                       <TableRow key={user.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
                         <TableCell className="px-6 py-4">
                           <div className="flex items-center space-x-3">
-                            <div className="w-10 h-10 bg-gradient-to-br from-orange-500 to-red-600 rounded-full flex items-center justify-center text-white font-semibold">
+                            <div className="w-10 h-10 bg-gray-950 rounded-full flex items-center justify-center text-white font-semibold">
                               {user.name.charAt(0).toUpperCase()}
                             </div>
                             <span className="font-medium text-gray-900 dark:text-white">{user.name}</span>

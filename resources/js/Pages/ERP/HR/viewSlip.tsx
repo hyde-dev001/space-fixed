@@ -468,8 +468,8 @@ export default function ViewSlip() {
                                 <tr key={slip.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
                                     <td className="px-6 py-4">
                                         <div className="flex items-center gap-3">
-                                            <div className="h-10 w-10 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
-                                                <span className="text-blue-600 dark:text-blue-300 font-medium text-sm">{getInitials(slip.employeeName)}</span>
+                                            <div className="h-10 w-10 rounded-full bg-gray-950 flex items-center justify-center">
+                                                <span className="text-white font-medium text-sm">{getInitials(slip.employeeName)}</span>
                                             </div>
                                             <div className="flex flex-col">
                                                 <span className="font-semibold text-gray-900 dark:text-white">{slip.employeeName}</span>
@@ -591,8 +591,8 @@ export default function ViewSlip() {
                             <div className="p-4 rounded-xl border border-gray-200 dark:border-gray-800">
                                 <p className="text-sm text-gray-500 dark:text-gray-400">Employee</p>
                                 <div className="mt-1 flex items-center gap-3">
-                                    <div className="h-10 w-10 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
-                                        <span className="text-blue-600 dark:text-blue-300 font-medium text-sm">{getInitials(selectedSlip.employeeName)}</span>
+                                    <div className="h-10 w-10 rounded-full bg-gray-950 flex items-center justify-center">
+                                        <span className="text-white font-medium text-sm">{getInitials(selectedSlip.employeeName)}</span>
                                     </div>
                                     <div>
                                         <p className="text-lg font-semibold text-gray-900 dark:text-white">{selectedSlip.employeeName}</p>

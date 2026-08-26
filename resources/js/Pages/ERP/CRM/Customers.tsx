@@ -411,7 +411,7 @@ export default function Customers() {
                   <tr key={customer.id} className="bg-white transition-colors hover:bg-gray-50 dark:bg-transparent dark:hover:bg-gray-800/40">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-linear-to-br from-blue-500 to-indigo-600 text-sm font-bold text-white">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-950 text-sm font-bold text-white">
                           {getInitials(customer.name)}
                         </div>
                         <div>
@@ -511,7 +511,7 @@ export default function Customers() {
                 {!loadingDetail && customerDetail && (<>
                 <div className="flex flex-col gap-4 border-b border-gray-200 pb-5 dark:border-gray-800 md:flex-row md:items-center md:justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-linear-to-br from-blue-500 to-indigo-600 text-base font-bold text-white">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gray-950 text-base font-bold text-white">
                       {getInitials(customerDetail.name)}
                     </div>
                     <div>

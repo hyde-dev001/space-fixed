@@ -151,7 +151,7 @@ export default function ShopOwnerLayout({ children, title }: ShopOwnerLayoutProp
                                 </p>
                                 <p className="text-xs text-gray-500">{shopOwner.email}</p>
                             </div>
-                            <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-white font-semibold">
+                            <div className="w-10 h-10 bg-gray-950 rounded-full flex items-center justify-center text-white font-semibold">
                                 {shopOwner.first_name.charAt(0)}{shopOwner.last_name.charAt(0)}
                             </div>
                         </div>

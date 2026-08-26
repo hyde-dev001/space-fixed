@@ -997,7 +997,7 @@ export default function RepairerSupport() {
                                       className="w-10 h-10 rounded-full object-cover"
                                     />
                                   ) : (
-                                    <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center shrink-0 text-blue-700 text-xs font-semibold">
+                                    <div className="w-10 h-10 rounded-full bg-gray-950 flex items-center justify-center shrink-0 text-white text-xs font-semibold">
                                       {getInitials(shopName)}
                                     </div>
                                   )}
