@@ -319,7 +319,7 @@ export default function CustomersPage() {
                       <tr key={customer.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center">
-                            <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-semibold">
+                            <div className="h-10 w-10 rounded-full bg-gray-950 flex items-center justify-center text-white font-semibold">
                               {getInitials(customer.name)}
                             </div>
                             <div className="ml-4">
@@ -419,7 +419,7 @@ export default function CustomersPage() {
               <div className="p-6 space-y-6">
                 {/* Customer Info */}
                 <div className="flex items-center space-x-4">
-                  <div className="h-20 w-20 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold">
+                  <div className="h-20 w-20 rounded-full bg-gray-950 flex items-center justify-center text-white font-bold">
                     <span className="text-2xl">{getInitials(selectedCustomer.name)}</span>
                   </div>
                   <div>

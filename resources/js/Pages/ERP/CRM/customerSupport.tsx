@@ -579,7 +579,7 @@ export default function CustomerSupport() {
                   <div className="flex items-start gap-3">
                     {/* Avatar */}
                     <div className="relative shrink-0">
-                      <div className="w-12 h-12 rounded-full bg-gray-200 overflow-hidden flex items-center justify-center text-gray-700 font-semibold text-sm">
+                      <div className="w-12 h-12 rounded-full bg-gray-950 overflow-hidden flex items-center justify-center text-white font-semibold text-sm">
                         {ticket.customerAvatar}
                       </div>
                       <div className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${getStatusColor(ticket.status)}`} />
@@ -615,7 +615,7 @@ export default function CustomerSupport() {
               <div className="border-b border-gray-200 px-6 py-4 flex items-center justify-between bg-white">
                 <div className="flex items-center gap-4">
                   <div className="relative">
-                    <div className="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center text-gray-700 font-semibold text-sm">
+                    <div className="w-12 h-12 rounded-full bg-gray-950 flex items-center justify-center text-white font-semibold text-sm">
                       {selectedTicket.customerAvatar}
                     </div>
                     <div className={`absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full border-2 border-white ${getStatusColor(selectedTicket.status)}`} />

@@ -651,7 +651,7 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
       );
     }
 
-    const bgClass = tone === 'customer' ? 'bg-gray-900 text-white' : 'bg-blue-100 text-blue-700';
+    const bgClass = 'bg-gray-950 text-white';
 
     return (
       <div className={`w-7 h-7 rounded-full ${bgClass} flex items-center justify-center text-[11px] font-semibold`}>
