@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Preserve an active shop owner's configured 150-slot showroom capacity and restore the existing operational navigation for individual shop owners without changing company ERP navigation.
+**Goal:** Preserve an active shop owner's configured 150-slot showroom capacity, restore the existing operational navigation for individual shop owners, and expose the supported individual refund approval flow without changing company ERP navigation.
 
-**Architecture:** The stored subscription/plan showroom limit is authoritative; legacy plan-code/name defaults are used only when no positive configured limit exists. Individual owners receive the existing direct operational routes in a separate sidebar section, filtered by the same business-type and module rules as those routes, while company owners continue using ERP Workspace.
+**Architecture:** The stored subscription/plan showroom limit is authoritative; legacy plan-code/name defaults are used only when no positive configured limit exists. Individual owners receive the existing direct operational routes in a separate sidebar section, filtered by the same business-type and module rules as those routes, plus the all-account refund approval route. Company-only approval workflows remain gated and company owners continue using ERP Workspace.
 
 **Tech Stack:** Laravel 12, PHP 8.2, Inertia 2, React 18, TypeScript 5.7, Vitest, Tailwind CSS 4.
 
@@ -36,11 +36,11 @@ Run the same test and confirm the payload reports 150.
 
 **Files:**
 - Modify: `resources/js/layout/__tests__/AppSidebar_shopOwner.test.tsx`.
-- Test: individual retail/repair/both owner visibility for the existing product, job-order, repair, and logistics routes, while preserving company ERP Workspace behavior.
+- Test: individual retail/repair/both owner visibility for the existing product, job-order, repair, logistics, and supported refund-approval routes, while preserving company ERP Workspace behavior.
 
 - [x] **Step 1: Write the failing tests**
 
-Extend the current sidebar tests so an individual owner with the relevant module states can see the direct operational links and a company owner still does not receive those legacy direct links.
+Extend the current sidebar tests so an individual owner with the relevant module states can see the direct operational links and supported Refund Approval, while a company owner still does not receive those legacy direct links and company-only approval pages remain gated.
 
 - [x] **Step 2: Run the focused frontend tests to verify they fail**
 
@@ -48,7 +48,7 @@ Run Vitest for `AppSidebar_shopOwner.test.tsx`. Expected result: the individual-
 
 - [x] **Step 3: Implement the minimal sidebar change**
 
-Restore the existing direct operational navigation for individual owners using existing route names, icons, business-type gates, and module-access checks. Keep company owners on ERP Workspace and preserve mobile/sidebar collapse behavior.
+Restore the existing direct operational navigation for individual owners using existing route names, icons, business-type gates, and module-access checks. Keep the supported Refund Approval item outside the company-only Finance module gate, keep company-only approval pages gated, keep company owners on ERP Workspace, and preserve mobile/sidebar collapse behavior.
 
 - [x] **Step 4: Run the focused frontend tests to verify they pass**
 

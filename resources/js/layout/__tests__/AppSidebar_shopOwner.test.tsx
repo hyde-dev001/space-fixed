@@ -129,6 +129,28 @@ it('renders individual owner operational pages with business and module access',
   expect(screen.getByRole('link', { name: 'Riders' })).toBeInTheDocument();
 });
 
+it('shows individual owners the supported refund approval page without company modules', () => {
+  state.shopModules = accessible({
+    finance: false,
+    procurement: false,
+    logistics: false,
+    repair_operations: false,
+  });
+  render(<AppSidebarShopOwner />);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Approval Pages' }));
+
+  expect(screen.getByRole('link', { name: 'Refund Approval' })).toHaveAttribute(
+    'href',
+    '/shop-owner.refund-approvals',
+  );
+  expect(screen.queryByRole('link', { name: 'Price Approvals' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Payslip Approval' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Purchase Request Approval' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Expense Approvals' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Salary Adjustment Approval' })).not.toBeInTheDocument();
+});
+
 it('removes Employee Modules and standalone Logistics for a shop owner', () => {
   state.shopOwner = {
     registration_type: 'company',
@@ -301,7 +323,7 @@ it('hides disabled employee modules from a business shop owner', () => {
   expect(screen.queryByRole('link', { name: 'Logistics' })).not.toBeInTheDocument();
 });
 
-it('does not render empty owner module sections when every module is unavailable', () => {
+it('keeps supported refund approval visible when every module is unavailable', () => {
   state.shopOwner = {
     registration_type: 'company',
     business_type: 'both',
@@ -321,7 +343,9 @@ it('does not render empty owner module sections when every module is unavailable
 
   render(<AppSidebarShopOwner />);
 
-  expect(screen.queryByRole('button', { name: 'Approval Pages' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Approval Pages' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Approval Pages' }));
+  expect(screen.getByRole('link', { name: 'Refund Approval' })).toBeInTheDocument();
   expect(screen.queryByText('Employee Modules', { exact: true })).not.toBeInTheDocument();
   expect(screen.queryByText('Customer Management', { exact: true })).not.toBeInTheDocument();
 });
