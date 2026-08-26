@@ -404,13 +404,15 @@ function UtilizationOverviewCard({
 }) {
   if (loading) {
     return (
-      <div className={`rounded-2xl border border-gray-200 bg-gray-100 dark:border-gray-800 dark:bg-white/[0.03] ${className ?? ""}`}>
+      <div className={`rounded-2xl border border-gray-200 bg-gray-100 dark:border-gray-800 dark:bg-white/[0.03] overflow-hidden h-full flex flex-col ${className ?? ""}`}>
         <div className="px-5 pt-5 bg-white shadow-default rounded-2xl pb-8 dark:bg-gray-900 sm:px-6 sm:pt-6">
           <div className="h-6 w-32 rounded bg-gray-200 dark:bg-gray-800 animate-pulse" />
           <div className="mt-2 h-4 w-48 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" />
           <div className="mt-8 h-56 rounded-xl bg-gray-100 dark:bg-gray-800 animate-pulse" />
         </div>
-        <div className="h-24 rounded-b-2xl bg-gray-50 dark:bg-gray-900/50 animate-pulse" />
+        <div className="flex flex-1 flex-col">
+          <div className="min-h-24 flex-1 rounded-b-2xl bg-gray-50 dark:bg-gray-900/50 animate-pulse" />
+        </div>
       </div>
     );
   }
@@ -475,7 +477,7 @@ function UtilizationOverviewCard({
   };
 
   return (
-    <div className={`rounded-2xl border border-gray-200 bg-gray-100 dark:border-gray-800 dark:bg-white/[0.03] overflow-hidden ${className ?? ""}`}>
+    <div className={`rounded-2xl border border-gray-200 bg-gray-100 dark:border-gray-800 dark:bg-white/[0.03] overflow-hidden h-full flex flex-col ${className ?? ""}`}>
       <div className="px-5 pt-5 bg-white shadow-default rounded-2xl pb-8 dark:bg-gray-900 sm:px-6 sm:pt-6">
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -509,43 +511,45 @@ function UtilizationOverviewCard({
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-y-4 gap-x-2 px-6 py-4 sm:grid-cols-4 sm:gap-4 sm:py-5">
-        <div>
-          <p className="mb-1 text-center text-gray-500 text-theme-xs dark:text-gray-400 sm:text-sm">Active</p>
-          <p className="text-center text-base font-semibold text-gray-800 dark:text-white/90 sm:text-lg">{workload.active_count}</p>
-        </div>
-        <div>
-          <p className="mb-1 text-center text-gray-500 text-theme-xs dark:text-gray-400 sm:text-sm">Intake / day</p>
-          <p className="text-center text-base font-semibold text-gray-800 dark:text-white/90 sm:text-lg">{workload.intake_rate}</p>
-        </div>
-        <div>
-          <p className="mb-1 text-center text-gray-500 text-theme-xs dark:text-gray-400 sm:text-sm">Completed ({period}d)</p>
-          <p className="text-center text-base font-semibold text-gray-800 dark:text-white/90 sm:text-lg">{workload.completed_total}</p>
-        </div>
-        <div>
-          <p className="mb-1 text-center text-gray-500 text-theme-xs dark:text-gray-400 sm:text-sm">Overdue</p>
-          <p className={`text-center text-base font-semibold sm:text-lg ${workload.overdue_count > 0 ? "text-red-600 dark:text-red-400" : "text-gray-800 dark:text-white/90"}`}>
-            {workload.overdue_count}
-          </p>
-        </div>
-      </div>
-      <div className="border-t border-gray-200/70 dark:border-gray-800 px-6 py-3">
-        <div className="grid grid-cols-1 gap-2 text-center text-xs sm:grid-cols-3">
+      <div className="flex flex-1 flex-col">
+        <div className="grid flex-1 content-center grid-cols-2 gap-y-4 gap-x-2 px-6 py-4 sm:grid-cols-4 sm:gap-4 sm:py-5">
           <div>
-            <p className="text-gray-500 dark:text-gray-400">Completion Rate</p>
-            <p className="mt-1 font-semibold text-gray-800 dark:text-white/90">
-              {workload.completion_rate !== null ? `${workload.completion_rate}%` : "N/A"}
-            </p>
+            <p className="mb-1 text-center text-gray-500 text-theme-xs dark:text-gray-400 sm:text-sm">Active</p>
+            <p className="text-center text-base font-semibold text-gray-800 dark:text-white/90 sm:text-lg">{workload.active_count}</p>
           </div>
           <div>
-            <p className="text-gray-500 dark:text-gray-400">Throughput / day</p>
-            <p className="mt-1 font-semibold text-gray-800 dark:text-white/90">{workload.throughput}</p>
+            <p className="mb-1 text-center text-gray-500 text-theme-xs dark:text-gray-400 sm:text-sm">Intake / day</p>
+            <p className="text-center text-base font-semibold text-gray-800 dark:text-white/90 sm:text-lg">{workload.intake_rate}</p>
           </div>
           <div>
-            <p className="text-gray-500 dark:text-gray-400">Avg Completion</p>
-            <p className="mt-1 font-semibold text-gray-800 dark:text-white/90">
-              {workload.avg_days !== null && workload.avg_days !== undefined ? `${workload.avg_days}d` : "N/A"}
+            <p className="mb-1 text-center text-gray-500 text-theme-xs dark:text-gray-400 sm:text-sm">Completed ({period}d)</p>
+            <p className="text-center text-base font-semibold text-gray-800 dark:text-white/90 sm:text-lg">{workload.completed_total}</p>
+          </div>
+          <div>
+            <p className="mb-1 text-center text-gray-500 text-theme-xs dark:text-gray-400 sm:text-sm">Overdue</p>
+            <p className={`text-center text-base font-semibold sm:text-lg ${workload.overdue_count > 0 ? "text-red-600 dark:text-red-400" : "text-gray-800 dark:text-white/90"}`}>
+              {workload.overdue_count}
             </p>
+          </div>
+        </div>
+        <div className="border-t border-gray-200/70 dark:border-gray-800 px-6 py-3">
+          <div className="grid grid-cols-1 gap-2 text-center text-xs sm:grid-cols-3">
+            <div>
+              <p className="text-gray-500 dark:text-gray-400">Completion Rate</p>
+              <p className="mt-1 font-semibold text-gray-800 dark:text-white/90">
+                {workload.completion_rate !== null ? `${workload.completion_rate}%` : "N/A"}
+              </p>
+            </div>
+            <div>
+              <p className="text-gray-500 dark:text-gray-400">Throughput / day</p>
+              <p className="mt-1 font-semibold text-gray-800 dark:text-white/90">{workload.throughput}</p>
+            </div>
+            <div>
+              <p className="text-gray-500 dark:text-gray-400">Avg Completion</p>
+              <p className="mt-1 font-semibold text-gray-800 dark:text-white/90">
+                {workload.avg_days !== null && workload.avg_days !== undefined ? `${workload.avg_days}d` : "N/A"}
+              </p>
+            </div>
           </div>
         </div>
       </div>
@@ -1088,7 +1092,7 @@ const DssInsights: React.FC = () => {
 
       {/* ── WORKLOAD TAB ── */}
       {tab === "workload" && isRepair && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 items-start gap-5">
+        <div className="grid grid-cols-1 lg:grid-cols-3 items-stretch gap-5">
           {/* Utilization panel */}
           <UtilizationOverviewCard
             workload={data?.workload}
