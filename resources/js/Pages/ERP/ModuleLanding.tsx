@@ -33,7 +33,7 @@ const ModuleLanding: React.FC = () => {
         <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-theme-sm dark:border-gray-800 dark:bg-gray-900 sm:p-8">
           <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-2xl space-y-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-700 dark:text-gray-300">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600 dark:text-blue-300">
                 ERP module
               </p>
               <h1 id="erp-module-title" className="text-3xl font-semibold tracking-tight text-gray-900 dark:text-white">
@@ -45,7 +45,7 @@ const ModuleLanding: React.FC = () => {
             </div>
             <Link
               href={props.urls.workspace}
-              className="inline-flex min-h-11 items-center justify-center rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-900 transition hover:border-gray-900 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-black/30 dark:border-gray-600 dark:text-gray-100 dark:hover:border-gray-300 dark:hover:bg-gray-800 dark:focus:ring-white/30"
+              className="inline-flex min-h-11 items-center justify-center rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 transition hover:border-blue-300 hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:border-gray-700 dark:text-gray-200 dark:hover:border-blue-500 dark:hover:text-blue-200"
             >
               Back to ERP Workspace
             </Link>
@@ -68,10 +68,10 @@ const ModuleLanding: React.FC = () => {
                 <Link
                   key={page.routeName}
                   href={page.url}
-                  className="group flex items-center justify-between rounded-xl border border-gray-200 bg-white p-5 transition hover:-translate-y-0.5 hover:border-gray-900 hover:shadow-theme-sm focus:outline-none focus:ring-2 focus:ring-black/40 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-400 dark:focus:ring-white/40"
+                  className="group flex items-center justify-between rounded-xl border border-gray-200 bg-white p-5 transition hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-theme-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-blue-500"
                 >
                   <span className="flex items-center gap-4">
-                    <span aria-hidden="true" className="flex h-10 w-10 items-center justify-center rounded-xl bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-white">
+                    <span aria-hidden="true" className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-300">
                       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
                         <rect x="4" y="4" width="16" height="16" rx="3" />
                         <path d="M8 9h8M8 13h5M8 17h3" strokeLinecap="round" />
@@ -79,7 +79,7 @@ const ModuleLanding: React.FC = () => {
                     </span>
                     <span className="font-semibold text-gray-900 dark:text-white">{page.label}</span>
                   </span>
-                  <span aria-hidden="true" className="text-lg text-gray-900 transition-transform group-hover:translate-x-1 dark:text-white">
+                  <span aria-hidden="true" className="text-lg text-blue-600 transition-transform group-hover:translate-x-1 dark:text-blue-300">
                     →
                   </span>
                 </Link>
