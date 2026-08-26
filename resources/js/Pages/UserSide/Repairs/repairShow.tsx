@@ -1159,8 +1159,8 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                   <div key={review.id} className="bg-linear-to-br from-white to-gray-50 rounded-2xl p-5 xl:p-8 border border-gray-100 hover:shadow-lg transition-all">
                     <div className="flex items-start gap-4 xl:gap-6">
                       {/* User Avatar */}
-                      <div className="w-14 h-14 xl:w-20 xl:h-20 rounded-2xl bg-gray-950 border-2 border-gray-950 overflow-hidden shrink-0 flex items-center justify-center shadow-md">
-                        <span className="text-xl xl:text-2xl font-bold text-white">
+                      <div className="w-14 h-14 xl:w-20 xl:h-20 rounded-2xl bg-gray-950 dark:bg-linear-to-br dark:from-gray-100 dark:to-gray-200 border-2 border-gray-950 dark:border-gray-200 overflow-hidden shrink-0 flex items-center justify-center shadow-md">
+                        <span className="text-xl xl:text-2xl font-bold text-white dark:text-gray-600">
                           {review.user_name.charAt(0).toUpperCase()}
                         </span>
                       </div>

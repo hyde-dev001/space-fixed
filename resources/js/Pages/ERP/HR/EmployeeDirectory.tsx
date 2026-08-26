@@ -2320,8 +2320,8 @@ export const EmployeeManagement: React.FC<{
                       <td className="px-3 py-3 align-top">
                         <div className="flex items-center">
                           <div className="flex-shrink-0 h-8 w-8">
-                            <div className="h-8 w-8 rounded-full bg-gray-950 flex items-center justify-center">
-                              <span className="text-white font-medium text-xs">
+                            <div className="h-8 w-8 rounded-full bg-gray-950 dark:bg-blue-900 flex items-center justify-center">
+                              <span className="text-white dark:text-blue-300 font-medium text-xs">
                                 {buildName(employee)
                                   .split(" ")
                                   .map((n) => n[0])

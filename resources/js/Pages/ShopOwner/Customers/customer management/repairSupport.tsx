@@ -229,7 +229,7 @@ export default function RepairSupport() {
     }
 
     return (
-      <div className={`${sizeClass} rounded-full bg-gray-950 flex items-center justify-center text-white font-semibold text-sm`}>
+      <div className={`${sizeClass} rounded-full bg-gray-950 dark:bg-blue-100 flex items-center justify-center text-white dark:text-blue-700 font-semibold text-sm`}>
         {getInitials(shopName || "Shop")}
       </div>
     );
@@ -842,7 +842,7 @@ export default function RepairSupport() {
                                       {shopAvatarUrl ? (
                                         <img src={shopAvatarUrl} alt={shopName} className="w-10 h-10 rounded-full object-cover" />
                                       ) : (
-                                        <div className="w-10 h-10 rounded-full bg-gray-950 flex items-center justify-center shrink-0 text-white text-xs font-semibold">
+                                        <div className="w-10 h-10 rounded-full bg-gray-950 dark:bg-blue-100 flex items-center justify-center shrink-0 text-white dark:text-blue-700 text-xs font-semibold">
                                           {getInitials(shopName)}
                                         </div>
                                       )}

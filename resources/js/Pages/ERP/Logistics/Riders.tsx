@@ -48,7 +48,7 @@ function RiderCard({ rider }: { rider: LogisticsRider }) {
   return (
     <article data-testid={`rider-card-${rider.id}`} className="mx-auto w-full max-w-2xl rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800 sm:p-5">
       <div className="flex items-start gap-3">
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gray-950 font-semibold text-white">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gray-950 dark:bg-gradient-to-br dark:from-blue-500 dark:to-purple-600 font-semibold text-white">
           {rider.name.charAt(0).toUpperCase()}
         </div>
         <div className="min-w-0 flex-1">
@@ -157,7 +157,7 @@ export default function Riders() {
                   <TableRow key={rider.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
                     <TableCell className="px-6 py-4">
                       <div className="flex items-center space-x-3">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-950 font-semibold text-white">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-950 dark:bg-gradient-to-br dark:from-blue-500 dark:to-purple-600 font-semibold text-white">
                           {rider.name.charAt(0).toUpperCase()}
                         </div>
                         <div className="font-medium text-gray-900 dark:text-white">{rider.name}</div>

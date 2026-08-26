@@ -174,8 +174,12 @@ body.userside-hide-scrollbar::-webkit-scrollbar {
 }
 
 .flatpickr-day.selected {
-  background: #111111 !important;
+  background: #465fff !important;
   color: white !important;
+}
+
+html:not(.dark) .flatpickr-day.selected {
+  background: #111111 !important;
 }
 
 .flatpickr-day.today {
@@ -244,21 +248,20 @@ body.userside-hide-scrollbar::-webkit-scrollbar {
   --color-current: currentColor;
   --color-transparent: transparent;
   --color-white: #ffffff;
-  --color-black: #111111;
+  --color-black: #101828;
 
-  /* Monochrome primary palette; semantic colors remain independent. */
-  --color-brand-25: #fafafa;
-  --color-brand-50: #f5f5f5;
-  --color-brand-100: #e5e5e5;
-  --color-brand-200: #d4d4d4;
-  --color-brand-300: #a3a3a3;
-  --color-brand-400: #737373;
-  --color-brand-500: #111111;
-  --color-brand-600: #000000;
-  --color-brand-700: #000000;
-  --color-brand-800: #171717;
-  --color-brand-900: #262626;
-  --color-brand-950: #0a0a0a;
+  --color-brand-25: #f2f7ff;
+  --color-brand-50: #ecf3ff;
+  --color-brand-100: #dde9ff;
+  --color-brand-200: #c2d6ff;
+  --color-brand-300: #9cb9ff;
+  --color-brand-400: #7592ff;
+  --color-brand-500: #465fff;
+  --color-brand-600: #3641f5;
+  --color-brand-700: #2a31d8;
+  --color-brand-800: #252dae;
+  --color-brand-900: #262e89;
+  --color-brand-950: #161950;
 
   --color-blue-light-25: #f5fbff;
   --color-blue-light-50: #f0f9ff;
@@ -1439,7 +1442,7 @@ html.userside-dark #app .userside-auth-ghost:hover {
 }
 
 @utility menu-item-active {
-  @apply bg-black text-white dark:bg-white dark:text-black;
+  @apply bg-brand-50 text-brand-500 dark:bg-brand-500/[0.12] dark:text-brand-400;
 }
 
 @utility menu-item-inactive {
@@ -1454,7 +1457,7 @@ html.userside-dark #app .userside-auth-ghost:hover {
 }
 
 @utility menu-item-icon-active {
-  @apply text-white dark:text-black;
+  @apply text-brand-500 dark:text-brand-400;
 }
 
 @utility menu-item-icon-inactive {
@@ -1466,7 +1469,7 @@ html.userside-dark #app .userside-auth-ghost:hover {
 }
 
 @utility menu-dropdown-item-active {
-  @apply bg-black text-white dark:bg-white dark:text-black;
+  @apply bg-brand-50 text-brand-500 dark:bg-brand-500/[0.12] dark:text-brand-400;
 }
 
 @utility menu-dropdown-item-inactive {
@@ -1478,7 +1481,7 @@ html.userside-dark #app .userside-auth-ghost:hover {
 }
 
 @utility menu-dropdown-badge-active {
-  @apply bg-gray-200 text-gray-900 dark:bg-gray-700 dark:text-white;
+  @apply bg-brand-100 text-brand-600 dark:bg-brand-500/[0.2] dark:text-brand-300;
 }
 
 @utility menu-dropdown-badge-inactive {
@@ -1486,107 +1489,134 @@ html.userside-dark #app .userside-auth-ghost:hover {
 }
 
 /* Shared light navigation and controls use black as the primary accent. */
-.erp-sidebar {
+html:not(.dark) {
+  --color-black: #111111;
+  --color-brand-25: #fafafa;
+  --color-brand-50: #f5f5f5;
+  --color-brand-100: #e5e5e5;
+  --color-brand-200: #d4d4d4;
+  --color-brand-300: #a3a3a3;
+  --color-brand-400: #737373;
+  --color-brand-500: #111111;
+  --color-brand-600: #000000;
+  --color-brand-700: #000000;
+  --color-brand-800: #171717;
+  --color-brand-900: #262626;
+  --color-brand-950: #0a0a0a;
+}
+
+html:not(.dark) .erp-sidebar {
   background: #ffffff;
   border-color: #e5e7eb;
   color: #111827;
 }
 
-.erp-sidebar .menu-item-active,
-.erp-sidebar .menu-dropdown-item-active {
+html:not(.dark) .erp-sidebar .menu-item-active,
+html:not(.dark) .erp-sidebar .menu-dropdown-item-active {
   background: #111111;
   color: #ffffff;
 }
 
-.erp-sidebar .menu-item-inactive,
-.erp-sidebar .menu-dropdown-item-inactive {
+html:not(.dark) .erp-sidebar .menu-item-inactive,
+html:not(.dark) .erp-sidebar .menu-dropdown-item-inactive {
   color: #111827;
 }
 
-.erp-sidebar .menu-item-inactive:hover,
-.erp-sidebar .menu-dropdown-item-inactive:hover,
-.erp-sidebar .menu-item-inactive.group:hover {
+html:not(.dark) .erp-sidebar .menu-item-inactive:hover,
+html:not(.dark) .erp-sidebar .menu-dropdown-item-inactive:hover,
+html:not(.dark) .erp-sidebar .menu-item-inactive.group:hover {
   background: #f3f4f6;
   color: #111111;
 }
 
-.erp-sidebar .menu-item-icon-active,
-.erp-sidebar .menu-item-icon-inactive,
-.erp-sidebar .menu-item-inactive.group:hover .menu-item-icon-inactive {
+html:not(.dark) .erp-sidebar .menu-item-icon-active,
+html:not(.dark) .erp-sidebar .menu-item-icon-inactive,
+html:not(.dark) .erp-sidebar .menu-item-inactive.group:hover .menu-item-icon-inactive {
   color: currentColor;
 }
 
-.erp-sidebar .menu-dropdown-badge-active {
+html:not(.dark) .erp-sidebar .menu-dropdown-badge-active {
   background: #e5e7eb;
   color: #111111;
 }
 
-.erp-sidebar .menu-dropdown-badge-inactive {
+html:not(.dark) .erp-sidebar .menu-dropdown-badge-inactive {
   background: #f3f4f6;
   color: #6b7280;
 }
 
-.erp-sidebar [class*='text-brand-'] {
+html:not(.dark) .erp-sidebar [class*='text-brand-'] {
   color: currentColor !important;
 }
 
-.erp-sidebar [class*='border-brand-'] {
+html:not(.dark) .erp-sidebar [class*='border-brand-'] {
   border-color: #111111 !important;
 }
 
 /* Legacy primary controls are normalized without touching status badges or charts. */
-.erp-theme :is(button, a, [role='button'])[class~='bg-blue-500'],
-.erp-theme :is(button, a, [role='button'])[class~='bg-blue-600'],
-.erp-theme :is(button, a, [role='button'])[class~='bg-indigo-500'],
-.erp-theme :is(button, a, [role='button'])[class~='bg-indigo-600'],
-.erp-theme :is(button, a, [role='button'])[class~='bg-purple-500'],
-.erp-theme :is(button, a, [role='button'])[class~='bg-purple-600'] {
+html:not(.dark) .erp-theme :is(button, a, [role='button'])[class~='bg-blue-500'],
+html:not(.dark) .erp-theme :is(button, a, [role='button'])[class~='bg-blue-600'],
+html:not(.dark) .erp-theme :is(button, a, [role='button'])[class~='bg-indigo-500'],
+html:not(.dark) .erp-theme :is(button, a, [role='button'])[class~='bg-indigo-600'],
+html:not(.dark) .erp-theme :is(button, a, [role='button'])[class~='bg-purple-500'],
+html:not(.dark) .erp-theme :is(button, a, [role='button'])[class~='bg-purple-600'] {
   background-color: #111111 !important;
   color: #ffffff !important;
   border-color: #111111 !important;
 }
 
-.erp-theme :is(button, a, [role='button']):is(:hover, :focus-visible)[class~='bg-blue-500'],
-.erp-theme :is(button, a, [role='button']):is(:hover, :focus-visible)[class~='bg-blue-600'],
-.erp-theme :is(button, a, [role='button']):is(:hover, :focus-visible)[class~='bg-indigo-500'],
-.erp-theme :is(button, a, [role='button']):is(:hover, :focus-visible)[class~='bg-indigo-600'],
-.erp-theme :is(button, a, [role='button']):is(:hover, :focus-visible)[class~='bg-purple-500'],
-.erp-theme :is(button, a, [role='button']):is(:hover, :focus-visible)[class~='bg-purple-600'] {
+html:not(.dark) .erp-theme :is(button, a, [role='button'])[class~='bg-brand-500'] {
+  background-color: #111111 !important;
+  color: #ffffff !important;
+  border-color: #111111 !important;
+}
+
+html:not(.dark) .erp-theme :is(button, a, [role='button']):is(:hover, :focus-visible)[class~='bg-brand-500'] {
   background-color: #000000 !important;
   border-color: #000000 !important;
 }
 
-.erp-theme :is(button, a, [role='button'])[class~='border-blue-500'],
-.erp-theme :is(button, a, [role='button'])[class~='border-blue-600'],
-.erp-theme :is(button, a, [role='button'])[class~='border-indigo-500'],
-.erp-theme :is(button, a, [role='button'])[class~='border-indigo-600'],
-.erp-theme :is(button, a, [role='button'])[class~='border-purple-500'],
-.erp-theme :is(button, a, [role='button'])[class~='border-purple-600'] {
+html:not(.dark) .erp-theme :is(button, a, [role='button']):is(:hover, :focus-visible)[class~='bg-blue-500'],
+html:not(.dark) .erp-theme :is(button, a, [role='button']):is(:hover, :focus-visible)[class~='bg-blue-600'],
+html:not(.dark) .erp-theme :is(button, a, [role='button']):is(:hover, :focus-visible)[class~='bg-indigo-500'],
+html:not(.dark) .erp-theme :is(button, a, [role='button']):is(:hover, :focus-visible)[class~='bg-indigo-600'],
+html:not(.dark) .erp-theme :is(button, a, [role='button']):is(:hover, :focus-visible)[class~='bg-purple-500'],
+html:not(.dark) .erp-theme :is(button, a, [role='button']):is(:hover, :focus-visible)[class~='bg-purple-600'] {
+  background-color: #000000 !important;
+  border-color: #000000 !important;
+}
+
+html:not(.dark) .erp-theme :is(button, a, [role='button'])[class~='border-blue-500'],
+html:not(.dark) .erp-theme :is(button, a, [role='button'])[class~='border-blue-600'],
+html:not(.dark) .erp-theme :is(button, a, [role='button'])[class~='border-indigo-500'],
+html:not(.dark) .erp-theme :is(button, a, [role='button'])[class~='border-indigo-600'],
+html:not(.dark) .erp-theme :is(button, a, [role='button'])[class~='border-purple-500'],
+html:not(.dark) .erp-theme :is(button, a, [role='button'])[class~='border-purple-600'] {
   border-color: #111111 !important;
 }
 
-.erp-theme :is(input, select, textarea)[class*='focus:ring-blue-']:focus,
-.erp-theme :is(input, select, textarea)[class*='focus:ring-indigo-']:focus,
-.erp-theme :is(input, select, textarea)[class*='focus:ring-purple-']:focus,
-.erp-theme :is(input, select, textarea)[class*='focus:ring-brand-']:focus {
+html:not(.dark) .erp-theme :is(input, select, textarea)[class*='focus:ring-blue-']:focus,
+html:not(.dark) .erp-theme :is(input, select, textarea)[class*='focus:ring-indigo-']:focus,
+html:not(.dark) .erp-theme :is(input, select, textarea)[class*='focus:ring-purple-']:focus,
+html:not(.dark) .erp-theme :is(input, select, textarea)[class*='focus:ring-brand-']:focus {
   --tw-ring-color: rgb(17 17 17 / 0.16) !important;
   border-color: #111111 !important;
 }
 
-.erp-theme :is(input, select, textarea, button, a, [role='button'], [role='tab'])[class*='focus:ring-blue-']:focus,
-.erp-theme :is(input, select, textarea, button, a, [role='button'], [role='tab'])[class*='focus:ring-indigo-']:focus,
-.erp-theme :is(input, select, textarea, button, a, [role='button'], [role='tab'])[class*='focus:ring-purple-']:focus {
+html:not(.dark) .erp-theme :is(input, select, textarea, button, a, [role='button'], [role='tab'])[class*='focus:ring-blue-']:focus,
+html:not(.dark) .erp-theme :is(input, select, textarea, button, a, [role='button'], [role='tab'])[class*='focus:ring-indigo-']:focus,
+html:not(.dark) .erp-theme :is(input, select, textarea, button, a, [role='button'], [role='tab'])[class*='focus:ring-purple-']:focus {
   --tw-ring-color: rgb(17 17 17 / 0.16) !important;
   border-color: #111111 !important;
 }
 
-.erp-theme :is(input[type='checkbox'], input[type='radio']) {
+html:not(.dark) .erp-theme :is(input[type='checkbox'], input[type='radio']) {
   accent-color: #111111;
 }
 
-.erp-theme :is(a, [role='tab'])[class*='text-blue-'],
-.erp-theme :is(a, [role='tab'])[class*='text-indigo-'],
-.erp-theme :is(a, [role='tab'])[class*='text-purple-'] {
+html:not(.dark) .erp-theme :is(a, [role='tab'])[class*='text-blue-'],
+html:not(.dark) .erp-theme :is(a, [role='tab'])[class*='text-indigo-'],
+html:not(.dark) .erp-theme :is(a, [role='tab'])[class*='text-purple-'] {
   color: #111111 !important;
 }
 

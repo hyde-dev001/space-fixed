@@ -931,8 +931,8 @@ const SalaryChanges: React.FC = () => {
                   <tr key={change.id} className="transition-colors hover:bg-gray-50 dark:hover:bg-gray-900/50">
                     <td className="px-6 py-4">
                       <div className="flex items-center space-x-3">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gray-950">
-                          <span className="text-sm font-medium text-white">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gray-950 dark:bg-blue-900/40">
+                          <span className="text-sm font-medium text-white dark:text-blue-300">
                             {getInitials(change.employee?.name)}
                           </span>
                         </div>
