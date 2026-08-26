@@ -1535,24 +1535,33 @@ html.userside-dark #app .userside-auth-ghost:hover {
 }
 
 /* Legacy primary controls are normalized without touching status badges or charts. */
-.erp-theme :is(button, a, [role='button'])[class*='bg-blue-'],
-.erp-theme :is(button, a, [role='button'])[class*='bg-indigo-'],
-.erp-theme :is(button, a, [role='button'])[class*='bg-purple-'] {
+.erp-theme :is(button, a, [role='button'])[class~='bg-blue-500'],
+.erp-theme :is(button, a, [role='button'])[class~='bg-blue-600'],
+.erp-theme :is(button, a, [role='button'])[class~='bg-indigo-500'],
+.erp-theme :is(button, a, [role='button'])[class~='bg-indigo-600'],
+.erp-theme :is(button, a, [role='button'])[class~='bg-purple-500'],
+.erp-theme :is(button, a, [role='button'])[class~='bg-purple-600'] {
   background-color: #111111 !important;
   color: #ffffff !important;
   border-color: #111111 !important;
 }
 
-.erp-theme :is(button, a, [role='button']):is(:hover, :focus-visible)[class*='bg-blue-'],
-.erp-theme :is(button, a, [role='button']):is(:hover, :focus-visible)[class*='bg-indigo-'],
-.erp-theme :is(button, a, [role='button']):is(:hover, :focus-visible)[class*='bg-purple-'] {
+.erp-theme :is(button, a, [role='button']):is(:hover, :focus-visible)[class~='bg-blue-500'],
+.erp-theme :is(button, a, [role='button']):is(:hover, :focus-visible)[class~='bg-blue-600'],
+.erp-theme :is(button, a, [role='button']):is(:hover, :focus-visible)[class~='bg-indigo-500'],
+.erp-theme :is(button, a, [role='button']):is(:hover, :focus-visible)[class~='bg-indigo-600'],
+.erp-theme :is(button, a, [role='button']):is(:hover, :focus-visible)[class~='bg-purple-500'],
+.erp-theme :is(button, a, [role='button']):is(:hover, :focus-visible)[class~='bg-purple-600'] {
   background-color: #000000 !important;
   border-color: #000000 !important;
 }
 
-.erp-theme :is(button, a, [role='button'])[class*='border-blue-'],
-.erp-theme :is(button, a, [role='button'])[class*='border-indigo-'],
-.erp-theme :is(button, a, [role='button'])[class*='border-purple-'] {
+.erp-theme :is(button, a, [role='button'])[class~='border-blue-500'],
+.erp-theme :is(button, a, [role='button'])[class~='border-blue-600'],
+.erp-theme :is(button, a, [role='button'])[class~='border-indigo-500'],
+.erp-theme :is(button, a, [role='button'])[class~='border-indigo-600'],
+.erp-theme :is(button, a, [role='button'])[class~='border-purple-500'],
+.erp-theme :is(button, a, [role='button'])[class~='border-purple-600'] {
   border-color: #111111 !important;
 }
 
