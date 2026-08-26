@@ -682,19 +682,13 @@ const AppSidebar_shopOwner: React.FC<AppSidebarShopOwnerProps> = ({ activeModule
           {nav.subItems ? (
             <button
               onClick={() => handleSubmenuToggle(index, menuType)}
-              className={`menu-item group ${openSubmenu === `${menuType}-${index}`
-                  ? "menu-item-active"
-                  : "menu-item-inactive"
-                } cursor-pointer ${!isExpanded && !isHovered
+              className={`menu-item group menu-item-inactive cursor-pointer ${!isExpanded && !isHovered
                   ? "lg:justify-center"
                   : "lg:justify-start"
                 }`}
             >
               <span
-                className={`menu-item-icon-size w-6 h-6 ${openSubmenu === `${menuType}-${index}`
-                    ? "menu-item-icon-active"
-                    : "menu-item-icon-inactive"
-                  }`}
+                className="menu-item-icon-size w-6 h-6 menu-item-icon-inactive"
               >
                 {nav.icon}
               </span>
