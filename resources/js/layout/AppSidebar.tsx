@@ -414,8 +414,8 @@ const AppSidebar: React.FC = () => {
         <Link href={resolveRouteHref("landing") ?? "/"} className="flex items-center gap-2 hover:scale-105 transition-transform duration-200">
           {isExpanded || isHovered || isMobileOpen ? (
             <>
-              <ShootingStarIcon className="w-6 h-6 text-black" />
-              <span className="text-xl font-bold tracking-tight text-black">
+              <ShootingStarIcon className="w-6 h-6 text-white" />
+              <span className="text-xl font-bold tracking-tight text-white">
                 SoleSpace
               </span>
             </>

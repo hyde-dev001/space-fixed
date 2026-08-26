@@ -1533,29 +1533,29 @@ html.dark .swal2-cancel.user-swal2-cancel:hover {
   @apply bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400;
 }
 
-/* ERP and shop-owner navigation use a white rail with a black active state. */
+/* ERP and shop-owner navigation keep a consistent black luxury rail in both themes. */
 .erp-sidebar {
-  background: #ffffff;
-  border-color: #e5e5e5;
-  color: #111111;
+  background: #111111;
+  border-color: #262626;
+  color: #f5f5f5;
 }
 
 .erp-sidebar .menu-item-active,
 .erp-sidebar .menu-dropdown-item-active {
-  background: #111111;
-  color: #ffffff;
+  background: #ffffff;
+  color: #111111;
 }
 
 .erp-sidebar .menu-item-inactive,
 .erp-sidebar .menu-dropdown-item-inactive {
-  color: #111111;
+  color: #a3a3a3;
 }
 
 .erp-sidebar .menu-item-inactive:hover,
 .erp-sidebar .menu-dropdown-item-inactive:hover,
 .erp-sidebar .menu-item-inactive.group:hover {
-  background: #f5f5f5;
-  color: #111111;
+  background: #262626;
+  color: #ffffff;
 }
 
 .erp-sidebar .menu-item-icon-active,
@@ -1565,13 +1565,13 @@ html.dark .swal2-cancel.user-swal2-cancel:hover {
 }
 
 .erp-sidebar .menu-dropdown-badge-active {
-  background: #ffffff;
+  background: #e5e5e5;
   color: #111111;
 }
 
 .erp-sidebar .menu-dropdown-badge-inactive {
-  background: #f5f5f5;
-  color: #525252;
+  background: #262626;
+  color: #a3a3a3;
 }
 
 .erp-sidebar [class*='text-brand-'] {
@@ -1579,52 +1579,7 @@ html.dark .swal2-cancel.user-swal2-cancel:hover {
 }
 
 .erp-sidebar [class*='border-brand-'] {
-  border-color: #111111 !important;
-}
-
-.dark .erp-sidebar {
-  background: #111111;
-  border-color: #262626;
-  color: #f5f5f5;
-}
-
-.dark .erp-sidebar .menu-item-active,
-.dark .erp-sidebar .menu-dropdown-item-active {
-  background: #ffffff;
-  color: #111111;
-}
-
-.dark .erp-sidebar .menu-item-inactive,
-.dark .erp-sidebar .menu-dropdown-item-inactive {
-  color: #f5f5f5;
-}
-
-.dark .erp-sidebar .menu-item-inactive:hover,
-.dark .erp-sidebar .menu-dropdown-item-inactive:hover,
-.dark .erp-sidebar .menu-item-inactive.group:hover {
-  background: #262626;
-  color: #ffffff;
-}
-
-.dark .erp-sidebar [class*='border-brand-'] {
   border-color: #ffffff !important;
-}
-
-.dark .erp-sidebar .text-black {
-  color: #ffffff !important;
-}
-
-/* Every ERP action, including modal and filter controls, uses the same black/white treatment. */
-.erp-theme :is(button, [role='button']) {
-  background-color: #111111 !important;
-  color: #ffffff !important;
-  border-color: #111111 !important;
-}
-
-.erp-theme :is(button, [role='button']):is(:hover, :focus-visible) {
-  background-color: #000000 !important;
-  color: #ffffff !important;
-  border-color: #000000 !important;
 }
 
 /* Legacy page actions inherit the same monochrome treatment without changing status badges. */
