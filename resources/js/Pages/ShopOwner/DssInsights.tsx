@@ -475,8 +475,8 @@ function UtilizationOverviewCard({
   };
 
   return (
-    <div className={`rounded-2xl border border-gray-200 bg-gray-100 dark:border-gray-800 dark:bg-white/[0.03] overflow-hidden h-full flex flex-col ${className ?? ""}`}>
-      <div className="px-5 pt-5 bg-white shadow-default rounded-2xl pb-8 dark:bg-gray-900 sm:px-6 sm:pt-6 flex-1">
+    <div className={`rounded-2xl border border-gray-200 bg-gray-100 dark:border-gray-800 dark:bg-white/[0.03] overflow-hidden ${className ?? ""}`}>
+      <div className="px-5 pt-5 bg-white shadow-default rounded-2xl pb-8 dark:bg-gray-900 sm:px-6 sm:pt-6">
         <div className="flex items-start justify-between gap-4">
           <div>
             <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">Repair Request</h3>
@@ -1088,14 +1088,13 @@ const DssInsights: React.FC = () => {
 
       {/* ── WORKLOAD TAB ── */}
       {tab === "workload" && isRepair && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 lg:grid-cols-3 items-start gap-5">
           {/* Utilization panel */}
           <UtilizationOverviewCard
             workload={data?.workload}
             workloadLimit={data?.workload_limit ?? 0}
             period={period}
             loading={loading}
-            className="h-full"
           />
 
           {/* Daily active chart */}
