@@ -1749,6 +1749,26 @@ html.dark .swal2-cancel.user-swal2-cancel:hover {
   color: #ffffff !important;
 }
 
+/* Icon-only controls retain their original transparent appearance. Text/action buttons stay monochrome. */
+.erp-theme :is(button, [role='button'])[aria-label] {
+  background-color: transparent !important;
+  border-color: transparent !important;
+  color: #111111 !important;
+}
+
+.erp-theme :is(button, [role='button'])[aria-label] * {
+  color: inherit !important;
+}
+
+.erp-theme :is(button, [role='button'])[aria-label] svg {
+  color: inherit !important;
+  stroke: currentColor !important;
+}
+
+.dark .erp-theme :is(button, [role='button'])[aria-label] {
+  color: #f5f5f5 !important;
+}
+
 .erp-theme :is(input, select, textarea)[class*='focus:ring-blue-']:focus,
 .erp-theme :is(input, select, textarea)[class*='focus:ring-indigo-']:focus,
 .erp-theme :is(input, select, textarea)[class*='focus:ring-purple-']:focus,
