@@ -14,8 +14,9 @@ export const MoneyIcon = ({ className = "" }: MoneyIconProps) => (
     strokeLinejoin="round"
     aria-hidden="true"
   >
-    <rect x="3" y="5" width="18" height="14" rx="2" />
-    <circle cx="12" cy="12" r="3" />
-    <path d="M7 8h.01M17 16h.01" />
+    <ellipse cx="12" cy="6.5" rx="6.5" ry="2.5" />
+    <path d="M5.5 6.5v3c0 1.38 2.91 2.5 6.5 2.5s6.5-1.12 6.5-2.5v-3" />
+    <path d="M5.5 9.5v3c0 1.38 2.91 2.5 6.5 2.5s6.5-1.12 6.5-2.5v-3" />
+    <path d="M5.5 12.5v3c0 1.38 2.91 2.5 6.5 2.5s6.5-1.12 6.5-2.5v-3" />
   </svg>
 );
