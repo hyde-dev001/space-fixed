@@ -299,7 +299,7 @@ export default function SuspensionAppeals({ appeals = [], stats, filters }: Prop
       <Head title="Suspension Appeals" />
       <div className="space-y-8 p-6 md:p-8">
         <div className="flex items-start gap-3">
-          <div className="mt-1 flex h-11 w-11 items-center justify-center rounded-xl bg-blue-100 text-blue-600">
+          <div className="mt-1 flex h-11 w-11 items-center justify-center rounded-xl bg-gray-100 text-gray-900">
             <ShieldIcon className="h-6 w-6" />
           </div>
           <div>

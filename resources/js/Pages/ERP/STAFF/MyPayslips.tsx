@@ -448,7 +448,7 @@ export default function MyPayslips() {
 					{/* Page header */}
 					<div className="mb-6">
 						<div className="flex items-center gap-3 mb-1">
-							<div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg text-blue-600 dark:text-blue-400">
+							<div className="p-2 bg-gray-100 dark:bg-blue-900/30 rounded-lg text-gray-900 dark:text-blue-400">
 								<DocumentIcon />
 							</div>
 							<h1 className="text-2xl font-bold text-gray-900 dark:text-white">My Payslips</h1>
