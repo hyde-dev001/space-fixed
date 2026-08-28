@@ -135,14 +135,11 @@ it("selects the canonical frame for a direct Shop Owner page", () => {
   expect(screen.queryByTestId("existing-owner-sidebar")).not.toBeInTheDocument();
 });
 
-it("keeps canonical shell branding and profile links on canonical destinations", () => {
+it("keeps the canonical owner dropdown while hiding the duplicate Light Mode wordmark", () => {
   state.auth = { shop_owner: { id: 1 } };
   render(<AppLayoutShopOwner><div>owner page</div></AppLayoutShopOwner>);
 
-  expect(screen.getAllByRole("link", { name: "SoleSpace" })).toHaveLength(1);
-  expect(screen.getAllByRole("link", { name: "SoleSpace" }).every((link) => (
-    link.getAttribute("href") === "/shop-owner/home"
-  ))).toBe(true);
+  expect(screen.getByRole("link", { name: "SoleSpace" })).toHaveClass("hidden", "dark:inline-flex");
   expect(screen.getByTestId("shop-owner-dropdown")).toHaveAttribute(
     "data-profile-url",
     "/shop-owner/settings/profile",

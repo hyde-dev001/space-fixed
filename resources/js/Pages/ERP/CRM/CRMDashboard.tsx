@@ -79,8 +79,8 @@ const MetricCard = ({ title, value, change, changeType, icon: Icon, color, descr
           <div
             className={`flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold transition-all duration-300 ${
               changeType === "increase"
-                ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                ? "bg-gray-100 text-gray-900 dark:bg-green-900/30 dark:text-green-400"
+                : "bg-gray-100 text-gray-900 dark:bg-red-900/30 dark:text-red-400"
             }`}
           >
             {changeType === "increase" ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" />}
@@ -120,6 +120,18 @@ interface InteractionItem {
   status: string;
   priority: string;
 }
+
+const formatInteractionTime = (value: string | null | undefined): string => {
+  if (!value) return "";
+
+  const parsedDate = new Date(value);
+  return Number.isNaN(parsedDate.getTime()) ? value : parsedDate.toLocaleString();
+};
+
+const formatInteractionMessage = (value: string | null | undefined): string => {
+  const message = value?.replace(/\*\*(.*?)\*\*/g, "$1").trim();
+  return message || "—";
+};
 
 export default function CRMDashboard() {
   const { initialStats, initialEngagement, initialInteractions, auth, erpCapabilities } = usePage().props as any;
@@ -279,12 +291,12 @@ export default function CRMDashboard() {
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="text-sm font-semibold text-gray-900 dark:text-white">{item.customer_name}</p>
-                      <p className="mt-0.5 text-sm text-gray-600 dark:text-gray-400">{item.last_message || "—"}</p>
+                      <p className="mt-0.5 whitespace-pre-wrap break-words text-sm text-gray-600 dark:text-gray-400">{formatInteractionMessage(item.last_message)}</p>
                     </div>
                     <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300 capitalize">{item.status?.replace(/_/g, " ") ?? "open"}</span>
                   </div>
                   <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                    {item.last_message_at ? new Date(item.last_message_at).toLocaleString() : ""}
+                    {formatInteractionTime(item.last_message_at)}
                   </p>
                 </div>
               ))}

@@ -2,9 +2,53 @@ import { useState } from "react";
 import { usePage, router } from "@inertiajs/react";
 import { Dropdown } from "../ui/dropdown/Dropdown";
 import Swal from "sweetalert2";
-import { Building2, LogOut, Settings2, User, Store, Wrench } from "lucide-react";
+import { LogOut, Settings2, User } from "lucide-react";
 import type { ErpActor, ErpUrls } from "../../types/erp";
 import InlineAccountMenu from "./InlineAccountMenu";
+
+const normalizePhotoPath = (photoPath: unknown): string | null => {
+  if (typeof photoPath !== "string") return null;
+
+  const trimmedPath = photoPath.trim();
+  if (!trimmedPath) return null;
+
+  if (/^(?:https?:)?\/\//i.test(trimmedPath) || trimmedPath.startsWith("/") || trimmedPath.startsWith("data:")) {
+    return trimmedPath;
+  }
+
+  return `/storage/${trimmedPath.replace(/^\/+/, "")}`;
+};
+
+type ShopOwnerAvatarProps = {
+  src: string | null;
+  alt: string;
+  className: string;
+  iconClassName: string;
+};
+
+const ShopOwnerAvatar = ({ src, alt, className, iconClassName }: ShopOwnerAvatarProps) => {
+  const [imageFailed, setImageFailed] = useState(false);
+  const showPhoto = Boolean(src) && !imageFailed;
+
+  return (
+    <span
+      data-testid={imageFailed || !src ? "shop-owner-avatar-fallback" : undefined}
+      className={`flex items-center justify-center overflow-hidden rounded-full bg-gray-100 text-gray-900 dark:bg-purple-900 dark:text-purple-300 ${className}`}
+    >
+      {showPhoto && (
+        <img
+          src={src ?? ""}
+          alt={alt}
+          className="h-full w-full object-cover dark:hidden"
+          onError={() => setImageFailed(true)}
+        />
+      )}
+      <svg className={`${iconClassName}${showPhoto ? " hidden dark:block" : ""}`} fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+        <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+      </svg>
+    </span>
+  );
+};
 
 type ShopOwnerDropdownProps = {
   actor?: ErpActor;
@@ -20,23 +64,14 @@ export default function ShopOwnerDropdown({ actor, urls, inline = false }: ShopO
   
   if (!shopOwner && !actor) return null;
 
-  const userName = actor?.name || shopOwner?.name || shopOwner?.first_name || "Shop Owner";
+  const userName = actor?.name || shopOwner?.business_name || shopOwner?.name || shopOwner?.first_name || "Shop Owner";
   const userEmail = shopOwner?.email || "owner@solespace.com";
-  const isIndividual = !!shopOwner?.is_individual;
-  const isCompany = !!shopOwner?.is_company;
-  const businessType = shopOwner?.business_type;
-
-  const getBusinessTypeInfo = () => {
-    if (businessType === "retail") {
-      return { icon: <Store className="w-4 h-4" />, label: "Retail Shop", color: "blue" };
-    }
-    if (businessType === "repair") {
-      return { icon: <Wrench className="w-4 h-4" />, label: "Repair Services", color: "green" };
-    }
-    return { icon: <Store className="w-4 h-4" />, label: "Retail & Repair", color: "purple" };
-  };
-
-  const businessTypeInfo = getBusinessTypeInfo();
+  const profilePhoto = normalizePhotoPath(
+    shopOwner?.profile_photo_url
+      || shopOwner?.profile_photo
+      || auth?.user?.shop_owner?.profile_photo_url
+      || auth?.user?.shop_owner?.profile_photo,
+  );
   function toggleDropdown() {
     setIsOpen(!isOpen);
   }
@@ -71,7 +106,8 @@ export default function ShopOwnerDropdown({ actor, urls, inline = false }: ShopO
         name={userName}
         email={userEmail}
         role="Shop Owner"
-        tone="purple"
+        tone="neutral"
+        avatarUrl={profilePhoto}
         actions={[
           {
             label: "Shop Profile",
@@ -103,24 +139,26 @@ export default function ShopOwnerDropdown({ actor, urls, inline = false }: ShopO
   return (
     <div className="relative">
       <button
+        type="button"
         onClick={toggleDropdown}
-        className="flex items-center gap-2 px-3 py-2 text-gray-700 rounded-lg transition dropdown-toggle dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
+        aria-label={`Open account menu for ${userName}`}
+        aria-haspopup="menu"
+        aria-expanded={isOpen}
+        data-testid="shop-owner-account-trigger"
+        className="dropdown-toggle inline-flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white p-1 text-gray-900 transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] dark:h-auto dark:w-auto dark:gap-2 dark:rounded-lg dark:border-transparent dark:bg-transparent dark:px-3 dark:py-2 dark:text-gray-400 dark:hover:bg-gray-800 dark:focus-visible:ring-blue-300"
       >
-        <div className="flex items-center justify-center w-8 h-8 bg-purple-100 rounded-full dark:bg-purple-900">
-          <svg
-            className="w-5 h-5 text-purple-600 dark:text-purple-300"
-            fill="currentColor"
-            viewBox="0 0 20 20"
-          >
-            <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
-          </svg>
-        </div>
-        <div className="hidden sm:block">
-          <span className="block font-semibold text-sm">{userName}</span>
+        <ShopOwnerAvatar
+          src={profilePhoto}
+          alt={`${userName} profile photo`}
+          className="h-full w-full dark:h-8 dark:w-8"
+          iconClassName="h-5 w-5"
+        />
+        <span className="hidden dark:block">
+          <span className="block text-sm font-semibold">{userName}</span>
           <span className="text-xs text-gray-500 dark:text-gray-400">Shop Owner</span>
-        </div>
+        </span>
         <svg
-          className={`stroke-gray-500 dark:stroke-gray-400 transition-transform duration-200 ${
+          className={`hidden stroke-gray-500 transition-transform duration-200 dark:block dark:stroke-gray-400 ${
             isOpen ? "rotate-180" : ""
           }`}
           width="18"
@@ -128,6 +166,7 @@ export default function ShopOwnerDropdown({ actor, urls, inline = false }: ShopO
           viewBox="0 0 18 20"
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
+          aria-hidden="true"
         >
           <path
             d="M4.3125 8.65625L9 13.3437L13.6875 8.65625"
@@ -146,15 +185,12 @@ export default function ShopOwnerDropdown({ actor, urls, inline = false }: ShopO
       >
         <div className="px-4 py-4 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center w-10 h-10 bg-purple-100 rounded-full dark:bg-purple-900">
-              <svg
-                className="w-6 h-6 text-purple-600 dark:text-purple-300"
-                fill="currentColor"
-                viewBox="0 0 20 20"
-              >
-                <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
-              </svg>
-            </div>
+            <ShopOwnerAvatar
+              src={profilePhoto}
+              alt={`${userName} profile photo`}
+              className="h-10 w-10 shrink-0"
+              iconClassName="h-6 w-6"
+            />
             <div className="flex-1 min-w-0">
               <p className="font-semibold text-gray-900 dark:text-white truncate">
                 {userName}
@@ -162,7 +198,7 @@ export default function ShopOwnerDropdown({ actor, urls, inline = false }: ShopO
               <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
                 {userEmail}
               </p>
-              <p className="mt-1 inline-block text-xs font-semibold px-2 py-0.5 bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300 rounded-full">
+              <p className="mt-1 inline-block rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-900 dark:bg-purple-900 dark:text-purple-300">
                 Shop Owner
               </p>
             </div>
@@ -174,10 +210,10 @@ export default function ShopOwnerDropdown({ actor, urls, inline = false }: ShopO
             closeDropdown();
             router.visit(urls?.profile || '/shop-owner/shop-profile');
           }}
-          className="flex items-center gap-3 px-3 py-2.5 font-medium text-gray-700 rounded-lg group text-sm hover:bg-gray-100 w-full dark:text-gray-300 dark:hover:bg-gray-700 transition mx-2 mt-2"
+          className="group mx-2 mt-2 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-700 transition hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700"
         >
           <svg
-            className="w-5 h-5 text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-200"
+            className="h-5 w-5 text-gray-400 group-hover:text-gray-900 dark:group-hover:text-gray-200"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -197,10 +233,10 @@ export default function ShopOwnerDropdown({ actor, urls, inline = false }: ShopO
             closeDropdown();
             router.visit(urls?.settings || '/shop-owner/settings');
           }}
-          className="flex items-center gap-3 px-3 py-2.5 font-medium text-gray-700 rounded-lg group text-sm hover:bg-gray-100 w-full dark:text-gray-300 dark:hover:bg-gray-700 transition mx-2"
+          className="group mx-2 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-700 transition hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700"
         >
           <svg
-            className="w-5 h-5 text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-200"
+            className="h-5 w-5 text-gray-400 group-hover:text-gray-900 dark:group-hover:text-gray-200"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -216,10 +252,10 @@ export default function ShopOwnerDropdown({ actor, urls, inline = false }: ShopO
 
         <button
           onClick={handleLogout}
-          className="flex items-center gap-3 px-3 py-2.5 mb-2 font-medium text-gray-700 rounded-lg group text-sm hover:bg-red-50 hover:text-red-700 w-full dark:text-gray-300 dark:hover:bg-red-900/20 dark:hover:text-red-400 transition mx-2"
+          className="group mx-2 mb-2 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-700 transition hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-red-900/20 dark:hover:text-red-400"
         >
           <svg
-            className="w-5 h-5 text-gray-400 group-hover:text-red-600 dark:group-hover:text-red-400"
+            className="h-5 w-5 text-gray-400 group-hover:text-gray-900 dark:group-hover:text-red-400"
             fill="currentColor"
             viewBox="0 0 24 24"
           >
