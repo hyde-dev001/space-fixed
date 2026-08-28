@@ -6,6 +6,7 @@ namespace App\Services\Manager;
 
 use App\Models\ShopOwner;
 use App\Models\User;
+use App\Support\Audit\AuditLogPresentation;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Collection;
@@ -216,10 +217,21 @@ final class ManagerAuditLogService
         }
 
         if ($target !== '') {
-            $query->where(function (Builder $targetQuery) use ($target): void {
+            $targetSearch = str_replace(' ', '_', Str::snake($target));
+            $query->where(function (Builder $targetQuery) use ($target, $targetSearch): void {
                 $targetQuery
                     ->where('target_type', 'like', "%{$target}%")
-                    ->orWhere('target_id', $target);
+                    ->orWhere('target_type', 'like', "%{$targetSearch}%")
+                    ->orWhere('target_id', $target)
+                    ->orWhere(function (Builder $contextQuery) use ($target, $targetSearch): void {
+                        foreach (['data_json', 'context_json', 'old_values_json', 'new_values_json'] as $column) {
+                            $contextQuery->orWhere($column, 'like', "%{$target}%");
+
+                            if ($targetSearch !== $target) {
+                                $contextQuery->orWhere($column, 'like', "%{$targetSearch}%");
+                            }
+                        }
+                    });
             });
         }
 
@@ -233,9 +245,15 @@ final class ManagerAuditLogService
         }
 
         if ($search !== '') {
-            $query->where(function (Builder $searchQuery) use ($search): void {
-                foreach (['action', 'event', 'module', 'description', 'target_type', 'context_json'] as $column) {
-                    $searchQuery->orWhere($column, 'like', "%{$search}%");
+            $searchVariants = array_values(array_unique([
+                $search,
+                str_replace(' ', '_', Str::snake($search)),
+            ]));
+            $query->where(function (Builder $searchQuery) use ($searchVariants): void {
+                foreach (['action', 'event', 'module', 'description', 'target_type', 'target_id', 'data_json', 'context_json'] as $column) {
+                    foreach ($searchVariants as $variant) {
+                        $searchQuery->orWhere($column, 'like', "%{$variant}%");
+                    }
                 }
             });
         }
@@ -358,19 +376,26 @@ final class ManagerAuditLogService
             'correlationId',
             'batch_uuid',
         ]);
+        $targetLabel = $this->targetLabel($targetType, $context);
 
         return [
             'id' => (string) $row->source . ':' . (string) $row->source_id,
             'source' => (string) $row->source,
             'source_id' => (int) $row->source_id,
             'action' => $action,
+            'action_label' => AuditLogPresentation::actionLabel($action),
             'event' => strtolower(trim((string) ($row->event ?: $action))),
             'description' => trim((string) ($row->description ?? '')) ?: Str::headline($action),
+            'display_description' => AuditLogPresentation::description(
+                (string) ($row->description ?? ''),
+                $action,
+            ),
             'actor' => $actor,
             'target' => [
                 'type' => $targetType,
                 'id' => $targetId,
-                'label' => $this->targetLabel($targetType, $targetId, $context),
+                'type_label' => AuditLogPresentation::subjectTypeLabel($targetType),
+                'label' => $targetLabel,
             ],
             'created_at' => $row->created_at,
             'previous_state' => $previousState,
@@ -467,7 +492,7 @@ final class ManagerAuditLogService
     }
 
     /** @param array<string, mixed> $context */
-    private function targetLabel(?string $targetType, ?int $targetId, array $context): string
+    private function targetLabel(?string $targetType, array $context): string
     {
         $reference = $this->firstString($context, [
             'reference_id',
@@ -481,9 +506,7 @@ final class ManagerAuditLogService
             return $reference;
         }
 
-        $label = $targetType !== null ? Str::headline($targetType) : 'Record';
-
-        return $targetId !== null ? $label . ' #' . $targetId : $label;
+        return AuditLogPresentation::subjectTypeLabel($targetType);
     }
 
     /** @param array<string, mixed> $context */

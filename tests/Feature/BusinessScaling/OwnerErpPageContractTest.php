@@ -125,6 +125,39 @@ final class OwnerErpPageContractTest extends TestCase
             );
     }
 
+    public function test_owner_workforce_uses_user_access_control_instead_of_employee_directory(): void
+    {
+        config([
+            'shop_modules.enforcement_enabled' => true,
+        ]);
+        $owner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
+            'business_type' => 'both',
+        ]);
+        ShopOwnerModule::factory()->create([
+            'shop_owner_id' => $owner->id,
+            'module_key' => 'hr_employees',
+            'enabled' => true,
+        ]);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->get('/shop-owner/oversee/workforce')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('activeModule.pages.0.routeName', 'shop-owner.erp.hr.user-access-control')
+                ->where('activeModule.pages.0.label', 'User Access Control')
+                ->where('activeModule.pages.1.routeName', 'shop-owner.erp.hr.attendance')
+            );
+
+        $this->actingAs($owner, 'shop_owner')
+            ->get('/shop-owner/erp/hr/user-access-control')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('ShopOwner/TeamManagement/UserAccessControl', false)
+                ->where('erpMode', true)
+            );
+    }
+
     public function test_owner_rider_page_returns_read_only_redacted_records(): void
     {
         config([
@@ -218,7 +251,7 @@ final class OwnerErpPageContractTest extends TestCase
                 'shop-owner.erp.repair.services',
             ],
             'hr_employees' => [
-                'shop-owner.erp.hr.employee-directory',
+                'shop-owner.erp.hr.user-access-control',
                 'shop-owner.erp.hr.attendance',
             ],
             'finance' => [
@@ -327,7 +360,7 @@ final class OwnerErpPageContractTest extends TestCase
                 'shop-owner.erp.repair.services',
             ],
             'hr_employees' => [
-                'shop-owner.erp.hr.employee-directory',
+                'shop-owner.erp.hr.user-access-control',
                 'shop-owner.erp.hr.attendance',
             ],
             'finance' => [
@@ -431,7 +464,7 @@ final class OwnerErpPageContractTest extends TestCase
                 'canonical' => '/shop-owner/oversee/workforce',
                 'dashboard' => 'ERP/HR/HR',
                 'pages' => [
-                    'shop-owner.erp.hr.employee-directory',
+                    'shop-owner.erp.hr.user-access-control',
                     'shop-owner.erp.hr.attendance',
                 ],
             ],
@@ -536,7 +569,7 @@ final class OwnerErpPageContractTest extends TestCase
                 'shop-owner.erp.crm.customer-reviews',
             ],
             'hr_employees' => [
-                'shop-owner.erp.hr.employee-directory',
+                'shop-owner.erp.hr.user-access-control',
                 'shop-owner.erp.hr.attendance',
             ],
             'finance' => [

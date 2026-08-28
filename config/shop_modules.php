@@ -1486,14 +1486,20 @@ $ownerModulePageGroups = [
             'visible' => false,
             'supporting_routes' => ['shop-owner.erp.hr.dashboard'],
         ],
+        'shop-owner.erp.hr.user-access-control' => [
+            'label' => 'User Access Control',
+            'order' => 20,
+            'supporting_routes' => ['shop-owner.erp.hr.user-access-control'],
+        ],
         'shop-owner.erp.hr.employee-directory' => [
             'label' => 'Employees',
-            'order' => 20,
+            'order' => 30,
+            'visible' => false,
             'supporting_routes' => ['shop-owner.erp.hr.employee-directory'],
         ],
         'shop-owner.erp.hr.attendance' => [
             'label' => 'Attendance',
-            'order' => 30,
+            'order' => 40,
             'group' => 'attendance-monitoring',
             'group_label' => 'Attendance Monitoring',
             'group_order' => 20,

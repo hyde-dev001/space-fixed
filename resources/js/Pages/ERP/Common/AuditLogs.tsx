@@ -6,11 +6,15 @@ import { erpUrl } from "../../../utils/erpCapabilities";
 type AuditLog = {
   id: number;
   action?: string | null;
+  action_label?: string | null;
   description?: string | null;
+  display_description?: string | null;
   module?: string | null;
+  module_label?: string | null;
   severity?: string | null;
   created_at?: string | null;
   entity_type?: string | null;
+  entity_type_label?: string | null;
   entity_id?: number | string | null;
   user?: { name?: string | null; email?: string | null } | null;
   employee?: { first_name?: string | null; last_name?: string | null } | null;
@@ -38,6 +42,29 @@ const formatDate = (value?: string | null): string => {
   if (!value) return "—";
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+};
+
+const formatLabel = (value?: string | null): string => {
+  const normalized = String(value ?? "").trim();
+  if (!normalized) return "Record";
+
+  const baseName = normalized.split("\\").pop() ?? normalized;
+
+  return baseName
+    .replace(/[_.-]+/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
+    .trim();
+};
+
+const displayDescription = (log: AuditLog): string => {
+  const description = String(log.display_description ?? log.description ?? "").trim();
+  const action = String(log.action ?? "").trim();
+
+  if (!description || description === action || description.includes("App\\Models\\")) {
+    return log.action_label || formatLabel(action);
+  }
+
+  return description;
 };
 
 export default function AuditLogs({ title, description, capabilityKey }: AuditLogsProps) {
@@ -105,18 +132,18 @@ export default function AuditLogs({ title, description, capabilityKey }: AuditLo
         </div>
 
         <div className="grid gap-3 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900 md:grid-cols-3">
-          <input
-            value={search}
-            onChange={(event) => { setSearch(event.target.value); setPage(1); }}
-            placeholder="Search audit activity..."
-            className="rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800"
-          />
-          <input
-            value={module}
-            onChange={(event) => { setModule(event.target.value); setPage(1); }}
-            placeholder="Filter by module"
-            className="rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800"
-          />
+           <input
+             value={search}
+             onChange={(event) => { setSearch(event.target.value); setPage(1); }}
+             placeholder="Search activity..."
+             className="rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800"
+           />
+           <input
+             value={module}
+             onChange={(event) => { setModule(event.target.value); setPage(1); }}
+             placeholder="Filter by area"
+             className="rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800"
+           />
           <select
             value={severity}
             onChange={(event) => { setSeverity(event.target.value); setPage(1); }}
@@ -135,22 +162,22 @@ export default function AuditLogs({ title, description, capabilityKey }: AuditLo
           <table className="min-w-full text-left text-sm">
             <thead className="border-b border-gray-200 bg-gray-50 text-xs uppercase tracking-wide text-gray-500 dark:border-gray-800 dark:bg-gray-800/50">
               <tr>
-                <th className="px-4 py-3">Date</th>
-                <th className="px-4 py-3">Actor</th>
-                <th className="px-4 py-3">Action</th>
-                <th className="px-4 py-3">Module</th>
-                <th className="px-4 py-3">Details</th>
+                 <th className="px-4 py-3">Date</th>
+                 <th className="px-4 py-3">Actor</th>
+                 <th className="px-4 py-3">Action</th>
+                 <th className="px-4 py-3">Area</th>
+                 <th className="px-4 py-3">Details</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
               {loading && <tr><td colSpan={5} className="px-4 py-10 text-center text-gray-500">Loading audit logs...</td></tr>}
               {!loading && logs.map((log) => (
                 <tr key={log.id} className="align-top">
-                  <td className="whitespace-nowrap px-4 py-3 text-gray-600 dark:text-gray-400">{formatDate(log.created_at)}</td>
-                  <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">{displayName(log)}</td>
-                  <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{log.action || "—"}</td>
-                  <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{log.module || "—"}</td>
-                  <td className="max-w-xl px-4 py-3 text-gray-600 dark:text-gray-400">{log.description || log.entity_type || "—"}</td>
+                   <td className="whitespace-nowrap px-4 py-3 text-gray-600 dark:text-gray-400">{formatDate(log.created_at)}</td>
+                   <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">{displayName(log)}</td>
+                   <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{log.action_label || formatLabel(log.action)}</td>
+                   <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{log.module_label || formatLabel(log.module)}</td>
+                   <td className="max-w-xl px-4 py-3 text-gray-600 dark:text-gray-400">{displayDescription(log) || log.entity_type_label || formatLabel(log.entity_type)}</td>
                 </tr>
               ))}
               {!loading && logs.length === 0 && <tr><td colSpan={5} className="px-4 py-10 text-center text-gray-500">No audit activity found.</td></tr>}

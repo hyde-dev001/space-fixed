@@ -15,6 +15,7 @@ interface AuditActor {
 interface AuditTarget {
   type: string | null;
   id: number | null;
+  type_label?: string;
   label: string;
 }
 
@@ -23,8 +24,10 @@ interface AuditLog {
   source?: string;
   source_id?: number;
   action: string;
+  action_label?: string;
   event?: string;
   description: string;
+  display_description?: string;
   actor: AuditActor | null;
   target: AuditTarget;
   created_at: string;
@@ -55,6 +58,9 @@ interface AuditResponse {
   data?: AuditLog[];
   meta?: Pagination;
   stats?: AuditStats;
+  filters?: {
+    actions?: string[];
+  };
   last_updated_at?: string;
   logs?: {
     data?: LegacyActivityLog[];
@@ -71,6 +77,9 @@ interface LegacyActivityLog {
   subject_type: string | null;
   subject_id: number | null;
   subject_label?: string;
+  subject_type_label?: string;
+  event_label?: string;
+  display_description?: string;
   event: string;
   properties?: Record<string, unknown>;
   created_at: string;
@@ -80,10 +89,7 @@ interface LegacyActivityLog {
 interface AuditFilters {
   search: string;
   action: string;
-  actor_id: string;
   target: string;
-  target_id: string;
-  status: string;
   severity: string;
   date_from: string;
   date_to: string;
@@ -92,10 +98,7 @@ interface AuditFilters {
 const initialFilters: AuditFilters = {
   search: '',
   action: '',
-  actor_id: '',
   target: '',
-  target_id: '',
-  status: '',
   severity: '',
   date_from: '',
   date_to: '',
@@ -121,13 +124,18 @@ function normalizeLegacyLog(log: LegacyActivityLog): AuditLog {
     source: 'activity',
     source_id: log.id,
     action: log.event,
+    action_label: log.event_label,
     event: log.event,
     description: log.description,
+    display_description: log.display_description ?? log.description,
     actor: log.causer ?? null,
     target: {
       type: log.subject_type,
       id: log.subject_id,
-      label: log.subject_label ?? log.subject_type ?? 'Record',
+      type_label: log.subject_type_label,
+      label: log.subject_label && log.subject_label !== 'Record'
+        ? log.subject_label
+        : log.subject_type_label ?? 'Record',
     },
     created_at: log.created_at,
     previous_state: previousState,
@@ -143,13 +151,16 @@ function normalizeResponse(payload: AuditResponse): {
   logs: AuditLog[];
   pagination: Pagination;
   stats: AuditStats;
+  actionOptions: string[];
   lastUpdated: string | null;
 } {
   if (Array.isArray(payload.data) && payload.meta) {
+    const stats = payload.stats ?? { total_logs: payload.meta.total, logs_last_24h: 0, action_counts: {} };
     return {
       logs: payload.data,
       pagination: payload.meta,
-      stats: payload.stats ?? { total_logs: payload.meta.total, logs_last_24h: 0, action_counts: {} },
+      stats,
+      actionOptions: payload.filters?.actions ?? Object.keys(stats.action_counts),
       lastUpdated: payload.last_updated_at ?? null,
     };
   }
@@ -166,16 +177,46 @@ function normalizeResponse(payload: AuditResponse): {
       last_page: legacy?.last_page ?? 1,
     },
     stats: { total_logs: total, logs_last_24h: 0, action_counts: {} },
+    actionOptions: Array.from(new Set((legacy?.data ?? []).map((log) => log.event).filter(Boolean))),
     lastUpdated: payload.last_updated_at ?? null,
   };
 }
 
 function formatAction(action: string): string {
-  return action.replace(/[_-]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+  return action.replace(/[_.-]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function isTechnicalStateKey(key: string): boolean {
+  const normalized = key.trim().toLowerCase();
+  return normalized === 'id' || normalized.endsWith('_id');
+}
+
+function displayStateValue(value: unknown, fieldName = ''): unknown {
+  if (Array.isArray(value)) return value.map((item) => displayStateValue(item, fieldName));
+  if (!value || typeof value !== 'object') {
+    if (typeof value === 'string' && /status|state/i.test(fieldName)) {
+      return formatAction(value);
+    }
+
+    if (typeof value === 'string' && value.includes('App\\Models\\')) {
+      return 'Record';
+    }
+
+    return value;
+  }
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => !isTechnicalStateKey(key))
+      .map(([key, nestedValue]) => [key, displayStateValue(nestedValue, key)]),
+  );
 }
 
 function formatState(state: AuditState): string {
-  const entries = Object.entries(state);
+  const entries = Object.entries(state)
+    .filter(([key]) => !isTechnicalStateKey(key))
+    .map(([key, value]) => [key, displayStateValue(value, key)] as const)
+    .filter(([, value]) => !(value && typeof value === 'object' && Object.keys(value).length === 0));
   if (entries.length === 0) return '—';
 
   return entries
@@ -216,6 +257,7 @@ export default function ManagerAuditLogs() {
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [pagination, setPagination] = useState<Pagination | null>(null);
   const [stats, setStats] = useState<AuditStats>({ total_logs: 0, logs_last_24h: 0, action_counts: {} });
+  const [actionOptions, setActionOptions] = useState<string[]>([]);
   const [filters, setFilters] = useState<AuditFilters>(initialFilters);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -255,6 +297,7 @@ export default function ManagerAuditLogs() {
         setLogs(normalized.logs);
         setPagination(normalized.pagination);
         setStats(normalized.stats);
+        setActionOptions((current) => current.length > 0 ? current : normalized.actionOptions);
         setLastUpdated(normalized.lastUpdated);
       } catch {
         if (cancelled) return;
@@ -340,52 +383,29 @@ export default function ManagerAuditLogs() {
               <input
                 value={filters.search}
                 onChange={(event) => updateFilter('search', event.target.value)}
-                placeholder="Action, description, target, or reference"
+                placeholder="Activity, description, order, or repair reference"
                 className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
               />
             </label>
             <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
-              Action
-              <input
+              Activity
+              <select
                 value={filters.action}
                 onChange={(event) => updateFilter('action', event.target.value)}
-                placeholder="e.g. order_reassigned"
                 className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-              />
+              >
+                <option value="">All activities</option>
+                {actionOptions.map((action) => (
+                  <option key={action} value={action}>{formatAction(action)}</option>
+                ))}
+              </select>
             </label>
             <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
-              Status
-              <input
-                value={filters.status}
-                onChange={(event) => updateFilter('status', event.target.value)}
-                placeholder="e.g. approved"
-                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-              />
-            </label>
-            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
-              Actor ID
-              <input
-                inputMode="numeric"
-                value={filters.actor_id}
-                onChange={(event) => updateFilter('actor_id', event.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-              />
-            </label>
-            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
-              Target / reference
+              Record / reference
               <input
                 value={filters.target}
                 onChange={(event) => updateFilter('target', event.target.value)}
                 placeholder="Order or repair reference"
-                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-              />
-            </label>
-            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
-              Target ID
-              <input
-                inputMode="numeric"
-                value={filters.target_id}
-                onChange={(event) => updateFilter('target_id', event.target.value)}
                 className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
               />
             </label>
@@ -469,8 +489,8 @@ export default function ManagerAuditLogs() {
                       <tr key={log.id} className="align-top hover:bg-slate-50 dark:hover:bg-slate-800/50">
                         <td className="whitespace-nowrap px-4 py-4 text-sm text-slate-600 dark:text-slate-300">{formatDate(log.created_at)}</td>
                         <td className="px-4 py-4">
-                          <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${badgeClass(log.action)}`}>{formatAction(log.action)}</span>
-                          <p className="mt-2 max-w-[220px] text-xs text-slate-500 dark:text-slate-400">{log.description}</p>
+                          <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${badgeClass(log.action)}`}>{log.action_label ?? formatAction(log.action)}</span>
+                          <p className="mt-2 max-w-[220px] text-xs text-slate-500 dark:text-slate-400">{log.display_description ?? log.description}</p>
                         </td>
                         <td className="px-4 py-4 text-sm">
                           <p className="font-semibold text-slate-800 dark:text-slate-200">{log.actor?.name ?? 'System / unavailable'}</p>
@@ -478,7 +498,9 @@ export default function ManagerAuditLogs() {
                         </td>
                         <td className="px-4 py-4 text-sm">
                           <p className="font-semibold text-slate-800 dark:text-slate-200">{log.target.label}</p>
-                          <p className="text-xs text-slate-500 dark:text-slate-400">{log.target.type ?? 'record'}{log.target.id ? ` #${log.target.id}` : ''}</p>
+                          {log.target.type_label && log.target.type_label !== log.target.label && (
+                            <p className="text-xs text-slate-500 dark:text-slate-400">{log.target.type_label}</p>
+                          )}
                         </td>
                         <td className="px-4 py-4 text-xs text-slate-600 dark:text-slate-300">
                           <p><span className="font-semibold text-slate-500 dark:text-slate-400">Before:</span> {formatState(log.previous_state)}</p>
@@ -487,7 +509,6 @@ export default function ManagerAuditLogs() {
                         <td className="max-w-[260px] px-4 py-4 text-xs text-slate-600 dark:text-slate-300">
                           <p>{log.reason ?? 'No reason recorded'}</p>
                           {log.reference_id && <p className="mt-2 break-all"><span className="font-semibold">Ref:</span> {log.reference_id}</p>}
-                          {log.correlation_id && <p className="mt-1 break-all"><span className="font-semibold">Correlation:</span> {log.correlation_id}</p>}
                         </td>
                       </tr>
                     ))}

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\HR\AuditLog;
 use App\Support\Erp\ErpActorContext;
+use App\Support\Audit\AuditLogPresentation;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
 
@@ -122,6 +123,18 @@ class AuditLogController extends Controller
         // Pagination
         $perPage = $request->input('per_page', 50);
         $logs = $query->paginate($perPage);
+
+        $logs->getCollection()->transform(function (AuditLog $log): AuditLog {
+            $log->setAttribute('action_label', AuditLogPresentation::actionLabel($log->action));
+            $log->setAttribute(
+                'display_description',
+                AuditLogPresentation::description($log->description, $log->action),
+            );
+            $log->setAttribute('module_label', AuditLogPresentation::actionLabel($log->module));
+            $log->setAttribute('entity_type_label', AuditLogPresentation::subjectTypeLabel($log->entity_type));
+
+            return $log;
+        });
 
         return response()->json([
             'success' => true,

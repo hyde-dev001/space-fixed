@@ -6,6 +6,7 @@ namespace Tests\Feature\ShopOwner;
 
 use App\Models\ShopOwner;
 use App\Models\User;
+use App\Models\HR\AuditLog as HrAuditLog;
 use App\Services\OwnerOperationAudit;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -51,6 +52,62 @@ final class CanonicalAuditTest extends TestCase
         $response->assertJsonPath('logs.data.0.event', 'owner-visible-action');
         $response->assertJsonPath('logs.data.0.description', 'owner-visible-action');
         $this->assertCount(1, $response->json('logs.data'));
+    }
+
+    public function test_canonical_owner_audit_api_includes_business_friendly_presentation_fields(): void
+    {
+        $owner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
+            'business_type' => 'both',
+        ]);
+
+        activity()
+            ->causedBy($owner)
+            ->performedOn(new \App\Models\ShopOwnerSubscription())
+            ->event('subscription_cancelled')
+            ->withProperties([])
+            ->log('subscription_cancelled');
+
+        $response = $this->actingAs($owner, 'shop_owner')
+            ->getJson('/api/shop-owner/audit-logs')
+            ->assertOk();
+
+        $log = $response->json('logs.data.0');
+
+        $this->assertSame('Subscription Cancelled', $log['event_label']);
+        $this->assertSame('Subscription', $log['subject_type_label']);
+        $this->assertSame('Subscription Cancelled', $log['display_description']);
+        $this->assertStringNotContainsString('App\\Models\\', $log['display_description']);
+    }
+
+    public function test_owner_hr_audit_api_includes_business_friendly_presentation_fields(): void
+    {
+        $owner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
+            'business_type' => 'both',
+        ]);
+
+        HrAuditLog::create([
+            'shop_owner_id' => $owner->id,
+            'module' => 'subscription',
+            'action' => 'subscription_cancelled',
+            'entity_type' => 'App\\Models\\ShopOwnerSubscription',
+            'entity_id' => 2,
+            'description' => 'subscription_cancelled',
+            'severity' => HrAuditLog::SEVERITY_WARNING,
+            'tags' => [],
+        ]);
+
+        $response = $this->actingAs($owner, 'shop_owner')
+            ->getJson('/api/shop-owner/erp/hr/audit-logs')
+            ->assertOk();
+
+        $log = $response->json('data.data.0');
+
+        $this->assertSame('Subscription Cancelled', $log['action_label']);
+        $this->assertSame('Subscription', $log['entity_type_label']);
+        $this->assertSame('Subscription Cancelled', $log['display_description']);
+        $this->assertStringNotContainsString('App\\Models\\', $log['display_description']);
     }
 
     public function test_canonical_owner_audit_page_is_reachable(): void

@@ -325,6 +325,49 @@ class ManagerAuditLogsTest extends TestCase
         $this->assertSame('ORD-303', $row['reference_id']);
     }
 
+    public function test_canonical_manager_audit_logs_include_business_friendly_presentation_fields(): void
+    {
+        $activity = $this->createActivity([
+            'event' => 'subscription_cancelled',
+            'description' => 'subscription_cancelled',
+            'subject_type' => 'App\\Models\\ShopOwnerSubscription',
+            'subject_id' => 2,
+        ]);
+
+        $row = $this->actingAs($this->manager, 'user')
+            ->getJson('/api/manager/audit-logs')
+            ->assertOk()
+            ->json('data.0');
+
+        $this->assertSame('activity:' . $activity->id, $row['id']);
+        $this->assertSame('Subscription Cancelled', $row['action_label']);
+        $this->assertSame('Subscription', $row['target']['type_label']);
+        $this->assertSame('Subscription', $row['target']['label']);
+        $this->assertSame('Subscription Cancelled', $row['display_description']);
+        $this->assertStringNotContainsString('App\\Models\\', $row['display_description']);
+        $this->assertStringNotContainsString('#2', $row['target']['label']);
+    }
+
+    public function test_canonical_manager_audit_target_filter_accepts_business_reference(): void
+    {
+        $activity = $this->createActivity([
+            'event' => 'updated',
+            'description' => 'Order status updated',
+            'subject_type' => 'App\\Models\\Order',
+            'subject_id' => 303,
+            'properties' => [
+                'reference_id' => 'ORD-303',
+            ],
+        ]);
+
+        $response = $this->actingAs($this->manager, 'user')
+            ->getJson('/api/manager/audit-logs?target=ORD-303')
+            ->assertOk();
+
+        $this->assertSame(1, $response->json('meta.total'));
+        $this->assertSame('activity:' . $activity->id, $response->json('data.0.id'));
+    }
+
     public function test_canonical_manager_audit_logs_are_tenant_scoped_and_support_filters_and_pagination(): void
     {
         $otherShop = ShopOwner::factory()->create();
