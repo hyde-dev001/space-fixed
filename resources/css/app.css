@@ -1644,9 +1644,20 @@ html:not(.dark) .erp-theme :is(input[type='checkbox'], input[type='radio']) {
   accent-color: #111111;
 }
 
-html:not(.dark) .erp-theme :is(a, [role='tab'])[class*='text-blue-'],
-html:not(.dark) .erp-theme :is(a, [role='tab'])[class*='text-indigo-'],
-html:not(.dark) .erp-theme :is(a, [role='tab'])[class*='text-purple-'] {
+html:not(.dark) .erp-theme :is(a, [role='tab']):is(
+  [class~='text-blue-50'], [class~='text-blue-100'], [class~='text-blue-200'],
+  [class~='text-blue-300'], [class~='text-blue-400'], [class~='text-blue-500'],
+  [class~='text-blue-600'], [class~='text-blue-700'], [class~='text-blue-800'],
+  [class~='text-blue-900'], [class~='text-blue-950'],
+  [class~='text-indigo-50'], [class~='text-indigo-100'], [class~='text-indigo-200'],
+  [class~='text-indigo-300'], [class~='text-indigo-400'], [class~='text-indigo-500'],
+  [class~='text-indigo-600'], [class~='text-indigo-700'], [class~='text-indigo-800'],
+  [class~='text-indigo-900'], [class~='text-indigo-950'],
+  [class~='text-purple-50'], [class~='text-purple-100'], [class~='text-purple-200'],
+  [class~='text-purple-300'], [class~='text-purple-400'], [class~='text-purple-500'],
+  [class~='text-purple-600'], [class~='text-purple-700'], [class~='text-purple-800'],
+  [class~='text-purple-900'], [class~='text-purple-950']
+) {
   color: #111111 !important;
 }
 
