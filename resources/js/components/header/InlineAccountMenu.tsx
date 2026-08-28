@@ -1,6 +1,6 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 
-type AccountTone = 'blue' | 'purple' | 'red';
+type AccountTone = 'blue' | 'purple' | 'red' | 'neutral';
 
 export type InlineAccountAction = {
   label: string;
@@ -17,6 +17,7 @@ type InlineAccountMenuProps = {
   tone: AccountTone;
   actions: InlineAccountAction[];
   error?: string | null;
+  avatarUrl?: string | null;
 };
 
 const toneClasses: Record<AccountTone, { avatar: string; icon: string; pill: string }> = {
@@ -35,17 +36,32 @@ const toneClasses: Record<AccountTone, { avatar: string; icon: string; pill: str
     icon: 'text-red-600 dark:text-red-300',
     pill: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300',
   },
+  neutral: {
+    avatar: 'bg-gray-100 dark:bg-purple-900',
+    icon: 'text-gray-900 dark:text-purple-300',
+    pill: 'bg-gray-100 text-gray-900 dark:bg-purple-900 dark:text-purple-300',
+  },
 };
 
-export default function InlineAccountMenu({ name, email, role, tone, actions, error }: InlineAccountMenuProps) {
+export default function InlineAccountMenu({ name, email, role, tone, actions, error, avatarUrl }: InlineAccountMenuProps) {
   const colors = toneClasses[tone];
+  const [avatarFailed, setAvatarFailed] = useState(false);
+  const showPhoto = Boolean(avatarUrl) && !avatarFailed;
 
   return (
     <div className="w-full">
       <div className="border-b border-gray-200 px-4 py-4 dark:border-gray-700 sm:px-5">
         <div className="flex min-w-0 items-center gap-3">
-          <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${colors.avatar}`}>
-            <svg className={`h-6 w-6 ${colors.icon}`} fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+          <div className={`flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full ${colors.avatar}`}>
+            {showPhoto && (
+              <img
+                src={avatarUrl ?? ""}
+                alt={`${name} profile photo`}
+                className="h-full w-full object-cover dark:hidden"
+                onError={() => setAvatarFailed(true)}
+              />
+            )}
+            <svg className={`h-6 w-6 ${colors.icon}${showPhoto ? ' hidden dark:block' : ''}`} fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
               <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
             </svg>
           </div>
@@ -60,28 +76,36 @@ export default function InlineAccountMenu({ name, email, role, tone, actions, er
       {error && <p role="alert" className="px-4 pt-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
 
       <nav aria-label="Account actions" className="divide-y divide-gray-200 dark:divide-gray-700">
-        {actions.map((action) => (
-          <button
-            key={action.label}
-            type="button"
-            onClick={action.onClick}
-            className={`flex min-h-11 w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-medium transition sm:px-5 ${action.destructive
+        {actions.map((action) => {
+          const actionClasses = tone === 'neutral'
+            ? action.destructive
+              ? 'text-gray-700 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-red-900/20 dark:hover:text-red-400'
+              : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white'
+            : action.destructive
               ? 'text-gray-700 hover:bg-red-50 hover:text-red-700 dark:text-gray-300 dark:hover:bg-red-900/20 dark:hover:text-red-400'
-              : 'text-gray-700 hover:bg-gray-50 hover:text-blue-700 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-blue-400'}`}
+              : 'text-gray-700 hover:bg-gray-50 hover:text-blue-700 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-blue-400';
+
+          return (
+            <button
+              key={action.label}
+              type="button"
+              onClick={action.onClick}
+              className={`flex min-h-11 w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-medium transition sm:px-5 ${actionClasses}`}
             >
-            <span className="flex min-w-0 items-center gap-3">
-              <span className="text-gray-400 dark:text-gray-500">
-                {action.icon ?? (
-                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M5 12h14M12 5l7 7-7 7" />
-                  </svg>
-                )}
+              <span className="flex min-w-0 items-center gap-3">
+                <span className="text-gray-400 dark:text-gray-500">
+                  {action.icon ?? (
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M5 12h14M12 5l7 7-7 7" />
+                    </svg>
+                  )}
+                </span>
+                <span className="truncate">{action.label}</span>
               </span>
-              <span className="truncate">{action.label}</span>
-            </span>
-            {action.meta}
-          </button>
-        ))}
+              {action.meta}
+            </button>
+          );
+        })}
       </nav>
     </div>
   );

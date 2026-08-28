@@ -67,7 +67,11 @@ const CanonicalOwnerHeader: React.FC<CanonicalOwnerHeaderProps> = ({ menuButtonR
           >
             <span aria-hidden="true" className="text-xl leading-none">{isMobileOpen ? "×" : "☰"}</span>
           </button>
-          <Link href="/shop-owner/home" className="truncate text-lg font-bold tracking-tight text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-white">
+          <Link
+            href="/shop-owner/home"
+            className="hidden truncate text-lg font-bold tracking-tight text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:inline-flex dark:text-white"
+            aria-label="SoleSpace"
+          >
             SoleSpace
           </Link>
           <div className="hidden lg:block">
@@ -77,7 +81,7 @@ const CanonicalOwnerHeader: React.FC<CanonicalOwnerHeaderProps> = ({ menuButtonR
               id="canonical-owner-search"
               type="search"
               placeholder="Search or type command..."
-              className="h-10 w-72 rounded-lg border border-gray-200 bg-transparent px-3 text-sm text-gray-800 outline-none transition-colors motion-reduce:transition-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-800 dark:text-white"
+              className="h-10 w-72 rounded-lg border border-gray-200 bg-transparent px-3 text-sm text-gray-800 outline-none transition-colors motion-reduce:transition-none focus:border-[#111111] focus:ring-2 focus:ring-[#111111]/10 dark:border-gray-800 dark:text-white dark:focus:border-blue-400 dark:focus:ring-blue-500/20"
             />
           </div>
         </div>
