@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Erp;
 use App\Http\Controllers\Controller;
 use App\Models\InventoryItem;
 use App\Models\StockMovement;
+use App\Services\Erp\ShopOwnerInventoryReadService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -12,6 +13,10 @@ use App\Support\Erp\ErpActorContext;
 
 class ProductInventoryController extends Controller
 {
+    public function __construct(
+        private readonly ShopOwnerInventoryReadService $ownerInventoryRead,
+    ) {}
+
     /**
      * List all inventory items with filters
      */
@@ -24,6 +29,19 @@ class ProductInventoryController extends Controller
             ], 403);
         }
         
+        if ($this->ownerMode()) {
+            return response()->json($this->ownerInventoryRead->paginate($shopOwnerId, $request->only([
+                'search',
+                'category',
+                'brand',
+                'status',
+                'sort_by',
+                'sort_order',
+                'page',
+                'per_page',
+            ])));
+        }
+
         $query = InventoryItem::with(['sizes', 'colorVariants', 'images'])
             ->where('shop_owner_id', $shopOwnerId)
             ->where('is_active', true);
@@ -272,5 +290,12 @@ class ProductInventoryController extends Controller
             ?? null;
 
         return $shopOwnerId ? (int) $shopOwnerId : null;
+    }
+
+    private function ownerMode(): bool
+    {
+        $context = request()->attributes->get('erp.actor_context');
+
+        return $context instanceof ErpActorContext && $context->isOwnerMode();
     }
 }

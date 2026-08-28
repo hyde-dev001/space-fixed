@@ -1,12 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { Link, usePage } from "@inertiajs/react";
 import {
   BarChart3,
   Boxes,
   ChevronDown,
   ClipboardList,
-  CreditCard,
-  ExternalLink,
   FileText,
   Home,
   ShoppingBag,
@@ -36,16 +35,36 @@ const matchesActivePath = (path: string, pattern: string): boolean => {
 
 const isItemActive = (path: string, item: OwnerShellItem): boolean => (
   item.active_matching.some((pattern) => matchesActivePath(path, pattern))
+  || (item.children ?? []).some((child) => child.available && isItemActive(path, child))
+);
+
+const hasActiveChild = (path: string, item: OwnerShellItem): boolean => (
+  (item.children ?? []).some((child) => child.available && isItemActive(path, child))
 );
 
 const visibleLabelClass = "transition-opacity duration-200 motion-reduce:transition-none";
+const EXPANDED_GROUPS_STORAGE_KEY = "canonicalOwnerSidebarExpandedGroups";
 
 const ITEM_ICONS: Record<string, LucideIcon> = {
   home: Home,
+  "assist-center": FileText,
+  "action-center": ClipboardList,
   retail: ShoppingBag,
   repair: Wrench,
+  "job-orders-retail": ShoppingCart,
+  "product-management": ShoppingBag,
+  "vouchers-discount": FileText,
+  "job-orders-repair": Wrench,
+  "warranty-queue": ClipboardList,
+  "services-management": Wrench,
+  "repair-support": Users,
+  cashier: ShoppingCart,
+  "retail-pos": ShoppingCart,
+  "repair-pos": ShoppingCart,
+  "stock-management": Boxes,
+  "product-stock": Boxes,
+  "repair-materials": Boxes,
   customers: Users,
-  payments: CreditCard,
   finance: BarChart3,
   workforce: Users,
   inventory: Boxes,
@@ -55,7 +74,38 @@ const ITEM_ICONS: Record<string, LucideIcon> = {
   audit: ClipboardList,
 };
 
-const CanonicalOwnerSidebar: React.FC<CanonicalOwnerSidebarProps> = ({ metadata }) => {
+const defaultExpandedGroupKeys = (groups: OwnerShellGroup[]): Set<string> => (
+  new Set(groups.filter((group) => group.default_expanded).map((group) => group.key))
+);
+
+const readStoredExpandedGroupKeys = (groups: OwnerShellGroup[]): Set<string> => {
+  const defaults = defaultExpandedGroupKeys(groups);
+
+  if (typeof window === "undefined") {
+    return defaults;
+  }
+
+  try {
+    const stored = window.localStorage.getItem(EXPANDED_GROUPS_STORAGE_KEY);
+    if (stored === null) {
+      return defaults;
+    }
+
+    const parsed = JSON.parse(stored);
+    if (!Array.isArray(parsed)) {
+      return defaults;
+    }
+
+    const availableKeys = new Set(groups.map((group) => group.key));
+    return new Set(parsed.filter((key): key is string => (
+      typeof key === "string" && availableKeys.has(key)
+    )));
+  } catch {
+    return defaults;
+  }
+};
+
+const CanonicalOwnerSidebar = ({ metadata }: CanonicalOwnerSidebarProps) => {
   const { isExpanded, isMobileOpen, isHovered, setIsHovered } = useSidebar();
   const page = usePage();
   const currentPath = normalizePath(String(page.url || "/"));
@@ -66,12 +116,35 @@ const CanonicalOwnerSidebar: React.FC<CanonicalOwnerSidebarProps> = ({ metadata 
     [metadata.groups],
   );
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(
-    () => new Set(groups.filter((group) => group.default_expanded).map((group) => group.key)),
+    () => readStoredExpandedGroupKeys(groups),
   );
+  const previousGroupKeys = useRef(new Set(groups.map((group) => group.key)));
 
   useEffect(() => {
-    setExpandedGroups(new Set(groups.filter((group) => group.default_expanded).map((group) => group.key)));
-  }, [groups]);
+    const availableKeys = new Set(groups.map((group) => group.key));
+    const newExpandedKeys = groups
+      .filter((group) => !previousGroupKeys.current.has(group.key) && group.default_expanded)
+      .map((group) => group.key);
+    const activeGroupKeys = groups
+      .filter((group) => group.items.some((item) => item.available && isItemActive(currentPath, item)))
+      .map((group) => group.key);
+
+    setExpandedGroups((current) => {
+      const next = new Set([...current].filter((key) => availableKeys.has(key)));
+      newExpandedKeys.forEach((key) => next.add(key));
+      activeGroupKeys.forEach((key) => next.add(key));
+      return next;
+    });
+    previousGroupKeys.current = availableKeys;
+  }, [currentPath, groups]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(EXPANDED_GROUPS_STORAGE_KEY, JSON.stringify([...expandedGroups]));
+    } catch {
+      // Sidebar state is still functional when storage is unavailable.
+    }
+  }, [expandedGroups]);
 
   const showLabels = isExpanded || isHovered || isMobileOpen;
   const toggleGroup = (groupKey: string) => {
@@ -86,8 +159,9 @@ const CanonicalOwnerSidebar: React.FC<CanonicalOwnerSidebarProps> = ({ metadata 
     });
   };
 
-  const renderItem = (item: OwnerShellItem) => {
+  const renderItem = (item: OwnerShellItem): ReactNode => {
     const active = item.available && isItemActive(currentPath, item);
+    const activeChild = item.available && hasActiveChild(currentPath, item);
     const Icon = ITEM_ICONS[item.key] ?? FileText;
     const itemClassName = `flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${active
       ? "menu-item-active bg-blue-50 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300"
@@ -116,7 +190,7 @@ const CanonicalOwnerSidebar: React.FC<CanonicalOwnerSidebarProps> = ({ metadata 
         <Link
           href={item.canonical_url}
           className={itemClassName}
-          aria-current={active ? "page" : undefined}
+          aria-current={active && !activeChild ? "page" : undefined}
           title={showLabels ? undefined : item.label}
         >
           <Icon
@@ -126,6 +200,11 @@ const CanonicalOwnerSidebar: React.FC<CanonicalOwnerSidebarProps> = ({ metadata 
           />
           <span className={showLabels ? visibleLabelClass : "sr-only"}>{item.label}</span>
         </Link>
+        {showLabels && item.children && item.children.length > 0 && (
+          <ul className="ml-4 mt-1 space-y-1 border-l border-gray-200 pl-2 dark:border-gray-700" aria-label={`${item.label} pages`}>
+            {item.children.map((child) => renderItem(child))}
+          </ul>
+        )}
       </li>
     );
   };
@@ -184,23 +263,6 @@ const CanonicalOwnerSidebar: React.FC<CanonicalOwnerSidebarProps> = ({ metadata 
         </ul>
       </nav>
 
-      {metadata.compatibility.show_erp_fallback && metadata.compatibility.fallback_url && (
-        <div data-testid="canonical-owner-compatibility" className="border-t border-gray-200 py-4 dark:border-gray-800">
-          <Link
-            href={metadata.compatibility.fallback_url}
-            aria-label="Open existing ERP Workspace"
-            className="flex min-h-10 items-center rounded-lg px-3 py-2 text-sm font-medium text-gray-500 transition-colors motion-reduce:transition-none hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
-            title={showLabels ? undefined : "Open existing ERP Workspace"}
-          >
-            <ExternalLink
-              data-testid="canonical-owner-fallback-icon"
-              aria-hidden="true"
-              className="h-4 w-4 shrink-0"
-            />
-            <span className={showLabels ? visibleLabelClass : "sr-only"}>Open existing ERP Workspace</span>
-          </Link>
-        </div>
-      )}
     </aside>
   );
 };

@@ -3,6 +3,7 @@
 namespace Tests\Feature\Manager;
 
 use App\Models\RepairRequest;
+use App\Models\Order;
 use App\Models\ShopOwner;
 use App\Models\SuspensionRequest;
 use App\Models\User;
@@ -389,5 +390,175 @@ class ManagerDashboardKpisTest extends TestCase
 
         // Should either work or be not implemented
         $this->assertContains($response->status(), [200, 404, 422]);
+    }
+
+    public function test_dashboard_returns_one_authoritative_snapshot_with_operational_signals(): void
+    {
+        $inactiveStaff = User::factory()->for($this->shop)->create([
+            'role' => 'Staff',
+            'status' => 'inactive',
+        ]);
+        $inactiveRepairer = User::factory()->for($this->shop)->create([
+            'role' => 'Repairer',
+            'status' => 'inactive',
+        ]);
+
+        Order::factory()->for($this->shop)->create([
+            'assigned_staff_id' => $inactiveStaff->id,
+            'status' => 'processing',
+            'created_at' => now()->subDays(2),
+        ]);
+        RepairRequest::factory()->for($this->shop)->create([
+            'assigned_repairer_id' => $inactiveRepairer->id,
+            'status' => 'assigned_to_repairer',
+            'created_at' => now()->subDays(3),
+        ]);
+
+        $response = $this->actingAs($this->manager, 'user')
+            ->getJson('/api/manager/dashboard/stats?range=last_7_days');
+
+        $response->assertOk();
+        $data = $response->json();
+
+        $this->assertArrayHasKey('snapshot', $data);
+        $this->assertArrayHasKey('current_state', $data);
+        $this->assertArrayHasKey('period_metrics', $data);
+        $this->assertArrayHasKey('signals', $data);
+        $this->assertArrayHasKey('freshness', $data);
+        $this->assertSame($data['snapshot']['captured_at'], $data['freshness']['captured_at']);
+
+        $this->assertSame(1, $data['current_state']['job_orders']['reassignment_required']);
+        $this->assertSame(1, $data['current_state']['repair_jobs']['reassignment_required']);
+
+        $this->assertNotEmpty($data['signals']);
+        foreach ($data['signals'] as $signal) {
+            $this->assertArrayHasKey('age_days', $signal);
+            $this->assertArrayHasKey('severity', $signal);
+            $this->assertArrayHasKey('status', $signal);
+            $this->assertArrayHasKey('responsible', $signal);
+            $this->assertArrayHasKey('next_action', $signal);
+            $this->assertArrayHasKey('href', $signal);
+        }
+    }
+
+    public function test_dashboard_keeps_soft_deleted_assignees_visible_for_reassignment_signals(): void
+    {
+        $deletedStaff = User::factory()->for($this->shop)->create([
+            'role' => 'Staff',
+            'status' => 'active',
+        ]);
+        $deletedRepairer = User::factory()->for($this->shop)->create([
+            'role' => 'Repairer',
+            'status' => 'active',
+        ]);
+
+        Order::factory()->for($this->shop)->create([
+            'assigned_staff_id' => $deletedStaff->id,
+            'status' => 'processing',
+        ]);
+        RepairRequest::factory()->for($this->shop)->create([
+            'assigned_repairer_id' => $deletedRepairer->id,
+            'status' => 'assigned_to_repairer',
+        ]);
+
+        $deletedStaff->delete();
+        $deletedRepairer->delete();
+
+        $response = $this->actingAs($this->manager, 'user')
+            ->getJson('/api/manager/dashboard/stats');
+
+        $response->assertOk();
+        $data = $response->json();
+
+        $this->assertSame(1, $data['current_state']['job_orders']['reassignment_required']);
+        $this->assertSame(1, $data['current_state']['repair_jobs']['reassignment_required']);
+        $this->assertSame(2, $data['current_state']['staff']['unavailable_with_active_work']);
+    }
+
+    public function test_retail_only_dashboard_excludes_repair_operational_data(): void
+    {
+        $this->shop->update(['business_type' => 'retail']);
+
+        Order::factory()->for($this->shop)->create([
+            'status' => 'processing',
+            'created_at' => now(),
+        ]);
+        RepairRequest::factory()->for($this->shop)->create([
+            'status' => 'in_progress',
+            'created_at' => now(),
+        ]);
+        RepairRequest::factory()->for($this->shop)->create([
+            'status' => 'repairer_rejected',
+            'created_at' => now(),
+        ]);
+
+        $response = $this->actingAs($this->manager, 'user')
+            ->getJson('/api/manager/dashboard/stats');
+
+        $response->assertOk();
+        $data = $response->json();
+
+        $this->assertSame('retail', $data['businessCapabilities']['businessType']);
+        $this->assertTrue($data['businessCapabilities']['canRetail']);
+        $this->assertFalse($data['businessCapabilities']['canRepair']);
+        $this->assertSame(0, $data['current_state']['repair_jobs']['active']);
+        $this->assertSame(0, $data['current_state']['repair_jobs']['reassignment_required']);
+        $this->assertSame(0, $data['current_state']['repair_jobs']['pending_manager_review']);
+        $this->assertSame(0, $data['current_state']['approvals']['repair_review']);
+        $this->assertSame(0, $data['period_metrics']['repairs']['received']);
+        $this->assertSame(0, $data['period_metrics']['repairs']['completed']);
+        $this->assertSame(0, $data['period_metrics']['repairs']['rejected']);
+
+        foreach ($data['signals'] as $signal) {
+            $this->assertNotSame('repair_review', $signal['type']);
+        }
+    }
+
+    public function test_dashboard_separates_current_state_from_selected_period_metrics(): void
+    {
+        RepairRequest::factory()->for($this->shop)->create([
+            'status' => 'pending',
+            'created_at' => now(),
+        ]);
+        RepairRequest::factory()->for($this->shop)->create([
+            'status' => 'completed',
+            'created_at' => now()->subDays(2),
+            'completed_at' => now()->subDays(1),
+        ]);
+        RepairRequest::factory()->for($this->shop)->create([
+            'status' => 'completed',
+            'created_at' => now()->subDays(20),
+            'completed_at' => now()->subDays(20),
+        ]);
+
+        $response = $this->actingAs($this->manager, 'user')
+            ->getJson('/api/manager/dashboard/stats?range=last_7_days');
+
+        $response->assertOk();
+        $data = $response->json();
+
+        $this->assertSame(1, $data['current_state']['repair_jobs']['active']);
+        $this->assertSame(2, $data['period_metrics']['repairs']['received']);
+        $this->assertSame(1, $data['period_metrics']['repairs']['completed']);
+        $this->assertSame('last_7_days', $data['period_metrics']['range']['key']);
+        $this->assertArrayHasKey('comparison', $data['period_metrics']['range']);
+        $this->assertArrayHasKey('percent', $data['period_metrics']['trends']['repairs']);
+    }
+
+    public function test_dashboard_does_not_return_finance_or_full_queue_widgets(): void
+    {
+        $response = $this->actingAs($this->manager, 'user')
+            ->getJson('/api/manager/dashboard/stats');
+
+        $response->assertOk();
+        $data = $response->json();
+
+        $this->assertArrayNotHasKey('approvalSummary', $data);
+        $this->assertArrayNotHasKey('recentActivities', $data);
+        $this->assertArrayNotHasKey('complaints', $data);
+        $this->assertArrayHasKey('current_state', $data);
+        $this->assertArrayHasKey('leave', $data['current_state']['approvals']);
+        $this->assertArrayHasKey('suspension', $data['current_state']['approvals']);
+        $this->assertArrayHasKey('repair_review', $data['current_state']['approvals']);
     }
 }

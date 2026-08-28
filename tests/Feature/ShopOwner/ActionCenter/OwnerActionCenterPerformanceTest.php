@@ -38,6 +38,7 @@ final class OwnerActionCenterPerformanceTest extends TestCase
             'owner_action_center.coverage.refunds' => true,
             'owner_action_center.coverage.expenses' => true,
             'owner_action_center.coverage.purchase_requests' => true,
+            'owner_action_center.coverage.suspensions' => false,
             'owner_action_center.coverage.prices' => true,
             'owner_action_center.coverage.payslips' => true,
             'owner_action_center.coverage.salary_changes' => true,

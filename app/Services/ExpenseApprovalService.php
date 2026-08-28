@@ -306,7 +306,8 @@ class ExpenseApprovalService
                 message: "Expense {$expenseData['reference']} for ₱{$expenseData['amount']} now requires shop owner approval.",
                 data: $expenseData,
                 actionUrl: $shopOwnerActionUrl,
-                priority: 'medium'
+                priority: 'medium',
+                requiresAction: true,
             );
 
             return;

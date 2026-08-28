@@ -37,6 +37,61 @@ final class OrderFulfillmentPolicyTest extends TestCase
     }
 
     #[Test]
+    public function company_shop_owner_can_view_orders_but_cannot_mutate_them(): void
+    {
+        $shop = $this->shopOwner(['registration_type' => 'company']);
+        $order = Order::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'status' => 'pending',
+        ]);
+
+        $this->actingAs($shop, 'shop_owner')
+            ->getJson('/api/shop-owner/orders')
+            ->assertOk()
+            ->assertJsonPath('data.0.id', $order->id)
+            ->assertJsonPath('data.0.available_actions', []);
+
+        $this->actingAs($shop, 'shop_owner')
+            ->getJson("/api/shop-owner/orders/{$order->id}")
+            ->assertOk()
+            ->assertJsonPath('id', $order->id)
+            ->assertJsonPath('available_actions', []);
+
+        $mutationRequests = [
+            fn () => $this->patchJson("/api/shop-owner/orders/{$order->id}/status", [
+                'status' => 'processing',
+            ]),
+            fn () => $this->postJson("/api/shop-owner/orders/{$order->id}/correct-terminal-outcome", [
+                'target' => 'completed',
+                'reason' => 'Owner monitoring must not mutate fulfillment.',
+            ]),
+            fn () => $this->postJson("/api/shop-owner/orders/{$order->id}/activate-pickup"),
+            fn () => $this->postJson("/api/shop-owner/orders/{$order->id}/arrange-return-pickup", [
+                'tracking_number' => '123456',
+                'carrier_company' => 'Lalamove',
+                'rider_name' => 'Test Rider',
+                'rider_phone' => '09171234567',
+                'tracking_link' => 'https://example.test/returns/123456',
+            ]),
+            fn () => $this->postJson("/api/shop-owner/orders/{$order->id}/confirm-return-received", [
+                'line_dispositions' => [[
+                    'order_item_id' => 1,
+                    'approved_qty' => 1,
+                    'inspection_disposition' => 'resellable',
+                ]],
+            ]),
+        ];
+
+        foreach ($mutationRequests as $request) {
+            $request()
+                ->assertForbidden()
+                ->assertJsonPath('code', 'SHOP_OWNER_ORDER_READ_ONLY');
+        }
+
+        $this->assertSame('pending', $order->fresh()->status->value);
+    }
+
+    #[Test]
     public function staff_generic_status_endpoint_cannot_jump_pending_to_shipped(): void
     {
         $shop = $this->shopOwner(['registration_type' => 'company']);

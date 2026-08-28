@@ -1028,8 +1028,8 @@ it('uses return handoff controls instead of customer delivery outcomes', async (
   expect(screen.queryByText('Delivered successfully')).not.toBeInTheDocument();
   expect(screen.queryByText("Couldn't deliver")).not.toBeInTheDocument();
   const photo = new File(['return'], 'return.jpg', { type: 'image/jpeg' });
-  fireEvent.change(screen.getByLabelText('Return handoff photo'), { target: { files: [photo] } });
-  fireEvent.click(screen.getByRole('button', { name: 'Confirm return handoff' }));
+  fireEvent.change(screen.getAllByLabelText('Return handoff photo')[0], { target: { files: [photo] } });
+  fireEvent.click(screen.getAllByRole('button', { name: 'Confirm return handoff' })[0]);
 
   await waitFor(() => expect(mocks.post).toHaveBeenCalledTimes(2));
   const [proofUrl, proofBody] = mocks.post.mock.calls[0];

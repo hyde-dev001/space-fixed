@@ -106,6 +106,7 @@ final class OwnerActionCenterServiceTest extends TestCase
             'payslips' => 0,
             'salary_changes' => 0,
             'purchase_requests' => 0,
+            'suspensions' => 0,
             'expenses' => 2,
             'repair_rejections' => 0,
         ], $decisions->coverageCounts);
@@ -668,6 +669,7 @@ final class OwnerActionCenterServiceTest extends TestCase
             'owner_action_center.coverage.refunds' => $coverage === 'refunds',
             'owner_action_center.coverage.expenses' => $coverage === 'expenses',
             'owner_action_center.coverage.purchase_requests' => $coverage === 'purchase_requests',
+            'owner_action_center.coverage.suspensions' => $coverage === 'suspensions',
             'owner_action_center.coverage.prices' => $coverage === 'prices',
             'owner_action_center.coverage.payslips' => $coverage === 'payslips',
             'owner_action_center.coverage.salary_changes' => $coverage === 'salary_changes',

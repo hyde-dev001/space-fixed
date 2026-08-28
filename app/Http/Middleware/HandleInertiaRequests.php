@@ -485,7 +485,7 @@ class HandleInertiaRequests extends Middleware
     }
 
     /**
-     * @return array{portal: string|null, settings: string|null, workspace: string|null, notifications: string|null, profile: string|null, logout: string|null, manageModules: string|null}
+     * @return array{portal: string|null, settings: string|null, notifications: string|null, profile: string|null, logout: string|null, manageModules: string|null}
      */
     private function erpUrls(bool $ownerMode): array
     {
@@ -493,7 +493,6 @@ class HandleInertiaRequests extends Middleware
             return [
                 'portal' => null,
                 'settings' => null,
-                'workspace' => null,
                 'notifications' => null,
                 'profile' => null,
                 'logout' => null,
@@ -506,9 +505,6 @@ class HandleInertiaRequests extends Middleware
         return [
             'portal' => $this->namedRouteUrl('shop-owner.dashboard'),
             'settings' => $settings,
-            'workspace' => (bool) config('shop_modules.owner_erp_workspace_enabled', false)
-                ? $this->namedRouteUrl('shop-owner.erp.workspace')
-                : null,
             'notifications' => $this->namedRouteUrl('shop-owner.notifications.index'),
             'profile' => $this->namedRouteUrl('shop-owner.shop-profile'),
             'logout' => $this->namedRouteUrl('shop-owner.logout'),
@@ -540,6 +536,9 @@ class HandleInertiaRequests extends Middleware
             return null;
         }
 
-        return $this->erpWorkspaceNavigation->forKey((string) $moduleKeys[0]);
+        return $this->erpWorkspaceNavigation->forOwner(
+            $context->tenantOwner(),
+            (string) $moduleKeys[0],
+        );
     }
 }

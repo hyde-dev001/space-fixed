@@ -9,6 +9,7 @@ import {
 } from "../icons";
 import { useSidebar } from "../context/SidebarContext";
 import type { ShopModuleKey } from "../types/shopModules";
+import { getManagerBusinessCapabilities } from "../utils/managerBusinessCapabilities";
 import { canRenderShopModule } from "../utils/shopModuleAccess";
 import AppSidebar_shopOwner from "./AppSidebar_shopOwner";
 
@@ -19,6 +20,7 @@ type NavItem = {
   params?: Record<string, any>;
   extraPaths?: string[];
   moduleKey?: ShopModuleKey;
+  managerSection?: "operations" | "people" | "review";
   subItems?: { name: string; route: string; params?: Record<string, any>; icon?: React.ReactNode; moduleKey?: ShopModuleKey; pro?: boolean; new?: boolean }[];
 };
 
@@ -42,6 +44,14 @@ const myPayslipsItem: NavItem = {
   route: "erp.my-payslips",
   moduleKey: "finance",
 };
+
+const managerMyPayslipsItem: NavItem = {
+  icon: myPayslipsItem.icon,
+  name: myPayslipsItem.name,
+  route: myPayslipsItem.route,
+};
+
+const managerSelfServiceItems: NavItem[] = [attendanceItem, managerMyPayslipsItem];
 
 const navItems: NavItem[] = [
   {
@@ -363,57 +373,100 @@ const managerItems: NavItem[] = [
     ),
     name: "Manager Dashboard",
     route: "erp.manager.dashboard",
+    managerSection: "operations",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 7h18"></path>
+        <path d="M5 7l1 13h12l1-13"></path>
+        <path d="M9 7V5a3 3 0 016 0v2"></path>
+        <path d="M9 11v5m6-5v5"></path>
+      </svg>
+    ),
+    name: "Job Orders",
+    route: "erp.manager.job-orders",
+    managerSection: "operations",
   },
   {
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M6 4h12v16H6z"></path>
+        <path d="M9 8h6M9 12h6M9 16h3"></path>
+      </svg>
+    ),
+    name: "Repair Jobs",
+    route: "erp.manager.repair-jobs",
+    managerSection: "operations",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M4 7h16v13H4z"></path>
+        <path d="M8 7V4h8v3M8 11h8M8 15h5"></path>
+      </svg>
+    ),
+    name: "Inventory Overview",
+    route: "erp.manager.inventory-overview",
+    managerSection: "operations",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="9" cy="7" r="3"></circle>
+        <path d="M3 21v-2a6 6 0 0112 0v2"></path>
+        <circle cx="17" cy="8" r="2"></circle>
+        <path d="M16 14a5 5 0 015 5v2"></path>
+      </svg>
+    ),
+    name: "Staff & Workload",
+    route: "erp.manager.staff-workload",
+    managerSection: "people",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3" y="4" width="18" height="17" rx="2"></rect>
+        <path d="M16 2v4M8 2v4M3 10h18"></path>
+        <path d="M8 14h3m2 0h3m-8 3h3m2 0h3"></path>
+      </svg>
+    ),
+    name: "Leave Approvals",
+    route: "erp.manager.leave-approvals",
+    managerSection: "people",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 15v2"></path>
+        <path d="M6 21h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"></path>
+        <path d="M8 11V7a4 4 0 018 0v4"></path>
+      </svg>
+    ),
+    name: "Suspension Approvals",
+    route: "erp.manager.suspension-approvals",
+    managerSection: "people",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 3v18h18"></path>
+        <path d="M7 15l3-3 3 2 4-6"></path>
+      </svg>
+    ),
+    name: "Reports & Analytics",
+    route: "erp.manager.reports",
+    managerSection: "review",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
       </svg>
     ),
     name: "Audit Logs",
     route: "erp.manager.audit-logs",
-  },
-  {
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
-      </svg>
-    ),
-    name: "Suspend Approval",
-    route: "erp.manager.suspend-approval",
-    moduleKey: "finance",
-  },
-  {
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-      </svg>
-    ),
-    name: "Repair Rejection Review",
-    route: "erp.manager.repair-rejection-review",
-    moduleKey: "repair_operations",
-  },
-  {
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M21 16V8a2 2 0 0 0-1-1.73L12 3 4 6.27A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73L12 21l8-4.27A2 2 0 0 0 21 16z"></path>
-        <path d="M12 12v9"></path>
-      </svg>
-    ),
-    name: "Inventory Overview",
-    route: "erp.manager.inventory-overview",
-    moduleKey: "inventory",
-  },
-  {
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="2" y="3" width="20" height="14" rx="2"></rect>
-        <path d="M8 21h8m-4-4v4"></path>
-        <path d="M7 8h.01M11 8h6M7 12h4m2 0h3"></path>
-      </svg>
-    ),
-    name: "Assist Center",
-    route: "erp.manager.dss-insights",
+    managerSection: "review",
   },
 ];
 
@@ -811,9 +864,11 @@ const EmployeeSidebarERP: React.FC = () => {
     auth?.shop_owner?.business_type
     ?? auth?.user?.shop_owner?.business_type
     ?? ''
-  ).toLowerCase().trim();
-  const normalizedBusinessType = rawBusinessType.includes('both') ? 'both' : rawBusinessType;
-  const isRepairCapableBusiness = normalizedBusinessType === 'repair' || normalizedBusinessType === 'both';
+  );
+  const managerBusinessCapabilities = getManagerBusinessCapabilities(rawBusinessType);
+  const normalizedBusinessType = managerBusinessCapabilities.businessType;
+  const isRetailCapableBusiness = managerBusinessCapabilities.canRetail;
+  const isRepairCapableBusiness = managerBusinessCapabilities.canRepair;
   const isRetailOnlyBusiness = normalizedBusinessType === 'retail';
   const isRepairOnlyBusiness = normalizedBusinessType === 'repair';
   const normalizedRole = String(role || '').toUpperCase();
@@ -937,7 +992,6 @@ const EmployeeSidebarERP: React.FC = () => {
     "finance.index": "/finance",
     "finance.dashboard": "/finance/dashboard",
     "finance.create-invoice": "/create-invoice",
-    "erp.manager.repair-rejection-review": "/erp/manager/repair-rejection-review",
     "erp.finance.audit-logs": "/erp/finance/audit-logs",
     // CRM section routes
     "crm.dashboard": "/crm",
@@ -946,10 +1000,14 @@ const EmployeeSidebarERP: React.FC = () => {
     "crm.customer-reviews": "/crm/customer-reviews",
     // Manager section routes
     "erp.manager.dashboard": "/erp/manager/dashboard",
+    "erp.manager.job-orders": "/erp/manager/job-orders",
+    "erp.manager.repair-jobs": "/erp/manager/repair-jobs",
+    "erp.manager.inventory-overview": "/erp/manager/inventory-overview",
+    "erp.manager.staff-workload": "/erp/manager/staff-workload",
+    "erp.manager.leave-approvals": "/erp/manager/leave-approvals",
+    "erp.manager.suspension-approvals": "/erp/manager/suspension-approvals",
     "erp.manager.reports": "/erp/manager/reports",
     "erp.manager.shoe-pricing": "/erp/manager/shoe-pricing",
-    "erp.manager.products": "/erp/manager/products",
-    "erp.manager.inventory-overview": "/erp/manager/inventory-overview",
     "erp.manager.inventory-dashboard": "/erp/manager/inventory-dashboard",
     "erp.manager.upload-stocks": "/erp/manager/upload-stocks",
     "erp.manager.stock-movement": "/erp/manager/stock-movement",
@@ -970,10 +1028,7 @@ const EmployeeSidebarERP: React.FC = () => {
     "erp.procurement.purchase-orders": "/erp/procurement/purchase-orders",
     "erp.procurement.stock-request-approval": "/erp/procurement/stock-request-approval",
     "erp.procurement.suppliers-management": "/erp/procurement/suppliers-management",
-    "erp.manager.user-management": "/erp/manager/user-management",
     "erp.manager.audit-logs": "/erp/manager/audit-logs",
-    "erp.manager.suspend-approval": "/erp/manager/suspend-approval",
-    "erp.manager.dss-insights": "/erp/manager/dss-insights",
     // User section routes
     "erp.user.repair-reject-approval": "/erp/user/repair-reject-approval",
     "erp.repairer.support": "/erp/staff/repairer-support",
@@ -1169,7 +1224,7 @@ const EmployeeSidebarERP: React.FC = () => {
       const filteredManagerItems = getFilteredManagerItems();
       menuGroups.push({
         menuType: "manager",
-        items: withAttendanceForSection("manager", [...filteredManagerItems, myPayslipsItem]),
+        items: [...managerSelfServiceItems, ...filteredManagerItems],
       });
     }
 
@@ -1382,6 +1437,11 @@ const EmployeeSidebarERP: React.FC = () => {
     // should not elevate inventory-only users into the manager section.
     const managerPermissions = [
       'access-manager-dashboard',
+      'access-manager-job-orders',
+      'access-manager-repair-jobs',
+      'access-manager-staff-workload',
+      'access-manager-leave-approvals',
+      'access-manager-suspension-approvals',
       'access-audit-logs',
       'access-manager-reports',
       'access-repair-reject-review',
@@ -1455,25 +1515,39 @@ const EmployeeSidebarERP: React.FC = () => {
         return permissions.includes('access-manager-dashboard');
       }
 
-      if (item.route === 'erp.manager.audit-logs') {
-        return permissions.includes('access-audit-logs');
+      if (item.route === 'erp.manager.job-orders') {
+        return isRetailCapableBusiness && permissions.includes('access-manager-job-orders');
       }
 
-      if (item.route === 'erp.manager.suspend-approval') {
-        return permissions.includes('access-suspend-account');
-      }
-
-      if (item.route === 'erp.manager.repair-rejection-review') {
-        // Repair rejection review is only relevant for repair-capable shops.
-        return isRepairCapableBusiness && permissions.includes('access-repair-reject-review');
+      if (item.route === 'erp.manager.repair-jobs') {
+        return isRepairCapableBusiness && (
+          permissions.includes('access-manager-repair-jobs') ||
+          permissions.includes('access-repair-reject-review')
+        );
       }
 
       if (item.route === 'erp.manager.inventory-overview') {
         return permissions.includes('access-inventory-overview');
       }
 
-      if (item.route === 'erp.manager.dss-insights') {
-        return permissions.includes('access-manager-reports') || permissions.includes('access-manager-dashboard');
+      if (item.route === 'erp.manager.staff-workload') {
+        return permissions.includes('access-manager-staff-workload');
+      }
+
+      if (item.route === 'erp.manager.leave-approvals') {
+        return permissions.includes('access-manager-leave-approvals') || permissions.includes('access-leave-approvals');
+      }
+
+      if (item.route === 'erp.manager.suspension-approvals') {
+        return permissions.includes('access-manager-suspension-approvals') || permissions.includes('access-suspend-account');
+      }
+
+      if (item.route === 'erp.manager.reports') {
+        return permissions.includes('access-manager-reports');
+      }
+
+      if (item.route === 'erp.manager.audit-logs') {
+        return permissions.includes('access-audit-logs');
       }
 
       return false;
@@ -1850,6 +1924,27 @@ const EmployeeSidebarERP: React.FC = () => {
     );
   };
 
+  const filteredManagerItems = getFilteredManagerItems();
+  const renderManagerSection = (
+    label: string,
+    section: NonNullable<NavItem["managerSection"]>,
+  ) => {
+    const items = filteredManagerItems.filter((item) => item.managerSection === section);
+
+    if (items.length === 0) {
+      return null;
+    }
+
+    return (
+      <div className="space-y-3">
+        <h3 className="px-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-400 dark:text-gray-500">
+          {label}
+        </h3>
+        {renderMenuItems(deduplicateItems(items), "manager")}
+      </div>
+    );
+  };
+
   return (
     <aside
       className={`erp-sidebar fixed mt-16 flex flex-col xl:mt-0 top-0 px-5 left-0 h-screen transition-all duration-300 ease-in-out z-50 border-r
@@ -1956,7 +2051,7 @@ const EmployeeSidebarERP: React.FC = () => {
             </div>
           </nav>
         )}
-        {hasManagerAccess() && (
+        {hasManagerAccess() && filteredManagerItems.length > 0 && (
           <>
             <nav className="mb-6">
               <div className="flex flex-col gap-4">
@@ -1974,10 +2069,12 @@ const EmployeeSidebarERP: React.FC = () => {
                       <HorizontaLDots className="size-6" />
                     )}
                   </h2>
-                  {renderMenuItems(
-                    deduplicateItems(withAttendanceForSection("manager", [...getFilteredManagerItems(), myPayslipsItem])),
-                    "manager"
-                  )}
+                  <div className="space-y-6">
+                    {renderMenuItems(deduplicateItems(managerSelfServiceItems), "manager")}
+                    {renderManagerSection("OPERATIONS", "operations")}
+                    {renderManagerSection("PEOPLE & APPROVALS", "people")}
+                    {renderManagerSection("REVIEW", "review")}
+                  </div>
                 </div>
               </div>
             </nav>

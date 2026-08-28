@@ -2,6 +2,7 @@ import type { OwnerActionCenterResult, OwnerAttentionAdapterKey } from "../../ty
 
 interface OwnerActionCenterAvailabilityProps {
   result: OwnerActionCenterResult | null;
+  approvalOnly?: boolean;
 }
 
 const adapterLabels: Record<OwnerAttentionAdapterKey, string> = {
@@ -12,6 +13,7 @@ const adapterLabels: Record<OwnerAttentionAdapterKey, string> = {
   salary_changes: "Salary changes",
   expenses: "Expenses",
   purchase_requests: "Purchase requests",
+  suspension_requests: "Suspension requests",
   repair_rejections: "Repair rejections",
   compliance_documents: "Compliance documents",
   failed_order_refunds: "Order refund recovery",
@@ -28,17 +30,21 @@ const failedSourceLabels = (keys: OwnerAttentionAdapterKey[]): string[] => {
   return Array.from(new Set(labels));
 };
 
-export default function OwnerActionCenterAvailability({ result }: OwnerActionCenterAvailabilityProps) {
-  const bucketLabel = result?.bucket === "urgent_exceptions"
-    ? "Urgent Exceptions"
-    : result?.bucket === "waiting_on_others"
-      ? "Waiting on Others"
-      : "Needs My Decision";
-  const itemLabel = result?.bucket === "urgent_exceptions"
-    ? "exceptions"
-    : result?.bucket === "waiting_on_others"
-      ? "waiting items"
-      : "actions";
+export default function OwnerActionCenterAvailability({ result, approvalOnly = false }: OwnerActionCenterAvailabilityProps) {
+  const bucketLabel = approvalOnly
+    ? "Approval Center"
+    : result?.bucket === "urgent_exceptions"
+      ? "Urgent Exceptions"
+      : result?.bucket === "waiting_on_others"
+        ? "Waiting on Others"
+        : "Needs My Decision";
+  const itemLabel = approvalOnly
+    ? "approvals"
+    : result?.bucket === "urgent_exceptions"
+      ? "exceptions"
+      : result?.bucket === "waiting_on_others"
+        ? "waiting items"
+        : "actions";
 
   if (result === null || result.degradation_status === "unavailable") {
     return (
@@ -62,6 +68,12 @@ export default function OwnerActionCenterAvailability({ result }: OwnerActionCen
 
   const total = result.pagination.total;
   const partial = result.degradation_status === "partial";
+
+  // Healthy totals already have a single source of truth in the queue header.
+  // Keep this component for degraded states only so the queue does not repeat
+  // the selected label and count inside the panel.
+  if (!partial) return null;
+
   const failedSources = failedSourceLabels(result.health.failed_adapter_keys);
 
   return (
@@ -79,13 +91,6 @@ export default function OwnerActionCenterAvailability({ result }: OwnerActionCen
             </p>
           ))}
         </>
-      )}
-      {!partial && total === 0 && (
-        <p>{result.bucket === "urgent_exceptions"
-          ? "No urgent exceptions from currently supported sources."
-          : result.bucket === "waiting_on_others"
-            ? "No waiting items from currently supported sources."
-            : "No decisions from currently supported sources require action."}</p>
       )}
     </div>
   );

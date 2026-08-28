@@ -30,17 +30,12 @@ final class CanonicalOwnerCapabilityParityTest extends TestCase
         $this->assertTrue(Route::has($canonicalRoute), "Missing canonical route for {$capability}.");
         $this->assertSame($canonicalPath, '/'.Route::getRoutes()->getByName($canonicalRoute)->uri());
 
-        if ($moduleKey === null && $capability !== 'payments') {
+        if ($moduleKey === null) {
             $this->assertNotNull($compatibilityPath, "{$capability} must record a compatibility source.");
         }
 
-        if ($capability === 'payments') {
-            $this->assertTrue($fallbackRequired);
-            $this->assertFalse($migrationComplete);
-        } else {
-            $this->assertFalse($fallbackRequired);
-            $this->assertTrue($migrationComplete);
-        }
+        $this->assertFalse($fallbackRequired);
+        $this->assertTrue($migrationComplete);
     }
 
     #[DataProvider('capabilityProvider')]
@@ -56,7 +51,6 @@ final class CanonicalOwnerCapabilityParityTest extends TestCase
     ): void {
         config([
             'shop_modules.enforcement_enabled' => false,
-            'shop_modules.owner_erp_workspace_enabled' => true,
         ]);
         $owner = $this->owner('company', 'both');
 
@@ -70,6 +64,22 @@ final class CanonicalOwnerCapabilityParityTest extends TestCase
         }
 
         if ($compatibilityPath === null) {
+            return;
+        }
+
+        if ($capability === 'audit') {
+            $this->actingAs($owner, 'shop_owner')
+                ->get($compatibilityPath)
+                ->assertRedirect(route('shop-owner.erp.workspace'));
+
+            return;
+        }
+
+        if ($moduleKey !== null) {
+            $this->actingAs($owner, 'shop_owner')
+                ->get($compatibilityPath)
+                ->assertRedirect($canonicalPath);
+
             return;
         }
 
@@ -100,7 +110,6 @@ final class CanonicalOwnerCapabilityParityTest extends TestCase
             return;
         }
 
-        config(['shop_modules.owner_erp_workspace_enabled' => true]);
 
         $canonical = $this->getJson($canonicalPath);
         $compatibility = $this->getJson($compatibilityPath);
@@ -121,7 +130,6 @@ final class CanonicalOwnerCapabilityParityTest extends TestCase
     ): void {
         config([
             'shop_modules.enforcement_enabled' => true,
-            'shop_modules.owner_erp_workspace_enabled' => true,
         ]);
         $owner = $this->owner('company', 'both');
         ShopOwnerModule::factory()->create([
@@ -131,10 +139,13 @@ final class CanonicalOwnerCapabilityParityTest extends TestCase
         ]);
 
         $canonical = $this->actingAs($owner, 'shop_owner')->getJson($canonicalPath);
-        $compatibility = $this->actingAs($owner, 'shop_owner')->getJson($compatibilityPath);
+        $canonical->assertForbidden();
 
-        $this->assertSame($compatibility->status(), $canonical->status(), "Status drift for {$capability}.");
-        $this->assertSame($compatibility->json('code'), $canonical->json('code'), "Denial code drift for {$capability}.");
+        $this->actingAs($owner, 'shop_owner')
+            ->get($compatibilityPath)
+            ->assertRedirect(route('shop-owner.shell.settings.modules-team', [
+                'module' => $moduleKey,
+            ]));
     }
 
     /**
@@ -144,15 +155,14 @@ final class CanonicalOwnerCapabilityParityTest extends TestCase
     {
         return [
             'home' => ['home', 'shop-owner.shell.home', '/shop-owner/home', '/shop-owner/dashboard', 'ShopOwner/Dashboard', null, false, true],
-            'retail' => ['retail', 'shop-owner.shell.operate.retail', '/shop-owner/operate/retail', '/shop-owner/erp/retail', 'ERP/ModuleLanding', 'retail_operations', false, true],
-            'repair' => ['repair', 'shop-owner.shell.operate.repair', '/shop-owner/operate/repair', '/shop-owner/erp/repair', 'ERP/ModuleLanding', 'repair_operations', false, true],
-            'customers' => ['customers', 'shop-owner.shell.operate.customers', '/shop-owner/operate/customers', '/shop-owner/erp/crm', 'ERP/ModuleLanding', 'crm', false, true],
-            'payments' => ['payments', 'shop-owner.shell.operate.payments', '/shop-owner/operate/payments', null, 'ShopOwner/Payments/CanonicalPaymentsLanding', null, true, false],
-            'finance' => ['finance', 'shop-owner.shell.oversee.finance', '/shop-owner/oversee/finance', '/shop-owner/erp/finance', 'ERP/ModuleLanding', 'finance', false, true],
-            'workforce' => ['workforce', 'shop-owner.shell.oversee.workforce', '/shop-owner/oversee/workforce', '/shop-owner/erp/hr', 'ERP/ModuleLanding', 'hr_employees', false, true],
-            'inventory' => ['inventory', 'shop-owner.shell.oversee.inventory', '/shop-owner/oversee/inventory', '/shop-owner/erp/inventory', 'ERP/ModuleLanding', 'inventory', false, true],
-            'procurement' => ['procurement', 'shop-owner.shell.oversee.procurement', '/shop-owner/oversee/procurement', '/shop-owner/erp/procurement', 'ERP/ModuleLanding', 'procurement', false, true],
-            'logistics' => ['logistics', 'shop-owner.shell.oversee.logistics', '/shop-owner/oversee/logistics', '/shop-owner/erp/logistics', 'ERP/ModuleLanding', 'logistics', false, true],
+            'retail' => ['retail', 'shop-owner.shell.operate.retail', '/shop-owner/operate/retail', '/shop-owner/erp/retail', 'ShopOwner/Dashboard', 'retail_operations', false, true],
+            'repair' => ['repair', 'shop-owner.shell.operate.repair', '/shop-owner/operate/repair', '/shop-owner/erp/repair', 'ERP/repairer/dashboardRepair', 'repair_operations', false, true],
+            'customers' => ['customers', 'shop-owner.shell.operate.customers', '/shop-owner/operate/customers', '/shop-owner/erp/crm', 'ERP/CRM/CRMDashboard', 'crm', false, true],
+            'finance' => ['finance', 'shop-owner.shell.oversee.finance', '/shop-owner/oversee/finance', '/shop-owner/erp/finance', 'ERP/Finance/Dashboard', 'finance', false, true],
+            'workforce' => ['workforce', 'shop-owner.shell.oversee.workforce', '/shop-owner/oversee/workforce', '/shop-owner/erp/hr', 'ERP/HR/HR', 'hr_employees', false, true],
+            'inventory' => ['inventory', 'shop-owner.shell.oversee.inventory', '/shop-owner/oversee/inventory', '/shop-owner/erp/inventory', 'ERP/inventory/InventoryDashboard', 'inventory', false, true],
+            'procurement' => ['procurement', 'shop-owner.shell.oversee.procurement', '/shop-owner/oversee/procurement', '/shop-owner/erp/procurement', 'ERP/Procurement/Dashboard', 'procurement', false, true],
+            'logistics' => ['logistics', 'shop-owner.shell.oversee.logistics', '/shop-owner/oversee/logistics', '/shop-owner/erp/logistics', 'ERP/Logistics/Dashboard', 'logistics', false, true],
             'reports' => ['reports', 'shop-owner.shell.reports', '/shop-owner/reports', '/shop-owner/erp/manager/reports', 'ERP/Manager/Reports', null, false, true],
             'audit' => ['audit', 'shop-owner.shell.audit', '/shop-owner/audit', '/shop-owner/erp/manager/audit-logs', 'ERP/Manager/AuditLogs', null, false, true],
             'settings.profile' => ['settings.profile', 'shop-owner.shell.settings.profile', '/shop-owner/settings/profile', '/shop-owner/settings', 'ShopOwner/Settings/shopSetting', null, false, true],

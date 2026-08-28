@@ -17,6 +17,7 @@ final readonly class OwnerActionCenterResult
         'salary_changes',
         'expenses',
         'purchase_requests',
+        'suspension_requests',
         'repair_rejections',
         'compliance_documents',
         'failed_order_refunds',

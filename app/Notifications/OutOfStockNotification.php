@@ -41,7 +41,7 @@ class OutOfStockNotification extends Notification implements ShouldQueue
             ->line('**URGENT:** The inventory item **' . $this->inventoryItem->name . '** (SKU: ' . $this->inventoryItem->sku . ') is now OUT OF STOCK.')
             ->line('This item has 0 available quantity and needs immediate attention.')
             ->line('Recommended Reorder Quantity: **' . $this->inventoryItem->reorder_quantity . '**')
-            ->action('Place Supplier Order', url('/erp/inventory/supplier-orders/create'))
+            ->action('Place Supplier Order', url('/erp/inventory/supplier-order-monitoring'))
             ->line('Please place a supplier order immediately to avoid business disruption.');
     }
 

@@ -62,7 +62,7 @@ Route::prefix('api/hr/notifications')->middleware(['web', 'auth:user', 'shop.iso
  * All routes require authentication and permission-based access
  * Users must have at least one HR-related permission (view-employees, view-attendance, view-payroll)
  */
-Route::prefix('api/hr')->middleware(['web', 'auth:user', 'permission:access-hr-dashboard|access-employee-directory|access-attendance-records|access-leave-approvals|access-overtime-approvals|manage-attendance|access-payslip-generation|access-view-payslip|manage-salary-changes|approve-salary-change|override-salary-retroactive', 'shop.isolation'])->group(function () {
+Route::prefix('api/hr')->middleware(['web', 'auth:user', 'permission:access-hr-dashboard|access-employee-directory|access-attendance-records|access-leave-approvals|access-manager-leave-approvals|decide-manager-leave-approvals|access-overtime-approvals|manage-attendance|access-payslip-generation|access-view-payslip|request-employee-suspensions|manage-salary-changes|approve-salary-change|override-salary-retroactive', 'shop.isolation'])->group(function () {
     // ============================================
     // DASHBOARD & ANALYTICS
     // ============================================

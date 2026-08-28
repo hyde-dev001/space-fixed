@@ -68,6 +68,14 @@ class PriceChangeApprovalWorkflowTest extends TestCase
     {
         $priceChange = $this->createWorkflowBoundPriceChange();
 
+        $this->priceChangeApprovalService->notifyPriceChangeApprovalRequested($priceChange);
+
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $this->financeFirst->id,
+            'title' => 'New Price Change Request',
+            'action_url' => "/finance?section=shoe-pricing&price_change={$priceChange->id}",
+        ]);
+
         // Level 1: Finance
         $firstApproval = $this->actingAs($this->financeFirst, 'user')
             ->postJson("/api/finance/price-changes/{$priceChange->id}/approve", [

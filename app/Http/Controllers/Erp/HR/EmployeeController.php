@@ -4,7 +4,9 @@ namespace App\Http\Controllers\ERP\HR;
 
 use App\Http\Controllers\Controller;
 use App\Enums\EmployeeStatus;
+use App\Enums\SuspensionStatus;
 use App\Models\Employee;
+use App\Models\SuspensionRequest;
 use App\Models\User;
 use App\Models\HR\LeaveBalance;
 use App\Models\HR\AuditLog;
@@ -376,6 +378,10 @@ class EmployeeController extends Controller
 
         $employee = Employee::forShopOwner($user->shop_owner_id)->findOrFail($id);
 
+        if ($request->has('status') && $this->isDirectSuspensionStateMutation($employee, (string) $request->input('status'))) {
+            return $this->suspensionWorkflowRequiredResponse();
+        }
+
         $validator = Validator::make($request->all(), [
             'firstName' => 'sometimes|required|string|max:50',
             'lastName' => 'sometimes|required|string|max:50',
@@ -507,35 +513,7 @@ class EmployeeController extends Controller
      */
     public function suspend(Request $request, $id): JsonResponse
     {
-        $user = Auth::guard('user')->user();
-        
-        // Check if user is Manager or has any HR-related permissions
-        if (!$user->hasRole('Manager') && !$user->can('access-employee-directory') && !$user->can('access-attendance-records') && !$user->can('access-payslip-generation')) {
-            return response()->json(['error' => 'Unauthorized'], 403);
-        }
-
-        $validator = Validator::make($request->all(), [
-            'reason' => 'required|string|max:500',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json(['errors' => $validator->errors()], 422);
-        }
-
-        $employee = Employee::forShopOwner($user->shop_owner_id)->findOrFail($id);
-
-        $employee->update([
-            'status' => EmployeeStatus::SUSPENDED,
-            'suspensionReason' => $request->reason,
-            'privileged_suspension_id' => null,
-        ]);
-
-        $this->linkedUserSynchronizer->sync($employee);
-
-        return response()->json([
-            'message' => 'Employee suspended successfully',
-            'employee' => $employee
-        ]);
+        return $this->suspensionWorkflowRequiredResponse();
     }
 
     /**
@@ -543,33 +521,30 @@ class EmployeeController extends Controller
      */
     public function activate(Request $request, $id): JsonResponse
     {
-        $user = Auth::guard('user')->user();
+        return $this->suspensionWorkflowRequiredResponse();
+    }
 
-        if (!$user->hasRole('Manager') && !$user->can('access-employee-directory') && !$user->can('access-attendance-records') && !$user->can('access-payslip-generation')) {
-            return response()->json(['error' => 'Unauthorized'], 403);
+    private function isDirectSuspensionStateMutation(Employee $employee, string $targetStatus): bool
+    {
+        $target = EmployeeStatus::tryFrom(strtolower(trim($targetStatus)));
+        $current = $employee->status instanceof EmployeeStatus ? $employee->status : null;
+
+        if ($target === EmployeeStatus::SUSPENDED || $current === EmployeeStatus::SUSPENDED) {
+            return true;
         }
 
-        $employee = Employee::forShopOwner($user->shop_owner_id)->findOrFail($id);
+        return SuspensionRequest::query()
+            ->where('employee_id', $employee->getKey())
+            ->whereIn('status', [SuspensionStatus::PENDING_MANAGER, SuspensionStatus::PENDING_OWNER])
+            ->exists();
+    }
 
-        if (! $this->employeePolicy->canChangeAccountState($employee, EmployeeStatus::ACTIVE)) {
-            return response()->json([
-                'error' => 'Terminated employees cannot be reactivated.',
-                'code' => 'EMPLOYEE_TERMINATED',
-            ], 422);
-        }
-
-        $employee->update([
-            'status' => 'active',
-            'suspension_reason' => null,
-            'privileged_suspension_id' => null,
-        ]);
-
-        $this->linkedUserSynchronizer->sync($employee);
-
+    private function suspensionWorkflowRequiredResponse(): JsonResponse
+    {
         return response()->json([
-            'message' => 'Employee account reactivated successfully',
-            'employee' => $employee,
-        ]);
+            'error' => 'Employee suspension changes must go through the HR → Manager → Shop Owner workflow.',
+            'code' => 'SUSPENSION_WORKFLOW_REQUIRED',
+        ], 403);
     }
 
     /**

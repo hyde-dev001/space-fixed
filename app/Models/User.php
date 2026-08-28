@@ -137,6 +137,16 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->hasMany(RepairRequest::class, 'assigned_repairer_id');
     }
 
+    public function assignedOrders(): HasMany
+    {
+        return $this->hasMany(Order::class, 'assigned_staff_id');
+    }
+
+    public function repairerUnavailability(): HasMany
+    {
+        return $this->hasMany(RepairerUnavailability::class, 'repairer_id');
+    }
+
     /**
      * Check if user has a specific role (OLD COLUMN - Deprecated)
      * Use Spatie's hasRole() method instead for new code

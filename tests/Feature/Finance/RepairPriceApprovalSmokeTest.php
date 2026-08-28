@@ -2,17 +2,114 @@
 
 namespace Tests\Feature\Finance;
 
+use App\Enums\NotificationType;
+use App\Models\Notification;
 use App\Models\RepairService;
 use App\Models\RepairPackage;
 use App\Models\ProcurementSettings;
 use App\Models\ShopOwner;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 class RepairPriceApprovalSmokeTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_repair_service_price_change_notifies_each_approval_owner(): void
+    {
+        $this->withoutMiddleware();
+
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'both',
+            'registration_type' => 'company',
+        ]);
+        $this->enableOwnerPriceApproval($shopOwner->id);
+
+        $requester = User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $finance = User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $finance->assignRole(Role::findOrCreate('Finance', 'user'));
+
+        $service = RepairService::create([
+            'name' => 'Notification Heel Repair',
+            'category' => 'Restoration',
+            'price' => 1000.00,
+            'old_price' => 1000.00,
+            'duration' => '2 days',
+            'description' => 'Notification workflow test',
+            'status' => 'Active',
+            'shop_owner_id' => $shopOwner->id,
+            'created_by' => $requester->id,
+            'updated_by' => $requester->id,
+        ]);
+
+        $this->actingAs($requester, 'user')
+            ->putJson("/api/repair-services/{$service->id}", [
+                'price' => 1250,
+                'reason' => 'Material cost increase',
+            ])
+            ->assertOk();
+
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $finance->id,
+            'type' => NotificationType::PRICE_CHANGE_REQUEST->value,
+            'group_key' => "repair-price-change:{$service->id}:finance-initial",
+            'action_url' => '/finance?section=repair-pricing',
+            'requires_action' => true,
+        ]);
+        $this->assertDatabaseHas('notifications', [
+            'shop_owner_id' => $shopOwner->id,
+            'type' => NotificationType::PRICE_CHANGE_REQUEST->value,
+            'group_key' => "repair-price-change:{$service->id}:owner-submitted",
+        ]);
+        $this->assertDatabaseMissing('notifications', [
+            'shop_owner_id' => $shopOwner->id,
+            'type' => NotificationType::REPAIR_SERVICE_REQUEST->value,
+        ]);
+
+        $this->actingAs($finance, 'user')
+            ->postJson("/api/finance/repair-price-changes/{$service->id}/approve", [
+                'notes' => 'Finance initial review',
+            ])
+            ->assertOk();
+
+        $ownerNotification = Notification::query()
+            ->where('shop_owner_id', $shopOwner->id)
+            ->where('type', NotificationType::REPAIR_SERVICE_REQUEST->value)
+            ->latest('id')
+            ->first();
+
+        $this->assertNotNull($ownerNotification);
+        $this->assertStringContainsString(
+            "approval=repair_price_change:{$service->id}",
+            (string) $ownerNotification->action_url,
+        );
+        $this->assertTrue((bool) $ownerNotification->requires_action);
+
+        $this->actingAs($shopOwner, 'shop_owner')
+            ->postJson("/api/shop-owner/repair-price-changes/{$service->id}/approve", [
+                'request_type' => 'service',
+            ])
+            ->assertOk();
+
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $finance->id,
+            'type' => NotificationType::PRICE_CHANGE_REQUEST->value,
+            'group_key' => "repair-price-change:{$service->id}:finance-final",
+            'action_url' => '/finance?section=repair-pricing',
+            'requires_action' => true,
+        ]);
+
+        $this->actingAs($finance, 'user')
+            ->postJson("/api/finance/repair-price-changes/{$service->id}/approve-final", [
+                'notes' => 'Finance final review',
+            ])
+            ->assertOk();
+
+        $this->assertSame('Active', $service->fresh()->status);
+        $this->assertSame('1250.00', (string) $service->fresh()->price);
+    }
 
     public function test_repair_price_three_step_runtime_smoke_pass(): void
     {

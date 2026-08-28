@@ -197,8 +197,9 @@ class PayslipApprovalService
             title: 'Payslip Approval Required',
             message: "Payroll {$payload['period']} for {$payload['employee_name']} needs Finance review.",
             data: $payload,
-            actionUrl: '/erp/finance/payslip-approvals',
-            priority: 'medium'
+            actionUrl: $this->financePayslipActionUrl($payslip->id),
+            priority: 'medium',
+            requiresAction: true,
         );
     }
 
@@ -221,7 +222,7 @@ class PayslipApprovalService
                     title: 'Payslip Fully Approved',
                     message: "Payroll {$payload['period']} for {$payload['employee_name']} completed all approval levels.",
                     data: $payload,
-                    actionUrl: '/erp/hr/payslips',
+                    actionUrl: $this->hrPayslipActionUrl($payslip->id),
                     shopId: $shopOwnerId
                 );
             }
@@ -248,7 +249,8 @@ class PayslipApprovalService
                 message: "Payroll {$payload['period']} for {$payload['employee_name']} now requires your approval.",
                 data: $payload,
                 actionUrl: $this->notificationService->ownerApprovalActionUrl('payslip', $payslip->id),
-                priority: 'medium'
+                priority: 'medium',
+                requiresAction: true,
             );
 
             return;
@@ -269,8 +271,9 @@ class PayslipApprovalService
                 title: $title,
                 message: $message,
                 data: $payload,
-                actionUrl: '/erp/finance/payslip-approvals',
-                priority: 'medium'
+                actionUrl: $this->financePayslipActionUrl($payslip->id),
+                priority: 'medium',
+                requiresAction: true,
             );
         }
     }
@@ -288,7 +291,7 @@ class PayslipApprovalService
                 title: 'Payslip Rejected In Approval Workflow',
                 message: "Payroll {$payload['period']} for {$payload['employee_name']} was rejected. Reason: {$comments}",
                 data: $payload,
-                actionUrl: '/erp/hr/payslips',
+                actionUrl: $this->hrPayslipActionUrl($payslip->id),
                 shopId: $shopOwnerId
             );
         }
@@ -300,6 +303,16 @@ class PayslipApprovalService
                 'rejection_reason' => $comments,
             ]);
         }
+    }
+
+    private function financePayslipActionUrl(int|string $payrollId): string
+    {
+        return '/finance?section=payslip-approvals&payroll=' . urlencode((string) $payrollId);
+    }
+
+    private function hrPayslipActionUrl(int|string $payrollId): string
+    {
+        return '/erp/hr?section=payroll-view&payroll=' . urlencode((string) $payrollId);
     }
 
     private function buildPayslipNotificationData(Payroll $payslip, ?User $actor = null, ?string $reason = null): array

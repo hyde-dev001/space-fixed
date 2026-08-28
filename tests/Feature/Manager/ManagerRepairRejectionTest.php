@@ -257,7 +257,7 @@ class ManagerRepairRejectionTest extends TestCase
                 ['notes' => 'Should fail']
             );
 
-        $response->assertForbidden();
+        $response->assertNotFound();
     }
 
     /**
@@ -347,7 +347,7 @@ class ManagerRepairRejectionTest extends TestCase
         $this->assertDatabaseHas('notifications', [
             'user_id' => $permissionBasedReviewer->id,
             'type' => 'repair_rejection_review',
-            'action_url' => '/erp/manager/repair-rejection-review',
+            'action_url' => '/erp/manager/repair-jobs',
         ]);
     }
 

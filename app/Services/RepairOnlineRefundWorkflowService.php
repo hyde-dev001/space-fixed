@@ -63,6 +63,7 @@ class RepairOnlineRefundWorkflowService
                 ],
                 actionUrl: '/finance?section=refund-approvals',
                 priority: 'high',
+                requiresAction: true,
             );
         }
 

@@ -68,7 +68,7 @@ final class PhaseThreeCCharacterizationTest extends TestCase
         $this->assertSame([], $registry->adaptersFor('waiting_on_others'));
     }
 
-    public function test_waiting_baseline_is_no_enabled_and_absent_from_the_action_center_page(): void
+    public function test_waiting_baseline_is_no_enabled_and_absent_from_the_approval_center_page(): void
     {
         $owner = ShopOwner::factory()->approved()->create();
         config([
@@ -89,9 +89,8 @@ final class PhaseThreeCCharacterizationTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('ShopOwner/ActionCenter', false)
-                ->has('bucketSummaries.needs_my_decision')
-                ->has('bucketSummaries.urgent_exceptions')
-            ->missing('bucketSummaries.waiting_on_others'));
+                ->where('ownerActionCenter.bucket', 'needs_my_decision')
+                ->missing('bucketSummaries'));
     }
 
     public function test_waiting_defaults_register_the_three_phase_three_c_source_families(): void

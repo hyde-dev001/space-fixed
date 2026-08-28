@@ -10,13 +10,22 @@ use App\Http\Controllers\Erp\ReadPageController;
 use App\Http\Controllers\Logistics\ErpLogisticsController;
 use App\Http\Controllers\ShopOwner\OwnerActionCenterController;
 use App\Http\Controllers\Staff\CustomerController;
-use App\Http\Middleware\EnsureOwnerErpWorkspaceEnabled;
+use App\Models\ShopOwner;
 use App\Services\ErpWorkspaceNavigationService;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
-Route::middleware(EnsureOwnerErpWorkspaceEnabled::class)
-    ->prefix('shop-owner/erp')
+$ownerOperationsComponent = static function (string $companyComponent, string $individualComponent): string {
+    $owner = Auth::guard('shop_owner')->user();
+
+    return $owner instanceof ShopOwner
+        && strtolower(trim((string) $owner->registration_type)) === 'company'
+        ? $companyComponent
+        : $individualComponent;
+};
+
+Route::prefix('shop-owner/erp')
     ->name('shop-owner.erp.')
     ->group(function (): void {
         Route::get('/workspace', [WorkspaceController::class, 'index'])
@@ -25,6 +34,11 @@ Route::middleware(EnsureOwnerErpWorkspaceEnabled::class)
         Route::get('/{module}', [WorkspaceController::class, 'module'])
             ->whereIn('module', ErpWorkspaceNavigationService::slugs())
             ->name('module');
+    });
+
+Route::prefix('shop-owner/erp')
+    ->name('shop-owner.erp.')
+    ->group(function () use ($ownerOperationsComponent): void {
 
         Route::get('/retail/dashboard', function (): \Inertia\Response {
             return Inertia::render('ShopOwner/Dashboard', [
@@ -38,9 +52,12 @@ Route::middleware(EnsureOwnerErpWorkspaceEnabled::class)
             ]);
         })->name('retail.products');
 
-        Route::prefix('retail')->name('retail.')->group(function (): void {
-            Route::get('/orders', function (): \Inertia\Response {
-                return Inertia::render('ShopOwner/Orders/order management/JobOrders', [
+        Route::prefix('retail')->name('retail.')->group(function () use ($ownerOperationsComponent): void {
+            Route::get('/orders', function () use ($ownerOperationsComponent): \Inertia\Response {
+                return Inertia::render($ownerOperationsComponent(
+                    'ShopOwner/Operations/JobOrders',
+                    'ShopOwner/Orders/order management/JobOrders',
+                ), [
                     'erpMode' => true,
                 ]);
             })->name('orders');
@@ -58,9 +75,12 @@ Route::middleware(EnsureOwnerErpWorkspaceEnabled::class)
             })->name('discounts');
         });
 
-        Route::prefix('repair')->name('repair.')->group(function (): void {
-            Route::get('/job-orders', function (): \Inertia\Response {
-                return Inertia::render('ShopOwner/Repairs/service management/JobOrdersRepair', [
+        Route::prefix('repair')->name('repair.')->group(function () use ($ownerOperationsComponent): void {
+            Route::get('/job-orders', function () use ($ownerOperationsComponent): \Inertia\Response {
+                return Inertia::render($ownerOperationsComponent(
+                    'ShopOwner/Operations/RepairJobs',
+                    'ShopOwner/Repairs/service management/JobOrdersRepair',
+                ), [
                     'erpMode' => true,
                 ]);
             })->name('job-orders');

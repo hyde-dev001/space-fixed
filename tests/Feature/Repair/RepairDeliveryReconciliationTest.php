@@ -446,6 +446,7 @@ class RepairDeliveryReconciliationTest extends TestCase
     private function paidIntakeRepair(): array
     {
         $shop = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
             'business_type' => 'repair',
             'shop_latitude' => 14.5995,
             'shop_longitude' => 120.9842,

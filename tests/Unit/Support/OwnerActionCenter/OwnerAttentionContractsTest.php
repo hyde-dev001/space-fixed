@@ -350,7 +350,7 @@ final class OwnerAttentionContractsTest extends TestCase
         $this->assertSame(20, $query->candidateLimit);
     }
 
-    public function test_decision_queries_expose_all_seven_approval_coverages(): void
+    public function test_decision_queries_expose_all_eight_approval_coverages(): void
     {
         $this->assertSame([
             'all',
@@ -359,6 +359,7 @@ final class OwnerAttentionContractsTest extends TestCase
             'payslips',
             'salary_changes',
             'purchase_requests',
+            'suspensions',
             'expenses',
             'repair_rejections',
         ], OwnerAttentionQuery::COVERAGES_BY_BUCKET['needs_my_decision']);
@@ -384,6 +385,7 @@ final class OwnerAttentionContractsTest extends TestCase
             'payslip' => 'payslips',
             'salary_change' => 'salary_changes',
             'purchase_request' => 'purchase_requests',
+            'suspension_request' => 'suspensions',
             'expense' => 'expenses',
             'repair_rejection' => 'repair_rejections',
         ];

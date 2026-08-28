@@ -787,10 +787,8 @@ Route::prefix('shopOwner')->name('shopOwner.')->group(function () {
 });
 
 // Shop Owner Protected Routes
-Route::middleware(['auth:shop_owner'])->get('/point-of-sale', function (\Illuminate\Http\Request $request) {
-    $query = $request->getQueryString();
-
-    return redirect('/shop-owner/point-of-sale'.($query ? ('?'.$query) : ''));
+Route::middleware(['auth:shop_owner'])->get('/point-of-sale', function () {
+    return redirect()->route('shop-owner.shell.home');
 })->name('shop-owner.point-of-sale.legacy');
 
 Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')->group(function () {
@@ -811,7 +809,7 @@ Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')-
     });
 
     Route::get('/point-of-sale', function () {
-        return Inertia::render('ShopOwner/Repairs/service management/POS');
+        return redirect()->route('shop-owner.shell.home');
     })->name('point-of-sale');
 
     // PRODUCT MANAGEMENT - Retail or Both only
@@ -834,8 +832,17 @@ Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')-
 
     // SERVICE MANAGEMENT - Repair or Both only
     Route::middleware('check.business.type:repair,both')->group(function () {
+        Route::get('/high-value-repairs', function () {
+            return Inertia::render('ShopOwner/Repairs/highValueRepairs');
+        })->name('high-value-repairs');
+
         Route::get('/job-orders-repair', function () {
             $shopOwner = Auth::guard('shop_owner')->user();
+
+            if ($shopOwner instanceof \App\Models\ShopOwner
+                && strtolower(trim((string) $shopOwner->registration_type)) === 'company') {
+                return Inertia::render('ShopOwner/Operations/RepairJobs');
+            }
 
             return Inertia::render('ShopOwner/Repairs/service management/JobOrdersRepair', [
                 'repair_workload_limit' => (int) ($shopOwner->repair_workload_limit ?? 20),
@@ -867,6 +874,13 @@ Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')-
 
     // ORDERS - Available to ALL
     Route::get('/job-orders-retail', function () {
+        $shopOwner = Auth::guard('shop_owner')->user();
+
+        if ($shopOwner instanceof \App\Models\ShopOwner
+            && strtolower(trim((string) $shopOwner->registration_type)) === 'company') {
+            return Inertia::render('ShopOwner/Operations/JobOrders');
+        }
+
         return Inertia::render('ShopOwner/Orders/order management/JobOrders');
     })->middleware('check.business.type:retail,both')->name('job-orders-retail');
 
@@ -1146,7 +1160,9 @@ Route::get('/api/activity-logs', [\App\Http\Controllers\ActivityLogController::c
 Route::middleware('auth:shop_owner')->prefix('api/shop-owner')->group(function () {
     Route::get('action-center/summary', OwnerActionCenterSummaryController::class)
         ->name('shop-owner.action-center.summary');
-    Route::get('dashboard/stats', [\App\Http\Controllers\ShopOwner\DashboardController::class, 'getStats']);
+    Route::get('dashboard/stats', [\App\Http\Controllers\ShopOwner\DashboardController::class, 'getStats'])
+        ->middleware(['erp.audience', 'erp.actor'])
+        ->name('shop-owner.erp.api.retail.dashboard-stats');
     Route::get('dashboard/low-stock', [\App\Http\Controllers\ShopOwner\DashboardController::class, 'getLowStockAlerts']);
     Route::get('dashboard/dss-insights', [\App\Http\Controllers\ShopOwner\DssController::class, 'getInsights'])->name('api.shop_owner.dashboard.dss-insights');
     Route::get('orders', [\App\Http\Controllers\ShopOwner\OrderController::class, 'index'])->middleware('check.business.type:retail,both');
@@ -1229,15 +1245,15 @@ Route::prefix('api/products')->group(function () {
             ->middleware('throttle:120,1')
             ->middleware('permission:access-product-upload-staff|access-product-management');
         Route::post('/', [\App\Http\Controllers\Api\ProductController::class, 'store'])
-            ->middleware('permission:access-product-upload-staff|access-product-management');
+            ->middleware(['permission:access-product-upload-staff|access-product-management', 'owner.product.write']);
         Route::put('{id}', [\App\Http\Controllers\Api\ProductController::class, 'update'])
-            ->middleware('permission:access-product-upload-staff|access-product-management');
+            ->middleware(['permission:access-product-upload-staff|access-product-management', 'owner.product.write']);
         Route::delete('{id}', [\App\Http\Controllers\Api\ProductController::class, 'destroy'])
             ->middleware('throttle:120,1')
-            ->middleware('permission:access-product-upload-staff|access-product-management');
+            ->middleware(['permission:access-product-upload-staff|access-product-management', 'owner.product.write']);
         Route::post('upload-image', [\App\Http\Controllers\Api\ProductController::class, 'uploadImage'])
             ->middleware('throttle:180,1')
-            ->middleware('permission:access-product-upload-staff|access-product-management');
+            ->middleware(['permission:access-product-upload-staff|access-product-management', 'owner.product.write']);
         Route::get('{id}/variants', [\App\Http\Controllers\Api\ProductController::class, 'getVariants'])
             ->middleware('permission:access-product-upload-staff|access-product-management');
 
@@ -1251,25 +1267,25 @@ Route::prefix('api/products')->group(function () {
         Route::get('{productId}/color-variants', [\App\Http\Controllers\Api\ProductController::class, 'getColorVariants'])
             ->middleware('permission:access-product-upload-staff|access-product-management');
         Route::post('{productId}/color-variants', [\App\Http\Controllers\Api\ProductController::class, 'storeColorVariant'])
-            ->middleware('permission:access-product-upload-staff|access-product-management');
+            ->middleware(['permission:access-product-upload-staff|access-product-management', 'owner.product.write']);
         Route::put('{productId}/color-variants/{colorVariantId}', [\App\Http\Controllers\Api\ProductController::class, 'updateColorVariant'])
-            ->middleware('permission:access-product-upload-staff|access-product-management');
+            ->middleware(['permission:access-product-upload-staff|access-product-management', 'owner.product.write']);
         Route::delete('{productId}/color-variants/{colorVariantId}', [\App\Http\Controllers\Api\ProductController::class, 'deleteColorVariant'])
             ->middleware('throttle:180,1')
-            ->middleware('permission:access-product-upload-staff|access-product-management');
+            ->middleware(['permission:access-product-upload-staff|access-product-management', 'owner.product.write']);
 
         // Color Variant Image Management
         Route::post('{productId}/color-variants/{colorVariantId}/images', [\App\Http\Controllers\Api\ProductController::class, 'uploadColorVariantImage'])
             ->middleware('throttle:240,1')
-            ->middleware('permission:access-product-upload-staff|access-product-management');
+            ->middleware(['permission:access-product-upload-staff|access-product-management', 'owner.product.write']);
         Route::put('{productId}/color-variants/{colorVariantId}/images/{imageId}', [\App\Http\Controllers\Api\ProductController::class, 'updateColorVariantImage'])
-            ->middleware('permission:access-product-upload-staff|access-product-management');
+            ->middleware(['permission:access-product-upload-staff|access-product-management', 'owner.product.write']);
         Route::delete('{productId}/color-variants/{colorVariantId}/images/{imageId}', [\App\Http\Controllers\Api\ProductController::class, 'deleteColorVariantImage'])
             ->middleware('throttle:240,1')
-            ->middleware('permission:access-product-upload-staff|access-product-management');
+            ->middleware(['throttle:240,1', 'owner.product.write']);
         Route::post('{productId}/color-variants/{colorVariantId}/images/reorder', [\App\Http\Controllers\Api\ProductController::class, 'reorderColorVariantImages'])
             ->middleware('throttle:240,1')
-            ->middleware('permission:access-product-upload-staff|access-product-management');
+            ->middleware(['throttle:240,1', 'owner.product.write']);
     });
 });
 
@@ -1519,29 +1535,53 @@ Route::middleware(['auth:user', 'check.user.business.type:repair,both'])->prefix
 });
 
 // Manager API Routes (Phase 5 - Rejection Review)
-// Accessible by Manager role or explicit manager-level permissions
+// Reads and mutations use separate Manager capabilities.
 Route::middleware([
     'auth:user',
-    'role_or_permission:Manager|access-manager-dashboard|access-repair-reject-review',
     'check.user.business.type:repair,both',
 ])->prefix('api/manager/repairs')->group(function () {
+    // Canonical Manager Repair Jobs API
+    Route::get('/', [\App\Http\Controllers\Api\ManagerRepairController::class, 'index'])
+        ->middleware('manager.capability:repair-jobs-read');
+    Route::get('/{id}/eligible-repairers', [\App\Http\Controllers\Api\ManagerRepairController::class, 'eligibleRepairers'])
+        ->whereNumber('id')
+        ->middleware('manager.capability:repair-jobs-read');
+    Route::get('/{id}', [\App\Http\Controllers\Api\ManagerRepairController::class, 'show'])
+        ->whereNumber('id')
+        ->middleware('manager.capability:repair-jobs-read');
+    Route::post('/{id}/reassign', [\App\Http\Controllers\Api\ManagerRepairController::class, 'reassign'])
+        ->whereNumber('id')
+        ->middleware('manager.capability:repair-review');
+    Route::post('/{id}/final-reject', [\App\Http\Controllers\Api\ManagerRepairController::class, 'finalReject'])
+        ->whereNumber('id')
+        ->middleware('manager.capability:repair-review');
+    Route::post('/{id}/forward-to-owner', [\App\Http\Controllers\Api\ManagerRepairController::class, 'forwardToOwner'])
+        ->whereNumber('id')
+        ->middleware('manager.capability:repair-review');
+
     // Get repairs pending manager review
-    Route::get('/rejected', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'getPendingManagerReviews']);
+    Route::get('/rejected', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'getPendingManagerReviews'])
+        ->middleware('manager.capability:repair-jobs-read');
 
     // Get rejection history timeline
-    Route::get('/rejection-history', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'getRejectionHistory']);
+    Route::get('/rejection-history', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'getRejectionHistory'])
+        ->middleware('manager.capability:repair-jobs-read');
 
     // Approve repairer's rejection
-    Route::post('{id}/approve-rejection', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'approveRejection']);
+    Route::post('{id}/approve-rejection', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'approveRejection'])
+        ->middleware('manager.capability:repair-review');
 
     // Final manager approval to close rejection workflow
-    Route::post('{id}/finalize-rejection', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'finalizeRejection']);
+    Route::post('{id}/finalize-rejection', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'finalizeRejection'])
+        ->middleware('manager.capability:repair-review');
 
     // Override rejection and reassign
-    Route::post('{id}/override-rejection', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'overrideRejection']);
+    Route::post('{id}/override-rejection', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'overrideRejection'])
+        ->middleware('manager.capability:repair-review');
 
     // Get available repairers for a repair (with skill matching)
-    Route::get('{id}/available-repairers', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'getAvailableRepairersForRepair']);
+    Route::get('{id}/available-repairers', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'getAvailableRepairersForRepair'])
+        ->middleware('manager.capability:repair-jobs-read');
 });
 
 // Shop Owner API Routes (Phase 6 - High-Value Approval)
@@ -2173,62 +2213,31 @@ Route::prefix('crm')->name('crm.')->middleware(['auth:user', 'permission:access-
     Route::get('/customer-reviews', [\App\Http\Controllers\Api\CRM\CRMReviewController::class, 'indexPage'])->name('customer-reviews');
 });
 
-// MANAGER routes (Manager role OR manager permissions)
+// MANAGER routes use page-specific capability gates.
 Route::prefix('erp/manager')->name('erp.manager.')->middleware([
     'auth:user',
-    'role_or_permission:Manager|access-manager-dashboard|access-audit-logs|access-manager-reports|access-repair-reject-review|access-suspend-account',
 ])->group(function () {
     Route::get('/dashboard', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }
-        $user = Auth::guard('user')->user();
-        $shopOwnerId = $user->shop_owner_id ?? $user->id;
-        $initialPendingLeaves = \App\Models\HR\LeaveRequest::where('shop_owner_id', $shopOwnerId)
-            ->where('status', 'pending')
-            ->with(['employee' => function ($query) {
-                $query->select('id', 'name', 'email', 'position');
-            }])
-            ->orderBy('created_at', 'asc')
-            ->get()
-            ->map(function ($leave) {
-                if (! $leave->employee) {
-                    return null;
-                }
-
-                return [
-                    'id' => $leave->id,
-                    'employee' => [
-                        'id' => $leave->employee->id,
-                        'name' => $leave->employee->name,
-                        'email' => $leave->employee->email,
-                        'position' => $leave->employee->position,
-                    ],
-                    'leave_type' => $leave->leave_type,
-                    'leave_type_label' => \App\Models\HR\LeaveRequest::LEAVE_TYPES[$leave->leave_type] ?? $leave->leave_type,
-                    'start_date' => $leave->start_date->format('Y-m-d'),
-                    'end_date' => $leave->end_date->format('Y-m-d'),
-                    'no_of_days' => $leave->no_of_days,
-                    'reason' => $leave->reason,
-                    'status' => $leave->status,
-                    'created_at' => $leave->created_at->toIso8601String(),
-                    'days_pending' => \Carbon\Carbon::parse($leave->created_at)->diffInDays(now()),
-                ];
-            })
-            ->filter()
-            ->values();
-
-        return Inertia::render('ERP/Manager/Dashboard', compact('initialPendingLeaves'));
-    })->name('dashboard');
+        return Inertia::render('ERP/Manager/Dashboard');
+    })->middleware('manager.capability:dashboard-read')->name('dashboard');
+    Route::get('/job-orders', [\App\Http\Controllers\Erp\ReadPageController::class, 'managerJobOrders'])
+        ->middleware(['manager.capability:job-orders-read', 'check.user.business.type:retail,both'])->name('job-orders');
+    Route::get('/repair-jobs', [\App\Http\Controllers\Erp\ReadPageController::class, 'managerRepairJobs'])
+        ->middleware(['manager.capability:repair-jobs-read', 'check.user.business.type:repair,both'])->name('repair-jobs');
+    Route::get('/staff-workload', [\App\Http\Controllers\Erp\ReadPageController::class, 'managerStaffWorkload'])
+        ->middleware('manager.capability:staff-workload-read')->name('staff-workload');
+    Route::get('/leave-approvals', [\App\Http\Controllers\Erp\ReadPageController::class, 'managerLeaveApprovals'])
+        ->middleware('manager.capability:leave-approvals-read')->name('leave-approvals');
     Route::get('/reports', [\App\Http\Controllers\Erp\ReadPageController::class, 'managerReports'])
-        ->name('reports');
+        ->middleware('manager.capability:reports-read')->name('reports');
+    Route::get('/suspension-approvals', [\App\Http\Controllers\Erp\ReadPageController::class, 'managerSuspensionApprovals'])
+        ->middleware('manager.capability:suspension-approvals-read')->name('suspension-approvals');
     Route::get('/suspend-approval', function () {
-        if (Auth::guard('user')->user()?->force_password_change) {
-            return redirect()->route('erp.profile');
-        }
-
-        return Inertia::render('ERP/Manager/suspendAccountManager');
-    })->name('suspend-approval');
+        return redirect()->route('erp.manager.suspension-approvals');
+    })->middleware('manager.capability:suspension-approvals-read')->name('suspend-approval');
     Route::get('/shoe-pricing', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
@@ -2237,21 +2246,12 @@ Route::prefix('erp/manager')->name('erp.manager.')->middleware([
         return Inertia::render('ERP/STAFF/shoePricing');
     })->middleware(['permission:access-shoe-pricing', 'check.user.business.type:retail,both'])->name('shoe-pricing');
     Route::get('/products', function () {
-        if (Auth::guard('user')->user()?->force_password_change) {
-            return redirect()->route('erp.profile');
-        }
-
-        return Inertia::render('ERP/Manager/productUpload');
-    })->middleware('check.user.business.type:retail,both')->name('products');
+        return redirect()->route('erp.manager.inventory-overview');
+    })->middleware('manager.capability:inventory-read')->name('products');
 
     // Inventory routes - accessible by Inventory Manager (Manager needs explicit permission)
-    Route::get('/inventory-overview', function () {
-        if (Auth::guard('user')->user()?->force_password_change) {
-            return redirect()->route('erp.profile');
-        }
-
-        return Inertia::render('ERP/Manager/InventoryOverview');
-    })->middleware('permission:access-inventory-overview')->name('inventory-overview');
+    Route::get('/inventory-overview', [\App\Http\Controllers\Erp\ReadPageController::class, 'managerInventoryOverview'])
+        ->middleware('manager.capability:inventory-read')->name('inventory-overview');
     Route::get('/upload-stocks', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
@@ -2294,30 +2294,12 @@ Route::prefix('erp/manager')->name('erp.manager.')->middleware([
 
         return Inertia::render('ERP/inventory/ProductInventory', compact('initialData'));
     })->middleware('permission:access-product-inventory')->name('product-inventory');
-    Route::get('/user-management', function () {
-        if (Auth::guard('user')->user()?->force_password_change) {
-            return redirect()->route('erp.profile');
-        }
-
-        return Inertia::render('ERP/Manager/UserManagement');
-    })->name('user-management');
     Route::get('/audit-logs', [\App\Http\Controllers\Erp\ReadPageController::class, 'managerAuditLogs'])
-        ->name('audit-logs');
+        ->middleware('manager.capability:audit-read')->name('audit-logs');
     // Repair rejection review: manager route limited to repair-capable businesses
     Route::get('/repair-rejection-review', function () {
-        if (Auth::guard('user')->user()?->force_password_change) {
-            return redirect()->route('erp.profile');
-        }
-
-        return Inertia::render('ERP/Manager/repairRejectReview');
-    })->middleware('check.user.business.type:repair,both')->name('repair-rejection-review');
-    Route::get('/dss-insights', function () {
-        if (Auth::guard('user')->user()?->force_password_change) {
-            return redirect()->route('erp.profile');
-        }
-
-        return Inertia::render('ShopOwner/DssInsights');
-    })->name('dss-insights');
+        return redirect()->route('erp.manager.repair-jobs');
+    })->middleware(['manager.capability:repair-jobs-read', 'check.user.business.type:repair,both'])->name('repair-rejection-review');
 });
 
 // Note: Manager audit-logs route already defined above within the manager group
@@ -2740,25 +2722,55 @@ Route::prefix('api/manager')->name('api.manager.')->middleware([
     'web',
     'auth:user',
     'check.suspension',
-    'role_or_permission:Manager|access-manager-dashboard|access-audit-logs|access-manager-reports|access-repair-reject-review|access-suspend-account',
 ])->group(function () {
-    Route::get('/dashboard/stats', [ManagerController::class, 'getDashboardStats'])->name('dashboard.stats');
-    Route::get('/dss-insights', [\App\Http\Controllers\ShopOwner\DssController::class, 'getInsights'])->name('dss-insights');
-    Route::get('/audit-logs', [\App\Http\Controllers\ActivityLogController::class, 'index'])->name('audit-logs');
-    Route::get('/staff-performance', [ManagerController::class, 'getStaffPerformance'])->name('staff-performance');
-    Route::get('/analytics', [ManagerController::class, 'getAnalytics'])->name('analytics');
-    Route::get('/inventory-overview', [ManagerController::class, 'getInventoryOverview'])->name('inventory-overview');
-    Route::get('/products', [ManagerController::class, 'getProducts'])->name('products');
-    Route::get('/reports', [ManagerController::class, 'getReports'])->name('reports.index');
-    Route::post('/reports/generate', [ManagerController::class, 'generateReport'])->name('reports.generate');
-    Route::post('/reports/{id}/send', [ManagerController::class, 'sendReport'])->name('reports.send');
-    Route::get('/reports/{id}/download', [ManagerController::class, 'downloadReport'])->name('reports.download');
+    Route::get('/dashboard/stats', [ManagerController::class, 'getDashboardStats'])
+        ->middleware('manager.capability:dashboard-read')->name('dashboard.stats');
+    Route::get('/dss-insights', [\App\Http\Controllers\ShopOwner\DssController::class, 'getInsights'])
+        ->middleware('manager.capability:reports-read')->name('dss-insights');
+    Route::get('/audit-logs', [\App\Http\Controllers\ActivityLogController::class, 'managerIndex'])
+        ->middleware('manager.capability:audit-read')->name('audit-logs');
+    Route::get('/staff-performance', [ManagerController::class, 'getStaffPerformance'])
+        ->middleware('manager.capability:staff-workload-read')->name('staff-performance');
+    Route::get('/staff-workload', [ManagerController::class, 'getStaffWorkload'])
+        ->middleware('manager.capability:staff-workload-read')->name('staff-workload');
+    Route::get('/inventory-overview', [ManagerController::class, 'getInventoryOverview'])
+        ->middleware('manager.capability:inventory-read')->name('inventory-overview');
+    // Manager Job Order Routes
+    Route::prefix('orders')->middleware('check.user.business.type:retail,both')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Api\ManagerOrderController::class, 'index'])
+            ->middleware('manager.capability:job-orders-read')->name('orders.index');
+        Route::get('/{id}/eligible-replacements', [\App\Http\Controllers\Api\ManagerOrderController::class, 'eligibleReplacements'])
+            ->whereNumber('id')
+            ->middleware('manager.capability:job-orders-read')->name('orders.replacements');
+        Route::get('/{id}', [\App\Http\Controllers\Api\ManagerOrderController::class, 'show'])
+            ->whereNumber('id')
+            ->middleware('manager.capability:job-orders-read')->name('orders.show');
+        Route::post('/{id}/reassign', [\App\Http\Controllers\Api\ManagerOrderController::class, 'reassign'])
+            ->whereNumber('id')
+            ->middleware('manager.capability:order-reassign')->name('orders.reassign');
+    });
+
+    Route::get('/reports', [ManagerController::class, 'getReports'])
+        ->middleware('manager.capability:reports-read')->name('reports.index');
+    Route::post('/reports/generate', [ManagerController::class, 'generateReport'])
+        ->middleware('manager.capability:reports-generate')->name('reports.generate');
+    Route::post('/reports/{id}/review', [ManagerController::class, 'reviewReport'])
+        ->whereNumber('id')
+        ->middleware('manager.capability:reports-review')->name('reports.review');
+    Route::post('/reports/{id}/send', [ManagerController::class, 'sendReport'])
+        ->whereNumber('id')
+        ->middleware('manager.capability:reports-review')->name('reports.send');
+    Route::get('/reports/{id}/download', [ManagerController::class, 'downloadReport'])
+        ->middleware('manager.capability:reports-read')->name('reports.download');
 
     // Suspension Approval Routes
     Route::prefix('suspension-requests')->group(function () {
-        Route::get('/', [\App\Http\Controllers\Erp\Manager\SuspensionApprovalController::class, 'index'])->name('suspension_requests.index');
-        Route::get('/{id}', [\App\Http\Controllers\Erp\Manager\SuspensionApprovalController::class, 'show'])->name('suspension_requests.show');
-        Route::post('/{id}/review', [\App\Http\Controllers\Erp\Manager\SuspensionApprovalController::class, 'review'])->name('suspension_requests.review');
+        Route::get('/', [\App\Http\Controllers\Erp\Manager\SuspensionApprovalController::class, 'index'])
+            ->middleware('manager.capability:suspension-approvals-read')->name('suspension_requests.index');
+        Route::get('/{id}', [\App\Http\Controllers\Erp\Manager\SuspensionApprovalController::class, 'show'])
+            ->middleware('manager.capability:suspension-approvals-read')->name('suspension_requests.show');
+        Route::post('/{id}/review', [\App\Http\Controllers\Erp\Manager\SuspensionApprovalController::class, 'review'])
+            ->middleware('manager.capability:suspension-decision')->name('suspension_requests.review');
     });
 });
 

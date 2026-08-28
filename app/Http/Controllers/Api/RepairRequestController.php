@@ -557,6 +557,7 @@ class RepairRequestController extends Controller
                 // If high-value repair requiring owner approval, send additional notification
                 if ($requiresOwnerApproval) {
                     $notificationService->notifyHighValueRepairApproval($request->shop_owner_id, [
+                        'repair_id' => $repairRequest->id,
                         'request_id' => $requestId,
                         'order_number' => $requestId,
                         'customer_name' => $request->customer_name,

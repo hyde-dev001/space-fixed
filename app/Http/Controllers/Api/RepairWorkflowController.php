@@ -28,21 +28,27 @@ use App\Services\ShopOwnerApprovalPolicyService;
 use App\Services\Logistics\SourceShipmentService;
 use App\Services\RepairDeliveryService;
 use App\Services\Repairs\RepairOwnerProjection;
+use App\Services\Manager\ManagerRepairService;
+use App\Services\Manager\ManagerAuthorizationService;
 
 class RepairWorkflowController extends Controller
 {
-    private function userHasManagerReviewAccess($user): bool
+    private function userHasManagerReviewAccess($user, string $capability = ManagerAuthorizationService::REPAIR_REVIEW): bool
     {
-        if (!$user) {
+        if (!$user instanceof User) {
             return false;
         }
 
-        return $user->hasRole('Manager')
-            || $user->can('access-repair-reject-review')
-            || $user->can('access-manager-dashboard');
+        return $this->managerAuthorization->allows(
+            $user,
+            $capability,
+            $this->managerAuthorization->shopOwnerId($user),
+        );
     }
 
     protected $notificationService;
+
+    private ManagerAuthorizationService $managerAuthorization;
 
     public function __construct(
         NotificationService $notificationService,
@@ -51,9 +57,11 @@ class RepairWorkflowController extends Controller
         private SourceShipmentService $sourceShipmentService,
         private RepairDeliveryService $repairDeliveryService,
         private RepairOwnerProjection $repairOwnerProjection,
+        ManagerAuthorizationService $managerAuthorization,
     )
     {
         $this->notificationService = $notificationService;
+        $this->managerAuthorization = $managerAuthorization;
     }
     /**
      * Auto-assign repair request to available repairer
@@ -914,6 +922,52 @@ class RepairWorkflowController extends Controller
                 'message' => 'A rejection reason is required.'
             ], 422);
         }
+
+        // Repairer decisions use the shared Manager repair workflow so the
+        // tenant check, row lock, rejection history, and Manager notification
+        // cannot drift from the Manager review APIs.
+        if (!Auth::guard('shop_owner')->check()) {
+            $repairer = Auth::guard('user')->user();
+
+            if ($repairer) {
+                try {
+                    $repairRequest = app(ManagerRepairService::class)->recordRepairerRejection(
+                        repairer: $repairer,
+                        repairId: (int) $requestId,
+                        reason: $reasonText,
+                        category: $reasonCategory,
+                    );
+
+                    return response()->json([
+                        'success' => true,
+                        'message' => 'Repair rejected. Manager has been notified for review.',
+                        'repair' => $repairRequest,
+                        'rejection_reason' => [
+                            'category' => $reasonCategory,
+                            'text' => $reasonText,
+                        ],
+                    ]);
+                } catch (ModelNotFoundException) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Repair request not found.',
+                    ], 404);
+                } catch (ValidationException $exception) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Repair rejection was not completed.',
+                        'errors' => $exception->errors(),
+                    ], 422);
+                } catch (\Throwable $exception) {
+                    report($exception);
+
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Repair rejection could not be completed.',
+                    ], 500);
+                }
+            }
+        }
         
         try {
             DB::beginTransaction();
@@ -1094,7 +1148,7 @@ class RepairWorkflowController extends Controller
                 ], 401);
             }
             
-            if (!$this->userHasManagerReviewAccess($user)) {
+            if (!$this->userHasManagerReviewAccess($user, ManagerAuthorizationService::REPAIR_JOBS_READ)) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Unauthorized. Manager role required.'
@@ -1149,6 +1203,43 @@ class RepairWorkflowController extends Controller
         $request->validate([
             'notes' => 'nullable|string|max:500'
         ]);
+
+        $manager = Auth::guard('user')->user();
+        if ($manager) {
+            try {
+                $repairRequest = app(ManagerRepairService::class)->beginLegacyManagerReview(
+                    manager: $manager,
+                    repairId: (int) $requestId,
+                    reason: (string) ($request->input('notes') ?? 'Manager reviewed the repairer rejection.'),
+                );
+
+                return response()->json([
+                    'success' => true,
+                    'message' => $repairRequest->status === 'owner_approval_pending'
+                        ? 'Repair rejection was forwarded to the Shop Owner under the explicit approval policy.'
+                        : 'Repair rejection is ready for the Manager final decision.',
+                    'repair' => $repairRequest,
+                ]);
+            } catch (ModelNotFoundException) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Repair request not found.',
+                ], 404);
+            } catch (ValidationException $exception) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Manager repair review was not completed.',
+                    'errors' => $exception->errors(),
+                ], 422);
+            } catch (\Throwable $exception) {
+                report($exception);
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Manager repair review could not be completed.',
+                ], 500);
+            }
+        }
         
         try {
             DB::beginTransaction();
@@ -1263,6 +1354,41 @@ class RepairWorkflowController extends Controller
             'notes' => 'nullable|string|max:500'
         ]);
 
+        $manager = Auth::guard('user')->user();
+        if ($manager) {
+            try {
+                $repairRequest = app(ManagerRepairService::class)->finalizeLegacy(
+                    manager: $manager,
+                    repairId: (int) $requestId,
+                    reason: (string) ($request->input('notes') ?? 'Manager final review confirmed the rejection.'),
+                );
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Repair request was rejected by the Manager.',
+                    'repair' => $repairRequest,
+                ]);
+            } catch (ModelNotFoundException) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Repair request not found.',
+                ], 404);
+            } catch (ValidationException $exception) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Manager final rejection was not completed.',
+                    'errors' => $exception->errors(),
+                ], 400);
+            } catch (\Throwable $exception) {
+                report($exception);
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Manager final rejection could not be completed.',
+                ], 500);
+            }
+        }
+
         try {
             DB::beginTransaction();
 
@@ -1358,6 +1484,42 @@ class RepairWorkflowController extends Controller
             'notes' => 'required|string|min:10|max:500',
             'repairer_id' => 'required|integer|exists:users,id'
         ]);
+
+        $manager = Auth::guard('user')->user();
+        if ($manager) {
+            try {
+                $repairRequest = app(ManagerRepairService::class)->reassign(
+                    manager: $manager,
+                    repairId: (int) $requestId,
+                    replacementRepairerId: (int) $request->input('repairer_id'),
+                    reason: (string) $request->input('notes'),
+                );
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Repair rejection was overridden and reassigned to the selected repairer.',
+                    'repair' => $repairRequest,
+                ]);
+            } catch (ModelNotFoundException) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Repair request not found.',
+                ], 404);
+            } catch (ValidationException $exception) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Repair reassignment was not completed.',
+                    'errors' => $exception->errors(),
+                ], 422);
+            } catch (\Throwable $exception) {
+                report($exception);
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Repair reassignment could not be completed.',
+                ], 500);
+            }
+        }
         
         try {
             DB::beginTransaction();

@@ -106,7 +106,10 @@ final class ErpRouteMatrixCommand extends Command
                     $errors[] = "allowed mutation has no actor persistence decision: {$routeName}";
                 }
 
-                if (($entry['supporting_routes'] ?? []) === []) {
+                $isNavigationOnlyCore = ($entry['classification'] ?? null) === 'core'
+                    && ($entry['navigation_group'] ?? null) === 'workspace';
+
+                if (($entry['supporting_routes'] ?? []) === [] && ! $isNavigationOnlyCore) {
                     $errors[] = "owner-capable component has no supporting API list: {$routeName}";
                 }
 

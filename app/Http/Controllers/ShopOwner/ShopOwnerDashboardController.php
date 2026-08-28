@@ -40,18 +40,6 @@ final class ShopOwnerDashboardController extends Controller
                     $props['ownerActionCenter'] = $this->actionCenter
                         ->summaryForHome($owner, 'needs_my_decision')
                         ->toArray();
-
-                    if ($this->exceptionsEnabled()) {
-                        $props['ownerUrgentExceptions'] = $this->actionCenter
-                            ->summaryForHome($owner, 'urgent_exceptions')
-                            ->toArray();
-                    }
-
-                    if ($this->waitingEnabled()) {
-                        $props['ownerWaitingOnOthers'] = $this->actionCenter
-                            ->summaryForHome($owner, 'waiting_on_others')
-                            ->toArray();
-                    }
                 }
             } catch (Throwable $exception) {
                 report($exception);
@@ -61,22 +49,4 @@ final class ShopOwnerDashboardController extends Controller
         return Inertia::render('ShopOwner/Dashboard', $props);
     }
 
-    private function exceptionsEnabled(): bool
-    {
-        return $this->bucketEnabled('urgent_exceptions');
-    }
-
-    private function waitingEnabled(): bool
-    {
-        return $this->bucketEnabled('waiting_on_others');
-    }
-
-    private function bucketEnabled(string $bucket): bool
-    {
-        $coverage = config("owner_action_center.buckets.{$bucket}.coverage", []);
-
-        return config("owner_action_center.buckets.{$bucket}.enabled", false) === true
-            && is_array($coverage)
-            && in_array(true, $coverage, true);
-    }
 }

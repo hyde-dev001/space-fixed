@@ -101,7 +101,7 @@ final class PendingComplianceRenewalAttentionAdapterTest extends TestCase
         )->items[0];
 
         $this->assertSame($pending->id, $item->sourceId);
-        $this->assertSame('2026-08-17T01:30:00.000000Z', $item->actionableSince);
+        $this->assertSame('2026-08-17T09:30:00.000000Z', $item->actionableSince);
     }
 
     public function test_approved_rejected_and_withdrawn_successors_exit_waiting(): void

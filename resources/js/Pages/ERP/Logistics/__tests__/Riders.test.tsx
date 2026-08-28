@@ -37,6 +37,7 @@ beforeEach(() => {
     },
     filters: { availability: 'all', type: 'all' },
     auth: { erpActor: { ownerMode: false } },
+    canManageRiders: true,
   };
 });
 

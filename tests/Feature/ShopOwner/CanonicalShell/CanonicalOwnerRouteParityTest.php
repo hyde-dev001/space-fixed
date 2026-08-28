@@ -25,7 +25,6 @@ final class CanonicalOwnerRouteParityTest extends TestCase
     ): void {
         config([
             'shop_modules.enforcement_enabled' => true,
-            'shop_modules.owner_erp_workspace_enabled' => true,
         ]);
         $owner = $this->owner('company', 'both');
         ShopOwnerModule::factory()->create([
@@ -37,18 +36,18 @@ final class CanonicalOwnerRouteParityTest extends TestCase
         $canonical = $this->actingAs($owner, 'shop_owner')
             ->get($canonicalPath)
             ->assertOk()
-            ->assertInertia(fn (Assert $page) => $page->component('ERP/ModuleLanding', false));
+            ->assertInertia(fn (Assert $page) => $page->component($this->dashboardComponent($moduleKey), false));
 
         $compatibility = $this->actingAs($owner, 'shop_owner')
             ->get($compatibilityPath)
-            ->assertOk()
-            ->assertInertia(fn (Assert $page) => $page->component('ERP/ModuleLanding', false));
+            ->assertRedirect(route($canonicalRoute));
 
-        $this->assertSame($canonical->status(), $compatibility->status());
+        $this->assertSame(200, $canonical->status());
+        $this->assertSame(302, $compatibility->status());
     }
 
     #[DataProvider('moduleRouteProvider')]
-    public function test_canonical_module_route_works_when_erp_workspace_flag_is_off(
+    public function test_canonical_module_route_works_without_a_workspace_toggle(
         string $slug,
         string $canonicalRoute,
         string $canonicalPath,
@@ -57,7 +56,6 @@ final class CanonicalOwnerRouteParityTest extends TestCase
     ): void {
         config([
             'shop_modules.enforcement_enabled' => true,
-            'shop_modules.owner_erp_workspace_enabled' => false,
         ]);
         $owner = $this->owner('company', 'both');
         ShopOwnerModule::factory()->create([
@@ -69,11 +67,22 @@ final class CanonicalOwnerRouteParityTest extends TestCase
         $this->actingAs($owner, 'shop_owner')
             ->get($canonicalPath)
             ->assertOk()
-            ->assertInertia(fn (Assert $page) => $page->component('ERP/ModuleLanding', false));
+            ->assertInertia(fn (Assert $page) => $page->component($this->dashboardComponent($moduleKey), false));
 
         $this->actingAs($owner, 'shop_owner')
-            ->getJson($compatibilityPath)
-            ->assertNotFound();
+            ->get($compatibilityPath)
+            ->assertRedirect(route($canonicalRoute));
+    }
+
+    public function test_individual_owner_can_open_repair_operations_without_company_module_state(): void
+    {
+        config(['shop_modules.enforcement_enabled' => false]);
+        $owner = $this->owner('individual', 'repair');
+
+        $this->actingAs($owner, 'shop_owner')
+            ->get('/shop-owner/operate/repair')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->component('ERP/repairer/dashboardRepair', false));
     }
 
     #[DataProvider('moduleRouteProvider')]
@@ -86,14 +95,14 @@ final class CanonicalOwnerRouteParityTest extends TestCase
     ): void {
         config([
             'shop_modules.enforcement_enabled' => true,
-            'shop_modules.owner_erp_workspace_enabled' => true,
         ]);
         $ineligible = $this->owner('partnership', 'retail');
 
         $canonicalIneligible = $this->actingAs($ineligible, 'shop_owner')->getJson($canonicalPath);
-        $compatibilityIneligible = $this->actingAs($ineligible, 'shop_owner')->getJson($compatibilityPath);
-        $this->assertSame($compatibilityIneligible->status(), $canonicalIneligible->status());
-        $this->assertSame($compatibilityIneligible->json('code'), $canonicalIneligible->json('code'));
+        $canonicalIneligible->assertForbidden();
+        $this->actingAs($ineligible, 'shop_owner')
+            ->get($compatibilityPath)
+            ->assertRedirect(route('shop-owner.pending-approval'));
 
         $disabled = $this->owner('company', 'both');
         ShopOwnerModule::factory()->create([
@@ -103,9 +112,12 @@ final class CanonicalOwnerRouteParityTest extends TestCase
         ]);
 
         $canonicalDisabled = $this->actingAs($disabled, 'shop_owner')->getJson($canonicalPath);
-        $compatibilityDisabled = $this->actingAs($disabled, 'shop_owner')->getJson($compatibilityPath);
-        $this->assertSame($compatibilityDisabled->status(), $canonicalDisabled->status());
-        $this->assertSame($compatibilityDisabled->json('code'), $canonicalDisabled->json('code'));
+        $canonicalDisabled->assertForbidden();
+        $this->actingAs($disabled, 'shop_owner')
+            ->get($compatibilityPath)
+            ->assertRedirect(route('shop-owner.shell.settings.modules-team', [
+                'module' => $moduleKey,
+            ]));
     }
 
     #[DataProvider('moduleRouteProvider')]
@@ -118,7 +130,6 @@ final class CanonicalOwnerRouteParityTest extends TestCase
     ): void {
         config([
             'shop_modules.enforcement_enabled' => true,
-            'shop_modules.owner_erp_workspace_enabled' => true,
         ]);
         $owner = $this->owner('company', 'both');
         ShopOwnerModule::factory()->create([
@@ -138,17 +149,15 @@ final class CanonicalOwnerRouteParityTest extends TestCase
 
         $this->get($canonicalPath)
             ->assertOk()
-            ->assertInertia(fn (Assert $page) => $page->component('ERP/ModuleLanding', false));
+            ->assertInertia(fn (Assert $page) => $page->component($this->dashboardComponent($moduleKey), false));
         $this->get($compatibilityPath)
-            ->assertOk()
-            ->assertInertia(fn (Assert $page) => $page->component('ERP/ModuleLanding', false));
+            ->assertRedirect(route($canonicalRoute));
     }
 
-    public function test_payments_landing_exposes_only_authorized_owner_safe_operation_links(): void
+    public function test_shop_owner_pos_routes_are_retired_and_fail_closed(): void
     {
         config([
             'shop_modules.enforcement_enabled' => true,
-            'shop_modules.owner_erp_workspace_enabled' => false,
         ]);
         $owner = $this->owner('company', 'both');
         ShopOwnerModule::factory()->create([
@@ -162,30 +171,181 @@ final class CanonicalOwnerRouteParityTest extends TestCase
             'enabled' => true,
         ]);
 
-        $this->actingAs($owner, 'shop_owner')
-            ->get('/shop-owner/operate/payments')
-            ->assertOk()
-            ->assertInertia(fn (Assert $page) => $page
-                ->component('ShopOwner/Payments/CanonicalPaymentsLanding', false)
-                ->where('links.retail', route('shop-owner.point-of-sale'))
-                ->where('links.repair', null)
-            );
+        foreach ([
+            '/shop-owner/operate/payments',
+            '/shop-owner/erp/retail/point-of-sale',
+            '/shop-owner/erp/repair/point-of-sale',
+        ] as $path) {
+            $this->actingAs($owner, 'shop_owner')
+                ->get($path)
+                ->assertRedirect(route('shop-owner.pending-approval'));
+        }
 
-        config(['shop_modules.owner_erp_workspace_enabled' => true]);
-        $repairOwner = $this->owner('company', 'repair');
+        foreach (['/shop-owner/point-of-sale', '/point-of-sale'] as $path) {
+            $this->actingAs($owner, 'shop_owner')
+                ->get($path)
+                ->assertRedirect(route('shop-owner.shell.home'));
+        }
+    }
+
+    public function test_individual_owner_keeps_owner_pos_but_has_no_logistics_surface(): void
+    {
+        config([
+            'shop_modules.enforcement_enabled' => true,
+        ]);
+        $owner = $this->owner('individual', 'both');
         ShopOwnerModule::factory()->create([
-            'shop_owner_id' => $repairOwner->getKey(),
+            'shop_owner_id' => $owner->getKey(),
+            'module_key' => 'retail_operations',
+            'enabled' => true,
+        ]);
+        ShopOwnerModule::factory()->create([
+            'shop_owner_id' => $owner->getKey(),
             'module_key' => 'repair_operations',
             'enabled' => true,
         ]);
 
-        $this->actingAs($repairOwner, 'shop_owner')
+        foreach ([
+            '/shop-owner/erp/retail/point-of-sale',
+            '/shop-owner/erp/repair/point-of-sale',
+        ] as $path) {
+            $this->actingAs($owner, 'shop_owner')
+                ->get($path)
+                ->assertOk()
+                ->assertInertia(fn (Assert $page) => $page->component('ShopOwner/Repairs/service management/POS', false));
+        }
+
+        $this->actingAs($owner, 'shop_owner')
             ->get('/shop-owner/operate/payments')
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->where('links.retail', null)
-                ->where('links.repair', route('shop-owner.erp.repair.point-of-sale'))
-            );
+                ->component('ERP/cashier/POS', false)
+                ->missing('links'));
+
+        $this->actingAs($owner, 'shop_owner')
+            ->getJson('/shop-owner/oversee/logistics')
+            ->assertForbidden()
+            ->assertJsonPath('code', 'OWNER_ERP_ACCOUNT_INELIGIBLE');
+    }
+
+    public function test_individual_owner_can_open_each_approved_operational_page(): void
+    {
+        config(['shop_modules.enforcement_enabled' => true]);
+        $owner = $this->owner('individual', 'both');
+
+        foreach (['retail_operations', 'repair_operations'] as $moduleKey) {
+            ShopOwnerModule::factory()->create([
+                'shop_owner_id' => $owner->getKey(),
+                'module_key' => $moduleKey,
+                'enabled' => true,
+            ]);
+        }
+
+        $pages = [
+            '/shop-owner/erp/retail/orders' => 'ShopOwner/Orders/order management/JobOrders',
+            '/shop-owner/erp/retail/products' => 'ShopOwner/Products/product management/ProductManagementWithVariants',
+            '/shop-owner/erp/retail/discounts' => 'ShopOwner/Orders/order management/discount',
+            '/shop-owner/erp/retail/point-of-sale' => 'ShopOwner/Repairs/service management/POS',
+            '/shop-owner/erp/repair/job-orders' => 'ShopOwner/Repairs/service management/JobOrdersRepair',
+            '/shop-owner/erp/repair/warranty-queue' => 'ShopOwner/Repairs/service management/WarrantyQueue',
+            '/shop-owner/erp/repair/services' => 'ShopOwner/Repairs/service management/uploadService',
+            '/shop-owner/erp/repair/stock-materials' => 'ShopOwner/Repairs/individual/uploadStockMaterial',
+            '/shop-owner/erp/repair/point-of-sale' => 'ShopOwner/Repairs/service management/POS',
+            '/shop-owner/erp/repair/support' => 'ShopOwner/Customers/customer management/repairSupport',
+        ];
+
+        foreach ($pages as $path => $component) {
+            $this->actingAs($owner, 'shop_owner')
+                ->get($path)
+                ->assertOk()
+                ->assertInertia(fn (Assert $page) => $page->component($component, false));
+        }
+    }
+
+    public function test_company_owner_keeps_shared_product_and_repair_service_pages(): void
+    {
+        config(['shop_modules.enforcement_enabled' => true]);
+        $owner = $this->owner('company', 'both');
+
+        foreach (['retail_operations', 'repair_operations'] as $moduleKey) {
+            ShopOwnerModule::factory()->create([
+                'shop_owner_id' => $owner->getKey(),
+                'module_key' => $moduleKey,
+                'enabled' => true,
+            ]);
+        }
+
+        $this->actingAs($owner, 'shop_owner')
+            ->get('/shop-owner/erp/retail/products')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->component(
+                'ShopOwner/Products/product management/ProductManagementWithVariants',
+                false,
+            ));
+
+        $this->actingAs($owner, 'shop_owner')
+            ->get('/shop-owner/erp/repair/services')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->component(
+                'ShopOwner/Repairs/service management/uploadService',
+                false,
+            ));
+
+        $this->actingAs($owner, 'shop_owner')
+            ->getJson('/api/shop-owner/repair-services')
+            ->assertOk();
+
+        $this->actingAs($owner, 'shop_owner')
+            ->getJson('/api/shop-owner/repair-materials?category=repair_materials')
+            ->assertOk();
+    }
+
+    public function test_legacy_workspace_picker_get_redirects_to_canonical_home_after_parity(): void
+    {
+        config([
+            'shop_modules.enforcement_enabled' => true,
+        ]);
+        $owner = $this->owner('company', 'both');
+
+        $this->actingAs($owner, 'shop_owner')
+            ->get('/shop-owner/erp/workspace')
+            ->assertRedirect(route('shop-owner.shell.home'));
+    }
+
+    public function test_legacy_enabled_module_get_redirects_to_its_canonical_overview(): void
+    {
+        config([
+            'shop_modules.enforcement_enabled' => true,
+        ]);
+        $owner = $this->owner('company', 'both');
+        ShopOwnerModule::factory()->create([
+            'shop_owner_id' => $owner->getKey(),
+            'module_key' => 'retail_operations',
+            'enabled' => true,
+        ]);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->get('/shop-owner/erp/retail')
+            ->assertRedirect(route('shop-owner.shell.operate.retail'));
+    }
+
+    public function test_legacy_disabled_module_get_redirects_to_module_settings(): void
+    {
+        config([
+            'shop_modules.enforcement_enabled' => true,
+        ]);
+        $owner = $this->owner('company', 'both');
+        ShopOwnerModule::factory()->create([
+            'shop_owner_id' => $owner->getKey(),
+            'module_key' => 'retail_operations',
+            'enabled' => false,
+        ]);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->get('/shop-owner/erp/retail')
+            ->assertRedirect(route('shop-owner.shell.settings.modules-team', [
+                'module' => 'retail_operations',
+            ]));
     }
 
     /**
@@ -259,5 +419,19 @@ final class CanonicalOwnerRouteParityTest extends TestCase
             'registration_type' => $registrationType,
             'business_type' => $businessType,
         ]);
+    }
+
+    private function dashboardComponent(string $moduleKey): string
+    {
+        return [
+            'retail_operations' => 'ShopOwner/Dashboard',
+            'repair_operations' => 'ERP/repairer/dashboardRepair',
+            'crm' => 'ERP/CRM/CRMDashboard',
+            'finance' => 'ERP/Finance/Dashboard',
+            'hr_employees' => 'ERP/HR/HR',
+            'inventory' => 'ERP/inventory/InventoryDashboard',
+            'procurement' => 'ERP/Procurement/Dashboard',
+            'logistics' => 'ERP/Logistics/Dashboard',
+        ][$moduleKey] ?? throw new \InvalidArgumentException("Unknown module {$moduleKey}.");
     }
 }

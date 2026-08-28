@@ -80,4 +80,52 @@ final class EmployeeOperationalPolicyTest extends TestCase
         $this->assertFalse($this->policy->isOnLeave($employee, CarbonImmutable::parse('2026-08-18')));
         $this->assertSame(EmployeeStatus::ACTIVE, $employee->status);
     }
+
+    #[Test]
+    public function assignment_ineligibility_reason_uses_canonical_status_and_leave_rules(): void
+    {
+        $date = CarbonImmutable::parse('2026-08-16');
+
+        $this->assertNull(
+            $this->policy->assignmentIneligibilityReason(
+                new Employee(['status' => EmployeeStatus::ACTIVE]),
+                $date,
+            ),
+        );
+        $this->assertSame(
+            'inactive',
+            $this->policy->assignmentIneligibilityReason(
+                new Employee(['status' => EmployeeStatus::INACTIVE]),
+                $date,
+            ),
+        );
+        $this->assertSame(
+            'suspended',
+            $this->policy->assignmentIneligibilityReason(
+                new Employee(['status' => EmployeeStatus::SUSPENDED]),
+                $date,
+            ),
+        );
+        $this->assertSame(
+            'terminated',
+            $this->policy->assignmentIneligibilityReason(
+                new Employee(['status' => EmployeeStatus::TERMINATED]),
+                $date,
+            ),
+        );
+
+        $employee = new Employee(['status' => EmployeeStatus::ACTIVE]);
+        $employee->setRelation('leaveRequests', collect([
+            new LeaveRequest([
+                'status' => 'approved',
+                'start_date' => '2026-08-15',
+                'end_date' => '2026-08-17',
+            ]),
+        ]));
+
+        $this->assertSame(
+            'approved_leave',
+            $this->policy->assignmentIneligibilityReason($employee, $date),
+        );
+    }
 }

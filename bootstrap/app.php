@@ -13,7 +13,6 @@ use App\Http\Middleware\EnsurePrivilegedAccountIsActive;
 use App\Http\Middleware\EnsurePrivilegedCapability;
 use App\Http\Middleware\EnsurePrivilegedMfaComplete;
 use App\Http\Middleware\EnsureErpAudience;
-use App\Http\Middleware\EnsureOwnerErpWorkspaceEnabled;
 use App\Http\Middleware\ResolveErpActorContext;
 use App\Http\Middleware\EnsureShopModuleEnabled;
 use App\Http\Middleware\SuperAdminAuth;
@@ -173,6 +172,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'old_role' => \App\Http\Middleware\RoleMiddleware::class, // Keep for rollback
             'gate.erp.access' => \App\Http\Middleware\GateErpAccess::class,
             'manager.staff' => \App\Http\Middleware\CheckManagerStaffAccess::class,
+            'manager.capability' => \App\Http\Middleware\RequireManagerCapability::class,
             'check.suspension' => \App\Http\Middleware\CheckEmployeeSuspension::class,
             // Shop Owner Access Control
             'check.business.type' => \App\Http\Middleware\CheckBusinessType::class,
@@ -183,6 +183,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'auth' => Authenticate::class,
             'erp.audience' => EnsureErpAudience::class,
             'erp.actor' => ResolveErpActorContext::class,
+            'owner.product.write' => \App\Http\Middleware\EnsureCompanyOwnerProductMutations::class,
         ]);
         // priority() replaces Laravel's defaults; retain session startup before every authenticator.
         $middleware->priority([
@@ -196,7 +197,6 @@ return Application::configure(basePath: dirname(__DIR__))
             EnsurePrivilegedAccountIsActive::class,
             EnsurePrivilegedMfaComplete::class,
             EnsurePrivilegedCapability::class,
-            EnsureOwnerErpWorkspaceEnabled::class,
             EnsureErpAudience::class,
             Authenticate::class,
             \Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests::class,

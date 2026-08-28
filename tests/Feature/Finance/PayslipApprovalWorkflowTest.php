@@ -85,6 +85,10 @@ class PayslipApprovalWorkflowTest extends TestCase
         $payslip = $this->createWorkflowBoundPayslip();
 
         $this->assertApprovalStage($payslip, 1, 4, 'finance');
+        $this->assertDatabaseHas('notifications', [
+            'title' => 'Payslip Approval Required',
+            'action_url' => "/finance?section=payslip-approvals&payroll={$payslip->id}",
+        ]);
         $this->setPayslipApproval(false);
 
         // Level 1: Finance checker
@@ -156,6 +160,11 @@ class PayslipApprovalWorkflowTest extends TestCase
         $this->assertSame(4, $payslip->current_approval_level);
         $this->assertSame('approved', $payslip->status);
         $this->assertSame('approved', $payslip->approval_status);
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $this->requester->id,
+            'title' => 'Payslip Fully Approved',
+            'action_url' => "/erp/hr?section=payroll-view&payroll={$payslip->id}",
+        ]);
 
         $stale = $this->actingAs($this->financeFinal, 'user')
             ->postJson("/api/finance/payslip-approvals/{$payslip->id}/approve", [
@@ -245,6 +254,11 @@ class PayslipApprovalWorkflowTest extends TestCase
         $this->assertSame(1, $payslip->current_approval_level);
         $this->assertSame('pending', $payslip->status);
         $this->assertSame('rejected', $payslip->approval_status);
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $this->requester->id,
+            'title' => 'Payslip Rejected In Approval Workflow',
+            'action_url' => "/erp/hr?section=payroll-view&payroll={$payslip->id}",
+        ]);
     }
 
     public function test_generic_finance_hr_and_cross_shop_owner_cannot_approve_owner_stage(): void

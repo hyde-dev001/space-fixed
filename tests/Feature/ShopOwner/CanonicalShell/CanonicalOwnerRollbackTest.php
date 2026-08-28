@@ -21,7 +21,6 @@ final class CanonicalOwnerRollbackTest extends TestCase
             'owner_shell.enabled' => true,
             'owner_shell.allowlisted_shop_ids' => [$owner->getKey()],
             'shop_modules.enforcement_enabled' => false,
-            'shop_modules.owner_erp_workspace_enabled' => true,
         ]);
 
         $this->actingAs($owner, 'shop_owner')
@@ -44,8 +43,7 @@ final class CanonicalOwnerRollbackTest extends TestCase
                 ->where('ownerShell.presentation', 'existing')
                 ->where('ownerShell.selection_reason', 'global_disabled')
                 ->where('ownerShell.context', null)
-                ->where('ownerShell.groups', [])
-                ->where('ownerShell.compatibility.show_erp_fallback', false));
+                ->where('ownerShell.groups', []));
     }
 
     public function test_canonical_bookmarks_stay_on_their_underlying_capability_without_redirect_loops(): void
@@ -54,7 +52,6 @@ final class CanonicalOwnerRollbackTest extends TestCase
         config([
             'owner_shell.enabled' => false,
             'shop_modules.enforcement_enabled' => false,
-            'shop_modules.owner_erp_workspace_enabled' => false,
         ]);
 
         foreach ($this->canonicalBookmarkPaths() as $path) {
@@ -81,7 +78,6 @@ final class CanonicalOwnerRollbackTest extends TestCase
         config([
             'owner_shell.enabled' => false,
             'shop_modules.enforcement_enabled' => true,
-            'shop_modules.owner_erp_workspace_enabled' => false,
         ]);
 
         $this->actingAs($owner, 'shop_owner')
@@ -101,7 +97,6 @@ final class CanonicalOwnerRollbackTest extends TestCase
             '/shop-owner/operate/retail',
             '/shop-owner/operate/repair',
             '/shop-owner/operate/customers',
-            '/shop-owner/operate/payments',
             '/shop-owner/oversee/finance',
             '/shop-owner/oversee/workforce',
             '/shop-owner/oversee/inventory',

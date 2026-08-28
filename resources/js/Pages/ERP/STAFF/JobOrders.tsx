@@ -2637,7 +2637,7 @@ export default function JobOrdersPage() {
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Delivery awareness</p>
-                      <p className="mt-1 text-sm font-semibold text-gray-900 dark:text-white">Official status: {formatStatusLabel(viewOrder.status)}</p>
+                      <p className="mt-1 text-sm font-semibold text-gray-900 dark:text-white">Official status: {formatLogisticsStatus(viewOrder.status)}</p>
                     </div>
                     {viewOrder.customerReceiptStatus === 'disputed' ? (
                       <span className="rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-700 dark:bg-rose-900/30 dark:text-rose-300">Customer Dispute</span>

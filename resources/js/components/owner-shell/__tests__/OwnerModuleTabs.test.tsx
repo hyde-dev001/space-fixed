@@ -15,7 +15,7 @@ it('renders only server-derived module links and marks the current page', () => 
       currentUrl="/shop-owner/erp/crm/customers"
       moduleLabel="Customers"
       links={[
-        { label: 'Overview', url: '/shop-owner/operate/customers' },
+        { label: 'Dashboard', url: '/shop-owner/operate/customers' },
         { label: 'Customers', url: '/shop-owner/erp/crm/customers' },
         { label: 'Customer Reviews', url: '/shop-owner/erp/crm/customer-reviews' },
       ]}
@@ -23,8 +23,26 @@ it('renders only server-derived module links and marks the current page', () => 
   );
 
   expect(screen.getByRole('navigation', { name: 'Customers navigation' })).toBeInTheDocument();
-  expect(screen.getByRole('link', { name: 'Overview' })).toHaveAttribute('href', '/shop-owner/operate/customers');
+  expect(screen.getByRole('link', { name: 'Dashboard' })).toHaveAttribute('href', '/shop-owner/operate/customers');
   expect(screen.getByRole('link', { name: 'Customers' })).toHaveAttribute('aria-current', 'page');
   expect(screen.getByRole('link', { name: 'Customer Reviews' })).toHaveAttribute('href', '/shop-owner/erp/crm/customer-reviews');
   expect(screen.queryByRole('link', { name: /invoice|expense|approval|audit|create/i })).not.toBeInTheDocument();
+});
+
+it('keeps server-generated absolute tab URLs on the current application origin', () => {
+  render(
+    <OwnerModuleTabs
+      currentUrl="/shop-owner/operate/retail"
+      moduleLabel="Retail Operations"
+      links={[
+        { label: 'Dashboard', url: 'http://localhost:8000/shop-owner/operate/retail' },
+        { label: 'Job Orders', url: 'http://localhost:8000/shop-owner/erp/retail/orders' },
+      ]}
+    />,
+  );
+
+  expect(screen.getByRole('link', { name: 'Job Orders' })).toHaveAttribute(
+    'href',
+    '/shop-owner/erp/retail/orders',
+  );
 });

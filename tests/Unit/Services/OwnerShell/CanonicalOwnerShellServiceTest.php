@@ -28,7 +28,6 @@ final class CanonicalOwnerShellServiceTest extends TestCase
         config([
             'owner_shell.enabled' => true,
             'shop_modules.enforcement_enabled' => true,
-            'shop_modules.owner_erp_workspace_enabled' => false,
         ]);
 
         foreach ($this->canonicalRoutes() as $name => $uri) {
@@ -42,7 +41,7 @@ final class CanonicalOwnerShellServiceTest extends TestCase
     public function test_individual_owner_emphasizes_operate_and_omits_ineligible_destinations(): void
     {
         $owner = $this->owner('individual', 'retail');
-        $this->enableModules($owner, ['retail_operations', 'logistics', 'finance']);
+        $this->enableModules($owner, ['retail_operations', 'crm', 'logistics', 'finance']);
         config(['owner_shell.allowlisted_shop_ids' => [$owner->getKey()]]);
 
         $metadata = app(CanonicalOwnerShellService::class)->forOwner($owner)->toArray();
@@ -50,13 +49,46 @@ final class CanonicalOwnerShellServiceTest extends TestCase
 
         $this->assertSame('canonical', $metadata['presentation']);
         $this->assertSame('individual', $metadata['context']);
-        $this->assertSame(['home', 'action-center', 'operate', 'oversee', 'reports'], array_column($metadata['groups'], 'key'));
+        $this->assertSame(['home', 'action-center', 'operate'], array_column($metadata['groups'], 'key'));
         $this->assertTrue($groups['operate']['default_expanded']);
-        $this->assertFalse($groups['oversee']['default_expanded']);
-        $this->assertSame(['retail', 'payments'], array_column($groups['operate']['items'], 'key'));
-        $this->assertSame(['logistics'], array_column($groups['oversee']['items'], 'key'));
+        $this->assertSame(['retail', 'customers', 'cashier'], array_column($groups['operate']['items'], 'key'));
+        $this->assertArrayNotHasKey('oversee', $groups->all());
         $this->assertNull(collect($groups['operate']['items'])->firstWhere('key', 'repair'));
-        $this->assertNull(collect($groups['oversee']['items'])->firstWhere('key', 'finance'));
+        $retailItem = collect($groups['operate']['items'])->firstWhere('key', 'retail');
+        $this->assertNotNull($retailItem);
+        $this->assertSame([], $retailItem['children']);
+        $cashierItem = collect($groups['operate']['items'])->firstWhere('key', 'cashier');
+        $this->assertNotNull($cashierItem);
+        $this->assertSame('/shop-owner/operate/payments', $cashierItem['canonical_url']);
+        $this->assertSame([], $cashierItem['children']);
+        $customerItem = collect($groups['operate']['items'])->firstWhere('key', 'customers');
+        $this->assertNotNull($customerItem);
+        $this->assertSame('Customer Management', $customerItem['label']);
+        $this->assertSame('/shop-owner/operate/customers', $customerItem['canonical_url']);
+        $this->assertSame([], $customerItem['children']);
+    }
+
+    public function test_individual_owner_keeps_eligible_operational_modules_when_enforcement_is_disabled(): void
+    {
+        $owner = $this->owner('individual', 'both');
+        config([
+            'owner_shell.allowlisted_shop_ids' => [$owner->getKey()],
+            'shop_modules.enforcement_enabled' => false,
+        ]);
+
+        $metadata = app(CanonicalOwnerShellService::class)->forOwner($owner)->toArray();
+        $groups = collect($metadata['groups'])->keyBy('key');
+
+        $this->assertSame(['home', 'action-center', 'operate'], array_column($metadata['groups'], 'key'));
+        $this->assertSame(
+            ['retail', 'repair', 'customers', 'cashier'],
+            array_column($groups['operate']['items'], 'key'),
+        );
+        $retailItem = collect($groups['operate']['items'])->firstWhere('key', 'retail');
+        $repairItem = collect($groups['operate']['items'])->firstWhere('key', 'repair');
+        $this->assertSame([], $retailItem['children']);
+        $this->assertSame([], $repairItem['children']);
+        $this->assertArrayNotHasKey('oversee', $groups->all());
     }
 
     public function test_company_owner_emphasizes_oversee_and_retains_direct_operations(): void
@@ -84,7 +116,7 @@ final class CanonicalOwnerShellServiceTest extends TestCase
             ['finance', 'workforce', 'inventory', 'procurement', 'logistics'],
             array_column($groups['oversee']['items'], 'key'),
         );
-        $this->assertSame(['retail', 'repair', 'customers', 'payments'], array_column($groups['operate']['items'], 'key'));
+        $this->assertSame(['retail', 'repair', 'customers'], array_column($groups['operate']['items'], 'key'));
     }
 
     public function test_eligible_disabled_modules_are_unavailable_with_settings_management(): void
@@ -116,7 +148,7 @@ final class CanonicalOwnerShellServiceTest extends TestCase
 
         $metadata = app(CanonicalOwnerShellService::class)->forOwner($owner)->toArray();
 
-        $this->assertSame(['home', 'action-center', 'reports'], array_column($metadata['groups'], 'key'));
+        $this->assertSame(['home', 'action-center'], array_column($metadata['groups'], 'key'));
     }
 
     public function test_reports_and_audit_are_distinct_and_business_settings_is_not_in_the_sidebar(): void
@@ -130,7 +162,7 @@ final class CanonicalOwnerShellServiceTest extends TestCase
         $this->assertArrayNotHasKey('settings', $groups->all());
     }
 
-    public function test_payments_appears_only_when_a_retail_or_repair_path_is_accessible(): void
+    public function test_individual_owner_receives_payments_for_each_operational_path(): void
     {
         $owner = $this->owner('individual', 'repair');
         $this->enableModules($owner, ['repair_operations']);
@@ -138,13 +170,20 @@ final class CanonicalOwnerShellServiceTest extends TestCase
 
         $groups = collect(app(CanonicalOwnerShellService::class)->forOwner($owner)->toArray()['groups'])->keyBy('key');
 
-        $this->assertSame(['repair', 'payments'], array_column($groups['operate']['items'], 'key'));
+        $this->assertSame(['repair', 'cashier'], array_column($groups['operate']['items'], 'key'));
+        $repairItem = collect($groups['operate']['items'])->firstWhere('key', 'repair');
+        $this->assertSame([], $repairItem['children']);
+        $cashierItem = collect($groups['operate']['items'])->firstWhere('key', 'cashier');
+        $this->assertNotNull($cashierItem);
+        $this->assertSame('/shop-owner/operate/payments', $cashierItem['canonical_url']);
+        $this->assertSame([], $cashierItem['children']);
 
         $retailOwner = $this->owner('individual', 'retail');
+        $this->enableModules($retailOwner, ['retail_operations']);
         config(['owner_shell.allowlisted_shop_ids' => [$retailOwner->getKey()]]);
         $retailGroups = collect(app(CanonicalOwnerShellService::class)->forOwner($retailOwner)->toArray()['groups'])->keyBy('key');
 
-        $this->assertArrayNotHasKey('operate', $retailGroups->all());
+        $this->assertSame(['retail', 'cashier'], array_column($retailGroups['operate']['items'], 'key'));
     }
 
     public function test_selected_phase_three_owner_gets_a_separate_action_center_group(): void
@@ -165,45 +204,18 @@ final class CanonicalOwnerShellServiceTest extends TestCase
         $this->assertSame(['/shop-owner/action-center'], $groups['action-center']['items'][0]['active_matching']);
     }
 
-    public function test_canonical_destinations_do_not_change_when_erp_workspace_flag_changes(): void
+    public function test_canonical_destinations_are_independent_of_the_retired_workspace_boundary(): void
     {
         $owner = $this->owner('company', 'both');
         $this->enableModules($owner, ['retail_operations', 'finance']);
         config([
             'owner_shell.allowlisted_shop_ids' => [$owner->getKey()],
-            'shop_modules.owner_erp_workspace_enabled' => false,
         ]);
 
         $withoutWorkspace = app(CanonicalOwnerShellService::class)->forOwner($owner)->toArray();
-        config(['shop_modules.owner_erp_workspace_enabled' => true]);
         $withWorkspace = app(CanonicalOwnerShellService::class)->forOwner($owner)->toArray();
 
         $this->assertSame($withoutWorkspace['groups'], $withWorkspace['groups']);
-    }
-
-    public function test_fallback_requires_canonical_selection_and_existing_workspace_eligibility(): void
-    {
-        $owner = $this->owner('company', 'retail');
-        config([
-            'owner_shell.allowlisted_shop_ids' => [$owner->getKey()],
-            'shop_modules.owner_erp_workspace_enabled' => true,
-        ]);
-
-        $eligible = app(CanonicalOwnerShellService::class)->forOwner($owner)->toArray();
-        $this->assertTrue($eligible['compatibility']['show_erp_fallback']);
-        $this->assertSame('/shop-owner/erp/workspace', $eligible['compatibility']['erp_workspace_url']);
-
-        config(['owner_shell.enabled' => false]);
-        $existing = app(CanonicalOwnerShellService::class)->forOwner($owner)->toArray();
-        $this->assertFalse($existing['compatibility']['show_erp_fallback']);
-
-        config([
-            'owner_shell.enabled' => true,
-            'owner_shell.allowlisted_shop_ids' => [$owner->getKey()],
-            'shop_modules.owner_erp_workspace_enabled' => false,
-        ]);
-        $disabled = app(CanonicalOwnerShellService::class)->forOwner($owner)->toArray();
-        $this->assertFalse($disabled['compatibility']['show_erp_fallback']);
     }
 
     public function test_composition_failure_returns_complete_existing_presentation_and_logs_stable_shop_id(): void
@@ -220,7 +232,6 @@ final class CanonicalOwnerShellServiceTest extends TestCase
         $this->assertSame('shell_composition_failed', $metadata['selection_reason']);
         $this->assertNull($metadata['context']);
         $this->assertSame([], $metadata['groups']);
-        $this->assertFalse($metadata['compatibility']['show_erp_fallback']);
         Log::shouldHaveReceived('warning')
             ->once()
             ->with('shop_owner_shell_composition_failed', Mockery::on(
@@ -273,6 +284,7 @@ final class CanonicalOwnerShellServiceTest extends TestCase
         return [
             'shop-owner.shell.home' => '/shop-owner/home',
             'shop-owner.shell.action-center' => '/shop-owner/action-center',
+            'shop-owner.dss-insights' => '/shop-owner/dss-insights',
             'shop-owner.shell.operate.retail' => '/shop-owner/operate/retail',
             'shop-owner.shell.operate.repair' => '/shop-owner/operate/repair',
             'shop-owner.shell.operate.customers' => '/shop-owner/operate/customers',
@@ -290,6 +302,16 @@ final class CanonicalOwnerShellServiceTest extends TestCase
             'shop-owner.shell.settings.operations' => '/shop-owner/settings/operations',
             'shop-owner.shell.settings.policies-compliance' => '/shop-owner/settings/policies-compliance',
             'shop-owner.shell.settings.subscription' => '/shop-owner/settings/subscription',
+            'shop-owner.erp.retail.orders' => '/shop-owner/erp/retail/orders',
+            'shop-owner.erp.retail.products' => '/shop-owner/erp/retail/products',
+            'shop-owner.erp.retail.discounts' => '/shop-owner/erp/retail/discounts',
+            'shop-owner.erp.repair.job-orders' => '/shop-owner/erp/repair/job-orders',
+            'shop-owner.erp.repair.warranty-queue' => '/shop-owner/erp/repair/warranty-queue',
+            'shop-owner.erp.repair.services' => '/shop-owner/erp/repair/services',
+            'shop-owner.erp.repair.stock-materials' => '/shop-owner/erp/repair/stock-materials',
+            'shop-owner.erp.repair.support' => '/shop-owner/erp/repair/support',
+            'shop-owner.erp.retail.point-of-sale' => '/shop-owner/erp/retail/point-of-sale',
+            'shop-owner.erp.repair.point-of-sale' => '/shop-owner/erp/repair/point-of-sale',
         ];
     }
 

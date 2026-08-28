@@ -135,7 +135,7 @@ const ownerWaitingOnOthers: OwnerActionCenterResult = {
   pagination: { page: 1, per_page: 3, total: 4, last_page: 2 },
 };
 
-describe("canonical shop owner home placeholders", () => {
+describe("canonical shop owner home approval summary", () => {
   beforeEach(() => {
     mocks.props = {
       auth: {
@@ -159,13 +159,14 @@ describe("canonical shop owner home placeholders", () => {
     vi.stubGlobal("fetch", mocks.fetch);
   });
 
-  it("renders subordinate informational placeholders alongside existing dashboard metrics", async () => {
+  it("keeps the approval center out of the canonical home", async () => {
     render(<Dashboard />);
 
-    expect(await screen.findByText("Required Actions \u2014 Coming in Phase 3")).toBeInTheDocument();
-    expect(screen.getByText("Exceptions \u2014 Coming in Phase 3")).toBeInTheDocument();
-    expect(screen.getByText("Existing dashboard metrics")).toBeInTheDocument();
-    expect(screen.getByText(/existing module and approval pages remain the current action surfaces/i)).toBeInTheDocument();
+    expect(await screen.findByText("Existing dashboard metrics")).toBeInTheDocument();
+    expect(screen.queryByText("Required Actions \u2014 Coming in Phase 3")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Urgent Exceptions/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Waiting on Others/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /urgent exceptions|waiting items/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /approval/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /required actions|exceptions/i })).not.toBeInTheDocument();
   });
@@ -183,7 +184,7 @@ describe("canonical shop owner home placeholders", () => {
     expect(screen.queryByText("Exceptions \u2014 Coming in Phase 3")).not.toBeInTheDocument();
   });
 
-  it("replaces only Required Actions with the bounded decision summary", async () => {
+  it("does not render an approval summary when the legacy prop is present", async () => {
     mocks.props = {
       ...mocks.props,
       ownerActionCenter,
@@ -191,19 +192,17 @@ describe("canonical shop owner home placeholders", () => {
 
     render(<Dashboard />);
 
-    expect(await screen.findByText("Owner Actions")).toBeInTheDocument();
-    expect(screen.getAllByText("Needs My Decision").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText("Supplier expense")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /View all/i })).toHaveAttribute(
-      "href",
-      "/shop-owner/action-center",
-    );
-    expect(screen.getByText(/^Exceptions/)).toBeInTheDocument();
+    expect(await screen.findByText("Existing dashboard metrics")).toBeInTheDocument();
+    expect(screen.queryByText("Owner Actions")).not.toBeInTheDocument();
+    expect(screen.queryByText("Supplier expense")).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Exceptions/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Urgent Exceptions/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Waiting on Others/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/^Required Actions/)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /approve|reject/i })).not.toBeInTheDocument();
   });
 
-  it("renders decisions and urgent exceptions as separate bounded summaries", async () => {
+  it("does not render a stale urgent-exception prop", async () => {
     mocks.props = {
       ...mocks.props,
       ownerActionCenter,
@@ -212,19 +211,13 @@ describe("canonical shop owner home placeholders", () => {
 
     render(<Dashboard />);
 
-    expect(await screen.findByText("Owner Actions")).toBeInTheDocument();
-    expect(screen.getAllByText("Needs My Decision").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText("Urgent Exceptions").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText("Supplier expense")).toBeInTheDocument();
-    expect(screen.getByText("Mayor's Permit expiry")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /View all urgent exceptions/i })).toHaveAttribute(
-      "href",
-      expect.stringContaining("bucket=urgent_exceptions"),
-    );
+    expect(await screen.findByText("Existing dashboard metrics")).toBeInTheDocument();
+    expect(screen.queryByText("Mayor's Permit expiry")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /View all urgent exceptions/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/^Exceptions \u2014 Coming in Phase 3$/)).not.toBeInTheDocument();
   });
 
-  it("renders three independent summaries with no more than three rows per bucket", async () => {
+  it("does not render a stale waiting-on-others prop", async () => {
     mocks.props = {
       ...mocks.props,
       ownerActionCenter,
@@ -234,18 +227,13 @@ describe("canonical shop owner home placeholders", () => {
 
     render(<Dashboard />);
 
-    expect((await screen.findAllByText("Waiting on Others")).length).toBeGreaterThanOrEqual(2);
-    expect(screen.getByText("Refund recovery 1")).toBeInTheDocument();
-    expect(screen.getByText("Refund recovery 2")).toBeInTheDocument();
-    expect(screen.getByText("Refund recovery 3")).toBeInTheDocument();
-    expect(screen.queryByText("Refund recovery 4")).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /View all waiting items/i })).toHaveAttribute(
-      "href",
-      expect.stringContaining("bucket=waiting_on_others"),
-    );
+    expect(await screen.findByText("Existing dashboard metrics")).toBeInTheDocument();
+    expect(screen.queryByText("Waiting on Others")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Refund recovery/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /View all waiting items/i })).not.toBeInTheDocument();
   });
 
-  it("renders a Logistics exception in the urgent summary without adding an owner action", async () => {
+  it("does not surface stale logistics exceptions on the home page", async () => {
     mocks.props = {
       ...mocks.props,
       ownerActionCenter,
@@ -274,11 +262,10 @@ describe("canonical shop owner home placeholders", () => {
 
     render(<Dashboard />);
 
-    expect(await screen.findByText("Failed delivery needs escalation")).toBeInTheDocument();
-    expect(screen.getByText("Logistics Failure")).toBeInTheDocument();
-    expect(screen.getAllByRole("link", { name: /Open workflow/i }).some((link) => (
-      link.getAttribute("href") === "/shop-owner/logistics/shipments?shipment=8&leg=17"
-    ))).toBe(true);
+    expect(await screen.findByText("Existing dashboard metrics")).toBeInTheDocument();
+    expect(screen.queryByText("Failed delivery needs escalation")).not.toBeInTheDocument();
+    expect(screen.queryByText("Logistics Failure")).not.toBeInTheDocument();
+    expect(screen.queryAllByRole("link", { name: /Open workflow/i })).toHaveLength(0);
     expect(screen.queryByRole("button", { name: /dismiss|hide|acknowledge|snooze|resolve/i })).not.toBeInTheDocument();
   });
 });

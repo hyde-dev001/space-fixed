@@ -25,15 +25,27 @@ class RiderProfileController extends Controller
     {
         $shop = $this->authorizedShop('manage-logistics-riders');
         $context = request()->attributes->get('erp.actor_context');
-        if (! ($context instanceof ErpActorContext && $context->isOwnerMode())) {
+        $ownerMode = $context instanceof ErpActorContext && $context->isOwnerMode();
+        if (! $ownerMode) {
             app(RiderProfileSyncService::class)->syncShop((int) $shop->id);
         }
 
+        $riders = RiderProfile::query()
+            ->select($ownerMode
+                ? ['id', 'shop_owner_id', 'name', 'rider_type', 'availability_status', 'active', 'daily_capacity']
+                : ['*'])
+            ->where('shop_owner_id', $shop->id)
+            ->orderBy('name')
+            ->get();
+
+        if ($ownerMode) {
+            $riders->transform(
+                static fn (RiderProfile $rider): RiderProfile => $rider->setAttribute('phone', null),
+            );
+        }
+
         return response()->json([
-            'riders' => RiderProfile::query()
-                ->where('shop_owner_id', $shop->id)
-                ->orderBy('name')
-                ->get(),
+            'riders' => $riders,
         ]);
     }
 

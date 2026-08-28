@@ -20,6 +20,7 @@ use App\Services\RepairOnlineRefundWorkflowService;
 use App\Services\RepairPosRefundService;
 use App\Services\SupplierOrderService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Inertia\Testing\AssertableInertia as Assert;
 use PHPUnit\Framework\Attributes\Test;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
@@ -323,8 +324,104 @@ class NotificationCriticalFlowsTest extends TestCase
                 'shop_owner_id' => $shopOwner->id,
                 'title' => $title,
                 'action_url' => $actionUrl,
+                'requires_action' => true,
             ]);
         }
+    }
+
+    #[Test]
+    public function high_value_repair_owner_notification_points_to_the_high_value_approval_page(): void
+    {
+        $shopOwner = $this->createShopOwner([
+            'business_type' => 'repair',
+            'registration_type' => 'company',
+        ]);
+
+        app(NotificationService::class)->notifyHighValueRepairApproval($shopOwner->id, [
+            'repair_id' => 501,
+            'request_id' => 'RR-501',
+            'total' => '2500.00',
+        ]);
+
+        $this->assertDatabaseHas('notifications', [
+            'shop_owner_id' => $shopOwner->id,
+            'title' => 'High-Value Repair Approval',
+            'action_url' => '/shop-owner/high-value-repairs?repair_id=501',
+        ]);
+
+        $this->actingAs($shopOwner, 'shop_owner')
+            ->get('/shop-owner/high-value-repairs?repair_id=501')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('ShopOwner/Repairs/highValueRepairs'));
+    }
+
+    #[Test]
+    public function warranty_owner_notifications_point_to_owner_reachable_repair_pages(): void
+    {
+        $individualOwner = $this->createShopOwner([
+            'business_type' => 'repair',
+            'registration_type' => 'individual',
+        ]);
+
+        app(NotificationService::class)->notifyRepairWarrantyClaimFiled($individualOwner->id, [
+            'claim_no' => 'WCLM-IND-1',
+            'request_id' => 'REP-IND-1',
+        ]);
+        app(NotificationService::class)->notifyRepairWarrantyClaimApproved($individualOwner->id, [
+            'claim_no' => 'WCLM-IND-2',
+            'request_id' => 'REP-IND-2',
+        ]);
+        app(NotificationService::class)->notifyRepairWarrantyClaimRejected($individualOwner->id, [
+            'claim_no' => 'WCLM-IND-3',
+            'request_id' => 'REP-IND-3',
+        ]);
+
+        foreach (['Warranty Claim Filed', 'Warranty Claim Approved', 'Warranty Claim Rejected'] as $title) {
+            $this->assertDatabaseHas('notifications', [
+                'shop_owner_id' => $individualOwner->id,
+                'title' => $title,
+                'action_url' => '/shop-owner/warranty-queue',
+            ]);
+        }
+
+        $this->actingAs($individualOwner, 'shop_owner')
+            ->get('/shop-owner/warranty-queue')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('ShopOwner/Repairs/service management/WarrantyQueue'));
+
+        $companyOwner = $this->createShopOwner([
+            'business_type' => 'repair',
+            'registration_type' => 'company',
+        ]);
+
+        app(NotificationService::class)->notifyRepairWarrantyClaimFiled($companyOwner->id, [
+            'claim_no' => 'WCLM-COMP-1',
+            'request_id' => 'REP-COMP-1',
+        ]);
+        app(NotificationService::class)->notifyRepairWarrantyClaimApproved($companyOwner->id, [
+            'claim_no' => 'WCLM-COMP-2',
+            'request_id' => 'REP-COMP-2',
+        ]);
+        app(NotificationService::class)->notifyRepairWarrantyClaimRejected($companyOwner->id, [
+            'claim_no' => 'WCLM-COMP-3',
+            'request_id' => 'REP-COMP-3',
+        ]);
+
+        foreach (['Warranty Claim Filed', 'Warranty Claim Approved', 'Warranty Claim Rejected'] as $title) {
+            $this->assertDatabaseHas('notifications', [
+                'shop_owner_id' => $companyOwner->id,
+                'title' => $title,
+                'action_url' => '/shop-owner/job-orders-repair',
+            ]);
+        }
+
+        $this->actingAs($companyOwner, 'shop_owner')
+            ->get('/shop-owner/job-orders-repair')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('ShopOwner/Repairs/service management/JobOrdersRepair'));
     }
 
     #[Test]
@@ -419,7 +516,7 @@ class NotificationCriticalFlowsTest extends TestCase
             'shop_owner_id' => $shopOwner->id,
         ]);
 
-        SupplierOrder::factory()->create([
+        $supplierOrder = SupplierOrder::factory()->create([
             'shop_owner_id' => $shopOwner->id,
             'supplier_id' => $supplier->id,
             'status' => 'sent',
@@ -443,6 +540,7 @@ class NotificationCriticalFlowsTest extends TestCase
             'user_id' => $inventoryUser->id,
             'title' => 'Supplier Order Overdue',
             'type' => 'purchase_request_submitted',
+            'action_url' => '/erp/inventory/supplier-order-monitoring?supplier=' . rawurlencode((string) $supplierOrder->po_number),
         ]);
     }
 

@@ -4,12 +4,24 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Models\ShopOwner;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
 use RuntimeException;
 
 final class ErpWorkspaceNavigationService
 {
+    /**
+     * Company owners use the manager-style names for their monitoring tabs.
+     * Individual owners keep the existing operator-facing labels.
+     *
+     * @var array<string, string>
+     */
+    private const COMPANY_PAGE_LABELS = [
+        'shop-owner.erp.retail.orders' => 'Job Orders',
+        'shop-owner.erp.repair.job-orders' => 'Repair Jobs',
+    ];
+
     /**
      * @var array<string, array{slug: string, label: string, description: string}>
      */
@@ -95,6 +107,20 @@ final class ErpWorkspaceNavigationService
     }
 
     /**
+     * Return the module tabs that are readable by this specific owner.
+     * Owner-only operational pages can opt into tabs without becoming part of
+     * the shared company navigation definition.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function forOwner(ShopOwner $owner, string $moduleKey): ?array
+    {
+        $definition = self::MODULES[$moduleKey] ?? null;
+
+        return is_array($definition) ? $this->payload($moduleKey, $definition, $owner) : null;
+    }
+
+    /**
      * @return array{key: string, slug: string, label: string, description: string, overview: array{label: string, url: string}, pages: array<int, array{label: string, routeName: string, url: string, groupKey: string|null, groupLabel: string|null, groupOrder: int|null, pageOrder: int}>}|null
      */
     public function forSlug(string $slug): ?array
@@ -102,6 +128,20 @@ final class ErpWorkspaceNavigationService
         foreach (self::MODULES as $moduleKey => $definition) {
             if ($definition['slug'] === $slug) {
                 return $this->payload($moduleKey, $definition);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    public function forSlugForOwner(ShopOwner $owner, string $slug): ?array
+    {
+        foreach (self::MODULES as $moduleKey => $definition) {
+            if ($definition['slug'] === $slug) {
+                return $this->payload($moduleKey, $definition, $owner);
             }
         }
 
@@ -123,7 +163,7 @@ final class ErpWorkspaceNavigationService
      * @param  array{slug: string, label: string, description: string}  $definition
      * @return array{key: string, slug: string, label: string, description: string, overview: array{label: string, url: string}, pages: array<int, array{label: string, routeName: string, url: string, groupKey: string|null, groupLabel: string|null, groupOrder: int|null, pageOrder: int}>}
      */
-    private function payload(string $moduleKey, array $definition): array
+    private function payload(string $moduleKey, array $definition, ?ShopOwner $owner = null): array
     {
         return [
             'key' => $moduleKey,
@@ -131,10 +171,10 @@ final class ErpWorkspaceNavigationService
             'label' => $definition['label'],
             'description' => $definition['description'],
             'overview' => [
-                'label' => 'Overview',
+                'label' => 'Dashboard',
                 'url' => route($this->canonicalModuleRoute($moduleKey)),
             ],
-            'pages' => $this->pagesForKey($moduleKey),
+            'pages' => $this->pagesForKey($moduleKey, $owner),
         ];
     }
 
@@ -160,22 +200,21 @@ final class ErpWorkspaceNavigationService
     /**
      * @return array<int, array{label: string, routeName: string, url: string, groupKey: string|null, groupLabel: string|null, groupOrder: int|null, pageOrder: int}>
      */
-    private function pagesForKey(string $moduleKey): array
+    private function pagesForKey(string $moduleKey, ?ShopOwner $owner = null): array
     {
         $pages = [];
 
         foreach ($this->catalog->all() as $routeName => $entry) {
             $routeName = (string) $routeName;
             if (($entry['navigation_group'] ?? null) !== $moduleKey
-                || ! $this->catalog->hasOwnerReadablePageContract($routeName)
+                || ! $this->catalog->hasOwnerReadablePageContract($routeName, $owner)
                 || ! str_starts_with($routeName, 'shop-owner.erp.')
                 || str_starts_with($routeName, 'shop-owner.erp.api.')
                 || ! Route::has($routeName)) {
                 continue;
             }
 
-            $label = $entry['navigation_label']
-                ?? Str::headline(Str::afterLast($routeName, '.'));
+            $label = $this->pageLabel($routeName, $entry, $owner);
 
             $pages[] = [
                 'label' => (string) $label,
@@ -207,5 +246,21 @@ final class ErpWorkspaceNavigationService
 
             return $page;
         }, $pages);
+    }
+
+    /**
+     * @param  array<string, mixed>  $entry
+     */
+    private function pageLabel(string $routeName, array $entry, ?ShopOwner $owner): string
+    {
+        $label = $entry['navigation_label']
+            ?? Str::headline(Str::afterLast($routeName, '.'));
+
+        if ($owner instanceof ShopOwner
+            && strtolower(trim((string) $owner->getRawOriginal('registration_type'))) === 'company') {
+            $label = self::COMPANY_PAGE_LABELS[$routeName] ?? $label;
+        }
+
+        return (string) $label;
     }
 }

@@ -46,7 +46,7 @@ $modules = [
     ],
     'crm' => [
         'label' => 'CRM',
-        'registration_types' => ['company'],
+        'registration_types' => ['individual', 'company'],
         'business_types' => ['retail', 'repair', 'both'],
         'default_enabled' => true,
         'backfill_enabled' => true,
@@ -70,7 +70,7 @@ $modules = [
     ],
     'logistics' => [
         'label' => 'Logistics',
-        'registration_types' => ['individual', 'company'],
+        'registration_types' => ['company'],
         'business_types' => ['retail', 'repair', 'both'],
         'default_enabled' => true,
         'backfill_enabled' => true,
@@ -121,6 +121,7 @@ $routeEntry = static function (
         'navigation_page_group_label' => null,
         'navigation_page_group_order' => null,
         'navigation_visible' => null,
+        'owner_navigation_visible' => false,
         'self_service' => $selfService,
         'supporting_routes' => [],
         'actor_persistence' => 'not_applicable',
@@ -129,23 +130,32 @@ $routeEntry = static function (
 
 $routeBuckets = [
     'core' => [
-        'api.manager.analytics',
         'api.manager.audit-logs',
         'api.manager.dashboard.stats',
         'api.manager.dss-insights',
+        'api.manager.orders.index',
+        'api.manager.orders.reassign',
+        'api.manager.orders.replacements',
+        'api.manager.orders.show',
         'api.manager.reports.download',
         'api.manager.reports.generate',
         'api.manager.reports.index',
+        'api.manager.reports.review',
         'api.manager.reports.send',
         'api.manager.staff-performance',
+        'api.manager.staff-workload',
         'erp.hr',
         'erp.hr.audit-logs',
         'erp.logistics.settings',
         'erp.manager.audit-logs',
         'erp.manager.dashboard',
-        'erp.manager.dss-insights',
+        'erp.manager.job-orders',
+        'erp.manager.leave-approvals',
+        'erp.manager.repair-jobs',
         'erp.manager.reports',
-        'erp.manager.user-management',
+        'erp.manager.staff-workload',
+        'erp.manager.suspension-approvals',
+        'erp.manager.suspend-approval',
         'erp.notifications.destroy',
         'erp.notifications.index',
         'erp.notifications.mark-all-read',
@@ -187,7 +197,6 @@ $routeBuckets = [
         'shop-owner.compliance-documents.renewals.store',
         'shop-owner.shell.action-center',
         'shop-owner.shell.home',
-        'shop-owner.shell.erp-fallback',
         'shop-owner.shell.settings.profile',
         'shop-owner.shell.settings.modules-team',
         'shop-owner.shell.settings.payments-approvals',
@@ -258,7 +267,6 @@ $routeBuckets = [
         'shop_owner.premium.upgrade.preview',
     ],
     'retail_operations' => [
-        'api.manager.products',
         'erp.cashier.point-of-sale',
         'erp.manager.products',
         'erp.staff.job-orders',
@@ -309,7 +317,6 @@ $routeBuckets = [
     ],
     'repair_operations' => [
         'erp.staff.api.repair-dashboard',
-        'erp.manager.repair-rejection-review',
         'erp.manager.shoe-pricing',
         'erp.repairer.point-of-sale',
         'erp.repairer.pricing-services',
@@ -327,6 +334,8 @@ $routeBuckets = [
         'finance.repair-price-changes.index',
         'finance.repair-price-changes.reject',
         'shop-owner.job-orders-repair',
+        'erp.manager.repair-rejection-review',
+        'shop-owner.high-value-repairs',
         'shop-owner.repair-reject-approval',
         'shop-owner.repair-support',
         'shop-owner.upload-services',
@@ -537,7 +546,6 @@ $routeBuckets = [
     ],
     'finance' => [
         'erp.finance.audit-logs',
-        'erp.manager.suspend-approval',
         'erp.my-payslips',
         'finance.audit.export',
         'finance.audit.index',
@@ -912,6 +920,7 @@ $routeMethods = static function (string $routeName): array {
         'shop_owner.settings.geofence' => ['POST'],
         'api.products.vouchers.claim' => ['POST'],
         'api.customer.repairs.warranty-claims' => ['POST'],
+        'api.manager.orders.reassign' => ['POST'],
         'shop_owner.repairs.approve-high-value' => ['POST'],
         'shop_owner.repairs.reject-high-value' => ['POST'],
         'inventory.products.update-quantity' => ['PUT'],
@@ -1143,15 +1152,11 @@ $workspaceRoute['registration_types'] = ['company'];
 $workspaceRoute['business_types'] = ['retail', 'repair', 'both'];
 $workspaceRoute['owner_access'] = 'allowed';
 $workspaceRoute['owner_denial_reason'] = null;
-$workspaceRoute['supporting_routes'] = ['shop-owner.erp.api.workspace'];
+$workspaceRoute['supporting_routes'] = [];
 $routes['shop-owner.erp.workspace'] = $workspaceRoute;
 
-$workspaceApiRoute = $workspaceRoute;
-$workspaceApiRoute['supporting_routes'] = ['shop-owner.erp.workspace'];
-$routes['shop-owner.erp.api.workspace'] = $workspaceApiRoute;
-
 $moduleLandingRoute = $workspaceRoute;
-$moduleLandingRoute['supporting_routes'] = ['shop-owner.erp.api.workspace'];
+$moduleLandingRoute['supporting_routes'] = [];
 $routes['shop-owner.erp.module'] = $moduleLandingRoute;
 
 $ownerReadPairs = [
@@ -1319,21 +1324,9 @@ $retailProductsRoute['owner_access'] = 'allowed';
 $retailProductsRoute['owner_denial_reason'] = null;
 $retailProductsRoute['supporting_routes'] = [
     'shop_owner.products.index',
-    'shop_owner.products.store',
     'shop_owner.products.show',
-    'shop_owner.products.update',
-    'shop_owner.products.destroy',
-    'shop_owner.products.restore',
-    'shop_owner.products.upload-image',
     'shop_owner.products.variants',
     'shop_owner.products.color-variants.index',
-    'shop_owner.products.color-variants.store',
-    'shop_owner.products.color-variants.update',
-    'shop_owner.products.color-variants.destroy',
-    'shop_owner.products.color-variants.images.store',
-    'shop_owner.products.color-variants.images.update',
-    'shop_owner.products.color-variants.images.destroy',
-    'shop_owner.products.color-variants.images.reorder',
     'shop_owner.products.showroom-entitlement',
 ];
 $retailProductsRoute['navigation_label'] = 'Products';
@@ -1382,6 +1375,57 @@ $ownerOperationalPageRoute = static function (
     return $route;
 };
 
+$ownerMonitoringApiRoute = static function (
+    string $moduleKey,
+    array $businessTypes,
+    string $domainRule,
+    array $supportingRoutes = [],
+) use ($routeEntry, $modules): array {
+    $route = $routeEntry(
+        modules: $modules,
+        classification: 'module',
+        mode: 'single',
+        moduleKeys: [$moduleKey],
+        methods: ['GET'],
+        audience: 'shop_owner',
+        actorGuard: 'shop_owner',
+        action: 'view',
+        ownerDenialReason: 'owner_operation_not_reviewed',
+        navigationGroup: $moduleKey,
+        selfService: false,
+    );
+    $route['owner_access'] = 'allowed';
+    $route['owner_denial_reason'] = null;
+    $route['registration_types'] = ['company'];
+    $route['business_types'] = $businessTypes;
+    $route['domain_rule'] = $domainRule;
+    $route['actor_persistence'] = 'server_resolved_shop_owner';
+    $route['supporting_routes'] = $supportingRoutes;
+
+    return $route;
+};
+
+$routes['shop-owner.erp.api.operations.orders'] = $ownerMonitoringApiRoute(
+    moduleKey: 'retail_operations',
+    businessTypes: ['retail', 'both'],
+    domainRule: 'Company-owner order monitoring is read-only and scoped to the authenticated retail shop.',
+    supportingRoutes: [
+        'shop-owner.erp.api.operations.orders',
+        'shop-owner.erp.api.operations.orders.show',
+    ],
+);
+$routes['shop-owner.erp.api.operations.orders.show'] = $routes['shop-owner.erp.api.operations.orders'];
+$routes['shop-owner.erp.api.operations.repairs'] = $ownerMonitoringApiRoute(
+    moduleKey: 'repair_operations',
+    businessTypes: ['repair', 'both'],
+    domainRule: 'Company-owner repair monitoring is read-only and scoped to the authenticated repair shop.',
+    supportingRoutes: [
+        'shop-owner.erp.api.operations.repairs',
+        'shop-owner.erp.api.operations.repairs.show',
+    ],
+);
+$routes['shop-owner.erp.api.operations.repairs.show'] = $routes['shop-owner.erp.api.operations.repairs'];
+
 $retailOwnerPages = [
     'shop-owner.erp.retail.dashboard' => [
         'label' => 'Retail Dashboard',
@@ -1395,6 +1439,8 @@ $retailOwnerPages = [
         'supporting_routes' => [
             'shop_owner.orders.index',
             'shop_owner.orders.show',
+            'shop-owner.erp.api.operations.orders',
+            'shop-owner.erp.api.operations.orders.show',
             'shop_owner.orders.update-status',
             'shop_owner.orders.correct-terminal-outcome',
             'shop_owner.orders.activate-pickup',
@@ -1410,6 +1456,7 @@ $retailOwnerPages = [
     'shop-owner.erp.retail.discounts' => [
         'label' => 'Vouchers and Discounts',
         'order' => 40,
+        'visible' => true,
         'supporting_routes' => [
             'shop_owner.promos.index',
             'shop_owner.promos.products',
@@ -1436,35 +1483,26 @@ $ownerModulePageGroups = [
         'shop-owner.erp.hr.dashboard' => [
             'label' => 'Dashboard',
             'order' => 10,
-            'supporting_routes' => ['erp.hr'],
+            'visible' => false,
+            'supporting_routes' => ['shop-owner.erp.hr.dashboard'],
         ],
         'shop-owner.erp.hr.employee-directory' => [
             'label' => 'Employees',
             'order' => 20,
-            'supporting_routes' => [
-                'shop-owner.employees.store',
-                'shop-owner.employees.update',
-                'shop-owner.employees.destroy',
-                'shop-owner.employees.suspend',
-                'shop-owner.employees.activate',
-                'shop-owner.employees.permissions.get',
-                'shop-owner.employees.permissions.update',
-                'shop-owner.employees.permissions.sync',
-                'shop-owner.employees.roles.sync',
-                'shop-owner.employees.apply-template',
-            ],
+            'supporting_routes' => ['shop-owner.erp.hr.employee-directory'],
         ],
         'shop-owner.erp.hr.attendance' => [
-            'label' => 'View Attendance',
+            'label' => 'Attendance',
             'order' => 30,
             'group' => 'attendance-monitoring',
             'group_label' => 'Attendance Monitoring',
             'group_order' => 20,
-            'supporting_routes' => ['hr.attendance.index'],
+            'supporting_routes' => ['shop-owner.erp.hr.attendance'],
         ],
         'shop-owner.erp.hr.leave-approvals' => [
             'label' => 'Leave Requests',
             'order' => 40,
+            'visible' => false,
             'group' => 'attendance-monitoring',
             'group_label' => 'Attendance Monitoring',
             'group_order' => 20,
@@ -1473,6 +1511,7 @@ $ownerModulePageGroups = [
         'shop-owner.erp.hr.overtime-approvals' => [
             'label' => 'Overtime Requests',
             'order' => 50,
+            'visible' => false,
             'group' => 'attendance-monitoring',
             'group_label' => 'Attendance Monitoring',
             'group_order' => 20,
@@ -1481,6 +1520,7 @@ $ownerModulePageGroups = [
         'shop-owner.erp.hr.payroll-view' => [
             'label' => 'View Slip',
             'order' => 60,
+            'visible' => false,
             'group' => 'payroll',
             'group_label' => 'Payroll',
             'group_order' => 30,
@@ -1489,6 +1529,7 @@ $ownerModulePageGroups = [
         'shop-owner.erp.hr.payroll-generate' => [
             'label' => 'Generate Slip',
             'order' => 70,
+            'visible' => false,
             'group' => 'payroll',
             'group_label' => 'Payroll',
             'group_order' => 30,
@@ -1502,6 +1543,7 @@ $ownerModulePageGroups = [
         'shop-owner.erp.hr.salary-changes' => [
             'label' => 'Salary Changes',
             'order' => 80,
+            'visible' => false,
             'group' => 'payroll',
             'group_label' => 'Payroll',
             'group_order' => 30,
@@ -1515,6 +1557,7 @@ $ownerModulePageGroups = [
         'shop-owner.erp.hr.suspend-accounts' => [
             'label' => 'Suspend Accounts',
             'order' => 90,
+            'visible' => false,
             'supporting_routes' => [
                 'shop_owner.suspension_requests.index',
                 'shop_owner.suspension_requests.show',
@@ -1526,22 +1569,24 @@ $ownerModulePageGroups = [
         'shop-owner.erp.finance.dashboard' => [
             'label' => 'Dashboard',
             'order' => 10,
-            'supporting_routes' => ['finance.dashboard'],
+            'visible' => false,
+            'supporting_routes' => ['shop_owner.finance.dashboard.summary'],
         ],
         'shop-owner.erp.finance.invoices' => [
             'label' => 'Invoices',
             'order' => 20,
+            'visible' => true,
             'supporting_routes' => [
-                'finance.invoices.index',
-                'finance.invoices.show',
-                'finance.invoices.store',
-                'finance.invoices.update',
-                'finance.invoices.destroy',
-                'finance.invoices.restore',
-                'finance.invoices.send',
-                'finance.invoices.void',
-                'finance.invoices.mark_paid',
-                'finance.invoices.post',
+                'shop_owner.finance.invoices.index',
+                'shop_owner.finance.invoices.show',
+                'shop_owner.finance.invoices.store',
+                'shop_owner.finance.invoices.update',
+                'shop_owner.finance.invoices.destroy',
+                'shop_owner.finance.invoices.restore',
+                'shop_owner.finance.invoices.send',
+                'shop_owner.finance.invoices.void',
+                'shop_owner.finance.invoices.mark_paid',
+                'shop_owner.finance.invoices.post',
             ],
         ],
         'shop-owner.erp.finance.create-invoice' => [
@@ -1556,18 +1601,20 @@ $ownerModulePageGroups = [
         'shop-owner.erp.finance.expenses' => [
             'label' => 'Expenses',
             'order' => 30,
+            'visible' => true,
             'supporting_routes' => [
-                'finance.expenses.index',
-                'finance.expenses.show',
-                'finance.expenses.store',
-                'finance.expenses.update',
-                'finance.expenses.destroy',
-                'finance.expenses.restore',
+                'shop_owner.finance.expenses.index',
+                'shop_owner.finance.expenses.show',
+                'shop_owner.finance.expenses.store',
+                'shop_owner.finance.expenses.update',
+                'shop_owner.finance.expenses.destroy',
+                'shop_owner.finance.expenses.restore',
             ],
         ],
         'shop-owner.erp.finance.expense-approvals' => [
             'label' => 'Expense Approvals',
             'order' => 40,
+            'visible' => false,
             'group' => 'approvals',
             'group_label' => 'Approvals',
             'group_order' => 40,
@@ -1580,6 +1627,7 @@ $ownerModulePageGroups = [
         'shop-owner.erp.finance.repair-pricing' => [
             'label' => 'Repair Pricing Approval',
             'order' => 50,
+            'visible' => false,
             'group' => 'approvals',
             'group_label' => 'Approvals',
             'group_order' => 40,
@@ -1592,6 +1640,7 @@ $ownerModulePageGroups = [
         'shop-owner.erp.finance.shoe-pricing' => [
             'label' => 'Shoe Pricing Approval',
             'order' => 60,
+            'visible' => false,
             'group' => 'approvals',
             'group_label' => 'Approvals',
             'group_order' => 40,
@@ -1604,6 +1653,7 @@ $ownerModulePageGroups = [
         'shop-owner.erp.finance.purchase-request-review' => [
             'label' => 'Purchase Request Review',
             'order' => 70,
+            'visible' => false,
             'group' => 'approvals',
             'group_label' => 'Approvals',
             'group_order' => 40,
@@ -1616,6 +1666,7 @@ $ownerModulePageGroups = [
         'shop-owner.erp.finance.refund-approvals' => [
             'label' => 'Refund Approvals',
             'order' => 80,
+            'visible' => false,
             'group' => 'approvals',
             'group_label' => 'Approvals',
             'group_order' => 40,
@@ -1633,6 +1684,7 @@ $ownerModulePageGroups = [
         'shop-owner.erp.finance.payslip-approvals' => [
             'label' => 'Payslip Approvals',
             'order' => 90,
+            'visible' => false,
             'group' => 'approvals',
             'group_label' => 'Approvals',
             'group_order' => 40,
@@ -1646,6 +1698,7 @@ $ownerModulePageGroups = [
         'shop-owner.erp.finance.salary-adjustment-approvals' => [
             'label' => 'Salary Adjustments',
             'order' => 100,
+            'visible' => false,
             'group' => 'approvals',
             'group_label' => 'Approvals',
             'group_order' => 40,
@@ -1660,6 +1713,7 @@ $ownerModulePageGroups = [
         'shop-owner.erp.crm.customer-support' => [
             'label' => 'Customer Support',
             'order' => 50,
+            'visible' => false,
             'supporting_routes' => [
                 'shop_owner.conversations.index',
                 'shop_owner.conversations.show',
@@ -1672,26 +1726,31 @@ $ownerModulePageGroups = [
         'shop-owner.erp.inventory.upload-stocks' => [
             'label' => 'Upload Stocks',
             'order' => 20,
+            'visible' => false,
             'supporting_routes' => ['erp.inventory.upload-stocks'],
         ],
         'shop-owner.erp.inventory.stock-request' => [
             'label' => 'Stock Requests',
             'order' => 50,
+            'visible' => false,
             'supporting_routes' => ['erp.inventory.stock-request'],
         ],
         'shop-owner.erp.inventory.request-material-approval' => [
             'label' => 'Request Material Approval',
             'order' => 60,
+            'visible' => false,
             'supporting_routes' => ['erp.inventory.request-material-approval'],
         ],
         'shop-owner.erp.inventory.supplier-order-monitoring' => [
             'label' => 'Supplier Order Monitoring',
             'order' => 70,
-            'supporting_routes' => ['erp.inventory.supplier-order-monitoring'],
+            'visible' => true,
+            'supporting_routes' => ['shop-owner.erp.inventory.supplier-order-monitoring'],
         ],
         'shop-owner.erp.inventory.overview' => [
             'label' => 'Inventory Overview',
             'order' => 80,
+            'visible' => false,
             'supporting_routes' => ['shop_owner.inventory.overview'],
         ],
     ],
@@ -1699,21 +1758,23 @@ $ownerModulePageGroups = [
         'shop-owner.erp.procurement.purchase-request' => [
             'label' => 'Purchase Requests',
             'order' => 10,
-            'supporting_routes' => ['erp.procurement.purchase-request'],
+            'supporting_routes' => ['shop-owner.erp.procurement.purchase-request'],
         ],
         'shop-owner.erp.procurement.purchase-orders' => [
             'label' => 'Purchase Orders',
             'order' => 20,
-            'supporting_routes' => ['erp.procurement.purchase-orders'],
+            'supporting_routes' => ['shop-owner.erp.procurement.purchase-orders'],
         ],
         'shop-owner.erp.procurement.stock-request-approval' => [
             'label' => 'Stock Request Approval',
             'order' => 30,
+            'visible' => false,
             'supporting_routes' => ['erp.procurement.stock-request-approval'],
         ],
         'shop-owner.erp.procurement.purchase-request-approval' => [
             'label' => 'Purchase Request Approval',
             'order' => 50,
+            'visible' => false,
             'supporting_routes' => [
                 'shop_owner.purchase-requests.index',
                 'shop_owner.purchase-requests.approve',
@@ -1725,11 +1786,13 @@ $ownerModulePageGroups = [
         'shop-owner.erp.logistics.batches' => [
             'label' => 'Batches',
             'order' => 30,
-            'supporting_routes' => ['erp.logistics.batches'],
+            'visible' => true,
+            'supporting_routes' => ['shop-owner.erp.logistics.batches'],
         ],
         'shop-owner.erp.logistics.settings' => [
             'label' => 'Settings',
             'order' => 50,
+            'visible' => false,
             'supporting_routes' => ['erp.logistics.settings'],
         ],
     ],
@@ -1751,21 +1814,21 @@ foreach ($ownerModulePageGroups as $moduleKey => $pages) {
 }
 
 $existingOwnerPageMetadata = [
-    'shop-owner.erp.crm.dashboard' => ['label' => 'Dashboard', 'order' => 10, 'visible' => true],
+    'shop-owner.erp.crm.dashboard' => ['label' => 'Dashboard', 'order' => 10, 'visible' => false],
     'shop-owner.erp.crm.customers' => ['label' => 'Customers', 'order' => 20, 'visible' => true],
     'shop-owner.erp.crm.customer-reviews' => ['label' => 'Customer Reviews', 'order' => 30, 'visible' => true],
     'shop-owner.erp.staff.customers' => ['label' => 'Customer Directory', 'order' => 40],
-    'shop-owner.erp.inventory.inventory-dashboard' => ['label' => 'Dashboard', 'order' => 10],
-    'shop-owner.erp.inventory.product-inventory' => ['label' => 'Product Inventory', 'order' => 30],
-    'shop-owner.erp.inventory.stock-movement' => ['label' => 'Stock Movement', 'order' => 40],
+    'shop-owner.erp.inventory.inventory-dashboard' => ['label' => 'Inventory Overview', 'order' => 10, 'visible' => false],
+    'shop-owner.erp.inventory.product-inventory' => ['label' => 'Product Inventory', 'order' => 30, 'visible' => true],
+    'shop-owner.erp.inventory.stock-movement' => ['label' => 'Stock Movement', 'order' => 40, 'visible' => true],
     'shop-owner.erp.inventory.overview' => ['label' => 'Inventory Overview', 'order' => 80],
-    'shop-owner.erp.procurement.suppliers-management' => ['label' => 'Suppliers Management', 'order' => 40],
+    'shop-owner.erp.procurement.suppliers-management' => ['label' => 'Suppliers', 'order' => 40, 'visible' => true],
     'shop-owner.erp.hr.audit-logs' => ['label' => 'Audit Logs', 'order' => 100],
     'shop-owner.erp.finance.audit-logs' => ['label' => 'Audit Logs', 'order' => 110],
-    'shop-owner.erp.logistics.dashboard' => ['label' => 'Dashboard', 'order' => 10, 'visible' => true],
+    'shop-owner.erp.logistics.dashboard' => ['label' => 'Dashboard', 'order' => 10, 'visible' => false],
     'shop-owner.erp.logistics.shipments' => ['label' => 'Shipments', 'order' => 20, 'visible' => true],
-    'shop-owner.erp.logistics.riders' => ['label' => 'Riders', 'order' => 40],
-    'shop-owner.erp.staff.repair-dashboard' => ['label' => 'Repair Dashboard', 'order' => 10],
+    'shop-owner.erp.logistics.riders' => ['label' => 'Riders', 'order' => 40, 'visible' => true],
+    'shop-owner.erp.staff.repair-dashboard' => ['label' => 'Repair Dashboard', 'order' => 10, 'visible' => false],
 ];
 
 foreach ($existingOwnerPageMetadata as $routeName => $metadata) {
@@ -1778,10 +1841,13 @@ foreach ($existingOwnerPageMetadata as $routeName => $metadata) {
 
 $repairOwnerPages = [
     'shop-owner.erp.repair.job-orders' => [
-        'label' => 'Repair Job Orders',
+        'label' => 'Job Orders Repair',
         'order' => 20,
+        'visible' => true,
         'supporting_routes' => [
             'shop_owner.repairs.index',
+            'shop-owner.erp.api.operations.repairs',
+            'shop-owner.erp.api.operations.repairs.show',
             'shop_owner.repairs.accept',
             'shop_owner.repairs.reject',
             'shop_owner.repairs.mark-received',
@@ -1804,7 +1870,7 @@ $repairOwnerPages = [
         'supporting_routes' => ['shop-owner.warranty-queue'],
     ],
     'shop-owner.erp.repair.services' => [
-        'label' => 'Services and Packages',
+        'label' => 'Services Management',
         'order' => 40,
         'supporting_routes' => [
             'shop_owner.repair-services.index',
@@ -1817,7 +1883,7 @@ $repairOwnerPages = [
         ],
     ],
     'shop-owner.erp.repair.stock-materials' => [
-        'label' => 'Stock Materials',
+        'label' => 'Repair Materials',
         'order' => 50,
         'supporting_routes' => [
             'shop_owner.inventory.items.index',
@@ -1851,7 +1917,22 @@ foreach ($repairOwnerPages as $routeName => $page) {
         navigationLabel: $page['label'],
         navigationOrder: $page['order'],
         supportingRoutes: $page['supporting_routes'],
+        navigationVisible: $page['visible'] ?? ($routeName === 'shop-owner.erp.repair.services'),
     );
+}
+
+// Individual owners operate their own retail/repair counter, so the owner POS
+// remains available to them. Company owners use the staff/cashier POS surface
+// instead and must not receive the owner POS routes through this exception.
+foreach ([
+    'shop-owner.erp.retail.point-of-sale',
+    'shop-owner.erp.repair.point-of-sale',
+] as $routeName) {
+    if (! isset($routes[$routeName])) {
+        continue;
+    }
+
+    $routes[$routeName]['registration_types'] = ['individual'];
 }
 
 $ownerOperationalApiRouteGroups = [
@@ -1874,6 +1955,19 @@ $ownerOperationalApiRouteGroups = [
         'routes' => [
             'shop_owner.orders.index',
             'shop_owner.orders.show',
+        ],
+    ],
+    [
+        'page_route' => 'shop-owner.erp.retail.discounts',
+        'risk_tier' => 'normal',
+        'domain_rule' => 'Owner voucher and discount operations remain scoped to the authenticated retail shop and product ownership checks.',
+        'routes' => [
+            'shop_owner.promos.index',
+            'shop_owner.promos.products',
+            'shop_owner.promos.store',
+            'shop_owner.promos.update',
+            'shop_owner.promos.destroy',
+            'shop_owner.promos.update-status',
         ],
     ],
     [
@@ -1919,6 +2013,20 @@ $ownerOperationalApiRouteGroups = [
         'routes' => [
             'shop_owner.finance.dashboard.summary',
             'shop_owner.finance.tax-rates.index',
+        ],
+    ],
+    [
+        'page_route' => 'shop-owner.erp.repair.services',
+        'risk_tier' => 'normal',
+        'domain_rule' => 'Owner repair-service management remains scoped to the authenticated repair shop and existing service validation.',
+        'routes' => [
+            'shop_owner.repair-services.index',
+            'shop_owner.repair-services.store',
+            'shop_owner.repair-services.show',
+            'shop_owner.repair-services.update',
+            'shop_owner.repair-services.destroy',
+            'shop_owner.repair-services.restore',
+            'shop_owner.repair-materials.index',
         ],
     ],
     [
@@ -1986,7 +2094,10 @@ $canonicalShellModuleRoutes = [
     'shop-owner.shell.operate.payments' => [
         'module_keys' => ['retail_operations', 'repair_operations'],
         'mode' => 'any_of',
-        'supporting_routes' => ['shop-owner.point-of-sale', 'shop-owner.erp.repair.point-of-sale'],
+        'supporting_routes' => [
+            'shop-owner.erp.retail.point-of-sale',
+            'shop-owner.erp.repair.point-of-sale',
+        ],
     ],
     'shop-owner.shell.oversee.finance' => [
         'module_keys' => ['finance'],
@@ -2037,6 +2148,10 @@ foreach ($canonicalShellModuleRoutes as $routeName => $definition) {
     $routes[$routeName] = $route;
 }
 
+if (isset($routes['shop-owner.shell.operate.payments'])) {
+    $routes['shop-owner.shell.operate.payments']['registration_types'] = ['individual'];
+}
+
 foreach ([
     'shop-owner.shell.reports' => 'shop-owner.erp.manager.reports',
     'shop-owner.shell.audit' => 'shop-owner.erp.manager.audit-logs',
@@ -2055,9 +2170,325 @@ foreach ([
     $routes[$routeName] = $route;
 }
 
+$ownerDeniedParentPageRoutes = [
+    'shop-owner.erp.finance.create-invoice' => 'owner_invoice_creation_not_allowed',
+    'shop-owner.erp.hr.payroll-generate' => 'owner_payroll_generation_not_allowed',
+    'shop-owner.erp.inventory.upload-stocks' => 'owner_inventory_upload_not_allowed',
+];
+
+$ownerRetailDashboardStatsRoute = $routeEntry(
+    modules: $modules,
+    classification: 'module',
+    mode: 'any_of',
+    moduleKeys: ['retail_operations', 'repair_operations'],
+    methods: ['GET'],
+    audience: 'shop_owner',
+    actorGuard: 'shop_owner',
+    action: 'view',
+    ownerDenialReason: 'owner_operation_not_reviewed',
+    navigationGroup: 'retail_operations',
+    selfService: false,
+);
+$ownerRetailDashboardStatsRoute['owner_access'] = 'allowed';
+$ownerRetailDashboardStatsRoute['owner_denial_reason'] = null;
+$ownerRetailDashboardStatsRoute['actor_persistence'] = 'server_resolved_shop_owner';
+$ownerRetailDashboardStatsRoute['navigation_visible'] = false;
+$ownerRetailDashboardStatsRoute['supporting_routes'] = ['shop-owner.erp.api.retail.dashboard-stats'];
+$routes['shop-owner.erp.api.retail.dashboard-stats'] = $ownerRetailDashboardStatsRoute;
+
+$ownerExplicitlyExcludedLegacyPageRoutes = [
+    'erp.manager.audit-logs' => 'phase_5_surface_not_characterized',
+    'shop-owner.point-of-sale' => 'owner_pos_retired',
+    'shop-owner.point-of-sale.legacy' => 'owner_pos_retired',
+    'shop-owner.erp.retail.dashboard' => 'phase_5_surface_not_characterized',
+    'shop-owner.erp.repair.warranty-queue' => 'phase_5_surface_not_characterized',
+    'shop-owner.erp.repair.stock-materials' => 'phase_5_surface_not_characterized',
+    'shop-owner.erp.repair.support' => 'phase_5_surface_not_characterized',
+    'shop-owner.erp.crm.customer-support' => 'phase_5_surface_not_characterized',
+    'shop-owner.erp.logistics.settings' => 'phase_5_surface_not_characterized',
+    'shop-owner.erp.manager.audit-logs' => 'phase_5_surface_not_characterized',
+];
+
+foreach ($ownerExplicitlyExcludedLegacyPageRoutes as $routeName => $reason) {
+    if (! isset($routes[$routeName])) {
+        continue;
+    }
+
+    $routes[$routeName]['owner_access'] = 'denied';
+    $routes[$routeName]['owner_denial_reason'] = $reason;
+    $routes[$routeName]['navigation_visible'] = false;
+    $routes[$routeName]['actor_persistence'] = 'not_applicable';
+}
+
+foreach ($ownerDeniedParentPageRoutes as $routeName => $reason) {
+    if (! isset($routes[$routeName])) {
+        continue;
+    }
+
+    $routes[$routeName]['owner_access'] = 'denied';
+    $routes[$routeName]['owner_denial_reason'] = $reason;
+    $routes[$routeName]['navigation_visible'] = false;
+    $routes[$routeName]['actor_persistence'] = 'not_applicable';
+}
+
+$ownerDeniedParentApiRoutes = [
+    'shop_owner.finance.invoices.store' => 'owner_invoice_creation_not_allowed',
+    'shop_owner.finance.invoices.from_job' => 'owner_invoice_creation_not_allowed',
+    'shop_owner.finance.expenses.store' => 'owner_expense_creation_not_allowed',
+    'shop_owner.hr.payroll.store' => 'owner_payroll_generation_not_allowed',
+    'shop_owner.hr.payroll.calculate_preview' => 'owner_payroll_generation_not_allowed',
+    'shop_owner.hr.payroll.batch.preview' => 'owner_payroll_generation_not_allowed',
+    'shop_owner.hr.payroll.batch.generate' => 'owner_payroll_generation_not_allowed',
+    'shop_owner.hr.payroll.batch.retry' => 'owner_payroll_generation_not_allowed',
+    'shop_owner.hr.payroll.batch.export' => 'owner_payroll_generation_not_allowed',
+];
+
+foreach ($ownerDeniedParentApiRoutes as $routeName => $reason) {
+    if (! isset($routes[$routeName])) {
+        continue;
+    }
+
+    $routes[$routeName]['owner_access'] = 'denied';
+    $routes[$routeName]['owner_denial_reason'] = $reason;
+    $routes[$routeName]['actor_persistence'] = 'not_applicable';
+}
+
+$ownerExplicitlyExcludedLegacyApiRoutes = [
+    'api.manager.audit-logs' => 'phase_5_surface_not_characterized',
+    'shop-owner.erp.api.manager.audit-logs' => 'phase_5_surface_not_characterized',
+    'shop_owner.finance.invoices.update' => 'phase_5_surface_not_characterized',
+    'shop_owner.finance.invoices.destroy' => 'phase_5_surface_not_characterized',
+    'shop_owner.finance.invoices.restore' => 'phase_5_surface_not_characterized',
+    'shop_owner.finance.invoices.send' => 'phase_5_surface_not_characterized',
+    'shop_owner.finance.invoices.void' => 'phase_5_surface_not_characterized',
+    'shop_owner.finance.invoices.mark_paid' => 'phase_5_surface_not_characterized',
+    'shop_owner.finance.invoices.post' => 'phase_5_surface_not_characterized',
+    'shop_owner.conversations.index' => 'phase_5_surface_not_characterized',
+    'shop_owner.conversations.show' => 'phase_5_surface_not_characterized',
+    'shop_owner.conversations.messages.store' => 'phase_5_surface_not_characterized',
+    'shop_owner.conversations.transfer' => 'phase_5_surface_not_characterized',
+    'shop_owner.conversations.activate-payment' => 'phase_5_surface_not_characterized',
+];
+
+foreach ($ownerExplicitlyExcludedLegacyApiRoutes as $routeName => $reason) {
+    if (! isset($routes[$routeName])) {
+        continue;
+    }
+
+    $routes[$routeName]['owner_access'] = 'denied';
+    $routes[$routeName]['owner_denial_reason'] = $reason;
+    $routes[$routeName]['actor_persistence'] = 'not_applicable';
+}
+
+// Individual owners are the operator of record for their own retail and
+// repair work. Keep the company-only exclusions above intact, but restore the
+// owner-operated repair pages and their supporting APIs for individual shops.
+foreach ([
+    'shop-owner.erp.repair.job-orders',
+    'shop-owner.erp.repair.warranty-queue',
+    'shop-owner.erp.repair.stock-materials',
+    'shop-owner.erp.repair.support',
+] as $routeName) {
+    if (! isset($routes[$routeName])) {
+        continue;
+    }
+
+    $routes[$routeName]['owner_access'] = 'allowed';
+    $routes[$routeName]['owner_denial_reason'] = null;
+    // These are legacy individual-owner operational pages. The repair jobs
+    // page is the one shared monitoring surface: individual owners keep the
+    // existing operator page, while company owners receive its read-only
+    // monitoring projection.
+    $routes[$routeName]['registration_types'] = $routeName === 'shop-owner.erp.repair.job-orders'
+        ? ['individual', 'company']
+        : ['individual'];
+    $routes[$routeName]['business_types'] = ['repair', 'both'];
+    $routes[$routeName]['actor_persistence'] = 'server_resolved_shop_owner';
+    $routes[$routeName]['owner_navigation_visible'] = true;
+    $routes[$routeName]['navigation_visible'] = $routeName === 'shop-owner.erp.repair.job-orders';
+}
+
+if (isset($routes['shop-owner.erp.crm.customer-support'])) {
+    $routes['shop-owner.erp.crm.customer-support']['owner_access'] = 'allowed';
+    $routes['shop-owner.erp.crm.customer-support']['owner_denial_reason'] = null;
+    $routes['shop-owner.erp.crm.customer-support']['registration_types'] = ['individual'];
+    $routes['shop-owner.erp.crm.customer-support']['business_types'] = ['retail', 'repair', 'both'];
+    $routes['shop-owner.erp.crm.customer-support']['actor_persistence'] = 'server_resolved_shop_owner';
+    $routes['shop-owner.erp.crm.customer-support']['owner_navigation_visible'] = true;
+    $routes['shop-owner.erp.crm.customer-support']['navigation_visible'] = false;
+}
+
+if (isset($routes['shop-owner.warranty-queue'])) {
+    $routes['shop-owner.warranty-queue']['owner_access'] = 'allowed';
+    $routes['shop-owner.warranty-queue']['owner_denial_reason'] = null;
+    $routes['shop-owner.warranty-queue']['registration_types'] = ['individual'];
+    $routes['shop-owner.warranty-queue']['business_types'] = ['repair', 'both'];
+    $routes['shop-owner.warranty-queue']['actor_persistence'] = 'server_resolved_shop_owner';
+}
+
+foreach ([
+    'shop_owner.products.index',
+    'shop_owner.products.show',
+    'shop_owner.products.variants',
+    'shop_owner.products.color-variants.index',
+    'shop_owner.products.showroom-entitlement',
+    'shop_owner.products.store',
+    'shop_owner.products.update',
+    'shop_owner.products.destroy',
+    'shop_owner.products.restore',
+    'shop_owner.products.upload-image',
+    'shop_owner.products.color-variants.store',
+    'shop_owner.products.color-variants.update',
+    'shop_owner.products.color-variants.destroy',
+    'shop_owner.products.color-variants.images.store',
+    'shop_owner.products.color-variants.images.update',
+    'shop_owner.products.color-variants.images.destroy',
+    'shop_owner.products.color-variants.images.reorder',
+    'shop_owner.orders.index',
+    'shop_owner.orders.show',
+    'shop_owner.orders.update-status',
+    'shop_owner.orders.correct-terminal-outcome',
+    'shop_owner.orders.activate-pickup',
+    'shop_owner.orders.arrange-return-pickup',
+    'shop_owner.orders.confirm-return-received',
+    'shop_owner.repairs.index',
+    'shop_owner.repairs.accept',
+    'shop_owner.repairs.reject',
+    'shop_owner.repairs.mark-received',
+    'shop_owner.repairs.start-work',
+    'shop_owner.repairs.resume-work',
+    'shop_owner.repairs.mark-completed',
+    'shop_owner.repairs.materials.index',
+    'shop_owner.repairs.materials.store',
+    'shop_owner.repairs.materials.destroy',
+    'shop_owner.repairs.mark-ready',
+    'shop_owner.repairs.activate-pickup',
+    'shop_owner.repairs.activate-payment',
+    'shop_owner.repairs.mark-paid-in-shop',
+    'shop_owner.repairs.high-value-pending',
+    'shop_owner.repairs.approve-high-value',
+    'shop_owner.repairs.reject-high-value',
+    'shop_owner.repairs.ship',
+    'shop_owner.inventory.items.colors.store',
+    'shop_owner.inventory.items.colors.sizes.store',
+    'shop_owner.inventory.items.sizes.update',
+    'shop_owner.inventory.items.index',
+    'shop_owner.inventory.items.store',
+    'shop_owner.inventory.items.update',
+    'shop_owner.inventory.items.destroy',
+    'shop_owner.inventory.items.restore',
+    'shop_owner.inventory.items.images.upload',
+    'shop_owner.inventory.items.images.delete',
+    'shop_owner.inventory.items.images.thumbnail',
+    'shop_owner.conversations.index',
+    'shop_owner.conversations.show',
+    'shop_owner.conversations.messages.store',
+    'shop_owner.conversations.transfer',
+    'shop_owner.conversations.activate-payment',
+] as $routeName) {
+    if (! isset($routes[$routeName])) {
+        continue;
+    }
+
+    $routes[$routeName]['owner_access'] = 'allowed';
+    $routes[$routeName]['owner_denial_reason'] = null;
+    // Company owners may read the shared product catalog and manage the
+    // repair-service workspace. Product mutations and individual-only
+    // operational flows remain restricted to individual owners.
+    $companySharedRoute = in_array($routeName, [
+        'shop_owner.products.index',
+        'shop_owner.products.show',
+        'shop_owner.products.variants',
+        'shop_owner.products.color-variants.index',
+        'shop_owner.products.showroom-entitlement',
+        'shop_owner.repair-services.index',
+        'shop_owner.repair-services.store',
+        'shop_owner.repair-services.show',
+        'shop_owner.repair-services.update',
+        'shop_owner.repair-services.destroy',
+        'shop_owner.repair-services.restore',
+        'shop_owner.repair-materials.index',
+    ], true);
+    $routes[$routeName]['registration_types'] = $companySharedRoute
+        ? ['individual', 'company']
+        : ['individual'];
+    $routes[$routeName]['business_types'] = str_starts_with($routeName, 'shop_owner.products.')
+        || str_starts_with($routeName, 'shop_owner.orders.')
+        ? ['retail', 'both']
+        : (str_starts_with($routeName, 'shop_owner.conversations.')
+            ? ['retail', 'repair', 'both']
+            : ['repair', 'both']);
+    $routes[$routeName]['actor_persistence'] = 'existing_owner_ref';
+
+    $supportingPageRoute = match (true) {
+        str_starts_with($routeName, 'shop_owner.products.') => 'shop-owner.erp.retail.products',
+        str_starts_with($routeName, 'shop_owner.orders.') => 'shop-owner.erp.retail.orders',
+        str_starts_with($routeName, 'shop_owner.repairs.') => 'shop-owner.erp.repair.job-orders',
+        str_starts_with($routeName, 'shop_owner.inventory.items.') => 'shop-owner.erp.repair.stock-materials',
+        str_starts_with($routeName, 'shop_owner.conversations.') => 'shop-owner.erp.crm.customer-support',
+        default => null,
+    };
+
+    if ($supportingPageRoute !== null) {
+        $routes[$routeName]['supporting_routes'] = $routes[$routeName]['supporting_routes'] !== []
+            ? $routes[$routeName]['supporting_routes']
+            : [$supportingPageRoute];
+        $routes[$routeName]['domain_rule'] ??= match (true) {
+            str_starts_with($routeName, 'shop_owner.products.') => 'Owner product operations remain scoped to the authenticated retail shop and product ownership checks.',
+            str_starts_with($routeName, 'shop_owner.orders.') => 'Owner order operations remain scoped to the authenticated retail shop and order-state validation.',
+            str_starts_with($routeName, 'shop_owner.repairs.') => 'Owner repair operations remain scoped to the authenticated repair shop and repair-state validation.',
+            str_starts_with($routeName, 'shop_owner.inventory.items.') => 'Owner repair-material inventory operations remain scoped to the authenticated shop and inventory validation.',
+            str_starts_with($routeName, 'shop_owner.conversations.') => 'Owner customer-support operations remain scoped to the authenticated shop and conversation authorization checks.',
+            default => 'Owner operations remain scoped to the authenticated shop and existing authorization checks.',
+        };
+    }
+}
+
+// Assist Center is a shared owner destination, including the individual
+// workspace. It was previously caught by the broad excluded-route defaults.
+foreach (['shop-owner.dss-insights', 'api.shop_owner.dashboard.dss-insights'] as $routeName) {
+    if (! isset($routes[$routeName])) {
+        continue;
+    }
+
+    $routes[$routeName]['owner_access'] = 'allowed';
+    $routes[$routeName]['owner_denial_reason'] = null;
+    $routes[$routeName]['registration_types'] = ['individual', 'company'];
+    $routes[$routeName]['business_types'] = ['retail', 'repair', 'both'];
+    $routes[$routeName]['actor_persistence'] = 'server_resolved_shop_owner';
+}
+
+if (isset($routes['shop-owner.dss-insights'])) {
+    $routes['shop-owner.dss-insights']['supporting_routes'] = ['api.shop_owner.dashboard.dss-insights'];
+}
+
+if (isset($routes['api.shop_owner.dashboard.dss-insights'])) {
+    $routes['api.shop_owner.dashboard.dss-insights']['supporting_routes'] = ['shop-owner.dss-insights'];
+}
+
+if (isset($routes['shop-owner.warranty-queue'])) {
+    $routes['shop-owner.warranty-queue']['supporting_routes'] = ['shop_owner.repairs.index'];
+}
+
+foreach (['shop_owner.audit.index', 'shop_owner.audit.stats'] as $routeName) {
+    if (! isset($routes[$routeName])) {
+        continue;
+    }
+
+    $routes[$routeName]['owner_access'] = 'allowed';
+    $routes[$routeName]['owner_denial_reason'] = null;
+    $routes[$routeName]['actor_persistence'] = 'server_resolved_shop_owner';
+    $routes[$routeName]['supporting_routes'] = ['shop_owner.audit.index'];
+}
+
+if (isset($routes['shop-owner.shell.audit'])) {
+    $routes['shop-owner.shell.audit']['owner_access'] = 'allowed';
+    $routes['shop-owner.shell.audit']['owner_denial_reason'] = null;
+    $routes['shop-owner.shell.audit']['supporting_routes'] = ['shop_owner.audit.index'];
+}
+
 return [
     'enforcement_enabled' => (bool) env('SHOP_MODULE_ENFORCEMENT_ENABLED', false),
-    'owner_erp_workspace_enabled' => (bool) env('SHOP_OWNER_ERP_WORKSPACE_ENABLED', false),
     'supported_gate_modes' => ['single', 'all_of', 'any_of'],
     'modules' => $modules,
     'routes' => $routes,

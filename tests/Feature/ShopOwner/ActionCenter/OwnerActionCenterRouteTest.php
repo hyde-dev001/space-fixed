@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\ShopOwner\ActionCenter;
 
 use App\Contracts\OwnerActionCenter\OwnerAttentionAdapter;
+use App\Models\Approval;
 use App\Models\Finance\Expense;
 use App\Models\Order;
 use App\Models\OrderRefund;
@@ -48,10 +49,10 @@ final class OwnerActionCenterRouteTest extends TestCase
             'owner_action_center.coverage.salary_changes' => false,
             'owner_action_center.coverage.expenses' => true,
             'owner_action_center.coverage.purchase_requests' => true,
+            'owner_action_center.coverage.suspensions' => false,
             'owner_action_center.coverage.repair_rejections' => false,
             'owner_action_center.buckets.urgent_exceptions.enabled' => false,
             'owner_action_center.buckets.urgent_exceptions.coverage.compliance' => false,
-            'shop_modules.owner_erp_workspace_enabled' => false,
         ]);
     }
 
@@ -127,6 +128,288 @@ final class OwnerActionCenterRouteTest extends TestCase
                 ->where('ownerActionCenter.coverage', 'refunds')
                 ->where('ownerActionCenter.bucket', 'needs_my_decision')
                 ->where('ownerActionCenter.pagination.per_page', 3));
+    }
+
+    public function test_action_center_exposes_only_the_owner_approval_queue(): void
+    {
+        $owner = $this->phaseThreeOwner();
+
+        $this->actingAs($owner, 'shop_owner')
+            ->get(route('shop-owner.shell.action-center'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('bucket', 'needs_my_decision')
+                ->where('ownerActionCenter.bucket', 'needs_my_decision')
+                ->missing('bucketSummaries'));
+    }
+
+    public function test_individual_owner_approval_center_exposes_refunds_only(): void
+    {
+        $owner = $this->phaseThreeOwner();
+        $owner->forceFill([
+            'registration_type' => 'individual',
+            'business_type' => 'both',
+        ])->save();
+
+        $this->actingAs($owner, 'shop_owner')
+            ->get(route('shop-owner.shell.action-center'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('approvalCoverageSources', ['refunds'])
+                ->where('ownerActionCenter.health.enabled_adapter_keys', ['order_refunds', 'repair_refunds'])
+                ->where('ownerActionCenter.coverage', 'all'));
+
+        $this->actingAs($owner, 'shop_owner')
+            ->get(route('shop-owner.shell.action-center', [
+                'approval' => 'salary_change:14',
+            ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('approvalSelection', null)
+                ->where('approvalSelectionError', 'invalid'));
+    }
+
+    public function test_owner_approval_history_exposes_completed_purchase_request_decisions(): void
+    {
+        $owner = $this->phaseThreeOwner();
+        $requester = User::factory()->create(['shop_owner_id' => $owner->id]);
+        $decisionAt = now()->subHour();
+
+        $purchaseRequest = PurchaseRequest::factory()->create([
+            'shop_owner_id' => $owner->id,
+            'requested_by' => $requester->id,
+            'status' => 'pending_finance_final',
+            'requires_owner_approval' => true,
+            'approved_by_shop_owner_id' => $owner->id,
+            'shop_owner_approved_at' => $decisionAt,
+            'total_cost' => 1250,
+        ]);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->get(route('shop-owner.shell.action-center', [
+                'view' => 'history',
+                'source' => 'purchase_requests',
+            ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('view', 'history')
+                ->where('source', 'purchase_requests')
+                ->where('ownerActionCenter.bucket', 'needs_my_decision')
+                ->where('approvalHistory.pagination.total', 1)
+                ->where('approvalHistory.items.0.source_type', 'purchase_request')
+                ->where('approvalHistory.items.0.source_id', $purchaseRequest->id)
+                ->where('approvalHistory.items.0.status', 'approved'));
+    }
+
+    public function test_owner_approval_history_reads_generic_decisions_recorded_for_the_owner_user(): void
+    {
+        $owner = $this->phaseThreeOwner();
+        $requester = User::factory()->create(['shop_owner_id' => $owner->id]);
+        $ownerUser = User::factory()->create(['shop_owner_id' => $owner->id]);
+        $decisionAt = now()->subHours(2);
+        $expense = Expense::create([
+            'reference' => 'EXP-HISTORY-'.uniqid(),
+            'date' => now()->toDateString(),
+            'category' => 'Operations',
+            'description' => 'Generic approval history expense',
+            'amount' => 500,
+            'tax_amount' => 0,
+            'status' => 'approved',
+            'shop_id' => $owner->id,
+        ]);
+
+        Approval::create([
+            'shop_owner_id' => $ownerUser->id,
+            'approvable_type' => Expense::class,
+            'approvable_id' => $expense->id,
+            'reference' => $expense->reference,
+            'description' => 'Generic approval history expense',
+            'amount' => 500,
+            'requested_by' => $requester->id,
+            'current_level' => 2,
+            'total_levels' => 2,
+            'status' => 'approved',
+            'approval_roles' => ['1' => 'finance', '2' => 'shop_owner'],
+            'current_approver_role' => 'shop_owner',
+            'level_reviewers' => [
+                '2' => [
+                    'user_id' => $ownerUser->id,
+                    'action' => 'approved',
+                    'reviewed_at' => $decisionAt->toIso8601String(),
+                ],
+            ],
+        ]);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->get(route('shop-owner.shell.action-center', [
+                'view' => 'history',
+                'source' => 'expenses',
+            ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('approvalHistory.pagination.total', 1)
+                ->where('approvalHistory.items.0.source_type', 'expense')
+                ->where('approvalHistory.items.0.source_id', $expense->id)
+                ->where('approvalHistory.items.0.status', 'approved'));
+    }
+
+    public function test_owner_approval_history_exposes_final_decisions_when_owner_stage_was_skipped(): void
+    {
+        $owner = $this->phaseThreeOwner();
+        $requester = User::factory()->create(['shop_owner_id' => $owner->id]);
+        $financeReviewer = User::factory()->create([
+            'name' => 'Finance Reviewer',
+            'shop_owner_id' => $owner->id,
+        ]);
+        $decisionAt = now()->subHour();
+        $expense = Expense::create([
+            'reference' => 'EXP-SKIPPED-'.uniqid(),
+            'date' => now()->toDateString(),
+            'category' => 'Operations',
+            'description' => 'Finance-only approval history expense',
+            'amount' => 750,
+            'tax_amount' => 0,
+            'status' => 'approved',
+            'shop_id' => $owner->id,
+        ]);
+
+        Approval::create([
+            'shop_owner_id' => $financeReviewer->id,
+            'approvable_type' => Expense::class,
+            'approvable_id' => $expense->id,
+            'reference' => $expense->reference,
+            'description' => 'Finance-only approval history expense',
+            'amount' => 750,
+            'requested_by' => $requester->id,
+            'reviewed_by' => $financeReviewer->id,
+            'reviewed_at' => $decisionAt,
+            'current_level' => 1,
+            'total_levels' => 1,
+            'status' => 'approved',
+            'approval_roles' => ['1' => 'finance'],
+            'current_approver_role' => 'finance',
+            'level_reviewers' => [
+                '1' => [
+                    'role' => 'finance',
+                    'user_id' => $financeReviewer->id,
+                    'action' => 'approved',
+                    'reviewed_at' => $decisionAt->toIso8601String(),
+                ],
+            ],
+        ]);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->get(route('shop-owner.shell.action-center', [
+                'view' => 'history',
+                'source' => 'expenses',
+            ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('approvalHistory.pagination.total', 1)
+                ->where('approvalHistory.items.0.source_type', 'expense')
+                ->where('approvalHistory.items.0.source_id', $expense->id)
+                ->where('approvalHistory.items.0.status', 'approved')
+                ->where('approvalHistory.items.0.reviewed_by', 'Finance Reviewer')
+                ->where('approvalHistory.items.0.concise_summary', 'Approved by Finance; owner approval was not required.'));
+    }
+
+    public function test_owner_approval_history_exposes_finance_final_direct_decisions_when_owner_stage_was_skipped(): void
+    {
+        $owner = $this->phaseThreeOwner();
+        $financeReviewer = User::factory()->create([
+            'name' => 'Finance Reviewer',
+            'shop_owner_id' => $owner->id,
+        ]);
+        $refundDecisionAt = now()->subHour();
+        $purchaseDecisionAt = now()->subHours(2);
+
+        $refund = OrderRefund::factory()->create([
+            'shop_owner_id' => $owner->id,
+            'requires_owner_approval' => false,
+            'status' => 'pending_approval',
+            'shop_owner_status' => 'approved',
+            'shop_owner_approved_at' => $refundDecisionAt,
+            'shop_owner_approved_by' => null,
+            'finance_status' => 'approved',
+            'finance_approved_at' => $refundDecisionAt,
+            'finance_approved_by' => $financeReviewer->id,
+        ]);
+
+        $purchaseRequest = PurchaseRequest::factory()->create([
+            'shop_owner_id' => $owner->id,
+            'requires_owner_approval' => false,
+            'status' => 'approved',
+            'approved_by' => $financeReviewer->id,
+            'approved_date' => $purchaseDecisionAt,
+        ]);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->get(route('shop-owner.shell.action-center', [
+                'view' => 'history',
+                'source' => 'all',
+            ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('approvalHistory.pagination.total', 2)
+                ->where('approvalHistory.items.0.source_type', 'order_refund')
+                ->where('approvalHistory.items.0.source_id', $refund->id)
+                ->where('approvalHistory.items.0.status', 'approved')
+                ->where('approvalHistory.items.0.reviewed_by', 'Finance Reviewer')
+                ->where('approvalHistory.items.0.concise_summary', 'Approved by Finance; owner approval was not required.')
+                ->where('approvalHistory.items.1.source_type', 'purchase_request')
+                ->where('approvalHistory.items.1.source_id', $purchaseRequest->id)
+                ->where('approvalHistory.items.1.status', 'approved')
+                ->where('approvalHistory.items.1.reviewed_by', 'Finance Reviewer')
+                ->where('approvalHistory.items.1.concise_summary', 'Approved by Finance; owner approval was not required.'));
+    }
+
+    public function test_owner_approval_history_exposes_manager_final_repair_decision_when_owner_stage_was_skipped(): void
+    {
+        $owner = $this->phaseThreeOwner();
+        $manager = User::factory()->create([
+            'name' => 'Repair Manager',
+            'shop_owner_id' => $owner->id,
+        ]);
+        $decisionAt = now()->subHour();
+        $repair = RepairRequest::factory()->create([
+            'shop_owner_id' => $owner->id,
+            'requires_owner_approval' => false,
+            'status' => 'rejected',
+            'manager_decision' => 'approve_rejection',
+            'manager_reviewed_at' => $decisionAt,
+            'manager_reviewed_by' => $manager->id,
+            'repairer_rejection_reason' => 'Repair cannot be completed safely.',
+        ]);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->get(route('shop-owner.shell.action-center', [
+                'view' => 'history',
+                'source' => 'repair_rejections',
+            ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('approvalHistory.pagination.total', 1)
+                ->where('approvalHistory.items.0.source_type', 'repair_rejection')
+                ->where('approvalHistory.items.0.source_id', $repair->id)
+                ->where('approvalHistory.items.0.status', 'rejected')
+                ->where('approvalHistory.items.0.reviewed_by', 'Repair Manager')
+                ->where('approvalHistory.items.0.concise_summary', 'Rejected by Manager; owner approval was not required.'));
+    }
+
+    public function test_legacy_exception_and_waiting_bucket_urls_redirect_to_approval_center(): void
+    {
+        $owner = $this->phaseThreeOwner();
+
+        foreach (['urgent_exceptions', 'waiting_on_others'] as $bucket) {
+            $this->actingAs($owner, 'shop_owner')
+                ->get(route('shop-owner.shell.action-center', [
+                    'bucket' => $bucket,
+                    'source' => 'all',
+                ]))
+                ->assertRedirect(route('shop-owner.shell.action-center', [
+                    'source' => 'all',
+                ]));
+        }
     }
 
     public function test_invalid_approval_selection_keeps_the_queue_available_and_marks_the_link_invalid(): void
@@ -422,7 +705,7 @@ final class OwnerActionCenterRouteTest extends TestCase
                 ->where('ownerActionCenter.coverage', 'all'));
     }
 
-    public function test_exception_bucket_uses_bucket_scoped_source_and_independent_page_state(): void
+    public function test_exception_bucket_is_no_longer_served_by_the_approval_center(): void
     {
         $owner = $this->phaseThreeOwner();
         config([
@@ -437,19 +720,12 @@ final class OwnerActionCenterRouteTest extends TestCase
                 'page' => 2,
                 'per_page' => 3,
             ]))
-            ->assertOk()
-            ->assertInertia(fn (Assert $page) => $page
-                ->component('ShopOwner/ActionCenter', false)
-                ->where('bucket', 'urgent_exceptions')
-                ->where('source', 'compliance')
-                ->where('page', 1)
-                ->where('ownerActionCenter.bucket', 'urgent_exceptions')
-                ->where('ownerActionCenter.coverage', 'compliance')
-                ->has('bucketSummaries.needs_my_decision')
-                ->has('bucketSummaries.urgent_exceptions'));
+            ->assertRedirect(route('shop-owner.shell.action-center', [
+                'source' => 'all',
+            ]));
     }
 
-    public function test_waiting_bucket_accepts_its_scoped_source_and_resets_pagination(): void
+    public function test_waiting_bucket_is_no_longer_served_by_the_approval_center(): void
     {
         $owner = $this->phaseThreeOwner();
         config([
@@ -466,18 +742,9 @@ final class OwnerActionCenterRouteTest extends TestCase
                 'page' => 2,
                 'per_page' => 3,
             ]))
-            ->assertOk()
-            ->assertInertia(fn (Assert $page) => $page
-                ->component('ShopOwner/ActionCenter', false)
-                ->where('bucket', 'waiting_on_others')
-                ->where('source', 'compliance')
-                ->where('page', 1)
-                ->where('ownerActionCenter.bucket', 'waiting_on_others')
-                ->where('ownerActionCenter.coverage', 'compliance')
-                ->where('ownerActionCenter.degradation_status', 'none')
-                ->has('bucketSummaries.needs_my_decision')
-                ->has('bucketSummaries.urgent_exceptions')
-                ->has('bucketSummaries.waiting_on_others'));
+            ->assertRedirect(route('shop-owner.shell.action-center', [
+                'source' => 'all',
+            ]));
     }
 
     public function test_disabled_exception_bucket_normalizes_to_the_default_decision_bucket(): void
@@ -490,15 +757,12 @@ final class OwnerActionCenterRouteTest extends TestCase
                 'source' => 'compliance',
                 'page' => 4,
             ]))
-            ->assertOk()
-            ->assertInertia(fn (Assert $page) => $page
-                ->where('bucket', 'needs_my_decision')
-                ->where('source', 'all')
-                ->where('page', 1)
-                ->where('ownerActionCenter.bucket', 'needs_my_decision'));
+            ->assertRedirect(route('shop-owner.shell.action-center', [
+                'source' => 'all',
+            ]));
     }
 
-    public function test_disabling_waiting_leaves_existing_bucket_summaries_unchanged(): void
+    public function test_waiting_bucket_redirect_does_not_depend_on_bucket_configuration(): void
     {
         $owner = $this->phaseThreeOwner();
         config([
@@ -513,13 +777,9 @@ final class OwnerActionCenterRouteTest extends TestCase
                 'bucket' => 'waiting_on_others',
                 'source' => 'compliance',
             ]))
-            ->assertOk()
-            ->assertInertia(fn (Assert $page) => $page
-                ->where('bucket', 'needs_my_decision')
-                ->where('source', 'all')
-                ->has('bucketSummaries.needs_my_decision')
-                ->has('bucketSummaries.urgent_exceptions')
-                ->missing('bucketSummaries.waiting_on_others'));
+            ->assertRedirect(route('shop-owner.shell.action-center', [
+                'source' => 'all',
+            ]));
     }
 
     public function test_selected_canonical_home_receives_a_bounded_summary(): void
@@ -536,24 +796,7 @@ final class OwnerActionCenterRouteTest extends TestCase
                 ->where('ownerActionCenter.pagination.per_page', 3));
     }
 
-    public function test_canonical_home_receives_separate_decision_and_exception_summaries(): void
-    {
-        $owner = $this->phaseThreeOwner();
-        config([
-            'owner_action_center.buckets.urgent_exceptions.enabled' => true,
-            'owner_action_center.buckets.urgent_exceptions.coverage.compliance' => true,
-        ]);
-
-        $this->actingAs($owner, 'shop_owner')
-            ->get(route('shop-owner.shell.home'))
-            ->assertOk()
-            ->assertInertia(fn (Assert $page) => $page
-                ->where('ownerActionCenter.bucket', 'needs_my_decision')
-                ->where('ownerUrgentExceptions.bucket', 'urgent_exceptions')
-                ->where('ownerUrgentExceptions.pagination.per_page', 3));
-    }
-
-    public function test_canonical_home_receives_an_independent_waiting_summary(): void
+    public function test_canonical_home_receives_only_the_decision_summary(): void
     {
         $owner = $this->phaseThreeOwner();
         config([
@@ -568,9 +811,8 @@ final class OwnerActionCenterRouteTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('ownerActionCenter.bucket', 'needs_my_decision')
-                ->where('ownerUrgentExceptions.bucket', 'urgent_exceptions')
-                ->where('ownerWaitingOnOthers.bucket', 'waiting_on_others')
-                ->where('ownerWaitingOnOthers.pagination.per_page', 3));
+                ->missing('ownerUrgentExceptions')
+                ->missing('ownerWaitingOnOthers'));
     }
 
     public function test_existing_dashboard_never_reads_phase_three_attention_sources(): void

@@ -52,10 +52,10 @@ const metadata = (overrides: Partial<OwnerShellMetadata> = {}): OwnerShellMetada
     },
     {
       key: "action-center",
-      label: "Action Center",
+      label: "Approval Center",
       order: 5,
       default_expanded: true,
-      items: [item({ key: "action-center", label: "Action Center", canonical_url: "/shop-owner/action-center", active_matching: ["/shop-owner/action-center"] })],
+      items: [item({ key: "action-center", label: "Approval Center", canonical_url: "/shop-owner/action-center", active_matching: ["/shop-owner/action-center"] })],
     },
     {
       key: "operate",
@@ -98,11 +98,6 @@ const metadata = (overrides: Partial<OwnerShellMetadata> = {}): OwnerShellMetada
       ],
     },
   ],
-  compatibility: {
-    show_erp_fallback: true,
-    erp_workspace_url: "/shop-owner/erp/workspace",
-    fallback_url: "/shop-owner/erp/fallback?reason=user_preference&source=home",
-  },
   ...overrides,
 });
 
@@ -111,6 +106,7 @@ beforeEach(() => {
   state.isExpanded = true;
   state.isMobileOpen = false;
   state.isHovered = false;
+  window.localStorage.clear();
 });
 
 it("orders and expands the primary group for an individual owner", () => {
@@ -191,11 +187,11 @@ it("uses canonical URLs for Home, Reports, Audit, and Settings", () => {
   expect(screen.queryByRole("link", { name: "Profile" })).not.toBeInTheDocument();
 });
 
-it("keeps Action Center separate and does not expand module links into local pages", () => {
+it("keeps Approval Center separate and renders only metadata-provided module links", () => {
   render(<CanonicalOwnerSidebar metadata={metadata()} />);
 
   expect(screen.getByTestId("canonical-owner-group-action-center")).toBeInTheDocument();
-  expect(screen.getByRole("link", { name: "Action Center" })).toHaveAttribute(
+  expect(screen.getByRole("link", { name: "Approval Center" })).toHaveAttribute(
     "href",
     "/shop-owner/action-center",
   );
@@ -218,6 +214,39 @@ it("matches one canonical item when a compatibility URL is active", () => {
   expect(activeLinks[0]).toHaveClass("menu-item-active");
 });
 
+it("keeps an active nested page visible and expands its parent group", () => {
+  state.url = "/shop-owner/erp/retail/products";
+  const nestedMetadata = metadata({
+    groups: metadata().groups.map((group) => group.key === "operate"
+      ? {
+          ...group,
+          items: [item({
+            children: [
+              item({
+                key: "job-orders-retail",
+                label: "Job Orders Retail",
+                canonical_url: "/shop-owner/erp/retail/orders",
+                active_matching: ["/shop-owner/erp/retail/orders*"],
+              }),
+              item({
+                key: "product-management",
+                label: "Product Management",
+                canonical_url: "/shop-owner/erp/retail/products",
+                active_matching: ["/shop-owner/erp/retail/products*"],
+              }),
+            ],
+          })],
+        }
+      : group),
+  });
+
+  render(<CanonicalOwnerSidebar metadata={nestedMetadata} />);
+
+  expect(screen.getByRole("link", { name: "Product Management" })).toHaveAttribute("aria-current", "page");
+  expect(screen.getByRole("link", { name: "Retail" })).not.toHaveAttribute("aria-current", "page");
+  expect(screen.getByTestId("canonical-owner-group-operate")).toHaveAttribute("aria-expanded", "true");
+});
+
 it("keeps collapsed destinations visually identifiable with icons and labels", () => {
   state.isExpanded = false;
   render(<CanonicalOwnerSidebar metadata={metadata()} />);
@@ -227,19 +256,14 @@ it("keeps collapsed destinations visually identifiable with icons and labels", (
   expect(within(retailLink).getByTestId("canonical-owner-item-icon-retail")).toBeVisible();
   expect(screen.getByTestId("canonical-owner-group-operate")).toHaveAttribute("title", "Operate");
   expect(within(screen.getByTestId("canonical-owner-group-operate")).getByTestId("canonical-owner-group-icon-operate")).toBeVisible();
-  expect(screen.getByTestId("canonical-owner-fallback-icon")).toBeVisible();
 });
 
-it("keeps the ERP fallback outside primary navigation", () => {
+it("does not render a retired ERP Workspace compatibility link", () => {
   render(<CanonicalOwnerSidebar metadata={metadata()} />);
 
   const primary = screen.getByTestId("canonical-owner-primary-navigation");
-  const compatibility = screen.getByTestId("canonical-owner-compatibility");
   expect(within(primary).queryByRole("link", { name: /open existing erp workspace/i })).not.toBeInTheDocument();
-  expect(within(compatibility).getByRole("link", { name: /open existing erp workspace/i })).toHaveAttribute(
-    "href",
-    "/shop-owner/erp/fallback?reason=user_preference&source=home",
-  );
+  expect(screen.queryByTestId("canonical-owner-compatibility")).not.toBeInTheDocument();
 });
 
 it("does not render Business Settings as a primary navigation group", () => {
@@ -254,4 +278,49 @@ it("reads presentation metadata directly without needing client authorization in
 
   fireEvent.click(screen.getByRole("button", { name: "Oversee" }));
   expect(screen.getByRole("link", { name: "Finance" })).toBeVisible();
+});
+
+it("keeps manually expanded groups open when page metadata refreshes after navigation", () => {
+  const companyMetadata = metadata({
+    context: "company",
+    groups: metadata().groups.map((group) => (
+      group.key === "operate" || group.key === "reports"
+        ? { ...group, default_expanded: false }
+        : group
+    )),
+  });
+  const { rerender } = render(<CanonicalOwnerSidebar metadata={companyMetadata} />);
+
+  fireEvent.click(screen.getByRole("button", { name: "Operate" }));
+  fireEvent.click(screen.getByRole("button", { name: "Reports & Audit" }));
+  expect(screen.getByTestId("canonical-owner-group-operate")).toHaveAttribute("aria-expanded", "true");
+  expect(screen.getByTestId("canonical-owner-group-reports")).toHaveAttribute("aria-expanded", "true");
+
+  state.url = "/shop-owner/operate/retail";
+  rerender(<CanonicalOwnerSidebar metadata={{ ...companyMetadata, groups: companyMetadata.groups.map((group) => ({ ...group })) }} />);
+
+  expect(screen.getByTestId("canonical-owner-group-operate")).toHaveAttribute("aria-expanded", "true");
+  expect(screen.getByTestId("canonical-owner-group-reports")).toHaveAttribute("aria-expanded", "true");
+});
+
+it("restores expanded groups when the canonical sidebar remounts after navigation", () => {
+  const companyMetadata = metadata({
+    context: "company",
+    groups: metadata().groups.map((group) => (
+      group.key === "operate" || group.key === "reports"
+        ? { ...group, default_expanded: false }
+        : group
+    )),
+  });
+  const firstRender = render(<CanonicalOwnerSidebar metadata={companyMetadata} />);
+
+  fireEvent.click(screen.getByRole("button", { name: "Operate" }));
+  fireEvent.click(screen.getByRole("button", { name: "Reports & Audit" }));
+  firstRender.unmount();
+
+  state.url = "/shop-owner/reports";
+  render(<CanonicalOwnerSidebar metadata={{ ...companyMetadata, groups: companyMetadata.groups.map((group) => ({ ...group })) }} />);
+
+  expect(screen.getByTestId("canonical-owner-group-operate")).toHaveAttribute("aria-expanded", "true");
+  expect(screen.getByTestId("canonical-owner-group-reports")).toHaveAttribute("aria-expanded", "true");
 });

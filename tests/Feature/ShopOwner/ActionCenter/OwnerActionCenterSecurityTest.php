@@ -39,6 +39,7 @@ final class OwnerActionCenterSecurityTest extends TestCase
             'owner_action_center.coverage.refunds' => false,
             'owner_action_center.coverage.expenses' => false,
             'owner_action_center.coverage.purchase_requests' => true,
+            'owner_action_center.coverage.suspensions' => false,
             'owner_action_center.coverage.prices' => false,
             'owner_action_center.coverage.payslips' => false,
             'owner_action_center.coverage.salary_changes' => false,
@@ -330,21 +331,29 @@ final class OwnerActionCenterSecurityTest extends TestCase
         $ownerDocument = $this->expiringDocument($owner, $reviewer, 'private/owner-secret.pdf');
         $otherDocument = $this->expiringDocument($otherOwner, $reviewer, 'private/other-secret.pdf');
 
-        $response = $this->actingAs($owner, 'shop_owner')->get(route('shop-owner.shell.action-center', [
-            'bucket' => 'urgent_exceptions',
-            'source' => 'compliance',
-        ]))->assertOk();
+        $result = app(OwnerActionCenterService::class)->queueForActionCenter(
+            $owner,
+            new OwnerAttentionQuery(bucket: 'urgent_exceptions', coverage: 'compliance'),
+        );
 
-        $items = $response->inertiaProps('ownerActionCenter.items');
-        $this->assertSame([$ownerDocument->id], array_column($items, 'source_id'));
-        $this->assertNotContains($otherDocument->id, array_column($items, 'source_id'));
-        $serialized = json_encode($items, JSON_THROW_ON_ERROR);
+        $this->assertSame([$ownerDocument->id], array_map(
+            static fn (OwnerAttentionItem $item): int => $item->sourceId,
+            $result->items,
+        ));
+        $this->assertNotContains($otherDocument->id, array_map(
+            static fn (OwnerAttentionItem $item): int => $item->sourceId,
+            $result->items,
+        ));
+        $serialized = json_encode(array_map(
+            static fn (OwnerAttentionItem $item): array => $item->toArray(),
+            $result->items,
+        ), JSON_THROW_ON_ERROR);
         $this->assertStringNotContainsString('owner-secret', $serialized);
         $this->assertStringNotContainsString('other-secret', $serialized);
         $this->assertStringNotContainsString('checksum_sha256', $serialized);
     }
 
-    public function test_compliance_failure_keeps_decisions_healthy_and_marks_exceptions_unavailable(): void
+    public function test_compliance_failure_does_not_add_a_retired_exception_summary_to_home(): void
     {
         $owner = $this->phaseThreeOwner();
         $request = $this->createPurchaseRequest($owner);
@@ -369,8 +378,8 @@ final class OwnerActionCenterSecurityTest extends TestCase
             'source_id',
         ));
         $this->assertSame('none', $response->inertiaProps('ownerActionCenter.degradation_status'));
-        $this->assertSame('unavailable', $response->inertiaProps('ownerUrgentExceptions.degradation_status'));
-        $this->assertSame(['compliance_documents'], $response->inertiaProps('ownerUrgentExceptions.health.failed_adapter_keys'));
+        $this->assertNull($response->inertiaProps('ownerUrgentExceptions'));
+        $this->assertNull($response->inertiaProps('ownerWaitingOnOthers'));
     }
 
     public function test_blocked_exception_sources_are_not_resolved_or_reported_as_failures(): void
@@ -383,12 +392,13 @@ final class OwnerActionCenterSecurityTest extends TestCase
             'owner_action_center.buckets.urgent_exceptions.coverage.logistics' => false,
         ]);
 
-        $response = $this->actingAs($owner, 'shop_owner')->get(route('shop-owner.shell.action-center', [
-            'bucket' => 'urgent_exceptions',
-        ]))->assertOk();
+        $result = app(OwnerActionCenterService::class)->queueForActionCenter(
+            $owner,
+            new OwnerAttentionQuery(bucket: 'urgent_exceptions'),
+        );
 
-        $this->assertSame(['compliance_documents'], $response->inertiaProps('ownerActionCenter.health.enabled_adapter_keys'));
-        $this->assertSame([], $response->inertiaProps('ownerActionCenter.health.failed_adapter_keys'));
+        $this->assertSame(['compliance_documents'], $result->enabledAdapterKeys);
+        $this->assertSame([], $result->failedAdapterKeys);
     }
 
     private function phaseThreeOwner(): ShopOwner

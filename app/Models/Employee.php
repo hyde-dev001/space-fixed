@@ -263,6 +263,11 @@ class Employee extends Model
         return $this->shop_owner_id === $shopOwnerId;
     }
 
+    public function isOffboarded(): bool
+    {
+        return $this->trashed();
+    }
+
     /**
      * Activity Log Configuration
      */

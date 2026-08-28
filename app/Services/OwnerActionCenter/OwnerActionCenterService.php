@@ -46,10 +46,25 @@ final class OwnerActionCenterService
         return $this->read($owner, $query);
     }
 
-    private function read(ShopOwner $owner, OwnerAttentionQuery $query): OwnerActionCenterResult
+    public function queueForOwnerApprovalCenter(ShopOwner $owner, OwnerAttentionQuery $query): OwnerActionCenterResult
+    {
+        return $this->read($owner, $query, ownerScoped: true);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function approvalCoverageSourcesFor(ShopOwner $owner): array
+    {
+        return $this->adapterRegistry->approvalCoverageSourcesFor($owner);
+    }
+
+    private function read(ShopOwner $owner, OwnerAttentionQuery $query, bool $ownerScoped = false): OwnerActionCenterResult
     {
         $startedAt = microtime(true);
-        $adapters = $this->adapterRegistry->adaptersFor($query->bucket, $query->coverage);
+        $adapters = $ownerScoped
+            ? $this->adapterRegistry->adaptersForOwner($owner, $query->bucket, $query->coverage)
+            : $this->adapterRegistry->adaptersFor($query->bucket, $query->coverage);
         $emptyCoverageCounts = $this->emptyCoverageCounts($query->bucket);
         $enabledAdapterKeys = array_map(
             static fn ($adapter): string => $adapter->adapterKey(),

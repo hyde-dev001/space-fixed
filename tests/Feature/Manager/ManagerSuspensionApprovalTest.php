@@ -4,6 +4,7 @@ namespace Tests\Feature\Manager;
 
 use App\Enums\SuspensionStatus;
 use App\Models\Employee;
+use App\Models\HR\AuditLog;
 use App\Models\ShopOwner;
 use App\Models\SuspensionRequest;
 use App\Models\User;
@@ -74,6 +75,14 @@ class ManagerSuspensionApprovalTest extends TestCase
         $this->assertNotNull($this->suspension->manager_id);
         $this->assertEquals($this->manager->id, $this->suspension->manager_id);
         $this->assertNotNull($this->suspension->manager_reviewed_at);
+
+        $this->assertDatabaseHas('hr_audit_logs', [
+            'shop_owner_id' => $this->shop->id,
+            'user_id' => $this->manager->id,
+            'employee_id' => $this->employee->id,
+            'action' => AuditLog::ACTION_APPROVED,
+            'entity_id' => $this->suspension->id,
+        ]);
     }
 
     /**
@@ -136,8 +145,10 @@ class ManagerSuspensionApprovalTest extends TestCase
                 ['action' => 'reject', 'note' => 'Trying to reject already approved']
             );
 
-        $response->assertStatus(422);
-        $response->assertJson(['message' => 'This request is not pending manager review.']);
+        $response->assertStatus(409);
+        $response->assertJsonPath('code', 'SUSPENSION_REQUEST_ALREADY_DECIDED');
+        $response->assertJsonPath('message', 'This suspension request has already been decided.');
+        $response->assertJsonMissing(['message' => 'This request has already reached a decision.']);
     }
 
     /**

@@ -17,6 +17,8 @@ final readonly class OwnerShellItem
         public ?string $managementUrl,
         /** @var array<int, string> */
         public array $activeMatching,
+        /** @var array<int, OwnerShellItem> */
+        public array $children = [],
     ) {
         self::validateKey($key, 'item key');
         self::validateLabel($label, 'item label');
@@ -34,6 +36,12 @@ final readonly class OwnerShellItem
             self::validatePath($pattern, 'active-matching pattern', false, true);
         }
 
+        foreach ($children as $child) {
+            if (! $child instanceof self) {
+                throw new InvalidArgumentException('Owner shell item children must be OwnerShellItem values.');
+            }
+        }
+
         if ($available) {
             if ($unavailableReason !== null || $managementUrl !== null) {
                 throw new InvalidArgumentException('Available owner shell items cannot carry unavailable metadata.');
@@ -47,7 +55,7 @@ final readonly class OwnerShellItem
     }
 
     /**
-     * @return array{key: string, label: string, canonical_url: string, available: bool, unavailable_reason: string|null, management_url: string|null, active_matching: array<int, string>}
+     * @return array{key: string, label: string, canonical_url: string, available: bool, unavailable_reason: string|null, management_url: string|null, active_matching: array<int, string>, children: array<int, array<string, mixed>>}
      */
     public function toArray(): array
     {
@@ -59,6 +67,10 @@ final readonly class OwnerShellItem
             'unavailable_reason' => $this->unavailableReason,
             'management_url' => $this->managementUrl,
             'active_matching' => array_values($this->activeMatching),
+            'children' => array_map(
+                static fn (self $child): array => $child->toArray(),
+                array_values($this->children),
+            ),
         ];
     }
 

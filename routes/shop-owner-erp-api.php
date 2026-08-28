@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Http\Controllers\Erp\WorkspaceController;
 use App\Http\Controllers\Api\CRM\CRMCustomerController;
 use App\Http\Controllers\Api\CRM\CRMDashboardController;
 use App\Http\Controllers\Api\CRM\CRMReviewController;
@@ -17,18 +16,14 @@ use App\Http\Controllers\Erp\InventoryDashboardController;
 use App\Http\Controllers\Erp\ProductInventoryController;
 use App\Http\Controllers\Erp\StockMovementController;
 use App\Http\Controllers\Erp\SupplierController;
+use App\Http\Controllers\ShopOwner\ShopOwnerOperationsMonitoringController;
 use App\Http\Controllers\Api\Staff\CustomerController as StaffCustomerApiController;
 use App\Http\Controllers\Repairer\DashboardController as RepairerDashboardController;
-use App\Http\Middleware\EnsureOwnerErpWorkspaceEnabled;
 use Illuminate\Support\Facades\Route;
 
-Route::middleware(EnsureOwnerErpWorkspaceEnabled::class)
-    ->prefix('api/shop-owner/erp')
+Route::prefix('api/shop-owner/erp')
     ->name('shop-owner.erp.api.')
     ->group(function (): void {
-        Route::get('/workspace', [WorkspaceController::class, 'data'])
-            ->name('workspace');
-
         Route::get('/hr/audit-logs', [HRAuditLogController::class, 'index'])
             ->name('hr.audit-logs');
         Route::get('/finance/audit-logs', [FinanceAuditLogController::class, 'index'])
@@ -37,6 +32,21 @@ Route::middleware(EnsureOwnerErpWorkspaceEnabled::class)
             ->name('manager.reports');
         Route::get('/manager/audit-logs', [ActivityLogController::class, 'index'])
             ->name('manager.audit-logs');
+
+        // Company-owner monitoring projections reuse the normalized Manager
+        // read shape without exposing Manager mutation routes.
+        Route::prefix('operations')->name('operations.')->group(function (): void {
+            Route::get('/orders', [ShopOwnerOperationsMonitoringController::class, 'orders'])
+                ->name('orders');
+            Route::get('/orders/{id}', [ShopOwnerOperationsMonitoringController::class, 'showOrder'])
+                ->whereNumber('id')
+                ->name('orders.show');
+            Route::get('/repairs', [ShopOwnerOperationsMonitoringController::class, 'repairs'])
+                ->name('repairs');
+            Route::get('/repairs/{id}', [ShopOwnerOperationsMonitoringController::class, 'showRepair'])
+                ->whereNumber('id')
+                ->name('repairs.show');
+        });
 
         Route::get('/inventory/dashboard', [InventoryDashboardController::class, 'index'])
             ->name('inventory.dashboard');

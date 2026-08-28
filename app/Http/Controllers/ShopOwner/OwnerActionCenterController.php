@@ -9,6 +9,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ShopOwner;
 use App\Services\OwnerActionCenter\OwnerActionCenterRolloutPolicy;
 use App\Services\OwnerActionCenter\OwnerActionCenterService;
+use App\Services\OwnerActionCenter\OwnerApprovalHistoryService;
 use App\Services\OwnerShell\CanonicalOwnerShellService;
 use App\Support\OwnerActionCenter\OwnerAttentionQuery;
 use Illuminate\Http\RedirectResponse;
@@ -31,6 +32,7 @@ final class OwnerActionCenterController extends Controller
         'payslip',
         'salary_change',
         'purchase_request',
+        'suspension_request',
         'expense',
         'repair_rejection',
     ];
@@ -39,6 +41,7 @@ final class OwnerActionCenterController extends Controller
         private readonly OwnerActionCenterRolloutPolicy $rollout,
         private readonly CanonicalOwnerShellService $shell,
         private readonly OwnerActionCenterService $actionCenter,
+        private readonly OwnerApprovalHistoryService $approvalHistory,
     ) {}
 
     public function __invoke(Request $request): Response|RedirectResponse
@@ -48,15 +51,28 @@ final class OwnerActionCenterController extends Controller
             return redirect()->route('shop-owner.shell.home');
         }
 
-        $query = $this->queryFrom($request);
-        $approvalSelection = $this->approvalSelectionFrom($request);
+        $view = $this->viewFrom($request);
+
+        if ($this->isRetiredBucketRequest($request)) {
+            $parameters = ['source' => 'all'];
+            if ($view === 'history') {
+                $parameters['view'] = 'history';
+            }
+
+            return redirect()->route('shop-owner.shell.action-center', $parameters);
+        }
+
+        $query = $this->queryFrom($request, $owner, $view);
+        $approvalSelection = $this->approvalSelectionFrom($request, $owner);
         $approvalSelectionError = $request->query->has('approval') && $approvalSelection === null
             ? 'invalid'
             : null;
 
         try {
-            $result = $this->actionCenter->queueForActionCenter($owner, $query);
-            $bucketSummaries = $this->bucketSummaries($owner);
+            $result = $this->actionCenter->queueForOwnerApprovalCenter($owner, $query);
+            $history = $view === 'history'
+                ? $this->approvalHistory->read($owner, $query)
+                : null;
         } catch (Throwable $exception) {
             report($exception);
             Log::warning('owner_action_center.route_failed', [
@@ -73,11 +89,14 @@ final class OwnerActionCenterController extends Controller
 
         return Inertia::render('ShopOwner/ActionCenter', [
             'ownerActionCenter' => $result->toArray(),
-            'bucketSummaries' => $bucketSummaries,
+            'approvalCoverageSources' => $this->enabledApprovalCoverageSources($owner),
+            'approvalHistoryCoverageSources' => $this->approvalHistory->coverageSourcesFor($owner),
+            'view' => $view,
             'bucket' => $result->bucket,
-            'source' => $result->coverage,
-            'page' => $result->page,
-            'per_page' => $result->perPage,
+            'source' => $history?->coverage ?? $result->coverage,
+            'page' => $history?->page ?? $result->page,
+            'per_page' => $history?->perPage ?? $result->perPage,
+            'approvalHistory' => $history?->toArray(),
             'approvalSelection' => $approvalSelection,
             'approvalSelectionError' => $approvalSelectionError,
         ]);
@@ -86,7 +105,10 @@ final class OwnerActionCenterController extends Controller
     public function legacyRedirect(Request $request): RedirectResponse
     {
         $parameters = [];
-        $selection = $this->legacyApprovalSelectionFrom($request);
+        $owner = $request->user('shop_owner');
+        $selection = $owner instanceof ShopOwner
+            ? $this->legacyApprovalSelectionFrom($request, $owner)
+            : null;
 
         if ($selection !== null) {
             $parameters = [
@@ -104,30 +126,31 @@ final class OwnerActionCenterController extends Controller
             && $this->shell->forOwner($owner)->presentation === OwnerShellPresentation::Canonical;
     }
 
-    private function queryFrom(Request $request): OwnerAttentionQuery
+    private function queryFrom(Request $request, ShopOwner $owner, string $view): OwnerAttentionQuery
     {
         $bucket = $request->query('bucket', 'needs_my_decision');
         if (! is_string($bucket)
             || ! in_array($bucket, OwnerAttentionQuery::BUCKETS, true)) {
             throw ValidationException::withMessages([
-                'bucket' => 'The Action Center bucket is invalid.',
+                'bucket' => 'The Approval Center bucket is invalid.',
             ]);
         }
 
-        if ($bucket !== 'needs_my_decision' && ! $this->bucketEnabled($bucket)) {
-            return new OwnerAttentionQuery(
-                page: 1,
-                perPage: $this->configuredDefaultPerPage(
-                    $this->configuredBound('max_per_page', OwnerAttentionQuery::MAX_PER_PAGE),
-                ),
-            );
+        if ($bucket !== 'needs_my_decision') {
+            throw ValidationException::withMessages([
+                'bucket' => 'Only owner approvals are available in the Approval Center.',
+            ]);
         }
 
         $source = $request->query('source', 'all');
+        $allowedSources = $view === 'history'
+            ? $this->approvalHistory->coverageSourcesFor($owner)
+            : $this->enabledApprovalCoverageSources($owner);
+
         if (! is_string($source)
-            || ! in_array($source, OwnerAttentionQuery::COVERAGES_BY_BUCKET[$bucket], true)) {
+            || ! in_array($source, ['all', ...$allowedSources], true)) {
             throw ValidationException::withMessages([
-                'source' => 'The Action Center source filter is invalid.',
+                'source' => 'The Approval Center source filter is invalid.',
             ]);
         }
 
@@ -143,8 +166,20 @@ final class OwnerActionCenterController extends Controller
         );
     }
 
+    private function viewFrom(Request $request): string
+    {
+        $view = $request->query('view', 'pending');
+        if (! is_string($view) || ! in_array($view, ['pending', 'history'], true)) {
+            throw ValidationException::withMessages([
+                'view' => 'The Approval Center view is invalid.',
+            ]);
+        }
+
+        return $view;
+    }
+
     /** @return array{sourceType: string, sourceId: int}|null */
-    private function approvalSelectionFrom(Request $request): ?array
+    private function approvalSelectionFrom(Request $request, ShopOwner $owner): ?array
     {
         $value = $request->query('approval');
         if (! is_string($value)) {
@@ -152,7 +187,7 @@ final class OwnerActionCenterController extends Controller
         }
 
         if (preg_match('/\A([a-z][a-z0-9_]*):([1-9][0-9]*)\z/', $value, $matches) !== 1
-            || ! in_array($matches[1], self::APPROVAL_SOURCE_TYPES, true)) {
+            || ! in_array($matches[1], $this->approvalSourceTypesFor($owner), true)) {
             return null;
         }
 
@@ -173,9 +208,9 @@ final class OwnerActionCenterController extends Controller
     }
 
     /** @return array{sourceType: string, sourceId: int}|null */
-    private function legacyApprovalSelectionFrom(Request $request): ?array
+    private function legacyApprovalSelectionFrom(Request $request, ShopOwner $owner): ?array
     {
-        $selection = $this->approvalSelectionFrom($request);
+        $selection = $this->approvalSelectionFrom($request, $owner);
         if ($selection !== null) {
             return $selection;
         }
@@ -203,7 +238,7 @@ final class OwnerActionCenterController extends Controller
             };
         }
 
-        if (! is_string($sourceType) || ! in_array($sourceType, self::APPROVAL_SOURCE_TYPES, true)) {
+        if (! is_string($sourceType) || ! in_array($sourceType, $this->approvalSourceTypesFor($owner), true)) {
             return null;
         }
 
@@ -273,48 +308,35 @@ final class OwnerActionCenterController extends Controller
         return $sourceId === false ? null : (int) $sourceId;
     }
 
-    /** @return array<string, array<string, mixed>> */
-    private function bucketSummaries(ShopOwner $owner): array
+    private function isRetiredBucketRequest(Request $request): bool
     {
-        $summaries = [
-            'needs_my_decision' => $this->actionCenter
-                ->summaryForHome($owner, 'needs_my_decision')
-                ->toArray(),
-        ];
-
-        if ($this->bucketEnabled('urgent_exceptions')) {
-            $summaries['urgent_exceptions'] = $this->actionCenter
-                ->summaryForHome($owner, 'urgent_exceptions')
-                ->toArray();
-        }
-
-        if ($this->bucketEnabled('waiting_on_others')) {
-            $summaries['waiting_on_others'] = $this->actionCenter
-                ->summaryForHome($owner, 'waiting_on_others')
-                ->toArray();
-        }
-
-        return $summaries;
+        return in_array($request->query('bucket'), [
+            'urgent_exceptions',
+            'waiting_on_others',
+        ], true);
     }
 
-    private function bucketEnabled(string $bucket): bool
+    /** @return array<int, string> */
+    private function enabledApprovalCoverageSources(ShopOwner $owner): array
     {
-        if ($bucket === 'needs_my_decision') {
-            return true;
+        return $this->actionCenter->approvalCoverageSourcesFor($owner);
+    }
+
+    /** @return array<int, string> */
+    private function approvalSourceTypesFor(ShopOwner $owner): array
+    {
+        if ($owner->registration_type === 'individual') {
+            return ['order_refund', 'repair_refund'];
         }
 
-        $coverage = config("owner_action_center.buckets.{$bucket}.coverage", []);
-
-        return config("owner_action_center.buckets.{$bucket}.enabled", false) === true
-            && is_array($coverage)
-            && in_array(true, $coverage, true);
+        return self::APPROVAL_SOURCE_TYPES;
     }
 
     private function configuredBound(string $key, int $hardMaximum): int
     {
         $value = config('owner_action_center.'.$key, $hardMaximum);
         if (! is_int($value) || $value < 1 || $value > $hardMaximum) {
-            throw new \InvalidArgumentException("Owner Action Center {$key} is out of bounds.");
+            throw new \InvalidArgumentException("Approval Center {$key} is out of bounds.");
         }
 
         return $value;
@@ -324,7 +346,7 @@ final class OwnerActionCenterController extends Controller
     {
         $value = config('owner_action_center.per_page', 20);
         if (! is_int($value) || $value < 1 || $value > $maximum) {
-            throw new \InvalidArgumentException('Owner Action Center default per-page value is out of bounds.');
+            throw new \InvalidArgumentException('Approval Center default per-page value is out of bounds.');
         }
 
         return $value;
@@ -338,13 +360,13 @@ final class OwnerActionCenterController extends Controller
             $integer = (int) $value;
         } else {
             throw ValidationException::withMessages([
-                $field => "The Action Center {$field} value is invalid.",
+                $field => "The Approval Center {$field} value is invalid.",
             ]);
         }
 
         if ($integer < $minimum || $integer > $maximum) {
             throw ValidationException::withMessages([
-                $field => "The Action Center {$field} value is out of bounds.",
+                $field => "The Approval Center {$field} value is out of bounds.",
             ]);
         }
 

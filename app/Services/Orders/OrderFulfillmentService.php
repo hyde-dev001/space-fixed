@@ -30,6 +30,7 @@ final class OrderFulfillmentService
     {
         return DB::transaction(function () use ($order, $actor): Order {
             $lockedOrder = $this->lockShopOrder($order, $actor);
+            $this->ensureStaffOwnership($lockedOrder, $actor);
 
             $this->assertAllowed(
                 $this->transitionPolicy->canMarkProcessing($lockedOrder),
@@ -47,6 +48,7 @@ final class OrderFulfillmentService
     {
         return DB::transaction(function () use ($order, $actor, $shippingData): Order {
             $lockedOrder = $this->lockShopOrder($order, $actor);
+            $this->ensureStaffOwnership($lockedOrder, $actor);
 
             $this->assertAllowed(
                 $this->transitionPolicy->canMarkShipped($lockedOrder),
@@ -66,6 +68,7 @@ final class OrderFulfillmentService
     {
         return DB::transaction(function () use ($order, $actor): Order {
             $lockedOrder = $this->lockShopOrder($order, $actor);
+            $this->ensureStaffOwnership($lockedOrder, $actor);
 
             $this->assertAllowed(
                 $this->transitionPolicy->canCompleteDirectly(
@@ -225,6 +228,50 @@ final class OrderFulfillmentService
         return in_array(strtoupper((string) $actor->role), ['STAFF', 'MANAGER'], true)
             ? (int) $actor->getAuthIdentifier()
             : 0;
+    }
+
+    private function ensureStaffOwnership(Order $order, Authenticatable $actor): void
+    {
+        if (! $actor instanceof User) {
+            return;
+        }
+
+        $assignedStaffId = (int) ($order->getAttribute('assigned_staff_id') ?? 0);
+        $actorId = (int) $actor->getAuthIdentifier();
+
+        if ($assignedStaffId > 0 && $assignedStaffId !== $actorId) {
+            throw ValidationException::withMessages([
+                'assignment' => ['This order is locked to another active staff handler.'],
+            ]);
+        }
+
+        if ($assignedStaffId > 0) {
+            return;
+        }
+
+        $order->forceFill([
+            'assigned_staff_id' => $actorId,
+            'assigned_at' => now(),
+            'assignment_method' => 'auto',
+            'assigned_by' => $actorId,
+        ])->save();
+
+        AuditLog::create([
+            'shop_owner_id' => (int) $order->shop_owner_id,
+            'user_id' => $actorId,
+            'actor_user_id' => $actorId,
+            'action' => 'order_claimed',
+            'object_type' => 'order',
+            'object_id' => (int) $order->id,
+            'target_type' => 'order',
+            'target_id' => (int) $order->id,
+            'metadata' => [
+                'previous_state' => ['assigned_staff_id' => null],
+                'new_state' => ['assigned_staff_id' => $actorId],
+                'reason' => 'Staff claimed the order before processing.',
+                'reference_id' => 'order:' . $order->id,
+            ],
+        ]);
     }
 
     private function lockCustomerOrder(Order $order, Authenticatable $actor): Order

@@ -6,7 +6,6 @@ namespace Tests\Feature\ShopOwner\CanonicalShell;
 
 use App\Http\Controllers\Erp\ReadPageController;
 use App\Http\Controllers\Erp\WorkspaceController;
-use App\Http\Middleware\EnsureOwnerErpWorkspaceEnabled;
 use App\Models\ShopOwner;
 use App\Models\ShopOwnerModule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -36,7 +35,6 @@ final class CanonicalOwnerRouteContractTest extends TestCase
             );
             $this->assertStringNotContainsString('/erp', $route->uri());
             $this->assertStringNotContainsString('/legacy', $route->uri());
-            $this->assertNotContains(EnsureOwnerErpWorkspaceEnabled::class, $route->gatherMiddleware());
             $this->assertContains('auth:shop_owner', $route->middleware());
             $this->assertContains('erp.audience', $route->middleware());
             $this->assertContains('erp.actor', $route->middleware());
@@ -51,11 +49,10 @@ final class CanonicalOwnerRouteContractTest extends TestCase
         }
     }
 
-    public function test_canonical_routes_remain_registered_with_both_rollout_and_erp_workspace_flags_off(): void
+    public function test_canonical_routes_remain_registered_when_the_rollout_is_off(): void
     {
         config([
             'owner_shell.enabled' => false,
-            'shop_modules.owner_erp_workspace_enabled' => false,
         ]);
 
         foreach (array_keys($this->operationalRoutes()) as $name) {
@@ -63,7 +60,7 @@ final class CanonicalOwnerRouteContractTest extends TestCase
         }
     }
 
-    public function test_canonical_customers_route_exposes_the_overview_and_only_owner_readable_local_pages(): void
+    public function test_canonical_customers_route_exposes_the_dashboard_and_only_owner_readable_local_pages(): void
     {
         config('shop_modules.enforcement_enabled', true);
         $owner = ShopOwner::factory()->approved()->create([
@@ -80,21 +77,20 @@ final class CanonicalOwnerRouteContractTest extends TestCase
             ->get('/shop-owner/operate/customers')
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->component('ERP/ModuleLanding', false)
+                ->component('ERP/CRM/CRMDashboard', false)
                 ->where('activeModule.key', 'crm')
-                ->where('activeModule.overview.label', 'Overview')
+                ->where('activeModule.overview.label', 'Dashboard')
                 ->where('activeModule.overview.url', route('shop-owner.shell.operate.customers'))
-                ->where('activeModule.pages', fn (Collection $pages): bool => $pages
-                    ->pluck('routeName')
-                    ->all() === [
-                        'shop-owner.erp.crm.dashboard',
+                    ->where('activeModule.pages', fn (Collection $pages): bool => $pages
+                        ->pluck('routeName')
+                        ->all() === [
                         'shop-owner.erp.crm.customers',
                         'shop-owner.erp.crm.customer-reviews',
                     ])
             );
     }
 
-    public function test_canonical_finance_route_keeps_unproven_local_pages_out_of_the_payload(): void
+    public function test_canonical_finance_route_exposes_the_dashboard_without_a_duplicate_dashboard_tab(): void
     {
         config('shop_modules.enforcement_enabled', true);
         $owner = ShopOwner::factory()->approved()->create([
@@ -111,9 +107,59 @@ final class CanonicalOwnerRouteContractTest extends TestCase
             ->get('/shop-owner/oversee/finance')
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
+                ->component('ERP/Finance/Dashboard', false)
                 ->where('activeModule.overview.url', route('shop-owner.shell.oversee.finance'))
-                ->has('activeModule.pages', 0)
+                ->where('activeModule.pages', fn (Collection $pages): bool => $pages
+                    ->pluck('routeName')
+                    ->all() === [
+                        'shop-owner.erp.finance.invoices',
+                        'shop-owner.erp.finance.expenses',
+                    ])
             );
+    }
+
+    public function test_each_canonical_module_route_renders_its_real_owner_dashboard(): void
+    {
+        config('shop_modules.enforcement_enabled', true);
+        $owner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
+            'business_type' => 'both',
+        ]);
+
+        foreach ([
+            'retail_operations',
+            'repair_operations',
+            'crm',
+            'finance',
+            'hr_employees',
+            'inventory',
+            'procurement',
+            'logistics',
+        ] as $moduleKey) {
+            ShopOwnerModule::factory()->create([
+                'shop_owner_id' => $owner->id,
+                'module_key' => $moduleKey,
+                'enabled' => true,
+            ]);
+        }
+
+        $dashboards = [
+            '/shop-owner/operate/retail' => 'ShopOwner/Dashboard',
+            '/shop-owner/operate/repair' => 'ERP/repairer/dashboardRepair',
+            '/shop-owner/operate/customers' => 'ERP/CRM/CRMDashboard',
+            '/shop-owner/oversee/finance' => 'ERP/Finance/Dashboard',
+            '/shop-owner/oversee/workforce' => 'ERP/HR/HR',
+            '/shop-owner/oversee/inventory' => 'ERP/inventory/InventoryDashboard',
+            '/shop-owner/oversee/procurement' => 'ERP/Procurement/Dashboard',
+            '/shop-owner/oversee/logistics' => 'ERP/Logistics/Dashboard',
+        ];
+
+        foreach ($dashboards as $uri => $component) {
+            $this->actingAs($owner, 'shop_owner')
+                ->get($uri)
+                ->assertOk()
+                ->assertInertia(fn (Assert $page) => $page->component($component, false));
+        }
     }
 
     /**

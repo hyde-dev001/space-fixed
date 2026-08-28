@@ -37,7 +37,9 @@ export const getShopOwnerNavigation = (access: ShopOwnerAccess): NavigationItem[
             visible: canAccessProducts(access),
             subItems: [
                 { label: 'All Products', path: '/shop-owner/products' },
-                { label: 'Add Product', path: '/shop-owner/products/add' },
+                ...(access.registrationType === 'individual'
+                    ? [{ label: 'Add Product', path: '/shop-owner/products/add' }]
+                    : []),
                 { label: 'Categories', path: '/shop-owner/products/categories' },
             ],
         },
@@ -80,9 +82,9 @@ export const getShopOwnerNavigation = (access: ShopOwnerAccess): NavigationItem[
             visible: true,
         },
 
-        // All owner approval decisions use the Action Center.
+        // All owner approval decisions use the Approval Center.
         {
-            label: 'Action Center',
+            label: 'Approval Center',
             path: '/shop-owner/action-center',
             icon: '✓',
             visible: true,
@@ -142,7 +144,7 @@ export const getQuickActions = (access: ShopOwnerAccess) => {
     const actions = [];
 
     // Add Product action (Retail or Both)
-    if (canAccessProducts(access)) {
+    if (canAccessProducts(access) && access.registrationType === 'individual') {
         actions.push({
             label: 'Add Product',
             icon: '➕',

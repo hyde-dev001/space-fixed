@@ -5,8 +5,11 @@
 
 export interface InventoryItem {
     id: number;
+    /** Identifies whether this read-only row came from inventory or the product catalog. */
+    source_type?: 'inventory' | 'product';
+    source_id?: number;
     shop_owner_id: number;
-    product_id?: number;
+    product_id?: number | null;
     name: string;
     sku: string;
     category: 'shoes' | 'accessories' | 'care_products' | 'cleaning_materials' | 'packaging' | 'repair_materials';

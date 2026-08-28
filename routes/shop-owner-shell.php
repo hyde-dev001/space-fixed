@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Http\Controllers\Erp\ReadPageController;
 use App\Http\Controllers\Erp\WorkspaceController;
 use App\Http\Controllers\ShopOwner\CanonicalOwnerPaymentsController;
-use App\Http\Controllers\ShopOwner\OwnerErpFallbackController;
 use App\Http\Controllers\ShopOwner\OwnerActionCenterController;
 use App\Http\Controllers\ShopOwner\ShopOwnerDashboardController;
 use App\Http\Controllers\ShopOwner\ShopSettingsController;
@@ -21,9 +20,6 @@ Route::prefix('shop-owner')
         Route::get('/home', ShopOwnerDashboardController::class)
             ->defaults('canonical_home', true)
             ->name('home');
-
-        Route::get('/erp/fallback', OwnerErpFallbackController::class)
-            ->name('erp-fallback');
 
         Route::middleware(['erp.audience', 'erp.actor', 'shop.module'])->group(function (): void {
             Route::get('/operate/retail', [WorkspaceController::class, 'module'])

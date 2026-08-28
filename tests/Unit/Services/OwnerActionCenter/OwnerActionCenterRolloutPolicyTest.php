@@ -115,6 +115,7 @@ final class OwnerActionCenterRolloutPolicyTest extends TestCase
             'owner_action_center.coverage.salary_changes' => false,
             'owner_action_center.coverage.expenses' => false,
             'owner_action_center.coverage.purchase_requests' => false,
+            'owner_action_center.coverage.suspensions' => false,
             'owner_action_center.coverage.repair_rejections' => false,
         ]);
 
@@ -156,6 +157,7 @@ final class OwnerActionCenterRolloutPolicyTest extends TestCase
             'owner_action_center.coverage.salary_changes' => true,
             'owner_action_center.coverage.expenses' => true,
             'owner_action_center.coverage.purchase_requests' => true,
+            'owner_action_center.coverage.suspensions' => true,
             'owner_action_center.coverage.repair_rejections' => true,
         ]);
     }

@@ -42,6 +42,18 @@ final class ShopModuleToggleTest extends TestCase
             'enabled' => 0,
         ]);
         $this->assertSame(1, DB::table('activity_log')->where('description', 'shop_owner_module_toggled')->count());
+        $audit = DB::table('activity_log')
+            ->where('description', 'shop_owner_module_toggled')
+            ->first();
+        $properties = json_decode((string) $audit->properties, true, 512, JSON_THROW_ON_ERROR);
+
+        $this->assertSame('owner_operation', $audit->log_name);
+        $this->assertSame('shop_owner_module_toggled', $audit->event);
+        $this->assertSame($owner->id, $properties['shop_owner_id']);
+        $this->assertSame('settings', $properties['module']);
+        $this->assertSame('succeeded', $properties['result']);
+        $this->assertSame(['enabled' => true, 'module_key' => 'retail_operations'], $properties['before']);
+        $this->assertSame(['enabled' => false, 'module_key' => 'retail_operations'], $properties['after']);
     }
 
     public function test_toggle_is_idempotent_and_missing_or_unknown_modules_are_rejected(): void

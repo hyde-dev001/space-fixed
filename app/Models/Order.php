@@ -98,6 +98,10 @@ class Order extends Model
         'pickup_enabled',
         'pickup_enabled_at',
         'pickup_enabled_by',
+        'assigned_staff_id',
+        'assigned_at',
+        'assignment_method',
+        'assigned_by',
     ];
 
     protected $casts = [
@@ -111,6 +115,7 @@ class Order extends Model
         'invoice_generated' => 'boolean',
         'pickup_enabled' => 'boolean',
         'pickup_enabled_at' => 'datetime',
+        'assigned_at' => 'datetime',
         'customer_received_at' => 'datetime',
         'customer_receipt_disputed_at' => 'datetime',
         'payment_link_created_at' => 'datetime',
@@ -300,6 +305,11 @@ class Order extends Model
     public function assignedByUser(): BelongsTo
     {
         return $this->belongsTo(User::class, 'assigned_by');
+    }
+
+    public function assignedStaff(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'assigned_staff_id');
     }
 
     /**

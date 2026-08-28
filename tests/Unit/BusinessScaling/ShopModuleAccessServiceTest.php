@@ -56,10 +56,13 @@ final class ShopModuleAccessServiceTest extends TestCase
     public function test_ineligible_and_invalid_legacy_states_fail_closed(): void
     {
         $individual = $this->owner('individual', 'retail', [['finance', true]]);
+        $individualLogistics = $this->owner('individual', 'retail', [['logistics', true]]);
         $repairOnly = $this->owner('company', 'repair', [['retail_operations', true]]);
         $invalid = $this->owner('legacy', 'retail', [['retail_operations', true]]);
 
         $this->assertSame('MODULE_INELIGIBLE', $this->service->decide($individual, 'finance')->code);
+        $this->assertSame('MODULE_INELIGIBLE', $this->service->decide($individualLogistics, 'logistics')->code);
+        $this->assertFalse($this->service->isEligible($individualLogistics, 'logistics'));
         $this->assertSame('MODULE_INELIGIBLE', $this->service->decide($repairOnly, 'retail_operations')->code);
         $this->assertSame('MODULE_INELIGIBLE', $this->service->decide($invalid, 'retail_operations')->code);
         $this->assertFalse($this->service->isEligible($invalid, 'retail_operations'));

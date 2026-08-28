@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\OwnerActionCenter;
 
 use App\Contracts\OwnerActionCenter\OwnerAttentionAdapter;
+use App\Models\ShopOwner;
 use App\Support\OwnerActionCenter\OwnerAttentionQuery;
 use InvalidArgumentException;
 
@@ -74,6 +75,14 @@ final class OwnerAttentionAdapterRegistry
                     'class' => 'App\\Services\\OwnerActionCenter\\Adapters\\RepairRejectAttentionAdapter',
                     'key' => 'repair_rejections',
                     'coverage' => 'repair_rejections',
+                    'bucket' => 'needs_my_decision',
+                ],
+            ],
+            'suspensions' => [
+                [
+                    'class' => 'App\\Services\\OwnerActionCenter\\Adapters\\SuspensionAttentionAdapter',
+                    'key' => 'suspension_requests',
+                    'coverage' => 'suspensions',
                     'bucket' => 'needs_my_decision',
                 ],
             ],
@@ -169,7 +178,17 @@ final class OwnerAttentionAdapterRegistry
                 continue;
             }
 
-            if (! array_key_exists($family, $configuredCoverage) || ! is_bool($configuredCoverage[$family])) {
+            if (! array_key_exists($family, $configuredCoverage)) {
+                // Older test/runtime overrides may intentionally provide a partial
+                // coverage map. New optional sources stay disabled unless enabled.
+                if ($family === 'suspensions') {
+                    continue;
+                }
+
+                throw new InvalidArgumentException("Owner Action Center coverage [{$family}] must be boolean.");
+            }
+
+            if (! is_bool($configuredCoverage[$family])) {
                 throw new InvalidArgumentException("Owner Action Center coverage [{$family}] must be boolean.");
             }
 
@@ -194,6 +213,43 @@ final class OwnerAttentionAdapterRegistry
         }
 
         return $adapters;
+    }
+
+    /**
+     * Resolve the approval adapters that belong in the canonical owner inbox.
+     * Individual owners only approve refunds because they do not have the
+     * company HR, Finance, Procurement, or repairer-review workflow.
+     *
+     * @return array<int, OwnerAttentionAdapter>
+     */
+    public function adaptersForOwner(ShopOwner $owner, string $bucket, string $coverage = 'all'): array
+    {
+        if ($owner->registration_type === 'individual' && $bucket === 'needs_my_decision') {
+            if ($coverage !== 'all' && $coverage !== 'refunds') {
+                return [];
+            }
+
+            return $this->adaptersFor($bucket, $coverage === 'all' ? 'refunds' : $coverage);
+        }
+
+        return $this->adaptersFor($bucket, $coverage);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function approvalCoverageSourcesFor(ShopOwner $owner): array
+    {
+        if ($owner->registration_type === 'individual') {
+            return config('owner_action_center.coverage.refunds', false) === true
+                ? ['refunds']
+                : [];
+        }
+
+        return array_values(array_filter(
+            array_diff(OwnerAttentionQuery::COVERAGES_BY_BUCKET['needs_my_decision'], ['all']),
+            static fn (string $coverage): bool => config("owner_action_center.coverage.{$coverage}", false) === true,
+        ));
     }
 
     private function bucketEnabled(string $bucket): bool

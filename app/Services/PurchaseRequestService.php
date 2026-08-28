@@ -334,7 +334,8 @@ class PurchaseRequestService
                 message: "{$payload['reference']} ({$payload['product_name']}) now requires shop owner approval.",
                 data: $payload,
                 actionUrl: $this->notificationService->ownerApprovalActionUrl('purchase_request', $purchaseRequest->id),
-                priority: 'medium'
+                priority: 'medium',
+                requiresAction: true,
             );
 
             return;
@@ -349,7 +350,8 @@ class PurchaseRequestService
                 message: "{$payload['reference']} was approved by shop owner and requires final Finance review.",
                 data: $payload,
                 actionUrl: "/finance?section=purchase-request-approval&purchase_request={$purchaseRequest->id}",
-                priority: 'medium'
+                priority: 'medium',
+                requiresAction: true,
             );
 
             return;
@@ -364,7 +366,8 @@ class PurchaseRequestService
                 message: "{$payload['reference']} was reviewed by Finance and requires final Finance release.",
                 data: $payload,
                 actionUrl: "/finance?section=purchase-request-approval&purchase_request={$purchaseRequest->id}",
-                priority: 'medium'
+                priority: 'medium',
+                requiresAction: true,
             );
 
             return;

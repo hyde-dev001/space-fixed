@@ -14,6 +14,7 @@ import { useNotifications, useMarkAsRead, useMarkAllAsRead, useDeleteNotificatio
 import NotificationItem from '../../Components/common/NotificationItem';
 import ExportModal from "../../components/Notifications/ExportModal";
 import type { Notification } from '../../hooks/useNotifications';
+import { resolveNotificationActionUrl } from '../../utils/resolveNotificationActionUrl';
 
 interface NotificationListProps {
   basePath?: string;
@@ -149,22 +150,7 @@ const NotificationList: React.FC<NotificationListProps> = ({
       return `${href}${separator}${key}=${encodeURIComponent(String(value))}`;
     };
 
-    const resolveLegacyActionUrl = (actionUrl?: string | null) => {
-      const normalized = String(actionUrl || '').trim();
-      if (!normalized) return null;
-
-      if (normalized === '/erp/finance/expenses' || normalized === '/erp/finance/approvals') {
-        return '/finance?section=expense-tracking';
-      }
-
-      if (normalized === '/shop-owner/expenses') {
-        return '/shop-owner/action-center';
-      }
-
-      return normalized;
-    };
-
-    const actionUrl = resolveLegacyActionUrl(notification.action_url);
+    const actionUrl = resolveNotificationActionUrl(notification.action_url, notification.type, notification.data);
 
     const getStaffRepairHighlightValue = () => {
       const data = notification.data || {};
@@ -221,13 +207,13 @@ const NotificationList: React.FC<NotificationListProps> = ({
       }
     }
 
+    // Canonical and migrated destinations take priority over broad type fallbacks.
+    if (actionUrl) return actionUrl;
+
     if (basePath.includes('shop-owner') && notification.type?.includes('repair')) {
       const repairId = notification.data?.repair_id || notification.data?.repair_request_id || notification.id;
       return `/shop-owner/job-orders-repair?highlightRepair=${repairId}`;
     }
-
-    // Use explicit action_url when set (all live DB notifications have this)
-    if (actionUrl) return actionUrl;
 
     if (!basePath.includes('shop-owner') && !basePath.includes('staff') && notification.type?.includes('repair')) {
       const repairId = notification.data?.repair_id || notification.data?.repair_request_id || notification.id;

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Models\ShopOwner;
 use Illuminate\Routing\Route;
 use Illuminate\Support\Facades\Route as RouteFacade;
 
@@ -57,7 +58,7 @@ final class ErpRouteCatalog
         return self::capabilityKey($method, (string) $employeeRoute);
     }
 
-    public function hasOwnerReadablePageContract(string $routeName): bool
+    public function hasOwnerReadablePageContract(string $routeName, ?ShopOwner $owner = null): bool
     {
         $entry = $this->entry($routeName);
 
@@ -67,7 +68,10 @@ final class ErpRouteCatalog
             || ($entry['actor_guard'] ?? null) !== 'shop_owner'
             || ($entry['owner_access'] ?? null) !== 'allowed'
             || ! is_string($entry['navigation_group'] ?? null)
-            || ($entry['navigation_visible'] ?? null) !== true
+            || (($entry['navigation_visible'] ?? null) !== true
+                && ! ($owner !== null
+                    && ($entry['owner_navigation_visible'] ?? false) === true
+                    && $this->ownerMatchesPageContract($owner, $entry)))
             || ! is_array($entry['supporting_routes'] ?? null)
             || $entry['supporting_routes'] === []) {
             return false;
@@ -105,6 +109,21 @@ final class ErpRouteCatalog
         return $hasRequiredReadSurface;
     }
 
+    /**
+     * @param  array<string, mixed>  $entry
+     */
+    private function ownerMatchesPageContract(ShopOwner $owner, array $entry): bool
+    {
+        $registrationType = strtolower(trim((string) $owner->getRawOriginal('registration_type')));
+        $businessType = match (strtolower(trim((string) $owner->getRawOriginal('business_type')))) {
+            'both (retail & repair)' => 'both',
+            default => strtolower(trim((string) $owner->getRawOriginal('business_type'))),
+        };
+
+        return in_array($registrationType, $entry['registration_types'] ?? [], true)
+            && in_array($businessType, $entry['business_types'] ?? [], true);
+    }
+
     public function employeeRule(string $routeName): string
     {
         $route = RouteFacade::getRoutes()->getByName($routeName);
@@ -134,13 +153,18 @@ final class ErpRouteCatalog
             ? RouteFacade::getRoutes()->getByName($ownerRouteName)
             : null;
 
-        if (! $ownerRoute instanceof Route || ! $this->forRoute($method, $ownerRouteName)) {
+        $ownerEntry = is_string($ownerRouteName) ? $this->entry($ownerRouteName) : null;
+
+        if (! $ownerRoute instanceof Route
+            || $ownerEntry === null
+            || ($ownerEntry['owner_access'] ?? null) !== 'allowed'
+            || ! $this->forRoute($method, $ownerRouteName)) {
             return null;
         }
 
         return [
             'route_name' => $ownerRouteName,
-            'methods' => $this->entry($ownerRouteName)['methods'],
+            'methods' => $ownerEntry['methods'],
         ];
     }
 }

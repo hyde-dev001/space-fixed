@@ -77,7 +77,7 @@ afterEach(() => {
 
 describe('staff order shipping coverage integration', () => {
   it('shows order details before processing a pending order', async () => {
-    const pendingOrder = { ...makeOrder(1), status: 'pending' };
+    const pendingOrder = { ...makeOrder(1), status: 'pending', available_actions: ['processing'] };
     mockPage.props.initialOrders = [pendingOrder];
     const fetchMock = vi.fn((input: string, init?: RequestInit) => {
       if (input === '/api/staff/orders') {

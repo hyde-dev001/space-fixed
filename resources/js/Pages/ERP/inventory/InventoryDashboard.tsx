@@ -411,7 +411,7 @@ export default function ERPInventoryOverview() {
                 className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
               >
                 {categories.map((cat) => (
-                  <option key={cat} value={cat}>{cat === "All" ? "All Categories" : cat}</option>
+                  <option key={cat} value={cat}>{cat === "All" ? "All Categories" : formatCategoryLabel(cat)}</option>
                 ))}
               </select>
             </div>
@@ -467,7 +467,7 @@ export default function ERPInventoryOverview() {
                 ) : paginatedItems.length === 0 ? (
                   <tr><td colSpan={5} className="py-10 text-center text-sm text-gray-500">No inventory items found.</td></tr>
                 ) : paginatedItems.map((item) => (
-                  <tr key={item.id}>
+                  <tr key={`${item.source_type ?? "inventory"}-${item.source_id ?? item.id}`}>
                     <td className="py-3">
                       <div className="flex items-center gap-3">
                         <div className="h-12 w-12 overflow-hidden rounded-md bg-gray-100 dark:bg-gray-800">

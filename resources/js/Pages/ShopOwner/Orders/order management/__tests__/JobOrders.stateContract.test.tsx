@@ -25,4 +25,15 @@ describe('shop owner order state contract', () => {
     expect(source).toContain("availableActions?.includes('shipped')");
     expect(source).not.toMatch(/order\.status\s*===\s*["']pending["'][\s\S]{0,120}Start processing/);
   });
+
+  it('keeps company-owner orders read-only while preserving the details modal', () => {
+    expect(source).toContain("const isIndividualRegistration = shopOwnerRegistrationType === 'individual';");
+    expect(source).toContain("isIndividualRegistration && order.availableActions?.includes('processing')");
+    expect(source).toContain("isIndividualRegistration && order.availableActions?.includes('shipped')");
+    expect(source).toContain('isIndividualRegistration && viewOrder.status === "pending"');
+    expect(source).toContain('isIndividualRegistration && viewOrder.status === "shipped"');
+    expect(source).toContain('title="View order details"');
+    expect(source).toContain('Monitor customer shoe orders');
+    expect(source).not.toContain('Open Approval');
+  });
 });

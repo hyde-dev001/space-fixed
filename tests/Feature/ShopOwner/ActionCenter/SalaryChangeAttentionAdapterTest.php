@@ -44,6 +44,24 @@ final class SalaryChangeAttentionAdapterTest extends TestCase
         );
     }
 
+    public function test_owner_self_proposed_salary_changes_are_not_actionable_for_that_owner(): void
+    {
+        $owner = ShopOwner::factory()->approved()->create(['registration_type' => 'company']);
+        $ownerUser = User::factory()->create([
+            'shop_owner_id' => $owner->id,
+            'email' => $owner->email,
+            'role' => 'Shop Owner',
+        ]);
+        $employee = Employee::factory()->active()->create(['shop_owner_id' => $owner->id]);
+
+        $this->createChange($owner, $employee, $ownerUser, true);
+
+        $result = $this->adapter()->read($owner, new OwnerAttentionQuery(perPage: 20));
+
+        $this->assertSame(0, $result->qualifyingCount);
+        $this->assertCount(0, $result->items);
+    }
+
     public function test_salary_change_projection_has_bounded_query_count(): void
     {
         $owner = ShopOwner::factory()->approved()->create();

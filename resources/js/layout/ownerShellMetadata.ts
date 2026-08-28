@@ -1,5 +1,4 @@
 import type {
-  OwnerShellCompatibility,
   OwnerShellContext,
   OwnerShellGroup,
   OwnerShellItem,
@@ -29,7 +28,7 @@ const isPath = (value: unknown): value is string => (
   isBoundedString(value) && value.startsWith("/") && !value.startsWith("//")
 );
 
-const isOwnerShellItem = (value: unknown): value is OwnerShellItem => {
+const isOwnerShellItem = (value: unknown, allowChildren = true): value is OwnerShellItem => {
   if (!isRecord(value)) {
     return false;
   }
@@ -37,6 +36,8 @@ const isOwnerShellItem = (value: unknown): value is OwnerShellItem => {
   const unavailableReason = value.unavailable_reason;
   const managementUrl = value.management_url;
   const isUnavailable = value.available === false;
+
+  const children = value.children;
 
   return isBoundedString(value.key, 80)
     && isBoundedString(value.label)
@@ -47,7 +48,11 @@ const isOwnerShellItem = (value: unknown): value is OwnerShellItem => {
     && (!isUnavailable || (isBoundedString(unavailableReason) && isPath(managementUrl)))
     && Array.isArray(value.active_matching)
     && value.active_matching.length > 0
-    && value.active_matching.every(isPath);
+    && value.active_matching.every(isPath)
+    && (children === undefined
+      || (Array.isArray(children)
+        && (children.length === 0
+          || (allowChildren && children.every((child) => isOwnerShellItem(child, false))))));
 };
 
 const isOwnerShellGroup = (value: unknown): value is OwnerShellGroup => {
@@ -61,18 +66,7 @@ const isOwnerShellGroup = (value: unknown): value is OwnerShellGroup => {
     && typeof value.default_expanded === "boolean"
     && Array.isArray(value.items)
     && value.items.length > 0
-    && value.items.every(isOwnerShellItem);
-};
-
-const isOwnerShellCompatibility = (value: unknown): value is OwnerShellCompatibility => {
-  if (!isRecord(value)) {
-    return false;
-  }
-
-  return typeof value.show_erp_fallback === "boolean"
-    && (value.erp_workspace_url === null || isPath(value.erp_workspace_url))
-    && (value.fallback_url === null || isPath(value.fallback_url))
-    && (!value.show_erp_fallback || isPath(value.fallback_url));
+    && value.items.every((item) => isOwnerShellItem(item));
 };
 
 export const readCanonicalOwnerShell = (value: unknown): OwnerShellMetadata | null => {
@@ -88,8 +82,7 @@ export const readCanonicalOwnerShell = (value: unknown): OwnerShellMetadata | nu
     || !SELECTION_REASONS.has(selectionReason as OwnerShellSelectionReason)
     || !Array.isArray(value.groups)
     || value.groups.length === 0
-    || !value.groups.every(isOwnerShellGroup)
-    || !isOwnerShellCompatibility(value.compatibility)) {
+    || !value.groups.every(isOwnerShellGroup)) {
     return null;
   }
 
@@ -98,7 +91,6 @@ export const readCanonicalOwnerShell = (value: unknown): OwnerShellMetadata | nu
     selection_reason: selectionReason as OwnerShellSelectionReason,
     context: context as Exclude<OwnerShellContext, null>,
     groups: value.groups as OwnerShellGroup[],
-    compatibility: value.compatibility,
   };
 };
 

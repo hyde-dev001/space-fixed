@@ -22,6 +22,28 @@ final class EmployeeOperationalPolicy
         return $this->accountState($employee) === EmployeeStatus::ACTIVE;
     }
 
+    public function assignmentIneligibilityReason(Employee $employee, CarbonInterface $date): ?string
+    {
+        $status = $this->accountState($employee);
+
+        $statusReason = match ($status) {
+            EmployeeStatus::INACTIVE => 'inactive',
+            EmployeeStatus::SUSPENDED => 'suspended',
+            EmployeeStatus::TERMINATED => 'terminated',
+            default => null,
+        };
+
+        if ($statusReason !== null) {
+            return $statusReason;
+        }
+
+        if ((string) ($employee->getAttributes()['status'] ?? '') === 'on_leave') {
+            return 'approved_leave';
+        }
+
+        return $this->isOnLeave($employee, $date) ? 'approved_leave' : null;
+    }
+
     public function isEligibleForRoutinePayroll(Employee $employee): bool
     {
         return $this->accountState($employee) === EmployeeStatus::ACTIVE;

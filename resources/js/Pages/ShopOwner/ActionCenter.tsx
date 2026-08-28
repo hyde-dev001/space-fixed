@@ -5,20 +5,26 @@ import OwnerActionCenterAvailability from "../../components/owner-action-center/
 import OwnerAttentionList from "../../components/owner-action-center/OwnerAttentionList";
 import OwnerApprovalDetailPanel from "../../components/owner-action-center/OwnerApprovalDetailPanel";
 import OwnerApprovalFilters, { actionCenterUrl } from "../../components/owner-action-center/OwnerApprovalFilters";
+import OwnerApprovalHistoryList from "../../components/owner-action-center/OwnerApprovalHistoryList";
 import { approvalDefinitionFor } from "../../components/owner-action-center/approvalPanelRegistry";
 import { parseApprovalSelection, type ApprovalSelection } from "../../components/owner-action-center/approvalSelection";
 import type {
   OwnerActionCenterCoverage,
   OwnerAttentionItem,
   OwnerActionCenterResult,
-  OwnerAttentionBucket,
   OwnerAttentionCoverageSource,
+  OwnerApprovalCenterView,
+  OwnerApprovalHistoryItem,
+  OwnerApprovalHistoryResult,
 } from "../../types/ownerActionCenter";
 
 interface ActionCenterPageProps {
   ownerActionCenter?: OwnerActionCenterResult;
-  bucketSummaries?: Partial<Record<OwnerAttentionBucket, OwnerActionCenterResult>>;
-  bucket?: OwnerAttentionBucket;
+  approvalHistory?: OwnerApprovalHistoryResult | null;
+  approvalCoverageSources?: OwnerAttentionCoverageSource[];
+  approvalHistoryCoverageSources?: OwnerAttentionCoverageSource[];
+  view?: OwnerApprovalCenterView;
+  bucket?: "needs_my_decision";
   source?: OwnerActionCenterCoverage;
   page?: number;
   per_page?: number;
@@ -31,6 +37,7 @@ const approvalCoverage = (sourceType: OwnerAttentionItem["source_type"]): OwnerA
   if (sourceType === "payslip") return "payslips";
   if (sourceType === "salary_change") return "salary_changes";
   if (sourceType === "purchase_request") return "purchase_requests";
+  if (sourceType === "suspension_request") return "suspensions";
   if (sourceType === "expense") return "expenses";
   if (sourceType === "repair_rejection") return "repair_rejections";
   return "refunds";
@@ -62,13 +69,25 @@ const pageNumbers = (current: number, last: number): number[] => {
 
 export default function ActionCenter() {
   const { props } = usePage() as { props: ActionCenterPageProps };
-  const result = props.ownerActionCenter ?? null;
-  const bucket = result?.bucket ?? props.bucket ?? "needs_my_decision";
-  const source = result?.coverage ?? props.source ?? "all";
-  const page = result?.pagination.page ?? props.page ?? 1;
-  const perPage = result?.pagination.per_page ?? props.per_page ?? 20;
-  const lastPage = result?.pagination.last_page ?? 1;
-  const summaries = props.bucketSummaries ?? {};
+  const rawResult = props.ownerActionCenter ?? null;
+  const result = rawResult?.bucket === "needs_my_decision" ? rawResult : null;
+  const history = props.approvalHistory ?? null;
+  const view = props.view ?? (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("view") === "history" ? "history" : "pending");
+  const bucket = "needs_my_decision" as const;
+  const source = view === "history"
+    ? history?.coverage ?? props.source ?? "all"
+    : result?.coverage ?? props.source ?? "all";
+  const page = view === "history"
+    ? history?.pagination.page ?? props.page ?? 1
+    : result?.pagination.page ?? props.page ?? 1;
+  const perPage = view === "history"
+    ? history?.pagination.per_page ?? props.per_page ?? 20
+    : result?.pagination.per_page ?? props.per_page ?? 20;
+  const lastPage = view === "history" ? history?.pagination.last_page ?? 1 : result?.pagination.last_page ?? 1;
+  const approvalCount = view === "history" ? history?.pagination.total ?? 0 : result?.pagination.total ?? 0;
+  const approvalSummary = view === "history"
+    ? `${approvalCount} approval decision${approvalCount === 1 ? "" : "s"} recorded`
+    : `${approvalCount} approval${approvalCount === 1 ? "" : "s"} ${approvalCount === 1 ? "requires" : "require"} your decision`;
   const rawApproval = typeof window === "undefined"
     ? null
     : new URLSearchParams(window.location.search).get("approval");
@@ -82,8 +101,35 @@ export default function ActionCenter() {
     setSelectedSelection(props.approvalSelection ?? null);
   }, [props.approvalSelection]);
 
+  const selectedHistoryItem = selectedSelection
+    ? history?.items.find((item) => item.source_type === selectedSelection.sourceType && item.source_id === selectedSelection.sourceId)
+    : null;
   const selectedItem = selectedSelection
-    ? result?.items.find((item) => item.source_type === selectedSelection.sourceType && item.source_id === selectedSelection.sourceId)
+    ? (view === "history" ? null : result?.items.find((item) => item.source_type === selectedSelection.sourceType && item.source_id === selectedSelection.sourceId))
+      ?? (selectedHistoryItem ? (() => {
+        const definition = approvalDefinitionFor(selectedHistoryItem.source_type);
+        if (!definition) return null;
+
+        return {
+          attention_key: selectedHistoryItem.attention_key,
+          source_type: selectedHistoryItem.source_type,
+          source_id: selectedHistoryItem.source_id,
+          category: "approval_history",
+          primary_bucket: "needs_my_decision",
+          module: "approval_history",
+          title: selectedHistoryItem.title,
+          concise_summary: selectedHistoryItem.concise_summary,
+          priority_tier: "normal",
+          materiality_tier: selectedHistoryItem.comparable_monetary_exposure === null ? "none" : "medium",
+          comparable_monetary_exposure: selectedHistoryItem.comparable_monetary_exposure,
+          urgency_at: null,
+          actionable_since: selectedHistoryItem.decision_at,
+          waiting_on: "shop_owner",
+          owner_action_required: false,
+          coverage_source: selectedHistoryItem.coverage_source,
+          destination_url: approvalUrl(selectedSelection),
+        } satisfies OwnerAttentionItem;
+      })() : null)
       ?? (() => {
         const definition = approvalDefinitionFor(selectedSelection.sourceType);
         if (!definition) return null;
@@ -96,14 +142,14 @@ export default function ActionCenter() {
           primary_bucket: "needs_my_decision",
           module: "owner_action_center",
           title: definition.label,
-          concise_summary: "Selected approval record from the Action Center link.",
+          concise_summary: "Selected approval record from the Approval Center link.",
           priority_tier: "normal",
           materiality_tier: "none",
           comparable_monetary_exposure: null,
           urgency_at: null,
           actionable_since: new Date().toISOString(),
           waiting_on: "shop_owner",
-          owner_action_required: true,
+          owner_action_required: view !== "history",
           coverage_source: approvalCoverage(selectedSelection.sourceType),
           destination_url: approvalUrl(selectedSelection),
         } satisfies OwnerAttentionItem;
@@ -117,10 +163,17 @@ export default function ActionCenter() {
     window.history.pushState({}, "", approvalUrl(nextSelection));
   };
 
+  const selectHistoryApproval = (item: OwnerApprovalHistoryItem) => {
+    const nextSelection: ApprovalSelection = { sourceType: item.source_type, sourceId: item.source_id };
+    lastReviewedKey.current = item.attention_key;
+    setSelectedSelection(nextSelection);
+    window.history.pushState({}, "", approvalUrl(nextSelection));
+  };
+
   const closeApproval = () => {
     setSelectedSelection(null);
     window.history.replaceState({}, "", clearApprovalUrl());
-    setQueueAnnouncement("Approval details closed. The Action Center queue is still available.");
+    setQueueAnnouncement("Approval details closed. The approval queue is still available.");
     window.requestAnimationFrame(() => {
       const button = Array.from(document.querySelectorAll<HTMLButtonElement>("button[data-attention-key]"))
         .find((candidate) => candidate.dataset.attentionKey === lastReviewedKey.current);
@@ -130,81 +183,59 @@ export default function ActionCenter() {
 
   const decisionComplete = () => {
     closeApproval();
-    setQueueAnnouncement("Decision saved. The Action Center queue was refreshed.");
+    setQueueAnnouncement("Decision saved. The approval queue was refreshed.");
     router.reload({ preserveScroll: true, preserveState: true });
   };
-  const buckets: Array<{ key: OwnerAttentionBucket; label: string }> = [
-    { key: "needs_my_decision", label: "Needs My Decision" },
-    ...(summaries.urgent_exceptions
-      ? [{ key: "urgent_exceptions" as const, label: "Urgent Exceptions" }]
-      : []),
-    ...(summaries.waiting_on_others || bucket === "waiting_on_others"
-      ? [{ key: "waiting_on_others" as const, label: "Waiting on Others" }]
-      : []),
-  ];
-  const selectedLabel = bucket === "urgent_exceptions"
-    ? "Urgent Exceptions"
-    : bucket === "waiting_on_others"
-      ? "Waiting on Others"
-      : "Needs My Decision";
 
   return (
     <AppLayoutShopOwner>
-      <Head title="Action Center - Shop Owner" />
-      <main className="space-y-6" aria-labelledby="owner-action-center-title">
+      <Head title="Approval Center - Shop Owner" />
+      <main className="space-y-6" aria-labelledby="approval-center-title">
         <header>
-          <h1 id="owner-action-center-title" className="text-2xl font-bold text-gray-800 dark:text-white/90">
-            Owner Action Center
+          <h1 id="approval-center-title" className="text-2xl font-bold text-gray-800 dark:text-white/90">
+            Approval Center
           </h1>
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            Review current owner decisions and material exceptions, then continue in the authoritative workflow.
+            {view === "history" ? "Review decisions you have already made." : "Approvals that currently require your decision."}
           </p>
+          <p className="mt-4 inline-flex rounded-full bg-blue-50 px-3 py-1.5 text-sm font-semibold text-blue-700 dark:bg-blue-900/30 dark:text-blue-200">
+            {approvalSummary}
+          </p>
+          <nav aria-label="Approval Center views" className="mt-5 flex flex-wrap gap-2 border-b border-gray-200 pb-3 dark:border-gray-800">
+            <a
+              href={actionCenterUrl(bucket, "all", 1, result?.pagination.per_page ?? 20)}
+              aria-current={view === "pending" ? "page" : undefined}
+              className={view === "pending"
+                ? "inline-flex min-h-11 items-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white"
+                : "inline-flex min-h-11 items-center rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 dark:border-gray-700 dark:text-gray-200"}
+            >
+              Pending
+            </a>
+            <a
+              href={actionCenterUrl(bucket, "all", 1, history?.pagination.per_page ?? 20, "history")}
+              aria-current={view === "history" ? "page" : undefined}
+              className={view === "history"
+                ? "inline-flex min-h-11 items-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white"
+                : "inline-flex min-h-11 items-center rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 dark:border-gray-700 dark:text-gray-200"}
+            >
+              History
+            </a>
+          </nav>
         </header>
 
-        <nav aria-label="Action Center buckets" className="flex gap-1 overflow-x-auto border-b border-gray-200 dark:border-gray-800">
-          {buckets.map(({ key, label }) => {
-            const active = bucket === key;
-            const summary = summaries[key] ?? (active ? result : null);
-            const count = summary?.pagination.total ?? 0;
-
-            return (
-              <a
-                key={key}
-                href={actionCenterUrl(key, "all", 1, perPage)}
-                aria-current={active ? "page" : undefined}
-                className={active
-                  ? "inline-flex min-h-11 shrink-0 items-center gap-2 border-b-2 border-blue-600 px-3 text-sm font-semibold text-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-blue-300"
-                  : "inline-flex min-h-11 shrink-0 items-center gap-2 border-b-2 border-transparent px-3 text-sm font-semibold text-gray-500 hover:text-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-gray-400 dark:hover:text-white"}
-              >
-                <span>{label}</span>
-                <span className={active
-                  ? "rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-900/40 dark:text-blue-200"
-                  : "rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-300"}
-                >
-                  {count}
-                </span>
-              </a>
-            );
-          })}
-        </nav>
-
-        <section className="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03]" aria-labelledby="selected-attention-bucket-title">
+        <section className="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03]" aria-labelledby="approval-queue-title">
           <div className="flex flex-col gap-4 border-b border-gray-200 pb-4 dark:border-gray-800 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 id="selected-attention-bucket-title" className="text-lg font-semibold text-gray-800 dark:text-white/90">
-                {selectedLabel}
+              <h2 id="approval-queue-title" className="text-lg font-semibold text-gray-800 dark:text-white/90">
+                {view === "history" ? "Approval history" : "Approvals requiring your decision"}
               </h2>
               <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                {bucket === "urgent_exceptions"
-                  ? "Material conditions that need your awareness and currently have no assigned next owner."
-                  : bucket === "waiting_on_others"
-                    ? "Material work where another legitimate party owns the next step."
-                    : "Decisions that currently require your approval or review."}
+                {view === "history" ? "Approved and rejected decisions remain available for reference." : "Review and complete decisions assigned to you."}
               </p>
             </div>
             <button
               type="button"
-              aria-label="Refresh Action Center"
+              aria-label="Refresh Approval Center"
               onClick={() => router.reload({ preserveScroll: true, preserveState: true })}
               className="inline-flex min-h-10 items-center justify-center rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/[0.06] dark:focus-visible:ring-offset-gray-900"
             >
@@ -212,41 +243,66 @@ export default function ActionCenter() {
             </button>
           </div>
 
-          <div className="mt-4">
-            <OwnerActionCenterAvailability result={result} />
-          </div>
+          {view === "pending" && (
+            <div className="mt-4">
+              <OwnerActionCenterAvailability result={result} approvalOnly />
+            </div>
+          )}
 
           {hasInvalidApproval && (
             <p role="alert" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-900/20 dark:text-amber-100">
-              This approval link is invalid. The Action Center queue is still available below.
+              This approval link is invalid. The Approval Center queue is still available below.
             </p>
           )}
 
-          <OwnerApprovalFilters result={result} source={source} perPage={perPage} />
+          <OwnerApprovalFilters
+            result={result}
+            availableCoverageSources={view === "history"
+              ? props.approvalHistoryCoverageSources ?? props.approvalCoverageSources
+              : props.approvalCoverageSources}
+            source={source}
+            perPage={perPage}
+            view={view}
+          />
 
-          <div className={selectedItem ? "mt-5 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(26rem,38rem)]" : "mt-5"}>
+          <div className="mt-5">
             <div className="min-w-0">
-              <OwnerAttentionList
-                items={result?.items ?? []}
-                onReview={selectApproval}
-                selectedAttentionKey={selectedItem?.attention_key ?? null}
-              />
+              {view === "history" ? (
+                <>
+                  <OwnerApprovalHistoryList
+                    items={history?.items ?? []}
+                    onReview={selectHistoryApproval}
+                    selectedAttentionKey={selectedItem?.attention_key ?? null}
+                  />
+                  {history !== null && history.items.length === 0 && (
+                    <p className="mt-5 rounded-xl border border-dashed border-gray-300 p-5 text-center text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
+                      No approval history yet.
+                    </p>
+                  )}
+                </>
+              ) : (
+                <>
+                  <OwnerAttentionList
+                    items={result?.items ?? []}
+                    onReview={selectApproval}
+                    selectedAttentionKey={selectedItem?.attention_key ?? null}
+                    ariaLabel="Owner approval queue"
+                  />
 
-              {result !== null && result.degradation_status !== "unavailable" && result.degradation_status !== "no_enabled_adapters" && result.items.length === 0 && (
-                <p className="mt-5 rounded-xl border border-dashed border-gray-300 p-5 text-center text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
-                  {bucket === "urgent_exceptions"
-                    ? "No urgent exceptions are listed on this page."
-                    : bucket === "waiting_on_others"
-                      ? "No waiting items are listed on this page."
-                      : "No decisions are listed on this page."}
-                </p>
+                  {result !== null && result.degradation_status !== "unavailable" && result.degradation_status !== "no_enabled_adapters" && result.items.length === 0 && (
+                    <p className="mt-5 rounded-xl border border-dashed border-gray-300 p-5 text-center text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
+                      No approvals require your decision.
+                    </p>
+                  )}
+                </>
               )}
 
-              {result !== null && result.degradation_status !== "unavailable" && result.degradation_status !== "no_enabled_adapters" && lastPage > 1 && (
-                <nav aria-label="Action Center pagination" className="mt-6 flex flex-wrap items-center justify-center gap-2">
+              {((view === "history" && history !== null && lastPage > 1)
+                || (view === "pending" && result !== null && result.degradation_status !== "unavailable" && result.degradation_status !== "no_enabled_adapters" && lastPage > 1)) && (
+                <nav aria-label="Approval Center pagination" className="mt-6 flex flex-wrap items-center justify-center gap-2">
               {page > 1 ? (
                 <a
-                  href={actionCenterUrl(bucket, source, page - 1, perPage)}
+                  href={actionCenterUrl(bucket, source, page - 1, perPage, view)}
                   aria-label="Previous page"
                   className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:border-gray-700 dark:text-gray-200"
                 >
@@ -264,7 +320,7 @@ export default function ActionCenter() {
               ) : (
                 <a
                   key={pageNumber}
-                  href={actionCenterUrl(bucket, source, pageNumber, perPage)}
+                  href={actionCenterUrl(bucket, source, pageNumber, perPage, view)}
                   aria-label={`Page ${pageNumber}`}
                   className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:border-gray-700 dark:text-gray-200"
                 >
@@ -273,7 +329,7 @@ export default function ActionCenter() {
               ))}
               {page < lastPage ? (
                 <a
-                  href={actionCenterUrl(bucket, source, page + 1, perPage)}
+                  href={actionCenterUrl(bucket, source, page + 1, perPage, view)}
                   aria-label="Next page"
                   className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:border-gray-700 dark:text-gray-200"
                 >
@@ -288,15 +344,15 @@ export default function ActionCenter() {
               )}
             </div>
 
-            {selectedItem && selectedSelection && (
-              <OwnerApprovalDetailPanel
-                item={selectedItem}
-                selection={selectedSelection}
-                onClose={closeApproval}
-                onDecisionComplete={decisionComplete}
-              />
-            )}
           </div>
+          {selectedItem && selectedSelection && (
+            <OwnerApprovalDetailPanel
+              item={selectedItem}
+              selection={selectedSelection}
+              onClose={closeApproval}
+              onDecisionComplete={decisionComplete}
+            />
+          )}
           <div role="status" aria-live="polite" className="sr-only">{queueAnnouncement}</div>
         </section>
       </main>

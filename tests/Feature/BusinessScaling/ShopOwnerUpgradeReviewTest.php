@@ -16,11 +16,13 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Tests\Concerns\AuthenticatesPrivilegedUsers;
+use Tests\Concerns\ResetsInMemoryDatabaseState;
 use Tests\TestCase;
 
 final class ShopOwnerUpgradeReviewTest extends TestCase
 {
     use AuthenticatesPrivilegedUsers;
+    use ResetsInMemoryDatabaseState;
     use RefreshDatabase;
 
     protected function setUp(): void

@@ -8,6 +8,7 @@ import PurchaseRequestApprovalDetails from "./approvals/PurchaseRequestApprovalD
 import RefundApprovalDetails from "./approvals/RefundApprovalDetails";
 import RepairRejectApprovalDetails from "./approvals/RepairRejectApprovalDetails";
 import SalaryAdjustmentApprovalDetails from "./approvals/SalaryAdjustmentApprovalDetails";
+import SuspensionApprovalDetails from "./approvals/SuspensionApprovalDetails";
 
 export type ApprovalAction = "approve" | "reject";
 
@@ -168,6 +169,23 @@ export const approvalPanelRegistry: Record<ApprovalSourceType, ApprovalPanelDefi
       maxLength: 1000,
     },
     consequence: "move the purchase request to the next authoritative procurement workflow stage",
+  }),
+  suspension_request: definition({
+    sourceType: "suspension_request",
+    label: "Employee suspension approval",
+    noun: "Employee suspension",
+    detailPath: (id) => `/api/shop-owner/suspension-requests/${id}`,
+    renderer: SuspensionApprovalDetails,
+    approve: {
+      path: (id) => `/api/shop-owner/suspension-requests/${id}/review`,
+      body: noteBody("note"),
+    },
+    reject: {
+      path: (id) => `/api/shop-owner/suspension-requests/${id}/review`,
+      body: noteBody("note"),
+      maxLength: 1000,
+    },
+    consequence: "suspend or keep the employee active through the authoritative HR workflow",
   }),
   expense: definition({
     sourceType: "expense",

@@ -30,6 +30,7 @@ class LeaveControllerTest extends TestCase
         Notification::fake();
         app(PermissionRegistrar::class)->forgetCachedPermissions();
         Permission::findOrCreate('access-employee-directory', 'user');
+        Permission::findOrCreate('access-leave-approvals', 'user');
 
         $this->shopOwner = ShopOwner::factory()->approved()->create();
         $this->hrUser = User::factory()->create([
@@ -37,6 +38,7 @@ class LeaveControllerTest extends TestCase
             'role' => 'HR',
         ]);
         $this->hrUser->givePermissionTo('access-employee-directory');
+        $this->hrUser->givePermissionTo('access-leave-approvals');
 
         $this->employee = Employee::factory()->active()->create([
             'shop_owner_id' => $this->shopOwner->id,

@@ -16,6 +16,7 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AuditLogController;
+use App\Http\Controllers\ActivityLogController as CanonicalActivityLogController;
 use App\Http\Controllers\Api\PriceChangeRequestController;
 use App\Http\Controllers\Api\RepairServiceController;
 use App\Http\Controllers\ShopOwner\SuspensionFinalApprovalController;
@@ -75,7 +76,7 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
         Route::get('/dashboard', FinanceSummaryController::class)
             ->name('shop_owner.finance.dashboard.summary');
 
-        Route::prefix('invoices')->group(function () {
+        Route::prefix('invoices')->middleware(['erp.audience', 'erp.actor'])->group(function () {
             Route::get('/', [FinanceInvoiceController::class, 'index'])->name('shop_owner.finance.invoices.index');
             Route::get('/{id}', [FinanceInvoiceController::class, 'show'])->name('shop_owner.finance.invoices.show');
             Route::post('/', [FinanceInvoiceController::class, 'store'])->name('shop_owner.finance.invoices.store');
@@ -176,9 +177,15 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
     // AUDIT LOGS (Shop Owner View)
     // ============================================
     Route::prefix('audit-logs')->group(function () {
-        Route::get('/', [AuditLogController::class, 'index'])->name('shop_owner.audit.index');
-        Route::get('/stats', [AuditLogController::class, 'stats'])->name('shop_owner.audit.stats');
-        Route::get('/export', [AuditLogController::class, 'export'])->name('shop_owner.audit.export');
+        Route::get('/', [CanonicalActivityLogController::class, 'index'])
+            ->middleware(['erp.audience', 'erp.actor'])
+            ->name('shop_owner.audit.index');
+        Route::get('/stats', [CanonicalActivityLogController::class, 'index'])
+            ->middleware(['erp.audience', 'erp.actor'])
+            ->name('shop_owner.audit.stats');
+        Route::get('/export', [AuditLogController::class, 'export'])
+            ->middleware(['erp.audience', 'erp.actor'])
+            ->name('shop_owner.audit.export');
     });
 
     // ============================================
@@ -234,7 +241,7 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
     // ============================================
     // PROMO CAMPAIGNS (Shop Owner Retail)
     // ============================================
-    Route::prefix('promos')->middleware('check.business.type:retail,both')->group(function () {
+    Route::prefix('promos')->middleware(['check.business.type:retail,both', 'erp.audience', 'erp.actor'])->group(function () {
         Route::get('/', [PromoCampaignController::class, 'index'])->name('shop_owner.promos.index');
         Route::post('/', [PromoCampaignController::class, 'store'])->name('shop_owner.promos.store');
         Route::put('/{id}', [PromoCampaignController::class, 'update'])->name('shop_owner.promos.update');
@@ -251,40 +258,48 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
         Route::get('/', [\App\Http\Controllers\Api\ProductController::class, 'myProducts'])
             ->middleware('throttle:120,1')
             ->name('shop_owner.products.index');
-        Route::post('/', [\App\Http\Controllers\Api\ProductController::class, 'store'])->name('shop_owner.products.store');
+        Route::post('/', [\App\Http\Controllers\Api\ProductController::class, 'store'])
+            ->middleware('owner.product.write')
+            ->name('shop_owner.products.store');
         Route::get('/{id}', [\App\Http\Controllers\Api\ProductController::class, 'show'])->name('shop_owner.products.show');
-        Route::put('/{id}', [\App\Http\Controllers\Api\ProductController::class, 'update'])->name('shop_owner.products.update');
+        Route::put('/{id}', [\App\Http\Controllers\Api\ProductController::class, 'update'])
+            ->middleware('owner.product.write')
+            ->name('shop_owner.products.update');
         Route::delete('/{id}', [\App\Http\Controllers\Api\ProductController::class, 'destroy'])
-            ->middleware('throttle:120,1')
+            ->middleware(['throttle:120,1', 'owner.product.write'])
             ->name('shop_owner.products.destroy');
         Route::post('/{id}/restore', [\App\Http\Controllers\Api\ProductController::class, 'restore'])
-            ->middleware('throttle:120,1')
+            ->middleware(['throttle:120,1', 'owner.product.write'])
             ->name('shop_owner.products.restore');
         Route::post('/upload-image', [\App\Http\Controllers\Api\ProductController::class, 'uploadImage'])
-            ->middleware('throttle:180,1')
+            ->middleware(['throttle:180,1', 'owner.product.write'])
             ->name('shop_owner.products.upload-image');
         Route::get('/{id}/variants', [\App\Http\Controllers\Api\ProductController::class, 'getVariants'])->name('shop_owner.products.variants');
         
         // Color variants
         Route::get('/{productId}/color-variants', [\App\Http\Controllers\Api\ProductController::class, 'getColorVariants'])->name('shop_owner.products.color-variants.index');
-        Route::post('/{productId}/color-variants', [\App\Http\Controllers\Api\ProductController::class, 'storeColorVariant'])->name('shop_owner.products.color-variants.store');
-        Route::put('/{productId}/color-variants/{colorVariantId}', [\App\Http\Controllers\Api\ProductController::class, 'updateColorVariant'])->name('shop_owner.products.color-variants.update');
+        Route::post('/{productId}/color-variants', [\App\Http\Controllers\Api\ProductController::class, 'storeColorVariant'])
+            ->middleware('owner.product.write')
+            ->name('shop_owner.products.color-variants.store');
+        Route::put('/{productId}/color-variants/{colorVariantId}', [\App\Http\Controllers\Api\ProductController::class, 'updateColorVariant'])
+            ->middleware('owner.product.write')
+            ->name('shop_owner.products.color-variants.update');
         Route::delete('/{productId}/color-variants/{colorVariantId}', [\App\Http\Controllers\Api\ProductController::class, 'deleteColorVariant'])
-            ->middleware('throttle:180,1')
+            ->middleware(['throttle:180,1', 'owner.product.write'])
             ->name('shop_owner.products.color-variants.destroy');
         
         // Color variant images
         Route::post('/{productId}/color-variants/{colorVariantId}/images', [\App\Http\Controllers\Api\ProductController::class, 'uploadColorVariantImage'])
-            ->middleware('throttle:240,1')
+            ->middleware(['throttle:240,1', 'owner.product.write'])
             ->name('shop_owner.products.color-variants.images.store');
         Route::put('/{productId}/color-variants/{colorVariantId}/images/{imageId}', [\App\Http\Controllers\Api\ProductController::class, 'updateColorVariantImage'])
-            ->middleware('throttle:240,1')
+            ->middleware(['throttle:240,1', 'owner.product.write'])
             ->name('shop_owner.products.color-variants.images.update');
         Route::delete('/{productId}/color-variants/{colorVariantId}/images/{imageId}', [\App\Http\Controllers\Api\ProductController::class, 'deleteColorVariantImage'])
-            ->middleware('throttle:240,1')
+            ->middleware(['throttle:240,1', 'owner.product.write'])
             ->name('shop_owner.products.color-variants.images.destroy');
         Route::post('/{productId}/color-variants/{colorVariantId}/images/reorder', [\App\Http\Controllers\Api\ProductController::class, 'reorderColorVariantImages'])
-            ->middleware('throttle:240,1')
+            ->middleware(['throttle:240,1', 'owner.product.write'])
             ->name('shop_owner.products.color-variants.images.reorder');
     });
 
@@ -325,32 +340,39 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
     // ============================================
     // REPAIR MANAGEMENT (Shop Owner)
     // ============================================
+    // Company owners may retain the existing read projection for compatibility,
+    // but only individual owners may operate the repair workflow. Company
+    // monitoring uses the normalized projection under /erp/operations.
     Route::prefix('repairs')->middleware('check.business.type:repair,both')->group(function () {
         Route::get('/', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'myAssignedRepairs'])->name('shop_owner.repairs.index');
-        Route::post('/{id}/accept', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'acceptRepair'])->name('shop_owner.repairs.accept');
-        Route::post('/{id}/reject', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'rejectRepair'])->name('shop_owner.repairs.reject');
-        Route::post('/{id}/mark-received', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'markAsReceived'])->name('shop_owner.repairs.mark-received');
-        Route::patch('/{id}/delivery-method', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'changeDeliveryMethod'])->name('shop_owner.repairs.delivery-method');
-        Route::post('/{id}/start-work', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'startWork'])->name('shop_owner.repairs.start-work');
-        Route::post('/{id}/resume-work', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'resumeWork'])->name('shop_owner.repairs.resume-work');
-        Route::post('/{id}/mark-completed', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'markCompleted'])->name('shop_owner.repairs.mark-completed');
-        Route::get('/{id}/materials', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'getRepairMaterialUsage'])->name('shop_owner.repairs.materials.index');
-        Route::post('/{id}/materials', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'logRepairMaterialUsage'])->name('shop_owner.repairs.materials.store');
-        Route::delete('/{id}/materials/{usageId}', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'removeRepairMaterialUsage'])->name('shop_owner.repairs.materials.destroy');
-        Route::post('/{id}/mark-ready', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'markReadyForPickup'])->name('shop_owner.repairs.mark-ready');
-        Route::post('/{id}/activate-pickup', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'activatePickup'])->name('shop_owner.repairs.activate-pickup');
-        Route::post('/{id}/activate-payment', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'activatePaymentForRepair'])->name('shop_owner.repairs.activate-payment');
-        Route::post('/{id}/mark-paid-in-shop', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'markPaidInShop'])->name('shop_owner.repairs.mark-paid-in-shop');
+
+        Route::middleware('check.registration.type:individual')->group(function () {
+            Route::post('/{id}/accept', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'acceptRepair'])->name('shop_owner.repairs.accept');
+            Route::post('/{id}/reject', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'rejectRepair'])->name('shop_owner.repairs.reject');
+            Route::post('/{id}/mark-received', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'markAsReceived'])->name('shop_owner.repairs.mark-received');
+            Route::patch('/{id}/delivery-method', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'changeDeliveryMethod'])->name('shop_owner.repairs.delivery-method');
+            Route::post('/{id}/start-work', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'startWork'])->name('shop_owner.repairs.start-work');
+            Route::post('/{id}/resume-work', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'resumeWork'])->name('shop_owner.repairs.resume-work');
+            Route::post('/{id}/mark-completed', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'markCompleted'])->name('shop_owner.repairs.mark-completed');
+            Route::get('/{id}/materials', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'getRepairMaterialUsage'])->name('shop_owner.repairs.materials.index');
+            Route::post('/{id}/materials', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'logRepairMaterialUsage'])->name('shop_owner.repairs.materials.store');
+            Route::delete('/{id}/materials/{usageId}', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'removeRepairMaterialUsage'])->name('shop_owner.repairs.materials.destroy');
+            Route::post('/{id}/mark-ready', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'markReadyForPickup'])->name('shop_owner.repairs.mark-ready');
+            Route::post('/{id}/activate-pickup', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'activatePickup'])->name('shop_owner.repairs.activate-pickup');
+            Route::post('/{id}/activate-payment', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'activatePaymentForRepair'])->name('shop_owner.repairs.activate-payment');
+            Route::post('/{id}/mark-paid-in-shop', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'markPaidInShop'])->name('shop_owner.repairs.mark-paid-in-shop');
+            Route::post('/{id}/ship', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'shipRepair'])->name('shop_owner.repairs.ship');
+        });
+
         Route::get('/high-value-pending', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'getHighValuePendingApprovals'])->name('shop_owner.repairs.high-value-pending');
         Route::post('/{id}/approve-high-value', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'approveHighValueRepair'])->name('shop_owner.repairs.approve-high-value');
         Route::post('/{id}/reject-high-value', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'rejectHighValueRepair'])->name('shop_owner.repairs.reject-high-value');
-        Route::post('/{id}/ship', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'shipRepair'])->name('shop_owner.repairs.ship');
     });
 
     // ============================================
     // REPAIR SERVICES (Shop Owner)
     // ============================================
-    Route::prefix('repair-services')->middleware('check.business.type:repair,both')->group(function () {
+    Route::prefix('repair-services')->middleware(['check.business.type:repair,both', 'erp.audience', 'erp.actor'])->group(function () {
         Route::get('/', [\App\Http\Controllers\Api\RepairServiceController::class, 'index'])->name('shop_owner.repair-services.index');
         Route::post('/', [\App\Http\Controllers\Api\RepairServiceController::class, 'store'])->name('shop_owner.repair-services.store');
         Route::get('/{id}', [\App\Http\Controllers\Api\RepairServiceController::class, 'show'])->name('shop_owner.repair-services.show');
@@ -360,7 +382,7 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
     });
 
     Route::get('/repair-materials', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'repairStocksOverview'])
-        ->middleware('check.business.type:repair,both')
+        ->middleware(['check.business.type:repair,both', 'erp.audience', 'erp.actor'])
         ->name('shop_owner.repair-materials.index');
 
     // ============================================
@@ -375,7 +397,7 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
     // ============================================
     // REPAIR CONVERSATIONS (Shop Owner)
     // ============================================
-    Route::prefix('conversations')->group(function () {
+    Route::prefix('conversations')->middleware(['erp.audience', 'erp.actor'])->group(function () {
         Route::get('/', [\App\Http\Controllers\Api\ConversationController::class, 'indexShopOwner'])->name('shop_owner.conversations.index');
         Route::get('/{id}', [\App\Http\Controllers\Api\ConversationController::class, 'showShopOwner'])->name('shop_owner.conversations.show');
         Route::post('/{id}/messages', [\App\Http\Controllers\Api\ConversationController::class, 'storeMessageShopOwner'])->name('shop_owner.conversations.messages.store');

@@ -9,6 +9,7 @@ import {
     type Notification,
 } from '@/hooks/useNotifications';
 import { Link } from '@inertiajs/react';
+import { resolveNotificationActionUrl } from '@/utils/resolveNotificationActionUrl';
 
 interface NotificationCenterProps {
     apiBasePath?: string;
@@ -44,7 +45,7 @@ export default function NotificationCenter({
             markAsRead.mutate(notification.id);
         }
 
-        if (notification.action_url) {
+        if (resolveNotificationActionUrl(notification.action_url, notification.type, notification.data)) {
             setIsOpen(false);
         }
     };
@@ -148,9 +149,14 @@ export default function NotificationCenter({
                             ) : (
                                 <div className="divide-y divide-gray-200 dark:divide-gray-700">
                                     {notifications.map((notification: Notification) => {
-                                        const NotificationWrapper = notification.action_url ? Link : 'div';
-                                        const wrapperProps = notification.action_url
-                                            ? { href: notification.action_url }
+                                        const actionUrl = resolveNotificationActionUrl(
+                                            notification.action_url,
+                                            notification.type,
+                                            notification.data,
+                                        );
+                                        const NotificationWrapper = actionUrl ? Link : 'div';
+                                        const wrapperProps = actionUrl
+                                            ? { href: actionUrl }
                                             : {};
 
                                         return (

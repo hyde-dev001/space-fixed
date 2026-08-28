@@ -75,11 +75,6 @@ const metadata: OwnerShellMetadata = {
       active_matching: ["/shop-owner/home"],
     }],
   }],
-  compatibility: {
-    show_erp_fallback: false,
-    erp_workspace_url: null,
-    fallback_url: null,
-  },
 };
 
 beforeEach(() => {
@@ -180,7 +175,7 @@ it("renders local tabs from the server-provided active module for owner ERP page
   state.url = "/shop-owner/erp/crm/customers";
   state.activeModule = {
     label: "Customers",
-    overview: { label: "Overview", url: "/shop-owner/operate/customers" },
+    overview: { label: "Dashboard", url: "/shop-owner/operate/customers" },
     pages: [{ label: "Customers", url: "/shop-owner/erp/crm/customers" }],
   };
 
@@ -212,7 +207,7 @@ it("does not render owner local tabs for employee ERP pages with the same module
   state.url = "/shop-owner/erp/crm/customers";
   state.activeModule = {
     label: "Customers",
-    overview: { label: "Overview", url: "/shop-owner/operate/customers" },
+    overview: { label: "Dashboard", url: "/shop-owner/operate/customers" },
     pages: [{ label: "Customers", url: "/shop-owner/erp/crm/customers" }],
   };
 
@@ -227,11 +222,6 @@ it("keeps the existing frame when canonical metadata is incomplete", () => {
     selection_reason: "shop_allowlisted",
     context: "company",
     groups: [],
-    compatibility: {
-      show_erp_fallback: false,
-      erp_workspace_url: null,
-      fallback_url: null,
-    },
   };
   state.auth = { shop_owner: { id: 1 } };
   render(<AppLayoutShopOwner><div>owner page</div></AppLayoutShopOwner>);

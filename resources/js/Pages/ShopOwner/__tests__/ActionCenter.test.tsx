@@ -81,81 +81,7 @@ const result = (overrides: Partial<OwnerActionCenterResult> = {}): OwnerActionCe
   ...overrides,
 });
 
-const exceptionResult = (overrides: Partial<OwnerActionCenterResult> = {}): OwnerActionCenterResult => result({
-  items: [item({
-    attention_key: "compliance_document:9:document_expiry",
-    source_type: "compliance_document",
-    source_id: 9,
-    category: "document_expiry",
-    primary_bucket: "urgent_exceptions",
-    module: "compliance",
-    title: "Mayor's Permit expiry",
-    concise_summary: "This document is within its renewal window and has no pending renewal.",
-    priority_tier: "high",
-    materiality_tier: "high",
-    comparable_monetary_exposure: null,
-    urgency_at: "2026-08-21T00:00:00+08:00",
-    actionable_since: "2026-07-22T00:00:00+08:00",
-    waiting_on: "none",
-    owner_action_required: false,
-    coverage_source: "compliance",
-    destination_url: "/shop-owner/settings/policies-compliance",
-  })],
-  coverage_counts: { compliance: 1, refunds: 0, logistics: 0 },
-  health: {
-    enabled_adapter_keys: ["compliance_documents"],
-    healthy_adapter_keys: ["compliance_documents"],
-    failed_adapter_keys: [],
-  },
-  bucket: "urgent_exceptions",
-  coverage: "all",
-  pagination: { page: 1, per_page: 20, total: 1, last_page: 1 },
-  ...overrides,
-});
-
-const waitingResult = (overrides: Partial<OwnerActionCenterResult> = {}): OwnerActionCenterResult => result({
-  items: [item({
-    attention_key: "order_refund:21:refund_recovery_waiting",
-    source_type: "order_refund",
-    source_id: 21,
-    category: "refund_recovery_waiting",
-    primary_bucket: "waiting_on_others",
-    module: "retail",
-    title: "Refund recovery in progress",
-    concise_summary: "Payment recovery owns the next step for this failed refund.",
-    priority_tier: "high",
-    materiality_tier: "high",
-    comparable_monetary_exposure: 725,
-    urgency_at: null,
-    actionable_since: "2026-08-14T09:00:00+08:00",
-    waiting_on: "payment_recovery",
-    owner_action_required: false,
-    coverage_source: "refunds",
-    destination_url: "/shop-owner/refund-approvals?refund=21",
-  })],
-  coverage_counts: { compliance: 0, refunds: 1, logistics: 0 },
-  health: {
-    enabled_adapter_keys: [
-      "pending_compliance_renewals",
-      "waiting_order_refund_recovery",
-      "waiting_repair_refund_recovery",
-      "active_logistics_recovery",
-    ],
-    healthy_adapter_keys: [
-      "pending_compliance_renewals",
-      "waiting_order_refund_recovery",
-      "waiting_repair_refund_recovery",
-      "active_logistics_recovery",
-    ],
-    failed_adapter_keys: [],
-  },
-  bucket: "waiting_on_others",
-  coverage: "all",
-  pagination: { page: 1, per_page: 20, total: 1, last_page: 1 },
-  ...overrides,
-});
-
-describe("Shop Owner Action Center", () => {
+describe("Shop Owner Approval Center", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
@@ -177,197 +103,52 @@ describe("Shop Owner Action Center", () => {
     }));
     mocks.props = {
       ownerActionCenter: result(),
+      approvalCoverageSources: [
+        "refunds",
+        "prices",
+        "payslips",
+        "salary_changes",
+        "purchase_requests",
+        "suspensions",
+        "expenses",
+        "repair_rejections",
+      ],
       source: "all",
       page: 1,
       per_page: 20,
       bucket: "needs_my_decision",
-      bucketSummaries: {
-        needs_my_decision: result(),
-        urgent_exceptions: exceptionResult(),
-        waiting_on_others: waitingResult(),
-      },
     };
   });
 
-  it("renders Waiting on Others with bounded filters, responsibility labels, and no mutation controls", () => {
-    mocks.props = {
-      ...mocks.props,
-      bucket: "waiting_on_others",
-      source: "all",
-      page: 4,
-      ownerActionCenter: waitingResult(),
-    };
-
+  it("renders one approval queue without retired exception or waiting navigation", () => {
     render(<ActionCenter />);
 
-    expect(screen.getByRole("link", { name: /Waiting on Others\s*1/i })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("link", { name: /Waiting on Others\s*1/i })).toHaveAttribute(
-      "href",
-      expect.stringMatching(/bucket=waiting_on_others.*page=1/),
-    );
-    expect(screen.getByRole("link", { name: /^All$/i })).toHaveAttribute(
-      "href",
-      expect.stringMatching(/bucket=waiting_on_others.*source=all.*page=1/),
-    );
-    expect(screen.getByRole("link", { name: /^Compliance$/i })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /^Refunds$/i })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /^Logistics$/i })).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /^Expenses$/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /^Purchase Requests$/i })).not.toBeInTheDocument();
-    expect(screen.getByText("Waiting on: Payment Recovery")).toBeInTheDocument();
-    expect(screen.getByText("Refund recovery in progress")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /approve|reject|dismiss|resolve|snooze/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Approval Center" })).toBeInTheDocument();
+    expect(screen.getByText("1 approval requires your decision")).toBeInTheDocument();
+    expect(screen.getByText("Approvals requiring your decision")).toBeInTheDocument();
+    expect(screen.queryByText("Owner Action Center")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Urgent Exceptions/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Waiting on Others/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: /Action Center buckets/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /All Approvals/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Price Changes/i })).toBeInTheDocument();
   });
 
-  it("uses distinct Waiting on Others empty, partial, unavailable, and disabled copy", () => {
-    const { rerender } = render(<ActionCenter />);
-
-    mocks.props = {
-      ...mocks.props,
-      bucket: "waiting_on_others",
-      ownerActionCenter: waitingResult({
-        items: [],
-        health: {
-          enabled_adapter_keys: ["waiting_order_refund_recovery"],
-          healthy_adapter_keys: ["waiting_order_refund_recovery"],
-          failed_adapter_keys: [],
-        },
-        coverage_counts: { compliance: 0, refunds: 0, logistics: 0 },
-        pagination: { page: 1, per_page: 20, total: 0, last_page: 1 },
-      }),
-    };
-    rerender(<ActionCenter />);
-    expect(screen.getByText(/No waiting items from currently supported sources/i)).toBeInTheDocument();
-
-    mocks.props = {
-      ...mocks.props,
-      ownerActionCenter: waitingResult({
-        health: {
-          enabled_adapter_keys: ["waiting_order_refund_recovery", "active_logistics_recovery"],
-          healthy_adapter_keys: ["waiting_order_refund_recovery"],
-          failed_adapter_keys: ["active_logistics_recovery"],
-        },
-        degradation_status: "partial",
-        coverage_counts: { compliance: 0, refunds: 1, logistics: 0 },
-        pagination: { page: 1, per_page: 20, total: 1, last_page: 1 },
-      }),
-    };
-    rerender(<ActionCenter />);
-    expect(screen.getByText(/waiting items from currently available sources/i)).toBeInTheDocument();
-    expect(screen.getByText(/Logistics recovery temporarily unavailable/i)).toBeInTheDocument();
-
-    mocks.props = {
-      ...mocks.props,
-      ownerActionCenter: waitingResult({
-        items: [],
-        health: {
-          enabled_adapter_keys: ["active_logistics_recovery"],
-          healthy_adapter_keys: [],
-          failed_adapter_keys: ["active_logistics_recovery"],
-        },
-        degradation_status: "unavailable",
-        coverage_counts: { compliance: 0, refunds: 0, logistics: 0 },
-        pagination: { page: 1, per_page: 20, total: 0, last_page: 1 },
-      }),
-    };
-    rerender(<ActionCenter />);
-    expect(screen.getByText(/Waiting on Others currently unavailable/i)).toBeInTheDocument();
-
-    mocks.props = {
-      ...mocks.props,
-      ownerActionCenter: waitingResult({
-        items: [],
-        health: { enabled_adapter_keys: [], healthy_adapter_keys: [], failed_adapter_keys: [] },
-        degradation_status: "no_enabled_adapters",
-        coverage_counts: { compliance: 0, refunds: 0, logistics: 0 },
-        pagination: { page: 1, per_page: 20, total: 0, last_page: 1 },
-      }),
-    };
-    rerender(<ActionCenter />);
-    expect(screen.getByText(/Waiting on Others sources are not enabled/i)).toBeInTheDocument();
-  });
-
-  it("uses dominant bucket tabs and a compact exception queue without redundant filters", () => {
-    mocks.props = {
-      ...mocks.props,
-      bucket: "urgent_exceptions",
-      ownerActionCenter: exceptionResult(),
-    };
-
+  it("renders owner decisions with all supported approval filters and review-only rows", async () => {
     render(<ActionCenter />);
 
-    expect(screen.getByRole("link", { name: /Needs My Decision\s*1/i })).toHaveAttribute(
-      "href",
-      expect.stringMatching(/bucket=needs_my_decision.*page=1/),
-    );
-    expect(screen.getByRole("link", { name: /Urgent Exceptions\s*1/i })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByText("Mayor's Permit expiry")).toBeInTheDocument();
-    expect(screen.getByText(/Priority:\s*High/i)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Open workflow/i })).toHaveAttribute(
-      "href",
-      "/shop-owner/settings/policies-compliance",
-    );
-    expect(screen.queryByRole("navigation", { name: /Action Center source filters/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /dismiss|hide|acknowledge|snooze|resolve/i })).not.toBeInTheDocument();
-  });
-
-  it("renders Logistics exceptions with a source label and workflow link", () => {
-    mocks.props = {
-      ...mocks.props,
-      bucket: "urgent_exceptions",
-      ownerActionCenter: exceptionResult({
-        items: [item({
-          attention_key: "logistics_failure:17:unowned_delivery_failure",
-          source_type: "logistics_failure",
-          source_id: 17,
-          category: "unowned_delivery_failure",
-          module: "logistics",
-          title: "Failed delivery needs escalation",
-          concise_summary: "Delivery recovery is exhausted and has no active responsible party.",
-          priority_tier: "high",
-          materiality_tier: "high",
-          comparable_monetary_exposure: null,
-          urgency_at: "2026-08-16T09:00:00+08:00",
-          actionable_since: "2026-08-15T09:00:00+08:00",
-          waiting_on: "none",
-          owner_action_required: false,
-          coverage_source: "logistics",
-          destination_url: "/shop-owner/logistics/shipments?shipment=8&leg=17",
-        })],
-        coverage_counts: { compliance: 0, refunds: 0, logistics: 1 },
-        health: {
-          enabled_adapter_keys: ["unowned_logistics_failures"],
-          healthy_adapter_keys: ["unowned_logistics_failures"],
-          failed_adapter_keys: [],
-        },
-      }),
-    };
-
-    render(<ActionCenter />);
-
-    expect(screen.getByText("Logistics Failure")).toBeInTheDocument();
-    expect(screen.getByText("Failed delivery needs escalation")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Open workflow/i })).toHaveAttribute(
-      "href",
-      "/shop-owner/logistics/shipments?shipment=8&leg=17",
-    );
-  });
-
-  it("renders grounded decisions with all seven approval filters and review-only rows", async () => {
-    render(<ActionCenter />);
-
-    expect(screen.getByRole("heading", { name: /owner action center/i })).toBeInTheDocument();
-    expect(screen.getAllByText("Needs My Decision").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("Supplier expense")).toBeInTheDocument();
     expect(screen.getAllByText(/Expense/i).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText(/450\.00/)).toBeInTheDocument();
     expect(screen.getByText(/Priority:\s*High/i)).toBeInTheDocument();
     for (const label of [
+      "All Approvals",
       "Refunds",
-      "Prices",
+      "Price Changes",
       "Payslips",
       "Salary Adjustments",
       "Purchase Requests",
+      "Suspension Requests",
       "Expenses",
       "Repair Rejections",
     ]) {
@@ -377,66 +158,78 @@ describe("Shop Owner Action Center", () => {
       "href",
       expect.stringContaining("source=refunds"),
     );
-    expect(screen.getByRole("button", { name: /Review Supplier expense/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /View Supplier expense approval details/i })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Approve$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Reject$/i })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /Review Supplier expense/i }));
+    fireEvent.click(screen.getByRole("button", { name: /View Supplier expense approval details/i }));
     await waitFor(() => expect(screen.getByRole("dialog", { name: /Expense approval/i })).toBeInTheDocument());
   });
 
-  it("labels all seven approval families and keeps decisions at review level in the queue", () => {
-    const approvals: Array<{
-      source_type: OwnerAttentionItem["source_type"];
-      coverage_source: OwnerAttentionItem["coverage_source"];
-      title: string;
-    }> = [
-      { source_type: "order_refund", coverage_source: "refunds", title: "Order refund approval" },
-      { source_type: "product_price_change", coverage_source: "prices", title: "Product price approval" },
-      { source_type: "payslip", coverage_source: "payslips", title: "Payslip approval" },
-      { source_type: "salary_change", coverage_source: "salary_changes", title: "Salary adjustment approval" },
-      { source_type: "purchase_request", coverage_source: "purchase_requests", title: "Purchase request approval" },
-      { source_type: "expense", coverage_source: "expenses", title: "Expense approval" },
-      { source_type: "repair_rejection", coverage_source: "repair_rejections", title: "Repair rejection approval" },
-    ];
-
+  it("keeps all approval families visible when one module filter is selected", () => {
     mocks.props = {
       ...mocks.props,
+      source: "refunds",
       ownerActionCenter: result({
-        items: approvals.map((approval, index) => item({
-          attention_key: `${approval.source_type}:${index + 1}:owner_approval`,
-          source_type: approval.source_type,
-          source_id: index + 1,
-          title: approval.title,
-          coverage_source: approval.coverage_source,
-          comparable_monetary_exposure: 100 + index,
-          destination_url: `/shop-owner/action-center?approval=${approval.source_type}:${index + 1}`,
-        })),
-        coverage_counts: {
-          refunds: 1,
-          prices: 1,
-          payslips: 1,
-          salary_changes: 1,
-          expenses: 1,
-          purchase_requests: 1,
-          repair_rejections: 1,
+        coverage: "refunds",
+        health: {
+          enabled_adapter_keys: ["order_refunds", "repair_refunds"],
+          healthy_adapter_keys: ["order_refunds", "repair_refunds"],
+          failed_adapter_keys: [],
         },
-        pagination: { page: 1, per_page: 20, total: 7, last_page: 1 },
       }),
     };
 
     render(<ActionCenter />);
 
-    for (const approval of approvals) {
-      expect(screen.getByText(approval.title)).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: `Review ${approval.title}` })).toBeInTheDocument();
-    }
-    expect(screen.getAllByRole("button", { name: /^Review /i })).toHaveLength(7);
-    expect(screen.queryByRole("button", { name: /^Approve$/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /^Reject$/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: /Approval Center source filters/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /^Refunds$/i })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: /^Expenses$/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /^Repair Rejections$/i })).toBeInTheDocument();
   });
 
-  it("labels partial coverage and names the failed source", () => {
+  it("shows completed owner decisions in history and opens them read-only", async () => {
+    mocks.props = {
+      ...mocks.props,
+      view: "history",
+      source: "purchase_requests",
+      approvalHistory: {
+        items: [{
+          attention_key: "history:purchase_request:42:approved",
+          source_type: "purchase_request",
+          source_id: 42,
+          title: "Purchase request PR-42",
+          concise_summary: "Purchase request approval was recorded.",
+          coverage_source: "purchase_requests",
+          status: "approved",
+          decision_at: "2026-08-14T11:00:00+08:00",
+          requested_at: "2026-08-14T09:00:00+08:00",
+          comparable_monetary_exposure: 1250,
+          comments: "Approved for restock.",
+          reviewed_by: "Second TestShop",
+          destination_url: "/shop-owner/action-center?view=history&source=purchase_requests&approval=purchase_request:42",
+        }],
+        coverage_counts: { purchase_requests: 1 },
+        coverage: "purchase_requests",
+        pagination: { page: 1, per_page: 20, total: 1, last_page: 1 },
+      },
+    };
+
+    render(<ActionCenter />);
+
+    expect(screen.getByRole("heading", { name: "Approval history" })).toBeInTheDocument();
+    expect(screen.getByText("Purchase request PR-42")).toBeInTheDocument();
+    expect(screen.getByText("Approved")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /View Purchase request PR-42 approval details/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Approve$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Reject$/i })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /View Purchase request PR-42 approval details/i }));
+    await waitFor(() => expect(screen.getByRole("dialog", { name: /Purchase request approval/i })).toBeInTheDocument());
+    expect(screen.getByText(/recorded in approval history/i)).toBeInTheDocument();
+  });
+
+  it("shows partial coverage using approval language", () => {
     mocks.props = {
       ...mocks.props,
       ownerActionCenter: result({
@@ -454,11 +247,11 @@ describe("Shop Owner Action Center", () => {
     render(<ActionCenter />);
 
     expect(screen.getByText(/partial coverage/i)).toBeInTheDocument();
-    expect(screen.getByText(/5 actions from currently available sources/i)).toBeInTheDocument();
+    expect(screen.getByText(/5 approvals from currently available sources/i)).toBeInTheDocument();
     expect(screen.getByText(/expenses temporarily unavailable/i)).toBeInTheDocument();
   });
 
-  it("distinguishes unavailable data from a healthy empty queue", () => {
+  it("distinguishes unavailable data from a healthy empty approval queue", () => {
     mocks.props = {
       ...mocks.props,
       ownerActionCenter: result({
@@ -476,8 +269,7 @@ describe("Shop Owner Action Center", () => {
 
     render(<ActionCenter />);
 
-    expect(screen.getByText(/currently unavailable/i)).toBeInTheDocument();
-    expect(screen.queryByText(/Needs My Decision\s*0/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/Approval Center currently unavailable/i)).toBeInTheDocument();
 
     mocks.props = {
       ...mocks.props,
@@ -494,28 +286,10 @@ describe("Shop Owner Action Center", () => {
 
     render(<ActionCenter />);
 
-    expect(screen.getByText(/No decisions from currently supported sources require action/i)).toBeInTheDocument();
+    expect(screen.getByText(/No approvals require your decision/i)).toBeInTheDocument();
   });
 
-  it("uses exception-specific empty-state language", () => {
-    mocks.props = {
-      ...mocks.props,
-      bucket: "urgent_exceptions",
-      ownerActionCenter: exceptionResult({
-        items: [],
-        coverage_counts: { compliance: 0, refunds: 0, logistics: 0 },
-        pagination: { page: 1, per_page: 20, total: 0, last_page: 1 },
-      }),
-    };
-
-    render(<ActionCenter />);
-
-    expect(screen.getByText(/No urgent exceptions from currently supported sources/i)).toBeInTheDocument();
-    expect(screen.getByText(/No urgent exceptions are listed on this page/i)).toBeInTheDocument();
-    expect(screen.queryByText(/No decisions are listed on this page/i)).not.toBeInTheDocument();
-  });
-
-  it("refreshes and preserves bounded filter and pagination state", () => {
+  it("refreshes and preserves source filter and pagination state", () => {
     mocks.props = {
       ...mocks.props,
       source: "expenses",
@@ -529,7 +303,7 @@ describe("Shop Owner Action Center", () => {
 
     render(<ActionCenter />);
 
-    fireEvent.click(screen.getByRole("button", { name: /refresh action center/i }));
+    fireEvent.click(screen.getByRole("button", { name: /refresh approval center/i }));
     expect(mocks.reload).toHaveBeenCalledWith({ preserveScroll: true, preserveState: true });
     expect(screen.getByRole("link", { name: /previous page/i })).toHaveAttribute(
       "href",
@@ -544,5 +318,27 @@ describe("Shop Owner Action Center", () => {
       "href",
       expect.stringContaining("page=3"),
     );
+  });
+
+  it("does not render retired bucket data if a stale payload reaches the page", () => {
+    mocks.props = {
+      ...mocks.props,
+      ownerActionCenter: result({
+        bucket: "urgent_exceptions",
+        items: [item({
+          primary_bucket: "urgent_exceptions",
+          source_type: "compliance_document",
+          title: "Expired document",
+          owner_action_required: false,
+          waiting_on: "none",
+        })],
+      }),
+    };
+
+    render(<ActionCenter />);
+
+    expect(screen.queryByText("Expired document")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Open workflow/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Approval Center" })).toBeInTheDocument();
   });
 });

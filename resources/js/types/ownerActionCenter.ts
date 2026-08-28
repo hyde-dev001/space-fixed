@@ -6,6 +6,7 @@ export type OwnerActionCenterCoverage =
   | "salary_changes"
   | "expenses"
   | "purchase_requests"
+  | "suspensions"
   | "repair_rejections"
   | "compliance"
   | "logistics";
@@ -22,6 +23,7 @@ export type OwnerAttentionCoverageSource =
   | "salary_changes"
   | "expenses"
   | "purchase_requests"
+  | "suspensions"
   | "repair_rejections"
   | "compliance"
   | "logistics";
@@ -34,6 +36,7 @@ export type OwnerAttentionAdapterKey =
   | "salary_changes"
   | "expenses"
   | "purchase_requests"
+  | "suspension_requests"
   | "repair_rejections"
   | "compliance_documents"
   | "failed_order_refunds"
@@ -54,6 +57,7 @@ export type OwnerAttentionSourceType =
   | "salary_change"
   | "expense"
   | "purchase_request"
+  | "suspension_request"
   | "repair_rejection"
   | "compliance_document"
   | "logistics_failure";
@@ -64,6 +68,10 @@ export type OwnerActionCenterDegradationStatus =
   | "no_enabled_adapters"
   | "partial"
   | "unavailable";
+
+export type OwnerApprovalCenterView = "pending" | "history";
+
+export type OwnerApprovalHistoryStatus = "approved" | "rejected";
 
 export interface OwnerAttentionItem {
   attention_key: string;
@@ -104,6 +112,29 @@ export interface OwnerActionCenterResult {
   health: OwnerAttentionAdapterHealth;
   degradation_status: OwnerActionCenterDegradationStatus;
   bucket: OwnerAttentionBucket;
+  coverage: OwnerActionCenterCoverage;
+  pagination: OwnerActionCenterPagination;
+}
+
+export interface OwnerApprovalHistoryItem {
+  attention_key: string;
+  source_type: OwnerAttentionSourceType;
+  source_id: number;
+  title: string;
+  concise_summary: string;
+  coverage_source: OwnerAttentionCoverageSource;
+  status: OwnerApprovalHistoryStatus;
+  decision_at: string;
+  requested_at: string | null;
+  comparable_monetary_exposure: number | null;
+  comments: string | null;
+  reviewed_by: string | null;
+  destination_url: string;
+}
+
+export interface OwnerApprovalHistoryResult {
+  items: OwnerApprovalHistoryItem[];
+  coverage_counts: Partial<Record<OwnerAttentionCoverageSource, number>>;
   coverage: OwnerActionCenterCoverage;
   pagination: OwnerActionCenterPagination;
 }

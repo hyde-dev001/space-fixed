@@ -14,18 +14,13 @@ use PHPUnit\Framework\TestCase;
 
 final class OwnerShellMetadataTest extends TestCase
 {
-    public function test_existing_presentation_serializes_without_canonical_groups_or_fallback(): void
+    public function test_existing_presentation_serializes_without_canonical_groups(): void
     {
         $metadata = new OwnerShellMetadata(
             OwnerShellPresentation::Existing,
             OwnerShellSelectionReason::GlobalDisabled,
             null,
             [],
-            [
-                'show_erp_fallback' => false,
-                'erp_workspace_url' => null,
-                'fallback_url' => null,
-            ],
         );
 
         $this->assertSame([
@@ -33,11 +28,6 @@ final class OwnerShellMetadataTest extends TestCase
             'selection_reason' => 'global_disabled',
             'context' => null,
             'groups' => [],
-            'compatibility' => [
-                'show_erp_fallback' => false,
-                'erp_workspace_url' => null,
-                'fallback_url' => null,
-            ],
         ], $metadata->toArray());
     }
 
@@ -50,7 +40,6 @@ final class OwnerShellMetadataTest extends TestCase
             OwnerShellSelectionReason::ShopAllowlisted,
             null,
             [],
-            $this->compatibility(),
         );
     }
 
@@ -63,18 +52,16 @@ final class OwnerShellMetadataTest extends TestCase
             OwnerShellSelectionReason::GlobalDisabled,
             'company',
             [$this->group()],
-            $this->compatibility(),
         );
     }
 
-    public function test_canonical_metadata_serializes_bounded_items_and_compatibility(): void
+    public function test_canonical_metadata_serializes_bounded_items_without_legacy_workspace_metadata(): void
     {
         $metadata = new OwnerShellMetadata(
             OwnerShellPresentation::Canonical,
             OwnerShellSelectionReason::ShopAllowlisted,
             'individual',
             [$this->group()],
-            $this->compatibility(),
         );
 
         $this->assertSame([
@@ -97,9 +84,9 @@ final class OwnerShellMetadataTest extends TestCase
                         '/shop-owner/operate/retail',
                         '/shop-owner/erp/retail*',
                     ],
+                    'children' => [],
                 ]],
             ]],
-            'compatibility' => $this->compatibility(),
         ], $metadata->toArray());
     }
 
@@ -200,20 +187,7 @@ final class OwnerShellMetadataTest extends TestCase
             OwnerShellSelectionReason::ShopAllowlisted,
             'microbusiness',
             [$this->group()],
-            $this->compatibility(),
         );
-    }
-
-    /**
-     * @return array{show_erp_fallback: bool, erp_workspace_url: string, fallback_url: string}
-     */
-    private function compatibility(): array
-    {
-        return [
-            'show_erp_fallback' => true,
-            'erp_workspace_url' => '/shop-owner/erp/workspace',
-            'fallback_url' => '/shop-owner/erp/fallback',
-        ];
     }
 
     private function group(): OwnerShellGroup

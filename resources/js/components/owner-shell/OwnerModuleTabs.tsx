@@ -24,12 +24,13 @@ const OwnerModuleTabs: React.FC<OwnerModuleTabsProps> = ({ moduleLabel, links, c
     <nav aria-label={`${moduleLabel} navigation`} className="mb-6 max-w-full overflow-hidden md:mb-8">
       <div className="flex w-full max-w-full gap-2 overflow-x-auto border-b border-gray-200 pb-1 dark:border-gray-800">
         {links.map((link) => {
-          const isCurrent = pageUrl(link.url) === currentPageUrl;
+          const href = pageUrl(link.url);
+          const isCurrent = href === currentPageUrl;
 
           return (
             <Link
               key={link.url}
-              href={link.url}
+              href={href}
               aria-current={isCurrent ? 'page' : undefined}
               className={`inline-flex min-h-11 shrink-0 items-center justify-center rounded-t-lg border-b-2 px-4 py-2 text-sm font-semibold transition-colors motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-950 ${
                 isCurrent

@@ -17,10 +17,12 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
+use Tests\Concerns\ResetsInMemoryDatabaseState;
 use Tests\TestCase;
 
 final class ShopOwnerUpgradeConcurrencyTest extends TestCase
 {
+    use ResetsInMemoryDatabaseState;
     use RefreshDatabase;
 
     protected function setUp(): void

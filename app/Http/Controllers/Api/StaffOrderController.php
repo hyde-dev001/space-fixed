@@ -685,7 +685,9 @@ class StaffOrderController extends Controller
     {
         $errors = $exception->errors();
         $message = collect($errors)->flatten()->first() ?? 'Order transition is not allowed.';
-        $status = str_starts_with($message, 'The order is already') ? 409 : 422;
+        $status = str_starts_with($message, 'The order is already') || array_key_exists('assignment', $errors)
+            ? 409
+            : 422;
 
         return response()->json([
             'success' => false,

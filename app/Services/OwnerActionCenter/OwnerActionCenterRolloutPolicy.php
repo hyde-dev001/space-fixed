@@ -82,10 +82,19 @@ final class OwnerActionCenterRolloutPolicy
             'payslips',
             'salary_changes',
             'purchase_requests',
+            'suspensions',
             'expenses',
             'repair_rejections',
         ] as $family) {
-            if (! array_key_exists($family, $coverage) || ! is_bool($coverage[$family])) {
+            if (! array_key_exists($family, $coverage)) {
+                if ($family === 'suspensions') {
+                    continue;
+                }
+
+                throw new UnexpectedValueException("Owner Action Center coverage [{$family}] must be boolean.");
+            }
+
+            if (! is_bool($coverage[$family])) {
                 throw new UnexpectedValueException("Owner Action Center coverage [{$family}] must be boolean.");
             }
 

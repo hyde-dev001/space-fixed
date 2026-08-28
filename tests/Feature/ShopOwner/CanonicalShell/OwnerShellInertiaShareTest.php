@@ -55,7 +55,7 @@ final class OwnerShellInertiaShareTest extends TestCase
         $this->assertNull($this->shareFor($admin, 'super_admin')['ownerShell']);
     }
 
-    public function test_flag_off_shares_complete_existing_presentation(): void
+    public function test_disabled_canonical_rollout_shares_complete_existing_presentation(): void
     {
         config([
             'owner_shell.enabled' => false,
@@ -72,7 +72,6 @@ final class OwnerShellInertiaShareTest extends TestCase
         $this->assertSame('global_disabled', $ownerShell['selection_reason']);
         $this->assertNull($ownerShell['context']);
         $this->assertSame([], $ownerShell['groups']);
-        $this->assertFalse($ownerShell['compatibility']['show_erp_fallback']);
     }
 
     public function test_allowlisted_owner_receives_the_server_selected_canonical_presentation(): void
@@ -132,7 +131,6 @@ final class OwnerShellInertiaShareTest extends TestCase
         $this->assertSame('shell_composition_failed', $ownerShell['selection_reason']);
         $this->assertNull($ownerShell['context']);
         $this->assertSame([], $ownerShell['groups']);
-        $this->assertFalse($ownerShell['compatibility']['show_erp_fallback']);
     }
 
     public function test_selection_telemetry_is_written_once_per_session_for_an_unchanged_selection(): void

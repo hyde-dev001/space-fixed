@@ -46,7 +46,7 @@ class LowStockNotification extends Notification implements ShouldQueue
             ->line('Current Quantity: **' . $this->currentQuantity . '**')
             ->line('Reorder Level: **' . $this->reorderLevel . '**')
             ->line('Recommended Reorder Quantity: **' . $this->inventoryItem->reorder_quantity . '**')
-            ->action('View Inventory', url('/erp/inventory/products/' . $this->inventoryItem->id))
+            ->action('View Inventory', url('/erp/inventory/inventory-dashboard?inventory_item=' . $this->inventoryItem->id))
             ->line('Please consider placing a supplier order to replenish stock.');
     }
 

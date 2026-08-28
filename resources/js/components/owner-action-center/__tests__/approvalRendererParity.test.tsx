@@ -7,6 +7,7 @@ import SalaryAdjustmentApprovalDetails from "../approvals/SalaryAdjustmentApprov
 import PurchaseRequestApprovalDetails from "../approvals/PurchaseRequestApprovalDetails";
 import ExpenseApprovalDetails from "../approvals/ExpenseApprovalDetails";
 import RepairRejectApprovalDetails from "../approvals/RepairRejectApprovalDetails";
+import SuspensionApprovalDetails from "../approvals/SuspensionApprovalDetails";
 import type { OwnerAttentionItem } from "../../../types/ownerActionCenter";
 
 const item = (overrides: Partial<OwnerAttentionItem> = {}): OwnerAttentionItem => ({
@@ -72,6 +73,10 @@ describe("owner approval renderer parity", () => {
       {
         renderer: <PurchaseRequestApprovalDetails item={item({ source_type: "purchase_request", title: "Purchase request" })} detail={{ pr_number: "PR-12", product_name: "Trail Shoe", quantity: 3, requested_size: "42", supplier: { name: "Supplier Co." }, total_cost: 4500, status: "pending_shop_owner" }} />,
         values: ["PR-12", "Trail Shoe", "Supplier Co.", "₱4,500.00"],
+      },
+      {
+        renderer: <SuspensionApprovalDetails item={item({ source_type: "suspension_request", title: "Employee suspension" })} detail={{ id: 42, name: "Alex Employee", email: "alex@example.com", position: "Technician", requested_by: "Manager", requested_at: "2026-08-25T09:00:00+08:00", reason: "Repeated policy violations", manager_status: "approved", status: "pending" }} />,
+        values: ["Alex Employee", "alex@example.com", "Technician", "Repeated policy violations"],
       },
       {
         renderer: <ExpenseApprovalDetails item={item({ source_type: "expense", title: "Expense" })} detail={{ reference: "EXP-12", category: "Operations", amount: 450, description: "Submitted supplier expense", receipt_path: "receipts/exp-12.pdf", status: "submitted" }} />,

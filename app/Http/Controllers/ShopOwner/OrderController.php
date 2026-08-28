@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\OrderRefund;
+use App\Models\ShopOwner;
 use App\Enums\OrderStatus;
 use App\Enums\NotificationType;
 use App\Services\NotificationService;
@@ -85,9 +86,10 @@ class OrderController extends Controller
             (int) $shopOwner->id,
             $orders->getCollection()->pluck('id')->map(fn ($id) => (int) $id)->all(),
         );
+        $canFulfillOrders = $this->canFulfillOrders($shopOwner);
 
         return response()->json([
-            'data' => $orders->map(function($order) use ($retailPosRefundSummaries, $includeRefundItems) {
+            'data' => $orders->map(function($order) use ($retailPosRefundSummaries, $includeRefundItems, $canFulfillOrders) {
                 $itemSubtotal = (float) ($order->total_amount ?? 0);
                 $shippingFee = (float) ($order->shipping_fee ?? 0);
                 $hasStoredVat = $order->vat_amount !== null;
@@ -135,7 +137,9 @@ class OrderController extends Controller
                     'grand_total' => $itemSubtotal + $shippingFee + ($vatAmount ?? 0.0),
                     'status' => $order->status,
                     'owner_projection' => $this->orderOwnerProjection->project($order),
-                    'available_actions' => $this->orderOwnerProjection->availableActions($order),
+                    'available_actions' => $canFulfillOrders
+                        ? $this->orderOwnerProjection->availableActions($order)
+                        : [],
                     'cancellation_reason' => $order->cancellation_reason,
                     'cancellation_note' => $order->cancellation_note,
                     'cancellation_other_reason_note' => $order->cancellation_other_reason_note,
@@ -263,6 +267,7 @@ class OrderController extends Controller
         }
 
         $retailPosRefundSummary = $this->retailPosRefundSummaryService->buildForOrders((int) $shopOwner->id, [(int) $order->id]);
+        $canFulfillOrders = $this->canFulfillOrders($shopOwner);
 
         return response()->json([
             'id' => $order->id,
@@ -284,7 +289,9 @@ class OrderController extends Controller
             'grand_total' => $itemSubtotal + $shippingFee + ($vatAmount ?? 0.0),
             'status' => $order->status,
             'owner_projection' => $this->orderOwnerProjection->project($order),
-            'available_actions' => $this->orderOwnerProjection->availableActions($order),
+            'available_actions' => $canFulfillOrders
+                ? $this->orderOwnerProjection->availableActions($order)
+                : [],
             'cancellation_reason' => $order->cancellation_reason,
             'cancellation_note' => $order->cancellation_note,
             'cancellation_other_reason_note' => $order->cancellation_other_reason_note,
@@ -361,6 +368,10 @@ class OrderController extends Controller
             return response()->json(['error' => 'Unauthenticated'], 401);
         }
 
+        if ($readOnlyResponse = $this->denyNonIndividualOrderMutation($shopOwner)) {
+            return $readOnlyResponse;
+        }
+
         $validated = $request->validate([
             'status' => 'required|string',
             'tracking_number' => 'nullable|string|max:255',
@@ -420,6 +431,10 @@ class OrderController extends Controller
 
         if (! $shopOwner) {
             return response()->json(['error' => 'Unauthenticated'], 401);
+        }
+
+        if ($readOnlyResponse = $this->denyNonIndividualOrderMutation($shopOwner)) {
+            return $readOnlyResponse;
         }
 
         $validated = $request->validate([
@@ -485,6 +500,10 @@ class OrderController extends Controller
                     'success' => false,
                     'message' => 'Unauthenticated'
                 ], 401);
+            }
+
+            if ($readOnlyResponse = $this->denyNonIndividualOrderMutation($shopOwner)) {
+                return $readOnlyResponse;
             }
 
             $order = Order::find($id);
@@ -566,6 +585,16 @@ class OrderController extends Controller
 
     public function confirmReturnReceived(Request $request, $id)
     {
+        $shopOwner = Auth::guard('shop_owner')->user();
+
+        if (!$shopOwner) {
+            return response()->json(['error' => 'Unauthenticated'], 401);
+        }
+
+        if ($readOnlyResponse = $this->denyNonIndividualOrderMutation($shopOwner)) {
+            return $readOnlyResponse;
+        }
+
         $validated = $request->validate([
             'return_notes' => 'nullable|string|max:1000',
             'line_dispositions' => 'required|array|min:1',
@@ -573,20 +602,6 @@ class OrderController extends Controller
             'line_dispositions.*.approved_qty' => 'required|integer|min:1',
             'line_dispositions.*.inspection_disposition' => 'required|string|in:resellable,damaged',
         ]);
-
-        $shopOwner = Auth::guard('shop_owner')->user();
-
-        if (!$shopOwner) {
-            return response()->json(['error' => 'Unauthenticated'], 401);
-        }
-
-        $registrationType = strtolower(trim((string) ($shopOwner->registration_type ?? '')));
-        if ($registrationType === 'company') {
-            return response()->json([
-                'success' => false,
-                'message' => 'For company accounts, confirm returned items from the Staff Job Orders module.',
-            ], 422);
-        }
 
         $order = Order::query()
             ->where('shop_owner_id', (int) $shopOwner->id)
@@ -637,6 +652,16 @@ class OrderController extends Controller
 
     public function arrangeReturnPickup(Request $request, $id)
     {
+        $shopOwner = Auth::guard('shop_owner')->user();
+
+        if (!$shopOwner) {
+            return response()->json(['error' => 'Unauthenticated'], 401);
+        }
+
+        if ($readOnlyResponse = $this->denyNonIndividualOrderMutation($shopOwner)) {
+            return $readOnlyResponse;
+        }
+
         $validated = $request->validate([
             'tracking_number' => 'required|string|max:255',
             'carrier_company' => 'required|string|max:255',
@@ -646,20 +671,6 @@ class OrderController extends Controller
             'note' => 'nullable|string|max:1000',
             'shipped_at' => 'nullable|date',
         ]);
-
-        $shopOwner = Auth::guard('shop_owner')->user();
-
-        if (!$shopOwner) {
-            return response()->json(['error' => 'Unauthenticated'], 401);
-        }
-
-        $registrationType = strtolower(trim((string) ($shopOwner->registration_type ?? '')));
-        if ($registrationType === 'company') {
-            return response()->json([
-                'success' => false,
-                'message' => 'For company accounts, arrange return pickup from the Staff Job Orders module.',
-            ], 422);
-        }
 
         $order = Order::query()
             ->where('shop_owner_id', (int) $shopOwner->id)
@@ -703,6 +714,24 @@ class OrderController extends Controller
             'message' => $result['message'] ?? 'Return pickup arranged successfully.',
             'refund' => $result['refund'],
         ]);
+    }
+
+    private function canFulfillOrders(ShopOwner $shopOwner): bool
+    {
+        return strtolower(trim((string) ($shopOwner->registration_type ?? ''))) === 'individual';
+    }
+
+    private function denyNonIndividualOrderMutation(ShopOwner $shopOwner): ?\Illuminate\Http\JsonResponse
+    {
+        if ($this->canFulfillOrders($shopOwner)) {
+            return null;
+        }
+
+        return response()->json([
+            'success' => false,
+            'code' => 'SHOP_OWNER_ORDER_READ_ONLY',
+            'message' => 'This Shop Owner account can view order details only. Order fulfillment is handled by staff.',
+        ], 403);
     }
 
 }

@@ -100,27 +100,6 @@ final class OwnerShellRolloutPolicyTest extends TestCase
         $this->assertSame('individual', $selection->context);
     }
 
-    public function test_erp_workspace_flag_does_not_change_rollout_selection(): void
-    {
-        $owner = ShopOwner::factory()->approved()->create([
-            'registration_type' => 'individual',
-        ]);
-        config([
-            'owner_shell.enabled' => true,
-            'owner_shell.allowlisted_shop_ids' => [$owner->getKey()],
-            'shop_modules.owner_erp_workspace_enabled' => false,
-        ]);
-
-        $disabledWorkspaceSelection = app(OwnerShellRolloutPolicy::class)->select($owner);
-
-        config(['shop_modules.owner_erp_workspace_enabled' => true]);
-        $enabledWorkspaceSelection = app(OwnerShellRolloutPolicy::class)->select($owner);
-
-        $this->assertSame($disabledWorkspaceSelection->presentation, $enabledWorkspaceSelection->presentation);
-        $this->assertSame($disabledWorkspaceSelection->reason, $enabledWorkspaceSelection->reason);
-        $this->assertSame($disabledWorkspaceSelection->context, $enabledWorkspaceSelection->context);
-    }
-
     public function test_owner_without_a_persisted_primary_key_is_not_allowlisted(): void
     {
         $owner = new ShopOwner([

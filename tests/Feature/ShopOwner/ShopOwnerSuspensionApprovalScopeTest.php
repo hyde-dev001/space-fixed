@@ -68,4 +68,69 @@ class ShopOwnerSuspensionApprovalScopeTest extends TestCase
 
         $response->assertStatus(404);
     }
+
+    #[Test]
+    public function company_shop_owner_can_approve_a_manager_approved_suspension_request(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
+        ]);
+        $employee = Employee::factory()->active()->for($shopOwner)->create();
+        $request = SuspensionRequest::factory()
+            ->for($employee)
+            ->create([
+                'status' => SuspensionStatus::PENDING_OWNER,
+                'manager_status' => 'approved',
+            ]);
+
+        $response = $this->actingAs($shopOwner, 'shop_owner')
+            ->postJson("/api/shop-owner/suspension-requests/{$request->id}/review", [
+                'action' => 'approve',
+                'note' => 'Approved by the shop owner.',
+            ]);
+
+        $response->assertOk()->assertJsonPath('success', true);
+        $this->assertDatabaseHas('suspension_requests', [
+            'id' => $request->id,
+            'status' => SuspensionStatus::APPROVED->value,
+            'owner_id' => $shopOwner->id,
+            'owner_status' => 'approved',
+        ]);
+        $this->assertDatabaseHas('employees', [
+            'id' => $employee->id,
+            'status' => 'suspended',
+        ]);
+    }
+
+    #[Test]
+    public function shop_owner_repeated_review_returns_a_stable_conflict(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
+        ]);
+        $employee = Employee::factory()->active()->for($shopOwner)->create();
+        $request = SuspensionRequest::factory()
+            ->for($employee)
+            ->create([
+                'status' => SuspensionStatus::PENDING_OWNER,
+                'manager_status' => 'approved',
+            ]);
+
+        $this->actingAs($shopOwner, 'shop_owner')
+            ->postJson("/api/shop-owner/suspension-requests/{$request->id}/review", [
+                'action' => 'approve',
+                'note' => 'Approve once.',
+            ])
+            ->assertOk();
+
+        $this->actingAs($shopOwner, 'shop_owner')
+            ->postJson("/api/shop-owner/suspension-requests/{$request->id}/review", [
+                'action' => 'reject',
+                'note' => 'A second decision is not allowed.',
+            ])
+            ->assertStatus(409)
+            ->assertJsonPath('code', 'SUSPENSION_REQUEST_ALREADY_DECIDED');
+
+        $this->assertSame(SuspensionStatus::APPROVED, $request->fresh()->status);
+    }
 }

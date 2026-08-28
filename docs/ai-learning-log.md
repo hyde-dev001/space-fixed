@@ -34,3 +34,8 @@
 
 - When a workflow is presented through a shared Action Center, freeze the approval policy at submission and let the existing domain service remain authoritative. Queue adapters, notifications, detail panels, and mutations should all derive responsibility from that same persisted snapshot.
 - A named route added for a shared detail or summary surface must be added to the authoritative route catalog in the same change, including tenant-scoped `show` routes; route-catalog parity tests catch this boundary before deployment.
+
+## 2026-08-24 - Presentation retirement and compatibility routes
+
+- Retiring an owner presentation requires removing its flag, payload/API, metadata, middleware, generated route map, and orphaned types together; retain only an explicit, one-way GET compatibility redirect when old bookmarks still matter.
+- A catalog validator should distinguish navigation-only core routes from record pages that require supporting API evidence; an empty supporting-route list must not be solved by inventing a picker API.

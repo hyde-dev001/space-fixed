@@ -58,8 +58,8 @@ describe("OwnerApprovalDetailPanel", () => {
     );
 
     const dialog = await screen.findByRole("dialog", { name: /Expense approval/i });
-    expect(dialog.className).toContain("fixed");
-    expect(dialog.className).toContain("lg:static");
+    expect(dialog.className).toContain("overflow-hidden");
+    expect(dialog.className).not.toContain("lg:static");
 
     const headings = screen.getAllByRole("heading").map((heading) => heading.textContent);
     expect(headings.indexOf("Decision summary")).toBeLessThan(headings.indexOf("Request details"));

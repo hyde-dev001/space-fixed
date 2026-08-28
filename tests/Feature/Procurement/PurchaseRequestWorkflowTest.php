@@ -207,6 +207,29 @@ class PurchaseRequestWorkflowTest extends TestCase
         ]);
     }
 
+    public function test_stock_request_submission_notifies_procurement_on_the_canonical_approval_page(): void
+    {
+        $procurement = User::factory()->for($this->shopOwner)->create();
+        $procurement->assignRole(Role::firstOrCreate([
+            'name' => 'procurement manager',
+            'guard_name' => 'user',
+        ]));
+
+        $stockRequest = StockRequestApproval::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'requested_by' => $this->requester->id,
+            'status' => 'pending',
+        ]);
+
+        app(StockRequestApprovalService::class)->notifyStockRequestSubmitted($stockRequest);
+
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $procurement->id,
+            'title' => 'New Stock Request Submitted',
+            'action_url' => "/erp/inventory/request-material-approval?stock_request={$stockRequest->id}",
+        ]);
+    }
+
     public function test_each_actor_rejection_uses_its_own_foreign_key(): void
     {
         $financeRequest = $this->pendingRequest('pending_finance');

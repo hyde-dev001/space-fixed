@@ -1348,10 +1348,11 @@ class RepairPosRefundService
                         'amount' => number_format($requestedAmount, 2, '.', ''),
                         'workflow_source' => $workflowSource,
                         'status' => (string) ($refund->status ?? 'requested'),
-                    ],
-                    actionUrl: '/finance?section=refund-approvals',
-                    priority: 'high',
-                );
+                ],
+                actionUrl: '/finance?section=refund-approvals',
+                priority: 'high',
+                requiresAction: true,
+            );
 
                 return;
             }
@@ -1384,6 +1385,7 @@ class RepairPosRefundService
                         'source_type' => 'repair_refund',
                     ],
                     'action_url' => $this->notificationService->ownerApprovalActionUrl('repair_refund', $refund->id),
+                    'requires_action' => true,
                     'shop_id' => (int) $refund->shop_owner_id,
                 ]);
             }

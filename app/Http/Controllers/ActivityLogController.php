@@ -6,10 +6,19 @@ use Illuminate\Http\Request;
 use Illuminate\Database\Eloquent\Model;
 use Spatie\Activitylog\Models\Activity;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
+use App\Services\Manager\ManagerAuditLogService;
+use App\Services\Manager\ManagerAuthorizationService;
 
 class ActivityLogController extends Controller
 {
     protected array $subjectLabelCache = [];
+
+    public function __construct(
+        private readonly ManagerAuditLogService $managerAuditLogs,
+        private readonly ManagerAuthorizationService $managerAuthorization,
+    ) {
+    }
 
     /**
      * Resolve a stable event label for rendering/filtering when Activity.event is null.
@@ -296,7 +305,12 @@ class ActivityLogController extends Controller
             // User role-based filtering
             if ($user) {
                 // Use Spatie role checking
-                if ($user->hasRole('Manager')) {
+                if ($this->managerAuthorization->isManagerActor($user)
+                    || $this->managerAuthorization->allows(
+                        $user,
+                        ManagerAuthorizationService::AUDIT_READ,
+                        $this->managerAuthorization->shopOwnerId($user),
+                    )) {
                     return $this->getManagerLogs($user, $request);
                 }
                 
@@ -320,13 +334,63 @@ class ActivityLogController extends Controller
             
             return response()->json(['message' => 'Unauthorized'], 401);
         } catch (\Exception $e) {
-            \Log::error('Activity log error: ' . $e->getMessage(), [
+            Log::error('Activity log error: ' . $e->getMessage(), [
                 'trace' => $e->getTraceAsString()
             ]);
             
             return response()->json([
                 'message' => 'Error fetching activity logs',
-                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+                'error' => 'Internal server error'
+            ], 500);
+        }
+    }
+
+    /**
+     * Canonical Manager audit endpoint. The legacy index above remains for
+     * existing role-specific consumers, while this path uses the exact
+     * capability and the normalized tenant-scoped Manager contract.
+     */
+    public function managerIndex(Request $request)
+    {
+        $user = Auth::guard('user')->user();
+        $shopOwnerId = $user ? $this->managerAuthorization->shopOwnerId($user) : null;
+
+        if (! $user || $shopOwnerId === null || ! $this->managerAuthorization->allows(
+            $user,
+            ManagerAuthorizationService::AUDIT_READ,
+            $shopOwnerId,
+        )) {
+            return response()->json(['message' => 'Audit log access is not authorized.'], 403);
+        }
+
+        $validated = $request->validate([
+            'search' => ['nullable', 'string', 'max:100'],
+            'action' => ['nullable', 'string', 'max:100'],
+            'event' => ['nullable', 'string', 'max:100'],
+            'module' => ['nullable', 'string', 'max:100'],
+            'status' => ['nullable', 'string', 'max:100'],
+            'severity' => ['nullable', 'in:info,warning,critical'],
+            'actor_id' => ['nullable', 'integer', 'min:1'],
+            'target' => ['nullable', 'string', 'max:100'],
+            'target_id' => ['nullable', 'integer', 'min:1'],
+            'date_from' => ['nullable', 'date'],
+            'date_to' => ['nullable', 'date'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+        ]);
+
+        try {
+            return response()->json($this->managerAuditLogs->list($user, $validated));
+        } catch (\Throwable $exception) {
+            Log::error('Manager audit log query failed.', [
+                'shop_owner_id' => $shopOwnerId,
+                'actor_id' => $user->id,
+                'error' => $exception->getMessage(),
+            ]);
+
+            return response()->json([
+                'message' => 'Unable to load Manager audit logs.',
+                'code' => 'MANAGER_AUDIT_LOGS_UNAVAILABLE',
             ], 500);
         }
     }

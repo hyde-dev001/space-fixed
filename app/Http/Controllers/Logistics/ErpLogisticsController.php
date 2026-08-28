@@ -903,29 +903,41 @@ class ErpLogisticsController extends Controller
     public function riders(Request $request): Response
     {
         $shopOwnerId = $this->authorizedShopOwnerId('manage-logistics-riders');
+        $ownerMode = $this->isOwnerMode();
         $availability = $request->query('availability', 'all');
         $type = $request->query('type', 'all');
-        if (! $this->isOwnerMode()) {
+        if (! $ownerMode) {
             app(RiderProfileSyncService::class)->syncShop($shopOwnerId);
         }
 
+        $riders = RiderProfile::query()
+            ->select($ownerMode
+                ? ['id', 'shop_owner_id', 'name', 'rider_type', 'availability_status', 'active', 'daily_capacity']
+                : ['*'])
+            ->where('shop_owner_id', $shopOwnerId)
+            ->when(in_array($availability, ['available', 'busy', 'inactive'], true), function ($query) use ($availability) {
+                $query->where('availability_status', $availability);
+            })
+            ->when(in_array($type, ['employee', 'contractor', 'shop_owner'], true), function ($query) use ($type) {
+                $query->where('rider_type', $type);
+            })
+            ->orderBy('name')
+            ->paginate(10)
+            ->withQueryString();
+
+        if ($ownerMode) {
+            $riders->getCollection()->transform(
+                static fn (RiderProfile $rider): RiderProfile => $rider->setAttribute('phone', null),
+            );
+        }
+
         return Inertia::render('ERP/Logistics/Riders', [
-            'riders' => RiderProfile::query()
-                ->where('shop_owner_id', $shopOwnerId)
-                ->when(in_array($availability, ['available', 'busy', 'inactive'], true), function ($query) use ($availability) {
-                    $query->where('availability_status', $availability);
-                })
-                ->when(in_array($type, ['employee', 'contractor', 'shop_owner'], true), function ($query) use ($type) {
-                    $query->where('rider_type', $type);
-                })
-                ->orderBy('name')
-                ->paginate(10)
-                ->withQueryString(),
+            'riders' => $riders,
             'filters' => [
                 'availability' => $availability,
                 'type' => $type,
             ],
-            'canManageRiders' => true,
+            'canManageRiders' => ! $ownerMode,
         ]);
     }
 

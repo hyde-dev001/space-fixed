@@ -4,6 +4,7 @@ interface OwnerAttentionListProps {
   items: OwnerAttentionItem[];
   onReview?: (item: OwnerAttentionItem) => void;
   selectedAttentionKey?: string | null;
+  ariaLabel?: string;
 }
 
 const sourceLabels: Record<OwnerAttentionSourceType, string> = {
@@ -16,6 +17,7 @@ const sourceLabels: Record<OwnerAttentionSourceType, string> = {
   salary_change: "Salary Adjustment",
   expense: "Expense",
   purchase_request: "Purchase Request",
+  suspension_request: "Employee Suspension",
   repair_rejection: "Repair Rejection",
   compliance_document: "Compliance Document",
   logistics_failure: "Logistics Failure",
@@ -52,13 +54,13 @@ const formatExposure = (value: number | null): string => {
   return currencyFormatter.format(value);
 };
 
-export default function OwnerAttentionList({ items, onReview, selectedAttentionKey }: OwnerAttentionListProps) {
+export default function OwnerAttentionList({ items, onReview, selectedAttentionKey, ariaLabel = "Owner attention queue" }: OwnerAttentionListProps) {
   if (items.length === 0) {
     return null;
   }
 
   return (
-    <ol aria-label="Owner attention queue" className="divide-y divide-gray-200 dark:divide-gray-800">
+    <ol aria-label={ariaLabel} className="divide-y divide-gray-200 dark:divide-gray-800">
       {items.map((item) => {
         const requiresDecision = item.primary_bucket === "needs_my_decision" && item.owner_action_required;
         const statusLabel = item.primary_bucket === "needs_my_decision"
@@ -96,13 +98,18 @@ export default function OwnerAttentionList({ items, onReview, selectedAttentionK
             {requiresDecision && onReview ? (
               <button
                 type="button"
-                aria-label={`Review ${item.title}`}
+                aria-label={`View ${item.title} approval details`}
+                title="View approval details"
+                aria-haspopup="dialog"
                 data-attention-key={item.attention_key}
                 aria-current={selectedAttentionKey === item.attention_key ? "true" : undefined}
                 onClick={() => onReview(item)}
-                className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-900"
+                className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg border border-gray-300 bg-white p-2 text-blue-600 transition-colors hover:border-blue-300 hover:bg-blue-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:border-gray-700 dark:bg-gray-900 dark:text-blue-400 dark:hover:border-blue-700 dark:hover:bg-blue-950/30 dark:focus-visible:ring-offset-gray-900"
               >
-                Review
+                <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12s3.5-6 9.75-6 9.75 6 9.75 6-3.5 6-9.75 6-9.75-6-9.75-6Z" />
+                  <circle cx="12" cy="12" r="2.75" />
+                </svg>
               </button>
             ) : (
               <a

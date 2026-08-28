@@ -13,6 +13,7 @@ return [
         'salary_changes' => true,
         'expenses' => true,
         'purchase_requests' => true,
+        'suspensions' => true,
         'repair_rejections' => true,
     ],
     'buckets' => [

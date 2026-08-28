@@ -187,6 +187,38 @@ class SalaryChangeOwnerApprovalTest extends TestCase
             ->assertNotFound();
     }
 
+    public function test_owner_cannot_approve_or_reject_a_salary_change_proposed_by_that_owner(): void
+    {
+        $this->setSalaryApprovalPolicy(true);
+        $change = SalaryChange::create([
+            'employee_id' => $this->employee->id,
+            'shop_owner_id' => $this->shopOwner->id,
+            'proposed_by' => $this->ownerUser->id,
+            'previous_salary' => 1000,
+            'new_salary' => 1100,
+            'change_percent' => 10,
+            'change_type' => SalaryChange::TYPE_MAJOR,
+            'effective_date' => now()->addDays(3)->toDateString(),
+            'reason' => 'Owner-proposed salary governance test',
+            'status' => SalaryChange::STATUS_PENDING,
+            'requires_owner_approval' => true,
+        ]);
+
+        $this->actingAsOwner()
+            ->postJson("/api/shop-owner/salary-changes/{$change->id}/approve")
+            ->assertForbidden();
+
+        $this->actingAsOwner()
+            ->postJson("/api/shop-owner/salary-changes/{$change->id}/reject", [
+                'notes' => 'Owner cannot decide on an owner-proposed request',
+            ])
+            ->assertForbidden();
+
+        $this->assertSame(SalaryChange::STATUS_PENDING, $change->fresh()->status);
+        $this->assertNull($change->fresh()->approved_by);
+        $this->assertNull($change->fresh()->rejected_by);
+    }
+
     public function test_effective_date_keeps_application_separate_from_approval(): void
     {
         $this->setSalaryApprovalPolicy(true);

@@ -24,14 +24,14 @@ class RepairRejectForwardToOwnerNotificationTest extends TestCase
         ]);
         $this->setRepairRejectPolicy($shopOwner, true);
 
-        Permission::findOrCreate('access-repair-reject-review', 'user');
+        Permission::findOrCreate('review-manager-repair-jobs', 'user');
 
         /** @var User $manager */
         $manager = User::factory()->createOne([
             'shop_owner_id' => $shopOwner->id,
             'name' => 'Manager Reviewer',
         ]);
-        $manager->givePermissionTo('access-repair-reject-review');
+        $manager->givePermissionTo('review-manager-repair-jobs');
 
         $repairRequest = RepairRequest::factory()
             ->for($shopOwner)
@@ -70,14 +70,14 @@ class RepairRejectForwardToOwnerNotificationTest extends TestCase
         ]);
         $this->setRepairRejectPolicy($shopOwner, false);
 
-        Permission::findOrCreate('access-repair-reject-review', 'user');
+        Permission::findOrCreate('review-manager-repair-jobs', 'user');
 
         /** @var User $manager */
         $manager = User::factory()->createOne([
             'shop_owner_id' => $shopOwner->id,
             'name' => 'Manager Reviewer',
         ]);
-        $manager->givePermissionTo('access-repair-reject-review');
+        $manager->givePermissionTo('review-manager-repair-jobs');
 
         $repairRequest = RepairRequest::factory()
             ->for($shopOwner)

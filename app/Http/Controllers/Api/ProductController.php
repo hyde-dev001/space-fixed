@@ -394,7 +394,8 @@ class ProductController extends Controller
     {
         try {
             // Try shop_owner guard first, then fall back to user guard
-            $user = Auth::guard('shop_owner')->user() ?? Auth::guard('user')->user();
+            $shopOwner = Auth::guard('shop_owner')->user();
+            $user = $shopOwner ?? Auth::guard('user')->user();
 
             if (!$user) {
                 return response()->json(['error' => 'Unauthorized'], 401);

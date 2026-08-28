@@ -335,7 +335,7 @@ export default function JobOrdersPage() {
   const { auth, erpMode } = usePage().props as any;
   const Layout = erpMode === true ? AppLayoutERP : AppLayoutShopOwner;
   const shopOwnerRegistrationType = String(auth?.shop_owner?.registration_type || auth?.registration_type || '').toLowerCase();
-  const isIndividualRegistration = shopOwnerRegistrationType !== 'company';
+  const isIndividualRegistration = shopOwnerRegistrationType === 'individual';
 
   const [error, setError] = useState<string | null>(null);
   const [selectedTab, setSelectedTab] = useState<string>("pending");
@@ -1634,7 +1634,9 @@ export default function JobOrdersPage() {
         <div className="flex justify-between items-start">
           <div>
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Customer Orders</h1>
-            <p className="text-gray-600 dark:text-gray-400 mt-2">Process and manage customer shoe orders</p>
+            <p className="text-gray-600 dark:text-gray-400 mt-2">
+              {isIndividualRegistration ? 'Process and manage customer shoe orders' : 'Monitor customer shoe orders'}
+            </p>
           </div>
         </div>
 
@@ -1918,7 +1920,7 @@ export default function JobOrdersPage() {
                           >
                             <EyeIcon className="size-5" />
                           </button>
-                          {order.availableActions?.includes('processing') && (
+                          {isIndividualRegistration && order.availableActions?.includes('processing') && (
                             <button
                               type="button"
                               onClick={() => handleViewOrder(order)}
@@ -1929,7 +1931,7 @@ export default function JobOrdersPage() {
                               <CheckCircleIcon className="size-5" />
                             </button>
                           )}
-                          {order.availableActions?.includes('shipped') && (
+                          {isIndividualRegistration && order.availableActions?.includes('shipped') && (
                             <button
                               type="button"
                               onClick={() => handleShipOrder(order)}
@@ -2628,7 +2630,7 @@ export default function JobOrdersPage() {
               </div>
 
               <div className="mt-6 px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex gap-3 flex-shrink-0">
-                {viewOrder.status === "pending" && (
+                {isIndividualRegistration && viewOrder.status === "pending" && (
                   <button
                     type="button"
                     onClick={() => handleProcessOrder(viewOrder)}
@@ -2658,7 +2660,7 @@ export default function JobOrdersPage() {
                     Arrange Return Pickup
                   </button>
                 )}
-                {viewOrder.status === "shipped" && (
+                {isIndividualRegistration && viewOrder.status === "shipped" && (
                   <button
                     type="button"
                     onClick={() => handleActivatePickup(viewOrder.id)}

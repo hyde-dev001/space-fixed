@@ -144,7 +144,7 @@ const approvalWorkflowItems: NavItem[] = [
         <path d="M7 4h10a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" />
       </svg>
     ),
-    name: "Action Center",
+    name: "Approval Center",
     path: "/shop-owner/action-center",
   },
 ];
@@ -255,7 +255,7 @@ const AppSidebar_shopOwner: React.FC<AppSidebarShopOwnerProps> = ({ activeModule
   const authModuleStates = auth?.shopModules;
   const sharedModuleStates = (props as any)?.moduleStates;
   const currentPath = normalizePath(url);
-  const isModuleScopedErpRoute = /^\/shop-owner\/erp\/(?!workspace(?:\/|$))/i.test(currentPath);
+  const isModuleScopedErpRoute = /^\/shop-owner\/erp\//i.test(currentPath);
   const activeModule = isModuleScopedErpRoute
     ? activeModuleProp ?? ((props as any)?.activeModule as OwnerErpModule | null | undefined) ?? null
     : null;
@@ -882,7 +882,6 @@ const AppSidebar_shopOwner: React.FC<AppSidebarShopOwnerProps> = ({ activeModule
               </h2>
               {activeModule ? (
                 <>
-                  {renderMenuItems(mainMenuItems.filter((item) => item.name === "ERP Workspace"), "main")}
                   {renderScopedModuleItems()}
                 </>
               ) : (

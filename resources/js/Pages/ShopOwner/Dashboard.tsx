@@ -8,9 +8,6 @@ import RecentOrders from "../../components/ecommerce/RecentOrders";
 import MonthlySalesChart from "../../components/ecommerce/MonthlySalesChart";
 import MonthlyTarget from "../../components/ecommerce/MonthlyTarget";
 import StatisticsChart from "../../components/ecommerce/StatisticsChart";
-import OwnerActionCenterAvailability from "../../components/owner-action-center/OwnerActionCenterAvailability";
-import OwnerAttentionList from "../../components/owner-action-center/OwnerAttentionList";
-import type { OwnerActionCenterResult } from "../../types/ownerActionCenter";
 
 interface DashboardStats {
   revenue: {
@@ -80,20 +77,12 @@ interface DashboardPageProps {
     };
   };
   erpMode?: boolean;
-  showPhaseThreePlaceholders?: boolean;
-  ownerActionCenter?: OwnerActionCenterResult;
-  ownerUrgentExceptions?: OwnerActionCenterResult;
-  ownerWaitingOnOthers?: OwnerActionCenterResult;
 }
 
 export default function Ecommerce() {
   const {
     auth,
     erpMode,
-    showPhaseThreePlaceholders = false,
-    ownerActionCenter,
-    ownerUrgentExceptions,
-    ownerWaitingOnOthers,
   } = usePage().props as DashboardPageProps;
   const Layout = erpMode === true ? AppLayoutERP : AppLayoutShopOwner;
   const businessType = String(auth?.shop_owner?.business_type ?? "").toLowerCase();
@@ -164,121 +153,6 @@ export default function Ecommerce() {
               : "Overview of your shop's ecommerce performance"}
           </p>
         </div>
-
-        {showPhaseThreePlaceholders && (
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-3" aria-label="Phase 3 dashboard areas">
-            {(!ownerActionCenter || ownerActionCenter.degradation_status === "no_enabled_adapters") && (
-            <section
-              aria-labelledby="required-actions-phase-three"
-              className="rounded-2xl border border-gray-200 bg-gray-50 p-5 dark:border-gray-800 dark:bg-white/[0.03]"
-            >
-              <h4 id="required-actions-phase-three" className="text-base font-semibold text-gray-700 dark:text-white/80">
-                Required Actions — Coming in Phase 3
-              </h4>
-              <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-                Existing module and approval pages remain the current action surfaces.
-              </p>
-            </section>
-
-            )}
-
-            {ownerActionCenter && ownerActionCenter.degradation_status !== "no_enabled_adapters" && (
-              <section
-                aria-labelledby="owner-actions-title"
-                className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]"
-              >
-                <div className="flex flex-col gap-3 border-b border-gray-200 pb-4 dark:border-gray-800 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <h4 id="owner-actions-title" className="text-base font-semibold text-gray-800 dark:text-white/90">
-                      Owner Actions
-                    </h4>
-                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Needs My Decision</p>
-                  </div>
-                  <a
-                    href="/shop-owner/action-center"
-                    className="text-sm font-semibold text-blue-600 underline-offset-4 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:text-blue-400 dark:focus-visible:ring-offset-gray-900"
-                  >
-                    View all
-                  </a>
-                </div>
-                <div className="mt-4">
-                  <OwnerActionCenterAvailability result={ownerActionCenter} />
-                </div>
-                <div className="mt-4">
-                  <OwnerAttentionList items={ownerActionCenter.items.slice(0, 3)} />
-                </div>
-              </section>
-            )}
-
-            {(!ownerUrgentExceptions || ownerUrgentExceptions.degradation_status === "no_enabled_adapters") ? (
-              <section
-                aria-labelledby="exceptions-phase-three"
-                className="rounded-2xl border border-gray-200 bg-gray-50 p-5 dark:border-gray-800 dark:bg-white/[0.03]"
-              >
-                <h4 id="exceptions-phase-three" className="text-base font-semibold text-gray-700 dark:text-white/80">
-                  Exceptions — Coming in Phase 3
-                </h4>
-                <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-                  Exception review continues in the existing module and approval pages until Phase 3.
-                </p>
-              </section>
-            ) : (
-              <section
-                aria-labelledby="urgent-exceptions-title"
-                className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]"
-              >
-                <div className="flex flex-col gap-3 border-b border-gray-200 pb-4 dark:border-gray-800 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <h4 id="urgent-exceptions-title" className="text-base font-semibold text-gray-800 dark:text-white/90">
-                      Urgent Exceptions
-                    </h4>
-                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Material conditions requiring awareness</p>
-                  </div>
-                  <a
-                    href="/shop-owner/action-center?bucket=urgent_exceptions&source=all&page=1"
-                    className="text-sm font-semibold text-blue-600 underline-offset-4 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:text-blue-400 dark:focus-visible:ring-offset-gray-900"
-                  >
-                    View all urgent exceptions
-                  </a>
-                </div>
-                <div className="mt-4">
-                  <OwnerActionCenterAvailability result={ownerUrgentExceptions} />
-                </div>
-                <div className="mt-4">
-                  <OwnerAttentionList items={ownerUrgentExceptions.items.slice(0, 3)} />
-                </div>
-              </section>
-            )}
-
-            {ownerWaitingOnOthers && (
-              <section
-                aria-labelledby="waiting-on-others-title"
-                className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]"
-              >
-                <div className="flex flex-col gap-3 border-b border-gray-200 pb-4 dark:border-gray-800 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <h4 id="waiting-on-others-title" className="text-base font-semibold text-gray-800 dark:text-white/90">
-                      Waiting on Others
-                    </h4>
-                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Material work assigned to another legitimate party</p>
-                  </div>
-                  <a
-                    href="/shop-owner/action-center?bucket=waiting_on_others&source=all&page=1"
-                    className="text-sm font-semibold text-blue-600 underline-offset-4 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:text-blue-400 dark:focus-visible:ring-offset-gray-900"
-                  >
-                    View all waiting items
-                  </a>
-                </div>
-                <div className="mt-4">
-                  <OwnerActionCenterAvailability result={ownerWaitingOnOthers} />
-                </div>
-                <div className="mt-4">
-                  <OwnerAttentionList items={ownerWaitingOnOthers.items.slice(0, 3)} />
-                </div>
-              </section>
-            )}
-          </div>
-        )}
 
       <EcommerceMetrics
         stats={stats}

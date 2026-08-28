@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\InventoryItem;
 use App\Models\RepairPackage;
 use App\Models\RepairRequest;
+use App\Services\NotificationService;
 use App\Services\ShopOwnerApprovalPolicyService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -18,7 +19,10 @@ class RepairPackageController extends Controller
     private const REPAIR_VAT_RATE_PERCENT = 12.0;
     private const MATERIAL_TEMPLATE_TABLE = 'repair_material_template_items';
 
-    public function __construct(private ShopOwnerApprovalPolicyService $shopOwnerApprovalPolicyService)
+    public function __construct(
+        private ShopOwnerApprovalPolicyService $shopOwnerApprovalPolicyService,
+        private NotificationService $notificationService,
+    )
     {
     }
 
@@ -515,6 +519,18 @@ class RepairPackageController extends Controller
                 'owner_reviewed_at' => null,
                 'owner_notes' => null,
             ]));
+
+            $this->notificationService->notifyRepairPriceChangeSubmittedToFinance(
+                (int) $package->shop_owner_id,
+                [
+                    'service_name' => $package->name . ' (Package)',
+                    'old_price' => $currentPrice,
+                    'proposed_price' => $proposedPrice,
+                    'package_id' => $package->id,
+                    'approval_stage' => 'finance_initial',
+                    'requires_owner_approval' => $requiresOwnerApproval,
+                ],
+            );
 
             return response()->json([
                 'success' => true,

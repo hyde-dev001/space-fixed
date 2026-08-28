@@ -9,6 +9,13 @@ describe("parseApprovalSelection", () => {
     });
   });
 
+  it("parses an employee suspension approval selection", () => {
+    expect(parseApprovalSelection("suspension_request:42")).toEqual({
+      sourceType: "suspension_request",
+      sourceId: 42,
+    });
+  });
+
   it("rejects zero and negative identifiers", () => {
     expect(parseApprovalSelection("order_refund:0")).toBeNull();
     expect(parseApprovalSelection("order_refund:-1")).toBeNull();

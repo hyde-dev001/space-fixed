@@ -1807,7 +1807,9 @@ class OrderRefundService
                 "Refund request for order #{$data['order_number']} (₱{$data['amount']}) needs finance review.",
                 $data,
                 '/finance?section=refund-approvals',
-                'high'
+                'high',
+                null,
+                true
             );
         }
 
@@ -1866,7 +1868,9 @@ class OrderRefundService
                 "Shop owner approved refund for order #{$data['order_number']}. Final finance approval is required.",
                 $data,
                 '/finance?section=refund-approvals',
-                'high'
+                'high',
+                null,
+                true
             );
             return;
         }

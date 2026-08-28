@@ -8,7 +8,6 @@ use App\Http\Controllers\Erp\ReadPageController;
 use App\Http\Controllers\Erp\WorkspaceController;
 use App\Http\Controllers\ShopOwner\ShopSettingsController;
 use App\Http\Middleware\EnsureErpAudience;
-use App\Http\Middleware\EnsureOwnerErpWorkspaceEnabled;
 use App\Http\Middleware\ResolveErpActorContext;
 use App\Models\ShopOwner;
 use App\Models\ShopOwnerModule;
@@ -22,7 +21,7 @@ final class ExistingPresentationCharacterizationTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_existing_dashboard_and_erp_workspace_keep_their_current_components(): void
+    public function test_existing_dashboard_remains_and_workspace_is_a_compatibility_redirect(): void
     {
         $owner = ShopOwner::factory()->approved()->create([
             'registration_type' => 'company',
@@ -30,7 +29,6 @@ final class ExistingPresentationCharacterizationTest extends TestCase
         ]);
 
         config([
-            'shop_modules.owner_erp_workspace_enabled' => true,
             'shop_modules.enforcement_enabled' => true,
         ]);
 
@@ -41,15 +39,19 @@ final class ExistingPresentationCharacterizationTest extends TestCase
 
         $this->actingAs($owner, 'shop_owner')
             ->get(route('shop-owner.erp.workspace'))
-            ->assertOk()
-            ->assertInertia(fn (Assert $page) => $page->component('ERP/Workspace', false));
+            ->assertRedirect(route('shop-owner.shell.home'));
     }
 
-    public function test_existing_erp_workspace_returns_not_found_when_its_compatibility_flag_is_off(): void
+    public function test_workspace_compatibility_redirect_is_not_feature_flagged(): void
     {
-        config(['shop_modules.owner_erp_workspace_enabled' => false]);
+        $owner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
+            'business_type' => 'both',
+        ]);
 
-        $this->get(route('shop-owner.erp.workspace'))->assertNotFound();
+        $this->actingAs($owner, 'shop_owner')
+            ->get(route('shop-owner.erp.workspace'))
+            ->assertRedirect(route('shop-owner.shell.home'));
     }
 
     public function test_existing_operational_read_and_settings_boundaries_keep_their_routes_middleware_and_components(): void
@@ -60,7 +62,6 @@ final class ExistingPresentationCharacterizationTest extends TestCase
         ]);
 
         config([
-            'shop_modules.owner_erp_workspace_enabled' => true,
             'shop_modules.enforcement_enabled' => true,
         ]);
 
@@ -74,19 +75,19 @@ final class ExistingPresentationCharacterizationTest extends TestCase
             'shop-owner.erp.module',
             'shop-owner/erp/{module}',
             WorkspaceController::class,
-            [EnsureOwnerErpWorkspaceEnabled::class, EnsureErpAudience::class, ResolveErpActorContext::class, 'auth:shop_owner'],
+            [EnsureErpAudience::class, ResolveErpActorContext::class, 'auth:shop_owner'],
         );
         $this->assertRouteBoundary(
             'shop-owner.erp.manager.reports',
             'shop-owner/erp/manager/reports',
             ReadPageController::class,
-            [EnsureOwnerErpWorkspaceEnabled::class, EnsureErpAudience::class, ResolveErpActorContext::class, 'auth:shop_owner'],
+            [EnsureErpAudience::class, ResolveErpActorContext::class, 'auth:shop_owner'],
         );
         $this->assertRouteBoundary(
             'shop-owner.erp.manager.audit-logs',
             'shop-owner/erp/manager/audit-logs',
             ReadPageController::class,
-            [EnsureOwnerErpWorkspaceEnabled::class, EnsureErpAudience::class, ResolveErpActorContext::class, 'auth:shop_owner'],
+            [EnsureErpAudience::class, ResolveErpActorContext::class, 'auth:shop_owner'],
         );
         $this->assertRouteBoundary(
             'shop-owner.settings',
@@ -96,9 +97,9 @@ final class ExistingPresentationCharacterizationTest extends TestCase
         );
 
         $this->actingAs($owner, 'shop_owner')
-            ->get('/shop-owner/erp/retail')
+            ->get('/shop-owner/operate/retail')
             ->assertOk()
-            ->assertInertia(fn (Assert $page) => $page->component('ERP/ModuleLanding', false));
+            ->assertInertia(fn (Assert $page) => $page->component('ShopOwner/Dashboard', false));
 
         $this->actingAs($owner, 'shop_owner')
             ->get(route('shop-owner.erp.manager.reports'))
@@ -107,8 +108,7 @@ final class ExistingPresentationCharacterizationTest extends TestCase
 
         $this->actingAs($owner, 'shop_owner')
             ->get(route('shop-owner.erp.manager.audit-logs'))
-            ->assertOk()
-            ->assertInertia(fn (Assert $page) => $page->component('ERP/Manager/AuditLogs', false));
+            ->assertRedirect(route('shop-owner.erp.workspace'));
 
         $this->actingAs($owner, 'shop_owner')
             ->get(route('shop-owner.settings'))

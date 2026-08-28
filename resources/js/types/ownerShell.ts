@@ -19,6 +19,7 @@ export interface OwnerShellItem {
   unavailable_reason: string | null;
   management_url: string | null;
   active_matching: string[];
+  children?: OwnerShellItem[];
 }
 
 export interface OwnerShellGroup {
@@ -29,16 +30,9 @@ export interface OwnerShellGroup {
   items: OwnerShellItem[];
 }
 
-export interface OwnerShellCompatibility {
-  show_erp_fallback: boolean;
-  erp_workspace_url: string | null;
-  fallback_url: string | null;
-}
-
 export interface OwnerShellMetadata {
   presentation: OwnerShellPresentation;
   selection_reason: OwnerShellSelectionReason;
   context: OwnerShellContext;
   groups: OwnerShellGroup[];
-  compatibility: OwnerShellCompatibility;
 }

@@ -49,12 +49,12 @@ class PurchaseRequestStatusNotification extends Notification implements ShouldQu
             $message->subject('Purchase Request Approved')
                    ->line('Your purchase request has been approved by the finance team.')
                    ->line('A purchase order will be created shortly.')
-                   ->action('View Purchase Request', url('/erp/procurement/purchase-requests/' . $this->purchaseRequest->id));
+                   ->action('View Purchase Request', url('/erp/procurement/purchase-request?purchase_request=' . $this->purchaseRequest->id));
         } else {
             $message->subject('Purchase Request Rejected')
                    ->line('Unfortunately, your purchase request has been rejected.')
                    ->line('**Reason:** ' . ($this->purchaseRequest->rejection_reason ?? 'Not specified'))
-                   ->action('View Purchase Request', url('/erp/procurement/purchase-requests/' . $this->purchaseRequest->id));
+                   ->action('View Purchase Request', url('/erp/procurement/purchase-request?purchase_request=' . $this->purchaseRequest->id));
         }
 
         return $message;

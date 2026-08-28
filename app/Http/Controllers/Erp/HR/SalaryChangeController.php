@@ -81,6 +81,18 @@ class SalaryChangeController extends Controller
             && $user->can('approve-salary-change');
     }
 
+    private function isOwnerSelfProposed(
+        SalaryChange $change,
+        ?User $user,
+        int $shopOwnerId,
+        bool $viaShopOwnerGuard
+    ): bool {
+        return $viaShopOwnerGuard
+            && $user instanceof User
+            && $this->isExactShopOwnerActor($user, $shopOwnerId, true)
+            && (int) $change->proposed_by === (int) $user->id;
+    }
+
     private function hasSalaryChangeColumn(string $column): bool
     {
         if ($this->salaryChangeColumns === null) {
@@ -465,6 +477,12 @@ class SalaryChangeController extends Controller
             return response()->json(['error' => 'This salary change is not awaiting your approval stage.'], 403);
         }
 
+        if ($this->isOwnerSelfProposed($change, $user, $shopOwnerId, $viaShopOwnerGuard)) {
+            return response()->json([
+                'error' => 'This salary change requires an independent review path and cannot return to its Shop Owner maker.',
+            ], 403);
+        }
+
         // Approver must not be the same person who proposed (unless they have override)
         if ($user && $change->proposed_by === $user->id && !$user->can('override-salary-retroactive')) {
             return response()->json(['error' => 'You cannot approve a salary change you proposed.'], 403);
@@ -542,6 +560,12 @@ class SalaryChangeController extends Controller
 
         if (! $this->canDecideSalaryChange($change, $user, $shopOwnerId, $viaShopOwnerGuard)) {
             return response()->json(['error' => 'This salary change is not awaiting your approval stage.'], 403);
+        }
+
+        if ($this->isOwnerSelfProposed($change, $user, $shopOwnerId, $viaShopOwnerGuard)) {
+            return response()->json([
+                'error' => 'This salary change requires an independent review path and cannot return to its Shop Owner maker.',
+            ], 403);
         }
 
         try {

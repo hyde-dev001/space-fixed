@@ -6,7 +6,6 @@ namespace Tests\Feature\ShopOwner\CanonicalShell;
 
 use App\Http\Controllers\ShopOwner\DashboardController;
 use App\Http\Controllers\ShopOwner\ShopOwnerDashboardController;
-use App\Http\Middleware\EnsureOwnerErpWorkspaceEnabled;
 use App\Models\ShopOwner;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -28,7 +27,6 @@ final class CanonicalOwnerHomeTest extends TestCase
 
         config([
             'owner_shell.enabled' => false,
-            'shop_modules.owner_erp_workspace_enabled' => false,
         ]);
 
         $this->actingAs($owner, 'shop_owner')
@@ -48,11 +46,36 @@ final class CanonicalOwnerHomeTest extends TestCase
                 ->missing('ownerActionCenter'));
     }
 
+    public function test_direct_dashboard_uses_the_canonical_shell_for_individual_and_company_owners(): void
+    {
+        config([
+            'owner_shell.enabled' => true,
+            'owner_shell.allowlisted_shop_ids' => [],
+            'shop_modules.enforcement_enabled' => false,
+        ]);
+
+        foreach (['individual', 'company'] as $registrationType) {
+            $owner = ShopOwner::factory()->approved()->create([
+                'registration_type' => $registrationType,
+                'business_type' => 'both',
+            ]);
+
+            $this->actingAs($owner, 'shop_owner')
+                ->get(route('shop-owner.dashboard'))
+                ->assertOk()
+                ->assertInertia(fn (Assert $page) => $page
+                    ->component('ShopOwner/Dashboard', false)
+                    ->where('ownerShell.presentation', 'canonical')
+                    ->where('ownerShell.context', $registrationType)
+                    ->where('ownerShell.groups.0.key', 'home')
+                    ->where('ownerShell.groups.0.items.0.label', 'Home'));
+        }
+    }
+
     public function test_canonical_home_is_registered_once_without_erp_workspace_gate_and_works_with_flags_off(): void
     {
         config([
             'owner_shell.enabled' => false,
-            'shop_modules.owner_erp_workspace_enabled' => false,
         ]);
 
         $route = RouteFacade::getRoutes()->getByName('shop-owner.shell.home');
@@ -61,7 +84,6 @@ final class CanonicalOwnerHomeTest extends TestCase
         $this->assertSame('shop-owner/home', $route->uri());
         $this->assertSame(ShopOwnerDashboardController::class, $route->getControllerClass());
         $this->assertContains('auth:shop_owner', $route->middleware());
-        $this->assertNotContains(EnsureOwnerErpWorkspaceEnabled::class, $route->gatherMiddleware());
         $this->assertSame(
             1,
             collect(RouteFacade::getRoutes()->getRoutes())
@@ -102,7 +124,6 @@ final class CanonicalOwnerHomeTest extends TestCase
 
         config([
             'owner_shell.enabled' => false,
-            'shop_modules.owner_erp_workspace_enabled' => false,
         ]);
 
         $this->actingAs($owner, 'shop_owner')

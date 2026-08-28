@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Tests\Feature\ShopOwner\CanonicalShell;
 
 use App\Http\Controllers\ShopOwner\ShopSettingsController;
-use App\Http\Middleware\EnsureOwnerErpWorkspaceEnabled;
 use App\Models\ShopOwner;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Routing\Route;
@@ -62,7 +61,6 @@ final class CanonicalOwnerSettingsTest extends TestCase
             $this->assertSame($definition['uri'], $route->uri());
             $this->assertSame(ShopSettingsController::class . '@index', $route->getActionName());
             $this->assertContains('auth:shop_owner', $route->middleware());
-            $this->assertNotContains(EnsureOwnerErpWorkspaceEnabled::class, $route->gatherMiddleware());
             $this->assertStringNotContainsString('/erp', $route->uri());
             $this->assertSame(
                 1,

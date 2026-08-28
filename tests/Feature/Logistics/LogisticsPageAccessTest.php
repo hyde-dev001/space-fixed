@@ -30,7 +30,6 @@ class LogisticsPageAccessTest extends TestCase
     public function test_company_owner_logistics_props_expose_dispatch_and_review_without_custody_controls(): void
     {
         config([
-            'shop_modules.owner_erp_workspace_enabled' => true,
             'shop_modules.enforcement_enabled' => true,
         ]);
         $shop = ShopOwner::factory()->approved()->create([
@@ -59,11 +58,10 @@ class LogisticsPageAccessTest extends TestCase
     public function test_owner_rider_mode_requires_a_trusted_active_assignment(): void
     {
         config([
-            'shop_modules.owner_erp_workspace_enabled' => true,
             'shop_modules.enforcement_enabled' => true,
         ]);
         $shop = ShopOwner::factory()->approved()->create([
-            'registration_type' => 'individual',
+            'registration_type' => 'company',
             'business_type' => 'both',
         ]);
         ShopOwnerModule::factory()->create([
@@ -106,11 +104,10 @@ class LogisticsPageAccessTest extends TestCase
     public function test_owner_without_an_active_owner_rider_assignment_cannot_enter_rider_mode(): void
     {
         config([
-            'shop_modules.owner_erp_workspace_enabled' => true,
             'shop_modules.enforcement_enabled' => true,
         ]);
         $shop = ShopOwner::factory()->approved()->create([
-            'registration_type' => 'individual',
+            'registration_type' => 'company',
             'business_type' => 'both',
         ]);
         ShopOwnerModule::factory()->create([

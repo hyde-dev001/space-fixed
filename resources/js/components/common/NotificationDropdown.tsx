@@ -10,6 +10,7 @@ import Swal from 'sweetalert2';
 import { useRecentNotifications, useMarkAsRead, useMarkAllAsRead } from '../../hooks/useNotifications';
 import NotificationItem from './NotificationItem';
 import { ThemeToggleButton } from './ThemeToggleButton';
+import { resolveNotificationActionUrl } from '../../utils/resolveNotificationActionUrl';
 
 interface NotificationDropdownProps {
   basePath: string;
@@ -91,26 +92,6 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
     return `${href}${separator}${key}=${encodeURIComponent(String(value))}`;
   };
 
-  const resolveLegacyActionUrl = (actionUrl?: string | null): string | null => {
-    const normalized = String(actionUrl || '').trim();
-    if (!normalized) return null;
-
-    // Legacy repair-refund finance links no longer have a dedicated page route.
-    if (normalized === '/erp/finance/repair-refunds') {
-      return '/finance?section=refund-approvals';
-    }
-
-    if (normalized === '/erp/finance/expenses' || normalized === '/erp/finance/approvals') {
-      return '/finance?section=expense-tracking';
-    }
-
-    if (normalized === '/shop-owner/expenses') {
-      return '/shop-owner/action-center';
-    }
-
-    return normalized;
-  };
-
   const getStaffRepairHighlightValue = (notification: { id: number; data?: any }) => {
     const data = notification.data || {};
     return data.repair_id || data.repair_request_id || data.request_id || data.order_number || notification.id;
@@ -152,7 +133,7 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
   const getNotificationHref = (notification: { id: number; type?: string; data?: any; action_url?: string | null }) => {
     const notificationType = String(notification.type || '').toLowerCase();
     const notificationData = notification.data || {};
-    const actionUrl = resolveLegacyActionUrl(notification.action_url);
+    const actionUrl = resolveNotificationActionUrl(notification.action_url, notificationType, notificationData);
     const isShopOwnerBase = basePath.includes('shop-owner');
     const isRepairNotification =
       notificationType.includes('repair')
@@ -189,6 +170,9 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
       }
     }
 
+    // Canonical and migrated destinations take priority over broad type fallbacks.
+    if (actionUrl) return actionUrl;
+
     // Shop owner: repair notifications go to Job Orders Repair page
     if (isShopOwnerBase && isRepairNotification) {
       const repairId = notificationData?.repair_id || notificationData?.repair_request_id || notification.id;
@@ -199,9 +183,6 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
     if (isShopOwnerBase && isOrderNotification) {
       return '/shop-owner/job-orders-retail';
     }
-
-    // Use explicit action_url when set (all live DB notifications have this)
-    if (actionUrl) return actionUrl;
 
     // Customer: repair notifications go to my-repairs
     if (!basePath.includes('shop-owner') && !basePath.includes('staff') && notification.type?.includes('repair')) {

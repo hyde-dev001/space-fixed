@@ -10,6 +10,7 @@ import {
 import ApprovalDecisionFooter from "./ApprovalDecisionFooter";
 import { isRecord, type ApprovalDetail } from "./approvalDetails";
 import type { OwnerAttentionItem } from "../../types/ownerActionCenter";
+import { Modal } from "../ui/modal";
 
 interface OwnerApprovalDetailPanelProps {
   item: OwnerAttentionItem;
@@ -144,6 +145,7 @@ export default function OwnerApprovalDetailPanel({
   const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key === "Escape") {
       event.preventDefault();
+      event.stopPropagation();
       onClose();
       return;
     }
@@ -204,10 +206,12 @@ export default function OwnerApprovalDetailPanel({
 
   if (!definition) {
     return (
-      <section role="dialog" aria-modal="true" aria-label="Approval details" className="fixed inset-0 z-50 overflow-y-auto bg-white p-5 dark:bg-gray-950 lg:static">
-        <button type="button" onClick={onClose} className="min-h-11 rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold dark:border-gray-700">Close</button>
-        <p role="alert" className="mt-4 text-sm">This record is not an owner approval decision.</p>
-      </section>
+      <Modal isOpen={true} onClose={onClose} showCloseButton={false} size="5xl" className="m-4 max-h-[calc(100dvh-2rem)] overflow-hidden !rounded-3xl">
+        <section role="dialog" aria-modal="true" aria-label="Approval details" className="max-h-[min(92dvh,60rem)] overflow-y-auto bg-white p-5 dark:bg-gray-950 sm:p-6">
+          <button type="button" onClick={onClose} className="min-h-11 rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold dark:border-gray-700">Close</button>
+          <p role="alert" className="mt-4 text-sm">This record is not an owner approval decision.</p>
+        </section>
+      </Modal>
     );
   }
 
@@ -215,13 +219,14 @@ export default function OwnerApprovalDetailPanel({
   const Renderer = definition.renderer;
 
   return (
-    <section
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="owner-approval-detail-title"
-      onKeyDown={handleKeyDown}
-      className="fixed inset-0 z-50 flex max-h-screen flex-col overflow-y-auto bg-white p-5 shadow-2xl dark:bg-gray-950 lg:static lg:max-h-[calc(100vh-12rem)] lg:rounded-xl lg:border lg:border-gray-200 lg:p-6 lg:shadow-none lg:dark:border-gray-800"
-    >
+    <Modal isOpen={true} onClose={onClose} showCloseButton={false} size="5xl" className="m-4 max-h-[calc(100dvh-2rem)] overflow-hidden !rounded-3xl">
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="owner-approval-detail-title"
+        onKeyDown={handleKeyDown}
+        className="flex max-h-[min(92dvh,60rem)] min-h-0 flex-col overflow-hidden bg-white p-5 shadow-2xl dark:bg-gray-950 sm:p-6"
+      >
       <header className="flex shrink-0 items-start justify-between gap-4 border-b border-gray-200 pb-4 dark:border-gray-800">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-blue-600 dark:text-blue-300">Owner approval</p>
@@ -254,7 +259,7 @@ export default function OwnerApprovalDetailPanel({
         </div>
       )}
 
-      <div className="min-h-0 flex-1 py-4">
+      <div className="min-h-0 flex-1 overflow-y-auto py-4">
         {loading ? (
           <div role="status" className="rounded-xl border border-dashed border-gray-300 p-5 text-sm text-gray-600 dark:border-gray-700 dark:text-gray-300">Loading approval details…</div>
         ) : detail ? (
@@ -276,12 +281,15 @@ export default function OwnerApprovalDetailPanel({
               />
             ) : (
               <p className="text-sm text-gray-600 dark:text-gray-300">
-                This record is no longer assigned to your decision queue. Refresh the Action Center to see its current status.
+                {item.owner_action_required
+                  ? "This record is no longer assigned to your decision queue. Refresh the Approval Center to see its current status."
+                  : "This decision is recorded in approval history. No further action is available."}
               </p>
             )}
           </div>
         </section>
       )}
-    </section>
+      </section>
+    </Modal>
   );
 }

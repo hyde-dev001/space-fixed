@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Services\OwnerShell;
 
 use App\Enums\OwnerShellPresentation;
-use App\Enums\OwnerShellFallbackReason;
 use App\Enums\OwnerShellSelectionReason;
 use App\Models\ShopOwner;
 use App\Services\OwnerActionCenter\OwnerActionCenterRolloutPolicy;
@@ -23,8 +22,6 @@ use Throwable;
 
 final class CanonicalOwnerShellService
 {
-    private const FALLBACK_ROUTE = 'shop-owner.shell.erp-fallback';
-
     /**
      * @var array<string, array{group: string, module: string, route: string, label: string}>
      */
@@ -108,20 +105,6 @@ final class CanonicalOwnerShellService
         }
     }
 
-    public function ownerErpFallbackAllowed(ShopOwner $owner): bool
-    {
-        try {
-            $selection = $this->rollout->select($owner);
-
-            return $selection->presentation === OwnerShellPresentation::Canonical
-                && $this->workspaceEligible($owner);
-        } catch (Throwable $exception) {
-            report($exception);
-
-            return false;
-        }
-    }
-
     private function compose(ShopOwner $owner, OwnerShellSelection $selection): OwnerShellMetadata
     {
         $context = $selection->context;
@@ -129,9 +112,12 @@ final class CanonicalOwnerShellService
             throw new RuntimeException('Canonical owner shell composition requires a registration context.');
         }
 
-        $states = $this->moduleAccess->statesFor($owner);
+        $states = $this->moduleAccess->statesFor(
+            $owner,
+            (bool) config('shop_modules.enforcement_enabled', false),
+        );
         $groups = [
-            $this->homeGroup(),
+            $this->homeGroup($context === 'individual'),
         ];
 
         $actionCenter = $this->actionCenterGroup($owner);
@@ -139,13 +125,9 @@ final class CanonicalOwnerShellService
             $groups[] = $actionCenter;
         }
 
-        $operate = $this->moduleGroup(
-            'operate',
-            'Operate',
-            $context === 'individual' ? 10 : 20,
-            $context === 'individual',
-            $states,
-        );
+        $operate = $context === 'individual'
+            ? $this->individualOperateGroup($states)
+            : $this->moduleGroup('operate', 'Operate', 20, false, $states);
         $oversee = $this->moduleGroup(
             'oversee',
             'Oversee',
@@ -172,18 +154,19 @@ final class CanonicalOwnerShellService
             }
         }
 
-        $groups[] = $this->reportsGroup();
+        if ($context === 'company') {
+            $groups[] = $this->reportsGroup();
+        }
 
         return new OwnerShellMetadata(
             OwnerShellPresentation::Canonical,
             $selection->reason,
             $context,
             $groups,
-            $this->compatibility($owner),
         );
     }
 
-    private function homeGroup(): OwnerShellGroup
+    private function homeGroup(bool $includeAssistCenter): OwnerShellGroup
     {
         $homeUrl = $this->canonicalUrl('shop-owner.shell.home');
         $activeMatching = [
@@ -205,6 +188,20 @@ final class CanonicalOwnerShellService
             $activeMatching,
         )];
 
+        if ($includeAssistCenter) {
+            $assistCenterUrl = $this->canonicalUrl('shop-owner.dss-insights');
+            $this->assertOwnerRoute('shop-owner.dss-insights');
+            $items[] = new OwnerShellItem(
+                'assist-center',
+                'Assist Center',
+                $assistCenterUrl,
+                true,
+                null,
+                null,
+                [$assistCenterUrl],
+            );
+        }
+
         return new OwnerShellGroup(
             'home',
             'Home',
@@ -224,12 +221,12 @@ final class CanonicalOwnerShellService
 
         return new OwnerShellGroup(
             'action-center',
-            'Action Center',
+            'Approval Center',
             5,
             true,
             [new OwnerShellItem(
                 'action-center',
-                'Action Center',
+                'Approval Center',
                 $actionCenterUrl,
                 true,
                 null,
@@ -293,10 +290,6 @@ final class CanonicalOwnerShellService
             );
         }
 
-        if ($groupKey === 'operate' && $this->hasAccessibleOperationalPath($states)) {
-            $items[] = $this->paymentsItem($states);
-        }
-
         if ($items === []) {
             return null;
         }
@@ -305,21 +298,31 @@ final class CanonicalOwnerShellService
     }
 
     /**
+     * Individual owners operate the shop themselves. Their sidebar therefore
+     * exposes the actual retail, repair, customer, and cashier workspaces
+     * instead of company-only oversight modules. Each module owns its own
+     * page tabs; the shell stays at the same high-level density as the
+     * company owner navigation.
+     *
      * @param array<string, array{eligible: bool, enabled: bool, accessible: bool, code: ?string, reason: ?string}> $states
      */
-    private function hasAccessibleOperationalPath(array $states): bool
+    private function individualOperateGroup(array $states): ?OwnerShellGroup
     {
-        return ($states['retail_operations']['accessible'] ?? false) === true
-            || ($states['repair_operations']['accessible'] ?? false) === true;
-    }
+        $items = [];
 
-    /**
-     * @param array<string, array{eligible: bool, enabled: bool, accessible: bool, code: ?string, reason: ?string}> $states
-     */
-    private function paymentsItem(array $states): OwnerShellItem
-    {
-        $activeMatching = [$this->canonicalUrl('shop-owner.shell.operate.payments')];
+        if (($states['retail_operations']['eligible'] ?? false) === true) {
+            $items[] = $this->individualModuleItem('retail', $states);
+        }
 
+        if (($states['repair_operations']['eligible'] ?? false) === true) {
+            $items[] = $this->individualModuleItem('repair', $states);
+        }
+
+        if (($states['crm']['eligible'] ?? false) === true) {
+            $items[] = $this->individualModuleItem('customers', $states, 'Customer Management');
+        }
+
+        $cashierActiveMatching = [$this->canonicalUrl('shop-owner.shell.operate.payments')];
         foreach (['retail_operations' => 'retail', 'repair_operations' => 'repair'] as $moduleKey => $slug) {
             if (($states[$moduleKey]['accessible'] ?? false) !== true) {
                 continue;
@@ -327,16 +330,76 @@ final class CanonicalOwnerShellService
 
             $routeName = 'shop-owner.erp.'.$slug.'.point-of-sale';
             $this->assertOwnerRoute($routeName);
-            $activeMatching[] = $this->pathForRoute($routeName).'*';
+            $cashierActiveMatching[] = $this->pathForRoute($routeName).'*';
+        }
+
+        if (count($cashierActiveMatching) > 1) {
+            $items[] = new OwnerShellItem(
+                'cashier',
+                'Cashier',
+                $cashierActiveMatching[0],
+                true,
+                null,
+                null,
+                $cashierActiveMatching,
+            );
+        }
+
+        $items = array_values(array_filter($items));
+        if ($items === []) {
+            return null;
+        }
+
+        return new OwnerShellGroup(
+            'operate',
+            'Operate',
+            10,
+            true,
+            $items,
+        );
+    }
+
+    /**
+     * @param array<string, array{eligible: bool, enabled: bool, accessible: bool, code: ?string, reason: ?string}> $states
+     */
+    private function individualModuleItem(
+        string $destinationKey,
+        array $states,
+        ?string $label = null,
+    ): ?OwnerShellItem
+    {
+        $destination = self::MODULE_DESTINATIONS[$destinationKey];
+        $state = $states[$destination['module']] ?? null;
+        if (! is_array($state) || ($state['eligible'] ?? false) !== true) {
+            return null;
+        }
+
+        $canonicalUrl = $this->canonicalUrl($destination['route']);
+        $activeMatching = $this->moduleActiveMatching($destination['module']);
+
+        if (($state['accessible'] ?? false) === true) {
+            return new OwnerShellItem(
+                $destinationKey,
+                $label ?? $destination['label'],
+                $canonicalUrl,
+                true,
+                null,
+                null,
+                $activeMatching,
+            );
+        }
+
+        if (($state['code'] ?? null) !== 'MODULE_DISABLED') {
+            return null;
         }
 
         return new OwnerShellItem(
-            'payments',
-            'Payments',
-            $this->canonicalUrl('shop-owner.shell.operate.payments'),
-            true,
-            null,
-            null,
+            $destinationKey,
+            $label ?? $destination['label'],
+            $canonicalUrl,
+            false,
+            'module_disabled',
+            $this->canonicalUrl('shop-owner.shell.settings.modules-team'),
             $activeMatching,
         );
     }
@@ -346,7 +409,7 @@ final class CanonicalOwnerShellService
         $reportsUrl = $this->canonicalUrl('shop-owner.shell.reports');
         $auditUrl = $this->canonicalUrl('shop-owner.shell.audit');
         $this->assertOwnerRoute('shop-owner.erp.manager.reports');
-        $this->assertOwnerRoute('shop-owner.erp.manager.audit-logs');
+        $this->assertOwnerRoute('shop-owner.shell.audit');
 
         return new OwnerShellGroup(
             'reports',
@@ -370,7 +433,7 @@ final class CanonicalOwnerShellService
                     true,
                     null,
                     null,
-                    [$auditUrl, $this->pathForRoute('shop-owner.erp.manager.audit-logs').'*'],
+                    [$auditUrl],
                 ),
             ],
         );
@@ -404,57 +467,6 @@ final class CanonicalOwnerShellService
         }
 
         throw new RuntimeException("Canonical module destination is missing for {$moduleKey}.");
-    }
-
-    private function compatibility(ShopOwner $owner): array
-    {
-        if (! $this->workspaceEligible($owner)) {
-            return [
-                'show_erp_fallback' => false,
-                'erp_workspace_url' => null,
-                'fallback_url' => null,
-            ];
-        }
-
-        $workspaceUrl = $this->pathForRoute('shop-owner.erp.workspace');
-
-        return [
-            'show_erp_fallback' => true,
-            'erp_workspace_url' => $workspaceUrl,
-            'fallback_url' => $this->fallbackUrl(),
-        ];
-    }
-
-    private function fallbackUrl(): string
-    {
-        if (! Route::has(self::FALLBACK_ROUTE)) {
-            throw new RuntimeException('Owner shell ERP fallback route is not registered.');
-        }
-
-        $url = route(self::FALLBACK_ROUTE, [
-            'reason' => OwnerShellFallbackReason::UserPreference->value,
-            'source' => 'home',
-        ]);
-        $path = $this->path($url);
-        $query = parse_url($url, PHP_URL_QUERY);
-
-        return is_string($query) && $query !== '' ? $path.'?'.$query : $path;
-    }
-
-    private function workspaceEligible(ShopOwner $owner): bool
-    {
-        if (! (bool) config('shop_modules.owner_erp_workspace_enabled', false)) {
-            return false;
-        }
-
-        $entry = $this->assertOwnerRoute('shop-owner.erp.workspace');
-        $registrationType = strtolower(trim((string) $owner->getRawOriginal('registration_type')));
-        $businessType = $this->normalizedBusinessType($owner);
-        $status = strtolower(trim((string) $owner->getRawOriginal('status')));
-
-        return $status === 'approved'
-            && in_array($registrationType, $entry['registration_types'] ?? [], true)
-            && in_array($businessType, $entry['business_types'] ?? [], true);
     }
 
     /**
@@ -506,11 +518,4 @@ final class CanonicalOwnerShellService
         return $path;
     }
 
-    private function normalizedBusinessType(ShopOwner $owner): string
-    {
-        return match (strtolower(trim((string) $owner->getRawOriginal('business_type')))) {
-            'both (retail & repair)' => 'both',
-            default => strtolower(trim((string) $owner->getRawOriginal('business_type'))),
-        };
-    }
 }
