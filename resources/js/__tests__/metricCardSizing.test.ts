@@ -33,7 +33,7 @@ describe('shared metric card icon sizing', () => {
   it('scopes the tile override to primary non-overlay metric icon containers', () => {
     const tileRule = ruleAfter('/* Match legacy primary metric icon tiles to the dashboard dimensions. */');
 
-    expect(tileRule.selectors).toContain('.metrics-card');
+    expect(tileRule.selectors).toContain('html:not(.dark) #app .metrics-card');
     expect(tileRule.selectors).toContain('[class~="group"]');
     expect(tileRule.selectors).toContain(':not([class*="absolute"])');
   });

@@ -163,8 +163,8 @@ const CanonicalOwnerSidebar = ({ metadata }: CanonicalOwnerSidebarProps) => {
     const active = item.available && isItemActive(currentPath, item);
     const activeChild = item.available && hasActiveChild(currentPath, item);
     const Icon = ITEM_ICONS[item.key] ?? FileText;
-    const itemClassName = `flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${active
-      ? "menu-item-active bg-blue-50 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300"
+    const itemClassName = `flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] dark:focus-visible:ring-blue-300 ${active
+      ? "menu-item-active bg-[#111111] text-white dark:bg-blue-500/15 dark:text-blue-300"
       : "text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white"
       }`;
 
@@ -176,7 +176,7 @@ const CanonicalOwnerSidebar = ({ metadata }: CanonicalOwnerSidebarProps) => {
           {item.management_url && (
             <Link
               href={item.management_url}
-              className="inline-flex rounded-md text-xs font-semibold text-blue-600 underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-blue-300"
+              className="inline-flex rounded-md text-xs font-semibold text-[#111111] underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] dark:text-blue-300 dark:focus-visible:ring-blue-500"
             >
               Manage in Settings
             </Link>
@@ -220,10 +220,10 @@ const CanonicalOwnerSidebar = ({ metadata }: CanonicalOwnerSidebarProps) => {
       <div className={`flex py-8 ${showLabels ? "justify-start" : "justify-center"}`}>
         <Link
           href="/shop-owner/home"
-          className="flex items-center gap-2 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          className="flex items-center gap-2 rounded-lg text-[#111111] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] dark:text-blue-300 dark:focus-visible:ring-blue-300"
           title={showLabels ? undefined : "SoleSpace"}
         >
-          <span className="text-xl font-bold tracking-tight text-blue-700 dark:text-blue-300">{showLabels ? "SoleSpace" : "SS"}</span>
+          <span className="text-xl font-bold tracking-tight">{showLabels ? "SoleSpace" : "SS"}</span>
         </Link>
       </div>
 

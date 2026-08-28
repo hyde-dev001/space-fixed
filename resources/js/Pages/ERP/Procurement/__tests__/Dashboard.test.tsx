@@ -27,6 +27,10 @@ it('renders the owner-safe procurement dashboard from scoped summary data', () =
   expect(screen.getByTestId('procurement-dashboard')).toHaveClass('w-full');
   expect(screen.getByTestId('procurement-dashboard')).not.toHaveClass('max-w-7xl');
   expect(screen.getByRole('heading', { name: 'Procurement Dashboard' })).toBeInTheDocument();
+  expect(screen.getByTestId('procurement-module-summary'))
+    .toHaveClass('metrics-card', 'border-gray-200', 'bg-white', 'dark:border-gray-800');
+  expect(screen.getByLabelText('Purchase requests'))
+    .toHaveClass('metrics-card', 'border-gray-200');
   expect(screen.getByText('Procurement health')).toBeInTheDocument();
   expect(screen.queryByRole('heading', { name: 'Procurement workspace' })).not.toBeInTheDocument();
   expect(screen.queryByText(/workspace pages/i)).not.toBeInTheDocument();

@@ -30,7 +30,7 @@ const CanonicalOwnerLayoutContent: React.FC<CanonicalOwnerLayoutProps> = ({
   }, [isMobileOpen]);
 
   return (
-    <div data-testid="canonical-owner-frame" className="min-h-screen bg-gray-50 text-gray-900 motion-reduce:transition-none dark:bg-gray-950 dark:text-gray-100 xl:flex">
+    <div data-testid="canonical-owner-frame" className="canonical-owner-theme erp-theme min-h-screen bg-gray-50 text-gray-900 motion-reduce:transition-none dark:bg-gray-950 dark:text-gray-100 xl:flex">
       <div>
         <CanonicalOwnerSidebar metadata={metadata} />
         <Backdrop />

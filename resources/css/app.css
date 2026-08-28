@@ -8,35 +8,35 @@ layer(base);
 
 /* Shared metrics-card treatment. EcommerceMetrics is the canonical source;
    these selectors keep legacy, page-local metric cards visually consistent. */
-.metrics-card,
-[class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"],
-[class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"] {
+html:not(.dark) #app .metrics-card,
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"],
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"] {
   border-color: #e2e8f0 !important;
   border-radius: 1rem !important;
   box-shadow: none !important;
   transition: border-color 180ms ease, box-shadow 180ms ease !important;
 }
 
-.metrics-card:hover,
-[class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"]:hover,
-[class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"]:hover {
+html:not(.dark) #app .metrics-card:hover,
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"]:hover,
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"]:hover {
   border-color: #cbd5e1 !important;
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06) !important;
   transform: none !important;
 }
 
-.metrics-card > div:first-child,
-[class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"] > div:first-child,
-[class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"] > div:first-child {
+html:not(.dark) #app .metrics-card > div:first-child,
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"] > div:first-child,
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"] > div:first-child {
   background-image: none !important;
 }
 
-.metrics-card [class*="bg-gradient-to-br"],
-.metrics-card [class*="bg-linear-to-br"],
-[class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"] [class*="bg-gradient-to-br"],
-[class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"] [class*="bg-linear-to-br"],
-[class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"] [class*="bg-gradient-to-br"],
-[class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"] [class*="bg-linear-to-br"] {
+html:not(.dark) #app .metrics-card [class*="bg-gradient-to-br"],
+html:not(.dark) #app .metrics-card [class*="bg-linear-to-br"],
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"] [class*="bg-gradient-to-br"],
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"] [class*="bg-linear-to-br"],
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"] [class*="bg-gradient-to-br"],
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"] [class*="bg-linear-to-br"] {
   background-image: none !important;
   background-color: #f1f5f9 !important;
   box-shadow: none !important;
@@ -46,34 +46,34 @@ layer(base);
 
 /* Legacy cards set text-white directly on the SVG, so the container color
    alone cannot override it. Keep the icon itself dark on the light tile. */
-.metrics-card :is([class*="bg-gradient-to-br"], [class*="bg-linear-to-br"]) > svg,
-[class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"] :is([class*="bg-gradient-to-br"], [class*="bg-linear-to-br"]) > svg,
-[class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"] :is([class*="bg-gradient-to-br"], [class*="bg-linear-to-br"]) > svg {
+html:not(.dark) #app .metrics-card :is([class*="bg-gradient-to-br"], [class*="bg-linear-to-br"]) > svg,
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"] :is([class*="bg-gradient-to-br"], [class*="bg-linear-to-br"]) > svg,
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"] :is([class*="bg-gradient-to-br"], [class*="bg-linear-to-br"]) > svg {
   color: #1e293b !important;
 }
 
 /* Match legacy primary metric icon tiles to the dashboard dimensions. */
-.metrics-card :is([class*="bg-gradient-to-br"], [class*="bg-linear-to-br"]):not([class*="absolute"]),
-[class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"] :is([class*="bg-gradient-to-br"], [class*="bg-linear-to-br"]):not([class*="absolute"]),
-[class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"] :is([class*="bg-gradient-to-br"], [class*="bg-linear-to-br"]):not([class*="absolute"]) {
+html:not(.dark) #app .metrics-card :is([class*="bg-gradient-to-br"], [class*="bg-linear-to-br"]):not([class*="absolute"]),
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"] :is([class*="bg-gradient-to-br"], [class*="bg-linear-to-br"]):not([class*="absolute"]),
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"] :is([class*="bg-gradient-to-br"], [class*="bg-linear-to-br"]):not([class*="absolute"]) {
   width: 3rem !important;
   height: 3rem !important;
   border-radius: 0.75rem !important;
 }
 
 /* Keep the main metric icon outlines as light as the dashboard icons. */
-.metrics-card > div:first-child > svg,
-.metrics-card :is([class*="bg-gradient-to-br"], [class*="bg-linear-to-br"]) > svg,
-[class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"] :is([class*="bg-gradient-to-br"], [class*="bg-linear-to-br"]) > svg,
-[class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"] :is([class*="bg-gradient-to-br"], [class*="bg-linear-to-br"]) > svg {
+html:not(.dark) #app .metrics-card > div:first-child > svg,
+html:not(.dark) #app .metrics-card :is([class*="bg-gradient-to-br"], [class*="bg-linear-to-br"]) > svg,
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"] :is([class*="bg-gradient-to-br"], [class*="bg-linear-to-br"]) > svg,
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"] :is([class*="bg-gradient-to-br"], [class*="bg-linear-to-br"]) > svg {
   width: 1.5rem !important;
   height: 1.5rem !important;
   stroke-width: 1.5 !important;
 }
 
-.metrics-card > [class*="absolute"][class*="inset-0"],
-[class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"] > [class*="absolute"][class*="inset-0"],
-[class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"] > [class*="absolute"][class*="inset-0"] {
+html:not(.dark) #app .metrics-card > [class*="absolute"][class*="inset-0"],
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"] > [class*="absolute"][class*="inset-0"],
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"] > [class*="absolute"][class*="inset-0"] {
   display: none !important;
 }
 
@@ -83,6 +83,36 @@ layer(base);
 .dark [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"] [class*="bg-linear-to-br"] {
   background-color: #1e293b !important;
   color: #f8fafc !important;
+}
+
+/* ApexCharts renders series colors as SVG attributes. Override those
+   attributes only in Light Mode so every account uses one monochrome chart
+   language while Dark Mode keeps each chart's original palette. */
+html:not(.dark) #app .erp-theme .apexcharts-series[rel="1"] path {
+  stroke: #111111 !important;
+  fill: #111111 !important;
+}
+
+html:not(.dark) #app .erp-theme .apexcharts-series[rel="2"] path {
+  stroke: #6b7280 !important;
+  fill: #6b7280 !important;
+}
+
+html:not(.dark) #app .erp-theme .apexcharts-series[rel="3"] path {
+  stroke: #9ca3af !important;
+  fill: #9ca3af !important;
+}
+
+html:not(.dark) #app .erp-theme .apexcharts-legend-marker[rel="1"] {
+  background: #111111 !important;
+}
+
+html:not(.dark) #app .erp-theme .apexcharts-legend-marker[rel="2"] {
+  background: #6b7280 !important;
+}
+
+html:not(.dark) #app .erp-theme .apexcharts-legend-marker[rel="3"] {
+  background: #9ca3af !important;
 }
 
 /* Hide viewport scrollbar UI on UserSide pages while keeping scroll behavior */
