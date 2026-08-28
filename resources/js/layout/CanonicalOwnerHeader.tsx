@@ -21,7 +21,7 @@ const CanonicalOwnerHeader: React.FC<CanonicalOwnerHeaderProps> = ({ menuButtonR
   const canonicalSettingsUrl = route("shop-owner.shell.settings.profile");
   const canonicalOwnerUrls: Partial<ErpUrls> = {
     ...(erpUrls ?? {}),
-    profile: canonicalSettingsUrl,
+    profile: typeof erpUrls?.profile === "string" ? erpUrls.profile : route("shop-owner.shop-profile"),
     settings: canonicalSettingsUrl,
   };
   const [isApplicationMenuOpen, setApplicationMenuOpen] = useState(false);
