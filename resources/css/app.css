@@ -93,6 +93,13 @@ html:not(.dark) #app .erp-theme .apexcharts-series[rel="1"] path {
   fill: #111111 !important;
 }
 
+/* Radial bars use a stroked arc. Keep their progress path hollow so the
+   Light Mode override does not turn the gauge into a filled wedge. */
+html:not(.dark) #app .erp-theme .apexcharts-series .apexcharts-radialbar-area {
+  stroke: #111111 !important;
+  fill: none !important;
+}
+
 html:not(.dark) #app .erp-theme .apexcharts-series[rel="2"] path {
   stroke: #6b7280 !important;
   fill: #6b7280 !important;
