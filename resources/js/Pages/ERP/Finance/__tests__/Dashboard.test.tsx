@@ -56,6 +56,14 @@ it('renders backend-owned primary and supporting metrics without client comparis
   expect(screen.queryByText(/\+15%|15%/)).not.toBeInTheDocument();
 });
 
+it('uses the shared dashboard card pattern for all primary metrics', async () => {
+  renderPage();
+
+  await waitFor(() => expect(screen.getByText('Net revenue')).toBeInTheDocument());
+  expect(screen.getAllByTestId('finance-metric-card')).toHaveLength(4);
+  expect(screen.getAllByTestId('finance-metric-icon')).toHaveLength(4);
+});
+
 it('shows a forbidden state without replacing it with empty tax-like data', async () => {
   getSummary.mockResolvedValue({ ok: false, status: 403, error: 'Forbidden' });
   renderPage();

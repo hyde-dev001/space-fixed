@@ -353,7 +353,7 @@ export function HRDashboard() {
       {/* Bottom Section - Workforce Analytics and Employment Status */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Workforce Analytics */}
-        <div className="rounded-2xl bg-white border border-gray-200 dark:bg-white/[0.03] dark:border-gray-800 p-6">
+        <div className="metrics-card rounded-2xl bg-white border border-gray-200 dark:bg-white/[0.03] dark:border-gray-800 p-6">
           <div className="flex items-center justify-between mb-6">
             <div>
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
@@ -363,7 +363,7 @@ export function HRDashboard() {
                 Snapshot of current workforce health
               </p>
             </div>
-            <span className="px-3 py-1 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 text-xs font-semibold rounded-full">
+            <span className="px-3 py-1 bg-gray-100 text-gray-800 dark:bg-blue-900/30 dark:text-blue-400 text-xs font-semibold rounded-full">
               Live
             </span>
           </div>
@@ -372,12 +372,12 @@ export function HRDashboard() {
             <div className="p-4 rounded-xl bg-white dark:bg-gray-900/20 border border-gray-200 dark:border-gray-700">
               <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Employment Rate</p>
               <div className="flex items-baseline gap-2 mb-2">
-                <span className="text-3xl font-bold text-blue-600 dark:text-blue-400">{employmentRate}%</span>
-                <span className="px-2 py-0.5 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 text-xs font-semibold rounded">Active</span>
+                <span className="text-3xl font-bold text-gray-900 dark:text-blue-400">{employmentRate}%</span>
+                <span className="px-2 py-0.5 bg-gray-100 text-gray-800 dark:bg-blue-900/30 dark:text-blue-400 text-xs font-semibold rounded">Active</span>
               </div>
               <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">Active vs total staff</p>
               <div className="h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
-                <div className="h-full bg-blue-500 rounded-full" style={{ width: `${employmentRate}%` }}></div>
+                <div className="h-full bg-gray-900 rounded-full" style={{ width: `${employmentRate}%` }}></div>
               </div>
             </div>
 
@@ -385,12 +385,12 @@ export function HRDashboard() {
             <div className="p-4 rounded-xl bg-white dark:bg-gray-900/20 border border-gray-200 dark:border-gray-700">
               <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Leave Rate</p>
               <div className="flex items-baseline gap-2 mb-2">
-                <span className="text-3xl font-bold text-purple-600 dark:text-purple-400">{leaveRate}%</span>
-                <span className="px-2 py-0.5 bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 text-xs font-semibold rounded">On Leave</span>
+                <span className="text-3xl font-bold text-gray-900 dark:text-purple-400">{leaveRate}%</span>
+                <span className="px-2 py-0.5 bg-gray-100 text-gray-800 dark:bg-purple-900/30 dark:text-purple-400 text-xs font-semibold rounded">On Leave</span>
               </div>
               <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">Currently away from duty</p>
               <div className="h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
-                <div className="h-full bg-purple-500 rounded-full" style={{ width: `${leaveRate}%` }}></div>
+                <div className="h-full bg-gray-900 rounded-full" style={{ width: `${leaveRate}%` }}></div>
               </div>
             </div>
 
@@ -398,19 +398,19 @@ export function HRDashboard() {
             <div className="p-4 rounded-xl bg-white dark:bg-gray-900/20 border border-gray-200 dark:border-gray-700">
               <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Availability</p>
               <div className="flex items-baseline gap-2 mb-2">
-                <span className="text-3xl font-bold text-orange-600 dark:text-orange-400">{availabilityRate}%</span>
-                <span className="px-2 py-0.5 bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 text-xs font-semibold rounded">Ready</span>
+                <span className="text-3xl font-bold text-gray-900 dark:text-orange-400">{availabilityRate}%</span>
+                <span className="px-2 py-0.5 bg-gray-100 text-gray-800 dark:bg-orange-900/30 dark:text-orange-400 text-xs font-semibold rounded">Ready</span>
               </div>
               <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">Available to deploy</p>
               <div className="h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
-                <div className="h-full bg-orange-500 rounded-full" style={{ width: `${availabilityRate}%` }}></div>
+                <div className="h-full bg-gray-900 rounded-full" style={{ width: `${availabilityRate}%` }}></div>
               </div>
             </div>
           </div>
         </div>
 
         {/* Employment Status */}
-        <div className="rounded-2xl bg-white border border-gray-200 dark:bg-white/[0.03] dark:border-gray-800 p-6">
+        <div className="metrics-card rounded-2xl bg-white border border-gray-200 dark:bg-white/[0.03] dark:border-gray-800 p-6">
           <div className="flex items-center justify-between mb-6">
             <div>
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
@@ -430,12 +430,12 @@ export function HRDashboard() {
             <div className="p-4 rounded-xl bg-white dark:bg-gray-900/20 border border-gray-200 dark:border-gray-700">
               <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Active Employees</p>
               <div className="flex items-baseline gap-2 mb-2">
-                <span className="text-3xl font-bold text-green-600 dark:text-green-400">{activeEmployees}</span>
-                <span className="px-2 py-0.5 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 text-xs font-semibold rounded">{activePercentage}%</span>
+                <span className="text-3xl font-bold text-gray-900 dark:text-green-400">{activeEmployees}</span>
+                <span className="px-2 py-0.5 bg-gray-100 text-gray-800 dark:bg-green-900/30 dark:text-green-400 text-xs font-semibold rounded">{activePercentage}%</span>
               </div>
               <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">Currently working</p>
               <div className="h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
-                <div className="h-full bg-green-500 rounded-full" style={{ width: `${activePercentage}%` }}></div>
+                <div className="h-full bg-gray-900 rounded-full" style={{ width: `${activePercentage}%` }}></div>
               </div>
             </div>
 
@@ -443,12 +443,12 @@ export function HRDashboard() {
             <div className="p-4 rounded-xl bg-white dark:bg-gray-900/20 border border-gray-200 dark:border-gray-700">
               <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">On Leave</p>
               <div className="flex items-baseline gap-2 mb-2">
-                <span className="text-3xl font-bold text-orange-600 dark:text-orange-400">{onLeaveCount}</span>
-                <span className="px-2 py-0.5 bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 text-xs font-semibold rounded">{onLeavePercentage}%</span>
+                <span className="text-3xl font-bold text-gray-900 dark:text-orange-400">{onLeaveCount}</span>
+                <span className="px-2 py-0.5 bg-gray-100 text-gray-800 dark:bg-orange-900/30 dark:text-orange-400 text-xs font-semibold rounded">{onLeavePercentage}%</span>
               </div>
               <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">Temporary absence</p>
               <div className="h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
-                <div className="h-full bg-orange-500 rounded-full" style={{ width: `${onLeavePercentage}%` }}></div>
+                <div className="h-full bg-gray-900 rounded-full" style={{ width: `${onLeavePercentage}%` }}></div>
               </div>
             </div>
 
@@ -456,12 +456,12 @@ export function HRDashboard() {
             <div className="p-4 rounded-xl bg-white dark:bg-gray-900/20 border border-gray-200 dark:border-gray-700">
               <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Inactive</p>
               <div className="flex items-baseline gap-2 mb-2">
-                <span className="text-3xl font-bold text-gray-600 dark:text-gray-400">{inactiveCount}</span>
-                <span className="px-2 py-0.5 bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400 text-xs font-semibold rounded">{inactivePercentage}%</span>
+                <span className="text-3xl font-bold text-gray-900 dark:text-gray-400">{inactiveCount}</span>
+                <span className="px-2 py-0.5 bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400 text-xs font-semibold rounded">{inactivePercentage}%</span>
               </div>
               <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">Not currently employed</p>
               <div className="h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
-                <div className="h-full bg-gray-500 rounded-full" style={{ width: `${inactivePercentage}%` }}></div>
+                <div className="h-full bg-gray-900 rounded-full" style={{ width: `${inactivePercentage}%` }}></div>
               </div>
             </div>
 
@@ -469,12 +469,12 @@ export function HRDashboard() {
             <div className="p-4 rounded-xl bg-white dark:bg-gray-900/20 border border-gray-200 dark:border-gray-700">
               <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Suspended</p>
               <div className="flex items-baseline gap-2 mb-2">
-                <span className="text-3xl font-bold text-red-600 dark:text-red-400">{suspendedCount}</span>
-                <span className="px-2 py-0.5 bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 text-xs font-semibold rounded">{suspendedPercentage}%</span>
+                <span className="text-3xl font-bold text-gray-900 dark:text-red-400">{suspendedCount}</span>
+                <span className="px-2 py-0.5 bg-gray-100 text-gray-800 dark:bg-red-900/30 dark:text-red-400 text-xs font-semibold rounded">{suspendedPercentage}%</span>
               </div>
               <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">Disciplinary action</p>
               <div className="h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
-                <div className="h-full bg-red-500 rounded-full" style={{ width: `${suspendedPercentage}%` }}></div>
+                <div className="h-full bg-gray-900 rounded-full" style={{ width: `${suspendedPercentage}%` }}></div>
               </div>
             </div>
           </div>

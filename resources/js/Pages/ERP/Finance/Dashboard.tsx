@@ -3,6 +3,8 @@ import { Head, usePage } from '@inertiajs/react';
 import AppLayoutERP from '../../../layout/AppLayout_ERP';
 import { useFinanceApi } from '../../../hooks/useFinanceApi';
 import Chart from 'react-apexcharts';
+import { CircleDollarSign, Receipt, TrendingUp, Wallet } from 'lucide-react';
+import type { ComponentType } from 'react';
 import type { ApexOptions } from 'apexcharts';
 
 type Money = string;
@@ -38,10 +40,22 @@ class FinanceSummaryError extends Error {
 
 const formatMoney = (value: Money | undefined): string => `₱${value ?? '0.00'}`;
 
-const MetricCard = ({ title, value, description }: { title: string; value: Money; description: string }) => (
-    <div className="metrics-card rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
-        <p className="text-sm font-medium text-gray-600 dark:text-gray-400">{title}</p>
-        <h2 className="mt-3 text-3xl font-bold text-gray-900 dark:text-white">{formatMoney(value)}</h2>
+type MetricIcon = ComponentType<{ className?: string }>;
+
+interface MetricCardProps {
+    title: string;
+    value: Money;
+    description: string;
+    icon: MetricIcon;
+}
+
+const MetricCard = ({ title, value, description, icon: Icon }: MetricCardProps) => (
+    <div data-testid="finance-metric-card" className="metrics-card rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] md:p-6">
+        <div data-testid="finance-metric-icon" aria-hidden="true" className="flex size-12 items-center justify-center rounded-xl bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-white/90">
+            <Icon className="size-6" />
+        </div>
+        <p className="mt-5 text-sm font-medium text-gray-600 dark:text-gray-400">{title}</p>
+        <h2 className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{formatMoney(value)}</h2>
         <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">{description}</p>
     </div>
 );
@@ -95,10 +109,10 @@ export default function FinanceDashboard() {
                     <>
                         <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">{summary.period.start} – {summary.period.end}</p>
                         <div className="mb-8 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
-                            <MetricCard title="Net revenue" value={summary.primary.net_revenue} description="Gross revenue less executed refunds" />
-                            <MetricCard title="Incurred expenses" value={summary.primary.incurred_expenses} description="Approved and operationally valid expenses" />
-                            <MetricCard title="Net operating result" value={summary.primary.net_operating_result} description="Net revenue less incurred expenses" />
-                            <MetricCard title="Net cash movement" value={summary.primary.net_cash_movement} description="Cash receipts, refunds, and paid expenses" />
+                            <MetricCard icon={CircleDollarSign} title="Net revenue" value={summary.primary.net_revenue} description="Gross revenue less executed refunds" />
+                            <MetricCard icon={Receipt} title="Incurred expenses" value={summary.primary.incurred_expenses} description="Approved and operationally valid expenses" />
+                            <MetricCard icon={TrendingUp} title="Net operating result" value={summary.primary.net_operating_result} description="Net revenue less incurred expenses" />
+                            <MetricCard icon={Wallet} title="Net cash movement" value={summary.primary.net_cash_movement} description="Cash receipts, refunds, and paid expenses" />
                         </div>
 
                         <div className="mb-8 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
