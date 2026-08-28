@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use App\Services\Manager\ManagerAuditLogService;
 use App\Services\Manager\ManagerAuthorizationService;
+use App\Support\Audit\AuditLogPresentation;
 
 class ActivityLogController extends Controller
 {
@@ -175,7 +176,7 @@ class ActivityLogController extends Controller
             return $this->subjectLabelCache[$cacheKey];
         }
 
-        $defaultLabel = 'Record';
+        $defaultLabel = AuditLogPresentation::subjectTypeLabel($log->subject_type);
 
         $preferredFields = [
             'name',
@@ -667,7 +668,8 @@ class ActivityLogController extends Controller
             $safeChanges = $this->filterSafeChanges($changes, $log->subject_type);
             $subjectLabel = $this->getSubjectLabel($log);
             $normalizedEvent = $this->normalizeEventLabel($log->event, $log->description);
-            
+            $subjectTypeLabel = AuditLogPresentation::subjectTypeLabel($log->subject_type);
+
             return [
                 'id' => $log->id,
                 'log_name' => $log->log_name,
@@ -675,7 +677,10 @@ class ActivityLogController extends Controller
                 'subject_type' => $log->subject_type,
                 'subject_id' => $log->subject_id,
                 'subject_label' => $subjectLabel,
+                'subject_type_label' => $subjectTypeLabel,
                 'event' => $normalizedEvent,
+                'event_label' => AuditLogPresentation::actionLabel($normalizedEvent),
+                'display_description' => AuditLogPresentation::description($log->description, $normalizedEvent),
                 'changes' => $safeChanges,  // Only safe, filtered changes
                 'created_at' => $log->created_at,
                 'causer' => $causerInfo,

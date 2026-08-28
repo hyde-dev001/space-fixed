@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\CRM\CRMReviewController;
 use App\Http\Controllers\Erp\ReadPageController;
 use App\Http\Controllers\Logistics\ErpLogisticsController;
 use App\Http\Controllers\ShopOwner\OwnerActionCenterController;
+use App\Http\Controllers\ShopOwner\UserAccessControlController;
 use App\Http\Controllers\Staff\CustomerController;
 use App\Models\ShopOwner;
 use App\Services\ErpWorkspaceNavigationService;
@@ -148,6 +149,8 @@ Route::prefix('shop-owner/erp')
                 ->name('dashboard');
             Route::get('/employee-directory', [ReadPageController::class, 'hrEmployeeDirectory'])
                 ->name('employee-directory');
+            Route::get('/user-access-control', [UserAccessControlController::class, 'index'])
+                ->name('user-access-control');
             Route::get('/attendance', [ReadPageController::class, 'hrAttendance'])
                 ->name('attendance');
             Route::get('/leave-approvals', [ReadPageController::class, 'hrLeaveApprovals'])
