@@ -6,7 +6,9 @@ namespace Tests\Feature\ShopOwner\ActionCenter;
 
 use App\Contracts\OwnerActionCenter\OwnerAttentionAdapter;
 use App\Models\Approval;
+use App\Models\Employee;
 use App\Models\Finance\Expense;
+use App\Models\HR\SalaryChange;
 use App\Models\Order;
 use App\Models\OrderRefund;
 use App\Models\PriceChangeRequest;
@@ -199,6 +201,49 @@ final class OwnerActionCenterRouteTest extends TestCase
                 ->where('approvalHistory.items.0.source_type', 'purchase_request')
                 ->where('approvalHistory.items.0.source_id', $purchaseRequest->id)
                 ->where('approvalHistory.items.0.status', 'approved'));
+    }
+
+    public function test_owner_approval_history_exposes_owner_native_salary_decisions_without_a_user_mirror(): void
+    {
+        $owner = $this->phaseThreeOwner();
+        $owner->forceFill(['business_name' => 'Native Salary Owner Shop'])->save();
+        config(['owner_action_center.coverage.salary_changes' => true]);
+
+        $proposer = User::factory()->create(['shop_owner_id' => $owner->id]);
+        $employee = Employee::factory()->active()->create([
+            'shop_owner_id' => $owner->id,
+            'salary' => 1000,
+        ]);
+        $decisionAt = now()->subHour();
+        $salaryChange = SalaryChange::create([
+            'employee_id' => $employee->id,
+            'shop_owner_id' => $owner->id,
+            'proposed_by' => $proposer->id,
+            'previous_salary' => 1000,
+            'new_salary' => 1200,
+            'change_percent' => 20,
+            'change_type' => SalaryChange::TYPE_MAJOR,
+            'effective_date' => now()->addDay()->toDateString(),
+            'reason' => 'Owner-native history test',
+            'status' => SalaryChange::STATUS_APPROVED,
+            'requires_owner_approval' => true,
+            'approved_by' => null,
+            'approved_by_shop_owner_id' => $owner->id,
+            'approved_at' => $decisionAt,
+        ]);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->get(route('shop-owner.shell.action-center', [
+                'view' => 'history',
+                'source' => 'salary_changes',
+            ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('approvalHistory.pagination.total', 1)
+                ->where('approvalHistory.items.0.source_type', 'salary_change')
+                ->where('approvalHistory.items.0.source_id', $salaryChange->id)
+                ->where('approvalHistory.items.0.status', 'approved')
+                ->where('approvalHistory.items.0.reviewed_by', 'Native Salary Owner Shop'));
     }
 
     public function test_owner_approval_history_reads_generic_decisions_recorded_for_the_owner_user(): void

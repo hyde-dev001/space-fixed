@@ -110,6 +110,59 @@ class SalaryChangeOwnerApprovalTest extends TestCase
         $this->assertSame($this->ownerUser->id, (int) $audit->user_id);
     }
 
+    public function test_shop_owner_guard_can_approve_without_a_linked_user_mirror(): void
+    {
+        $owner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
+        ]);
+        $proposer = User::factory()->create([
+            'shop_owner_id' => $owner->id,
+        ]);
+        $employee = Employee::factory()->active()->create([
+            'shop_owner_id' => $owner->id,
+            'salary' => 1000,
+        ]);
+        $settings = ProcurementSettings::getForShopOwner($owner->id);
+        $settingsJson = $settings->settings_json;
+        $settingsJson['approval_pages']['salary_adjustment_approval']['enabled'] = true;
+        $settings->update(['settings_json' => $settingsJson]);
+
+        $change = SalaryChange::create([
+            'employee_id' => $employee->id,
+            'shop_owner_id' => $owner->id,
+            'proposed_by' => $proposer->id,
+            'previous_salary' => 1000,
+            'new_salary' => 1100,
+            'change_percent' => 10,
+            'change_type' => SalaryChange::TYPE_MAJOR,
+            'effective_date' => now()->addDays(3)->toDateString(),
+            'reason' => 'Owner account has no ERP user mirror',
+            'status' => SalaryChange::STATUS_PENDING,
+            'requires_owner_approval' => true,
+        ]);
+
+        $this->assertDatabaseMissing('users', [
+            'shop_owner_id' => $owner->id,
+            'email' => $owner->email,
+        ]);
+
+        $response = $this->actingAs($owner, 'shop_owner')
+            ->postJson("/api/shop-owner/salary-changes/{$change->id}/approve", [
+                'notes' => 'Approved by the authenticated shop owner account',
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.status', SalaryChange::STATUS_APPROVED)
+            ->assertJsonPath('data.approved_by', null)
+            ->assertJsonPath('data.approved_by_shop_owner_id', $owner->id);
+
+        $change->refresh();
+        $this->assertSame(SalaryChange::STATUS_APPROVED, $change->status);
+        $this->assertNull($change->approved_by);
+        $this->assertSame($owner->id, $change->approved_by_shop_owner_id);
+        $this->assertSame('1000.00', (string) $employee->fresh()->salary);
+    }
+
     public function test_owner_disabled_change_uses_the_existing_non_proposer_salary_reviewer(): void
     {
         $this->setSalaryApprovalPolicy(false);

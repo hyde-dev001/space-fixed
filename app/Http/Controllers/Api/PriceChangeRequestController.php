@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Approval;
 use App\Models\PriceChangeRequest;
 use App\Models\Product;
+use App\Models\ShopOwner;
 use App\Models\User;
 use App\Enums\ApprovalStatus;
 use App\Enums\PriceChangeStatus;
@@ -16,6 +17,8 @@ use App\Support\Finance\FinanceErrorResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 
 class PriceChangeRequestController extends Controller
 {
@@ -668,7 +671,13 @@ class PriceChangeRequestController extends Controller
     public function ownerApprove($id)
     {
         $shopOwner = Auth::guard('shop_owner')->user();
-        $priceChangeRequest = PriceChangeRequest::findOrFail($id);
+        if (! $shopOwner instanceof ShopOwner) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
+        }
+
+        $priceChangeRequest = PriceChangeRequest::query()
+            ->where('shop_owner_id', $shopOwner->id)
+            ->findOrFail($id);
 
         // New 4-step workflow
         if ($priceChangeRequest->approval_id && $priceChangeRequest->approval_workflow_version === 'v4_multi_level') {
@@ -817,7 +826,13 @@ class PriceChangeRequestController extends Controller
         ]);
 
         $shopOwner = Auth::guard('shop_owner')->user();
-        $priceChangeRequest = PriceChangeRequest::findOrFail($id);
+        if (! $shopOwner instanceof ShopOwner) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
+        }
+
+        $priceChangeRequest = PriceChangeRequest::query()
+            ->where('shop_owner_id', $shopOwner->id)
+            ->findOrFail($id);
 
         // New 4-step workflow
         if ($priceChangeRequest->approval_id && $priceChangeRequest->approval_workflow_version === 'v4_multi_level') {
@@ -1037,17 +1052,19 @@ class PriceChangeRequestController extends Controller
 
     private function resolveShopOwnerApproverUser(int $shopOwnerId): ?User
     {
-        // Preferred: legacy coupled identity where user.id == shop_owner.id.
-        $exactOwner = User::find($shopOwnerId);
-        if ($exactOwner) {
-            return $exactOwner;
+        $shopOwner = ShopOwner::query()->find($shopOwnerId);
+        if (! $shopOwner) {
+            return null;
         }
 
-        // Next: explicit shop-owner role within the same shop.
+        // Prefer an explicitly linked owner account. Never infer ownership
+        // from a numeric User::id == ShopOwner::id collision.
         $roleScopedOwner = User::query()
             ->where('shop_owner_id', $shopOwnerId)
-            ->whereHas('roles', function ($query) {
-                $query->whereIn('name', ['shop-owner', 'Shop Owner']);
+            ->where(function ($query) {
+                $query->whereHas('roles', function ($roles) {
+                    $roles->whereIn('name', ['shop-owner', 'Shop Owner', 'SHOP_OWNER', 'shop_owner']);
+                })->orWhereIn('role', ['shop-owner', 'Shop Owner', 'SHOP_OWNER', 'shop_owner']);
             })
             ->orderByDesc('id')
             ->first();
@@ -1056,17 +1073,74 @@ class PriceChangeRequestController extends Controller
             return $roleScopedOwner;
         }
 
-        // Fallback: any ERP user account linked to this shop owner record.
-        $linkedUser = User::query()
-            ->where('shop_owner_id', $shopOwnerId)
-            ->orderByDesc('id')
-            ->first();
+        $ownerEmail = strtolower(trim((string) $shopOwner->email));
+        if ($ownerEmail !== '') {
+            $mappedByEmail = User::query()
+                ->where('shop_owner_id', $shopOwnerId)
+                ->whereRaw('LOWER(email) = ?', [$ownerEmail])
+                ->orderByDesc('id')
+                ->first();
 
-        if ($linkedUser) {
-            return $linkedUser;
+            if ($mappedByEmail) {
+                return $mappedByEmail;
+            }
         }
 
-        return null;
+        // Keep generic Approval's User foreign keys usable when the
+        // authenticated ShopOwner has no ERP mirror yet. The deterministic
+        // proxy is linked only to this owner and is never selected by ID.
+        $fallbackEmail = 'shopowner+' . $shopOwnerId . '@solespace.local';
+        $existingProxy = User::query()
+            ->whereRaw('LOWER(email) = ?', [strtolower($fallbackEmail)])
+            ->where(function ($query) use ($shopOwnerId) {
+                $query->whereNull('shop_owner_id')
+                    ->orWhere('shop_owner_id', $shopOwnerId);
+            })
+            ->first();
+
+        if ($existingProxy) {
+            $existingProxy->forceFill([
+                'shop_owner_id' => $shopOwnerId,
+                'role' => $existingProxy->role ?: 'Shop Owner',
+                'email_verified_at' => $existingProxy->email_verified_at ?: now(),
+            ])->save();
+
+            try {
+                if (! $existingProxy->hasRole('Shop Owner')) {
+                    $existingProxy->assignRole('Shop Owner');
+                }
+            } catch (\Throwable) {
+                // The legacy role table may not be installed in all environments.
+            }
+
+            return $existingProxy;
+        }
+
+        $firstName = trim((string) ($shopOwner->first_name ?? 'Shop')) ?: 'Shop';
+        $lastName = trim((string) ($shopOwner->last_name ?? 'Owner')) ?: 'Owner';
+
+        try {
+            $ownerProxy = User::query()->create([
+                'first_name' => $firstName,
+                'last_name' => $lastName,
+                'name' => trim($firstName . ' ' . $lastName),
+                'email' => $fallbackEmail,
+                'password' => Hash::make(Str::random(40)),
+                'shop_owner_id' => $shopOwnerId,
+                'role' => 'Shop Owner',
+                'email_verified_at' => now(),
+            ]);
+
+            try {
+                $ownerProxy->assignRole('Shop Owner');
+            } catch (\Throwable) {
+                // The legacy role table may not be installed in all environments.
+            }
+
+            return $ownerProxy;
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     private function reconcileFinalizedProductPrice($priceChangeRequest): void
