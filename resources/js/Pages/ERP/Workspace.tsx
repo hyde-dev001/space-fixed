@@ -103,7 +103,7 @@ const Workspace: React.FC = () => {
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-3 lg:justify-end lg:pt-1">
-              <span className="inline-flex items-center rounded-full bg-gray-900 px-3 py-1.5 text-xs font-semibold text-white lg:border lg:border-gray-700 lg:px-4 lg:py-2 dark:bg-white dark:text-gray-900">
+              <span className="inline-flex items-center rounded-full bg-gray-900 px-3 py-1.5 text-xs font-semibold text-white lg:border lg:border-gray-700 lg:px-4 lg:py-2 dark:bg-blue-500/10 dark:text-blue-200">
                 Owner mode
               </span>
               <Link

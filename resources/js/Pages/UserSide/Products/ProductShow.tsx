@@ -2419,7 +2419,7 @@ const ProductShow: React.FC = () => {
                     <div key={review.id} className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
                       <div className="flex items-start gap-3 p-4">
                         {/* Avatar */}
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gray-950 text-sm font-bold text-white">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gray-950 dark:bg-[#16233b] text-sm font-bold text-white">
                           {review.user_name?.charAt(0).toUpperCase() || 'U'}
                         </div>
 

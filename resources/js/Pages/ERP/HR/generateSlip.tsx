@@ -1848,8 +1848,8 @@ export default function GenerateSlip() {
 									</td>
 									<td className="px-6 py-4">
 										<div className="flex items-center gap-3">
-											<div className="h-10 w-10 rounded-full bg-gray-950 flex items-center justify-center">
-												<span className="text-white font-medium text-sm">{getInitials(employee.firstName, employee.lastName)}</span>
+											<div className="h-10 w-10 rounded-full bg-gray-950 dark:bg-blue-900 flex items-center justify-center">
+												<span className="text-white dark:text-blue-300 font-medium text-sm">{getInitials(employee.firstName, employee.lastName)}</span>
 											</div>
 											<div className="flex flex-col">
 												<span className="font-semibold text-gray-900 dark:text-white">{employee.firstName} {employee.lastName}</span>
@@ -2098,8 +2098,8 @@ export default function GenerateSlip() {
 							<div className="p-4 rounded-xl border-2 border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
 								<p className="text-sm text-gray-600 dark:text-gray-400 mb-2">Employee Information</p>
 								<div className="flex items-center gap-3">
-									<div className="h-12 w-12 rounded-full bg-gray-950 flex items-center justify-center">
-										<span className="text-white font-medium">{getInitials(selectedEmployee.firstName, selectedEmployee.lastName)}</span>
+									<div className="h-12 w-12 rounded-full bg-gray-950 dark:bg-blue-900 flex items-center justify-center">
+										<span className="text-white dark:text-blue-300 font-medium">{getInitials(selectedEmployee.firstName, selectedEmployee.lastName)}</span>
 									</div>
 									<div>
 										<p className="text-lg font-semibold text-gray-900 dark:text-white">{selectedEmployee.firstName} {selectedEmployee.lastName}</p>

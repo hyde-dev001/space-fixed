@@ -992,11 +992,11 @@ const ShopProfile: React.FC = () => {
             <div className="relative -mt-12 px-3">
               <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-md">
                 <div className="flex items-start gap-3">
-                  <div className="relative flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-gray-950 shadow-sm">
+                  <div className="relative flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-gray-950 dark:bg-blue-100 shadow-sm">
                     {profilePhoto ? (
                       <img src={profilePhoto} alt={displayName} className="h-full w-full object-cover" />
                     ) : (
-                      <span className="text-2xl font-bold text-white">{displayName?.slice(0, 1) || "S"}</span>
+                      <span className="text-2xl font-bold text-white dark:text-blue-600">{displayName?.slice(0, 1) || "S"}</span>
                     )}
                   </div>
                   <div className="min-w-0 flex-1">
