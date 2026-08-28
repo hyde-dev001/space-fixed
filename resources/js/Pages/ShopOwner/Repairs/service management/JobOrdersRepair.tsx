@@ -1208,50 +1208,6 @@ export default function JobOrdersRepair() {
     return isWalkInIntake(order) && String(order.id || '').toUpperCase().startsWith('REP-POS-');
   };
 
-  const isInShopPaymentDueNow = (order: Pick<RepairOrder, 'status' | 'payment_policy' | 'payment_status' | 'returnDeliveryMethod' | 'intakeDeliveryMethod' | 'serviceType' | 'isWarrantyJob' | 'billingMode'>) => {
-    if (isWarrantyNoChargeOrder(order)) return false;
-
-    const status = (order.payment_status ?? '').toLowerCase();
-    const isDepositSettled = status === 'paid' || status === 'partially_paid';
-    const policy = order.payment_policy ?? 'deposit_50';
-    const returnMethod = order.returnDeliveryMethod;
-
-    if (returnMethod === 'shop_delivery') return false;
-
-    const canCollectInShop =
-      isWalkInIntake(order)
-      || returnMethod === 'walk_in'
-      || returnMethod === 'customer_pickup';
-
-    if (order.status === 'cancelled') return false;
-    if (!canCollectInShop) return false;
-    if (status === 'completed') return false;
-    if (policy === 'full_upfront') {
-      return ['pending', 'failed', 'expired', ''].includes(status);
-    }
-
-    if (['pending', 'failed', 'expired', ''].includes(status)) return true;
-    if (isDepositSettled) return order.status === 'ready-for-pickup';
-    return false;
-  };
-
-  const getMarkPaidInShopLabel = (order: Pick<RepairOrder, 'payment_policy' | 'payment_status'>) => {
-    const status = (order.payment_status ?? '').toLowerCase();
-    if ((order.payment_policy ?? 'deposit_50') === 'deposit_50' && (status === 'paid' || status === 'partially_paid')) {
-      return 'Proceed to POS (Collect Remaining Balance)';
-    }
-    return 'Proceed to POS (Collect Payment)';
-  };
-
-  const resolvePosDueType = (order: Pick<RepairOrder, 'payment_policy' | 'payment_status'>): 'deposit' | 'balance' | 'full' => {
-    const policy = order.payment_policy ?? 'deposit_50';
-    const status = (order.payment_status ?? '').toLowerCase();
-
-    if (policy === 'full_upfront') return 'full';
-    if (status === 'paid' || status === 'partially_paid') return 'balance';
-    return 'deposit';
-  };
-
   const canActivateOnlineRemainingBalance = (order: Pick<RepairOrder, 'status' | 'payment_policy' | 'payment_status' | 'returnDeliveryMethod' | 'serviceType' | 'payment_enabled' | 'isWarrantyJob' | 'billingMode'>) => {
     const paymentPolicy = order.payment_policy ?? 'deposit_50';
     const paymentStatus = (order.payment_status ?? '').toLowerCase();
@@ -1794,7 +1750,7 @@ export default function JobOrdersRepair() {
     if (targetOrder && isPosManualWalkIn(targetOrder)) {
       await Swal.fire({
         title: 'Not Required',
-        text: 'POS walk-in repairs do not need payment activation. Use Proceed to POS when a payment phase is due.',
+        text: 'This walk-in repair is already recorded as an in-shop transaction; online payment activation is not needed.',
         icon: 'info',
         confirmButtonColor: '#2563eb',
       });
@@ -1846,39 +1802,6 @@ export default function JobOrdersRepair() {
         icon: 'error',
       });
     }
-  };
-
-  const handleMarkPaidInShop = async (order: RepairOrder) => {
-    const dueNow = isInShopPaymentDueNow(order);
-    if (!dueNow) {
-      await Swal.fire({
-        title: 'Payment Not Due',
-        text: 'No payable repair phase is currently due for in-shop payment.',
-        icon: 'info',
-        confirmButtonColor: '#2563eb',
-      });
-      return;
-    }
-
-    const result = await Swal.fire({
-      title: getMarkPaidInShopLabel(order),
-      text: 'Continue to the POS screen to complete and issue a receipt.',
-      icon: 'question',
-      showCancelButton: true,
-      confirmButtonText: 'Proceed to POS',
-      cancelButtonText: 'Cancel',
-      confirmButtonColor: '#2563eb',
-    });
-
-    if (!result.isConfirmed) return;
-
-    const dueType = resolvePosDueType(order);
-    const query = new URLSearchParams({
-      repair_request_id: String(order.database_id),
-      due_type: dueType,
-    });
-
-    window.location.href = `/shop-owner/point-of-sale?${query.toString()}`;
   };
 
   const handleCompleteWork = async (order: RepairOrder) => {
@@ -2735,25 +2658,6 @@ export default function JobOrdersRepair() {
                                   <MoneyIcon className="size-5" />
                                 </button>
                               )}
-                              {isWalkInIntake(order) && !isWarrantyNoChargeOrder(order) && (
-                                <button
-                                  onClick={() => handleMarkPaidInShop(order)}
-                                  disabled={!isInShopPaymentDueNow(order)}
-                                  className={`inline-flex items-center justify-center p-2 rounded-lg transition-colors ${
-                                    isInShopPaymentDueNow(order)
-                                      ? 'text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:text-emerald-300 dark:hover:bg-emerald-900/30'
-                                      : 'text-gray-400 cursor-not-allowed'
-                                  }`}
-                                  title={
-                                    isInShopPaymentDueNow(order)
-                                      ? getMarkPaidInShopLabel(order)
-                                      : 'No payable phase is currently due for in-shop payment'
-                                  }
-                                  aria-label="Proceed to POS"
-                                >
-                                  <MoneyIcon className="size-5" />
-                                </button>
-                              )}
                             </>
                           )}
 
@@ -2796,25 +2700,6 @@ export default function JobOrdersRepair() {
                               className="inline-flex items-center justify-center p-2 rounded-lg text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:text-amber-300 dark:hover:bg-amber-900/30 transition-colors"
                               title="Activate online payment for remaining balance"
                               aria-label="Activate Remaining Balance"
-                            >
-                              <MoneyIcon className="size-5" />
-                            </button>
-                          )}
-                          {order.status === "ready-for-pickup" && !isWarrantyNoChargeOrder(order) && isInShopPaymentDueNow(order) && (
-                            <button
-                              onClick={() => handleMarkPaidInShop(order)}
-                              disabled={!isInShopPaymentDueNow(order)}
-                              className={`inline-flex items-center justify-center p-2 rounded-lg transition-colors ${
-                                isInShopPaymentDueNow(order)
-                                  ? 'text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:text-emerald-300 dark:hover:bg-emerald-900/30'
-                                  : 'text-gray-400 cursor-not-allowed'
-                              }`}
-                              title={
-                                isInShopPaymentDueNow(order)
-                                  ? getMarkPaidInShopLabel(order)
-                                  : 'No payable phase is currently due for in-shop payment'
-                              }
-                              aria-label="Proceed to POS"
                             >
                               <MoneyIcon className="size-5" />
                             </button>

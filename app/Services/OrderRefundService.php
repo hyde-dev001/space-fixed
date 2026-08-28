@@ -36,6 +36,7 @@ class OrderRefundService
         private readonly PaymentSettlementService $paymentSettlementService,
         private readonly ShopOwnerApprovalPolicyService $shopOwnerApprovalPolicyService,
         private readonly NotificationService $notificationService,
+        private readonly ?OrderRefundRecoveryService $orderRefundRecoveryService = null,
     ) {
     }
 
@@ -204,6 +205,11 @@ class OrderRefundService
             $payload['customer_id'] = $payload['customer_id'] ?? $lockedOrder->customer_id;
             $payload['shop_owner_id'] = $payload['shop_owner_id'] ?? $lockedOrder->shop_owner_id;
             $payload['amount'] = $requestedAmount;
+            $payload['requires_owner_approval'] = $this->resolveRefundApprovalSnapshot(
+                $payload,
+                (int) $payload['shop_owner_id'],
+                $requestedAmount,
+            );
             $refund = $this->createReservedRefund($payload, $lockedOrder->id);
             $this->reconcileRefundLines($refund, $lines);
 
@@ -339,11 +345,10 @@ class OrderRefundService
         );
 
         if (!($gatewayResult['success'] ?? false)) {
-            $refund->update([
-                'status' => 'failed',
-                'failure_reason' => (string) ($gatewayResult['message'] ?? 'Refund request failed'),
-                'failed_at' => now(),
-            ]);
+            $this->recoveryService()->recordFailure(
+                refund: $refund,
+                reason: (string) ($gatewayResult['message'] ?? 'Refund request failed'),
+            );
 
             $this->paymentSettlementService->recordOrderRefundFailure($order, (string) ($gatewayResult['message'] ?? 'refund_failed'));
 
@@ -363,12 +368,14 @@ class OrderRefundService
             'status' => $refundStatus,
             'paymongo_refund_id' => $gatewayResult['refund_id'] ?? null,
             'refunded_at' => $refundStatus === 'succeeded' ? now() : null,
-            'failure_reason' => null,
-            'failed_at' => null,
             'reason_code' => $resolvedReasonCode,
             'reason_note' => $mergedReasonNote !== '' ? $mergedReasonNote : null,
             'other_reason_note' => $otherReasonText !== '' ? $otherReasonText : null,
         ]);
+
+        if ($refundStatus === 'succeeded' && $refund->exists && $refund->getKey()) {
+            $this->recoveryService()->recordSuccessfulExecution($refund, $refund->processed_by);
+        }
 
         if ($refundStatus === 'succeeded') {
             $this->paymentSettlementService->settleOrderRefunded(
@@ -449,10 +456,7 @@ class OrderRefundService
             ];
         }
 
-        $requiresOwnerApproval = $this->shopOwnerApprovalPolicyService->requiresOwnerApprovalForRefund(
-            (int) ($refund->shop_owner_id ?? 0),
-            (float) ($refund->amount ?? 0)
-        );
+        $requiresOwnerApproval = (bool) ($refund->requires_owner_approval ?? true);
         if ($isExhaustedDeliveryRefund) {
             $requiresOwnerApproval = false;
         }
@@ -462,11 +466,6 @@ class OrderRefundService
         );
         $isCompanyCustomerRefund = strtolower(trim((string) ($order->shopOwner?->registration_type ?? ''))) === 'company'
             && !$isExhaustedDeliveryRefund;
-
-        // Individual shops should route refund approvals directly to shop owner without finance pre-approval.
-        if ($isIndividualRegistration && !$isExhaustedDeliveryRefund) {
-            $requiresOwnerApproval = true;
-        }
 
         $payload = [
             'approved_at' => $refund->approved_at ?? now(),
@@ -727,6 +726,10 @@ class OrderRefundService
 
         $isCompanyCustomerRefund = strtolower(trim((string) ($refund->order?->shopOwner?->registration_type ?? ''))) === 'company'
             && (string) ($refund->reason_code ?? '') !== 'delivery_attempts_exhausted';
+        $requiresOwnerApproval = (bool) ($refund->requires_owner_approval ?? true);
+        if ((string) ($refund->reason_code ?? '') === 'delivery_attempts_exhausted') {
+            $requiresOwnerApproval = false;
+        }
 
         if ($stageNormalized === 'finance') {
             if ($isCompanyCustomerRefund && (string) ($refund->shop_owner_status ?? 'pending') !== 'approved') {
@@ -766,6 +769,14 @@ class OrderRefundService
         }
 
         if ($stageNormalized === 'shop_owner') {
+            if (!$requiresOwnerApproval) {
+                return [
+                    'result' => 'invalid_state',
+                    'message' => 'Shop owner approval is not required by policy for this refund request.',
+                    'refund' => $refund,
+                ];
+            }
+
             $shopOwnerStatus = strtolower(trim((string) ($refund->shop_owner_status ?? 'pending')));
             $registrationType = strtolower(trim((string) ($refund->order?->shopOwner?->registration_type ?? '')));
             $isIndividualRegistration = $registrationType === 'individual';
@@ -791,8 +802,6 @@ class OrderRefundService
             'rejection_reason' => $rejectionReason,
             'approved_at' => now(),
             'processed_by' => $processedBy,
-            'failed_at' => null,
-            'failure_reason' => null,
         ];
 
         if (in_array($stageNormalized, ['staff', 'shop_owner'], true)) {
@@ -1291,12 +1300,11 @@ class OrderRefundService
     {
         $secretKey = (string) ($order->shopOwner?->paymongo_secret_key ?? '');
         if ($secretKey === '') {
-            $refund->update([
-                'status' => 'failed',
-                'failure_reason' => 'Payment gateway is not configured for this shop.',
-                'failed_at' => now(),
-                'processed_by' => $processedBy,
-            ]);
+            $this->recoveryService()->recordFailure(
+                refund: $refund,
+                reason: 'Payment gateway is not configured for this shop.',
+                processedBy: $processedBy,
+            );
 
             return [
                 'result' => 'failed',
@@ -1307,12 +1315,11 @@ class OrderRefundService
 
         $paymentId = $this->resolvePaymentId($order, $secretKey);
         if (!$paymentId) {
-            $refund->update([
-                'status' => 'failed',
-                'failure_reason' => 'Unable to resolve payment reference for refund.',
-                'failed_at' => now(),
-                'processed_by' => $processedBy,
-            ]);
+            $this->recoveryService()->recordFailure(
+                refund: $refund,
+                reason: 'Unable to resolve payment reference for refund.',
+                processedBy: $processedBy,
+            );
 
             return [
                 'result' => 'failed',
@@ -1327,12 +1334,11 @@ class OrderRefundService
         }
 
         if ($amount <= 0) {
-            $refund->update([
-                'status' => 'failed',
-                'failure_reason' => 'Refund amount is invalid.',
-                'failed_at' => now(),
-                'processed_by' => $processedBy,
-            ]);
+            $this->recoveryService()->recordFailure(
+                refund: $refund,
+                reason: 'Refund amount is invalid.',
+                processedBy: $processedBy,
+            );
 
             return [
                 'result' => 'failed',
@@ -1396,11 +1402,10 @@ class OrderRefundService
         );
 
         if (!($gatewayResult['success'] ?? false)) {
-            $refund->update([
-                'status' => 'failed',
-                'failure_reason' => (string) ($gatewayResult['message'] ?? 'Refund request failed'),
-                'failed_at' => now(),
-            ]);
+            $this->recoveryService()->recordFailure(
+                refund: $refund,
+                reason: (string) ($gatewayResult['message'] ?? 'Refund request failed'),
+            );
 
             $this->paymentSettlementService->recordOrderRefundFailure($order, (string) ($gatewayResult['message'] ?? 'refund_failed'));
 
@@ -1420,9 +1425,11 @@ class OrderRefundService
             'status' => $refundStatus,
             'paymongo_refund_id' => $gatewayResult['refund_id'] ?? null,
             'refunded_at' => $refundStatus === 'succeeded' ? now() : null,
-            'failure_reason' => null,
-            'failed_at' => null,
         ]);
+
+        if ($refundStatus === 'succeeded' && $refund->exists && $refund->getKey()) {
+            $this->recoveryService()->recordSuccessfulExecution($refund, $refund->processed_by);
+        }
 
         if ($refundStatus === 'succeeded') {
             if (Schema::hasTable('order_refund_items')) {
@@ -1580,6 +1587,16 @@ class OrderRefundService
 
             return OrderRefund::create($this->filterOrderRefundPayload($fallbackPayload));
         }
+    }
+
+    private function resolveRefundApprovalSnapshot(array $payload, int $shopOwnerId, float $amount): bool
+    {
+        if (($payload['flow_type'] ?? null) === 'cancel_auto'
+            || ($payload['reason_code'] ?? null) === 'delivery_attempts_exhausted') {
+            return false;
+        }
+
+        return $this->shopOwnerApprovalPolicyService->requiresOwnerApprovalForRefund($shopOwnerId, $amount);
     }
 
     private function resolveOrderCapturedAmount(Order $order): float
@@ -1765,10 +1782,7 @@ class OrderRefundService
             return;
         }
 
-        $requiresOwnerApproval = $this->shopOwnerApprovalPolicyService->requiresOwnerApprovalForRefund(
-            (int) ($refund->shop_owner_id ?? 0),
-            (float) ($refund->amount ?? 0)
-        );
+        $requiresOwnerApproval = (bool) ($refund->requires_owner_approval ?? true);
         $isIndividualRegistration = $this->isIndividualRegistrationType(
             (string) ($order->shopOwner?->registration_type ?? '')
         );
@@ -1777,8 +1791,9 @@ class OrderRefundService
             'stage' => 'submitted',
             'requires_owner_approval' => $requiresOwnerApproval,
         ]);
+        $data['source_type'] = 'order_refund';
 
-        if ($isIndividualRegistration) {
+        if ($isIndividualRegistration && $requiresOwnerApproval) {
             $this->notificationService->notifyRefundRequest(
                 (int) ($refund->shop_owner_id ?? 0),
                 $data,
@@ -1792,7 +1807,9 @@ class OrderRefundService
                 "Refund request for order #{$data['order_number']} (₱{$data['amount']}) needs finance review.",
                 $data,
                 '/finance?section=refund-approvals',
-                'high'
+                'high',
+                null,
+                true
             );
         }
 
@@ -1824,7 +1841,6 @@ class OrderRefundService
         ]);
 
         if ($stage === 'finance' && !$requiresOwnerApproval && $previousFinanceStatus !== 'approved' && $currentFinanceStatus === 'approved') {
-            $this->notifyShopOwnerBypassInfo($refund, $data);
             $this->notifyCustomerFinalApproval($refund, $data, 'Your refund request has been approved by finance and is awaiting return shipment confirmation.');
             return;
         }
@@ -1836,7 +1852,7 @@ class OrderRefundService
                 title: 'Refund Approval Required',
                 message: "Order #{$data['order_number']} requires your refund approval.",
                 data: $data,
-                actionUrl: '/shop-owner/refund-approvals',
+                actionUrl: $this->notificationService->ownerApprovalActionUrl('order_refund', $refund->id),
                 priority: 'high',
                 requiresAction: true,
             );
@@ -1852,7 +1868,9 @@ class OrderRefundService
                 "Shop owner approved refund for order #{$data['order_number']}. Final finance approval is required.",
                 $data,
                 '/finance?section=refund-approvals',
-                'high'
+                'high',
+                null,
+                true
             );
             return;
         }
@@ -1864,7 +1882,7 @@ class OrderRefundService
                 title: 'Refund Approved',
                 message: "Refund for order #{$data['order_number']} has been approved and is awaiting return shipment confirmation.",
                 data: $data,
-                actionUrl: '/shop-owner/refund-approvals',
+                actionUrl: $this->notificationService->ownerApprovalActionUrl('order_refund', $refund->id),
                 priority: 'high',
                 requiresAction: true,
             );
@@ -1907,20 +1925,7 @@ class OrderRefundService
             title: 'Refund Request Rejected',
             message: "Order #{$data['order_number']} refund request was rejected at " . ($stage === 'finance' ? 'finance' : 'shop owner') . " stage.",
             data: $data,
-            actionUrl: '/shop-owner/refund-approvals',
-            priority: 'medium',
-        );
-    }
-
-    private function notifyShopOwnerBypassInfo(OrderRefund $refund, array $data): void
-    {
-        $this->notificationService?->sendToShopOwner(
-            shopOwnerId: (int) ($refund->shop_owner_id ?? 0),
-            type: NotificationType::REFUND_REQUEST,
-            title: 'Owner Approval Bypassed By Settings',
-            message: "Refund request for order #{$data['order_number']} was finalized by finance because owner approval is disabled in shop settings.",
-            data: $data,
-            actionUrl: '/shop-owner/refund-approvals',
+            actionUrl: $this->notificationService->ownerApprovalActionUrl('order_refund', $refund->id),
             priority: 'medium',
         );
     }
@@ -2018,5 +2023,10 @@ class OrderRefundService
         } catch (\Throwable) {
             return null;
         }
+    }
+
+    private function recoveryService(): OrderRefundRecoveryService
+    {
+        return $this->orderRefundRecoveryService ?? app(OrderRefundRecoveryService::class);
     }
 }

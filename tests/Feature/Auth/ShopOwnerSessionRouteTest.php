@@ -10,10 +10,11 @@ class ShopOwnerSessionRouteTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_approved_shop_owner_can_read_promos_with_the_session_guard(): void
+    public function test_approved_individual_shop_owner_can_read_vouchers_with_the_session_guard(): void
     {
         $shopOwner = ShopOwner::factory()->approved()->create([
             'business_type' => 'retail',
+            'registration_type' => 'individual',
         ]);
 
         $this->actingAs($shopOwner, 'shop_owner')

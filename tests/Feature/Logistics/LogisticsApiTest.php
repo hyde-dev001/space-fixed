@@ -18,11 +18,13 @@ use App\Models\PosTransaction;
 use App\Models\RepairPaymentSession;
 use App\Models\RepairRequest;
 use App\Models\ShopOwner;
+use App\Models\ShopOwnerModule;
 use App\Models\User;
 use App\Services\Logistics\ProofService;
 use App\Services\Logistics\ShipmentLegService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Permission;
@@ -31,6 +33,25 @@ use Tests\TestCase;
 class LogisticsApiTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        ShopOwner::creating(function (ShopOwner $shop): void {
+            $shop->forceFill([
+                'registration_type' => 'company',
+                'business_type' => 'both',
+            ]);
+        });
+        ShopOwner::created(function (ShopOwner $shop): void {
+            ShopOwnerModule::factory()->create([
+                'shop_owner_id' => $shop->id,
+                'module_key' => 'logistics',
+                'enabled' => true,
+            ]);
+        });
+    }
 
     public function test_staff_without_logistics_permission_cannot_schedule_leg(): void
     {
@@ -70,12 +91,15 @@ class LogisticsApiTest extends TestCase
 
     public function test_shop_owner_can_assign_leg_to_valid_rider(): void
     {
-        $shop = ShopOwner::factory()->create(['registration_type' => 'individual']);
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
         $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
         $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id]);
+        $riderUser = User::factory()->create(['shop_owner_id' => $shop->id]);
         $rider = RiderProfile::factory()->create([
             'shop_owner_id' => $shop->id,
-            'rider_type' => 'shop_owner',
+            'rider_type' => 'employee',
+            'linked_type' => User::class,
+            'linked_id' => $riderUser->id,
         ]);
 
         $this->actingAs($shop, 'shop_owner')
@@ -107,7 +131,7 @@ class LogisticsApiTest extends TestCase
                 'assignment_type' => 'internal_rider',
                 'rider_profile_id' => $second->id,
             ])
-            ->assertUnprocessable();
+            ->assertForbidden();
     }
 
     public function test_rider_cannot_update_leg_assigned_to_another_rider(): void
@@ -138,44 +162,23 @@ class LogisticsApiTest extends TestCase
             ->assertForbidden();
     }
 
-    public function test_shop_owner_can_upload_delivery_proof_before_delivery(): void
+    public function test_shop_owner_cannot_upload_delivery_proof_without_rider_custody(): void
     {
         Storage::fake('local');
-        Storage::fake('public');
 
         $shop = ShopOwner::factory()->create();
         $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
         $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'status' => 'in_transit']);
 
         $this->actingAs($shop, 'shop_owner')
-            ->postJson("/api/logistics/legs/{$leg->id}/proof", [
-                'handoff_type' => 'delivery',
-                'proof_type' => 'photo',
-            ])
-            ->assertJsonValidationErrors('proof_file');
-
-        $this->actingAs($shop, 'shop_owner')
-            ->post("/api/logistics/legs/{$leg->id}/proof", [
-                'handoff_type' => 'delivery',
-                'proof_type' => 'photo',
-                'proof_file' => $this->fakeAttemptPhoto('proof.png'),
-                'file_path' => 'chosen/by/rider.png',
-            ], ['Accept' => 'application/json'])
-            ->assertJsonValidationErrors('file_path');
-
-        $response = $this->actingAs($shop, 'shop_owner')
             ->post("/api/logistics/legs/{$leg->id}/proof", [
                 'handoff_type' => 'delivery',
                 'proof_type' => 'photo',
                 'proof_file' => $this->fakeAttemptPhoto('proof.png'),
             ], ['Accept' => 'application/json'])
-            ->assertCreated();
+            ->assertForbidden();
 
-        $response->assertJsonMissingPath('proof.file_path');
-        $path = (string) $leg->proofs()->value('file_path');
-        $response->assertJsonPath('proof.proof_url', "/api/logistics/proofs/{$response->json('proof.id')}/file");
-        Storage::disk('local')->assertExists($path);
-        Storage::disk('public')->assertMissing($path);
+        $this->assertSame(0, $leg->proofs()->count());
     }
 
     public function test_proof_cannot_be_changed_after_delivery(): void
@@ -190,7 +193,7 @@ class LogisticsApiTest extends TestCase
                 'proof_type' => 'photo',
                 'proof_file' => $this->fakeAttemptPhoto('proof.png'),
             ], ['Accept' => 'application/json'])
-            ->assertUnprocessable();
+            ->assertForbidden();
     }
 
     public function test_assigned_rider_submits_proof_and_only_proof_approver_can_complete_delivery(): void
@@ -374,7 +377,7 @@ class LogisticsApiTest extends TestCase
         $this->assertSame([], Storage::disk('local')->allFiles());
     }
 
-    public function test_back_office_proof_capability_takes_precedence_over_rider_assignment(): void
+    public function test_back_office_proof_capability_does_not_bypass_custody_arrival(): void
     {
         Permission::findOrCreate('record-logistics-proof', 'user');
 
@@ -404,7 +407,9 @@ class LogisticsApiTest extends TestCase
                 'handoff_type' => 'delivery',
                 'proof_type' => 'photo',
                 'proof_file' => $this->fakeAttemptPhoto("{$capability}.png"),
-            ], ['Accept' => 'application/json'])->assertCreated();
+            ], ['Accept' => 'application/json'])
+                ->assertUnprocessable()
+                ->assertJsonValidationErrors('arrival');
         }
     }
 
@@ -684,6 +689,8 @@ class LogisticsApiTest extends TestCase
             'shipment_leg_id' => $leg->id,
             'handoff_type' => 'delivery',
             'review_status' => 'pending',
+            'confirmed_by_type' => User::class,
+            'confirmed_by_id' => $rider->id,
         ]);
 
         $this->actingAs($approver, 'user')
@@ -732,7 +739,7 @@ class LogisticsApiTest extends TestCase
 
         $this->actingAs($approver, 'user')
             ->postJson("/api/logistics/proofs/{$pickupProof->id}/approve")
-            ->assertUnprocessable();
+            ->assertForbidden();
 
         $this->assertSame('awaiting_proof_approval', $leg->fresh()->status->value);
         $this->assertSame('pending', $pickupProof->fresh()->review_status);
@@ -1008,13 +1015,13 @@ class LogisticsApiTest extends TestCase
 
         $this->actingAs($shop, 'shop_owner')
             ->postJson("/api/logistics/legs/{$leg->id}/resolve/retry", ['reason' => 'Retry stale page.'])
-            ->assertUnprocessable();
+            ->assertForbidden();
         $this->actingAs($shop, 'shop_owner')
             ->postJson("/api/logistics/legs/{$leg->id}/assign", [
                 'assignment_type' => 'internal_rider',
                 'rider_profile_id' => $riderProfileId,
             ])
-            ->assertUnprocessable();
+            ->assertForbidden();
     }
 
     public function test_final_paid_repair_pickup_refund_obeys_failure_responsibility(): void
@@ -1562,6 +1569,7 @@ class LogisticsApiTest extends TestCase
 
         $this->assertSame($first->json('attempt.id'), $second->json('attempt.id'));
         $this->assertSame(1, $leg->attempts()->count());
+        Auth::guard('user')->logout();
         $this->actingAs($shop, 'shop_owner')
             ->postJson("/api/logistics/legs/{$leg->id}/attempts", $payload)
             ->assertForbidden();
@@ -1606,10 +1614,10 @@ class LogisticsApiTest extends TestCase
 
     public function test_dispatcher_user_with_permission_can_cancel_its_shop_leg(): void
     {
-        Permission::findOrCreate('assign-logistics-deliveries', 'user');
+        Permission::findOrCreate('resolve-logistics-exceptions', 'user');
         $shop = ShopOwner::factory()->create();
         $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
-        $dispatcher->givePermissionTo('assign-logistics-deliveries');
+        $dispatcher->givePermissionTo('resolve-logistics-exceptions');
         $leg = ShipmentLeg::factory()->create(['shipment_id' => Shipment::factory()->create(['shop_owner_id' => $shop->id])->id, 'status' => 'delivery_attempted']);
         $leg->attempts()->create(['attempt_type' => 'delivery', 'status' => 'failed', 'reason_code' => 'other', 'attempted_at' => now()]);
 

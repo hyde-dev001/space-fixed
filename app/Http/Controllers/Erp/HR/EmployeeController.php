@@ -3,13 +3,19 @@
 namespace App\Http\Controllers\ERP\HR;
 
 use App\Http\Controllers\Controller;
+use App\Enums\EmployeeStatus;
+use App\Enums\SuspensionStatus;
 use App\Models\Employee;
+use App\Models\SuspensionRequest;
 use App\Models\User;
 use App\Models\HR\LeaveBalance;
 use App\Models\HR\AuditLog;
 use App\Mail\EmployeeInvitation;
 use App\Models\ShopOwner;
 use App\Services\BusinessAccessControlService;
+use App\Services\HR\EmployeeLinkedUserSynchronizer;
+use App\Services\HR\EmployeeOwnerProjection;
+use App\Services\HR\EmployeeOperationalPolicy;
 use App\Services\Logistics\RiderProfileSyncService;
 use App\Traits\HR\LogsHRActivity;
 use Illuminate\Http\Request;
@@ -21,12 +27,20 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Carbon\Carbon;
 use Spatie\Permission\Models\Role;
 
 class EmployeeController extends Controller
 {
     use LogsHRActivity;
+
+    public function __construct(
+        private readonly EmployeeLinkedUserSynchronizer $linkedUserSynchronizer,
+        private readonly EmployeeOwnerProjection $employeeOwnerProjection,
+        private readonly EmployeeOperationalPolicy $employeePolicy,
+    ) {
+    }
 
     private function mapLegacyUserRole(string $normalizedRole): string
     {
@@ -62,33 +76,6 @@ class EmployeeController extends Controller
     }
 
     /**
-     * Keep linked user login status aligned with employee suspension/reactivation.
-     */
-    private function syncLinkedUserStatus(Employee $employee, int $shopOwnerId, string $employeeStatus): void
-    {
-        $normalizedStatus = strtolower(trim($employeeStatus));
-        $targetUserStatus = match ($normalizedStatus) {
-            'active' => 'active',
-            'suspended' => 'suspended',
-            default => null,
-        };
-
-        if (!$targetUserStatus) {
-            return;
-        }
-
-        $linkedUser = $employee->user;
-        if (!$linkedUser) {
-            $linkedUser = User::where('shop_owner_id', $shopOwnerId)
-                ->where('email', $employee->email)
-                ->first();
-        }
-
-        if ($linkedUser && $linkedUser->status !== $targetUserStatus) {
-            $linkedUser->update(['status' => $targetUserStatus]);
-        }
-    }
-    /**
      * Display a listing of employees.
      */
     public function index(Request $request): JsonResponse
@@ -123,6 +110,12 @@ class EmployeeController extends Controller
 
         $employees = $query->orderBy('name')
             ->paginate($request->get('per_page', 15));
+
+        $employees->setCollection($employees->getCollection()->map(function (Employee $employee): array {
+            return $employee->toArray() + [
+                'owner_projection' => $this->employeeOwnerProjection->project($employee),
+            ];
+        }));
 
         return response()->json($employees);
     }
@@ -300,6 +293,8 @@ class EmployeeController extends Controller
             return [$employee, $newUser, $inviteUrl];
         });
 
+        $this->linkedUserSynchronizer->sync($employee);
+
         // DON'T auto-send email - work email likely doesn't exist yet
         // HR will manually share the link via personal email/WhatsApp/SMS
         $emailSent = false;
@@ -364,6 +359,7 @@ class EmployeeController extends Controller
         $response['permissions'] = $employee->user?->getAllPermissions()->pluck('name')->toArray() ?? [];
         $response['direct_permissions'] = $employee->user?->permissions->pluck('name')->toArray() ?? [];
         $response['role_permissions'] = $employee->user?->getPermissionsViaRoles()->pluck('name')->toArray() ?? [];
+        $response['owner_projection'] = $this->employeeOwnerProjection->project($employee);
 
         return response()->json($response);
     }
@@ -382,6 +378,10 @@ class EmployeeController extends Controller
 
         $employee = Employee::forShopOwner($user->shop_owner_id)->findOrFail($id);
 
+        if ($request->has('status') && $this->isDirectSuspensionStateMutation($employee, (string) $request->input('status'))) {
+            return $this->suspensionWorkflowRequiredResponse();
+        }
+
         $validator = Validator::make($request->all(), [
             'firstName' => 'sometimes|required|string|max:50',
             'lastName' => 'sometimes|required|string|max:50',
@@ -390,7 +390,7 @@ class EmployeeController extends Controller
             'position' => 'sometimes|required|string|max:100',
             'department' => 'sometimes|required|string|max:100',
             'hireDate' => 'sometimes|required|date',
-            'status' => 'sometimes|required|in:active,inactive,on-leave,suspended',
+            'status' => ['sometimes', 'required', Rule::enum(EmployeeStatus::class)],
             'address' => 'sometimes|required|string',
             'city' => 'sometimes|required|string|max:100',
             'state' => 'sometimes|required|string|max:100',
@@ -413,6 +413,13 @@ class EmployeeController extends Controller
 
         if ($validator->fails()) {
             return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        if ($request->has('status') && ! $this->employeePolicy->canChangeAccountState($employee, (string) $request->status)) {
+            return response()->json([
+                'error' => 'Terminated employees cannot be reactivated.',
+                'code' => 'EMPLOYEE_TERMINATED',
+            ], 422);
         }
 
         // Map camelCase to snake_case for database
@@ -459,7 +466,7 @@ class EmployeeController extends Controller
         $employee->update($data);
 
         if (isset($data['status'])) {
-            $this->syncLinkedUserStatus($employee, (int) $user->shop_owner_id, (string) $data['status']);
+            $this->linkedUserSynchronizer->sync($employee);
         }
 
         // Audit log
@@ -506,35 +513,7 @@ class EmployeeController extends Controller
      */
     public function suspend(Request $request, $id): JsonResponse
     {
-        $user = Auth::guard('user')->user();
-        
-        // Check if user is Manager or has any HR-related permissions
-        if (!$user->hasRole('Manager') && !$user->can('access-employee-directory') && !$user->can('access-attendance-records') && !$user->can('access-payslip-generation')) {
-            return response()->json(['error' => 'Unauthorized'], 403);
-        }
-
-        $validator = Validator::make($request->all(), [
-            'reason' => 'required|string|max:500',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json(['errors' => $validator->errors()], 422);
-        }
-
-        $employee = Employee::forShopOwner($user->shop_owner_id)->findOrFail($id);
-
-        $employee->update([
-            'status' => 'suspended',
-            'suspensionReason' => $request->reason,
-            'privileged_suspension_id' => null,
-        ]);
-
-        $this->syncLinkedUserStatus($employee, (int) $user->shop_owner_id, 'suspended');
-
-        return response()->json([
-            'message' => 'Employee suspended successfully',
-            'employee' => $employee
-        ]);
+        return $this->suspensionWorkflowRequiredResponse();
     }
 
     /**
@@ -542,26 +521,30 @@ class EmployeeController extends Controller
      */
     public function activate(Request $request, $id): JsonResponse
     {
-        $user = Auth::guard('user')->user();
+        return $this->suspensionWorkflowRequiredResponse();
+    }
 
-        if (!$user->hasRole('Manager') && !$user->can('access-employee-directory') && !$user->can('access-attendance-records') && !$user->can('access-payslip-generation')) {
-            return response()->json(['error' => 'Unauthorized'], 403);
+    private function isDirectSuspensionStateMutation(Employee $employee, string $targetStatus): bool
+    {
+        $target = EmployeeStatus::tryFrom(strtolower(trim($targetStatus)));
+        $current = $employee->status instanceof EmployeeStatus ? $employee->status : null;
+
+        if ($target === EmployeeStatus::SUSPENDED || $current === EmployeeStatus::SUSPENDED) {
+            return true;
         }
 
-        $employee = Employee::forShopOwner($user->shop_owner_id)->findOrFail($id);
+        return SuspensionRequest::query()
+            ->where('employee_id', $employee->getKey())
+            ->whereIn('status', [SuspensionStatus::PENDING_MANAGER, SuspensionStatus::PENDING_OWNER])
+            ->exists();
+    }
 
-        $employee->update([
-            'status' => 'active',
-            'suspension_reason' => null,
-            'privileged_suspension_id' => null,
-        ]);
-
-        $this->syncLinkedUserStatus($employee, (int) $user->shop_owner_id, 'active');
-
+    private function suspensionWorkflowRequiredResponse(): JsonResponse
+    {
         return response()->json([
-            'message' => 'Employee account reactivated successfully',
-            'employee' => $employee,
-        ]);
+            'error' => 'Employee suspension changes must go through the HR → Manager → Shop Owner workflow.',
+            'code' => 'SUSPENSION_WORKFLOW_REQUIRED',
+        ], 403);
     }
 
     /**
@@ -576,13 +559,17 @@ class EmployeeController extends Controller
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
-        $totalEmployees = Employee::forShopOwner($user->shop_owner_id)->count();
-        $activeEmployees = Employee::forShopOwner($user->shop_owner_id)->active()->count();
-        $onLeaveEmployees = Employee::forShopOwner($user->shop_owner_id)
-            ->whereIn('status', ['on_leave', 'on-leave'])
-            ->count();
-        $probationEmployees = Employee::forShopOwner($user->shop_owner_id)->where('status', 'probation')->count();
-        $suspendedEmployees = Employee::forShopOwner($user->shop_owner_id)->where('status', 'suspended')->count();
+        $employees = Employee::forShopOwner($user->shop_owner_id)
+            ->with('leaveRequests')
+            ->get();
+        $projections = $employees->map(
+            fn (Employee $employee): array => $this->employeeOwnerProjection->project($employee),
+        );
+        $totalEmployees = $projections->count();
+        $activeEmployees = $projections->where('account_state', EmployeeStatus::ACTIVE->value)->count();
+        $onLeaveEmployees = $projections->where('on_leave', true)->count();
+        $probationEmployees = $projections->where('probation', true)->count();
+        $suspendedEmployees = $projections->where('account_state', EmployeeStatus::SUSPENDED->value)->count();
 
         return response()->json([
             'totalEmployees' => $totalEmployees,

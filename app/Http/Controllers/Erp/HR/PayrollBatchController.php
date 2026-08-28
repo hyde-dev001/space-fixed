@@ -12,6 +12,7 @@ use App\Models\HR\LeaveRequest;
 use App\Models\HR\AuditLog;
 use App\Models\ShopOwner;
 use App\Services\HR\PayrollService;
+use App\Services\HR\EmployeeOperationalPolicy;
 use App\Traits\HR\LogsHRActivity;
 use App\Notifications\HR\PayslipGenerated;
 use Illuminate\Http\Request;
@@ -37,10 +38,12 @@ class PayrollBatchController extends Controller
     use LogsHRActivity;
 
     protected PayrollService $payrollService;
+    protected EmployeeOperationalPolicy $employeePolicy;
 
-    public function __construct(PayrollService $payrollService)
+    public function __construct(PayrollService $payrollService, EmployeeOperationalPolicy $employeePolicy)
     {
         $this->payrollService = $payrollService;
+        $this->employeePolicy = $employeePolicy;
     }
 
     // ============================================================
@@ -115,8 +118,18 @@ class PayrollBatchController extends Controller
         foreach ($employeeIds as $employeeId) {
             try {
                 $employee = Employee::forShopOwner($this->shopOwnerId($user))
-                    ->where('status', 'active')
                     ->findOrFail($employeeId);
+
+                if (! $this->employeePolicy->isEligibleForRoutinePayroll($employee)) {
+                    $errors[] = [
+                        'employee_id' => $employeeId,
+                        'employee_name' => $employee->first_name . ' ' . $employee->last_name,
+                        'message' => 'Employee is not eligible for routine payroll.',
+                        'error_code' => 'EMPLOYEE_NOT_ELIGIBLE_FOR_ROUTINE_PAYROLL',
+                        'severity' => 'error',
+                    ];
+                    continue;
+                }
 
                 // Already generated for this period?
                 $existingPayroll = Payroll::forEmployee($employeeId)
@@ -241,8 +254,17 @@ class PayrollBatchController extends Controller
         foreach ($employeeIds as $employeeId) {
             try {
                 $employee = Employee::forShopOwner($this->shopOwnerId($user))
-                    ->where('status', 'active')
                     ->findOrFail($employeeId);
+
+                if (! $this->employeePolicy->isEligibleForRoutinePayroll($employee)) {
+                    $errors[] = [
+                        'employee_id' => $employeeId,
+                        'employee_name' => $employee->first_name . ' ' . $employee->last_name,
+                        'error' => 'Employee is not eligible for routine payroll.',
+                        'error_code' => 'EMPLOYEE_NOT_ELIGIBLE_FOR_ROUTINE_PAYROLL',
+                    ];
+                    continue;
+                }
 
                 $existingPayroll = Payroll::forEmployee($employeeId)
                     ->forPeriod($payrollPeriod)

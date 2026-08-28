@@ -14,9 +14,9 @@ use App\Models\ShopOwnerModule;
 use App\Models\ShopReview;
 use App\Models\Supplier;
 use App\Models\User;
+use App\Services\OwnerOperationAudit;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
-use Spatie\Activitylog\Models\Activity;
 use Tests\TestCase;
 
 final class OwnerErpTenantIsolationTest extends TestCase
@@ -26,7 +26,6 @@ final class OwnerErpTenantIsolationTest extends TestCase
     public function test_owner_read_pages_only_return_data_from_the_authenticated_tenant(): void
     {
         config([
-            'shop_modules.owner_erp_workspace_enabled' => true,
             'shop_modules.enforcement_enabled' => true,
         ]);
         $owner = ShopOwner::factory()->approved()->create([
@@ -87,7 +86,6 @@ final class OwnerErpTenantIsolationTest extends TestCase
     public function test_owner_read_apis_only_return_data_from_the_authenticated_tenant(): void
     {
         config([
-            'shop_modules.owner_erp_workspace_enabled' => true,
             'shop_modules.enforcement_enabled' => true,
         ]);
         $owner = ShopOwner::factory()->approved()->create([
@@ -142,16 +140,13 @@ final class OwnerErpTenantIsolationTest extends TestCase
             'shop_owner_id' => $otherOwner->id,
             'name' => 'Other tenant API supplier',
         ]);
-        Activity::create([
-            'log_name' => 'default',
-            'description' => 'Other tenant activity',
-            'subject_type' => ShopOwner::class,
-            'subject_id' => $otherOwner->id,
-            'event' => 'updated',
-            'causer_type' => ShopOwner::class,
-            'causer_id' => $otherOwner->id,
-            'properties' => [],
-        ]);
+        app(OwnerOperationAudit::class)->record(
+            actor: $otherOwner,
+            tenantOwnerId: (int) $otherOwner->getKey(),
+            module: 'settings',
+            action: 'other-tenant-action',
+            result: 'succeeded',
+        );
 
         $this->actingAs($owner, 'shop_owner')
             ->getJson('/api/shop-owner/erp/crm/customers')
@@ -192,7 +187,7 @@ final class OwnerErpTenantIsolationTest extends TestCase
             ->assertJsonPath('metrics.pending_issues', 0);
 
         $this->actingAs($owner, 'shop_owner')
-            ->getJson('/api/shop-owner/erp/manager/audit-logs')
+            ->getJson('/api/shop-owner/audit-logs')
             ->assertOk()
             ->assertJsonPath('logs.total', 0)
             ->assertJsonMissing(['description' => 'Other tenant activity']);

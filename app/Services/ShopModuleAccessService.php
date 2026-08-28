@@ -150,15 +150,16 @@ final class ShopModuleAccessService
     }
 
     /**
+     * @param bool $enforceState Whether persisted module state should gate eligible modules.
      * @return array<string, array{eligible: bool, enabled: bool, accessible: bool, code: ?string, reason: ?string}>
      */
-    public function statesFor(ShopOwner $owner): array
+    public function statesFor(ShopOwner $owner, bool $enforceState = true): array
     {
         $owner->loadMissing('modules');
         $states = [];
 
         foreach (array_keys(config('shop_modules.modules', [])) as $moduleKey) {
-            $decision = $this->decide($owner, $moduleKey);
+            $decision = $this->decide($owner, $moduleKey, $enforceState);
             $moduleState = $this->findModuleState($owner, $moduleKey);
 
             $states[$moduleKey] = [

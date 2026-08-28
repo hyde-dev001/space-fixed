@@ -100,7 +100,7 @@ class PurchaseOrderPolicy
     {
         return $user->can('procurement.complete_purchase_orders')
             && $user->shop_owner_id === $purchaseOrder->shop_owner_id
-            && $purchaseOrder->status === 'delivered';
+            && $purchaseOrder->isAwaitingClosure();
     }
 
     public function receive(User $user, PurchaseOrder $purchaseOrder): bool
@@ -109,7 +109,7 @@ class PurchaseOrderPolicy
             && $user->can('view-inventory')
             && $user->shop_owner_id === $purchaseOrder->shop_owner_id
             && !$purchaseOrder->is_historical
-            && in_array($purchaseOrder->status, ['in_transit', 'partially_received'], true);
+            && $purchaseOrder->isReceiving();
     }
 
     public function voidReceipt(User $user, PurchaseOrder $purchaseOrder): bool

@@ -84,7 +84,7 @@ const Repair: React.FC<Props> = ({ shops }) => {
     ? liveBadgeCounts.chatIconCount
     : initialChatIconCount;
   const cartBadgeCount = Number((page.props as any)?.cartIconCount ?? (cartLoading ? 0 : cartCount) ?? 0);
-  const meHref = isAuthenticated ? '/customer-profile' : '/user/login';
+  const meHref = isAuthenticated ? '/customer-profile' : '/login';
   const [sortBy, setSortBy] = useState('near_me');
   const [isSortOpen, setIsSortOpen] = useState(false);
   const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);

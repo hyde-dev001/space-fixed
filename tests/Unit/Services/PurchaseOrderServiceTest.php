@@ -156,11 +156,31 @@ class PurchaseOrderServiceTest extends TestCase
             'status' => 'completed',
         ]);
 
+        PurchaseOrder::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'supplier_id' => $this->supplier->id,
+            'status' => 'partially_received',
+        ]);
+
+        PurchaseOrder::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'supplier_id' => $this->supplier->id,
+            'status' => 'delivered',
+        ]);
+
+        PurchaseOrder::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'supplier_id' => $this->supplier->id,
+            'status' => 'cancelled',
+        ]);
+
         $metrics = $this->service->getMetrics($this->shopOwner->id);
 
-        $this->assertEquals(2, $metrics['total_purchase_orders']);
-        $this->assertEquals(1, $metrics['active_orders']);
+        $this->assertEquals(5, $metrics['total_purchase_orders']);
+        $this->assertEquals(2, $metrics['active_orders']);
+        $this->assertEquals(1, $metrics['awaiting_closure_orders']);
         $this->assertEquals(1, $metrics['completed_orders']);
+        $this->assertEquals(1, $metrics['cancelled_orders']);
     }
 
     /** @test */

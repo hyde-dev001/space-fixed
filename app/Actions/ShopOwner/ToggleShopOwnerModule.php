@@ -3,6 +3,7 @@
 namespace App\Actions\ShopOwner;
 
 use App\Models\ShopOwner;
+use App\Services\OwnerOperationAudit;
 use App\Services\ShopModuleAccessService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -12,6 +13,7 @@ final class ToggleShopOwnerModule
 {
     public function __construct(
         private readonly ShopModuleAccessService $access,
+        private readonly OwnerOperationAudit $audit,
     ) {}
 
     /**
@@ -54,20 +56,26 @@ final class ToggleShopOwnerModule
             }
 
             $module->update(['enabled' => $enabled]);
-            activity()
-                ->causedBy($lockedOwner)
-                ->performedOn($module)
-                ->withProperties([
-                    'actor_type' => 'shop_owner',
-                    'actor_guard' => 'shop_owner',
-                    'actor_id' => (int) $lockedOwner->id,
-                    'shop_owner_id' => (int) $lockedOwner->id,
-                    'module_key' => $moduleKey,
-                    'old_enabled' => $oldEnabled,
-                    'new_enabled' => $enabled,
+            $this->audit->record(
+                actor: $lockedOwner,
+                tenantOwnerId: (int) $lockedOwner->getKey(),
+                module: 'settings',
+                action: 'shop_owner_module_toggled',
+                result: 'succeeded',
+                subject: $module,
+                context: [
                     'correlation_id' => $correlationId,
-                ])
-                ->log('shop_owner_module_toggled');
+                    'source' => 'settings.modules-team',
+                    'before' => [
+                        'enabled' => $oldEnabled,
+                        'module_key' => $moduleKey,
+                    ],
+                    'after' => [
+                        'enabled' => $enabled,
+                        'module_key' => $moduleKey,
+                    ],
+                ],
+            );
 
             return [
                 'module_key' => $moduleKey,

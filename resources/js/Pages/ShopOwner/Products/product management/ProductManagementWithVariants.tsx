@@ -38,6 +38,15 @@ type Product = {
   variants?: Variant[];
 };
 
+type ProductPageProps = {
+  erpMode?: boolean;
+  auth?: {
+    shop_owner?: {
+      registration_type?: string | null;
+    } | null;
+  };
+};
+
 type ShowroomEntitlement = {
   business_type: string;
   is_eligible: boolean;
@@ -171,8 +180,9 @@ const MetricCard: React.FC<MetricCardProps> = ({
 };
 
 export default function ProductManagement() {
-  const page = usePage<{ erpMode?: boolean }>();
+  const page = usePage<ProductPageProps>();
   const Layout = page.props.erpMode ? AppLayoutERP : AppLayoutShopOwner;
+  const isCompanyOwner = page.props.auth?.shop_owner?.registration_type === 'company';
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [showArchived, setShowArchived] = useState(false);
@@ -503,6 +513,8 @@ export default function ProductManagement() {
   };
 
   const handleOpenModal = async (product?: Product) => {
+    if (isCompanyOwner) return;
+
     setShow3DShoeModels(false);
     setProduct3DFiles([]);
     setExistingShowroomFrameCount(0);
@@ -1315,6 +1327,8 @@ export default function ProductManagement() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (isCompanyOwner) return;
+
     // Validation
     if (!formData.name || (!editingProduct && !formData.price)) {
       Swal.fire({
@@ -1538,6 +1552,8 @@ export default function ProductManagement() {
   };
 
   const handleArchive = async (id: number) => {
+    if (isCompanyOwner) return;
+
     const result = await Swal.fire({
       title: 'Archive Product?',
       text: 'This product will be hidden from active lists until it is restored.',
@@ -1587,6 +1603,8 @@ export default function ProductManagement() {
   };
 
   const handleRestore = async (id: number) => {
+    if (isCompanyOwner) return;
+
     const result = await Swal.fire({
       title: 'Restore Product?',
       text: 'This product will be moved back to active products.',
@@ -1654,15 +1672,19 @@ export default function ProductManagement() {
   return (
     <>
       <Layout>
-        <Head title="Product Management" />
+        <Head title={isCompanyOwner ? 'Product Catalog' : 'Product Management'} />
 
         <div className="space-y-6">
           {/* Header */}
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Product Management</h1>
+              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+                {isCompanyOwner ? 'Product Catalog' : 'Product Management'}
+              </h1>
               <p className="text-gray-600 dark:text-gray-400 mt-1">
-                Manage your shoe inventory with variant-based stock control
+                {isCompanyOwner
+                  ? 'Review shoe products uploaded for your company.'
+                  : 'Manage your shoe inventory with variant-based stock control'}
               </p>
             </div>
             <div className="flex items-center gap-3">
@@ -1673,7 +1695,7 @@ export default function ProductManagement() {
               >
                 {showArchived ? 'Show Active' : 'Show Archived'}
               </button>
-              {!showArchived && (
+              {!showArchived && !isCompanyOwner && (
                 <button
                   onClick={() => handleOpenModal()}
                   className="px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
@@ -1747,7 +1769,11 @@ export default function ProductManagement() {
                 ) : products.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="px-6 py-12 text-center text-gray-500 dark:text-gray-400">
-                      {showArchived ? 'No archived products found.' : 'No products yet. Create your first product!'}
+                      {showArchived
+                        ? 'No archived products found.'
+                        : isCompanyOwner
+                          ? 'No shoe products are available yet. Ask authorized staff to add products for this shop.'
+                          : 'No products yet. Create your first product!'}
                     </td>
                   </tr>
                 ) : (
@@ -1814,7 +1840,9 @@ export default function ProductManagement() {
                         </span>
                       </td>
                       <td className="px-6 py-4 text-right flex items-center justify-end gap-2">
-                        {!showArchived ? (
+                        {isCompanyOwner ? (
+                          <span className="text-xs font-medium text-gray-500 dark:text-gray-400">View only</span>
+                        ) : !showArchived ? (
                           <>
                             <button
                               onClick={() => handleOpenModal(product)}
@@ -1889,7 +1917,7 @@ export default function ProductManagement() {
       </Layout>
 
       {/* Add/Edit Product Modal with Variant Management */}
-      {isModalOpen && createPortal(
+      {!isCompanyOwner && isModalOpen && createPortal(
         <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-2">
           <div className="bg-white dark:bg-gray-800 rounded-xl max-w-7xl w-full shadow-2xl relative flex flex-col" style={{ height: 'calc(100vh - 1rem)' }}>
             <div className="sticky top-0 p-6 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-t-xl z-10">

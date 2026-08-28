@@ -8,9 +8,11 @@ use App\Models\ShopOwner;
 use App\Models\User;
 use App\Enums\ApprovalStatus;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Inertia\Testing\AssertableInertia as Assert;
 use Illuminate\Routing\Route as RoutingRoute;
 use Illuminate\Support\Facades\Route;
 use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
@@ -22,9 +24,49 @@ class FinanceRouteContractTest extends TestCase
     {
         parent::setUp();
         app(PermissionRegistrar::class)->forgetCachedPermissions();
-        foreach (['access-finance-invoices', 'access-finance-expenses', 'access-finance-dashboard', 'manage-finance-tax', 'access-approval-workflow'] as $permission) {
+        foreach (['access-finance-invoices', 'access-finance-expenses', 'access-finance-dashboard', 'manage-finance-tax', 'access-approval-workflow', 'access-repair-price-approval'] as $permission) {
             Permission::findOrCreate($permission, 'user');
         }
+    }
+
+    public function test_repair_pricing_notification_destination_renders_the_canonical_finance_page(): void
+    {
+        $shop = ShopOwner::factory()->approved()->create([
+            'business_type' => 'both',
+        ]);
+        $financeUser = User::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'force_password_change' => false,
+        ]);
+        $financeUser->givePermissionTo('access-repair-price-approval');
+
+        $this->actingAs($financeUser, 'user')
+            ->get('/finance?section=repair-pricing')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('ERP/Finance/Finance')
+                ->where('auth.user.id', $financeUser->id));
+    }
+
+    public function test_finance_role_can_open_the_repair_pricing_notification_destination(): void
+    {
+        $shop = ShopOwner::factory()->approved()->create([
+            'business_type' => 'both',
+        ]);
+        $financeUser = User::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'role' => 'FINANCE',
+            'force_password_change' => false,
+        ]);
+        $financeRole = Role::findOrCreate('Finance', 'user');
+        $financeRole->givePermissionTo('access-repair-price-approval');
+        $financeUser->assignRole($financeRole);
+
+        $this->actingAs($financeUser, 'user')
+            ->get('/finance?section=repair-pricing')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('ERP/Finance/Finance'));
     }
 
     public function test_canonical_finance_routes_are_the_only_active_write_family(): void

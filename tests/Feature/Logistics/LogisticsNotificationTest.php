@@ -84,7 +84,7 @@ class LogisticsNotificationTest extends TestCase
         $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
         $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'status' => 'in_transit']);
 
-        app(ProofService::class)->recordProof($leg, ['handoff_type' => 'delivery', 'proof_type' => 'photo']);
+        app(ProofService::class)->recordProof($leg, ['handoff_type' => 'delivery', 'proof_type' => 'tracking_confirmation']);
 
         $this->assertDatabaseHas('notifications', [
             'user_id' => $dispatcher->id,

@@ -22,7 +22,6 @@ export type ErpCapabilities = Record<string, ErpCapability>;
 export interface ErpUrls {
   portal: string | null;
   settings: string | null;
-  workspace: string | null;
   notifications: string | null;
   profile: string | null;
   logout: string | null;

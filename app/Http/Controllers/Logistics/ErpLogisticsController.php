@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Logistics;
 
+use App\Enums\Logistics\LogisticsAction;
 use App\Http\Controllers\Controller;
 use App\Enums\Logistics\RiderProgressState;
 use App\Models\Logistics\DeliveryAssignment;
@@ -19,7 +20,9 @@ use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use App\Models\User;
 use App\Services\Logistics\ArrivalService;
+use App\Services\Logistics\LogisticsActorPolicy;
 use App\Services\Logistics\RiderProfileSyncService;
+use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -35,14 +38,23 @@ use Inertia\Response;
 
 class ErpLogisticsController extends Controller
 {
-    public function __construct(private ArrivalService $arrivals) {}
+    public function __construct(
+        private ArrivalService $arrivals,
+        private LogisticsActorPolicy $logisticsPolicy,
+    ) {}
 
     public function dashboard(): Response
     {
         $shopOwnerId = $this->authorizedShopOwnerId('access-logistics-dashboard');
+        $context = $this->erpContext();
+        $ownerMode = $context?->isOwnerMode() === true;
+        $user = Auth::guard('user')->user();
 
         return Inertia::render('ERP/Logistics/Dashboard', [
             'stats' => $this->stats($shopOwnerId),
+            'canViewShipments' => $ownerMode || (bool) ($user?->can('assign-logistics-deliveries')
+                || $user?->can('manage-logistics-riders')),
+            'canManageRiders' => $ownerMode || (bool) $user?->can('manage-logistics-riders'),
         ]);
     }
 
@@ -65,12 +77,30 @@ class ErpLogisticsController extends Controller
         }
 
         $shopOwnerId = $this->authorizedShopOwnerId('assign-logistics-deliveries');
-        $isDispatcher = $ownerMode || ($user && (
+        $shop = ShopOwner::query()->findOrFail($shopOwnerId);
+        $actor = $context?->actor() ?? ($ownerMode
+            ? Auth::guard('shop_owner')->user()
+            : $user);
+        $rider = $actor instanceof Authenticatable
+            ? $this->trustedRiderProfile($request, $actor, $shop)
+            : null;
+        $riderMode = $rider instanceof RiderProfile;
+        $isDispatcher = ! $riderMode && ($ownerMode || ($user && (
             $user->can('assign-logistics-deliveries') ||
             $user->can('manage-logistics-riders')
-        ));
-        $canAssign = ! $ownerMode && $user && $user->can('assign-logistics-deliveries');
-        $shop = ShopOwner::query()->findOrFail($shopOwnerId);
+        )));
+        $canAssign = ! $riderMode
+            && $actor instanceof Authenticatable
+            && $this->logisticsPolicy->canPerform($actor, $shop, LogisticsAction::ASSIGN_RIDER);
+        $canApproveProof = ! $riderMode
+            && $actor instanceof Authenticatable
+            && $this->logisticsPolicy->canPerform($actor, $shop, LogisticsAction::REVIEW_PROOF);
+        $canUpdateStatus = $riderMode;
+        $canRecordProof = $riderMode
+            && $actor instanceof Authenticatable
+            && ($actor instanceof ShopOwner || $actor->can('record-logistics-proof'));
+        $canReportIssue = $riderMode;
+        $riderProfileId = $rider?->id;
         $search = trim((string) ($request->validate([
             'search' => ['nullable', 'string', 'max:100'],
         ])['search'] ?? ''));
@@ -85,7 +115,7 @@ class ErpLogisticsController extends Controller
 
         return Inertia::render('ERP/Logistics/Shipments', [
             'shipments' => tap(Shipment::query()
-                ->with(['deliveryDisputes', 'legs' => function ($query) use ($user, $isDispatcher) {
+                ->with(['deliveryDisputes', 'legs' => function ($query) use ($isDispatcher, $riderProfileId) {
                     $query->with([
                         'assignments.riderProfile',
                         'proofs',
@@ -104,12 +134,9 @@ class ErpLogisticsController extends Controller
                         ->where('attempt_type', 'pickup')->where('status', 'failed')]);
 
                     if (! $isDispatcher) {
-                        $query->whereHas('assignments', function ($assignments) use ($user) {
+                        $query->whereHas('assignments', function ($assignments) use ($riderProfileId) {
                             $assignments->whereIn('status', ['assigned', 'accepted'])
-                                ->whereHas('riderProfile', function ($riders) use ($user) {
-                                    $riders->where('linked_type', User::class)
-                                        ->where('linked_id', $user->id);
-                                });
+                                ->where('rider_profile_id', $riderProfileId);
                         });
                     }
                 }])
@@ -144,13 +171,10 @@ class ErpLogisticsController extends Controller
                 ->when($purpose !== 'all', function ($query) use ($purpose) {
                     $query->where('purpose', $purpose);
                 })
-                ->when(! $isDispatcher, function ($query) use ($user) {
-                    $query->whereHas('legs.assignments', function ($assignments) use ($user) {
+                ->when(! $isDispatcher, function ($query) use ($riderProfileId) {
+                    $query->whereHas('legs.assignments', function ($assignments) use ($riderProfileId) {
                         $assignments->whereIn('status', ['assigned', 'accepted'])
-                            ->whereHas('riderProfile', function ($riders) use ($user) {
-                                $riders->where('linked_type', User::class)
-                                    ->where('linked_id', $user->id);
-                            });
+                            ->where('rider_profile_id', $riderProfileId);
                     });
                 })
                 ->latest()
@@ -179,11 +203,13 @@ class ErpLogisticsController extends Controller
             ],
             'today' => now(config('app.shop_timezone', 'Asia/Manila'))->toDateString(),
             'canAssign' => $canAssign,
-            'canUpdateStatus' => false,
-            'canRecordProof' => false,
-            'canApproveProof' => ! $ownerMode && $user && ($user->can('approve-proof-of-delivery') || $user->can('assign-logistics-deliveries')),
+            'canUpdateStatus' => $canUpdateStatus,
+            'canRecordProof' => $canRecordProof,
+            'canApproveProof' => $canApproveProof,
             'canResolveDisputes' => ! $ownerMode && $user && $user->can('resolve-logistics-exceptions'),
-            'riderMode' => false,
+            'canReportIssue' => $canReportIssue,
+            'canViewShipments' => $isDispatcher || $riderMode,
+            'riderMode' => $riderMode,
             'maxDeliveryAttempts' => $maxDeliveryAttempts,
             'assignableRiders' => $canAssign
                 ? RiderProfile::query()
@@ -223,11 +249,11 @@ class ErpLogisticsController extends Controller
             default => null,
         };
 
-        $rider = RiderProfile::query()
-            ->where('shop_owner_id', $shopOwnerId)
-            ->where('linked_type', User::class)
-            ->where('linked_id', $user->id)
-            ->firstOrFail();
+        $rider = $this->logisticsPolicy->resolveRiderProfile($user, ShopOwner::query()->findOrFail($shopOwnerId))
+            ?? abort(403);
+        $hasActiveAssignment = $rider->assignments()
+            ->whereIn('status', ['assigned', 'accepted'])
+            ->exists();
 
         $batches = DeliveryBatch::query()
             ->with([
@@ -372,7 +398,9 @@ class ErpLogisticsController extends Controller
                 'list' => $this->paginateDeliveryItems($filtered, $request),
                 'filters' => compact('tab', 'business', 'window', 'search'),
             ],
-            'canRecordProof' => $user->can('record-logistics-proof'),
+            'canRecordProof' => $hasActiveAssignment && $user->can('record-logistics-proof'),
+            'canUpdateStatus' => $hasActiveAssignment,
+            'canReportIssue' => $hasActiveAssignment,
             'maxDeliveryAttempts' => (int) LogisticsSetting::firstOrCreate([
                 'shop_owner_id' => $shopOwnerId,
             ])->max_delivery_attempts,
@@ -875,28 +903,41 @@ class ErpLogisticsController extends Controller
     public function riders(Request $request): Response
     {
         $shopOwnerId = $this->authorizedShopOwnerId('manage-logistics-riders');
+        $ownerMode = $this->isOwnerMode();
         $availability = $request->query('availability', 'all');
         $type = $request->query('type', 'all');
-        if (! $this->isOwnerMode()) {
+        if (! $ownerMode) {
             app(RiderProfileSyncService::class)->syncShop($shopOwnerId);
         }
 
+        $riders = RiderProfile::query()
+            ->select($ownerMode
+                ? ['id', 'shop_owner_id', 'name', 'rider_type', 'availability_status', 'active', 'daily_capacity']
+                : ['*'])
+            ->where('shop_owner_id', $shopOwnerId)
+            ->when(in_array($availability, ['available', 'busy', 'inactive'], true), function ($query) use ($availability) {
+                $query->where('availability_status', $availability);
+            })
+            ->when(in_array($type, ['employee', 'contractor', 'shop_owner'], true), function ($query) use ($type) {
+                $query->where('rider_type', $type);
+            })
+            ->orderBy('name')
+            ->paginate(10)
+            ->withQueryString();
+
+        if ($ownerMode) {
+            $riders->getCollection()->transform(
+                static fn (RiderProfile $rider): RiderProfile => $rider->setAttribute('phone', null),
+            );
+        }
+
         return Inertia::render('ERP/Logistics/Riders', [
-            'riders' => RiderProfile::query()
-                ->where('shop_owner_id', $shopOwnerId)
-                ->when(in_array($availability, ['available', 'busy', 'inactive'], true), function ($query) use ($availability) {
-                    $query->where('availability_status', $availability);
-                })
-                ->when(in_array($type, ['employee', 'contractor', 'shop_owner'], true), function ($query) use ($type) {
-                    $query->where('rider_type', $type);
-                })
-                ->orderBy('name')
-                ->paginate(10)
-                ->withQueryString(),
+            'riders' => $riders,
             'filters' => [
                 'availability' => $availability,
                 'type' => $type,
             ],
+            'canManageRiders' => ! $ownerMode,
         ]);
     }
 
@@ -1018,6 +1059,29 @@ class ErpLogisticsController extends Controller
         $context = request()->attributes->get('erp.actor_context');
 
         return $context instanceof ErpActorContext ? $context : null;
+    }
+
+    private function trustedRiderProfile(
+        Request $request,
+        Authenticatable $actor,
+        ShopOwner $shop,
+    ): ?RiderProfile {
+        $requested = $request->boolean('rider_mode')
+            || strtolower((string) $request->query('mode')) === 'rider';
+
+        if (! $requested) {
+            return null;
+        }
+
+        $rider = $this->logisticsPolicy->resolveRiderProfile($actor, $shop);
+
+        if (! $rider || ! $rider->assignments()
+            ->whereIn('status', ['assigned', 'accepted'])
+            ->exists()) {
+            return null;
+        }
+
+        return $rider;
     }
 
     private function stats(int $shopOwnerId): array

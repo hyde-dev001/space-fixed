@@ -8,6 +8,7 @@ use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
 use App\Models\ShopOwner;
+use App\Models\ShopOwnerModule;
 use App\Models\User;
 use App\Services\Logistics\BatchDispatchService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -17,6 +18,25 @@ use Tests\TestCase;
 class RiderTenantAuthorizationTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        ShopOwner::creating(function (ShopOwner $shop): void {
+            $shop->forceFill([
+                'registration_type' => 'company',
+                'business_type' => 'both',
+            ]);
+        });
+        ShopOwner::created(function (ShopOwner $shop): void {
+            ShopOwnerModule::factory()->create([
+                'shop_owner_id' => $shop->id,
+                'module_key' => 'logistics',
+                'enabled' => true,
+            ]);
+        });
+    }
 
     public function test_rider_profile_cannot_link_a_user_from_another_shop(): void
     {

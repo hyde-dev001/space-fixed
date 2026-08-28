@@ -32,6 +32,38 @@ class NotificationService
         $this->recipientResolver ??= app(RecipientResolver::class);
     }
 
+    public function ownerApprovalActionUrl(string $sourceType, mixed $sourceId): string
+    {
+        $allowedSourceTypes = [
+            'order_refund',
+            'repair_refund',
+            'product_price_change',
+            'repair_price_change',
+            'repair_package_price_change',
+            'payslip',
+            'salary_change',
+            'purchase_request',
+            'expense',
+            'repair_rejection',
+            'suspension_request',
+        ];
+
+        if (! in_array($sourceType, $allowedSourceTypes, true)) {
+            return '/shop-owner/action-center';
+        }
+
+        $sourceId = filter_var($sourceId, FILTER_VALIDATE_INT, [
+            'options' => [
+                'min_range' => 1,
+                'max_range' => 9_007_199_254_740_991,
+            ],
+        ]);
+
+        return $sourceId === false
+            ? '/shop-owner/action-center'
+            : "/shop-owner/action-center?bucket=needs_my_decision&approval={$sourceType}:{$sourceId}";
+    }
+
     // ==================== CORE METHODS ====================
 
     /**
@@ -247,7 +279,8 @@ class NotificationService
         string $message,
         ?array $data = null,
         ?string $actionUrl = null,
-        ?int $shopId = null
+        ?int $shopId = null,
+        bool $requiresAction = false
     ): ?Notification {
         // Convert string type to enum
         $notificationType = NotificationType::tryFrom($type);
@@ -256,7 +289,16 @@ class NotificationService
             return null;
         }
 
-        return $this->sendToUser($userId, $notificationType, $title, $message, $data, $actionUrl, $shopId);
+        return $this->sendToUser(
+            userId: $userId,
+            type: $notificationType,
+            title: $title,
+            message: $message,
+            data: $data,
+            actionUrl: $actionUrl,
+            shopId: $shopId,
+            requiresAction: $requiresAction,
+        );
     }
 
     // ==================== CUSTOMER NOTIFICATIONS ====================
@@ -736,7 +778,8 @@ class NotificationService
             message: "Expense of ₱{$expenseData['amount']} requires your approval",
             data: $expenseData,
             actionUrl: $this->financeExpenseActionUrl($expenseData),
-            shopId: $shopId
+            shopId: $shopId,
+            requiresAction: true
         );
     }
 
@@ -754,8 +797,9 @@ class NotificationService
             title: 'Leave Request Pending',
             message: "{$leaveData['employee_name']} has requested leave from {$leaveData['start_date']} to {$leaveData['end_date']}",
             data: $leaveData,
-            actionUrl: '/erp/manager/dashboard',
-            shopId: $shopId
+            actionUrl: '/erp/manager/leave-approvals',
+            shopId: $shopId,
+            requiresAction: true
         );
     }
 
@@ -773,7 +817,7 @@ class NotificationService
             title: 'Invoice Auto-Generated',
             message: "Invoice {$invoiceData['reference']} was created from job order",
             data: $invoiceData,
-            actionUrl: '/erp/finance/invoices',
+            actionUrl: $this->financeInvoiceActionUrl($invoiceData),
             shopId: $shopId
         );
     }
@@ -818,7 +862,7 @@ class NotificationService
         bool $requiresAction = false,
     ): void {
         $users = User::where('shop_owner_id', $shopId)
-            ->whereHas('roles', fn ($q) => $q->where('name', $roleName))
+            ->whereHas('roles', fn ($q) => $q->whereRaw('LOWER(name) = ?', [strtolower($roleName)]))
             ->get();
 
         foreach ($users as $user) {
@@ -875,12 +919,32 @@ class NotificationService
 
         if ($recipients->isEmpty()) {
             // Backward-compatible fallback.
-            $this->sendToErpRole('HR', $shopId, NotificationType::LEAVE_SUBMITTED, $title, $message, $leaveData, '/erp/hr?section=leaves', 'medium');
+            $this->sendToErpRole(
+                roleName: 'HR',
+                shopId: $shopId,
+                type: NotificationType::LEAVE_SUBMITTED,
+                title: $title,
+                message: $message,
+                data: $leaveData,
+                actionUrl: '/erp/hr?section=leaves',
+                priority: 'medium',
+                requiresAction: true,
+            );
             return;
         }
 
         foreach ($recipients as $recipient) {
-            $this->sendToUser($recipient->id, NotificationType::LEAVE_SUBMITTED, $title, $message, $leaveData, '/erp/hr?section=leaves', $shopId, 'medium');
+            $this->sendToUser(
+                userId: (int) $recipient->id,
+                type: NotificationType::LEAVE_SUBMITTED,
+                title: $title,
+                message: $message,
+                data: $leaveData,
+                actionUrl: '/erp/hr?section=leaves',
+                shopId: $shopId,
+                priority: 'medium',
+                requiresAction: true,
+            );
         }
     }
 
@@ -911,10 +975,16 @@ class NotificationService
     public function notifyOvertimeSubmitted(int $shopId, array $otData): void
     {
         $employeeName = $otData['employee_name'] ?? 'An employee';
-        $this->sendToErpRole('HR', $shopId, NotificationType::OVERTIME_SUBMITTED,
-            'New Overtime Request',
-            "{$employeeName} requested {$otData['hours']} hour(s) of overtime on {$otData['overtime_date']}.",
-            $otData, '/erp/hr?section=overtime', 'medium'
+        $this->sendToErpRole(
+            roleName: 'HR',
+            shopId: $shopId,
+            type: NotificationType::OVERTIME_SUBMITTED,
+            title: 'New Overtime Request',
+            message: "{$employeeName} requested {$otData['hours']} hour(s) of overtime on {$otData['overtime_date']}.",
+            data: $otData,
+            actionUrl: '/erp/hr?section=overtime',
+            priority: 'medium',
+            requiresAction: true,
         );
     }
 
@@ -935,7 +1005,7 @@ class NotificationService
             title: 'New Salary Change Request',
             message: "{$proposedBy} submitted a salary change for {$employeeName} to ₱{$newSalary}.{$dateText}",
             data: $salaryData,
-            actionUrl: '/shop-owner/salary-adjustment-approvals',
+            actionUrl: $this->ownerApprovalActionUrl('salary_change', $salaryData['salary_change_id'] ?? null),
             priority: 'high',
             groupKey: 'salary-change-request',
             requiresAction: true
@@ -1005,7 +1075,7 @@ class NotificationService
         $this->sendToErpRole('Finance', $shopId, NotificationType::INVOICE_CREATED_FINANCE,
             'New Invoice Created',
             "Invoice {$invoiceData['reference']} (₱{$invoiceData['total']}) has been created.",
-            $invoiceData, '/erp/finance/invoices', 'medium'
+            $invoiceData, $this->financeInvoiceActionUrl($invoiceData), 'medium'
         );
     }
 
@@ -1018,10 +1088,16 @@ class NotificationService
             ? "Procurement expense {$expenseData['reference']} of ₱{$expenseData['amount']} is ready for Finance review."
             : "Expense {$expenseData['reference']} of ₱{$expenseData['amount']} ({$expenseData['category']}) needs review.";
 
-        $this->sendToErpRole('Finance', $shopId, NotificationType::EXPENSE_SUBMITTED,
-            $title,
-            $message,
-            $expenseData, $this->financeExpenseActionUrl($expenseData), 'medium'
+        $this->sendToErpRole(
+            roleName: 'Finance',
+            shopId: $shopId,
+            type: NotificationType::EXPENSE_SUBMITTED,
+            title: $title,
+            message: $message,
+            data: $expenseData,
+            actionUrl: $this->financeExpenseActionUrl($expenseData),
+            priority: 'medium',
+            requiresAction: true,
         );
     }
 
@@ -1047,13 +1123,95 @@ class NotificationService
             : $actionUrl;
     }
 
+    private function financeInvoiceActionUrl(array $invoiceData): string
+    {
+        $actionUrl = '/finance?section=invoice-generation';
+        $invoiceId = (int) ($invoiceData['invoice_id'] ?? $invoiceData['id'] ?? 0);
+
+        return $invoiceId > 0
+            ? "{$actionUrl}&invoice={$invoiceId}"
+            : $actionUrl;
+    }
+
     /** Notify Finance users when a purchase request is submitted */
     public function notifyPurchaseRequestSubmitted(int $shopId, array $prData): void
     {
         $this->sendToErpRole('Finance', $shopId, NotificationType::PURCHASE_REQUEST_SUBMITTED,
             'New Purchase Request',
             "Purchase request {$prData['reference']} of ₱{$prData['total_cost']} requires finance review.",
-            $prData, "/finance?section=purchase-request-approval&purchase_request={$prData['purchase_request_id']}", 'medium'
+            $prData, "/finance?section=purchase-request-approval&purchase_request={$prData['purchase_request_id']}", 'medium', null, true
+        );
+    }
+
+    /** Notify Finance when a repair service or package price change is submitted. */
+    public function notifyRepairPriceChangeSubmittedToFinance(int $shopId, array $priceChangeData): void
+    {
+        $sourceId = (int) ($priceChangeData['service_id'] ?? $priceChangeData['package_id'] ?? 0);
+        if ($sourceId < 1) {
+            Log::warning('Repair price change notification is missing its source id', [
+                'shop_id' => $shopId,
+                'data' => $priceChangeData,
+            ]);
+            return;
+        }
+
+        $serviceName = (string) ($priceChangeData['service_name'] ?? $priceChangeData['package_name'] ?? 'Repair service');
+        $oldPrice = number_format((float) ($priceChangeData['old_price'] ?? $priceChangeData['current_price'] ?? 0), 2);
+        $proposedPrice = number_format((float) ($priceChangeData['proposed_price'] ?? $priceChangeData['new_price'] ?? 0), 2);
+
+        $this->sendToErpRole(
+            roleName: 'Finance',
+            shopId: $shopId,
+            type: NotificationType::PRICE_CHANGE_REQUEST,
+            title: 'Repair Price Change Requires Review',
+            message: "Repair service '{$serviceName}' price change (PHP {$oldPrice} to PHP {$proposedPrice}) requires Finance review.",
+            data: $priceChangeData,
+            actionUrl: '/finance?section=repair-pricing',
+            priority: 'medium',
+            groupKey: "repair-price-change:{$sourceId}:finance-initial",
+            requiresAction: true,
+        );
+
+        $this->sendToShopOwner(
+            shopOwnerId: $shopId,
+            type: NotificationType::PRICE_CHANGE_REQUEST,
+            title: 'Repair Price Change Submitted',
+            message: "Repair service '{$serviceName}' price change (PHP {$oldPrice} to PHP {$proposedPrice}) was submitted and is awaiting Finance review.",
+            data: array_merge($priceChangeData, ['workflow_stage' => 'finance_initial']),
+            actionUrl: '/shop-owner/erp/repair/services',
+            priority: 'medium',
+            groupKey: "repair-price-change:{$sourceId}:owner-submitted",
+            requiresAction: false,
+        );
+    }
+
+    /** Notify Finance when the Shop Owner has approved the second workflow step. */
+    public function notifyRepairPriceChangeFinalApprovalToFinance(int $shopId, array $priceChangeData): void
+    {
+        $sourceId = (int) ($priceChangeData['service_id'] ?? $priceChangeData['package_id'] ?? 0);
+        if ($sourceId < 1) {
+            Log::warning('Final repair price change notification is missing its source id', [
+                'shop_id' => $shopId,
+                'data' => $priceChangeData,
+            ]);
+            return;
+        }
+
+        $serviceName = (string) ($priceChangeData['service_name'] ?? $priceChangeData['package_name'] ?? 'Repair service');
+        $oldPrice = number_format((float) ($priceChangeData['old_price'] ?? $priceChangeData['current_price'] ?? 0), 2);
+        $proposedPrice = number_format((float) ($priceChangeData['proposed_price'] ?? $priceChangeData['new_price'] ?? 0), 2);
+
+        $this->sendToErpRole(
+            roleName: 'Finance',
+            shopId: $shopId,
+            type: NotificationType::PRICE_CHANGE_REQUEST,
+            title: 'Repair Price Change Final Approval',
+            message: "Repair service '{$serviceName}' price change (PHP {$oldPrice} to PHP {$proposedPrice}) is ready for final Finance approval.",
+            data: $priceChangeData,
+            actionUrl: '/finance?section=repair-pricing',
+            priority: 'medium',
+            groupKey: "repair-price-change:{$sourceId}:finance-final",
+            requiresAction: true,
         );
     }
 
@@ -1065,13 +1223,19 @@ class NotificationService
         $message = "Auto-reorder created stock request {$reorderData['request_number']} for {$reorderData['product_name']} (Qty: {$reorderData['quantity_needed']}).";
 
         $procurementUsers = User::where('shop_owner_id', $shopId)
-            ->whereHas('roles', fn ($q) => $q->where('name', 'Procurement Manager'))
+            ->whereHas('roles', fn ($q) => $q->whereRaw('LOWER(name) = ?', ['procurement manager']))
             ->get();
 
         if ($procurementUsers->isEmpty()) {
             $procurementUsers = User::where('shop_owner_id', $shopId)
-                ->whereHas('roles', fn ($q) => $q->where('name', 'Finance'))
+                ->whereHas('roles', fn ($q) => $q->whereRaw('LOWER(name) = ?', ['finance']))
                 ->get();
+        }
+
+        $stockRequestId = (int) ($reorderData['stock_request_id'] ?? $reorderData['request_id'] ?? 0);
+        $actionUrl = '/erp/inventory/request-material-approval';
+        if ($stockRequestId > 0) {
+            $actionUrl .= '?stock_request=' . $stockRequestId;
         }
 
         foreach ($procurementUsers as $user) {
@@ -1082,9 +1246,11 @@ class NotificationService
                     $title,
                     $message,
                     $reorderData,
-                    '/erp/procurement/stock-request-approval',
+                    $actionUrl,
                     $shopId,
-                    $priority
+                    $priority,
+                    null,
+                    true
                 );
             } catch (\Exception $e) {
                 Log::error("Failed to send auto-reorder procurement notification to user #{$user->id}", [
@@ -1112,7 +1278,7 @@ class NotificationService
         $this->sendToErpRole('Manager', $shopId, NotificationType::SUSPENSION_REQUEST_PENDING,
             'Suspension Request Pending',
             "A suspension request has been submitted for {$suspensionData['employee_name']}.",
-            $suspensionData, '/erp/manager/suspend-approval', 'high'
+            $suspensionData, '/erp/manager/suspension-approvals', 'high', null, true
         );
     }
 
@@ -1134,7 +1300,7 @@ class NotificationService
         }
 
         $title = 'Repair Rejection Needs Review';
-        $actionUrl = '/erp/manager/repair-rejection-review';
+        $actionUrl = '/erp/manager/repair-jobs';
         $excludedUserId = (int) ($repairData['rejected_by_user_id'] ?? 0);
 
         $recipientIds = User::query()
@@ -1142,8 +1308,8 @@ class NotificationService
             ->where(function ($query) {
                 $query->whereHas('permissions', function ($permissionQuery) {
                     $permissionQuery->whereIn('name', [
+                        'access-manager-repair-jobs',
                         'access-repair-reject-review',
-                        'access-manager-dashboard',
                     ]);
                 })->orWhereHas('roles', function ($roleQuery) {
                     $roleQuery->whereIn('name', [
@@ -1187,7 +1353,9 @@ class NotificationService
                 $message,
                 $repairData,
                 $actionUrl,
-                'high'
+                'high',
+                null,
+                true
             );
             return;
         }
@@ -1201,7 +1369,9 @@ class NotificationService
                 $repairData,
                 $actionUrl,
                 $shopId,
-                'high'
+                'high',
+                null,
+                true
             );
         }
     }
@@ -1228,7 +1398,7 @@ class NotificationService
             title: 'Warranty Claim Filed',
             message: $ownerMessage,
             data: $claimData,
-            actionUrl: '/erp/staff/job-orders-repair',
+            actionUrl: $this->warrantyOwnerActionUrl($shopOwnerId),
             priority: 'medium'
         );
 
@@ -1269,7 +1439,7 @@ class NotificationService
             title: 'Warranty Claim Approved',
             message: $ownerMessage,
             data: $claimData,
-            actionUrl: '/erp/staff/job-orders-repair',
+            actionUrl: $this->warrantyOwnerActionUrl($shopOwnerId),
             priority: 'medium'
         );
 
@@ -1314,7 +1484,7 @@ class NotificationService
             title: 'Warranty Claim Rejected',
             message: $ownerMessage,
             data: $claimData,
-            actionUrl: '/erp/staff/job-orders-repair',
+            actionUrl: $this->warrantyOwnerActionUrl($shopOwnerId),
             priority: 'medium'
         );
 
@@ -1336,6 +1506,15 @@ class NotificationService
                 groupKey: "warranty-claim-{$claimNo}"
             );
         }
+    }
+
+    private function warrantyOwnerActionUrl(int $shopOwnerId): string
+    {
+        $shopOwner = ShopOwner::query()->find($shopOwnerId);
+
+        return strtolower((string) ($shopOwner?->registration_type ?? 'individual')) === 'individual'
+            ? '/shop-owner/warranty-queue'
+            : '/shop-owner/job-orders-repair';
     }
 
     // ==================== SHOP OWNER NOTIFICATIONS ====================
@@ -1438,7 +1617,7 @@ class NotificationService
     public function notifyAllStaffNewOrder(int $shopOwnerId, array $orderData): int
     {
         try {
-            // Find all active staff with view-job-orders permission (via role or direct)
+            // Find all active Staff accounts with access to the staff retail orders page.
             $staffMembers = User::where('shop_owner_id', $shopOwnerId)
                 ->whereHas('employee', function($query) {
                     $query->where('status', 'active');
@@ -1449,8 +1628,8 @@ class NotificationService
                 ->where('status', 'active')
                 ->get()
                 ->filter(function($user) {
-                    // Check if user has permission (from role or direct)
-                    return $user->hasPermissionTo('view-job-orders');
+                    // The route and Staff role use this canonical permission.
+                    return $user->hasPermissionTo('access-staff-job-orders');
                 });
 
             $notifiedCount = 0;
@@ -1461,7 +1640,7 @@ class NotificationService
                     title: 'New Order Received',
                     message: "New order #{$orderData['order_number']} - ₱{$orderData['total']} ({$orderData['items_count']} items)",
                     data: $orderData,
-                    actionUrl: '/erp/staff/job-orders-retail',
+                    actionUrl: '/erp/staff/job-orders',
                     shopId: $shopOwnerId,
                     priority: 'high'
                 );
@@ -1506,7 +1685,7 @@ class NotificationService
                 title: 'Order Assigned to You',
                 message: "You've been assigned order #{$order->order_number} - ₱{$orderData['total']}",
                 data: $orderData,
-                actionUrl: '/erp/staff/job-orders-retail',
+                actionUrl: '/erp/staff/job-orders',
                 shopId: $order->shop_owner_id,
                 priority: 'high'
             );
@@ -1534,7 +1713,7 @@ class NotificationService
     public function notifyAllStaffNewRepair(int $shopOwnerId, array $repairData): int
     {
         try {
-            // Find all active staff with view-job-orders permission (via role or direct)
+            // Find all active Staff accounts with access to the staff repair orders page.
             $staffMembers = User::where('shop_owner_id', $shopOwnerId)
                 ->whereHas('employee', function($query) {
                     $query->where('status', 'active');
@@ -1545,8 +1724,8 @@ class NotificationService
                 ->where('status', 'active')
                 ->get()
                 ->filter(function($user) {
-                    // Check if user has permission (from role or direct)
-                    return $user->hasPermissionTo('view-job-orders');
+                    // The route and Staff role use this canonical permission.
+                    return $user->hasPermissionTo('access-staff-job-orders');
                 });
 
             $notifiedCount = 0;
@@ -1583,13 +1762,20 @@ class NotificationService
      */
     public function notifyPriceChangeRequest(int $shopOwnerId, array $requestData): ?Notification
     {
+        $sourceType = array_key_exists('package_id', $requestData)
+            ? 'repair_package_price_change'
+            : (array_key_exists('service_id', $requestData) ? 'repair_price_change' : 'product_price_change');
+        $sourceId = $requestData['package_id'] ?? $requestData['service_id'] ?? $requestData['price_change_id'] ?? $requestData['id'] ?? null;
+
         return $this->sendToShopOwner(
             shopOwnerId: $shopOwnerId,
             type: NotificationType::PRICE_CHANGE_REQUEST,
             title: 'Price Change Approval Required',
             message: "{$requestData['product_name']}: ₱{$requestData['old_price']} → ₱{$requestData['new_price']}",
             data: $requestData,
-            actionUrl: '/shop-owner/price-approvals'
+            actionUrl: $this->ownerApprovalActionUrl($sourceType, $sourceId),
+            priority: 'medium',
+            requiresAction: true,
         );
     }
 
@@ -1600,29 +1786,24 @@ class NotificationService
     {
         $reason = $requestData['rejection_reason'] ?? $requestData['reason'] ?? '';
         $reasonText = $reason ? " Reason: {$reason}" : '';
+        $sourceType = array_key_exists('package_id', $requestData)
+            ? 'repair_package_price_change'
+            : (array_key_exists('service_id', $requestData) ? 'repair_price_change' : 'product_price_change');
+        $sourceId = $requestData['package_id'] ?? $requestData['service_id'] ?? $requestData['price_change_id'] ?? $requestData['id'] ?? null;
+
         return $this->sendToShopOwner(
             shopOwnerId: $shopOwnerId,
             type: NotificationType::PRICE_CHANGE_REJECTED,
             title: 'Price Change Rejected',
             message: "{$requestData['product_name']} price change (₱{$requestData['old_price']} → ₱{$requestData['new_price']}) was rejected.{$reasonText}",
             data: $requestData,
-            actionUrl: '/shop-owner/price-approvals'
+            actionUrl: $this->ownerApprovalActionUrl($sourceType, $sourceId)
         );
     }
 
-    /**
-     * Notify shop owner of repair service approval request
-     * Only sends notification to individual shop owners, not companies
-     */
+    /** Notify a shop owner of a repair service or package approval request. */
     public function notifyRepairServiceRequest(int $shopOwnerId, array $serviceData): ?Notification
     {
-        // Check if shop owner is individual type
-        $shopOwner = ShopOwner::find($shopOwnerId);
-        if (!$shopOwner || $shopOwner->registration_type !== 'individual') {
-            Log::info("Skipping repair service request notification for shop owner #{$shopOwnerId} - not an individual registration type");
-            return null;
-        }
-
         $displayPrice = $serviceData['price']
             ?? $serviceData['proposed_price']
             ?? $serviceData['current_price']
@@ -1634,7 +1815,14 @@ class NotificationService
             title: 'Repair Service Approval Required',
             message: "New repair service '{$serviceData['service_name']}' requires approval - ₱{$displayPrice}",
             data: $serviceData,
-            actionUrl: '/shop-owner/repair-reject-approval'
+            actionUrl: $this->ownerApprovalActionUrl(
+                array_key_exists('package_id', $serviceData)
+                    ? 'repair_package_price_change'
+                    : 'repair_price_change',
+                $serviceData['package_id'] ?? $serviceData['service_id'] ?? null,
+            ),
+            priority: 'medium',
+            requiresAction: true,
         );
     }
 
@@ -1651,7 +1839,12 @@ class NotificationService
             title: 'Repair Service Price Change Rejected',
             message: "Repair service '{$serviceData['service_name']}' price change (₱{$serviceData['old_price']} → ₱{$serviceData['price']}) was rejected.{$reasonText}",
             data: $serviceData,
-            actionUrl: '/shop-owner/repair-reject-approval'
+            actionUrl: $this->ownerApprovalActionUrl(
+                array_key_exists('package_id', $serviceData)
+                    ? 'repair_package_price_change'
+                    : 'repair_price_change',
+                $serviceData['package_id'] ?? $serviceData['service_id'] ?? null,
+            )
         );
     }
 
@@ -1667,8 +1860,19 @@ class NotificationService
             title: 'High-Value Repair Approval',
             message: "Repair (₱{$repairData['total']}) requires your approval",
             data: $repairData,
-            actionUrl: '/shop-owner/repair-reject-approval'
+            actionUrl: $this->highValueRepairActionUrl($repairData),
+            priority: 'high',
+            requiresAction: true,
         );
+    }
+
+    private function highValueRepairActionUrl(array $repairData): string
+    {
+        $repairId = (int) ($repairData['repair_id'] ?? 0);
+
+        return $repairId > 0
+            ? "/shop-owner/high-value-repairs?repair_id={$repairId}"
+            : '/shop-owner/high-value-repairs';
     }
 
     /**
@@ -1691,7 +1895,7 @@ class NotificationService
             title: 'Repair Rejection Awaiting Your Review',
             message: $message,
             data: $repairData,
-            actionUrl: '/shop-owner/repair-reject-approval',
+            actionUrl: $this->ownerApprovalActionUrl('repair_rejection', $repairData['repair_id'] ?? null),
             priority: 'high',
             groupKey: "repair-reject-owner-{$orderNumber}",
             requiresAction: true
@@ -1703,6 +1907,10 @@ class NotificationService
      */
     public function notifyRefundRequest(int $shopOwnerId, array $refundData): ?Notification
     {
+        $sourceType = ($refundData['source_type'] ?? null) === 'repair_refund'
+            ? 'repair_refund'
+            : 'order_refund';
+
         return $this->sendToResolvedShopOwnerRecipients(
             eventType: 'refund_request',
             shopOwnerId: $shopOwnerId,
@@ -1710,7 +1918,9 @@ class NotificationService
             title: 'Refund Request',
             message: "Refund request for order #{$refundData['order_number']} - ₱{$refundData['amount']}",
             data: $refundData,
-            actionUrl: '/shop-owner/refund-approvals'
+            actionUrl: $this->ownerApprovalActionUrl($sourceType, $refundData['refund_id'] ?? null),
+            priority: 'high',
+            requiresAction: true,
         );
     }
 
@@ -1741,7 +1951,12 @@ class NotificationService
             title: 'Employee Suspension Request',
             message: "Suspension request for {$suspensionData['employee_name']} from {$suspensionData['requested_by']}",
             data: $suspensionData,
-            actionUrl: '/shop-owner/suspend-accounts'
+            actionUrl: $this->ownerApprovalActionUrl(
+                'suspension_request',
+                $suspensionData['suspension_request_id'] ?? $suspensionData['request_id'] ?? null,
+            ),
+            priority: 'high',
+            requiresAction: true,
         );
     }
 
@@ -1801,8 +2016,10 @@ class NotificationService
             title: 'Repair Rejection Review Required',
             message: "Repairer rejected repair: {$repairData['reason']}",
             data: $repairData,
-            actionUrl: '/erp/manager/repair-rejection-review',
-            shopId: $shopId
+            actionUrl: '/erp/manager/repair-jobs',
+            shopId: $shopId,
+            priority: 'high',
+            requiresAction: true
         );
     }
 
@@ -1937,8 +2154,10 @@ class NotificationService
             title: 'Leave Request Pending',
             message: "{$leaveData['employee_name']} requests leave: {$leaveData['leave_type']}",
             data: $leaveData,
-            actionUrl: '/erp/manager/dashboard',
-            shopId: $shopId
+            actionUrl: '/erp/manager/leave-approvals',
+            shopId: $shopId,
+            priority: 'medium',
+            requiresAction: true
         );
     }
 
@@ -1954,7 +2173,9 @@ class NotificationService
             message: "{$expenseData['submitted_by']} submitted expense: ₱{$expenseData['amount']}",
             data: $expenseData,
             actionUrl: '/erp/manager/dashboard',
-            shopId: $shopId
+            shopId: $shopId,
+            priority: 'medium',
+            requiresAction: true
         );
     }
 
@@ -1969,8 +2190,10 @@ class NotificationService
             title: 'Suspension Request Pending',
             message: "Suspension request for {$suspensionData['employee_name']}",
             data: $suspensionData,
-            actionUrl: '/erp/manager/suspend-approval',
-            shopId: $shopId
+            actionUrl: '/erp/manager/suspension-approvals',
+            shopId: $shopId,
+            priority: 'high',
+            requiresAction: true
         );
     }
 
@@ -2005,7 +2228,7 @@ class NotificationService
             'repair_completed' => 'browser_repair_updates',
             'repair_ready_pickup' => 'browser_repair_updates',
             'repair_status_update' => 'browser_repair_updates',
-            'repair_rejection_review' => 'browser_tasks',
+            'repair_rejection_review' => 'browser_approvals',
             'payment_received' => 'browser_payment_updates',
             'payment_failed' => 'browser_payment_updates',
             'message_received' => 'browser_alerts',
@@ -2015,7 +2238,7 @@ class NotificationService
             'new_repair_request' => 'browser_new_orders',
             'price_change_request' => 'browser_approvals',
             'salary_change_submitted' => 'browser_approvals',
-            'repair_service_request' => 'browser_new_orders',
+            'repair_service_request' => 'browser_approvals',
             'high_value_approval' => 'browser_approvals',
             'refund_request' => 'browser_approvals',
             'low_stock_alert' => 'browser_alerts',
@@ -2025,6 +2248,15 @@ class NotificationService
             'expense_approval' => 'browser_expense_approval',
             'leave_approval' => 'browser_leave_approval',
             'invoice_created' => 'browser_invoice_created',
+            'invoice_created_finance' => 'browser_invoice_created',
+            'expense_submitted' => 'browser_expense_approval',
+            'purchase_request_submitted' => 'browser_approvals',
+            'leave_request_pending' => 'browser_leave_approval',
+            'leave_submitted' => 'browser_leave_approval',
+            'overtime_request_pending' => 'browser_hr_updates',
+            'overtime_submitted' => 'browser_hr_updates',
+            'expense_request_pending' => 'browser_expense_approval',
+            'suspension_request_pending' => 'browser_approvals',
             'delegation_assigned' => 'browser_delegation_assigned',
             'task_assigned' => 'browser_tasks',
             'repair_assigned_to_me' => 'browser_tasks',
@@ -2059,7 +2291,7 @@ class NotificationService
             'repair_completed' => 'email_repair_updates',
             'repair_ready_pickup' => 'email_repair_updates',
             'repair_status_update' => 'email_repair_updates',
-            'repair_rejection_review' => 'email_tasks',
+            'repair_rejection_review' => 'email_approvals',
             'payment_received' => 'email_payment_updates',
             'payment_failed' => 'email_payment_updates',
             'message_received' => 'email_alerts',
@@ -2069,7 +2301,7 @@ class NotificationService
             'new_repair_request' => 'email_new_orders',
             'price_change_request' => 'email_approvals',
             'salary_change_submitted' => 'email_approvals',
-            'repair_service_request' => 'email_new_orders',
+            'repair_service_request' => 'email_approvals',
             'high_value_approval' => 'email_approvals',
             'refund_request' => 'email_approvals',
             'low_stock_alert' => 'email_alerts',
@@ -2079,6 +2311,15 @@ class NotificationService
             'expense_approval' => 'email_expense_approval',
             'leave_approval' => 'email_leave_approval',
             'invoice_created' => 'email_invoice_created',
+            'invoice_created_finance' => 'email_invoice_created',
+            'expense_submitted' => 'email_expense_approval',
+            'purchase_request_submitted' => 'email_approvals',
+            'leave_request_pending' => 'email_leave_approval',
+            'leave_submitted' => 'email_leave_approval',
+            'overtime_request_pending' => 'email_hr_updates',
+            'overtime_submitted' => 'email_hr_updates',
+            'expense_request_pending' => 'email_expense_approval',
+            'suspension_request_pending' => 'email_approvals',
             'delegation_assigned' => 'email_delegation_assigned',
             'task_assigned' => 'email_tasks',
             'repair_assigned_to_me' => 'email_tasks',

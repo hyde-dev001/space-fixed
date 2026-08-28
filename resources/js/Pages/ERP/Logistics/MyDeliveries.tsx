@@ -670,6 +670,8 @@ function DeliveryActions({
   online,
   pendingAction,
   canRecordProof,
+  canUpdateStatus,
+  canReportIssue,
   today,
   runAction,
 }: {
@@ -679,6 +681,8 @@ function DeliveryActions({
   online: boolean;
   pendingAction: string | null;
   canRecordProof: boolean;
+  canUpdateStatus: boolean;
+  canReportIssue: boolean;
   today: string;
   runAction: ActionRunner;
 }) {
@@ -706,13 +710,13 @@ function DeliveryActions({
   const compactSecondaryButtonClass =
     'min-h-12 w-full touch-manipulation rounded-2xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-950 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-white xl:min-h-11 xl:rounded-xl';
 
-  if (item.kind === 'batch' && item.status === 'accepted') {
+  if (canUpdateStatus && item.kind === 'batch' && item.status === 'accepted') {
     const key = `batch-start:${item.id}`;
 
     return (
       <button
         type="button"
-        disabled={mutationDisabled || pendingAction === key}
+         disabled={mutationDisabled || !canUpdateStatus || pendingAction === key}
         onClick={() =>
           runAction(key, () => logisticsApi.startBatch(item.id), {
             title: `Start batch #${item.id}?`,
@@ -768,7 +772,7 @@ function DeliveryActions({
         </p>
         <button
           type="button"
-          disabled={mutationDisabled || !retryDue || pendingAction === key}
+          disabled={mutationDisabled || !canUpdateStatus || !retryDue || pendingAction === key}
           onClick={() => runAction(key, () => logisticsApi.markInTransit(delivery.id), {
             title: `Start retry for ${deliveryReference}?`,
             text: 'This starts the scheduled delivery retry without recording another pickup.',
@@ -801,6 +805,7 @@ function DeliveryActions({
   }
   const submitIssue = () => {
     if (
+      !canReportIssue ||
       !issueReason ||
       !assignment ||
       (requiresIssuePhoto && !issueFile) ||
@@ -830,7 +835,7 @@ function DeliveryActions({
     );
   };
   const submitIncident = () => {
-    if (!incidentType || !incidentNotes.trim() || !incidentFile) return;
+    if (!canReportIssue || !incidentType || !incidentNotes.trim() || !incidentFile) return;
     const form = new FormData();
     form.append('type', incidentType);
     form.append('notes', incidentNotes.trim());
@@ -980,7 +985,7 @@ function DeliveryActions({
   const arrivalActionLabel = arrivalPhase === 'pickup' ? 'Pick up at shop' : "I've arrived";
   const arrivalKey = `arrival:${delivery.id}`;
   const recordArrival = () => {
-    if (!arrivalPhase) return;
+    if (!canUpdateStatus || !arrivalPhase) return;
     setArrivalResult(null);
     runAction(
       arrivalKey,
@@ -1010,7 +1015,7 @@ function DeliveryActions({
     );
   };
   const submitArrivalReason = () => {
-    if (!arrivalPhase || !arrivalReason || (arrivalReason === 'other' && !arrivalNotes.trim())) {
+    if (!canUpdateStatus || !arrivalPhase || !arrivalReason || (arrivalReason === 'other' && !arrivalNotes.trim())) {
       return;
     }
     runAction(arrivalKey, () => logisticsApi.arrive(delivery.id, {
@@ -1025,7 +1030,7 @@ function DeliveryActions({
       exception_notes: arrivalNotes.trim() || null,
     }));
   };
-  const arrivalControl = arrivalPhase && !arrival ? (
+  const arrivalControl = canUpdateStatus && arrivalPhase && !arrival ? (
     <div className="space-y-3">
       <button
         type="button"
@@ -1099,6 +1104,7 @@ function DeliveryActions({
 
   if (['assigned', 'pickup_scheduled'].includes(delivery.status)) {
     if (!arrival) return arrivalControl;
+    if (!canUpdateStatus && !(canReportIssue && isRepairPickup)) return null;
     const key = `pickup:${delivery.id}`;
     const pickupProof = delivery.proofs
       ?.filter(({ handoff_type }) => handoff_type === 'pickup')
@@ -1107,28 +1113,30 @@ function DeliveryActions({
     return (
       <div className="space-y-3">
         {arrivalSummary}
-        <button
-          type="button"
-          disabled={mutationDisabled || pendingAction === key}
-          onClick={() =>
-            runAction(
-              key,
-              () =>
-                pickupProof
-                  ? logisticsApi.confirmPickup(delivery.id, pickupProof.id)
-                  : logisticsApi.markPickedUp(delivery.id),
-              {
-                title: `Confirm pickup for ${deliveryReference}?`,
-                text: 'This confirms that the parcel is now in your custody.',
-                confirmButtonText: 'Confirm pickup',
-              },
-            )
-          }
-          className={buttonClass}
-        >
-          Confirm pickup
-        </button>
-        {isRepairPickup && (
+        {canUpdateStatus && (
+          <button
+            type="button"
+            disabled={mutationDisabled || pendingAction === key}
+            onClick={() =>
+              runAction(
+                key,
+                () =>
+                  pickupProof
+                    ? logisticsApi.confirmPickup(delivery.id, pickupProof.id)
+                    : logisticsApi.markPickedUp(delivery.id),
+                {
+                  title: `Confirm pickup for ${deliveryReference}?`,
+                  text: 'This confirms that the parcel is now in your custody.',
+                  confirmButtonText: 'Confirm pickup',
+                },
+              )
+            }
+            className={buttonClass}
+          >
+            Confirm pickup
+          </button>
+        )}
+        {canReportIssue && isRepairPickup && (
           <>
             <button
               type="button"
@@ -1146,6 +1154,7 @@ function DeliveryActions({
   }
 
   if (delivery.status === 'picked_up') {
+    if (!canUpdateStatus) return null;
     const key = `delivery-start:${delivery.id}`;
     const actionLabel = isReturnToShop ? 'Start return to shop' : 'Start delivery';
 
@@ -1177,6 +1186,7 @@ function DeliveryActions({
   }
 
   if (isReturnToShop && delivery.status === 'in_transit') {
+    if (!canUpdateStatus && !canRecordProof) return null;
     const returnProof = delivery.proofs
       ?.filter(({ handoff_type }) => handoff_type === 'receive')
       .at(-1);
@@ -1224,7 +1234,7 @@ function DeliveryActions({
             At the shop, upload a clear photo of the parcel handoff. The dispatcher will confirm receipt.
           </p>
         </div>
-        {!returnProof && (
+        {canRecordProof && !returnProof && (
           <DeliveryPhotoUpload
             inputId={`return-handoff-photo-${delivery.id}`}
             inputLabel="Return handoff photo"
@@ -1233,31 +1243,36 @@ function DeliveryActions({
             onChange={setProofFile}
           />
         )}
-        <button
-          type="button"
-          disabled={mutationDisabled || (!proofFile && !returnProof) || pendingAction === key}
-          onClick={submitReturnHandoff}
-          className={buttonClass}
-        >
-          Confirm return handoff
-        </button>
+        {canUpdateStatus && (
+          <button
+            type="button"
+            disabled={mutationDisabled || (!proofFile && !returnProof) || pendingAction === key}
+            onClick={submitReturnHandoff}
+            className={buttonClass}
+          >
+            Confirm return handoff
+          </button>
+        )}
       </div>
     );
   }
 
   if (delivery.status !== 'in_transit') return null;
   if (!arrival) {
+    if (!canUpdateStatus && !canReportIssue) return null;
     return (
       <div className="space-y-3">
         {arrivalControl}
-        <button
-          type="button"
-          disabled={mutationDisabled}
-          onClick={() => setShowIncident((current) => !current)}
-          className={compactSecondaryButtonClass}
-        >
-          Report incident
-        </button>
+        {canReportIssue && (
+          <button
+            type="button"
+            disabled={mutationDisabled}
+            onClick={() => setShowIncident((current) => !current)}
+            className={compactSecondaryButtonClass}
+          >
+            Report incident
+          </button>
+        )}
         {incidentPanel}
       </div>
     );
@@ -1309,23 +1324,27 @@ function DeliveryActions({
         </div>
       )}
 
-      <button
-        type="button"
-        disabled={mutationDisabled}
-        onClick={() => setShowIssue((current) => !current)}
-        className={compactSecondaryButtonClass}
-      >
-        Report issue
-      </button>
+      {canReportIssue && (
+        <>
+          <button
+            type="button"
+            disabled={mutationDisabled}
+            onClick={() => setShowIssue((current) => !current)}
+            className={compactSecondaryButtonClass}
+          >
+            Report issue
+          </button>
 
-      <button
-        type="button"
-        disabled={mutationDisabled}
-        onClick={() => setShowIncident((current) => !current)}
-        className={compactSecondaryButtonClass}
-      >
-        Report incident
-      </button>
+          <button
+            type="button"
+            disabled={mutationDisabled}
+            onClick={() => setShowIncident((current) => !current)}
+            className={compactSecondaryButtonClass}
+          >
+            Report incident
+          </button>
+        </>
+      )}
 
       {issuePanel}
       {incidentPanel}
@@ -1420,6 +1439,8 @@ function CurrentDeliveryCard({
   online,
   pendingAction,
   canRecordProof,
+  canUpdateStatus,
+  canReportIssue,
   today,
   runAction,
 }: {
@@ -1430,6 +1451,8 @@ function CurrentDeliveryCard({
   online: boolean;
   pendingAction: string | null;
   canRecordProof: boolean;
+  canUpdateStatus: boolean;
+  canReportIssue: boolean;
   today: string;
   runAction: ActionRunner;
 }) {
@@ -1507,6 +1530,8 @@ function CurrentDeliveryCard({
                   online={online}
                   pendingAction={pendingAction}
                   canRecordProof={canRecordProof}
+                  canUpdateStatus={canUpdateStatus}
+                  canReportIssue={canReportIssue}
                   today={today}
                   runAction={runAction}
                 />
@@ -1559,6 +1584,8 @@ function UpNextCard({
   online,
   pendingAction,
   canRecordProof,
+  canUpdateStatus,
+  canReportIssue,
   today,
   runAction,
 }: {
@@ -1567,6 +1594,8 @@ function UpNextCard({
   online: boolean;
   pendingAction: string | null;
   canRecordProof: boolean;
+  canUpdateStatus: boolean;
+  canReportIssue: boolean;
   today: string;
   runAction: ActionRunner;
 }) {
@@ -1597,6 +1626,8 @@ function UpNextCard({
             online={online}
             pendingAction={pendingAction}
             canRecordProof={canRecordProof}
+            canUpdateStatus={canUpdateStatus}
+            canReportIssue={canReportIssue}
             today={today}
             runAction={runAction}
           />
@@ -2010,9 +2041,17 @@ function DeliveryLists({
 }
 
 export default function MyDeliveries() {
-  const { deliveryData, canRecordProof, today = new Date().toISOString().slice(0, 10) } = usePage<{
+  const {
+    deliveryData,
+    canRecordProof,
+    canUpdateStatus = false,
+    canReportIssue = false,
+    today = new Date().toISOString().slice(0, 10),
+  } = usePage<{
     deliveryData: RiderDeliveryPageData;
     canRecordProof: boolean;
+    canUpdateStatus?: boolean;
+    canReportIssue?: boolean;
     maxDeliveryAttempts: number;
     today?: string;
   }>().props;
@@ -2153,6 +2192,8 @@ export default function MyDeliveries() {
           online={online}
           pendingAction={pendingAction}
           canRecordProof={canRecordProof}
+          canUpdateStatus={canUpdateStatus}
+          canReportIssue={canReportIssue}
           today={today}
           runAction={runAction}
         />
@@ -2168,6 +2209,8 @@ export default function MyDeliveries() {
           online={online}
           pendingAction={pendingAction}
           canRecordProof={canRecordProof}
+          canUpdateStatus={canUpdateStatus}
+          canReportIssue={canReportIssue}
           today={today}
           runAction={runAction}
         />

@@ -12,6 +12,7 @@ type MetricColor = "success" | "warning" | "info";
 
 interface ProductInventoryItem {
 	id: number;
+	sourceKey: string;
 	productName: string;
 	skuCode: string;
 	category: string;
@@ -25,6 +26,7 @@ interface ProductInventoryItem {
 
 const mapApiItem = (item: ApiInventoryItem): ProductInventoryItem => ({
 	id: item.id,
+	sourceKey: `${item.source_type ?? "inventory"}-${item.source_id ?? item.id}`,
 	productName: item.name,
 	skuCode: item.sku,
 	category: item.category,
@@ -385,7 +387,7 @@ export default function ProductInventory() {
 										const status = getStatus(item.availableQuantity);
 
 										return (
-											<tr key={item.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-colors">
+											<tr key={item.sourceKey} className="hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-colors">
 												<td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-white">{item.productName}</td>
 												<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{item.sizes.join(", ")}</td>
 												<td className="px-4 py-3 text-sm font-semibold text-gray-900 dark:text-white text-center">{item.availableQuantity}</td>

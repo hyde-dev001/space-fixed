@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Manager;
 
+use App\Models\ProcurementSettings;
 use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use App\Models\User;
@@ -56,6 +57,7 @@ class ManagerRepairRejectionTest extends TestCase
             ->for($this->repairShop)
             ->create([
                 'status' => 'repairer_rejected',
+                'requires_owner_approval' => true,
                 'repairer_rejection_reason' => 'Cannot repair - parts unavailable',
                 'repairer_rejected_at' => now()->subHours(2),
                 'manager_decision' => null, // Not yet reviewed by manager
@@ -113,6 +115,28 @@ class ManagerRepairRejectionTest extends TestCase
         $this->rejectedRepair->refresh();
         $this->assertEquals('approve_rejection', $this->rejectedRepair->manager_decision);
         $this->assertNotNull($this->rejectedRepair->manager_reviewed_at);
+    }
+
+    /**
+     * Test: OFF skips only the owner stage and leaves the final manager decision pending
+     */
+    public function test_manager_approval_routes_an_off_snapshot_to_manager_final_review(): void
+    {
+        $this->setRepairRejectPolicy(false);
+        $this->rejectedRepair->update(['requires_owner_approval' => false]);
+
+        $response = $this->actingAs($this->manager, 'user')
+            ->postJson(
+                "/api/manager/repairs/{$this->rejectedRepair->id}/approve-rejection",
+                ['notes' => 'Initial review complete; final manager review remains.']
+            );
+
+        $response->assertOk()
+            ->assertJson(['success' => true]);
+
+        $this->rejectedRepair->refresh();
+        $this->assertSame('manager_reviewing', $this->rejectedRepair->status);
+        $this->assertNotSame('rejected', $this->rejectedRepair->status);
     }
 
     /**
@@ -233,7 +257,7 @@ class ManagerRepairRejectionTest extends TestCase
                 ['notes' => 'Should fail']
             );
 
-        $response->assertForbidden();
+        $response->assertNotFound();
     }
 
     /**
@@ -323,7 +347,15 @@ class ManagerRepairRejectionTest extends TestCase
         $this->assertDatabaseHas('notifications', [
             'user_id' => $permissionBasedReviewer->id,
             'type' => 'repair_rejection_review',
-            'action_url' => '/erp/manager/repair-rejection-review',
+            'action_url' => '/erp/manager/repair-jobs',
         ]);
+    }
+
+    private function setRepairRejectPolicy(bool $enabled): void
+    {
+        $settings = ProcurementSettings::getForShopOwner($this->repairShop->id);
+        $settingsJson = $settings->settings_json;
+        $settingsJson['approval_pages']['repair_reject_approval']['enabled'] = $enabled;
+        $settings->update(['settings_json' => $settingsJson]);
     }
 }

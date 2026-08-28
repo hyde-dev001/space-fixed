@@ -126,6 +126,20 @@ const openDetails = async () => {
 };
 
 describe("ShopOwner JobOrdersRepair intake logistics", () => {
+  it("does not expose an in-shop POS action to the Shop Owner", async () => {
+    mocks.repair = repair("walk_in", false, {
+      payment_status: "pending",
+      payment_policy: "deposit_50",
+      status: "pending",
+    });
+
+    render(<JobOrdersRepair />);
+    fireEvent.click(await screen.findByRole("button", { name: /^Pending \(1\)$/ }));
+    await screen.findByText("Rina Santos");
+
+    expect(screen.queryByRole("button", { name: /Proceed to POS/i })).not.toBeInTheDocument();
+  });
+
   it.each([
     ["walk_in", "Customer drop-off"],
     ["customer_delivery", "Customer-arranged courier"],

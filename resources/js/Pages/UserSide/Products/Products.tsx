@@ -74,7 +74,7 @@ const Products: React.FC<Props> = () => {
     ? liveBadgeCounts.chatIconCount
     : initialChatIconCount;
   const cartBadgeCount = Number((page.props as any)?.cartIconCount ?? (cartLoading ? 0 : cartCount) ?? 0);
-  const meHref = isAuthenticated ? '/customer-profile' : '/user/login';
+  const meHref = isAuthenticated ? '/customer-profile' : '/login';
   const urlParams = new URLSearchParams(window.location.search);
   const searchParam = urlParams.get('search') || '';
   const rawCategoryParam = (urlParams.get('category') || '').toLowerCase();
@@ -701,7 +701,7 @@ const Products: React.FC<Props> = () => {
                     </>
                   ) : (
                     <Link
-                      href="/user/login"
+                      href="/login"
                       onClick={() => setMobileAccountOpen(false)}
                       className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-black hover:bg-gray-50"
                     >

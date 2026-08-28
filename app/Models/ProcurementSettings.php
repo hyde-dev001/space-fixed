@@ -48,10 +48,13 @@ class ProcurementSettings extends Model
                 'auto_generate_po' => false,
                 'settings_json' => [
                     'approval_pages' => [
-                        'refund_approval' => ['enabled' => false, 'limit' => null],
-                        'price_approval' => ['enabled' => false, 'limit' => null],
-                        'purchase_request_approval' => ['enabled' => false, 'limit' => null],
-                        'repair_reject_approval' => ['enabled' => false, 'limit' => null],
+                        'refund_approval' => ['enabled' => true, 'limit' => null],
+                        'price_approval' => ['enabled' => true, 'limit' => null],
+                        'payslip_approval' => ['enabled' => true, 'limit' => null],
+                        'salary_adjustment_approval' => ['enabled' => true, 'limit' => null],
+                        'purchase_request_approval' => ['enabled' => true, 'limit' => null],
+                        'expense_approval' => ['enabled' => true, 'limit' => null],
+                        'repair_reject_approval' => ['enabled' => true, 'limit' => null],
                     ],
                 ],
             ]

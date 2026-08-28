@@ -441,9 +441,9 @@ class DashboardController extends Controller
             ->where('status', OrderStatus::SHIPPED)
             ->count();
 
-        // Completed Orders (include delivered, which is the final fulfilled state after customer confirmation)
+        // Completed Orders (terminal fulfillment with no open refund, return, or payment blocker).
         $completedOrders = Order::where('shop_owner_id', $shopOwnerId)
-            ->whereIn('status', [OrderStatus::COMPLETED->value, OrderStatus::DELIVERED->value])
+            ->businessClosed()
             ->count();
 
         // Cancelled Orders
@@ -506,7 +506,11 @@ class DashboardController extends Controller
             ->selectRaw('SUM(subtotal) as total_revenue')
             ->whereHas('order', function($query) use ($shopOwnerId) {
                 $query->where('shop_owner_id', $shopOwnerId)
-                    ->whereIn('status', ['processing', 'shipped', 'completed', 'delivered'])
+                    ->where(function ($statusQuery) {
+                        $statusQuery
+                            ->whereIn('status', ['processing', 'shipped'])
+                            ->orWhere(fn ($closedQuery) => $closedQuery->businessClosed());
+                    })
                     ->where(function ($innerQuery) {
                         $innerQuery->whereNull('payment_status')
                             ->orWhere('payment_status', '!=', 'refunded');

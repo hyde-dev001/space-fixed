@@ -8,14 +8,24 @@ use App\Http\Controllers\Api\CRM\CRMDashboardController;
 use App\Http\Controllers\Api\CRM\CRMReviewController;
 use App\Http\Controllers\Erp\ReadPageController;
 use App\Http\Controllers\Logistics\ErpLogisticsController;
+use App\Http\Controllers\ShopOwner\OwnerActionCenterController;
 use App\Http\Controllers\Staff\CustomerController;
-use App\Http\Middleware\EnsureOwnerErpWorkspaceEnabled;
+use App\Models\ShopOwner;
 use App\Services\ErpWorkspaceNavigationService;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
-Route::middleware(EnsureOwnerErpWorkspaceEnabled::class)
-    ->prefix('shop-owner/erp')
+$ownerOperationsComponent = static function (string $companyComponent, string $individualComponent): string {
+    $owner = Auth::guard('shop_owner')->user();
+
+    return $owner instanceof ShopOwner
+        && strtolower(trim((string) $owner->registration_type)) === 'company'
+        ? $companyComponent
+        : $individualComponent;
+};
+
+Route::prefix('shop-owner/erp')
     ->name('shop-owner.erp.')
     ->group(function (): void {
         Route::get('/workspace', [WorkspaceController::class, 'index'])
@@ -24,6 +34,11 @@ Route::middleware(EnsureOwnerErpWorkspaceEnabled::class)
         Route::get('/{module}', [WorkspaceController::class, 'module'])
             ->whereIn('module', ErpWorkspaceNavigationService::slugs())
             ->name('module');
+    });
+
+Route::prefix('shop-owner/erp')
+    ->name('shop-owner.erp.')
+    ->group(function () use ($ownerOperationsComponent): void {
 
         Route::get('/retail/dashboard', function (): \Inertia\Response {
             return Inertia::render('ShopOwner/Dashboard', [
@@ -37,9 +52,12 @@ Route::middleware(EnsureOwnerErpWorkspaceEnabled::class)
             ]);
         })->name('retail.products');
 
-        Route::prefix('retail')->name('retail.')->group(function (): void {
-            Route::get('/orders', function (): \Inertia\Response {
-                return Inertia::render('ShopOwner/Orders/order management/JobOrders', [
+        Route::prefix('retail')->name('retail.')->group(function () use ($ownerOperationsComponent): void {
+            Route::get('/orders', function () use ($ownerOperationsComponent): \Inertia\Response {
+                return Inertia::render($ownerOperationsComponent(
+                    'ShopOwner/Operations/JobOrders',
+                    'ShopOwner/Orders/order management/JobOrders',
+                ), [
                     'erpMode' => true,
                 ]);
             })->name('orders');
@@ -57,9 +75,12 @@ Route::middleware(EnsureOwnerErpWorkspaceEnabled::class)
             })->name('discounts');
         });
 
-        Route::prefix('repair')->name('repair.')->group(function (): void {
-            Route::get('/job-orders', function (): \Inertia\Response {
-                return Inertia::render('ShopOwner/Repairs/service management/JobOrdersRepair', [
+        Route::prefix('repair')->name('repair.')->group(function () use ($ownerOperationsComponent): void {
+            Route::get('/job-orders', function () use ($ownerOperationsComponent): \Inertia\Response {
+                return Inertia::render($ownerOperationsComponent(
+                    'ShopOwner/Operations/RepairJobs',
+                    'ShopOwner/Repairs/service management/JobOrdersRepair',
+                ), [
                     'erpMode' => true,
                 ]);
             })->name('job-orders');
@@ -157,43 +178,29 @@ Route::middleware(EnsureOwnerErpWorkspaceEnabled::class)
                 ->name('create-invoice');
             Route::get('/expenses', [ReadPageController::class, 'financeExpenses'])
                 ->name('expenses');
-            Route::get('/expense-approvals', function (): \Inertia\Response {
-                return Inertia::render('ShopOwner/Approvals/ExpenseApproval', [
-                    'erpMode' => true,
-                ]);
-            })->name('expense-approvals');
-            Route::get('/repair-pricing', function (): \Inertia\Response {
-                return Inertia::render('ShopOwner/Approvals/PriceApprovals', [
-                    'erpMode' => true,
-                    'approvalType' => 'repair',
-                ]);
-            })->name('repair-pricing');
-            Route::get('/shoe-pricing', function (): \Inertia\Response {
-                return Inertia::render('ShopOwner/Approvals/PriceApprovals', [
-                    'erpMode' => true,
-                    'approvalType' => 'shoe',
-                ]);
-            })->name('shoe-pricing');
-            Route::get('/purchase-request-review', function (): \Inertia\Response {
-                return Inertia::render('ShopOwner/Approvals/PurchaseRequestApproval', [
-                    'erpMode' => true,
-                ]);
-            })->name('purchase-request-review');
-            Route::get('/refund-approvals', function (): \Inertia\Response {
-                return Inertia::render('ShopOwner/Approvals/refundApproval', [
-                    'erpMode' => true,
-                ]);
-            })->name('refund-approvals');
-            Route::get('/payslip-approvals', function (): \Inertia\Response {
-                return Inertia::render('ShopOwner/Approvals/PayslipApproval', [
-                    'erpMode' => true,
-                ]);
-            })->name('payslip-approvals');
-            Route::get('/salary-adjustment-approvals', function (): \Inertia\Response {
-                return Inertia::render('ShopOwner/Approvals/SalaryChangesApproval', [
-                    'erpMode' => true,
-                ]);
-            })->name('salary-adjustment-approvals');
+            Route::get('/expense-approvals', [OwnerActionCenterController::class, 'legacyRedirect'])
+                ->defaults('legacy_approval_family', 'expense')
+                ->name('expense-approvals');
+            Route::get('/repair-pricing', [OwnerActionCenterController::class, 'legacyRedirect'])
+                ->defaults('legacy_approval_family', 'price')
+                ->defaults('legacy_approval_source', 'repair_price_change')
+                ->name('repair-pricing');
+            Route::get('/shoe-pricing', [OwnerActionCenterController::class, 'legacyRedirect'])
+                ->defaults('legacy_approval_family', 'price')
+                ->defaults('legacy_approval_source', 'product_price_change')
+                ->name('shoe-pricing');
+            Route::get('/purchase-request-review', [OwnerActionCenterController::class, 'legacyRedirect'])
+                ->defaults('legacy_approval_family', 'purchase')
+                ->name('purchase-request-review');
+            Route::get('/refund-approvals', [OwnerActionCenterController::class, 'legacyRedirect'])
+                ->defaults('legacy_approval_family', 'refund')
+                ->name('refund-approvals');
+            Route::get('/payslip-approvals', [OwnerActionCenterController::class, 'legacyRedirect'])
+                ->defaults('legacy_approval_family', 'payslip')
+                ->name('payslip-approvals');
+            Route::get('/salary-adjustment-approvals', [OwnerActionCenterController::class, 'legacyRedirect'])
+                ->defaults('legacy_approval_family', 'salary')
+                ->name('salary-adjustment-approvals');
             Route::get('/audit-logs', [ReadPageController::class, 'financeAuditLogs'])
                 ->name('audit-logs');
         });
@@ -236,11 +243,9 @@ Route::middleware(EnsureOwnerErpWorkspaceEnabled::class)
                 ->name('stock-request-approval');
             Route::get('/suppliers-management', [ReadPageController::class, 'procurementSuppliers'])
                 ->name('suppliers-management');
-            Route::get('/purchase-request-approval', function (): \Inertia\Response {
-                return Inertia::render('ShopOwner/Approvals/PurchaseRequestApproval', [
-                    'erpMode' => true,
-                ]);
-            })->name('purchase-request-approval');
+            Route::get('/purchase-request-approval', [OwnerActionCenterController::class, 'legacyRedirect'])
+                ->defaults('legacy_approval_family', 'purchase')
+                ->name('purchase-request-approval');
         });
 
         Route::prefix('staff')->name('staff.')->group(function (): void {

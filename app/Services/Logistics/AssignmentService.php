@@ -3,16 +3,22 @@
 namespace App\Services\Logistics;
 
 use App\Enums\Logistics\CarrierType;
+use App\Models\Employee;
 use App\Models\Logistics\DeliveryAssignment;
 use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\ShipmentLeg;
 use App\Models\ShopOwner;
+use App\Models\User;
+use App\Services\HR\EmployeeOperationalPolicy;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class AssignmentService
 {
-    public function __construct(private DeliveryEventService $events)
+    public function __construct(
+        private DeliveryEventService $events,
+        private EmployeeOperationalPolicy $employeePolicy,
+    )
     {
     }
 
@@ -29,21 +35,34 @@ class AssignmentService
         }
 
         if ($rider->rider_type === 'employee'
-            && ($rider->linked_type !== \App\Models\User::class || ! $rider->linked_id)) {
+            && ($rider->linked_type !== User::class || ! $rider->linked_id)) {
             throw ValidationException::withMessages([
                 'rider_profile_id' => 'Employee rider must have a linked user account before work is assigned.',
             ]);
         }
+
+        $this->assertEmployeeRiderEligible($rider, (int) $leg->shipment->shop_owner_id);
 
         if ($rider->rider_type === 'shop_owner' && strtolower((string) $actor->registration_type) !== 'individual') {
             throw ValidationException::withMessages(['rider_profile_id' => 'Owner delivery is only allowed for individual shops.']);
         }
 
         return DB::transaction(function () use ($leg, $rider, $actor, $eventMetadata) {
+            $rider = RiderProfile::query()->lockForUpdate()->findOrFail($rider->id);
             $leg = ShipmentLeg::query()
                 ->with(['shipment', 'shippingMethod'])
                 ->lockForUpdate()
                 ->findOrFail($leg->id);
+
+            if ((int) $rider->shop_owner_id !== (int) $leg->shipment->shop_owner_id) {
+                throw ValidationException::withMessages(['rider_profile_id' => 'Rider does not belong to this shop.']);
+            }
+
+            $this->assertEmployeeRiderEligible(
+                $rider,
+                (int) $leg->shipment->shop_owner_id,
+                true,
+            );
 
             $method = $leg->shippingMethod;
             if ($method !== null
@@ -87,6 +106,50 @@ class AssignmentService
 
             return $assignment;
         });
+    }
+
+    private function assertEmployeeRiderEligible(RiderProfile $rider, int $shopOwnerId, bool $lock = false): void
+    {
+        if ($rider->rider_type !== 'employee') {
+            return;
+        }
+
+        $linkedUser = User::query()
+            ->whereKey($rider->linked_id)
+            ->where('shop_owner_id', $shopOwnerId)
+            ->first();
+
+        if (! $linkedUser) {
+            throw ValidationException::withMessages([
+                'rider_profile_id' => 'Employee rider must have a linked user account in this shop.',
+            ]);
+        }
+
+        $employeeQuery = Employee::query()
+            ->where('shop_owner_id', $shopOwnerId)
+            ->whereRaw('LOWER(email) = ?', [strtolower((string) $linkedUser->email)])
+            ->orderBy('id');
+
+        if ($lock) {
+            $employeeQuery->lockForUpdate();
+        }
+
+        $employees = $employeeQuery->limit(2)->get();
+
+        if ($employees->count() > 1) {
+            throw ValidationException::withMessages([
+                'rider_profile_id' => 'Employee rider identity is ambiguous in this shop.',
+            ]);
+        }
+
+        $employee = $employees->first();
+
+        // Preserve legacy rider profiles that predate a corresponding Employee row.
+        if ($employee && ! $this->employeePolicy->canReceiveNewAssignment($employee)) {
+            throw ValidationException::withMessages([
+                'rider_profile_id' => 'Employee is not eligible for a new assignment.',
+            ]);
+        }
     }
 
     public function respondToOffer(ShipmentLeg $leg, RiderProfile $rider, bool $accepted, ?string $reason = null): DeliveryAssignment

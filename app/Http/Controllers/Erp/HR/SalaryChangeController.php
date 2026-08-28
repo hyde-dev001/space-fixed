@@ -9,6 +9,7 @@ use App\Models\HR\SalaryChange;
 use App\Models\HR\Payroll;
 use App\Models\User;
 use App\Services\HR\SalaryChangeApprovalService;
+use App\Services\ShopOwnerApprovalPolicyService;
 use App\Traits\HR\LogsHRActivity;
 use Carbon\Carbon;
 use Illuminate\Database\QueryException;
@@ -28,7 +29,8 @@ class SalaryChangeController extends Controller
     private ?array $employeeColumns = null;
 
     public function __construct(
-        private SalaryChangeApprovalService $salaryChangeApprovalService
+        private SalaryChangeApprovalService $salaryChangeApprovalService,
+        private ShopOwnerApprovalPolicyService $approvalPolicyService
     ) {}
 
     // ─── Auth helpers ─────────────────────────────────────────
@@ -42,6 +44,53 @@ class SalaryChangeController extends Controller
     {
         return ($user?->hasRole('Shop Owner') ?? false)
             || ($user?->can('approve-salary-change') ?? false);
+    }
+
+    private function isExactShopOwnerActor(?User $user, int $shopOwnerId, bool $viaShopOwnerGuard): bool
+    {
+        if ($viaShopOwnerGuard) {
+            return $user instanceof User
+                && (int) $user->shop_owner_id === $shopOwnerId;
+        }
+
+        if (! $user || (int) $user->shop_owner_id !== $shopOwnerId) {
+            return false;
+        }
+
+        $userRole = (string) ($user->role ?? '');
+
+        return (int) $user->id === $shopOwnerId
+            || $user->hasRole('Shop Owner')
+            || in_array($userRole, ['Shop Owner', 'SHOP_OWNER', 'shop_owner'], true);
+    }
+
+    private function canDecideSalaryChange(
+        SalaryChange $change,
+        ?User $user,
+        int $shopOwnerId,
+        bool $viaShopOwnerGuard
+    ): bool {
+        if ($change->requires_owner_approval !== false) {
+            return $this->isExactShopOwnerActor($user, $shopOwnerId, $viaShopOwnerGuard);
+        }
+
+        return ! $viaShopOwnerGuard
+            && $user instanceof User
+            && (int) $user->shop_owner_id === $shopOwnerId
+            && ! $this->isExactShopOwnerActor($user, $shopOwnerId, false)
+            && $user->can('approve-salary-change');
+    }
+
+    private function isOwnerSelfProposed(
+        SalaryChange $change,
+        ?User $user,
+        int $shopOwnerId,
+        bool $viaShopOwnerGuard
+    ): bool {
+        return $viaShopOwnerGuard
+            && $user instanceof User
+            && $this->isExactShopOwnerActor($user, $shopOwnerId, true)
+            && (int) $change->proposed_by === (int) $user->id;
     }
 
     private function hasSalaryChangeColumn(string $column): bool
@@ -311,6 +360,8 @@ class SalaryChangeController extends Controller
                 'effective_date'  => $effectiveDate->toDateString(),
                 'reason'          => $request->reason,
                 'status'          => SalaryChange::STATUS_PENDING,
+                'requires_owner_approval' => $this->approvalPolicyService
+                    ->requiresOwnerApprovalForSalaryAdjustment((int) $shopOwnerId),
                 'retroactive'     => $isRetroactive,
                 'retroactive_override_by'     => $isRetroactive ? $user->id : null,
                 'retroactive_override_reason' => $isRetroactive ? $request->retroactive_override_reason : null,
@@ -422,8 +473,18 @@ class SalaryChangeController extends Controller
             ->where('status', SalaryChange::STATUS_PENDING)
             ->findOrFail($id);
 
+        if (! $this->canDecideSalaryChange($change, $user, $shopOwnerId, $viaShopOwnerGuard)) {
+            return response()->json(['error' => 'This salary change is not awaiting your approval stage.'], 403);
+        }
+
+        if ($this->isOwnerSelfProposed($change, $user, $shopOwnerId, $viaShopOwnerGuard)) {
+            return response()->json([
+                'error' => 'This salary change requires an independent review path and cannot return to its Shop Owner maker.',
+            ], 403);
+        }
+
         // Approver must not be the same person who proposed (unless they have override)
-        if (!$viaShopOwnerGuard && $user && $change->proposed_by === $user->id && !$user->can('override-salary-retroactive')) {
+        if ($user && $change->proposed_by === $user->id && !$user->can('override-salary-retroactive')) {
             return response()->json(['error' => 'You cannot approve a salary change you proposed.'], 403);
         }
 
@@ -449,6 +510,8 @@ class SalaryChangeController extends Controller
                         'effective_date'   => $change->effective_date->toDateString(),
                         'applied_now'      => false,
                     ],
+                    'shop_owner_id' => $shopOwnerId,
+                    'user_id'       => $user?->id,
                     'severity'    => AuditLog::SEVERITY_WARNING,
                     'tags'        => ['salary_change', 'approved', 'phase_7'],
                 ]
@@ -495,6 +558,16 @@ class SalaryChangeController extends Controller
             ->where('status', SalaryChange::STATUS_PENDING)
             ->findOrFail($id);
 
+        if (! $this->canDecideSalaryChange($change, $user, $shopOwnerId, $viaShopOwnerGuard)) {
+            return response()->json(['error' => 'This salary change is not awaiting your approval stage.'], 403);
+        }
+
+        if ($this->isOwnerSelfProposed($change, $user, $shopOwnerId, $viaShopOwnerGuard)) {
+            return response()->json([
+                'error' => 'This salary change requires an independent review path and cannot return to its Shop Owner maker.',
+            ], 403);
+        }
+
         try {
             $change = $this->salaryChangeApprovalService->rejectSalaryChange(
                 $change,
@@ -518,6 +591,8 @@ class SalaryChangeController extends Controller
                     'salary_change_id' => $change->id,
                     'rejection_reason' => $request->notes,
                 ],
+                'shop_owner_id' => $shopOwnerId,
+                'user_id'       => $user?->id,
                 'severity'    => AuditLog::SEVERITY_INFO,
                 'tags'        => ['salary_change', 'rejected', 'phase_7'],
             ]

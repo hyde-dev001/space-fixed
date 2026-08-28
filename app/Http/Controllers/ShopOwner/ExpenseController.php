@@ -54,6 +54,29 @@ class ExpenseController extends Controller
     }
 
     /**
+     * Show an expense belonging to this shop owner.
+     */
+    public function show($id)
+    {
+        $shopOwner = $this->shopOwner();
+
+        $expense = Expense::where('shop_id', $shopOwner->id)
+            ->whereNull('procurement_receipt_id')
+            ->find($id);
+
+        if (!$expense) {
+            return response()->json(['message' => 'Expense not found'], 404);
+        }
+
+        $expense->setAttribute(
+            'settlement_state',
+            $this->expenseSettlementService->state($expense, (int) $shopOwner->id)
+        );
+
+        return response()->json($expense);
+    }
+
+    /**
      * Shop owner approves a submitted expense when high-value escalation is pending.
      */
     public function approve(Request $request, $id)

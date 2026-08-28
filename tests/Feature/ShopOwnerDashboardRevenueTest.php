@@ -259,6 +259,38 @@ class ShopOwnerDashboardRevenueTest extends TestCase
         $this->assertSame(1, (int) ($payload['orders']['completed'] ?? 0));
     }
 
+    #[Test]
+    public function dashboard_completed_orders_exclude_terminal_orders_with_open_refunds(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'retail',
+        ]);
+
+        $this->createOrder($shopOwner->id, [
+            'status' => 'delivered',
+            'payment_status' => 'completed',
+        ]);
+        $openRefundOrder = $this->createOrder($shopOwner->id, [
+            'status' => 'completed',
+            'payment_status' => 'completed',
+        ]);
+
+        OrderRefund::create([
+            'order_id' => $openRefundOrder->id,
+            'shop_owner_id' => $shopOwner->id,
+            'status' => 'approved',
+            'return_status' => 'not_required',
+            'amount' => 40,
+            'idempotency_key' => 'dashboard-open-refund-closure',
+        ]);
+
+        $response = $this->actingAs($shopOwner, 'shop_owner')
+            ->getJson('/api/shop-owner/dashboard/stats')
+            ->assertOk();
+
+        $this->assertSame(1, (int) ($response->json('orders.completed') ?? 0));
+    }
+
     private function createOrder(int $shopOwnerId, array $overrides = []): Order
     {
         return Order::create(array_merge([

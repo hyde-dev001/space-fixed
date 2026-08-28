@@ -81,9 +81,7 @@ final class OwnerAdministrativeModuleAccessTest extends TestCase
             'shopOwner.user-access-control',
             'shop-owner.suspend-accounts',
             'shopOwner.suspend-accounts',
-            'shop-owner.expense-approvals',
             'shop-owner.inventory-overview',
-            'shop-owner.purchase-request-approval',
             'shop-owner.customers',
             'shop-owner.logistics.shipments',
             'shop-owner.job-orders-retail',
@@ -92,6 +90,11 @@ final class OwnerAdministrativeModuleAccessTest extends TestCase
             'shop-owner.upload-services',
         ] as $routeName) {
             $this->get(route($routeName))->assertOk();
+        }
+
+        foreach (['shop-owner.expense-approvals', 'shop-owner.purchase-request-approval'] as $routeName) {
+            $this->get(route($routeName))
+                ->assertRedirect(route('shop-owner.shell.action-center'));
         }
 
         // The owner session is not an employee session and cannot open

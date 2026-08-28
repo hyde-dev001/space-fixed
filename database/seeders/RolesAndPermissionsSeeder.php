@@ -41,6 +41,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'access-overtime-approvals',
             'access-payslip-generation',
             'access-view-payslip',
+            'request-employee-suspensions',
             
             // ===== CRM MODULE =====
             'access-crm-dashboard',
@@ -51,9 +52,20 @@ class RolesAndPermissionsSeeder extends Seeder
             
             // ===== MANAGER MODULE =====
             'access-manager-dashboard',
+            'access-manager-job-orders',
+            'access-manager-repair-jobs',
+            'access-manager-staff-workload',
+            'access-manager-leave-approvals',
+            'access-manager-suspension-approvals',
             'access-audit-logs',
             'access-manager-reports',
             'access-inventory-overview',
+            'reassign-manager-job-orders',
+            'review-manager-repair-jobs',
+            'decide-manager-leave-approvals',
+            'decide-manager-suspension-approvals',
+            'generate-manager-reports',
+            'review-manager-reports',
             'access-product-upload-manager',
             'access-repair-reject-review',
             'access-suspend-account',
@@ -148,17 +160,26 @@ class RolesAndPermissionsSeeder extends Seeder
 
         $this->command->info('Assigning simplified permissions to roles...');
 
-        // 1. Manager Role - Full System Access & User Management
+        // 1. Manager Role - Manager operations and global header access
         $manager = Role::firstOrCreate(['name' => 'Manager', 'guard_name' => 'user']);
         $manager->syncPermissions([
             // Manager Pages
             'access-manager-dashboard',
+            'access-manager-job-orders',
+            'access-manager-repair-jobs',
+            'access-manager-staff-workload',
+            'access-manager-leave-approvals',
+            'access-manager-suspension-approvals',
             'access-audit-logs',
             'access-manager-reports',
+            'generate-manager-reports',
+            'review-manager-reports',
             'access-inventory-overview',
-            'access-product-upload-manager',
-            'access-repair-reject-review',
-            'access-suspend-account',
+            // Manager mutations
+            'reassign-manager-job-orders',
+            'review-manager-repair-jobs',
+            'decide-manager-leave-approvals',
+            'decide-manager-suspension-approvals',
             // Global Access
             'access-global-search',
             'access-notification-center',
@@ -199,6 +220,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'access-overtime-approvals',
             'access-payslip-generation',
             'access-view-payslip',
+            'request-employee-suspensions',
             // Salary Change Workflow
             'manage-salary-changes',
             // RBAC & Permissions Management

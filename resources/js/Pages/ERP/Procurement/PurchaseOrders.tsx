@@ -10,7 +10,7 @@ import { hasPermission } from "@/utils/permissions";
 import PurchaseOrderReceiptPanel from "./components/PurchaseOrderReceiptPanel";
 
 type PurchaseOrderStatus = "draft" | "sent" | "confirmed" | "in_transit" | "partially_received" | "delivered" | "completed" | "cancelled";
-type MetricColor = "success" | "warning" | "info";
+type MetricColor = "success" | "warning" | "info" | "danger";
 const SIZE_SYSTEMS = ["US", "UK", "EU", "AU", "CN"] as const;
 
 interface PurchaseOrderFormState {
@@ -191,6 +191,13 @@ const CheckCircleIcon = ({ className }: { className?: string }) => (
 	</svg>
 );
 
+const XCircleIcon = ({ className }: { className?: string }) => (
+	<svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+		<circle cx="12" cy="12" r="9" />
+		<path strokeLinecap="round" strokeLinejoin="round" d="M9 9l6 6m0-6l-6 6" />
+	</svg>
+);
+
 const EyeIcon = ({ className }: { className?: string }) => (
 	<svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
 		<path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -308,6 +315,8 @@ const MetricCard = ({ title, value, description, icon: Icon, color }: MetricCard
 				return "from-yellow-500 to-orange-600";
 			case "info":
 				return "from-blue-500 to-indigo-600";
+			case "danger":
+				return "from-red-500 to-rose-600";
 			default:
 				return "from-gray-500 to-gray-600";
 		}
@@ -345,6 +354,7 @@ const nextStatusMap: Partial<Record<PurchaseOrderStatus, PurchaseOrderStatus>> =
 	delivered: "completed",
 };
 
+const activeReceivingStatuses: PurchaseOrderStatus[] = ["sent", "confirmed", "in_transit", "partially_received"];
 const cancellableStatuses: PurchaseOrderStatus[] = ["draft", "sent", "confirmed"];
 
 export default function PurchaseOrders() {
@@ -360,8 +370,10 @@ export default function PurchaseOrders() {
 	const [loading, setLoading] = useState(false);
 	const [metrics, setMetrics] = useState(() => ({
 		total_purchase_orders: initialData?.total ?? purchaseOrders.length,
-		active_orders: purchaseOrders.filter((order) => ["sent", "confirmed", "in_transit"].includes(order.status)).length,
+		active_orders: purchaseOrders.filter((order) => activeReceivingStatuses.includes(order.status)).length,
+		awaiting_closure_orders: purchaseOrders.filter((order) => order.status === "delivered").length,
 		completed_orders: purchaseOrders.filter((order) => order.status === "completed").length,
+		cancelled_orders: purchaseOrders.filter((order) => order.status === "cancelled").length,
 	}));
 	const [searchQuery, setSearchQuery] = useState("");
 	const [statusFilter, setStatusFilter] = useState<"all" | PurchaseOrderStatus>("all");
@@ -509,7 +521,9 @@ export default function PurchaseOrders() {
 
 	const totalPoCount = metrics.total_purchase_orders;
 	const activePoCount = metrics.active_orders;
+	const awaitingClosurePoCount = metrics.awaiting_closure_orders;
 	const completedPoCount = metrics.completed_orders;
+	const cancelledPoCount = metrics.cancelled_orders;
 
 	const closeCreateModal = () => {
 		setIsCreateModalOpen(false);
@@ -725,16 +739,18 @@ export default function PurchaseOrders() {
 					</button>}
 				</div>
 
-				<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+				<div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-6">
 					<MetricCard title="Total PO" value={totalPoCount} description="Purchase orders created" icon={ClipboardIcon} color="info" />
-					<MetricCard title="In Progress" value={activePoCount} description="Sent, confirmed, or in-transit orders" icon={TruckIcon} color="warning" />
-					<MetricCard title="Completed" value={completedPoCount} description="Fully received and closed" icon={CheckCircleIcon} color="success" />
+					<MetricCard title="Active Receiving" value={activePoCount} description="Sent, confirmed, in-transit, or partially received orders" icon={TruckIcon} color="warning" />
+					<MetricCard title="Awaiting Closure" value={awaitingClosurePoCount} description="Delivered orders awaiting explicit administrative closure" icon={CalendarIcon} color="warning" />
+					<MetricCard title="Completed" value={completedPoCount} description="Explicitly closed purchase orders" icon={CheckCircleIcon} color="success" />
+					<MetricCard title="Cancelled" value={cancelledPoCount} description="Purchase orders cancelled before receiving" icon={XCircleIcon} color="danger" />
 				</div>
 
 				<div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-6 shadow-sm">
 					<div className="mb-4">
 						<h2 className="text-lg font-semibold">Purchase Order Table</h2>
-						<p className="text-sm text-gray-500">Procurement actions: mark as Sent, Confirmed, In Transit, or Cancel. Inventory handles Delivered/Completed.</p>
+						<p className="text-sm text-gray-500">Receiving posts Delivered; authorized procurement users explicitly close delivered orders as Completed.</p>
 					</div>
 
 					<div className="mb-4 flex flex-col sm:flex-row gap-3">

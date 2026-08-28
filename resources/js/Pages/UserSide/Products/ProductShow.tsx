@@ -1258,7 +1258,7 @@ const ProductShow: React.FC = () => {
                     </>
                   ) : (
                     <Link
-                      href="/user/login"
+                      href="/login"
                       onClick={() => setMobileUserDropdownOpen(false)}
                       className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-black hover:bg-gray-50"
                     >
@@ -1780,7 +1780,7 @@ const ProductShow: React.FC = () => {
 
                 {/* Chat icon */}
                 <Link
-                  href={isAuthenticated ? '/messages' : '/user/login'}
+                  href={isAuthenticated ? '/messages' : '/login'}
                   className="flex w-[3.75rem] shrink-0 flex-col items-center justify-center gap-0.5 border-l border-gray-200 py-2.5 text-gray-600 hover:text-[#16233b] transition-colors"
                   aria-label="Chat"
                 >

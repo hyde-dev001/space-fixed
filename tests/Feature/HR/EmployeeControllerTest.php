@@ -142,29 +142,37 @@ class EmployeeControllerTest extends TestCase
             'status' => 'active',
         ]);
 
-        // Suspend employee
+        // Direct account suspension is no longer a valid HR mutation.
         $response = $this->actingAs($this->hrUser, 'user')
             ->postJson("/api/hr/employees/{$employee->id}/suspend", ['reason' => 'Policy violation']);
 
-        $response->assertStatus(200)
-            ->assertJson(['message' => 'Employee suspended successfully']);
-
-        $this->assertDatabaseHas('employees', [
-            'id' => $employee->id,
-            'status' => 'suspended',
-        ]);
-
-        // Activate employee
-        $response = $this->actingAs($this->hrUser, 'user')
-            ->postJson("/api/hr/employees/{$employee->id}/activate");
-
-        $response->assertStatus(200)
-            ->assertJson(['message' => 'Employee account reactivated successfully']);
+        $response->assertStatus(403)
+            ->assertJsonPath('code', 'SUSPENSION_WORKFLOW_REQUIRED');
 
         $this->assertDatabaseHas('employees', [
             'id' => $employee->id,
             'status' => 'active',
         ]);
+
+        // HR submits a request; Manager and Shop Owner own the decisions.
+        $response = $this->actingAs($this->hrUser, 'user')
+            ->postJson('/api/hr/suspension-requests', [
+                'employee_id' => $employee->id,
+                'reason' => 'Policy violation',
+            ]);
+
+        $response->assertStatus(201)
+            ->assertJsonPath('request.status', 'pending_manager');
+
+        $this->assertDatabaseHas('employees', [
+            'id' => $employee->id,
+            'status' => 'inactive',
+        ]);
+
+        $this->actingAs($this->hrUser, 'user')
+            ->postJson("/api/hr/employees/{$employee->id}/activate")
+            ->assertStatus(403)
+            ->assertJsonPath('code', 'SUSPENSION_WORKFLOW_REQUIRED');
     }
 
     #[Test]
@@ -190,6 +198,68 @@ class EmployeeControllerTest extends TestCase
             'id' => $employee->id,
             'first_name' => 'Updated',
         ]);
+    }
+
+    #[Test]
+    public function test_canonical_employee_status_changes_sync_linked_user_state(): void
+    {
+        $linkedUser = User::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'email' => 'linked.employee@example.com',
+            'status' => 'active',
+        ]);
+        $employee = Employee::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'email' => $linkedUser->email,
+            'status' => 'active',
+        ]);
+
+        $this->actingAs($this->hrUser, 'user')
+            ->putJson("/api/hr/employees/{$employee->id}", ['status' => 'inactive'])
+            ->assertOk();
+
+        $this->assertSame('inactive', $linkedUser->fresh()->status);
+
+        $this->actingAs($this->hrUser, 'user')
+            ->putJson("/api/hr/employees/{$employee->id}", ['status' => 'suspended'])
+            ->assertStatus(403)
+            ->assertJsonPath('code', 'SUSPENSION_WORKFLOW_REQUIRED');
+
+        $this->assertSame('inactive', $employee->fresh()->status->value);
+
+        $this->actingAs($this->hrUser, 'user')
+            ->putJson("/api/hr/employees/{$employee->id}", ['status' => 'active'])
+            ->assertOk();
+
+        $this->actingAs($this->hrUser, 'user')
+            ->putJson("/api/hr/employees/{$employee->id}", ['status' => 'terminated'])
+            ->assertOk();
+
+        $this->assertSame('inactive', $linkedUser->fresh()->status);
+    }
+
+    #[Test]
+    public function terminated_employee_cannot_be_reactivated_through_hr_api(): void
+    {
+        $employee = Employee::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'status' => 'terminated',
+        ]);
+
+        $this->actingAs($this->hrUser, 'user')
+            ->putJson("/api/hr/employees/{$employee->id}", ['status' => 'active'])
+            ->assertStatus(422)
+            ->assertJsonPath('code', 'EMPLOYEE_TERMINATED');
+
+        $this->assertDatabaseHas('employees', [
+            'id' => $employee->id,
+            'status' => 'terminated',
+        ]);
+
+        $this->actingAs($this->hrUser, 'user')
+            ->postJson("/api/hr/employees/{$employee->id}/activate")
+            ->assertStatus(403)
+            ->assertJsonPath('code', 'SUSPENSION_WORKFLOW_REQUIRED');
     }
 
     #[Test]

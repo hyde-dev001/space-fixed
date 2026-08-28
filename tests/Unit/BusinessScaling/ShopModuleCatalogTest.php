@@ -68,6 +68,7 @@ final class ShopModuleCatalogTest extends TestCase
             'navigation_page_group_label',
             'navigation_page_group_order',
             'navigation_visible',
+            'owner_navigation_visible',
             'self_service',
             'supporting_routes',
             'actor_persistence',
@@ -89,7 +90,7 @@ final class ShopModuleCatalogTest extends TestCase
             $this->assertContains($route['risk_tier'], ['normal', 'sensitive', 'financial']);
             $this->assertIsBool($route['self_service'], $routeName);
             $this->assertIsArray($route['supporting_routes'], $routeName);
-            $this->assertContains($route['actor_persistence'], ['not_applicable', 'existing_owner_ref', 'paired_owner_ref', 'polymorphic_actor']);
+            $this->assertContains($route['actor_persistence'], ['not_applicable', 'existing_owner_ref', 'paired_owner_ref', 'polymorphic_actor', 'server_resolved_shop_owner']);
 
             if ($route['classification'] === 'module') {
                 $this->assertNotEmpty($route['module_keys']);
@@ -106,6 +107,41 @@ final class ShopModuleCatalogTest extends TestCase
                 $this->assertSame('user', $route['audience'], $routeName);
                 $this->assertNull($route['paired_route'], $routeName);
             }
+        }
+    }
+
+    public function test_phase_five_owner_denied_creation_surfaces_are_cataloged_fail_closed(): void
+    {
+        $routes = config('shop_modules.routes');
+        $deniedPages = [
+            'shop-owner.erp.finance.create-invoice' => 'owner_invoice_creation_not_allowed',
+            'shop-owner.erp.hr.payroll-generate' => 'owner_payroll_generation_not_allowed',
+            'shop-owner.erp.inventory.upload-stocks' => 'owner_inventory_upload_not_allowed',
+        ];
+        $deniedApis = [
+            'shop_owner.finance.invoices.store' => 'owner_invoice_creation_not_allowed',
+            'shop_owner.finance.invoices.from_job' => 'owner_invoice_creation_not_allowed',
+            'shop_owner.hr.payroll.store' => 'owner_payroll_generation_not_allowed',
+            'shop_owner.hr.payroll.calculate_preview' => 'owner_payroll_generation_not_allowed',
+            'shop_owner.hr.payroll.batch.preview' => 'owner_payroll_generation_not_allowed',
+            'shop_owner.hr.payroll.batch.generate' => 'owner_payroll_generation_not_allowed',
+            'shop_owner.hr.payroll.batch.retry' => 'owner_payroll_generation_not_allowed',
+            'shop_owner.hr.payroll.batch.export' => 'owner_payroll_generation_not_allowed',
+        ];
+
+        foreach ($deniedPages as $routeName => $reason) {
+            $this->assertArrayHasKey($routeName, $routes);
+            $this->assertSame('denied', $routes[$routeName]['owner_access'], $routeName);
+            $this->assertSame($reason, $routes[$routeName]['owner_denial_reason'], $routeName);
+            $this->assertFalse($routes[$routeName]['navigation_visible'], $routeName);
+            $this->assertSame('not_applicable', $routes[$routeName]['actor_persistence'], $routeName);
+        }
+
+        foreach ($deniedApis as $routeName => $reason) {
+            $this->assertArrayHasKey($routeName, $routes);
+            $this->assertSame('denied', $routes[$routeName]['owner_access'], $routeName);
+            $this->assertSame($reason, $routes[$routeName]['owner_denial_reason'], $routeName);
+            $this->assertSame('not_applicable', $routes[$routeName]['actor_persistence'], $routeName);
         }
     }
 

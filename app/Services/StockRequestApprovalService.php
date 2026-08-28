@@ -255,7 +255,7 @@ class StockRequestApprovalService
             title: 'New Stock Request Submitted',
             message: "Stock request {$payload['request_number']} for {$payload['product_name']} (Qty: {$payload['quantity_needed']}) needs review.",
             data: $payload,
-            actionUrl: "/erp/procurement/stock-request-approval?stock_request={$stockRequest->id}",
+            actionUrl: "/erp/inventory/request-material-approval?stock_request={$stockRequest->id}",
             priority: $stockRequest->priority === 'high' ? 'high' : 'medium'
         );
     }
@@ -270,7 +270,7 @@ class StockRequestApprovalService
             title: 'Repair Material Request Forwarded',
             message: "Repair material request {$payload['request_number']} for {$payload['product_name']} is now ready for procurement approval.",
             data: $payload,
-            actionUrl: "/erp/procurement/stock-request-approval?stock_request={$stockRequest->id}",
+            actionUrl: "/erp/inventory/request-material-approval?stock_request={$stockRequest->id}",
             priority: $stockRequest->priority === 'high' ? 'high' : 'medium'
         );
     }
@@ -345,17 +345,18 @@ class StockRequestApprovalService
         string $message,
         array $data,
         string $actionUrl,
-        string $priority
+        string $priority,
+        bool $requiresAction = true
     ): void {
         $recipients = User::query()
             ->where('shop_owner_id', $shopOwnerId)
-            ->whereHas('roles', fn ($q) => $q->where('name', 'Procurement Manager'))
+            ->whereHas('roles', fn ($q) => $q->whereRaw('LOWER(name) = ?', ['procurement manager']))
             ->get();
 
         if ($recipients->isEmpty()) {
             $recipients = User::query()
                 ->where('shop_owner_id', $shopOwnerId)
-                ->whereHas('roles', fn ($q) => $q->where('name', 'Finance'))
+                ->whereHas('roles', fn ($q) => $q->whereRaw('LOWER(name) = ?', ['finance']))
                 ->get();
         }
 
@@ -368,7 +369,8 @@ class StockRequestApprovalService
                 data: $data,
                 actionUrl: $actionUrl,
                 shopId: $shopOwnerId,
-                priority: $priority
+                priority: $priority,
+                requiresAction: $requiresAction,
             );
         }
     }

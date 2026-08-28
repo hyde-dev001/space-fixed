@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\Logistics;
 
+use App\Enums\Logistics\LogisticsAction;
 use App\Http\Controllers\Controller;
 use App\Models\Logistics\DeliveryIncident;
 use App\Models\Logistics\RiderProfile;
@@ -9,26 +10,32 @@ use App\Models\Logistics\ShipmentLeg;
 use App\Models\ShopOwner;
 use App\Models\User;
 use App\Services\Logistics\DeliveryIncidentService;
+use App\Services\Logistics\LogisticsActorPolicy;
+use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
 class DeliveryIncidentController extends Controller
 {
+    public function __construct(private LogisticsActorPolicy $policy) {}
+
     public function store(Request $request, ShipmentLeg $leg, DeliveryIncidentService $service): JsonResponse
     {
-        $user = Auth::guard('user')->user();
-        abort_unless($user instanceof User, 403);
         $leg->loadMissing('shipment');
-        abort_unless($leg->shipment, 404);
-        abort_unless((int) $user->shop_owner_id === (int) $leg->shipment->shop_owner_id, 403);
-        $rider = RiderProfile::query()
-            ->where('shop_owner_id', $leg->shipment->shop_owner_id)
-            ->where('linked_type', User::class)
-            ->where('linked_id', $user->id)
-            ->firstOrFail();
+        $actor = $this->authenticatedActor(false);
+        $shop = $this->shopForActor($actor);
+        abort_unless($shop, 403);
+        $decision = $this->policy->decideCustody($actor, $shop, $leg);
+        if (! $decision['allowed']) {
+            $this->logDenial($actor, $shop, $decision['action'], $decision['reason_category']);
+            abort(403);
+        }
+        $rider = $this->policy->resolveAssignedRider($actor, $shop, $leg);
+        abort_unless($rider, 403);
         $data = $request->validate([
             'type' => ['required', 'in:damaged,lost,vehicle_problem,customer_dispute,other'],
             'notes' => ['required', 'string', 'max:1000'],
@@ -53,11 +60,18 @@ class DeliveryIncidentController extends Controller
 
     public function resolve(Request $request, DeliveryIncident $incident, DeliveryIncidentService $service): JsonResponse
     {
-        $shop = Auth::guard('shop_owner')->user();
-        if (!$shop) {
-            $user = Auth::guard('user')->user();
-            abort_unless($user?->shop_owner_id && $user->can('resolve-logistics-exceptions'), 403);
-            $shop = ShopOwner::findOrFail($user->shop_owner_id);
+        $incident->loadMissing('leg.shipment');
+        $actor = $this->authenticatedActor();
+        $shop = $this->shopForActor($actor);
+        abort_unless($shop, 403);
+        if (! $incident->leg?->shipment || (int) $incident->shop_owner_id !== (int) $shop->id) {
+            $this->logDenial($actor, $shop, LogisticsAction::RESOLVE_EXCEPTION->value, 'cross_shop');
+            abort(403);
+        }
+        $decision = $this->policy->decide($actor, LogisticsAction::RESOLVE_EXCEPTION, $shop, $incident->leg);
+        if (! $decision['allowed']) {
+            $this->logDenial($actor, $shop, $decision['action'], $decision['reason_category']);
+            abort(403);
         }
         $data = $request->validate([
             'resolution' => ['required', 'string', Rule::in(DeliveryIncidentService::RESOLUTIONS)],
@@ -116,6 +130,49 @@ class DeliveryIncidentController extends Controller
         }
 
         return $user->shopOwner;
+    }
+
+    private function authenticatedActor(bool $preferShopOwner = true): Authenticatable
+    {
+        $guards = $preferShopOwner ? ['shop_owner', 'user'] : ['user', 'shop_owner'];
+        $actor = collect($guards)
+            ->map(fn (string $guard) => Auth::guard($guard)->user())
+            ->first(fn ($candidate) => $candidate instanceof Authenticatable);
+        abort_unless($actor instanceof Authenticatable, 403);
+
+        return $actor;
+    }
+
+    private function shopForActor(Authenticatable $actor): ?ShopOwner
+    {
+        if ($actor instanceof ShopOwner) {
+            return $actor;
+        }
+
+        if (! $actor instanceof User || ! $actor->shop_owner_id) {
+            return null;
+        }
+
+        return $actor->shopOwner ?: ShopOwner::query()->find($actor->shop_owner_id);
+    }
+
+    private function logDenial(
+        Authenticatable $actor,
+        ShopOwner $shop,
+        string $action,
+        ?string $reasonCategory,
+    ): void {
+        Log::warning('Logistics action denied', [
+            'domain' => 'logistics',
+            'action' => $action,
+            'actor_guard' => $actor instanceof ShopOwner ? 'shop_owner' : 'user',
+            'actor_type' => $actor::class,
+            'shop_id' => (int) $shop->id,
+            'denial_category' => $reasonCategory,
+            'route_name' => (string) (request()->route()?->getName() ?? ''),
+            'correlation_id' => request()->header('X-Correlation-ID'),
+            'request_id' => request()->header('X-Request-ID'),
+        ]);
     }
 
     private function incidentPayload(DeliveryIncident $incident): DeliveryIncident

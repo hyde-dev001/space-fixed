@@ -12,9 +12,13 @@ interface FormErrors {
   password?: string;
 }
 
+type LoginPageProps = {
+  csrf_token?: string;
+  flash?: { success?: string };
+};
+
 export default function UserLogin() {
-  const { csrf_token } = usePage().props as any;
-  const flash = (usePage().props as any).flash || {};
+  const { csrf_token, flash = {} } = usePage<LoginPageProps>().props;
 
   const [formData, setFormData] = useState({
     email: '',
@@ -84,8 +88,9 @@ export default function UserLogin() {
     router.post('/user/login', {
       email: formData.email.trim(),
       password: formData.password,
+      remember: formData.rememberMe,
     }, {
-      onSuccess: (page: any) => {
+      onSuccess: (page) => {
         const redirectUrl = String(page?.url || '');
         const isTwoFactorChallenge = redirectUrl.includes('/shop-owner/two-factor');
 

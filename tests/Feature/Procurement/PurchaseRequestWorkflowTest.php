@@ -11,6 +11,7 @@ use App\Models\ShopOwner;
 use App\Models\StockRequestApproval;
 use App\Models\Supplier;
 use App\Models\User;
+use App\Models\ProcurementSettings;
 use App\Services\PurchaseRequestService;
 use App\Services\StockRequestApprovalService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -54,6 +55,8 @@ class PurchaseRequestWorkflowTest extends TestCase
             ->postJson("/api/erp/procurement/purchase-requests/{$purchaseRequest->id}/submit-to-finance")
             ->assertOk();
 
+        $this->assertTrue($purchaseRequest->fresh()->requires_owner_approval);
+
         $this->assertDatabaseHas('notifications', [
             'user_id' => $this->finance->id,
             'action_url' => "/finance?section=purchase-request-approval&purchase_request={$purchaseRequest->id}",
@@ -69,7 +72,7 @@ class PurchaseRequestWorkflowTest extends TestCase
         $this->assertSame($this->finance->id, $purchaseRequest->fresh()->reviewed_by);
         $this->assertDatabaseHas('notifications', [
             'shop_owner_id' => $this->shopOwner->id,
-            'action_url' => "/shop-owner/purchase-request-approval?purchase_request={$purchaseRequest->id}",
+            'action_url' => "/shop-owner/action-center?bucket=needs_my_decision&approval=purchase_request:{$purchaseRequest->id}",
         ]);
 
         $this->actingAs($this->shopOwner, 'shop_owner')
@@ -105,6 +108,89 @@ class PurchaseRequestWorkflowTest extends TestCase
         ]);
     }
 
+    public function test_disabled_owner_policy_routes_finance_directly_to_final_release_using_submission_snapshot(): void
+    {
+        $this->setPurchaseRequestApproval(false);
+        $purchaseRequest = PurchaseRequest::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'supplier_id' => $this->supplier->id,
+            'requested_by' => $this->requester->id,
+            'status' => 'draft',
+        ]);
+
+        $this->actingAs($this->requester)
+            ->postJson("/api/erp/procurement/purchase-requests/{$purchaseRequest->id}/submit-to-finance")
+            ->assertOk();
+
+        $this->assertFalse($purchaseRequest->fresh()->requires_owner_approval);
+        $this->setPurchaseRequestApproval(true);
+
+        $this->actingAs($this->finance)
+            ->postJson("/api/erp/procurement/purchase-requests/{$purchaseRequest->id}/approve", [
+                'approval_notes' => 'Budget checked.',
+            ])
+            ->assertOk();
+
+        $afterInitialFinance = $purchaseRequest->fresh();
+        $this->assertSame('pending_finance_final', $afterInitialFinance->status);
+        $this->assertSame($this->finance->id, $afterInitialFinance->reviewed_by);
+        $this->assertDatabaseMissing('notifications', [
+            'shop_owner_id' => $this->shopOwner->id,
+            'action_url' => "/shop-owner/purchase-request-approval?purchase_request={$purchaseRequest->id}",
+        ]);
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $this->finance->id,
+            'title' => 'Purchase Request Ready For Final Release',
+            'action_url' => "/finance?section=purchase-request-approval&purchase_request={$purchaseRequest->id}",
+        ]);
+
+        $this->actingAs($this->shopOwner, 'shop_owner')
+            ->postJson("/api/shop-owner/purchase-requests/{$purchaseRequest->id}/approve")
+            ->assertForbidden();
+
+        $this->actingAs($this->finance)
+            ->postJson("/api/erp/procurement/purchase-requests/{$purchaseRequest->id}/approve", [
+                'approval_notes' => 'Funds released.',
+            ])
+            ->assertOk();
+
+        $approved = $purchaseRequest->fresh();
+        $this->assertSame('approved', $approved->status);
+        $this->assertSame($this->finance->id, $approved->reviewed_by);
+        $this->assertSame($this->finance->id, $approved->approved_by);
+        $this->assertNull($approved->approved_by_shop_owner_id);
+
+        $this->actingAs($this->finance)
+            ->postJson("/api/erp/procurement/purchase-requests/{$purchaseRequest->id}/approve")
+            ->assertForbidden();
+    }
+
+    public function test_requester_cannot_review_own_purchase_request_even_with_review_permission(): void
+    {
+        $this->give($this->requester, 'procurement.review_purchase_requests');
+        $purchaseRequest = $this->pendingRequest('pending_finance');
+
+        $this->actingAs($this->requester)
+            ->postJson("/api/erp/procurement/purchase-requests/{$purchaseRequest->id}/approve")
+            ->assertForbidden();
+
+        $this->assertSame('pending_finance', $purchaseRequest->fresh()->status);
+    }
+
+    public function test_finance_cannot_review_a_purchase_request_from_another_shop(): void
+    {
+        $foreignShopOwner = ShopOwner::factory()->create();
+        $foreignFinance = User::factory()->for($foreignShopOwner)->create();
+        $this->give($foreignFinance, 'procurement.review_purchase_requests');
+        $purchaseRequest = $this->pendingRequest('pending_finance');
+
+        $this->actingAs($foreignFinance)
+            ->postJson("/api/erp/procurement/purchase-requests/{$purchaseRequest->id}/approve")
+            ->assertNotFound();
+
+        $this->assertSame('pending_finance', $purchaseRequest->fresh()->status);
+    }
+
     public function test_stock_request_result_notification_returns_inventory_requester_to_inventory_page(): void
     {
         $stockRequest = StockRequestApproval::factory()->create([
@@ -118,6 +204,29 @@ class PurchaseRequestWorkflowTest extends TestCase
         $this->assertDatabaseHas('notifications', [
             'user_id' => $this->requester->id,
             'action_url' => "/erp/inventory/stock-request?stock_request={$stockRequest->id}",
+        ]);
+    }
+
+    public function test_stock_request_submission_notifies_procurement_on_the_canonical_approval_page(): void
+    {
+        $procurement = User::factory()->for($this->shopOwner)->create();
+        $procurement->assignRole(Role::firstOrCreate([
+            'name' => 'procurement manager',
+            'guard_name' => 'user',
+        ]));
+
+        $stockRequest = StockRequestApproval::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'requested_by' => $this->requester->id,
+            'status' => 'pending',
+        ]);
+
+        app(StockRequestApprovalService::class)->notifyStockRequestSubmitted($stockRequest);
+
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $procurement->id,
+            'title' => 'New Stock Request Submitted',
+            'action_url' => "/erp/inventory/request-material-approval?stock_request={$stockRequest->id}",
         ]);
     }
 
@@ -464,5 +573,21 @@ class PurchaseRequestWorkflowTest extends TestCase
     {
         Permission::findOrCreate($permission, 'user');
         $user->givePermissionTo($permission);
+    }
+
+    private function setPurchaseRequestApproval(bool $enabled): void
+    {
+        $settings = ProcurementSettings::firstOrNew([
+            'shop_owner_id' => $this->shopOwner->id,
+        ]);
+        $settings->settings_json = [
+            'approval_pages' => [
+                'purchase_request_approval' => [
+                    'enabled' => $enabled,
+                    'limit' => null,
+                ],
+            ],
+        ];
+        $settings->save();
     }
 }

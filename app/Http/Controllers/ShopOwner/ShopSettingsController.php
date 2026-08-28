@@ -29,6 +29,25 @@ use Inertia\Response;
 
 class ShopSettingsController extends Controller
 {
+    private const APPROVAL_PAGE_KEYS = [
+        'refund_approval',
+        'price_approval',
+        'payslip_approval',
+        'salary_adjustment_approval',
+        'purchase_request_approval',
+        'expense_approval',
+        'repair_reject_approval',
+    ];
+
+    private const INITIAL_SECTION_KEYS = [
+        'profile',
+        'modules-team',
+        'payments-approvals',
+        'operations',
+        'policies-compliance',
+        'subscription',
+    ];
+
     public function __construct(
         private readonly ShopOwnerDocumentRequirementService $documentRequirements,
         private readonly ShopDocumentValidityService $documentValidity,
@@ -38,7 +57,7 @@ class ShopSettingsController extends Controller
     /**
      * Display the shop settings page for the authenticated shop owner.
      */
-    public function index(): Response
+    public function index(Request $request): Response
     {
         $shopOwner = Auth::guard('shop_owner')->user();
         $rawRepairPaymentPolicy = (string) ($shopOwner->repair_payment_policy ?? 'deposit_50');
@@ -63,7 +82,7 @@ class ShopSettingsController extends Controller
             && (!$latestPremiumSubscription->starts_at || $latestPremiumSubscription->starts_at->lte(now()))
             && (!$latestPremiumSubscription->ends_at || $latestPremiumSubscription->ends_at->gte(now())));
         $procurementSettings = ProcurementSettings::getForShopOwner($shopOwner->id);
-        $approvalPages = $this->normalizeApprovalPages($procurementSettings->settings_json['approval_pages'] ?? []);
+        $approvalPages = $this->normalizeApprovalPagesForRead($procurementSettings->settings_json['approval_pages'] ?? []);
         $branchPayrollSetting = null;
         if (Schema::hasTable('hr_branch_payroll_settings')) {
             $branchPayrollSetting = BranchPayrollSetting::query()
@@ -117,7 +136,17 @@ class ShopSettingsController extends Controller
                     'ends_at' => $latestPremiumSubscription?->ends_at?->toIso8601String(),
                 ],
             ],
+            'initialSection' => $this->initialSection($request),
         ]);
+    }
+
+    private function initialSection(Request $request): string
+    {
+        $section = $request->route('initial_section');
+
+        return is_string($section) && in_array($section, self::INITIAL_SECTION_KEYS, true)
+            ? $section
+            : 'profile';
     }
 
     /**
@@ -497,8 +526,11 @@ class ShopSettingsController extends Controller
             'approval_pages.refund_approval.enabled' => ['required_with:approval_pages', 'boolean'],
             'approval_pages.refund_approval.limit' => ['nullable', 'numeric', 'min:0', 'max:9999999.99'],
             'approval_pages.price_approval.enabled' => ['required_with:approval_pages', 'boolean'],
+            'approval_pages.payslip_approval.enabled' => ['required_with:approval_pages', 'boolean'],
+            'approval_pages.salary_adjustment_approval.enabled' => ['required_with:approval_pages', 'boolean'],
             'approval_pages.purchase_request_approval.enabled' => ['required_with:approval_pages', 'boolean'],
             'approval_pages.purchase_request_approval.limit' => ['nullable', 'numeric', 'min:0', 'max:9999999.99'],
+            'approval_pages.expense_approval.enabled' => ['required_with:approval_pages', 'boolean'],
             'approval_pages.repair_reject_approval.enabled' => ['required_with:approval_pages', 'boolean'],
             'approval_pages.repair_reject_approval.limit' => ['nullable', 'numeric', 'min:0', 'max:9999999.99'],
             'repair_payment_policy' => ['sometimes', 'string', 'in:deposit_50,full_upfront'],
@@ -511,10 +543,11 @@ class ShopSettingsController extends Controller
         ]);
 
         if (array_key_exists('approval_pages', $validated)) {
-            $normalizedApprovalPages = $this->normalizeApprovalPages($validated['approval_pages']);
-
             $settingsJson = $procurementSettings->settings_json ?? [];
-            $settingsJson['approval_pages'] = $normalizedApprovalPages;
+            $settingsJson['approval_pages'] = $this->mergeApprovalPagesForStorage(
+                $validated['approval_pages'],
+                is_array($settingsJson['approval_pages'] ?? null) ? $settingsJson['approval_pages'] : [],
+            );
 
             $procurementSettings->update([
                 'settings_json' => $settingsJson,
@@ -834,35 +867,40 @@ class ShopSettingsController extends Controller
     }
 
     /**
-     * Build a complete approval-page settings payload with defaults.
+     * Expose only the active binary controls. Legacy limits stay in storage.
+     *
+     * @return array<string, array{enabled: bool}>
      */
-    private function normalizeApprovalPages(array $input): array
+    private function normalizeApprovalPagesForRead(array $input): array
     {
-        $defaults = [
-            'refund_approval' => ['enabled' => false, 'limit' => null],
-            'price_approval' => ['enabled' => false, 'limit' => null],
-            'purchase_request_approval' => ['enabled' => false, 'limit' => null],
-            'repair_reject_approval' => ['enabled' => false, 'limit' => null],
-        ];
-
         $normalized = [];
-
-        foreach ($defaults as $key => $defaultValues) {
+        foreach (self::APPROVAL_PAGE_KEYS as $key) {
             $record = is_array($input[$key] ?? null) ? $input[$key] : [];
-            $enabled = (bool) ($record['enabled'] ?? $defaultValues['enabled']);
-            $limitValue = $record['limit'] ?? $defaultValues['limit'];
-
-            // Price approval is toggle-only; threshold is not used.
-            if ($key === 'price_approval') {
-                $limitValue = null;
-            }
-
             $normalized[$key] = [
-                'enabled' => $enabled,
-                'limit' => $enabled && $limitValue !== null && $limitValue !== '' ? (float) $limitValue : null,
+                'enabled' => is_bool($record['enabled'] ?? null) ? $record['enabled'] : true,
             ];
         }
 
         return $normalized;
+    }
+
+    /**
+     * Merge only the seven validated booleans into existing settings.
+     * Unknown JSON and legacy limits remain intact for compatibility.
+     *
+     * @return array<string, mixed>
+     */
+    private function mergeApprovalPagesForStorage(array $input, array $existing): array
+    {
+        $merged = $existing;
+
+        foreach (self::APPROVAL_PAGE_KEYS as $key) {
+            $record = is_array($merged[$key] ?? null) ? $merged[$key] : [];
+            $incoming = is_array($input[$key] ?? null) ? $input[$key] : [];
+            $record['enabled'] = (bool) ($incoming['enabled'] ?? true);
+            $merged[$key] = $record;
+        }
+
+        return $merged;
     }
 }

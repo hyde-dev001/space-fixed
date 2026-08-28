@@ -6,6 +6,7 @@ use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\ShippingMethod;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
+use App\Models\Employee;
 use App\Models\ShopOwner;
 use App\Models\User;
 use App\Services\Logistics\AssignmentService;
@@ -37,6 +38,10 @@ class AssignmentServiceTest extends TestCase
     {
         $company = ShopOwner::factory()->create(['registration_type' => 'company']);
         $user = User::factory()->create(['shop_owner_id' => $company->id]);
+        Employee::factory()->active()->create([
+            'shop_owner_id' => $company->id,
+            'email' => $user->email,
+        ]);
         $shipment = Shipment::factory()->create(['shop_owner_id' => $company->id]);
         $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id]);
         $rider = RiderProfile::factory()->create([
@@ -74,6 +79,72 @@ class AssignmentServiceTest extends TestCase
 
         $this->assertDatabaseCount('delivery_assignments', 0);
         $this->assertSame('pending', $leg->fresh()->status->value);
+    }
+
+    #[DataProvider('blockedEmployeeStatuses')]
+    public function test_employee_rider_cannot_receive_new_assignment_when_account_state_is_blocked(string $status): void
+    {
+        $company = ShopOwner::factory()->create(['registration_type' => 'company']);
+        $user = User::factory()->create(['shop_owner_id' => $company->id]);
+        Employee::factory()->create([
+            'shop_owner_id' => $company->id,
+            'email' => $user->email,
+            'status' => $status,
+        ]);
+        $shipment = Shipment::factory()->create(['shop_owner_id' => $company->id]);
+        $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id]);
+        $rider = RiderProfile::factory()->create([
+            'shop_owner_id' => $company->id,
+            'rider_type' => 'employee',
+            'linked_type' => User::class,
+            'linked_id' => $user->id,
+        ]);
+
+        $this->expectException(ValidationException::class);
+
+        try {
+            app(AssignmentService::class)->assignInternalRider($leg, $rider, $company);
+        } finally {
+            $this->assertDatabaseCount('delivery_assignments', 0);
+            $this->assertSame('pending', $leg->fresh()->status->value);
+        }
+    }
+
+    public static function blockedEmployeeStatuses(): array
+    {
+        return [
+            'inactive' => ['inactive'],
+            'suspended' => ['suspended'],
+            'terminated' => ['terminated'],
+        ];
+    }
+
+    public function test_status_change_does_not_delete_existing_assignment_history(): void
+    {
+        $company = ShopOwner::factory()->create(['registration_type' => 'company']);
+        $user = User::factory()->create(['shop_owner_id' => $company->id]);
+        $employee = Employee::factory()->active()->create([
+            'shop_owner_id' => $company->id,
+            'email' => $user->email,
+        ]);
+        $shipment = Shipment::factory()->create(['shop_owner_id' => $company->id]);
+        $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id]);
+        $rider = RiderProfile::factory()->create([
+            'shop_owner_id' => $company->id,
+            'rider_type' => 'employee',
+            'linked_type' => User::class,
+            'linked_id' => $user->id,
+        ]);
+
+        $assignment = app(AssignmentService::class)->assignInternalRider($leg, $rider, $company);
+
+        $employee->update(['status' => 'inactive']);
+
+        $this->assertDatabaseHas('delivery_assignments', [
+            'id' => $assignment->id,
+            'rider_profile_id' => $rider->id,
+            'status' => 'assigned',
+        ]);
     }
 
     #[DataProvider('unsupportedInternalAssignmentMethods')]

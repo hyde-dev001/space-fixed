@@ -7,6 +7,7 @@ use App\Enums\ShopOwnerStatus;
 use App\Models\Employee;
 use App\Models\ShopOwner;
 use App\Models\User;
+use App\Services\HR\EmployeeOperationalPolicy;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -14,6 +15,10 @@ use Symfony\Component\HttpFoundation\Response;
 
 class CheckEmployeeSuspension
 {
+    public function __construct(private readonly EmployeeOperationalPolicy $employeePolicy)
+    {
+    }
+
     /**
      * Handle an incoming request.
      *
@@ -89,15 +94,17 @@ class CheckEmployeeSuspension
                         ->limit(2)
                         ->get();
 
+                    $employee = $employees->first();
+
                     if ($employees->count() > 1
-                        || ($employees->count() === 1
-                            && ($employees->first()->trashed() || ! $this->isEmployeeActive($employees->first()->status)))) {
+                        || ($employee
+                            && ($employee->trashed() || ! $this->employeePolicy->canAuthenticate($employee)))) {
                         $this->logoutGuard('user');
                         $removedInvalidGuard = true;
                         $firstDenial ??= [
                             route('login'),
                             'Your account is unavailable. Please contact your administrator.',
-                            $employees->count() === 1 && $this->isEmployeeSuspended($employees->first()->status)
+                            $employees->count() === 1 && $this->isEmployeeSuspended($employee->getRawOriginal('status'))
                                 ? 'account_suspended'
                                 : 'account_unavailable',
                         ];
@@ -146,15 +153,6 @@ class CheckEmployeeSuspension
         }
 
         return (string) $status === EmployeeStatus::SUSPENDED->value;
-    }
-
-    private function isEmployeeActive(mixed $status): bool
-    {
-        if ($status instanceof EmployeeStatus) {
-            return $status === EmployeeStatus::ACTIVE;
-        }
-
-        return (string) $status === EmployeeStatus::ACTIVE->value;
     }
 
     private function isUserActive(mixed $status): bool

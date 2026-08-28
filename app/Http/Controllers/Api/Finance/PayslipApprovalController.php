@@ -741,6 +741,33 @@ class PayslipApprovalController extends Controller
                     continue;
                 }
 
+                if ($payslip->approval_id && $payslip->approval_workflow_version === 'v4_multi_level') {
+                    $result = $this->payslipApprovalService->approvePayslip(
+                        $payslip,
+                        User::find($actor['actor_user_id']),
+                        $request->input('notes')
+                    );
+
+                    if (! ($result['success'] ?? false)) {
+                        $errors[] = "Payslip #{$payslipId}: " . ($result['message'] ?? 'Approval failed');
+                        $failedCount++;
+                        continue;
+                    }
+
+                    $payslip->refresh();
+
+                    $this->logHRActivity(
+                        $actor['shop_owner_id'],
+                        'payslip_approved_level_' . $payslip->current_approval_level,
+                        'Payslip Batch Approved',
+                        "Payslip #{$payslip->id} approved at level {$payslip->current_approval_level} by {$actor['name']} (Finance, batch)",
+                        $payslip
+                    );
+
+                    $approvedCount++;
+                    continue;
+                }
+
                 if ($payslip->approval_status !== 'pending') {
                     $errors[] = "Payslip #{$payslipId} is not pending";
                     $failedCount++;

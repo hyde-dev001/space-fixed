@@ -20,6 +20,7 @@ use App\Models\PurchaseRequest;
 use App\Models\StockMovement;
 use App\Models\StockRequestApproval;
 use App\Models\Supplier;
+use App\Services\Erp\ShopOwnerInventoryReadService;
 use App\Support\Erp\ErpActorContext;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Auth;
@@ -28,6 +29,10 @@ use Inertia\Response;
 
 final class ReadPageController extends Controller
 {
+    public function __construct(
+        private readonly ShopOwnerInventoryReadService $ownerInventoryRead,
+    ) {}
+
     public function hrAuditLogs(): Response|RedirectResponse
     {
         return $this->renderEmployeePage('ERP/HR/AuditLogs');
@@ -176,7 +181,7 @@ final class ReadPageController extends Controller
             return $redirect;
         }
 
-        $initialEmployees = Employee::with('user:id,email')
+        $initialEmployees = Employee::query()
             ->where('shop_owner_id', $this->shopOwnerId())
             ->orderBy('name')
             ->get()
@@ -185,15 +190,15 @@ final class ReadPageController extends Controller
                 'firstName' => $employee->first_name,
                 'lastName' => $employee->last_name,
                 'employeeId' => $employee->employee_id,
-                'email' => $employee->email,
-                'phone' => $employee->phone,
+                'email' => '',
+                'phone' => null,
                 'department' => $employee->department,
                 'position' => $employee->position,
                 'status' => $employee->status,
                 'hiredAt' => optional($employee->hire_date)->toDateString(),
-                'lastActiveAt' => optional($employee->updated_at)->toISOString(),
-                'location' => $employee->location ?? $employee->address,
-                'linkedUser' => $employee->user?->id,
+                'lastActiveAt' => null,
+                'location' => null,
+                'linkedUser' => null,
             ])
             ->values();
 
@@ -209,7 +214,7 @@ final class ReadPageController extends Controller
             return $redirect;
         }
 
-        $initialAttendance = AttendanceRecord::with('employee:id,first_name,last_name,name,email,department,position,shop_owner_id')
+        $initialAttendance = AttendanceRecord::with('employee:id,first_name,last_name,name,department,position,shop_owner_id')
             ->where('shop_owner_id', $this->shopOwnerId())
             ->orderByDesc('date')
             ->paginate(200);
@@ -287,6 +292,36 @@ final class ReadPageController extends Controller
         return $this->renderEmployeePage('ERP/Manager/Reports');
     }
 
+    public function managerJobOrders(): Response|RedirectResponse
+    {
+        return $this->renderEmployeePage('ERP/Manager/JobOrders');
+    }
+
+    public function managerRepairJobs(): Response|RedirectResponse
+    {
+        return $this->renderEmployeePage('ERP/Manager/RepairJobs');
+    }
+
+    public function managerInventoryOverview(): Response|RedirectResponse
+    {
+        return $this->renderEmployeePage('ERP/Manager/InventoryOverview');
+    }
+
+    public function managerStaffWorkload(): Response|RedirectResponse
+    {
+        return $this->renderEmployeePage('ERP/Manager/StaffWorkload');
+    }
+
+    public function managerLeaveApprovals(): Response|RedirectResponse
+    {
+        return $this->renderEmployeePage('ERP/Manager/LeaveApprovals');
+    }
+
+    public function managerSuspensionApprovals(): Response|RedirectResponse
+    {
+        return $this->renderEmployeePage('ERP/Manager/SuspensionApprovals');
+    }
+
     public function managerAuditLogs(): Response|RedirectResponse
     {
         return $this->renderEmployeePage('ERP/Manager/AuditLogs');
@@ -299,6 +334,24 @@ final class ReadPageController extends Controller
         }
 
         $shopOwnerId = $this->shopOwnerId();
+        if ($this->erpContext()?->isOwnerMode()) {
+            $rows = $this->ownerInventoryRead->rows($shopOwnerId);
+            $initialMetrics = array_merge(
+                $this->ownerInventoryRead->metricsForRows($rows),
+                [
+                    'stock_in_today' => 0,
+                    'stock_out_today' => 0,
+                    'active_supplier_orders' => 0,
+                    'overdue_orders' => 0,
+                ],
+            );
+
+            return Inertia::render('ERP/inventory/InventoryDashboard', [
+                'initialData' => $this->ownerInventoryRead->paginateRows($rows, ['per_page' => 200]),
+                'initialMetrics' => $initialMetrics,
+            ]);
+        }
+
         $initialData = InventoryItem::with(['sizes', 'colorVariants', 'images'])
             ->where('shop_owner_id', $shopOwnerId)
             ->where('is_active', true)
@@ -317,6 +370,14 @@ final class ReadPageController extends Controller
     {
         if ($redirect = $this->employeePasswordRedirect()) {
             return $redirect;
+        }
+
+        if ($this->erpContext()?->isOwnerMode()) {
+            $rows = $this->ownerInventoryRead->rows($this->shopOwnerId());
+
+            return Inertia::render('ERP/inventory/ProductInventory', [
+                'initialData' => $this->ownerInventoryRead->paginateRows($rows, ['per_page' => 200]),
+            ]);
         }
 
         $initialData = InventoryItem::with(['sizes', 'colorVariants', 'images'])

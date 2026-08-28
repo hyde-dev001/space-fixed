@@ -2,13 +2,14 @@
 
 namespace App\Http\Controllers;
 
-use App\Enums\EmployeeStatus;
 use App\Enums\ShopOwnerStatus;
 use App\Models\Employee;
 use App\Models\ShopOwner;
 use App\Models\User;
 use App\Models\UserAddress;
 use App\Rules\NotDisposableEmail;
+use App\Services\Authentication\UnifiedLoginContextResolver;
+use App\Services\HR\EmployeeOperationalPolicy;
 use App\Services\NominatimService;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\Request;
@@ -16,24 +17,28 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
-use Inertia\Inertia;
 
 /**
  * UserController
  *
  * Handles user registration, authentication, and profile management
- * for regular customers on the platform
+ * for customers, staff, and shop owners on the platform
  */
 class UserController extends Controller
 {
+    public function __construct(
+        private readonly EmployeeOperationalPolicy $employeePolicy,
+        private readonly UnifiedLoginContextResolver $loginContext,
+        private readonly ShopOwnerAuthController $shopOwnerAuth,
+    )
+    {
+    }
+
     private const MAX_SHOP_OWNER_RESUBMISSION_ATTEMPTS = 3;
 
-    private const SHOP_OWNER_LOGIN_2FA_TTL_MINUTES = 10;
-
-    private const SHOP_OWNER_LOGIN_2FA_SESSION_KEY = 'shop_owner_2fa_entry';
+    private const DUMMY_PASSWORD_HASH = '$2y$10$5n3DruMVEXy/QDrfseoa.uJ3ed2F8YjGuWk8rbM.tE0uNTd85ew.C';
 
     /**
      * Check whether an email can be used for public registration flows.
@@ -390,214 +395,149 @@ class UserController extends Controller
                 'email' => 'required|email',
                 'password' => 'required',
             ]);
-            // Attempt to authenticate as a regular User first
+            $context = $this->loginContext->resolve(
+                (string) $credentials['email'],
+                (string) $credentials['password'],
+            );
+
+            if ($context === 'shop_owner') {
+                return $this->shopOwnerAuth->login($request);
+            }
+
+            if ($context !== 'user') {
+                throw ValidationException::withMessages([
+                    'email' => ['Invalid email or password.'],
+                ]);
+            }
+
             $user = User::where('email', $credentials['email'])->first();
+            $passwordHash = $user?->getAuthPassword() ?: self::DUMMY_PASSWORD_HASH;
 
-            if ($user && Hash::check($credentials['password'], $user->password)) {
-                // Check if email is verified (only for non-employee users)
-                if (! $user->shop_owner_id && ! $user->hasVerifiedEmail()) {
-                    // Auto-login user so they can access verification page
-                    Auth::guard('user')->login($user);
-                    $request->session()->regenerate();
+            if (! $user || ! Hash::check((string) $credentials['password'], (string) $passwordHash)) {
+                throw ValidationException::withMessages([
+                    'email' => ['Invalid email or password.'],
+                ]);
+            }
 
-                    throw ValidationException::withMessages([
-                        'email' => ['Please verify your email address before logging in. Check your inbox for the verification link.'],
-                    ])->redirectTo(route('verification.notice'));
-                }
-
-                // Check user status (stored as string in database)
-                if ($user->status !== 'active') {
-                    throw ValidationException::withMessages([
-                        'email' => ['Your account has been suspended. Please contact support.'],
-                    ]);
-                }
-
-                // For employees/staff, only active employment status can access the system.
-                if ($user->shop_owner_id) {
-                    $shopOwner = ShopOwner::find($user->shop_owner_id);
-                    if ($shopOwner) {
-                        $shopOwnerStatus = $shopOwner->status;
-                        $isShopSuspended = $shopOwnerStatus instanceof ShopOwnerStatus
-                            ? $shopOwnerStatus === ShopOwnerStatus::SUSPENDED
-                            : (string) $shopOwnerStatus === ShopOwnerStatus::SUSPENDED->value;
-
-                        if ($isShopSuspended) {
-                            throw ValidationException::withMessages([
-                                'email' => ['Your shop account has been suspended. Please contact your administrator.'],
-                            ]);
-                        }
-                    }
-
-                    $employees = Employee::where('shop_owner_id', $user->shop_owner_id)
-                        ->whereRaw('LOWER(email) = ?', [strtolower((string) $user->email)])
-                        ->orderBy('id')
-                        ->limit(2)
-                        ->get();
-                    if ($employees->count() > 1) {
-                        throw ValidationException::withMessages([
-                            'email' => ['Your account is unavailable. Please contact support.'],
-                        ]);
-                    }
-
-                    if ($employees->count() === 1) {
-                        $employeeStatus = $employees->first()->status;
-                        $isEmployeeActive = $employeeStatus instanceof EmployeeStatus
-                            ? $employeeStatus === EmployeeStatus::ACTIVE
-                            : (string) $employeeStatus === EmployeeStatus::ACTIVE->value;
-
-                        if (! $isEmployeeActive) {
-                            throw ValidationException::withMessages([
-                                'email' => ['Your account has been suspended. Please contact support.'],
-                            ]);
-                        }
-                    }
-                }
-
-                Auth::guard('user')->login($user, $request->filled('remember'));
+            // Check if email is verified (only for non-employee users)
+            if (! $user->shop_owner_id && ! $user->hasVerifiedEmail()) {
+                // Auto-login user so they can access verification page
+                Auth::guard('user')->login($user);
                 $request->session()->regenerate();
 
-                // CRITICAL: Explicitly save the session to ensure it persists
-                $request->session()->save();
+                throw ValidationException::withMessages([
+                    'email' => ['Please verify your email address before logging in. Check your inbox for the verification link.'],
+                ])->redirectTo(route('verification.notice'));
+            }
 
-                $user->update([
-                    'last_login_at' => now(),
-                    'last_login_ip' => $request->ip(),
+            // Check user status (stored as string in database)
+            if ($user->status !== 'active') {
+                throw ValidationException::withMessages([
+                    'email' => ['Your account has been suspended. Please contact support.'],
                 ]);
+            }
 
-                Log::info('User logged in successfully', ['user_id' => $user->id, 'user_role' => $user->role, 'shop_owner_id' => $user->shop_owner_id]);
+            // For employees/staff, only active employment status can access the system.
+            if ($user->shop_owner_id) {
+                $shopOwner = ShopOwner::find($user->shop_owner_id);
+                if ($shopOwner) {
+                    $shopOwnerStatus = $shopOwner->status;
+                    $isShopSuspended = $shopOwnerStatus instanceof ShopOwnerStatus
+                        ? $shopOwnerStatus === ShopOwnerStatus::SUSPENDED
+                        : (string) $shopOwnerStatus === ShopOwnerStatus::SUSPENDED->value;
 
-                // Determine redirect URL based ONLY on shop_owner_id
-                // - If user has shop_owner_id -> they are an employee/staff member -> redirect to erp/time-in
-                // - Otherwise -> they are a regular customer -> redirect to landing
-                // We use shop_owner_id as the source of truth because role column is unreliable (contaminated by migrations)
-
-                $isEmployee = ! is_null($user->shop_owner_id);
-
-                // Default redirect for customers (no shop_owner_id)
-                $redirectUrl = route('landing');
-
-                // If user is an employee, redirect to time-in
-                if ($isEmployee) {
-                    $redirectUrl = route('erp.time-in');
-
-                    // Check for password change requirement (staff only)
-                    if ($user->force_password_change) {
-                        $redirectUrl = route('erp.profile');
+                    if ($isShopSuspended) {
+                        throw ValidationException::withMessages([
+                            'email' => ['Your shop account has been suspended. Please contact your administrator.'],
+                        ]);
                     }
                 }
 
-                Log::info('Login redirect decision', [
-                    'user_id' => $user->id,
-                    'shop_owner_id' => $user->shop_owner_id,
-                    'role' => $user->role,
-                    'is_employee' => $isEmployee,
-                    'is_customer' => ! $isEmployee,
-                    'redirect_url' => $redirectUrl,
-                ]);
-
-                // For Inertia requests, return a redirect that preserves the session
-                if ($request->header('X-Inertia')) {
-                    return redirect($redirectUrl)->with('success', 'Welcome back!');
-                }
-
-                // For API/JSON requests, return the redirect URL in JSON
-                if ($request->expectsJson()) {
-                    return response()->json([
-                        'success' => true,
-                        'message' => 'Login successful!',
-                        'redirect' => $redirectUrl,
-                        'user' => [
-                            'id' => $user->id,
-                            'name' => $user->name,
-                            'email' => $user->email,
-                            'role' => $user->role,
-                            'is_employee' => $isEmployee,
-                        ],
+                $employees = Employee::where('shop_owner_id', $user->shop_owner_id)
+                    ->whereRaw('LOWER(email) = ?', [strtolower((string) $user->email)])
+                    ->orderBy('id')
+                    ->limit(2)
+                    ->get();
+                if ($employees->count() > 1) {
+                    throw ValidationException::withMessages([
+                        'email' => ['Your account is unavailable. Please contact support.'],
                     ]);
                 }
 
-                // For regular requests, perform a server-side redirect
-                return redirect($redirectUrl)->with('success', 'Welcome back!');
-            }
-
-            // If not a regular user, attempt to authenticate as ShopOwner
-            $shopOwner = ShopOwner::where('email', $credentials['email'])->first();
-
-            if (! $shopOwner) {
-                throw ValidationException::withMessages([
-                    'email' => ['Invalid email or password.'],
-                ]);
-            }
-
-            if ($shopOwner->status === 'pending') {
-                throw ValidationException::withMessages([
-                    'email' => ['Your application is still pending admin approval. Please wait for confirmation.'],
-                ]);
-            }
-
-            if ($shopOwner->status === 'rejected') {
-                $reason = $shopOwner->rejection_reason ? ': '.$shopOwner->rejection_reason : '';
-                throw ValidationException::withMessages([
-                    'email' => ['Your application was rejected'.$reason.'. Please contact support.'],
-                ]);
-            }
-
-            if ($shopOwner->status !== ShopOwnerStatus::APPROVED) {
-                throw ValidationException::withMessages([
-                    'email' => ['Your account is inactive. Please contact support.'],
-                ]);
-            }
-
-            if (! Hash::check($credentials['password'], $shopOwner->password)) {
-                throw ValidationException::withMessages([
-                    'email' => ['Invalid email or password.'],
-                ]);
-            }
-
-            $remember = (bool) $request->boolean('remember');
-
-            if ((bool) ($shopOwner->two_factor_email_enabled ?? false)) {
-                $this->beginShopOwnerTwoFactorChallenge($request, $shopOwner, $remember);
-
-                if ($request->expectsJson()) {
-                    return response()->json([
-                        'success' => true,
-                        'requires_two_factor' => true,
-                        'message' => 'Verification code sent to your email.',
-                        'redirect' => route('shop-owner.two-factor.challenge'),
-                    ], 202);
+                if ($employees->count() === 1) {
+                    if (! $this->employeePolicy->canAuthenticate($employees->first())) {
+                        throw ValidationException::withMessages([
+                            'email' => ['Your account has been suspended. Please contact support.'],
+                        ]);
+                    }
                 }
-
-                return redirect()->route('shop-owner.two-factor.challenge')->with('status', 'otp-sent');
             }
 
-            // Login the shop owner using shop_owner guard
-            Auth::guard('shop_owner')->login($shopOwner, $remember);
+            Auth::guard('user')->login($user, $request->filled('remember'));
             $request->session()->regenerate();
 
-            $shopOwner->update([
+            // CRITICAL: Explicitly save the session to ensure it persists
+            $request->session()->save();
+
+            $user->update([
                 'last_login_at' => now(),
                 'last_login_ip' => $request->ip(),
             ]);
 
-            Log::info('Shop owner logged in successfully via unified login', [
-                'shop_owner_id' => $shopOwner->id,
-                'business_name' => $shopOwner->business_name,
+            Log::info('User logged in successfully', ['user_id' => $user->id, 'user_role' => $user->role, 'shop_owner_id' => $user->shop_owner_id]);
+
+            // Determine redirect URL based ONLY on shop_owner_id
+            // - If user has shop_owner_id -> they are an employee/staff member -> redirect to erp/time-in
+            // - Otherwise -> they are a regular customer -> redirect to landing
+            // We use shop_owner_id as the source of truth because role column is unreliable (contaminated by migrations)
+
+            $isEmployee = ! is_null($user->shop_owner_id);
+
+            // Default redirect for customers (no shop_owner_id)
+            $redirectUrl = route('landing');
+
+            // If user is an employee, redirect to time-in
+            if ($isEmployee) {
+                $redirectUrl = route('erp.time-in');
+
+                // Check for password change requirement (staff only)
+                if ($user->force_password_change) {
+                    $redirectUrl = route('erp.profile');
+                }
+            }
+
+            Log::info('Login redirect decision', [
+                'user_id' => $user->id,
+                'shop_owner_id' => $user->shop_owner_id,
+                'role' => $user->role,
+                'is_employee' => $isEmployee,
+                'is_customer' => ! $isEmployee,
+                'redirect_url' => $redirectUrl,
             ]);
 
+            // For Inertia requests, return a redirect that preserves the session
+            if ($request->header('X-Inertia')) {
+                return redirect($redirectUrl)->with('success', 'Welcome back!');
+            }
+
+            // For API/JSON requests, return the redirect URL in JSON
             if ($request->expectsJson()) {
                 return response()->json([
                     'success' => true,
                     'message' => 'Login successful!',
-                    'shop_owner' => [
-                        'id' => $shopOwner->id,
-                        'business_name' => $shopOwner->business_name,
-                        'email' => $shopOwner->email,
+                    'redirect' => $redirectUrl,
+                    'user' => [
+                        'id' => $user->id,
+                        'name' => $user->name,
+                        'email' => $user->email,
+                        'role' => $user->role,
+                        'is_employee' => $isEmployee,
                     ],
                 ]);
             }
 
-            return redirect()->route('shop-owner.dashboard')->with('success', 'Welcome back!');
+            // For regular requests, perform a server-side redirect
+            return redirect($redirectUrl)->with('success', 'Welcome back!');
         } catch (ValidationException $e) {
             if ($request->expectsJson()) {
                 return response()->json([
@@ -619,52 +559,6 @@ class UserController extends Controller
             }
 
             return back()->withErrors(['email' => 'Login failed. Please try again.']);
-        }
-    }
-
-    private function beginShopOwnerTwoFactorChallenge(Request $request, ShopOwner $shopOwner, bool $remember): void
-    {
-        $request->session()->put('shop_owner_2fa_pending_id', (int) $shopOwner->id);
-        $request->session()->put('shop_owner_2fa_remember', $remember);
-        $request->session()->put('shop_owner_2fa_pending_at', now()->timestamp);
-
-        $this->issueShopOwnerLoginOtp($request, $shopOwner);
-    }
-
-    private function issueShopOwnerLoginOtp(Request $request, ShopOwner $shopOwner): void
-    {
-        $otp = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
-        $ttl = now()->addMinutes(self::SHOP_OWNER_LOGIN_2FA_TTL_MINUTES);
-
-        try {
-            $request->session()->put(self::SHOP_OWNER_LOGIN_2FA_SESSION_KEY, [
-                'shop_owner_id' => (int) $shopOwner->id,
-                'otp_hash' => Hash::make($otp),
-                'attempts' => 0,
-                'expires_at' => $ttl->timestamp,
-            ]);
-
-            Mail::raw(
-                "Your SoleSpace login verification code is {$otp}. This code expires in "
-                .self::SHOP_OWNER_LOGIN_2FA_TTL_MINUTES
-                .' minutes.',
-                function ($message) use ($shopOwner) {
-                    $message->to($shopOwner->email)
-                        ->subject('SoleSpace Login Verification Code');
-                }
-            );
-        } catch (\Throwable $e) {
-            $request->session()->forget(self::SHOP_OWNER_LOGIN_2FA_SESSION_KEY);
-
-            Log::error('Failed to send shop owner login 2FA code from unified login', [
-                'shop_owner_id' => $shopOwner->id,
-                'email' => $shopOwner->email,
-                'error' => $e->getMessage(),
-            ]);
-
-            throw ValidationException::withMessages([
-                'email' => ['Unable to send verification code right now. Please try again.'],
-            ]);
         }
     }
 

@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Builder;
 use App\Enums\EmployeeStatus;
+use App\Casts\EmployeeStatusCast;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Activitylog\LogOptions;
 
@@ -80,7 +81,7 @@ class Employee extends Model
         'other_allowances' => 'decimal:2',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
-        'status' => EmployeeStatus::class,
+        'status' => EmployeeStatusCast::class,
     ];
 
     /**
@@ -260,6 +261,11 @@ class Employee extends Model
     public function belongsToShop($shopOwnerId): bool
     {
         return $this->shop_owner_id === $shopOwnerId;
+    }
+
+    public function isOffboarded(): bool
+    {
+        return $this->trashed();
     }
 
     /**

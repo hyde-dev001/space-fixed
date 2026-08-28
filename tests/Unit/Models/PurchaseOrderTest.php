@@ -220,6 +220,22 @@ class PurchaseOrderTest extends TestCase
         $this->assertEquals(2, PurchaseOrder::active()->count());
     }
 
+    public function test_state_category_scopes_distinguish_receiving_closure_and_cancellation(): void
+    {
+        foreach (['sent', 'confirmed', 'in_transit', 'partially_received', 'delivered', 'completed', 'cancelled'] as $status) {
+            PurchaseOrder::factory()->create([
+                'shop_owner_id' => $this->shopOwner->id,
+                'supplier_id' => $this->supplier->id,
+                'status' => $status,
+            ]);
+        }
+
+        $this->assertSame(4, PurchaseOrder::active()->count());
+        $this->assertSame(1, PurchaseOrder::awaitingClosure()->count());
+        $this->assertSame(1, PurchaseOrder::completed()->count());
+        $this->assertSame(2, PurchaseOrder::cancellable()->count());
+    }
+
     /** @test */
     public function overdue_scope_works_correctly()
     {

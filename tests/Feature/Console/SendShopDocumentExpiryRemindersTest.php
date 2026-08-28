@@ -38,7 +38,7 @@ final class SendShopDocumentExpiryRemindersTest extends TestCase
         $reviewer = SuperAdmin::factory()->admin()->create();
         $date = CarbonImmutable::parse('2026-08-13', 'Asia/Manila');
 
-        foreach ([31, 30, 29, 8, 7, 6, 0, -1] as $days) {
+        foreach ([31, 30, 29, 8, 7, 6, 1, 0, -1] as $days) {
             $this->documentForDate($date->addDays($days), $reviewer);
         }
 
@@ -53,7 +53,7 @@ final class SendShopDocumentExpiryRemindersTest extends TestCase
             ->orderBy('threshold_days')
             ->pluck('threshold_days')
             ->all());
-        $this->assertSame(8, ShopDocument::query()->where('status', 'approved')->where('is_current', true)->count());
+        $this->assertSame(9, ShopDocument::query()->where('status', 'approved')->where('is_current', true)->count());
     }
 
     public function test_local_timezone_is_used_when_date_is_omitted(): void

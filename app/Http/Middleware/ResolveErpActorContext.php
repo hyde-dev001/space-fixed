@@ -75,7 +75,7 @@ final class ResolveErpActorContext
         }
 
         if ($ownerMode) {
-            if (! $this->isApprovedCompany($tenantOwner)) {
+            if (! $this->isApprovedOwnerRoute($tenantOwner, $entry)) {
                 return $this->responder->deny(
                     $request,
                     'OWNER_ERP_ACCOUNT_INELIGIBLE',
@@ -116,13 +116,25 @@ final class ResolveErpActorContext
             || ($guard === 'user' && $actor instanceof User);
     }
 
-    private function isApprovedCompany(ShopOwner $owner): bool
+    /**
+     * Owner ERP routes normally remain company-only. Existing module metadata
+     * explicitly widens the Logistics surface for individual owner-operated
+     * shops without changing the owner guard or introducing a new role.
+     *
+     * @param  array<string, mixed>  $entry
+     */
+    private function isApprovedOwnerRoute(ShopOwner $owner, array $entry): bool
     {
         $status = $owner->getRawOriginal('status') ?? $owner->status;
         $status = $status instanceof \BackedEnum ? $status->value : (string) $status;
+        $registrationType = strtolower(trim((string) $owner->registration_type));
+        $registrationTypes = is_array($entry['registration_types'] ?? null)
+            ? array_map(static fn (mixed $type): string => strtolower(trim((string) $type)), $entry['registration_types'])
+            : ['company'];
+        $registrationTypes = $registrationTypes === [] ? ['company'] : $registrationTypes;
 
         return strtolower(trim($status)) === 'approved'
-            && strtolower(trim((string) $owner->registration_type)) === 'company';
+            && in_array($registrationType, $registrationTypes, true);
     }
 
     /**

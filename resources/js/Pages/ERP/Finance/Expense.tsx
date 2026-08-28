@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { usePage } from "@inertiajs/react";
 import Swal from "sweetalert2";
 import Chart from "react-apexcharts";
 import { ApexOptions } from "apexcharts";
@@ -236,6 +237,10 @@ const formatExpenseDate = (value: string) => {
 };
 
 const Expense: React.FC = () => {
+  const page = usePage();
+  const auth = page.props.auth as any;
+  const ownerMode = auth?.erpActor?.ownerMode === true;
+  const canCreateExpense = !ownerMode;
   const api = useFinanceApi();
   const [showArchived, setShowArchived] = useState(false);
   
@@ -489,6 +494,8 @@ const Expense: React.FC = () => {
   };
 
   const openAddModal = () => {
+    if (!canCreateExpense) return;
+
     setAddForm({
       date: "",
       due_date: "",
@@ -553,6 +560,8 @@ const Expense: React.FC = () => {
   };
 
   const handleSaveAdd = async () => {
+    if (!canCreateExpense) return;
+
     // guard: ensure required fields are filled
     if (!addForm.date || !addForm.category.trim() || !(addForm.amount > 0)) {
       Swal.fire({
@@ -700,7 +709,7 @@ const Expense: React.FC = () => {
               <div>
                 <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Expense Management</h1>
                 <p className="text-gray-600 dark:text-gray-400 mt-2">
-                  Add and track team spending across the ERP suite.
+                  {ownerMode ? 'Review team spending across the ERP suite.' : 'Add and track team spending across the ERP suite.'}
                 </p>
               </div>
               <div className="flex items-center gap-3">
@@ -711,7 +720,7 @@ const Expense: React.FC = () => {
                 >
                   {showArchived ? 'Show Active' : 'Show Archived'}
                 </button>
-                {!showArchived && (
+                {canCreateExpense && !showArchived && (
                   <button 
                     onClick={openAddModal}
                     className="inline-flex items-center px-4 py-2 rounded-lg text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 shadow-sm transition-colors">
@@ -1119,7 +1128,7 @@ const Expense: React.FC = () => {
         </div>
       )}
 
-      {isAddOpen && (
+      {canCreateExpense && isAddOpen && (
         <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
           <div className="w-full max-w-lg max-h-[90vh] rounded-2xl bg-white dark:bg-gray-900 shadow-2xl border border-gray-200 dark:border-gray-800 overflow-hidden flex flex-col">
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex-shrink-0">

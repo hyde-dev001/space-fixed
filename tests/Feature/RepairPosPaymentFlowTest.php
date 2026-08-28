@@ -1419,7 +1419,10 @@ class RepairPosPaymentFlowTest extends TestCase
     #[Test]
     public function shop_actor_can_approve_and_execute_manual_repair_refund(): void
     {
-        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'registration_type' => 'company',
+        ]);
         /** @var \App\Models\User $customer */
         $customer = \App\Models\User::factory()->create();
         /** @var \App\Models\User $shopActor */
@@ -1472,7 +1475,16 @@ class RepairPosPaymentFlowTest extends TestCase
         $this->actingAs($shopActor, 'user')
             ->postJson("/api/repair-pos/refunds/{$refundId}/approve", [])
             ->assertOk()
-            ->assertJsonPath('data.status', 'approved');
+            ->assertJsonPath('data.status', 'requested')
+            ->assertJsonPath('data.finance_status', 'approved_initial')
+            ->assertJsonPath('data.shop_owner_status', 'pending');
+
+        $this->actingAs($shopOwner, 'shop_owner')
+            ->postJson("/api/shop-owner/repair-refunds/{$refundId}/approve", [])
+            ->assertOk()
+            ->assertJsonPath('data.status', 'approved')
+            ->assertJsonPath('data.finance_status', 'approved')
+            ->assertJsonPath('data.shop_owner_status', 'approved');
 
         $this->actingAs($shopActor, 'user')
             ->postJson("/api/repair-pos/refunds/{$refundId}/execute", ['execution_mode' => 'manual'])

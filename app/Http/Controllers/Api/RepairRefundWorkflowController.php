@@ -6,9 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\PosRefund;
 use App\Models\RepairRequest;
 use App\Services\PaymentSettlementService;
-use App\Services\ShopOwnerApprovalPolicyService;
 use App\Services\RepairOnlineRefundWorkflowService;
 use App\Services\RepairPosRefundService;
+use App\Services\Orders\OrderRefundOwnerProjection;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
@@ -16,6 +16,10 @@ use Illuminate\Validation\ValidationException;
 
 class RepairRefundWorkflowController extends Controller
 {
+    public function __construct(
+        private readonly OrderRefundOwnerProjection $orderRefundOwnerProjection,
+    ) {}
+
     public function financeDeliveryReconciliations(Request $request, PaymentSettlementService $payments)
     {
         $actor = Auth::guard('user')->user();
@@ -132,6 +136,26 @@ class RepairRefundWorkflowController extends Controller
 
         return response()->json([
             'data' => $refunds->map(fn (PosRefund $refund) => $this->transformApprovalRefund($refund))->values(),
+        ]);
+    }
+
+    public function ownerShow(Request $request, int $id)
+    {
+        $actor = Auth::guard('shop_owner')->user();
+        if (!$actor) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        $refund = $this->buildApprovalListQuery($request, (int) $actor->id)
+            ->whereKey($id)
+            ->first();
+
+        if (!$refund) {
+            return response()->json(['message' => 'Repair refund not found'], 404);
+        }
+
+        return response()->json([
+            'data' => $this->transformApprovalRefund($refund),
         ]);
     }
 
@@ -484,8 +508,7 @@ class RepairRefundWorkflowController extends Controller
         $shopOwnerStatus = strtolower((string) ($refund->shop_owner_status ?? 'pending'));
         $status = strtolower((string) $refund->status);
 
-        $requiresOwnerApproval = app(ShopOwnerApprovalPolicyService::class)
-            ->requiresOwnerApprovalForRefund((int) $refund->shop_owner_id, (float) ($refund->requested_amount ?? 0));
+        $requiresOwnerApproval = (bool) ($refund->requires_owner_approval ?? true);
 
         $approvalStage = 'none';
         if ($financeStatus === 'pending') {
@@ -611,6 +634,7 @@ class RepairRefundWorkflowController extends Controller
                 'execution_amount' => (float) ($refund->execution_amount ?? 0),
                 'execution_proof_urls' => is_array($refund->execution_proof_urls) ? $refund->execution_proof_urls : [],
             ],
+            'owner_projection' => $this->orderRefundOwnerProjection->project($refund),
         ];
     }
 

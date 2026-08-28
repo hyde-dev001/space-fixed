@@ -1059,11 +1059,11 @@ class PayrollService
             throw new Exception('13th-month release is restricted to December unless explicitly overridden.');
         }
 
-        $employeeQuery = Employee::query()
-            ->forShopOwner($shopOwnerId)
-            ->where('status', 'active');
+        $employeeQuery = Employee::query()->forShopOwner($shopOwnerId);
 
-        if (! empty($employeeIds)) {
+        if (empty($employeeIds)) {
+            $employeeQuery->where('status', 'active');
+        } else {
             $employeeQuery->whereIn('id', $employeeIds);
         }
 

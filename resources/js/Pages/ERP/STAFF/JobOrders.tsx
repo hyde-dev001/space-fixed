@@ -7,6 +7,13 @@ import ErrorModal from "../../../components/common/ErrorModal";
 import { Modal } from "../../../components/ui/modal";
 import { calculateRetailRevenue } from "../../../utils/deliveryRevenue";
 import { MoneyIcon } from "../../../components/common/MoneyIcon";
+import {
+  ORDER_STATUS_PRESENTATION,
+  getOrderStatusPresentation,
+  parseOrderActions,
+  type OrderAction,
+  type OrderStatus,
+} from "../../../utils/orderStatusPresentation";
 import axios from "axios";
 
 const SHOP_OWNED_LOGISTICS = "Shop-owned logistics";
@@ -65,7 +72,7 @@ type Order = {
   grand_total: number;
   paymentStatus: string;
   paymentMethod?: string;
-  status: "pending" | "processing" | "shipped" | "delivered" | "cancelled" | "refund";
+  status: OrderStatus;
   customerReceiptStatus?: 'pending' | 'confirmed' | 'disputed' | string;
   customerReceivedAt?: string | null;
   customerReceiptDisputedAt?: string | null;
@@ -76,6 +83,12 @@ type Order = {
     notes?: string | null;
     reported_at?: string | null;
   } | null;
+  availableActions?: OrderAction[];
+  ownerProjection?: {
+    fulfillment_status: OrderStatus;
+    business_closed: boolean;
+    blockers: string[];
+  };
   cancellation_reason?: string | null;
   cancellation_note?: string | null;
   cancellation_other_reason_note?: string | null;
@@ -538,11 +551,13 @@ export default function JobOrdersPage() {
       grand_total: grandTotal,
       paymentStatus: order.payment_status || 'pending',
       paymentMethod: order.payment_method || '',
-      status: (order.status === 'completed' ? 'delivered' : order.status) as Order['status'],
+      status: order.status as Order['status'],
       customerReceiptStatus: order.customer_receipt_status || 'pending',
       customerReceivedAt: order.customer_received_at || null,
       customerReceiptDisputedAt: order.customer_receipt_disputed_at || null,
       activeDeliveryDispute: order.active_delivery_dispute || null,
+      availableActions: parseOrderActions(order.available_actions),
+      ownerProjection: order.owner_projection || undefined,
       cancellation_reason: order.cancellation_reason || null,
       cancellation_note: order.cancellation_note || null,
       cancellation_other_reason_note: order.cancellation_other_reason_note || null,
@@ -648,7 +663,7 @@ export default function JobOrdersPage() {
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
   const paginatedOrders = filteredOrders.slice(startIndex, endIndex);
-  const processableOrders = paginatedOrders.filter((order) => order.status === "pending");
+  const processableOrders = paginatedOrders.filter((order) => order.availableActions?.includes('processing'));
 
   // Calculate statistics
   const stats = useMemo(() => {
@@ -657,6 +672,7 @@ export default function JobOrdersPage() {
     const processing = orders.filter(o => o.status === "processing").length;
     const shipped = orders.filter(o => o.status === "shipped").length;
     const delivered = orders.filter(o => o.status === "delivered").length;
+    const completed = orders.filter(o => o.status === "completed").length;
     const refund = orders.filter((o) =>
       o.status === "refund"
       || String(o.paymentStatus || '').toLowerCase() === 'refunded'
@@ -678,7 +694,7 @@ export default function JobOrdersPage() {
         });
       }, 0);
 
-    return { total, pending, processing, shipped, delivered, refund, totalRevenue };
+    return { total, pending, processing, shipped, delivered, completed, refund, totalRevenue };
   }, [orders]);
 
   const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -708,7 +724,7 @@ export default function JobOrdersPage() {
     if (!result.isConfirmed) return;
     try {
       const orderIds = selectedOrders.filter((id) =>
-        orders.some((order) => order.id === id && order.status === "pending")
+        orders.some((order) => order.id === id && order.availableActions?.includes('processing'))
       );
       if (orderIds.length === 0) {
         setSelectedOrders([]);
@@ -742,7 +758,9 @@ export default function JobOrdersPage() {
       }
 
       setOrders(prev =>
-        prev.map(o => orderIds.includes(o.id) ? { ...o, status: 'processing' as any } : o)
+        prev.map(o => orderIds.includes(o.id)
+          ? { ...o, status: 'processing', availableActions: ['shipped'] as OrderAction[] }
+          : o)
       );
       setSelectedOrders([]);
       Swal.fire('Done', `${orderIds.length} order(s) marked as Processing.`, 'success');
@@ -754,22 +772,6 @@ export default function JobOrdersPage() {
         'error',
       );
     }
-  };
-
-  const getStatusColor = (status: string) => {
-    const colors: Record<string, string> = {
-      "pending": "bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:ring-amber-700/40",
-      "processing": "bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-200 dark:bg-blue-900/20 dark:text-blue-300 dark:ring-blue-700/40",
-      "shipped": "bg-indigo-50 text-indigo-700 ring-1 ring-inset ring-indigo-200 dark:bg-indigo-900/20 dark:text-indigo-300 dark:ring-indigo-700/40",
-      "delivered": "bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:ring-emerald-700/40",
-      "cancelled": "bg-rose-50 text-rose-700 ring-1 ring-inset ring-rose-200 dark:bg-rose-900/20 dark:text-rose-300 dark:ring-rose-700/40",
-      "refund": "bg-orange-50 text-orange-700 ring-1 ring-inset ring-orange-200 dark:bg-orange-900/20 dark:text-orange-300 dark:ring-orange-700/40",
-    };
-    return colors[status] || "bg-gray-100 text-gray-800 ring-1 ring-inset ring-gray-200";
-  };
-
-  const formatStatusLabel = (status: string) => {
-    return status.charAt(0).toUpperCase() + status.slice(1);
   };
 
   const formatOrderTotal = (total: string | number) => {
@@ -1960,7 +1962,7 @@ export default function JobOrdersPage() {
                       : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
                   }`}
                 >
-                  Pending ({stats.pending})
+                  {ORDER_STATUS_PRESENTATION.pending.label} ({stats.pending})
                 </button>
                 <button
                   onClick={() => setSelectedTab("processing")}
@@ -1970,7 +1972,7 @@ export default function JobOrdersPage() {
                       : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
                   }`}
                 >
-                  Processing ({stats.processing})
+                  {ORDER_STATUS_PRESENTATION.processing.label} ({stats.processing})
                 </button>
                 <button
                   onClick={() => setSelectedTab("shipped")}
@@ -1980,7 +1982,7 @@ export default function JobOrdersPage() {
                       : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
                   }`}
                 >
-                  Shipped ({stats.shipped})
+                  {ORDER_STATUS_PRESENTATION.shipped.label} ({stats.shipped})
                 </button>
                 <button
                   onClick={() => setSelectedTab("delivered")}
@@ -1990,7 +1992,17 @@ export default function JobOrdersPage() {
                       : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
                   }`}
                 >
-                  Delivered ({stats.delivered})
+                  {ORDER_STATUS_PRESENTATION.delivered.label} ({stats.delivered})
+                </button>
+                <button
+                  onClick={() => setSelectedTab("completed")}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    selectedTab === "completed"
+                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                  }`}
+                >
+                  {ORDER_STATUS_PRESENTATION.completed.label} ({stats.completed})
                 </button>
                 <button
                   onClick={() => setSelectedTab("refund")}
@@ -2000,7 +2012,7 @@ export default function JobOrdersPage() {
                       : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
                   }`}
                 >
-                  Refund ({stats.refund})
+                  {ORDER_STATUS_PRESENTATION.refund.label} ({stats.refund})
                 </button>
               </div>
 
@@ -2117,7 +2129,7 @@ export default function JobOrdersPage() {
                           aria-label={`Select order ${order.order_number}`}
                           checked={selectedOrders.includes(order.id)}
                           onChange={() => handleSelectOrder(order.id)}
-                          disabled={order.status !== "pending"}
+                          disabled={!order.availableActions?.includes('processing')}
                           className="rounded border-gray-300 dark:border-gray-700 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
                         />
                       </td>
@@ -2177,9 +2189,9 @@ export default function JobOrdersPage() {
                       </td>
                       <td className="box-border px-4 py-4 align-top">
                         <div className="flex flex-col items-start gap-2 min-h-12">
-                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-full whitespace-nowrap ${getStatusColor(order.status)}`}>
+                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-full whitespace-nowrap ${getOrderStatusPresentation(order.status).badgeClass}`}>
                             <span className="size-1.5 rounded-full bg-current opacity-70" aria-hidden="true" />
-                            {formatStatusLabel(order.status)}
+                            {getOrderStatusPresentation(order.status).label}
                           </span>
                           {order.customerReceiptStatus === 'disputed' ? (
                             <span className="inline-flex items-center rounded-full bg-rose-100 px-2.5 py-1 text-xs font-semibold text-rose-700 dark:bg-rose-900/30 dark:text-rose-300">
@@ -2222,7 +2234,7 @@ export default function JobOrdersPage() {
                           >
                             <EyeIcon className="size-5" />
                           </button>
-                          {order.status === "pending" && (
+                          {order.availableActions?.includes('processing') && (
                             <button
                               type="button"
                               onClick={() => handleViewOrder(order)}
@@ -2233,7 +2245,7 @@ export default function JobOrdersPage() {
                               <CheckCircleIcon className="size-5" />
                             </button>
                           )}
-                          {order.status === "processing" && (
+                          {order.availableActions?.includes('shipped') && (
                             <button
                               type="button"
                               onClick={() => handleShipOrder(order)}
@@ -2625,7 +2637,7 @@ export default function JobOrdersPage() {
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Delivery awareness</p>
-                      <p className="mt-1 text-sm font-semibold text-gray-900 dark:text-white">Official status: {formatStatusLabel(viewOrder.status)}</p>
+                      <p className="mt-1 text-sm font-semibold text-gray-900 dark:text-white">Official status: {formatLogisticsStatus(viewOrder.status)}</p>
                     </div>
                     {viewOrder.customerReceiptStatus === 'disputed' ? (
                       <span className="rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-700 dark:bg-rose-900/30 dark:text-rose-300">Customer Dispute</span>

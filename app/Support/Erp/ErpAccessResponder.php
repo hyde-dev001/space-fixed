@@ -10,7 +10,6 @@ use Symfony\Component\HttpFoundation\Response;
 
 final class ErpAccessResponder
 {
-
     /**
      * @param  array<int, string>  $moduleKeys
      */
@@ -43,6 +42,7 @@ final class ErpAccessResponder
         $routeName = (string) ($request->route()?->getName() ?? '');
 
         return str_starts_with($routeName, 'shop-owner.erp.')
+            || str_starts_with($routeName, 'shop-owner.shell.')
             || str_starts_with($routeName, 'shop_owner.erp.');
     }
 
@@ -71,7 +71,7 @@ final class ErpAccessResponder
     {
         return match ($code) {
             'ERP_AUTH_REQUIRED' => 'Authentication is required for this ERP route.',
-            'OWNER_ERP_ACCOUNT_INELIGIBLE' => 'This shop owner account is not eligible for the ERP workspace.',
+            'OWNER_ERP_ACCOUNT_INELIGIBLE' => 'This shop owner account is not eligible for this ERP route.',
             'ERP_ROUTE_NOT_ALLOWED' => 'This ERP route is not available for this account.',
             'MODULE_STATE_MISSING' => 'This ERP module has not been initialized for the shop.',
             'MODULE_DISABLED' => 'This ERP module is disabled for the shop.',

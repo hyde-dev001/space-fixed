@@ -143,8 +143,8 @@ const MetricCard: React.FC<MetricCardProps> = ({
 // Transform function to convert snake_case API response to camelCase
 const transformLeaveFromApi = (apiLeave: any): LeaveRequest => {
   // Build employee name from employee relationship
-  const employeeName = apiLeave.employee 
-    ? `${apiLeave.employee.first_name || ''} ${apiLeave.employee.last_name || ''}`.trim()
+  const employeeName = apiLeave.employee
+    ? (apiLeave.employee.name || `${apiLeave.employee.first_name || ''} ${apiLeave.employee.last_name || ''}`.trim())
     : 'Unknown';
   
   const department = apiLeave.employee?.department || 'N/A';

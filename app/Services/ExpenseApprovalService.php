@@ -6,7 +6,6 @@ use App\Models\Approval;
 use App\Models\Finance\Expense;
 use App\Models\User;
 use App\Models\PurchaseOrderReceipt;
-use App\Models\ShopOwner;
 use App\Enums\ApprovalStatus;
 use App\Enums\NotificationType;
 use Illuminate\Support\Facades\DB;
@@ -15,7 +14,8 @@ class ExpenseApprovalService
 {
     public function __construct(
         private ApprovalService $approvalService,
-        private NotificationService $notificationService
+        private NotificationService $notificationService,
+        private ShopOwnerApprovalPolicyService $approvalPolicyService
     ) {}
 
     public function submitProcurementExpense(
@@ -129,8 +129,8 @@ class ExpenseApprovalService
 
     /**
      * Create the smallest manual approval workflow for an expense.
-     * Low-value expenses require Finance review; high-value expenses then
-     * require the Shop Owner's final approval.
+     * The binary owner policy is frozen in Approval::approval_roles; later
+     * actions use that stored role map rather than live settings.
      */
     public function createExpenseApproval(Expense $expense, User $shopOwner): Approval
     {
@@ -139,9 +139,10 @@ class ExpenseApprovalService
             throw new \LogicException('Operational expenses are not routed through manual approval.');
         }
 
-        $shop = ShopOwner::query()->find($shopOwner->id);
-        $threshold = (float) ($shop?->high_value_threshold ?? 5000.00);
-        $approvalRoles = (float) $expense->amount >= $threshold
+        $approvalRoles = $this->approvalPolicyService->requiresOwnerApprovalForExpense(
+            (int) $shopOwner->id,
+            (float) $expense->amount
+        )
             ? ['1' => 'finance', '2' => 'shop_owner']
             : ['1' => 'finance'];
 
@@ -278,7 +279,7 @@ class ExpenseApprovalService
         $shopOwnerId = (int) $approval->shop_owner_id;
         $expenseData = $this->buildExpenseNotificationData($expense, $approver, null);
         $financeActionUrl = "/finance?section=expense-tracking&expense={$expense->id}";
-        $shopOwnerActionUrl = "/shop-owner/expense-approvals?expense={$expense->id}";
+        $shopOwnerActionUrl = $this->notificationService->ownerApprovalActionUrl('expense', $expense->id);
 
         if ($result['is_final'] ?? false) {
             $requesterId = $this->resolveRequesterId($expense, $approval);
@@ -305,7 +306,8 @@ class ExpenseApprovalService
                 message: "Expense {$expenseData['reference']} for ₱{$expenseData['amount']} now requires shop owner approval.",
                 data: $expenseData,
                 actionUrl: $shopOwnerActionUrl,
-                priority: 'medium'
+                priority: 'medium',
+                requiresAction: true,
             );
 
             return;

@@ -4,7 +4,7 @@ import Swal from "sweetalert2";
 import { Inertia } from "@inertiajs/inertia";
 import { router, usePage } from '@inertiajs/react';
 
-type EmployeeStatus = "active" | "on_leave" | "probation" | "inactive" | "suspended";
+type EmployeeStatus = "active" | "inactive" | "suspended" | "terminated";
 
 type Employee = {
   id: number;
@@ -15,6 +15,8 @@ type Employee = {
   department: string;
   position: string;
   status: EmployeeStatus;
+  onLeave?: boolean;
+  probation?: boolean;
   suspensionReason?: string;
   hiredAt: string;
   lastActiveAt?: string;
@@ -197,18 +199,15 @@ const MetricCard: React.FC<MetricCardProps> = ({
 
 const statusLabel: Record<EmployeeStatus, string> = {
   active: "Active",
-  on_leave: "On Leave",
-  probation: "Probation",
-  inactive: "Under Investigation",
+  inactive: "Inactive",
   suspended: "Suspended",
+  terminated: "Terminated",
 };
 
 const statusBadge = (status: EmployeeStatus) => {
   if (status === "active") return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200";
-  if (status === "on_leave") return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200";
-  if (status === "probation") return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200";
-  if (status === "inactive") return "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200";
-  if (status === "suspended") return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200";
+  if (status === "inactive") return "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200";
+  if (status === "suspended") return "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200";
   return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200";
 };
 
@@ -234,7 +233,8 @@ const seedEmployees: Employee[] = [
     phone: "+63 928 112 0034",
     department: "Sales",
     position: "Sales Specialist",
-    status: "on_leave",
+    status: "active",
+    onLeave: true,
     hiredAt: "2023-07-01",
     lastActiveAt: "2026-01-12",
     location: "Cebu",
@@ -247,7 +247,8 @@ const seedEmployees: Employee[] = [
     phone: "+63 915 222 9182",
     department: "HR",
     position: "HR Generalist",
-    status: "probation",
+    status: "active",
+    probation: true,
     hiredAt: "2025-11-20",
     lastActiveAt: "2026-01-19",
     location: "Quezon City",
@@ -303,6 +304,25 @@ const formatDate = (value?: string) => {
 
 const buildName = (employee: Employee) => `${employee.firstName} ${employee.lastName}`;
 
+const canonicalEmployeeStatus = (value: unknown): EmployeeStatus => {
+  switch (String(value ?? '').trim().toLowerCase()) {
+    case 'active':
+      return 'active';
+    case 'inactive':
+      return 'inactive';
+    case 'suspended':
+      return 'suspended';
+    case 'terminated':
+      return 'terminated';
+    case 'on_leave':
+    case 'on-leave':
+    case 'probation':
+      return 'active';
+    default:
+      return 'inactive';
+  }
+};
+
 const parseLinkedUserId = (linkedUser?: string | number) => {
   const numericValue = Number(linkedUser ?? 0);
   return Number.isFinite(numericValue) && numericValue > 0 ? numericValue : null;
@@ -328,6 +348,10 @@ const transformEmployeeFromApi = (apiEmployee: any): Employee => {
     }
   }
   
+  const projection = apiEmployee.owner_projection || apiEmployee.ownerProjection || {};
+  const rawStatus = String(apiEmployee.status ?? '').trim().toLowerCase();
+  const legacyOnLeave = rawStatus === 'on_leave' || rawStatus === 'on-leave';
+
   return {
     id: apiEmployee.id,
     firstName: firstName,
@@ -336,7 +360,9 @@ const transformEmployeeFromApi = (apiEmployee: any): Employee => {
     phone: apiEmployee.phone,
     department: apiEmployee.department,
     position: apiEmployee.position,
-    status: apiEmployee.status as EmployeeStatus,
+    status: canonicalEmployeeStatus(apiEmployee.status),
+    onLeave: Boolean(projection.on_leave ?? projection.onLeave ?? apiEmployee.on_leave ?? apiEmployee.onLeave ?? legacyOnLeave),
+    probation: Boolean(projection.probation ?? apiEmployee.probation ?? rawStatus === 'probation'),
     suspensionReason: apiEmployee.suspension_reason || apiEmployee.suspensionReason,
     hiredAt: apiEmployee.hire_date || apiEmployee.hiredAt || apiEmployee.created_at,
     lastActiveAt: apiEmployee.last_active_at || apiEmployee.lastActiveAt || apiEmployee.updated_at,
@@ -361,6 +387,8 @@ export const EmployeeManagement: React.FC<{
   // Get shop owner data from auth for business type filtering
   const auth = pageProps.auth;
   const ownerMode = auth?.erpActor?.ownerMode === true;
+  const ownerReadOnly = ownerMode;
+  const ownerCanCreate = ownerMode;
   const employeeApiBase = ownerMode ? '/shop-owner/employees' : '/api/hr/employees';
   const invitationApiBase = ownerMode ? '/api/shop-owner/employees' : '/api/hr/employees';
   const shopOwner = auth?.shop_owner || auth?.user?.shop_owner || pageProps?.shop_owner;
@@ -924,8 +952,8 @@ export const EmployeeManagement: React.FC<{
 
     const total = (isServerPaginated || meta) ? (meta?.total ?? rows.length) : rows.length;
     const active = rows.filter((r) => r.status === "active").length;
-    const onLeave = rows.filter((r) => r.status === "on_leave").length;
-    const probation = rows.filter((r) => r.status === "probation").length;
+    const onLeave = rows.filter((r) => r.onLeave).length;
+    const probation = rows.filter((r) => r.probation).length;
     return {
       total,
       active,
@@ -1111,7 +1139,7 @@ export const EmployeeManagement: React.FC<{
           row.id === targetEmployeeId
             ? {
                 ...row,
-                status: "inactive",
+                status: ownerMode ? "suspended" : row.status,
                 suspensionReason: investigationReason,
               }
             : row
@@ -1123,7 +1151,7 @@ export const EmployeeManagement: React.FC<{
           prev
             ? {
                 ...prev,
-                status: "inactive",
+                status: ownerMode ? "suspended" : prev.status,
                 suspensionReason: investigationReason,
               }
             : prev
@@ -2123,8 +2151,13 @@ export const EmployeeManagement: React.FC<{
         <div className="flex justify-between items-start mb-8">
           <div>
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Employee Management</h1>
-            <p className="text-gray-600 dark:text-gray-400">Manage employee accounts, access, and lifecycle</p>
+            <p className="text-gray-600 dark:text-gray-400">
+              {ownerReadOnly
+                ? 'Review your shop workforce and add employees without changing account permissions.'
+                : 'Manage employee accounts, access, and lifecycle'}
+            </p>
           </div>
+          {(!ownerReadOnly || ownerCanCreate) && (
           <div className="flex gap-3">
             <button
               onClick={handleAddEmployee}
@@ -2137,6 +2170,7 @@ export const EmployeeManagement: React.FC<{
               Add Employee
             </button>
           </div>
+          )}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
@@ -2212,26 +2246,6 @@ export const EmployeeManagement: React.FC<{
                   Active
                 </button>
                 <button
-                  onClick={() => setFilterStatus("on_leave")}
-                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                    filterStatus === "on_leave"
-                      ? "bg-yellow-600 text-white"
-                      : "bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
-                  }`}
-                >
-                  On Leave
-                </button>
-                <button
-                  onClick={() => setFilterStatus("probation")}
-                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                    filterStatus === "probation"
-                      ? "bg-blue-600 text-white"
-                      : "bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
-                  }`}
-                >
-                  Probation
-                </button>
-                <button
                   onClick={() => setFilterStatus("inactive")}
                   className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                     filterStatus === "inactive"
@@ -2239,7 +2253,7 @@ export const EmployeeManagement: React.FC<{
                       : "bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
                   }`}
                 >
-                  Under Investigation
+                  Inactive
                 </button>
                 <button
                   onClick={() => setFilterStatus("suspended")}
@@ -2250,6 +2264,16 @@ export const EmployeeManagement: React.FC<{
                   }`}
                 >
                   Suspended
+                </button>
+                <button
+                  onClick={() => setFilterStatus("terminated")}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                    filterStatus === "terminated"
+                      ? "bg-red-800 text-white"
+                      : "bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
+                  }`}
+                >
+                  Terminated
                 </button>
               </div>
             </div>
@@ -2308,13 +2332,13 @@ export const EmployeeManagement: React.FC<{
                           </div>
                           <div className="ml-2 min-w-0">
                             <div className="text-sm font-medium text-gray-900 dark:text-white truncate" title={buildName(employee)}>{buildName(employee)}</div>
-                            <div className="text-xs text-gray-500 dark:text-gray-400 truncate" title={employee.location || "-"}>{employee.location || "-"}</div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400 truncate" title={ownerReadOnly ? 'Restricted' : (employee.location || "-")}>{ownerReadOnly ? 'Restricted' : (employee.location || "-")}</div>
                           </div>
                         </div>
                       </td>
                       <td className="px-3 py-3 align-top">
-                        <div className="text-sm text-gray-900 dark:text-white truncate" title={employee.email}>{employee.email}</div>
-                        {employee.phone && <div className="text-xs text-gray-500 dark:text-gray-400 truncate" title={employee.phone}>{employee.phone}</div>}
+                        <div className="text-sm text-gray-900 dark:text-white truncate" title={ownerReadOnly ? 'Restricted' : employee.email}>{ownerReadOnly ? 'Restricted' : employee.email}</div>
+                        {!ownerReadOnly && employee.phone && <div className="text-xs text-gray-500 dark:text-gray-400 truncate" title={employee.phone}>{employee.phone}</div>}
                       </td>
                       <td className="px-3 py-3 align-top">
                         <div className="text-sm text-gray-900 dark:text-white truncate" title={employee.department}>{employee.department}</div>
@@ -2324,9 +2348,21 @@ export const EmployeeManagement: React.FC<{
                         <div className="text-xs text-gray-500 dark:text-gray-400">Hired {formatDate(employee.hiredAt)}</div>
                       </td>
                       <td className="px-3 py-3 align-top">
-                        <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${statusBadge(employee.status)}`}>
-                          {statusLabel[employee.status]}
-                        </span>
+                        <div className="flex flex-wrap gap-1">
+                          <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${statusBadge(employee.status)}`}>
+                            {statusLabel[employee.status]}
+                          </span>
+                          {employee.onLeave && (
+                            <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
+                              On Leave
+                            </span>
+                          )}
+                          {employee.probation && (
+                            <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                              Probation
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-3 py-3 align-top text-sm text-gray-500 dark:text-gray-400">
                         {formatDate(employee.lastActiveAt)}
@@ -2343,6 +2379,8 @@ export const EmployeeManagement: React.FC<{
                       </td>
                       <td className="px-3 py-3 whitespace-nowrap text-right text-sm font-medium">
                         <div className="flex flex-wrap justify-end gap-2">
+                          {!ownerReadOnly && (
+                            <>
                           <button
                             onClick={() => handleResetEmployeePassword(employee)}
                             className={`text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 ${(isProcessingId === employee.id || String(employee.email ?? '').trim().toLowerCase() === currentUserEmail) ? 'opacity-50 cursor-not-allowed' : ''}`}
@@ -2363,6 +2401,8 @@ export const EmployeeManagement: React.FC<{
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                             </svg>
                           </button>
+                            </>
+                          )}
                           <button
                             onClick={() => openViewModal(employee)}
                             className={`text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 ${isProcessingId === employee.id ? 'opacity-50 cursor-not-allowed' : ''}`}
@@ -2371,6 +2411,8 @@ export const EmployeeManagement: React.FC<{
                           >
                             <InfoIcon className="h-5 w-5" />
                           </button>
+                          {!ownerReadOnly && (
+                            <>
                           <button
                             onClick={() => openPermissionModal(employee)}
                             className={`text-purple-600 hover:text-purple-900 dark:text-purple-400 dark:hover:text-purple-300 ${isProcessingId === employee.id ? 'opacity-50 cursor-not-allowed' : ''}`}
@@ -2379,7 +2421,7 @@ export const EmployeeManagement: React.FC<{
                           >
                             <LockIcon className="h-5 w-5" />
                           </button>
-                          {!['inactive', 'suspended'].includes(employee.status) && (
+                          {!['inactive', 'suspended', 'terminated'].includes(employee.status) && (
                             <>
                               <button
                                 onClick={() => handleSuspendClick(employee)}
@@ -2394,6 +2436,8 @@ export const EmployeeManagement: React.FC<{
                             </>
                           )}
                           {/* Delete button removed per request */}
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -2483,11 +2527,11 @@ export const EmployeeManagement: React.FC<{
                     </div>
                     <div>
                       <p className="text-base text-gray-500 dark:text-gray-400">Email</p>
-                      <p className="text-base font-medium text-gray-900 dark:text-white">{selectedEmployee.email}</p>
+                      <p className="text-base font-medium text-gray-900 dark:text-white">{ownerReadOnly ? 'Restricted' : selectedEmployee.email}</p>
                     </div>
                     <div>
                       <p className="text-base text-gray-500 dark:text-gray-400">Phone</p>
-                      <p className="text-base font-medium text-gray-900 dark:text-white">{selectedEmployee.phone || "N/A"}</p>
+                      <p className="text-base font-medium text-gray-900 dark:text-white">{ownerReadOnly ? 'Restricted' : (selectedEmployee.phone || "N/A")}</p>
                     </div>
                     <div>
                       <p className="text-base text-gray-500 dark:text-gray-400">Role</p>
@@ -2499,7 +2543,7 @@ export const EmployeeManagement: React.FC<{
                     </div>
                     <div>
                       <p className="text-base text-gray-500 dark:text-gray-400">Location</p>
-                      <p className="text-base font-medium text-gray-900 dark:text-white">{selectedEmployee.location || "N/A"}</p>
+                      <p className="text-base font-medium text-gray-900 dark:text-white">{ownerReadOnly ? 'Restricted' : (selectedEmployee.location || "N/A")}</p>
                     </div>
                     <div>
                       <p className="text-base text-gray-500 dark:text-gray-400">Status</p>
@@ -2524,7 +2568,7 @@ export const EmployeeManagement: React.FC<{
                   </div>
                     <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
                       <div className="flex justify-end gap-2">
-                        {['inactive', 'suspended'].includes(selectedEmployee.status) && (
+                        {!ownerReadOnly && ['inactive', 'suspended'].includes(selectedEmployee.status) && (
                           <Button variant="success" onClick={() => handleActivate(selectedEmployee.id, buildName(selectedEmployee))} className="mr-2" disabled={isProcessingId === selectedEmployee.id}>
                             {isProcessingId === selectedEmployee.id ? 'Processing...' : 'Activate'}
                           </Button>

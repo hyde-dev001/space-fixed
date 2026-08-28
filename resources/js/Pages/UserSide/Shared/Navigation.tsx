@@ -290,11 +290,11 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
     '/register': 'login', // Register page should highlight ACCOUNT
     '/user/register': 'login', // User register page should highlight ACCOUNT
     '/login': 'login', // Login page should highlight ACCOUNT
-    '/user/login': 'login', // User login page should highlight ACCOUNT
+    '/user/login': 'login', // Compatibility login URL should highlight ACCOUNT
     '/forgot-password': 'login', // Forgot password page should highlight ACCOUNT
     '/otp': 'login', // OTP page should highlight ACCOUNT
     '/new-password': 'login', // New password page should highlight ACCOUNT
-    '/shop-owner/login': 'login', // Shop Owner Login should highlight ACCOUNT
+    '/shop-owner/login': 'login', // Compatibility login URL should highlight ACCOUNT
     '/shop-owner/two-factor': 'login', // Shop Owner 2FA challenge should highlight ACCOUNT
     '/shop-owner-register': 'services', // Shop Owner Registration should highlight Services
     '/shop-owner/register': 'services' // Another possible URL
@@ -1152,7 +1152,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                     </>
                   ) : (
                     <Link
-                      href="/user/login"
+                      href="/login"
                       className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-gray-900 transition-colors hover:bg-gray-50"
                       onClick={() => setUserDropdownOpen(false)}
                     >
@@ -1322,7 +1322,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                   </>
                 ) : (
                   <Link
-                    href="/user/login"
+                    href="/login"
                     className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-gray-900 transition-colors hover:bg-gray-50"
                     onClick={() => setMobileMenuOpen(false)}
                   >

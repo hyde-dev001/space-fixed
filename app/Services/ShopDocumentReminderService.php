@@ -15,8 +15,9 @@ use Illuminate\Support\Facades\DB;
 
 final class ShopDocumentReminderService
 {
-    /** @var array<int, int> */
-    private const THRESHOLDS = [30, 7, 0];
+    public function __construct(
+        private readonly ShopDocumentValidityService $validity,
+    ) {}
 
     /**
      * Process one local business date. The query is deliberately limited to
@@ -29,7 +30,7 @@ final class ShopDocumentReminderService
         $localDate = $localDate->setTimezone($this->timezone())->startOfDay();
         $targetDates = array_map(
             fn (int $threshold): string => $localDate->addDays($threshold)->toDateString(),
-            self::THRESHOLDS,
+            $this->validity->milestoneDays(),
         );
         $result = ['matched' => 0, 'sent' => 0, 'skipped' => 0];
 
@@ -67,7 +68,7 @@ final class ShopDocumentReminderService
         $query->chunkById(max(1, min(1000, $chunk)), function (Collection $documents) use (&$result, $localDate): void {
             foreach ($documents as $document) {
                 $result['matched']++;
-                $threshold = $this->thresholdFor($localDate, $document->expires_on);
+                $threshold = $this->thresholdFor($localDate, $document);
                 if ($threshold === null || ! $document->shopOwner) {
                     $result['skipped']++;
                     continue;
@@ -84,18 +85,12 @@ final class ShopDocumentReminderService
         return $result;
     }
 
-    private function thresholdFor(CarbonImmutable $localDate, mixed $expiresOn): ?int
+    private function thresholdFor(CarbonImmutable $localDate, ShopDocument $document): ?int
     {
-        if (! $expiresOn) {
-            return null;
-        }
+        $days = $this->validity->daysUntilExpiry($document, $localDate);
 
-        $expirationDate = CarbonImmutable::parse((string) $expiresOn, $this->timezone())->startOfDay();
-        $days = $localDate->diffInDays($expirationDate, false);
-        $wholeDays = (int) $days;
-
-        return (float) $days === (float) $wholeDays && in_array($wholeDays, self::THRESHOLDS, true)
-            ? $wholeDays
+        return $days !== null && in_array($days, $this->validity->milestoneDays(), true)
+            ? $days
             : null;
     }
 

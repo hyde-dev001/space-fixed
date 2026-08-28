@@ -172,7 +172,7 @@ class PurchaseOrderService
         DB::beginTransaction();
 
         try {
-            $purchaseOrder = PurchaseOrder::findOrFail($poId);
+            $purchaseOrder = PurchaseOrder::query()->lockForUpdate()->findOrFail($poId);
 
             switch ($status) {
                 case 'sent':
@@ -227,7 +227,7 @@ class PurchaseOrderService
         DB::beginTransaction();
 
         try {
-            $purchaseOrder = PurchaseOrder::findOrFail($poId);
+            $purchaseOrder = PurchaseOrder::query()->lockForUpdate()->findOrFail($poId);
 
             $purchaseOrder->sendToSupplier();
 
@@ -261,7 +261,7 @@ class PurchaseOrderService
         DB::beginTransaction();
 
         try {
-            $purchaseOrder = PurchaseOrder::findOrFail($poId);
+            $purchaseOrder = PurchaseOrder::query()->lockForUpdate()->findOrFail($poId);
 
             $purchaseOrder->cancel($userId, $reason);
 
@@ -291,20 +291,23 @@ class PurchaseOrderService
      */
     public function getMetrics(int $shopOwnerId): array
     {
-        $totalValue = PurchaseOrder::where('shop_owner_id', $shopOwnerId)->sum('total_cost');
-        $completedValue = PurchaseOrder::where('shop_owner_id', $shopOwnerId)->completed()->sum('total_cost');
+        $orders = PurchaseOrder::query()->byShopOwner($shopOwnerId);
+        $totalOrders = (clone $orders)->count();
+        $totalValue = (clone $orders)->sum('total_cost');
+        $completedValue = (clone $orders)->completed()->sum('total_cost');
 
         return [
-            'total_purchase_orders' => PurchaseOrder::where('shop_owner_id', $shopOwnerId)->count(),
-            'active_orders' => PurchaseOrder::where('shop_owner_id', $shopOwnerId)->active()->count(),
-            'completed_orders' => PurchaseOrder::where('shop_owner_id', $shopOwnerId)->completed()->count(),
-            'cancelled_orders' => PurchaseOrder::where('shop_owner_id', $shopOwnerId)->cancelled()->count(),
-            'overdue_orders' => PurchaseOrder::where('shop_owner_id', $shopOwnerId)->overdue()->count(),
-            'draft_orders' => PurchaseOrder::where('shop_owner_id', $shopOwnerId)->draft()->count(),
+            'total_purchase_orders' => $totalOrders,
+            'active_orders' => (clone $orders)->active()->count(),
+            'awaiting_closure_orders' => (clone $orders)->awaitingClosure()->count(),
+            'completed_orders' => (clone $orders)->completed()->count(),
+            'cancelled_orders' => (clone $orders)->cancelled()->count(),
+            'overdue_orders' => (clone $orders)->overdue()->count(),
+            'draft_orders' => (clone $orders)->draft()->count(),
             'total_value' => $totalValue,
             'completed_value' => $completedValue,
-            'average_order_value' => PurchaseOrder::where('shop_owner_id', $shopOwnerId)->count() > 0 
-                ? $totalValue / PurchaseOrder::where('shop_owner_id', $shopOwnerId)->count() 
+            'average_order_value' => $totalOrders > 0
+                ? $totalValue / $totalOrders
                 : 0,
         ];
     }

@@ -13,7 +13,6 @@ describe('page theme scope', () => {
     expect(isLightOnlyComponent('Notifications/ShopOwnerNotifications')).toBe(false);
     expect(isUserSideComponent('UserSide/Products/LandingPage')).toBe(true);
     expect(isUserSideComponent('Notifications/CustomerNotifications')).toBe(true);
-    expect(isUserSideComponent('ERP/Workspace')).toBe(false);
   });
 
   it('applies the saved dark theme to shop owner registration', () => {

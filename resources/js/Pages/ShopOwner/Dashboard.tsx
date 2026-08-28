@@ -69,8 +69,21 @@ interface DashboardStats {
   }>;
 }
 
+interface DashboardPageProps {
+  auth?: {
+    shop_owner?: {
+      business_type?: string | null;
+      registration_type?: string | null;
+    };
+  };
+  erpMode?: boolean;
+}
+
 export default function Ecommerce() {
-  const { auth, erpMode } = usePage().props as any;
+  const {
+    auth,
+    erpMode,
+  } = usePage().props as DashboardPageProps;
   const Layout = erpMode === true ? AppLayoutERP : AppLayoutShopOwner;
   const businessType = String(auth?.shop_owner?.business_type ?? "").toLowerCase();
   const registrationType = String(auth?.shop_owner?.registration_type ?? "").toLowerCase();
@@ -140,6 +153,7 @@ export default function Ecommerce() {
               : "Overview of your shop's ecommerce performance"}
           </p>
         </div>
+
       <EcommerceMetrics
         stats={stats}
         showOrdersMetric={!hideOrderMetrics}

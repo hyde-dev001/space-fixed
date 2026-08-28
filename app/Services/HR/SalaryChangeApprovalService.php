@@ -17,6 +17,10 @@ class SalaryChangeApprovalService
 
     public function notifySalaryChangeSubmitted(SalaryChange $change, Employee $employee, User $proposer, string $reason): void
     {
+        if ($change->requires_owner_approval === false) {
+            return;
+        }
+
         $this->notificationService->notifySalaryChangeSubmittedToShopOwner(
             (int) $change->shop_owner_id,
             [

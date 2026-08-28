@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Enums\OwnerShellSelectionReason;
 use App\Models\CartItem;
 use App\Models\ConversationMessage;
 use App\Models\Notification;
@@ -9,13 +10,17 @@ use App\Models\ShopOwner;
 use App\Models\User;
 use App\Services\ErpRouteCatalog;
 use App\Services\ErpWorkspaceNavigationService;
+use App\Services\OwnerShell\CanonicalOwnerShellService;
 use App\Services\ShopModuleAccessService;
 use App\Support\Erp\ErpActorContext;
+use App\Support\OwnerShell\OwnerShellMetadata;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Route;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route as RouteFacade;
 use Inertia\Middleware;
+use Throwable;
 
 class HandleInertiaRequests extends Middleware
 {
@@ -70,6 +75,18 @@ class HandleInertiaRequests extends Middleware
                 }
             }
         }
+
+        $ownerShellOwner = null;
+        if ($erpContext?->isOwnerMode() === true) {
+            $ownerShellOwner = $erpContext->ownerActor();
+        } elseif ($erpContext === null) {
+            $shopOwnerActor = Auth::guard('shop_owner')->user();
+            $ownerShellOwner = $shopOwnerActor instanceof ShopOwner ? $shopOwnerActor : null;
+        }
+
+        $ownerShell = $ownerShellOwner instanceof ShopOwner
+            ? $this->ownerShell($request, $ownerShellOwner)
+            : null;
 
         $ownerMode = $erpContext?->isOwnerMode() ?? Auth::guard('shop_owner')->check();
         $moduleEnforcementEnabled = (bool) config('shop_modules.enforcement_enabled', false);
@@ -166,6 +183,7 @@ class HandleInertiaRequests extends Middleware
             'erpUrls' => $this->erpUrls($ownerMode),
             'activeModule' => $activeModule,
             'navigationMode' => $activeModule === null ? 'picker' : 'module',
+            'ownerShell' => $ownerShell,
 
             // Share session flash data
             'success' => fn() => $request->session()->get('success'),
@@ -248,6 +266,51 @@ class HandleInertiaRequests extends Middleware
                 ] : []),
             ],
         ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function ownerShell(Request $request, ShopOwner $owner): array
+    {
+        try {
+            $metadata = app(CanonicalOwnerShellService::class)->forOwner($owner);
+        } catch (Throwable $exception) {
+            report($exception);
+            $metadata = OwnerShellMetadata::existing(OwnerShellSelectionReason::ShellCompositionFailed);
+        }
+
+        $this->recordOwnerShellSelection($request, $owner, $metadata);
+
+        return $metadata->toArray();
+    }
+
+    private function recordOwnerShellSelection(
+        Request $request,
+        ShopOwner $owner,
+        OwnerShellMetadata $metadata,
+    ): void {
+        if (! $request->hasSession()) {
+            return;
+        }
+
+        $selection = [
+            'presentation' => $metadata->presentation->value,
+            'reason' => $metadata->selectionReason->value,
+        ];
+        $sessionKey = 'owner_shell.selection';
+
+        if ($request->session()->get($sessionKey) === $selection) {
+            return;
+        }
+
+        Log::info('shop_owner_shell_selection', [
+            'shop_id' => $owner->getKey(),
+            'presentation' => $selection['presentation'],
+            'reason' => $selection['reason'],
+            'session_id' => $request->session()->getId(),
+        ]);
+        $request->session()->put($sessionKey, $selection);
     }
 
     /**
@@ -422,7 +485,7 @@ class HandleInertiaRequests extends Middleware
     }
 
     /**
-     * @return array{portal: string|null, settings: string|null, workspace: string|null, notifications: string|null, profile: string|null, logout: string|null, manageModules: string|null}
+     * @return array{portal: string|null, settings: string|null, notifications: string|null, profile: string|null, logout: string|null, manageModules: string|null}
      */
     private function erpUrls(bool $ownerMode): array
     {
@@ -430,7 +493,6 @@ class HandleInertiaRequests extends Middleware
             return [
                 'portal' => null,
                 'settings' => null,
-                'workspace' => null,
                 'notifications' => null,
                 'profile' => null,
                 'logout' => null,
@@ -443,9 +505,6 @@ class HandleInertiaRequests extends Middleware
         return [
             'portal' => $this->namedRouteUrl('shop-owner.dashboard'),
             'settings' => $settings,
-            'workspace' => (bool) config('shop_modules.owner_erp_workspace_enabled', false)
-                ? $this->namedRouteUrl('shop-owner.erp.workspace')
-                : null,
             'notifications' => $this->namedRouteUrl('shop-owner.notifications.index'),
             'profile' => $this->namedRouteUrl('shop-owner.shop-profile'),
             'logout' => $this->namedRouteUrl('shop-owner.logout'),
@@ -477,6 +536,9 @@ class HandleInertiaRequests extends Middleware
             return null;
         }
 
-        return $this->erpWorkspaceNavigation->forKey((string) $moduleKeys[0]);
+        return $this->erpWorkspaceNavigation->forOwner(
+            $context->tenantOwner(),
+            (string) $moduleKeys[0],
+        );
     }
 }

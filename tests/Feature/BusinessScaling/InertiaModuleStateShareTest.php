@@ -23,12 +23,19 @@ final class InertiaModuleStateShareTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        config([
+            'owner_shell.enabled' => false,
+            'owner_shell.allowlisted_shop_ids' => [],
+        ]);
+    }
+
     public function test_shop_owner_dashboard_shares_module_state_for_approval_navigation(): void
     {
-        config([
-            'shop_modules.owner_erp_workspace_enabled' => true,
-            'shop_modules.enforcement_enabled' => true,
-        ]);
+        config(['shop_modules.enforcement_enabled' => true]);
         $owner = ShopOwner::factory()->approved()->create([
             'registration_type' => 'company',
             'business_type' => 'both',
@@ -53,7 +60,8 @@ final class InertiaModuleStateShareTest extends TestCase
                 ->where('moduleStates.procurement.accessible', true)
                 ->where('auth.shopModules.finance.accessible', true)
                 ->where('auth.shopModules.procurement.accessible', true)
-                ->where('erpUrls.workspace', route('shop-owner.erp.workspace'))
+                ->where('ownerShell.presentation', 'existing')
+                ->missing('erpUrls.workspace')
             );
     }
 
@@ -81,14 +89,17 @@ final class InertiaModuleStateShareTest extends TestCase
             array_keys($ownerShare['auth']['shopModules']()),
         );
         $this->assertFalse($ownerShare['auth']['shopModules']()['repair_operations']['accessible']);
+        $this->assertSame('existing', $ownerShare['ownerShell']['presentation']);
 
         $employee = User::factory()->create(['shop_owner_id' => $owner->id]);
         $employeeShare = $this->shareFor($employee, 'user');
         $this->assertArrayHasKey('shopModules', $employeeShare['auth']);
+        $this->assertNull($employeeShare['ownerShell']);
 
         $customer = User::factory()->create(['shop_owner_id' => null]);
         $customerShare = $this->shareFor($customer, 'user');
         $this->assertArrayNotHasKey('shopModules', $customerShare['auth']);
+        $this->assertNull($customerShare['ownerShell']);
 
         $admin = SuperAdmin::create([
             'first_name' => 'Share',
@@ -101,6 +112,7 @@ final class InertiaModuleStateShareTest extends TestCase
         ]);
         $adminShare = $this->shareFor($admin, 'super_admin');
         $this->assertArrayNotHasKey('shopModules', $adminShare['auth']);
+        $this->assertNull($adminShare['ownerShell']);
     }
 
     public function test_module_rows_are_loaded_once_when_the_lazy_state_is_evaluated(): void
@@ -129,10 +141,7 @@ final class InertiaModuleStateShareTest extends TestCase
 
     public function test_route_selected_erp_actor_and_owner_capabilities_are_shared_without_wildcard_owner_permissions(): void
     {
-        config([
-            'shop_modules.owner_erp_workspace_enabled' => true,
-            'shop_modules.enforcement_enabled' => true,
-        ]);
+        config(['shop_modules.enforcement_enabled' => true]);
         $owner = ShopOwner::factory()->approved()->create([
             'registration_type' => 'company',
             'business_type' => 'retail',
@@ -161,9 +170,10 @@ final class InertiaModuleStateShareTest extends TestCase
         $this->assertSame($owner->business_name, $share['auth']['erpActor']['name']);
         $this->assertTrue($share['auth']['erpActor']['ownerMode']);
         $this->assertSame($owner->id, $share['auth']['erpActor']['tenantOwnerId']);
+        $this->assertSame('existing', $share['ownerShell']['presentation']);
         $this->assertSame(route('shop-owner.dashboard'), $share['erpUrls']['portal']);
         $this->assertSame(route('shop-owner.settings'), $share['erpUrls']['settings']);
-        $this->assertSame(route('shop-owner.erp.workspace'), $share['erpUrls']['workspace']);
+        $this->assertArrayNotHasKey('workspace', $share['erpUrls']);
         $this->assertTrue($share['erpCapabilities']['GET:shop-owner.erp.workspace']['allowed']);
         $this->assertSame(
             route('shop-owner.erp.workspace'),
@@ -173,10 +183,7 @@ final class InertiaModuleStateShareTest extends TestCase
 
     public function test_owner_capabilities_share_parameterized_read_urls_as_client_resolvable_templates(): void
     {
-        config([
-            'shop_modules.owner_erp_workspace_enabled' => true,
-            'shop_modules.enforcement_enabled' => true,
-        ]);
+        config(['shop_modules.enforcement_enabled' => true]);
         $owner = ShopOwner::factory()->approved()->create([
             'registration_type' => 'company',
             'business_type' => 'both',
@@ -199,10 +206,7 @@ final class InertiaModuleStateShareTest extends TestCase
 
     public function test_dual_sessions_share_the_route_selected_employee_actor_and_preserve_employee_permissions(): void
     {
-        config([
-            'shop_modules.owner_erp_workspace_enabled' => true,
-            'shop_modules.enforcement_enabled' => true,
-        ]);
+        config(['shop_modules.enforcement_enabled' => true]);
         $owner = ShopOwner::factory()->approved()->create([
             'registration_type' => 'company',
             'business_type' => 'retail',
@@ -232,6 +236,7 @@ final class InertiaModuleStateShareTest extends TestCase
         $this->assertSame($employee->id, $share['auth']['erpActor']['id']);
         $this->assertFalse($share['auth']['erpActor']['ownerMode']);
         $this->assertSame($owner->id, $share['auth']['erpActor']['tenantOwnerId']);
+        $this->assertNull($share['ownerShell']);
         $this->assertNotContains('*', $share['auth']['permissions']);
     }
 

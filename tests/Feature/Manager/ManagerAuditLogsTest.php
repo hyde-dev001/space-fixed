@@ -4,8 +4,11 @@ namespace Tests\Feature\Manager;
 
 use App\Models\ShopOwner;
 use App\Models\User;
+use App\Models\AuditLog as ConsolidatedAuditLog;
+use App\Models\HR\AuditLog as HrAuditLog;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Activitylog\Models\Activity;
+use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
@@ -200,5 +203,179 @@ class ManagerAuditLogsTest extends TestCase
 
         $this->assertCount(1, $data);
         $this->assertSame($this->shop->id, $data[0]['subject_id']);
+    }
+
+    public function test_explicit_audit_read_capability_can_access_the_canonical_manager_endpoint(): void
+    {
+        $auditReader = User::factory()->for($this->shop)->create(['role' => 'Staff']);
+        Permission::findOrCreate('access-audit-logs', 'user');
+        $auditReader->givePermissionTo('access-audit-logs');
+
+        $this->actingAs($auditReader, 'user')
+            ->getJson('/api/activity-logs')
+            ->assertOk();
+
+        $this->actingAs($auditReader, 'user')
+            ->getJson('/api/manager/audit-logs')
+            ->assertOk()
+            ->assertJsonStructure([
+                'data' => [
+                    '*' => [
+                        'id',
+                        'action',
+                        'actor',
+                        'target',
+                        'created_at',
+                        'previous_state',
+                        'new_state',
+                        'reason',
+                        'reference_id',
+                        'correlation_id',
+                    ],
+                ],
+                'meta' => ['current_page', 'per_page', 'total', 'last_page'],
+                'stats' => ['total_logs', 'logs_last_24h', 'action_counts'],
+                'last_updated_at',
+            ]);
+    }
+
+    public function test_canonical_manager_audit_logs_merge_operational_and_hr_events_with_readable_context(): void
+    {
+        $orderAudit = ConsolidatedAuditLog::query()->create([
+            'shop_owner_id' => $this->shop->id,
+            'user_id' => $this->manager->id,
+            'actor_user_id' => $this->manager->id,
+            'action' => 'order_reassigned',
+            'object_type' => 'order',
+            'object_id' => 101,
+            'target_type' => 'order',
+            'target_id' => 101,
+            'metadata' => [
+                'previous_state' => ['assigned_staff_id' => 4],
+                'new_state' => ['assigned_staff_id' => 8],
+                'reason' => 'Handler is no longer available.',
+                'reference_id' => 'ORD-101',
+                'correlation_id' => 'corr-order-101',
+            ],
+        ]);
+
+        $leaveAudit = HrAuditLog::query()->create([
+            'shop_owner_id' => $this->shop->id,
+            'user_id' => $this->manager->id,
+            'module' => 'leave',
+            'action' => 'approved',
+            'entity_type' => 'App\\Models\\HR\\LeaveRequest',
+            'entity_id' => 202,
+            'description' => 'Leave request approved by Manager',
+            'old_values' => ['status' => 'pending'],
+            'new_values' => ['status' => 'approved', 'reason' => 'Coverage confirmed.'],
+            'severity' => HrAuditLog::SEVERITY_WARNING,
+            'tags' => ['leave', 'approval'],
+        ]);
+
+        $data = $this->actingAs($this->manager, 'user')
+            ->getJson('/api/manager/audit-logs')
+            ->assertOk()
+            ->json('data');
+
+        $this->assertCount(2, $data);
+        $orderRow = collect($data)->firstWhere('id', 'central:' . $orderAudit->id);
+        $leaveRow = collect($data)->firstWhere('id', 'hr:' . $leaveAudit->id);
+
+        $this->assertNotNull($orderRow);
+        $this->assertSame('order_reassigned', $orderRow['action']);
+        $this->assertSame($this->manager->id, $orderRow['actor']['id']);
+        $this->assertSame('order', $orderRow['target']['type']);
+        $this->assertSame(101, $orderRow['target']['id']);
+        $this->assertSame(['assigned_staff_id' => 4], $orderRow['previous_state']);
+        $this->assertSame(['assigned_staff_id' => 8], $orderRow['new_state']);
+        $this->assertSame('Handler is no longer available.', $orderRow['reason']);
+        $this->assertSame('ORD-101', $orderRow['reference_id']);
+        $this->assertSame('corr-order-101', $orderRow['correlation_id']);
+
+        $this->assertNotNull($leaveRow);
+        $this->assertSame('approved', $leaveRow['action']);
+        $this->assertSame(['status' => 'pending'], $leaveRow['previous_state']);
+        $this->assertSame('Coverage confirmed.', $leaveRow['reason']);
+    }
+
+    public function test_canonical_manager_audit_logs_normalize_legacy_activity_state_changes(): void
+    {
+        $activity = $this->createActivity([
+            'event' => 'updated',
+            'description' => 'Order status updated',
+            'subject_type' => 'App\\Models\\Order',
+            'subject_id' => 303,
+            'properties' => [
+                'old_status' => 'pending',
+                'new_status' => 'processing',
+                'reference_id' => 'ORD-303',
+            ],
+        ]);
+
+        $row = $this->actingAs($this->manager, 'user')
+            ->getJson('/api/manager/audit-logs')
+            ->assertOk()
+            ->json('data.0');
+
+        $this->assertSame('activity:' . $activity->id, $row['id']);
+        $this->assertSame('updated', $row['action']);
+        $this->assertSame(['status' => 'pending'], $row['previous_state']);
+        $this->assertSame(['status' => 'processing'], $row['new_state']);
+        $this->assertSame('ORD-303', $row['reference_id']);
+    }
+
+    public function test_canonical_manager_audit_logs_are_tenant_scoped_and_support_filters_and_pagination(): void
+    {
+        $otherShop = ShopOwner::factory()->create();
+        $otherManager = User::factory()->for($otherShop)->create(['role' => 'Manager']);
+
+        foreach (range(1, 12) as $index) {
+            ConsolidatedAuditLog::query()->create([
+                'shop_owner_id' => $this->shop->id,
+                'user_id' => $this->manager->id,
+                'actor_user_id' => $this->manager->id,
+                'action' => 'repair_reassigned',
+                'object_type' => 'repair_request',
+                'object_id' => $index,
+                'target_type' => 'repair_request',
+                'target_id' => $index,
+                'metadata' => ['reason' => "Repair handoff {$index}"],
+            ]);
+        }
+
+        ConsolidatedAuditLog::query()->create([
+            'shop_owner_id' => $this->shop->id,
+            'user_id' => $this->manager->id,
+            'actor_user_id' => $this->manager->id,
+            'action' => 'order_reassigned',
+            'object_type' => 'order',
+            'object_id' => 900,
+            'target_type' => 'order',
+            'target_id' => 900,
+            'metadata' => ['reason' => 'Different event'],
+        ]);
+
+        ConsolidatedAuditLog::query()->create([
+            'shop_owner_id' => $otherShop->id,
+            'user_id' => $otherManager->id,
+            'actor_user_id' => $otherManager->id,
+            'action' => 'repair_reassigned',
+            'object_type' => 'repair_request',
+            'object_id' => 999,
+            'target_type' => 'repair_request',
+            'target_id' => 999,
+            'metadata' => ['reason' => 'Other tenant'],
+        ]);
+
+        $response = $this->actingAs($this->manager, 'user')
+            ->getJson('/api/manager/audit-logs?action=repair_reassigned&target_id=6&page=1&per_page=5')
+            ->assertOk();
+
+        $this->assertSame(1, $response->json('meta.total'));
+        $this->assertSame(1, $response->json('meta.last_page'));
+        $this->assertSame(6, $response->json('data.0.target.id'));
+        $this->assertSame(1, $response->json('stats.total_logs'));
+        $this->assertFalse(collect($response->json('data'))->contains(fn (array $row): bool => $row['target']['id'] === 999));
     }
 }

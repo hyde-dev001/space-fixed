@@ -13,6 +13,7 @@ use App\Models\Order;
 use App\Models\Product;
 use App\Models\RepairRequest;
 use App\Models\ShopOwner;
+use App\Models\ShopOwnerModule;
 use App\Models\User;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -25,6 +26,106 @@ use Tests\TestCase;
 class LogisticsPageAccessTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_company_owner_logistics_props_expose_dispatch_and_review_without_custody_controls(): void
+    {
+        config([
+            'shop_modules.enforcement_enabled' => true,
+        ]);
+        $shop = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
+            'business_type' => 'both',
+        ]);
+        ShopOwnerModule::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'module_key' => 'logistics',
+            'enabled' => true,
+        ]);
+
+        $props = $this->actingAs($shop, 'shop_owner')
+            ->get('/shop-owner/erp/logistics/shipments')
+            ->assertOk()
+            ->viewData('page')['props'];
+
+        $this->assertTrue($props['canAssign']);
+        $this->assertTrue($props['canApproveProof']);
+        $this->assertFalse($props['canUpdateStatus']);
+        $this->assertFalse($props['canRecordProof']);
+        $this->assertFalse($props['canReportIssue']);
+        $this->assertFalse($props['riderMode']);
+    }
+
+    public function test_owner_rider_mode_requires_a_trusted_active_assignment(): void
+    {
+        config([
+            'shop_modules.enforcement_enabled' => true,
+        ]);
+        $shop = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
+            'business_type' => 'both',
+        ]);
+        ShopOwnerModule::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'module_key' => 'logistics',
+            'enabled' => true,
+        ]);
+        $leg = ShipmentLeg::factory()->create([
+            'shipment_id' => Shipment::factory()->create(['shop_owner_id' => $shop->id])->id,
+            'status' => 'assigned',
+        ]);
+        $profile = RiderProfile::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'rider_type' => 'shop_owner',
+            'linked_type' => ShopOwner::class,
+            'linked_id' => $shop->id,
+            'active' => true,
+            'availability_status' => 'available',
+        ]);
+        DeliveryAssignment::factory()->create([
+            'shipment_leg_id' => $leg->id,
+            'rider_profile_id' => $profile->id,
+            'status' => 'accepted',
+        ]);
+
+        $props = $this->actingAs($shop, 'shop_owner')
+            ->get('/shop-owner/erp/logistics/shipments?rider_mode=1')
+            ->assertOk()
+            ->viewData('page')['props'];
+
+        $this->assertTrue($props['riderMode']);
+        $this->assertTrue($props['canUpdateStatus']);
+        $this->assertTrue($props['canRecordProof']);
+        $this->assertTrue($props['canReportIssue']);
+        $this->assertFalse($props['canAssign']);
+        $this->assertFalse($props['canApproveProof']);
+        $this->assertSame([$leg->shipment_id], collect($props['shipments']['data'])->pluck('id')->all());
+    }
+
+    public function test_owner_without_an_active_owner_rider_assignment_cannot_enter_rider_mode(): void
+    {
+        config([
+            'shop_modules.enforcement_enabled' => true,
+        ]);
+        $shop = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
+            'business_type' => 'both',
+        ]);
+        ShopOwnerModule::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'module_key' => 'logistics',
+            'enabled' => true,
+        ]);
+
+        $props = $this->actingAs($shop, 'shop_owner')
+            ->get('/shop-owner/erp/logistics/shipments?rider_mode=1')
+            ->assertOk()
+            ->viewData('page')['props'];
+
+        $this->assertFalse($props['riderMode']);
+        $this->assertFalse($props['canUpdateStatus']);
+        $this->assertFalse($props['canRecordProof']);
+        $this->assertFalse($props['canReportIssue']);
+    }
 
     public function test_shop_owner_can_access_logistics_pages(): void
     {

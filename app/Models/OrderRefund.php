@@ -11,6 +11,28 @@ class OrderRefund extends Model
 {
     use HasFactory;
 
+    public const RECOVERY_STATUS_UNRESOLVED = 'unresolved';
+    public const RECOVERY_STATUS_IN_PROGRESS = 'in_progress';
+    public const RECOVERY_STATUS_RESOLVED = 'resolved';
+    public const RECOVERY_STATUS_SUPERSEDED = 'superseded';
+
+    public const RECOVERY_RESPONSIBLE_FINANCE = 'finance';
+    public const RECOVERY_RESPONSIBLE_PAYMENT_RECOVERY = 'payment_recovery';
+    public const RECOVERY_RESPONSIBLE_NONE = 'none';
+
+    public const RECOVERY_OUTCOME_MANUAL_REFUND = 'manual_refund';
+    public const RECOVERY_OUTCOME_REPLACEMENT_REFUND = 'replacement_refund';
+    public const RECOVERY_OUTCOME_NO_RECOVERY_REQUIRED = 'no_recovery_required';
+    public const RECOVERY_OUTCOME_AUTOMATIC_SUCCESS = 'automatic_success';
+
+    public const RECOVERY_RESOLVER_TYPES = ['user', 'shop_owner', 'super_admin'];
+    public const RECOVERY_OUTCOMES = [
+        self::RECOVERY_OUTCOME_MANUAL_REFUND,
+        self::RECOVERY_OUTCOME_REPLACEMENT_REFUND,
+        self::RECOVERY_OUTCOME_NO_RECOVERY_REQUIRED,
+        self::RECOVERY_OUTCOME_AUTOMATIC_SUCCESS,
+    ];
+
     protected $fillable = [
         'order_id',
         'customer_id',
@@ -18,6 +40,7 @@ class OrderRefund extends Model
         'flow_type',
         'status',
         'shop_owner_status',
+        'requires_owner_approval',
         'shop_owner_approved_at',
         'shop_owner_approved_by',
         'finance_status',
@@ -61,10 +84,22 @@ class OrderRefund extends Model
         'refunded_at',
         'failed_at',
         'processed_by',
+        'recovery_status',
+        'recovery_responsible_party',
+        'recovery_assigned_at',
+        'recovery_attempt_count',
+        'recovery_last_attempted_at',
+        'recovery_resolved_at',
+        'recovery_resolved_by_type',
+        'recovery_resolved_by_id',
+        'recovery_resolution_outcome',
+        'recovery_resolution_reason',
+        'replacement_refund_id',
     ];
 
     protected $casts = [
         'amount' => 'decimal:2',
+        'requires_owner_approval' => 'boolean',
         'evidence_media' => 'array',
         'requested_at' => 'datetime',
         'approved_at' => 'datetime',
@@ -77,6 +112,10 @@ class OrderRefund extends Model
         'refund_executed_at' => 'datetime',
         'refunded_at' => 'datetime',
         'failed_at' => 'datetime',
+        'recovery_attempt_count' => 'integer',
+        'recovery_assigned_at' => 'datetime',
+        'recovery_last_attempted_at' => 'datetime',
+        'recovery_resolved_at' => 'datetime',
     ];
 
     public function order(): BelongsTo
@@ -102,5 +141,10 @@ class OrderRefund extends Model
     public function items(): HasMany
     {
         return $this->hasMany(OrderRefundItem::class);
+    }
+
+    public function replacementRefund(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'replacement_refund_id');
     }
 }

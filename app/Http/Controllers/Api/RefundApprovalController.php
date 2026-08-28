@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\OrderRefund;
 use App\Services\OrderRefundService;
-use App\Services\ShopOwnerApprovalPolicyService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -13,7 +12,6 @@ class RefundApprovalController extends Controller
 {
     public function __construct(
         private readonly OrderRefundService $orderRefundService,
-        private readonly ShopOwnerApprovalPolicyService $shopOwnerApprovalPolicyService,
     ) {
     }
 
@@ -75,6 +73,25 @@ class RefundApprovalController extends Controller
         $paginated->setCollection($paginated->getCollection()->map(fn (OrderRefund $refund) => $this->transformRefund($refund)));
 
         return response()->json($paginated);
+    }
+
+    public function shopOwnerShow(Request $request, int $id)
+    {
+        $shopOwner = Auth::guard('shop_owner')->user();
+        if (!$shopOwner) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        $refund = $this->baseListQuery($request)
+            ->where('shop_owner_id', (int) $shopOwner->id)
+            ->whereKey($id)
+            ->first();
+
+        if (!$refund) {
+            return response()->json(['message' => 'Refund not found'], 404);
+        }
+
+        return response()->json($this->transformRefund($refund));
     }
 
     public function financeApprove(Request $request, int $id)
@@ -366,10 +383,7 @@ class RefundApprovalController extends Controller
             && $shippingFee > 0
             && str_contains($cleanReasonNote, OrderRefundService::FINANCE_SHIPPING_DECISION_MARKER);
 
-        $requiresOwnerApproval = $this->shopOwnerApprovalPolicyService->requiresOwnerApprovalForRefund(
-            (int) ($refund->shop_owner_id ?? 0),
-            $effectiveAmount
-        );
+        $requiresOwnerApproval = (bool) ($refund->requires_owner_approval ?? true);
 
         $approvalStage = 'none';
         if ($financeStatus === 'pending') {

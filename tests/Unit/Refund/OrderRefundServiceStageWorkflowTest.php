@@ -84,6 +84,27 @@ final class OrderRefundServiceStageWorkflowTest extends TestCase
     }
 
     #[Test]
+    public function finance_uses_the_refund_snapshot_when_live_policy_changes(): void
+    {
+        $this->requiresOwnerApproval = true;
+
+        $refund = $this->makeRefund(['requires_owner_approval' => false]);
+        $result = $this->service->approveRequestedRefund($refund, stage: 'finance', processedBy: 10);
+
+        $this->assertSame('approved', $result['result']);
+        $this->assertSame('approved', $refund->finance_status);
+        $this->assertSame('approved', $refund->shop_owner_status);
+
+        $this->requiresOwnerApproval = false;
+        $refund = $this->makeRefund(['requires_owner_approval' => true]);
+        $result = $this->service->approveRequestedRefund($refund, stage: 'finance', processedBy: 10);
+
+        $this->assertSame('approved', $result['result']);
+        $this->assertSame('approved_initial', $refund->finance_status);
+        $this->assertSame('pending', $refund->shop_owner_status);
+    }
+
+    #[Test]
     public function staged_approval_moves_refund_to_pending_customer_shipment(): void
     {
         $refund = $this->makeRefund();
@@ -521,6 +542,7 @@ final class OrderRefundServiceStageWorkflowTest extends TestCase
             'shop_owner_status' => 'pending',
             'finance_status' => 'pending',
             'return_status' => 'awaiting_approval',
+            'requires_owner_approval' => $this->requiresOwnerApproval,
             'amount' => 2500.00,
             'currency' => 'PHP',
             'reason_code' => 'quality_issue',

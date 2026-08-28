@@ -15,6 +15,7 @@ use App\Models\User;
 use App\Services\RepairPosPaymentService;
 use App\Services\RepairPosReceiptService;
 use App\Services\RepairPosRefundService;
+use App\Services\Manager\ManagerRepairService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
@@ -1148,39 +1149,7 @@ class RepairPosController extends Controller
 
     private function assignManualPosRepairOwner(RepairRequest $repair, object $actor, int $shopOwnerId): void
     {
-        $actorUserId = (int) (Auth::guard('user')->id() ?? 0);
-
-        if ($actorUserId > 0) {
-            $actorUser = User::query()->find($actorUserId);
-            if ($actorUser && method_exists($actorUser, 'hasRole') && $actorUser->hasRole('Repairer')) {
-                $repair->forceFill([
-                    'assigned_repairer_id' => $actorUserId,
-                    'assigned_at' => now(),
-                    'assignment_method' => 'manual',
-                    'assigned_by' => $actorUserId,
-                    'assignment_notes' => 'Assigned from manual POS checkout by repairer actor',
-                    'status' => 'assigned_to_repairer',
-                ])->save();
-
-                return;
-            }
-        }
-
-        $candidate = $this->resolveLeastLoadedRepairer($shopOwnerId, false)
-            ?? $this->resolveLeastLoadedRepairer($shopOwnerId, true);
-
-        if (!$candidate) {
-            return;
-        }
-
-        $repair->forceFill([
-            'assigned_repairer_id' => (int) $candidate->id,
-            'assigned_at' => now(),
-            'assignment_method' => 'auto',
-            'assigned_by' => (int) ($actorUserId > 0 ? $actorUserId : $this->resolveActorAuditUserId()),
-            'assignment_notes' => 'Auto-assigned from manual POS checkout',
-            'status' => 'assigned_to_repairer',
-        ])->save();
+        app(ManagerRepairService::class)->assignManualPos($repair, $actor, $shopOwnerId);
     }
 
     private function isIndividualShopOwner(int $shopOwnerId): bool

@@ -209,7 +209,7 @@ export default function UploadService() {
 
   const fetchRepairMaterials = async () => {
     try {
-      const response = await axios.get('/api/shop-owner/inventory/items', {
+      const response = await axios.get('/api/shop-owner/repair-materials', {
         params: {
           category: 'repair_materials',
           per_page: 200,

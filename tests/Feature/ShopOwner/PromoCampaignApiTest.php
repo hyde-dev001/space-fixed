@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\ShopOwner;
 
+use App\Models\Product;
 use App\Models\ShopOwner;
 use App\Models\ShopOwnerModule;
 use App\Models\Product;
@@ -21,36 +22,81 @@ class PromoCampaignApiTest extends TestCase
         $this->assertTrue(Schema::hasColumn('promo_campaigns', 'discount_target'));
     }
 
-    public function test_shop_owner_can_create_and_list_promos(): void
+    public function test_retail_shop_owner_can_read_products_and_create_product_scoped_voucher(): void
     {
         $owner = ShopOwner::factory()->create([
             'business_type' => 'retail',
             'status' => 'approved',
         ]);
+        $otherOwner = ShopOwner::factory()->create([
+            'business_type' => 'retail',
+            'status' => 'approved',
+        ]);
+        $product = Product::create([
+            'shop_owner_id' => $owner->id,
+            'name' => 'Weekend Runner',
+            'price' => 2500,
+            'category' => 'shoes',
+            'stock_quantity' => 10,
+            'is_active' => true,
+        ]);
+        $otherProduct = Product::create([
+            'shop_owner_id' => $otherOwner->id,
+            'name' => 'Other Runner',
+            'price' => 3000,
+            'category' => 'shoes',
+            'stock_quantity' => 10,
+            'is_active' => true,
+        ]);
 
         $this->actingAs($owner, 'shop_owner');
 
+        $this->getJson('/api/shop-owner/promos/products')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $product->id);
+
         $payload = [
             'kind' => 'voucher',
-            'scope' => 'shop_wide',
+            'scope' => 'product_specific',
             'name' => 'Weekend Drop',
-            'code' => 'WEEKEND10',
+            'code' => 'SAVE10',
             'discount_mode' => 'percentage',
             'value' => 10,
             'min_spend' => 2000,
             'usage_limit' => 100,
             'start_at' => now()->subHour()->toISOString(),
             'end_at' => now()->addDays(7)->toISOString(),
+            'product_ids' => [$product->id, $otherProduct->id],
         ];
 
         $this->postJson('/api/shop-owner/promos', $payload)
             ->assertCreated()
-            ->assertJsonPath('success', true);
+            ->assertJsonPath('data.shop_owner_id', $owner->id)
+            ->assertJsonPath('data.products.0.id', $product->id)
+            ->assertJsonMissing(['id' => $otherProduct->id]);
 
         $this->getJson('/api/shop-owner/promos')
             ->assertOk()
-            ->assertJsonPath('success', true)
-            ->assertJsonCount(1, 'data');
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.products.0.id', $product->id);
+
+        $this->assertDatabaseHas('promo_campaigns', [
+            'shop_owner_id' => $owner->id,
+            'code' => 'SAVE10',
+        ]);
+    }
+
+    public function test_non_retail_shop_owner_cannot_use_promo_api(): void
+    {
+        $owner = ShopOwner::factory()->create([
+            'business_type' => 'repair',
+            'status' => 'approved',
+        ]);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->getJson('/api/shop-owner/promos/products')
+            ->assertForbidden();
     }
 
     public function test_company_shop_with_logistics_can_create_shipping_voucher(): void

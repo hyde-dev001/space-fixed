@@ -12,6 +12,28 @@ class PosRefund extends Model
 {
     use HasFactory;
 
+    public const RECOVERY_STATUS_UNRESOLVED = 'unresolved';
+    public const RECOVERY_STATUS_IN_PROGRESS = 'in_progress';
+    public const RECOVERY_STATUS_RESOLVED = 'resolved';
+    public const RECOVERY_STATUS_SUPERSEDED = 'superseded';
+
+    public const RECOVERY_RESPONSIBLE_FINANCE = 'finance';
+    public const RECOVERY_RESPONSIBLE_PAYMENT_RECOVERY = 'payment_recovery';
+    public const RECOVERY_RESPONSIBLE_NONE = 'none';
+
+    public const RECOVERY_OUTCOME_MANUAL_REFUND = 'manual_refund';
+    public const RECOVERY_OUTCOME_REPLACEMENT_REFUND = 'replacement_refund';
+    public const RECOVERY_OUTCOME_NO_RECOVERY_REQUIRED = 'no_recovery_required';
+    public const RECOVERY_OUTCOME_AUTOMATIC_SUCCESS = 'automatic_success';
+
+    public const RECOVERY_RESOLVER_TYPES = ['user', 'shop_owner', 'super_admin'];
+    public const RECOVERY_OUTCOMES = [
+        self::RECOVERY_OUTCOME_MANUAL_REFUND,
+        self::RECOVERY_OUTCOME_REPLACEMENT_REFUND,
+        self::RECOVERY_OUTCOME_NO_RECOVERY_REQUIRED,
+        self::RECOVERY_OUTCOME_AUTOMATIC_SUCCESS,
+    ];
+
     protected $fillable = [
         'refund_no',
         'shop_owner_id',
@@ -27,6 +49,7 @@ class PosRefund extends Model
         'status',
         'finance_status',
         'shop_owner_status',
+        'requires_owner_approval',
         'repairer_status',
         'repairer_assessment_note',
         'repairer_reviewed_by',
@@ -54,11 +77,23 @@ class PosRefund extends Model
         'executed_at',
         'failed_at',
         'failure_reason',
+        'recovery_status',
+        'recovery_responsible_party',
+        'recovery_assigned_at',
+        'recovery_attempt_count',
+        'recovery_last_attempted_at',
+        'recovery_resolved_at',
+        'recovery_resolved_by_type',
+        'recovery_resolved_by_id',
+        'recovery_resolution_outcome',
+        'recovery_resolution_reason',
+        'replacement_refund_id',
     ];
 
     protected $casts = [
         'requested_amount' => 'decimal:2',
         'approved_amount' => 'decimal:2',
+        'requires_owner_approval' => 'boolean',
         'requested_at' => 'datetime',
         'approved_at' => 'datetime',
         'executed_at' => 'datetime',
@@ -70,6 +105,10 @@ class PosRefund extends Model
         'execution_proof_urls' => 'array',
         'paymongo_payment_ids' => 'array',
         'paymongo_refund_ids' => 'array',
+        'recovery_attempt_count' => 'integer',
+        'recovery_assigned_at' => 'datetime',
+        'recovery_last_attempted_at' => 'datetime',
+        'recovery_resolved_at' => 'datetime',
     ];
 
     public function sourceTransaction(): BelongsTo
@@ -100,5 +139,10 @@ class PosRefund extends Model
     public function requestedByUser(): BelongsTo
     {
         return $this->belongsTo(User::class, 'requested_by');
+    }
+
+    public function replacementRefund(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'replacement_refund_id');
     }
 }

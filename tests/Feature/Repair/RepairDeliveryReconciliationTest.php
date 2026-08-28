@@ -10,6 +10,7 @@ use App\Models\PosRefund;
 use App\Models\PosTransaction;
 use App\Models\RepairRequest;
 use App\Models\ShopOwner;
+use App\Models\ShopOwnerModule;
 use App\Models\User;
 use App\Models\UserAddress;
 use App\Services\PaymentSettlementService;
@@ -445,6 +446,7 @@ class RepairDeliveryReconciliationTest extends TestCase
     private function paidIntakeRepair(): array
     {
         $shop = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
             'business_type' => 'repair',
             'shop_latitude' => 14.5995,
             'shop_longitude' => 120.9842,
@@ -453,6 +455,11 @@ class RepairDeliveryReconciliationTest extends TestCase
             'shop_owner_id' => $shop->id,
             'coverage_radius_km' => 12,
             'lead_time_days' => 0,
+        ]);
+        ShopOwnerModule::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'module_key' => 'logistics',
+            'enabled' => true,
         ]);
         $customer = User::factory()->create();
         $repairer = User::factory()->create([

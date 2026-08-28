@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Order;
 use App\Models\OrderRefund;
+use App\Models\ProcurementSettings;
 use App\Models\ShopOwner;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -118,6 +119,20 @@ class OrderRefundApprovalWorkflowTest extends TestCase
         $this->assertFalse((bool) data_get($rows->get($waitingRefund->id), 'canExecutePayout'));
     }
 
+    public function test_new_order_refunds_snapshot_the_setting_at_reservation(): void
+    {
+        $shop = ShopOwner::factory()->approved()->create(['registration_type' => 'individual']);
+        $customer = User::factory()->create();
+
+        $this->setRefundApproval($shop, false);
+        $offRefund = $this->reserveRefund($shop, $customer, 'off');
+        $this->assertSame(false, $offRefund->requires_owner_approval);
+
+        $this->setRefundApproval($shop, true);
+        $onRefund = $this->reserveRefund($shop, $customer, 'on');
+        $this->assertSame(true, $onRefund->requires_owner_approval);
+    }
+
     private function fixture(): array
     {
         $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
@@ -141,5 +156,50 @@ class OrderRefundApprovalWorkflowTest extends TestCase
         ]);
 
         return [$shop, $staff, $refund];
+    }
+
+    private function setRefundApproval(ShopOwner $shop, bool $enabled): void
+    {
+        ProcurementSettings::query()->updateOrCreate(
+            ['shop_owner_id' => $shop->id],
+            [
+                'settings_json' => [
+                    'approval_pages' => [
+                        'refund_approval' => ['enabled' => $enabled],
+                    ],
+                ],
+            ],
+        );
+    }
+
+    private function reserveRefund(ShopOwner $shop, User $customer, string $suffix): OrderRefund
+    {
+        $order = Order::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'customer_id' => $customer->id,
+            'payment_status' => 'paid',
+            'payment_method' => 'paymongo',
+            'total_amount' => 1000,
+        ]);
+
+        $result = app(\App\Services\OrderRefundService::class)->reserveOrderRefund($order, [
+            'customer_id' => $customer->id,
+            'shop_owner_id' => $shop->id,
+            'flow_type' => 'request_approval',
+            'status' => 'requested',
+            'shop_owner_status' => 'pending',
+            'finance_status' => 'pending',
+            'return_status' => 'awaiting_approval',
+            'payment_gateway' => 'paymongo',
+            'currency' => 'PHP',
+            'reason_code' => 'defective_item',
+            'requires_owner_approval' => true,
+            'idempotency_key' => 'phase4-refund-snapshot-'.$suffix,
+            'requested_at' => now(),
+        ]);
+
+        $this->assertSame('reserved', $result['result']);
+
+        return $result['refund'];
     }
 }

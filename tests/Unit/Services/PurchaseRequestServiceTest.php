@@ -94,15 +94,38 @@ class PurchaseRequestServiceTest extends TestCase
 
         $this->assertInstanceOf(PurchaseRequest::class, $result);
         $this->assertEquals('pending_finance', $result->status);
+        $this->assertTrue($result->requires_owner_approval);
     }
 
     /** @test */
-    public function finance_review_always_advances_to_shop_owner()
+    public function submission_freezes_the_owner_policy_before_finance_review()
+    {
+        $this->setPurchaseRequestApproval(false);
+        $pr = PurchaseRequest::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'supplier_id' => $this->supplier->id,
+            'status' => 'draft',
+        ]);
+
+        $submitted = $this->service->submitToFinance($pr->id);
+        $this->assertSame(false, $submitted->requires_owner_approval);
+
+        $this->setPurchaseRequestApproval(true);
+
+        $reviewed = $this->service->reviewByFinance($pr->id, $this->user, 'Budget approved');
+
+        $this->assertSame('pending_finance_final', $reviewed->status);
+        $this->assertSame($this->user->id, $reviewed->reviewed_by);
+    }
+
+    /** @test */
+    public function finance_review_advances_to_shop_owner_when_snapshot_requires_it()
     {
         $pr = PurchaseRequest::factory()->create([
             'shop_owner_id' => $this->shopOwner->id,
             'supplier_id' => $this->supplier->id,
             'status' => 'pending_finance',
+            'requires_owner_approval' => true,
         ]);
 
         $result = $this->service->reviewByFinance($pr->id, $this->user, 'Budget approved');
@@ -243,5 +266,21 @@ class PurchaseRequestServiceTest extends TestCase
 
         $this->assertCount(1, $urgentRequests);
         $this->assertEquals('high', $urgentRequests[0]->priority);
+    }
+
+    private function setPurchaseRequestApproval(bool $enabled): void
+    {
+        $settings = ProcurementSettings::firstOrNew([
+            'shop_owner_id' => $this->shopOwner->id,
+        ]);
+        $settings->settings_json = [
+            'approval_pages' => [
+                'purchase_request_approval' => [
+                    'enabled' => $enabled,
+                    'limit' => null,
+                ],
+            ],
+        ];
+        $settings->save();
     }
 }

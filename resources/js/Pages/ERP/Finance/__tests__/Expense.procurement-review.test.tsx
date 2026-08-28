@@ -6,8 +6,12 @@ const mocks = vi.hoisted(() => ({
 	refetch: vi.fn(),
 	approve: vi.fn(),
 	reject: vi.fn(),
+	ownerMode: false,
 }));
 
+vi.mock("@inertiajs/react", () => ({
+	usePage: () => ({ props: { auth: { erpActor: { ownerMode: mocks.ownerMode } } } }),
+}));
 vi.mock("react-apexcharts", () => ({ default: () => null }));
 vi.mock("sweetalert2", () => ({ default: { fire: vi.fn() } }));
 vi.mock("../../../../hooks/useFinanceApi", () => ({
@@ -38,6 +42,7 @@ vi.mock("../../../../hooks/useFinanceQueries", () => ({
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	mocks.ownerMode = false;
 	mocks.refetch.mockResolvedValue(undefined);
 });
 
@@ -55,5 +60,14 @@ describe("Finance procurement expenses", () => {
 		expect(screen.queryByRole("button", { name: "Reject expense" })).not.toBeInTheDocument();
 		expect(mocks.approve).not.toHaveBeenCalled();
 		expect(mocks.reject).not.toHaveBeenCalled();
+	});
+
+	it("hides expense creation from the shop owner while keeping the page readable", () => {
+		mocks.ownerMode = true;
+
+		render(<Expense />);
+
+		expect(screen.getByText("Review team spending across the ERP suite.")).toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "Add Expense" })).not.toBeInTheDocument();
 	});
 });

@@ -6,6 +6,8 @@ use App\Models\Finance\Expense;
 use App\Models\Finance\ExpenseSettlement;
 use App\Models\ShopOwner;
 use App\Models\User;
+use App\Models\ProcurementSettings;
+use App\Services\ExpenseApprovalService;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
@@ -189,6 +191,28 @@ class ExpenseSettlementTest extends TestCase
             'reason' => 'Second attempt',
         ]);
         $duplicate->assertStatus(409)->assertJsonPath('code', 'ALREADY_REVERSED');
+    }
+
+    public function test_manual_expense_with_pending_owner_stage_cannot_be_settled(): void
+    {
+        [$shop, $expense, $user] = $this->makeExpenseContext();
+        $user->givePermissionTo('access-finance-expenses');
+        $settings = ProcurementSettings::getForShopOwner($shop->id);
+        $settingsJson = $settings->settings_json;
+        $settingsJson['approval_pages']['expense_approval']['enabled'] = true;
+        $settings->update(['settings_json' => $settingsJson]);
+
+        $approval = app(ExpenseApprovalService::class)->createExpenseApproval($expense, $user);
+        $this->assertSame(['1' => 'finance', '2' => 'shop_owner'], $approval->approval_roles);
+
+        $blocked = $this->actingAs($user, 'user')->postJson("/api/finance/expenses/{$expense->id}/settlements", [
+            'amount' => '20.00',
+            'payment_method' => 'cash',
+            'idempotency_key' => 'expense-pending-owner-stage',
+        ]);
+
+        $blocked->assertStatus(422)->assertJsonPath('code', 'INVALID_STATE');
+        $this->assertSame('submitted', $expense->fresh()->status);
     }
 
     public function test_rejecting_a_paid_expense_preserves_settlement_and_warns(): void
