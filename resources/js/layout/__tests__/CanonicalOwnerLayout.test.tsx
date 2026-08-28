@@ -14,7 +14,11 @@ const state = vi.hoisted(() => ({
 }));
 
 const routeMock = vi.hoisted(() => vi.fn((name: string) => (
-  name === "shop-owner.shell.settings.profile" ? "/shop-owner/settings/profile" : `/${name}`
+  name === "shop-owner.shell.settings.profile"
+    ? "/shop-owner/settings/profile"
+    : name === "shop-owner.shop-profile"
+      ? "/shop-owner/shop-profile"
+      : `/${name}`
 )));
 
 vi.mock("@inertiajs/react", () => ({
@@ -142,13 +146,14 @@ it("keeps the canonical owner dropdown while hiding the duplicate Light Mode wor
   expect(screen.getByRole("link", { name: "SoleSpace" })).toHaveClass("hidden", "dark:inline-flex");
   expect(screen.getByTestId("shop-owner-dropdown")).toHaveAttribute(
     "data-profile-url",
-    "/shop-owner/settings/profile",
+    "/shop-owner/shop-profile",
   );
   expect(screen.getByTestId("shop-owner-dropdown")).toHaveAttribute(
     "data-settings-url",
     "/shop-owner/settings/profile",
   );
   expect(routeMock).toHaveBeenCalledWith("shop-owner.shell.settings.profile");
+  expect(routeMock).toHaveBeenCalledWith("shop-owner.shop-profile");
 });
 
 it("keeps the existing Shop Owner frame when canonical metadata is absent", () => {

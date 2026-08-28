@@ -13,7 +13,10 @@ vi.mock("@inertiajs/react", () => ({
           name: "Urban Kicks Store",
         },
       },
-      erpUrls: {},
+      erpUrls: {
+        profile: "/shop-owner/shop-profile",
+        settings: "/shop-owner/settings",
+      },
     },
   }),
   Link: ({ href, children, ...props }: React.PropsWithChildren<{ href: string }>) => (
@@ -43,12 +46,20 @@ vi.mock("../../components/common/ThemeToggleButton", () => ({
 }));
 
 vi.mock("../../components/header/ShopOwnerDropdown", () => ({
-  default: () => <div data-testid="shop-owner-dropdown" />,
+  default: ({ urls }: { urls?: { profile?: string; settings?: string } }) => (
+    <div
+      data-testid="shop-owner-dropdown"
+      data-profile-url={urls?.profile}
+      data-settings-url={urls?.settings}
+    />
+  ),
 }));
 
-it("hides the duplicate SoleSpace wordmark in Light Mode while retaining the Dark Mode brand hook", () => {
+it("keeps Shop Profile separate from the canonical Settings profile route", () => {
   render(<CanonicalOwnerHeader menuButtonRef={{ current: null }} />);
 
   expect(screen.getByLabelText("Search")).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "SoleSpace" })).toHaveClass("hidden", "dark:inline-flex");
+  expect(screen.getByTestId("shop-owner-dropdown")).toHaveAttribute("data-profile-url", "/shop-owner/shop-profile");
+  expect(screen.getByTestId("shop-owner-dropdown")).toHaveAttribute("data-settings-url", "/shop-owner/settings/profile");
 });
