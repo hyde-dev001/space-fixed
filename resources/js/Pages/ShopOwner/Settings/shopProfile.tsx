@@ -37,6 +37,26 @@ type ShopOwner = {
   sunday_close?: string;
 };
 
+const resolveStorageUrl = (value?: string | null): string | null => {
+  if (!value) return null;
+
+  if (/^(?:https?:|data:|blob:|\/)/i.test(value)) {
+    return value;
+  }
+
+  return `/storage/${value}`;
+};
+
+const getFeedbackColors = () => {
+  const isDarkMode = typeof document !== "undefined" && document.documentElement.classList.contains("dark");
+
+  return {
+    primary: isDarkMode ? "#2563eb" : "#111111",
+    danger: isDarkMode ? "#dc2626" : "#111111",
+    cancel: "#6b7280",
+  };
+};
+
 type OperatingHours = {
   monday_open?: string;
   monday_close?: string;
@@ -165,7 +185,7 @@ const OperatingHoursModal: React.FC<{
         title: "Set Monday first",
         text: "Please set Monday hours before copying.",
         icon: "info",
-        confirmButtonColor: "#2563eb",
+        confirmButtonColor: getFeedbackColors().primary,
       });
       return;
     }
@@ -187,7 +207,7 @@ const OperatingHoursModal: React.FC<{
         title: "Invalid Time",
         text: error,
         icon: "error",
-        confirmButtonColor: "#dc2626",
+        confirmButtonColor: getFeedbackColors().danger,
       });
       return;
     }
@@ -199,16 +219,19 @@ const OperatingHoursModal: React.FC<{
   if (!isOpen) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white dark:bg-gray-900 shadow-2xl">
-        <div className="sticky top-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 px-6 py-4 flex items-center justify-between">
+    <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900">
+        <div className="sticky top-0 flex items-center justify-between border-b border-gray-200 bg-white px-6 py-4 dark:border-gray-800 dark:bg-gray-900">
           <h3 className="text-xl font-bold text-gray-900 dark:text-white">Set Operating Hours</h3>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md px-2 py-1 text-gray-500 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+            aria-label="Close operating hours"
+            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white dark:focus-visible:ring-blue-500"
           >
-            ✕
+            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
           </button>
         </div>
 
@@ -220,7 +243,7 @@ const OperatingHoursModal: React.FC<{
             <button
               type="button"
               onClick={handleCopyMonday}
-              className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+              className="min-h-11 rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-900 transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:hover:bg-gray-700 dark:focus-visible:ring-blue-500"
             >
               Copy Monday to All Days
             </button>
@@ -228,7 +251,7 @@ const OperatingHoursModal: React.FC<{
 
           <div className="space-y-3">
             {OPERATING_HOUR_ROWS.map(({ day, openKey, closeKey }) => (
-              <div key={day} className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center rounded-xl border border-gray-200 dark:border-gray-700 p-3">
+              <div key={day} className="grid grid-cols-1 items-center gap-3 rounded-xl border border-gray-200 bg-gray-50/70 p-3 dark:border-gray-700 dark:bg-gray-800/50 sm:grid-cols-12">
                 <label className="sm:col-span-3 text-sm font-semibold text-gray-800 dark:text-gray-100">
                   {day}
                 </label>
@@ -239,7 +262,7 @@ const OperatingHoursModal: React.FC<{
                   onChange={handleTimeChange}
                   aria-label={`${day} opening time`}
                   title={`${day} opening time`}
-                  className="sm:col-span-3 w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-gray-900 outline-none transition focus:border-gray-950 focus:ring-2 focus:ring-gray-950/10 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:focus:border-blue-500 dark:focus:ring-blue-500/20 sm:col-span-3"
                 />
                 <input
                   type="time"
@@ -248,7 +271,7 @@ const OperatingHoursModal: React.FC<{
                   onChange={handleTimeChange}
                   aria-label={`${day} closing time`}
                   title={`${day} closing time`}
-                  className="sm:col-span-3 w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-gray-900 outline-none transition focus:border-gray-950 focus:ring-2 focus:ring-gray-950/10 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:focus:border-blue-500 dark:focus:ring-blue-500/20 sm:col-span-3"
                 />
                 <button
                   type="button"
@@ -259,7 +282,7 @@ const OperatingHoursModal: React.FC<{
                       [closeKey]: "",
                     }));
                   }}
-                  className="sm:col-span-3 rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-900/20"
+                  className="min-h-11 rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900 transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 dark:border-red-700 dark:bg-gray-900 dark:text-red-400 dark:hover:bg-red-900/20 dark:focus-visible:ring-red-500 sm:col-span-3"
                 >
                   Mark Closed
                 </button>
@@ -268,18 +291,18 @@ const OperatingHoursModal: React.FC<{
           </div>
         </div>
 
-        <div className="sticky bottom-0 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-800 px-6 py-4 flex justify-end gap-3">
+        <div className="sticky bottom-0 flex justify-end gap-3 border-t border-gray-200 bg-white px-6 py-4 dark:border-gray-800 dark:bg-gray-900">
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-900 hover:bg-gray-50 dark:border-gray-700 dark:text-white dark:hover:bg-gray-700"
+            className="min-h-11 rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-900 transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:hover:bg-gray-700 dark:focus-visible:ring-blue-500"
           >
             Cancel
           </button>
           <button
             type="button"
             onClick={handleSave}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+            className="min-h-11 rounded-xl bg-black px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 focus-visible:ring-offset-2 dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus-visible:ring-blue-500"
           >
             Apply Hours
           </button>
@@ -295,16 +318,33 @@ const InfoField: React.FC<{ label: string; value?: string | number | null; icon?
   value,
   icon,
 }) => (
-  <div className="group">
-    <div className="flex items-center gap-2 mb-2">
-      {icon && <div className="text-gray-400 dark:text-gray-500 shrink-0">{icon}</div>}
-      <span className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+  <div className="group rounded-xl border border-gray-200 bg-gray-50/70 p-4 dark:border-gray-700 dark:bg-gray-800/50">
+    <div className="flex items-center gap-2">
+      {icon && <div className="shrink-0 text-gray-600 dark:text-gray-400">{icon}</div>}
+      <span className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500 dark:text-gray-400">
         {label}
       </span>
     </div>
-    <p className="text-base font-medium text-gray-900 dark:text-white pl-6 wrap-break-word">
+    <p className="mt-2 break-words text-sm font-semibold text-gray-950 dark:text-white">
       {value || <span className="text-gray-400 dark:text-gray-500 italic">Not set</span>}
     </p>
+  </div>
+);
+
+const SectionHeader: React.FC<{
+  title: string;
+  description: string;
+  icon: React.ReactNode;
+  darkIconClassName?: string;
+}> = ({ title, description, icon, darkIconClassName = "dark:bg-gray-700 dark:text-gray-100" }) => (
+  <div className="flex items-start gap-3 border-b border-gray-200 px-6 py-5 dark:border-gray-700">
+    <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-gray-100 text-gray-950 ${darkIconClassName} dark:border-gray-700`}>
+      {icon}
+    </div>
+    <div className="min-w-0">
+      <h2 className="text-lg font-bold text-gray-950 dark:text-white">{title}</h2>
+      <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">{description}</p>
+    </div>
   </div>
 );
 
@@ -348,7 +388,7 @@ const EditProfileModal: React.FC<{
         text: hoursError,
         icon: "error",
         confirmButtonText: "OK",
-        confirmButtonColor: "#dc2626",
+        confirmButtonColor: getFeedbackColors().danger,
       });
       return;
     }
@@ -369,7 +409,7 @@ const EditProfileModal: React.FC<{
           text: "Profile updated successfully.",
           icon: "success",
           confirmButtonText: "OK",
-          confirmButtonColor: "#2563eb",
+          confirmButtonColor: getFeedbackColors().primary,
         }).then(() => {
           onClose();
           router.reload({ only: ['shop_owner'] });
@@ -387,7 +427,7 @@ const EditProfileModal: React.FC<{
           html: errorMessages || "Failed to update profile.",
           icon: "error",
           confirmButtonText: "OK",
-          confirmButtonColor: "#dc2626",
+          confirmButtonColor: getFeedbackColors().danger,
         });
       }
     });
@@ -411,11 +451,11 @@ const EditProfileModal: React.FC<{
   if (!isOpen) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white dark:bg-gray-900 shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900">
         <form onSubmit={handleSubmit}>
           {/* Modal Header */}
-          <div className="sticky top-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 px-6 py-4">
+          <div className="sticky top-0 border-b border-gray-200 bg-white px-6 py-4 dark:border-gray-800 dark:bg-gray-900">
             <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
               Edit Profile
             </h2>
@@ -430,69 +470,74 @@ const EditProfileModal: React.FC<{
               </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="sm:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  <label htmlFor="shop-profile-business-name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Shop Name
                   </label>
                   <input
+                    id="shop-profile-business-name"
                     type="text"
                     name="business_name"
                     value={formData.business_name}
                     onChange={handleChange}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-gray-900 outline-none transition focus:border-gray-950 focus:ring-2 focus:ring-gray-950/10 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:focus:border-blue-500 dark:focus:ring-blue-500/20"
                     placeholder="Enter shop name"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  <label htmlFor="shop-profile-established-year" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Established Year
                   </label>
                   <input
+                    id="shop-profile-established-year"
                     type="number"
                     name="established_year"
                     value={formData.established_year}
                     onChange={handleChange}
                     min={1900}
                     max={new Date().getFullYear()}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-gray-900 outline-none transition focus:border-gray-950 focus:ring-2 focus:ring-gray-950/10 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:focus:border-blue-500 dark:focus:ring-blue-500/20"
                     placeholder="e.g. 2024"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  <label htmlFor="shop-profile-email" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Email Address
                   </label>
                   <input
+                    id="shop-profile-email"
                     type="email"
                     name="email"
                     value={formData.email}
                     onChange={handleChange}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-gray-900 outline-none transition focus:border-gray-950 focus:ring-2 focus:ring-gray-950/10 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:focus:border-blue-500 dark:focus:ring-blue-500/20"
                     placeholder="Enter email"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  <label htmlFor="shop-profile-phone" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Phone
                   </label>
                   <input
+                    id="shop-profile-phone"
                     type="text"
                     name="phone"
                     value={formData.phone}
                     onChange={handleChange}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-gray-900 outline-none transition focus:border-gray-950 focus:ring-2 focus:ring-gray-950/10 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:focus:border-blue-500 dark:focus:ring-blue-500/20"
                     placeholder="Enter phone number"
                   />
                 </div>
                 <div className="sm:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  <label htmlFor="shop-profile-bio" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Bio
                   </label>
                   <textarea
+                    id="shop-profile-bio"
                     name="bio"
                     value={formData.bio}
                     onChange={handleChange}
                     rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-gray-900 outline-none transition focus:border-gray-950 focus:ring-2 focus:ring-gray-950/10 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:focus:border-blue-500 dark:focus:ring-blue-500/20"
                     placeholder="Tell us about your shop"
                   />
                 </div>
@@ -506,41 +551,44 @@ const EditProfileModal: React.FC<{
               </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  <label htmlFor="shop-profile-country" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Country
                   </label>
                   <input
+                    id="shop-profile-country"
                     type="text"
                     name="country"
                     value={formData.country}
                     onChange={handleChange}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-gray-900 outline-none transition focus:border-gray-950 focus:ring-2 focus:ring-gray-950/10 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:focus:border-blue-500 dark:focus:ring-blue-500/20"
                     placeholder="Enter country"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  <label htmlFor="shop-profile-city-state" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     City/State
                   </label>
                   <input
+                    id="shop-profile-city-state"
                     type="text"
                     name="city_state"
                     value={formData.city_state}
                     onChange={handleChange}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-gray-900 outline-none transition focus:border-gray-950 focus:ring-2 focus:ring-gray-950/10 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:focus:border-blue-500 dark:focus:ring-blue-500/20"
                     placeholder="Enter city/state"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  <label htmlFor="shop-profile-postal-code" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Postal Code
                   </label>
                   <input
+                    id="shop-profile-postal-code"
                     type="text"
                     name="postal_code"
                     value={formData.postal_code}
                     onChange={handleChange}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-gray-900 outline-none transition focus:border-gray-950 focus:ring-2 focus:ring-gray-950/10 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:focus:border-blue-500 dark:focus:ring-blue-500/20"
                     placeholder="Enter postal code"
                   />
                 </div>
@@ -556,7 +604,7 @@ const EditProfileModal: React.FC<{
                 <button
                   type="button"
                   onClick={() => setIsHoursModalOpen(true)}
-                  className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700"
+                  className="min-h-11 rounded-xl bg-black px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus-visible:ring-blue-500"
                 >
                   Set Time in Modal
                 </button>
@@ -568,7 +616,7 @@ const EditProfileModal: React.FC<{
                   const isClosed = !openTime || !closeTime;
 
                   return (
-                    <div key={day} className="rounded-xl border border-gray-200 dark:border-gray-700 p-3">
+                    <div key={day} className="rounded-xl border border-gray-200 bg-gray-50/70 p-3 dark:border-gray-700 dark:bg-gray-800/50">
                       <p className="text-sm font-semibold text-gray-900 dark:text-white">{day}</p>
                       <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
                         {isClosed ? "Closed" : `${formatTimeTo12Hour(openTime)} - ${formatTimeTo12Hour(closeTime)}`}
@@ -581,19 +629,19 @@ const EditProfileModal: React.FC<{
           </div>
 
           {/* Modal Footer */}
-          <div className="sticky bottom-0 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-800 px-6 py-4 flex justify-end gap-3">
+          <div className="sticky bottom-0 flex justify-end gap-3 border-t border-gray-200 bg-white px-6 py-4 dark:border-gray-800 dark:bg-gray-900">
             <button
               type="button"
               onClick={handleCancel}
               disabled={isSubmitting}
-              className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-900 transition-all hover:bg-gray-50 dark:border-gray-700 dark:text-white dark:hover:bg-gray-700 disabled:opacity-50"
+              className="min-h-11 rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-900 transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:hover:bg-gray-700 dark:focus-visible:ring-blue-500 disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={isSubmitting}
-              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-all hover:bg-blue-700 disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-600"
+              className="min-h-11 rounded-xl bg-black px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 focus-visible:ring-offset-2 dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus-visible:ring-blue-500 disabled:opacity-50"
             >
               {isSubmitting ? "Saving..." : "Save Changes"}
             </button>
@@ -623,10 +671,10 @@ const ShopProfile: React.FC = () => {
     shopOwner?.business_name || shopOwner?.name || "Your shop";
 
   const [profilePhoto, setProfilePhoto] = useState<string | null>(
-    shopOwner?.profile_photo ? `/storage/${shopOwner.profile_photo}` : null
+    resolveStorageUrl(shopOwner?.profile_photo)
   );
   const [coverPhoto, setCoverPhoto] = useState<string | null>(
-    shopOwner?.cover_photo ? `/storage/${shopOwner.cover_photo}` : null
+    resolveStorageUrl(shopOwner?.cover_photo)
   );
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [isUploadingCoverPhoto, setIsUploadingCoverPhoto] = useState(false);
@@ -664,7 +712,7 @@ const ShopProfile: React.FC = () => {
         title: "Missing fields",
         text: "Please fill in all password fields.",
         icon: "warning",
-        confirmButtonColor: "#2563eb",
+        confirmButtonColor: getFeedbackColors().primary,
       });
       return;
     }
@@ -674,7 +722,7 @@ const ShopProfile: React.FC = () => {
         title: "Password mismatch",
         text: "New password and confirmation do not match.",
         icon: "error",
-        confirmButtonColor: "#dc2626",
+        confirmButtonColor: getFeedbackColors().danger,
       });
       return;
     }
@@ -695,7 +743,7 @@ const ShopProfile: React.FC = () => {
           title: "Password updated",
           text: "Your password has been updated successfully.",
           icon: "success",
-          confirmButtonColor: "#2563eb",
+          confirmButtonColor: getFeedbackColors().primary,
         });
       },
       onError: (errors: any) => {
@@ -706,7 +754,7 @@ const ShopProfile: React.FC = () => {
           title: "Password update failed",
           text: message,
           icon: "error",
-          confirmButtonColor: "#dc2626",
+          confirmButtonColor: getFeedbackColors().danger,
         });
       },
     });
@@ -749,14 +797,14 @@ const ShopProfile: React.FC = () => {
       const data = await response.json();
 
       // Update the local state with the new photo URL
-      setProfilePhoto(`/storage/${data.profile_photo}`);
+      setProfilePhoto(resolveStorageUrl(data.profile_photo));
 
       Swal.fire({
         title: 'Success!',
         text: 'Profile photo uploaded successfully.',
         icon: 'success',
         confirmButtonText: 'OK',
-        confirmButtonColor: '#2563eb',
+        confirmButtonColor: getFeedbackColors().primary,
       });
 
       // Reset file input
@@ -770,7 +818,7 @@ const ShopProfile: React.FC = () => {
         text: error.message || 'Failed to upload profile photo.',
         icon: 'error',
         confirmButtonText: 'OK',
-        confirmButtonColor: '#dc2626',
+        confirmButtonColor: getFeedbackColors().danger,
       });
     } finally {
       setIsUploadingPhoto(false);
@@ -805,14 +853,14 @@ const ShopProfile: React.FC = () => {
       }
 
       const data = await response.json();
-      setCoverPhoto(`/storage/${data.cover_photo}`);
+      setCoverPhoto(resolveStorageUrl(data.cover_photo));
 
       Swal.fire({
         title: 'Success!',
         text: 'Cover photo uploaded successfully.',
         icon: 'success',
         confirmButtonText: 'OK',
-        confirmButtonColor: '#2563eb',
+        confirmButtonColor: getFeedbackColors().primary,
       });
 
       if (coverPhotoInputRef.current) {
@@ -825,7 +873,7 @@ const ShopProfile: React.FC = () => {
         text: error.message || 'Failed to upload cover photo.',
         icon: 'error',
         confirmButtonText: 'OK',
-        confirmButtonColor: '#dc2626',
+        confirmButtonColor: getFeedbackColors().danger,
       });
     } finally {
       setIsUploadingCoverPhoto(false);
@@ -842,8 +890,8 @@ const ShopProfile: React.FC = () => {
       showCancelButton: true,
       confirmButtonText: 'Remove',
       cancelButtonText: 'Cancel',
-      confirmButtonColor: '#dc2626',
-      cancelButtonColor: '#6b7280',
+      confirmButtonColor: getFeedbackColors().danger,
+      cancelButtonColor: getFeedbackColors().cancel,
     });
 
     if (!result.isConfirmed) return;
@@ -879,7 +927,7 @@ const ShopProfile: React.FC = () => {
         title: 'Removed!',
         text: 'Profile photo removed successfully.',
         icon: 'success',
-        confirmButtonColor: '#2563eb',
+        confirmButtonColor: getFeedbackColors().primary,
       });
     } catch (error: any) {
       console.error('Error removing profile photo:', error);
@@ -887,7 +935,7 @@ const ShopProfile: React.FC = () => {
         title: 'Error!',
         text: error.message || 'Failed to remove profile photo.',
         icon: 'error',
-        confirmButtonColor: '#dc2626',
+        confirmButtonColor: getFeedbackColors().danger,
       });
     } finally {
       setIsUploadingPhoto(false);
@@ -904,8 +952,8 @@ const ShopProfile: React.FC = () => {
       showCancelButton: true,
       confirmButtonText: 'Remove',
       cancelButtonText: 'Cancel',
-      confirmButtonColor: '#dc2626',
-      cancelButtonColor: '#6b7280',
+      confirmButtonColor: getFeedbackColors().danger,
+      cancelButtonColor: getFeedbackColors().cancel,
     });
 
     if (!result.isConfirmed) return;
@@ -941,7 +989,7 @@ const ShopProfile: React.FC = () => {
         title: 'Removed!',
         text: 'Cover photo removed successfully.',
         icon: 'success',
-        confirmButtonColor: '#2563eb',
+        confirmButtonColor: getFeedbackColors().primary,
       });
     } catch (error: any) {
       console.error('Error removing cover photo:', error);
@@ -949,7 +997,7 @@ const ShopProfile: React.FC = () => {
         title: 'Error!',
         text: error.message || 'Failed to remove cover photo.',
         icon: 'error',
-        confirmButtonColor: '#dc2626',
+        confirmButtonColor: getFeedbackColors().danger,
       });
     } finally {
       setIsUploadingCoverPhoto(false);
@@ -960,621 +1008,437 @@ const ShopProfile: React.FC = () => {
     <AppLayoutShopOwner hideHeader={isEditModalOpen}>
       <Head title="Shop Profile - Shop Owner" />
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 dark:bg-opacity-50">
-        <div className="max-w-9xl mx-auto px-0 sm:px-4 lg:px-8 py-0 sm:py-6 lg:py-8">
-          <div className="lg:hidden">
-            <div className="sticky top-0 z-20 border-b border-gray-200 bg-white/95 px-3 py-3 backdrop-blur-sm">
-              <div className="flex items-center gap-2">
-                <button type="button" className="p-2 text-gray-700" aria-label="Back">
-                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                  </svg>
-                </button>
-                <div className="flex h-10 flex-1 items-center gap-2 rounded-xl bg-gray-100 px-3 text-sm text-gray-500">
-                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M11 18a7 7 0 100-14 7 7 0 000 14z" />
-                  </svg>
-                  Search in shop
-                </div>
-                <button type="button" className="p-2 text-gray-700" aria-label="Menu">
-                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h.01M12 12h.01M19 12h.01" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-
-            <div className="relative h-36 overflow-hidden bg-linear-to-b from-indigo-900 via-indigo-800 to-indigo-700">
-              {coverPhoto && (
-                <img src={coverPhoto} alt={`${displayName} cover`} className="h-full w-full object-cover" />
-              )}
-            </div>
-
-            <div className="relative -mt-12 px-3">
-              <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-md">
-                <div className="flex items-start gap-3">
-                  <div className="relative flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-gray-950 dark:bg-blue-100 shadow-sm">
-                    {profilePhoto ? (
-                      <img src={profilePhoto} alt={displayName} className="h-full w-full object-cover" />
-                    ) : (
-                      <span className="text-2xl font-bold text-white dark:text-blue-600">{displayName?.slice(0, 1) || "S"}</span>
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <h2 className="truncate text-xl font-semibold text-gray-900">{displayName}</h2>
-                    <div className="mt-1 flex items-center gap-2 text-sm text-gray-600">
-                      <span className="text-amber-500">★</span>
-                      <span>4.8</span>
-                      <span>|</span>
-                      <span>Shop Owner</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-4 grid grid-cols-2 gap-2">
-                  <button
-                    onClick={() => setIsEditModalOpen(true)}
-                    className="inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-900"
-                  >
-                    Edit Profile
-                  </button>
-                  <button
-                    onClick={() => profilePhotoInputRef.current?.click()}
-                    disabled={isUploadingPhoto}
-                    className="inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-900 disabled:opacity-50"
-                  >
-                    {isUploadingPhoto ? "Uploading..." : "Upload Photo"}
-                  </button>
-                  <button
-                    onClick={() => coverPhotoInputRef.current?.click()}
-                    disabled={isUploadingCoverPhoto}
-                    className="col-span-2 inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-900 disabled:opacity-50"
-                  >
-                    {isUploadingCoverPhoto ? "Uploading cover..." : "Upload Cover Photo"}
-                  </button>
-                </div>
-                <input
-                  ref={profilePhotoInputRef}
-                  type="file"
-                  accept="image/*"
-                  onChange={handlePhotoUpload}
-                  aria-label="Upload profile photo"
-                  title="Upload profile photo"
-                  className="hidden"
-                  disabled={isUploadingPhoto}
-                />
-                <input
-                  ref={coverPhotoInputRef}
-                  type="file"
-                  accept="image/*"
-                  onChange={handleCoverPhotoUpload}
-                  aria-label="Upload cover photo"
-                  title="Upload cover photo"
-                  className="hidden"
-                  disabled={isUploadingCoverPhoto}
-                />
-              </div>
-            </div>
-
-            <div className="px-3 pt-3">
-              <div className="rounded-2xl border border-gray-200 bg-white p-1 shadow-sm">
-                <div className="flex items-center gap-1 overflow-x-auto text-sm">
-                  <button className="whitespace-nowrap rounded-lg bg-orange-50 px-4 py-2 font-semibold text-orange-600">Shop</button>
-                  <button className="relative whitespace-nowrap rounded-lg px-4 py-2 text-gray-700">
-                    Products
-                    <span className="ml-1 rounded-md bg-orange-500 px-1.5 py-0.5 text-[10px] font-semibold text-white">New</span>
-                  </button>
-                  <button className="whitespace-nowrap rounded-lg px-4 py-2 text-gray-700">Reviews</button>
-                  <button className="whitespace-nowrap rounded-lg px-4 py-2 text-gray-700">Categories</button>
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-3 px-3 py-3 pb-6">
-              <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-                <h3 className="text-lg font-semibold text-gray-900">Shop Details</h3>
-                <div className="mt-3 inline-flex rounded-full bg-gray-100 px-3 py-1 text-xs font-medium tracking-wide text-gray-700">
-                  RETAIL & REPAIR
-                </div>
-                <div className="mt-3 text-sm text-gray-700">
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Bio</p>
-                  <p className="mt-1 whitespace-pre-wrap">{shopOwner?.bio || "Not set"}</p>
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-                <h3 className="text-lg font-semibold text-gray-900">Contact</h3>
-                <div className="mt-3 space-y-3 text-sm text-gray-700">
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Location</p>
-                    <p>{shopOwner?.city_state || "Not set"}{shopOwner?.country ? `, ${shopOwner.country}` : ""}</p>
-                  </div>
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Phone</p>
-                    <p>{shopOwner?.phone || "Not set"}</p>
-                  </div>
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Email</p>
-                    <p>{shopOwner?.email || "Not set"}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-                <h3 className="text-lg font-semibold text-gray-900">Change Password</h3>
-                <form onSubmit={handlePasswordSubmit} className="mt-3 space-y-3">
-                  <input
-                    type="password"
-                    value={currentPassword}
-                    onChange={(e) => setCurrentPassword(e.target.value)}
-                    placeholder="Current password"
-                    title="Current password"
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none"
-                  />
-                  <input
-                    type="password"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="New password"
-                    title="New password"
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none"
-                  />
-                  <input
-                    type="password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="Confirm new password"
-                    title="Confirm new password"
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none"
-                  />
-                  <button
-                    type="submit"
-                    disabled={isPasswordSubmitting}
-                    className="inline-flex w-full items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-all hover:bg-blue-700 disabled:opacity-50"
-                  >
-                    {isPasswordSubmitting ? "Updating..." : "Update Password"}
-                  </button>
-                </form>
-              </div>
-
-              <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-                <h3 className="text-lg font-semibold text-gray-900">Operating Hours</h3>
-                <div className="mt-3 space-y-2">
-                  {[
-                    { day: 'Monday', openKey: 'monday_open', closeKey: 'monday_close' },
-                    { day: 'Tuesday', openKey: 'tuesday_open', closeKey: 'tuesday_close' },
-                    { day: 'Wednesday', openKey: 'wednesday_open', closeKey: 'wednesday_close' },
-                    { day: 'Thursday', openKey: 'thursday_open', closeKey: 'thursday_close' },
-                    { day: 'Friday', openKey: 'friday_open', closeKey: 'friday_close' },
-                    { day: 'Saturday', openKey: 'saturday_open', closeKey: 'saturday_close' },
-                    { day: 'Sunday', openKey: 'sunday_open', closeKey: 'sunday_close' },
-                  ].map(({ day, openKey, closeKey }) => {
-                    const openTime = operatingHours[openKey as keyof OperatingHours];
-                    const closeTime = operatingHours[closeKey as keyof OperatingHours];
-                    const isClosed = !openTime || !closeTime;
-
-                    return (
-                      <div key={day} className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2">
-                        <div>
-                          <p className="text-sm font-semibold text-gray-900">{day}</p>
-                          <p className="text-xs text-gray-600">
-                            {openTime ? formatTimeTo12Hour(openTime) : "Not set"} - {closeTime ? formatTimeTo12Hour(closeTime) : "Not set"}
-                          </p>
-                        </div>
-                        <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${isClosed ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
-                          {isClosed ? 'Closed' : 'Open'}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="hidden lg:block">
-            {/* Page Header */}
-            <div className="mb-8">
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-                Profile Settings
+        <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+          <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+                Account settings
+              </p>
+              <h1 className="mt-2 text-3xl font-bold tracking-tight text-gray-950 dark:text-white">
+                Shop Profile
               </h1>
-              <p className="text-gray-600 dark:text-gray-400">
-                Manage your shop profile and personal information
+              <p className="mt-2 max-w-2xl text-sm text-gray-600 dark:text-gray-300">
+                Keep your shop identity, contact details, and operating hours up to date.
               </p>
             </div>
+            <span className="inline-flex w-fit items-center rounded-full border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
+              Shop Owner
+            </span>
+          </div>
 
-            {/* Profile Header Card */}
-            <div className="bg-white dark:bg-gray-800 dark:bg-opacity-50 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 dark:border-opacity-50 overflow-hidden mb-6">
-              <div className="relative h-56 w-full overflow-hidden bg-slate-200">
-                {coverPhoto && (
-                  <img
-                    src={coverPhoto}
-                    alt={`${displayName} cover`}
-                    className="h-full w-full object-cover"
-                  />
-                )}
-                <div className="absolute inset-0 bg-linear-to-t from-black/45 via-black/20 to-black/10" />
-                <div className="absolute right-5 top-5 flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={handleRemoveCoverPhoto}
-                    disabled={isUploadingCoverPhoto || !coverPhoto}
-                    aria-label="Remove cover photo"
-                    title="Remove cover photo"
-                    className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-red-300/70 bg-red-500/80 text-white backdrop-blur-sm transition-all hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3M4 7h16" />
+          <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:border-opacity-50 dark:bg-gray-800 dark:bg-opacity-50">
+            <div className="relative h-48 overflow-hidden bg-gray-200 sm:h-64 lg:h-72 dark:bg-gray-800">
+              {coverPhoto ? (
+                <img
+                  src={coverPhoto}
+                  alt={displayName + " cover photo"}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <div className="h-full w-full bg-[linear-gradient(135deg,#e5e7eb_25%,#d1d5db_25%,#d1d5db_50%,#e5e7eb_50%,#e5e7eb_75%,#d1d5db_75%)] bg-size-[32px_32px] dark:bg-[linear-gradient(135deg,#374151_25%,#1f2937_25%,#1f2937_50%,#374151_50%,#374151_75%,#1f2937_75%)]" />
+              )}
+              <div className="absolute inset-0 bg-linear-to-t from-black/60 via-black/10 to-transparent" />
+              <div className="absolute right-4 top-4 flex gap-2 sm:right-6 sm:top-6">
+                <button
+                  type="button"
+                  onClick={handleRemoveCoverPhoto}
+                  disabled={isUploadingCoverPhoto || !coverPhoto}
+                  aria-label="Remove cover photo"
+                  title="Remove cover photo"
+                  className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-white/80 bg-black/45 text-white shadow-sm backdrop-blur-sm transition-colors hover:bg-black/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-white disabled:cursor-not-allowed disabled:opacity-40 dark:border-red-300/70 dark:bg-red-600/80 dark:hover:bg-red-700 dark:focus-visible:ring-red-400"
+                >
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3M4 7h16" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => coverPhotoInputRef.current?.click()}
+                  disabled={isUploadingCoverPhoto}
+                  aria-label="Upload cover photo"
+                  title={isUploadingCoverPhoto ? "Uploading cover photo" : "Upload cover photo"}
+                  aria-busy={isUploadingCoverPhoto}
+                  className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-white/80 bg-black/45 text-white shadow-sm backdrop-blur-sm transition-colors hover:bg-black/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-white disabled:cursor-not-allowed disabled:opacity-50 dark:focus-visible:ring-blue-400"
+                >
+                  {isUploadingCoverPhoto ? (
+                    <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.35" strokeWidth="2" />
+                      <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
                     </svg>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => coverPhotoInputRef.current?.click()}
-                    disabled={isUploadingCoverPhoto}
-                    aria-label="Upload cover photo"
-                    title={isUploadingCoverPhoto ? 'Uploading cover...' : 'Upload cover photo'}
-                    className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/70 bg-black/35 text-white backdrop-blur-sm transition-all hover:bg-black/50 disabled:opacity-50"
-                  >
-                    {isUploadingCoverPhoto ? (
-                      <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                        <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.35" strokeWidth="2" />
-                        <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                      </svg>
-                    ) : (
-                      <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                      </svg>
-                    )}
-                  </button>
-                </div>
+                  ) : (
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                  )}
+                </button>
               </div>
+            </div>
 
-              <div className="relative px-8 pb-8 pt-0">
-                <div className="-mt-12 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
-                  <div className="flex items-end gap-4">
-                    <div className="relative">
-                      <div className="flex h-28 w-28 items-center justify-center overflow-hidden rounded-2xl border-4 border-white bg-blue-100 shadow-lg dark:border-gray-800 dark:bg-blue-900 dark:bg-opacity-30">
-                        {profilePhoto ? (
-                          <img
-                            src={profilePhoto}
-                            alt={displayName}
-                            className="h-full w-full object-cover"
-                          />
-                        ) : (
-                          <span className="text-4xl font-bold text-blue-600 dark:text-blue-400">
-                            {displayName?.slice(0, 1) || 'S'}
-                          </span>
-                        )}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={handleRemoveProfilePhoto}
-                        disabled={isUploadingPhoto || !profilePhoto}
-                        className="absolute -bottom-2 -left-2 rounded-lg border-2 border-red-200 bg-red-50 p-2 shadow-lg transition-all hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
-                        title="Remove photo"
-                        aria-label="Remove profile photo"
-                      >
-                        <svg className="h-4 w-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3M4 7h16" />
+            <div className="relative px-5 pb-6 sm:px-8 sm:pb-8">
+              <div className="-mt-14 flex flex-col gap-5 sm:-mt-16 lg:flex-row lg:items-end lg:justify-between">
+                <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-end">
+                  <div className="relative w-fit shrink-0">
+                    <div className="flex h-28 w-28 items-center justify-center overflow-hidden rounded-2xl border-4 border-white bg-gray-950 text-white shadow-lg dark:border-gray-900 dark:bg-blue-900/30 dark:text-blue-300 sm:h-32 sm:w-32">
+                      {profilePhoto ? (
+                        <img
+                          src={profilePhoto}
+                          alt={displayName + " profile photo"}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <span className="text-4xl font-bold">{displayName.slice(0, 1) || "S"}</span>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleRemoveProfilePhoto}
+                      disabled={isUploadingPhoto || !profilePhoto}
+                      title="Remove profile photo"
+                      aria-label="Remove profile photo"
+                      className="absolute -bottom-2 -left-2 inline-flex h-11 w-11 items-center justify-center rounded-xl border border-gray-300 bg-white text-gray-950 shadow-md transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 disabled:cursor-not-allowed disabled:opacity-40 dark:border-red-700 dark:bg-gray-900 dark:text-red-400 dark:hover:bg-red-900/20 dark:focus-visible:ring-red-500"
+                    >
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => profilePhotoInputRef.current?.click()}
+                      disabled={isUploadingPhoto}
+                      title={isUploadingPhoto ? "Uploading profile photo" : "Upload profile photo"}
+                      aria-label="Upload profile photo"
+                      aria-busy={isUploadingPhoto}
+                      className="absolute -bottom-2 -right-2 inline-flex h-11 w-11 items-center justify-center rounded-xl border border-gray-300 bg-white text-gray-950 shadow-md transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700 dark:focus-visible:ring-blue-500"
+                    >
+                      {isUploadingPhoto ? (
+                        <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                          <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.35" strokeWidth="2" />
+                          <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
                         </svg>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => profilePhotoInputRef.current?.click()}
-                        disabled={isUploadingPhoto}
-                        className="absolute -bottom-2 -right-2 p-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg border-2 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                        title="Upload photo"
-                      >
-                        <svg className="w-4 h-4 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      ) : (
+                        <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
                         </svg>
-                      </button>
-                    </div>
-
-                    <div>
-                      <h2 className="text-3xl font-bold text-gray-900 dark:text-white">{displayName}</h2>
-                      <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">Shop Owner</p>
-                    </div>
+                      )}
+                    </button>
                   </div>
 
+                  <div className="min-w-0 pb-1">
+                    <h2 className="truncate text-2xl font-bold text-gray-950 dark:text-white sm:text-3xl">{displayName}</h2>
+                    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-gray-600 dark:text-gray-300">
+                      <span className="inline-flex items-center gap-1.5">
+                        <svg className="h-4 w-4 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 21a9 9 0 100-18 9 9 0 000 18zm0-11a3 3 0 100-6 3 3 0 000 6zm0 0c-3.314 0-6 1.343-6 3v2h12v-2c0-1.657-2.686-3-6-3z" />
+                        </svg>
+                        Shop Owner
+                      </span>
+                      <span className="hidden text-gray-300 sm:inline dark:text-gray-600">•</span>
+                      <span className="inline-flex items-center gap-1.5">
+                        <svg className="h-4 w-4 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 21s8-4.438 8-10a8 8 0 10-16 0c0 5.562 8 10 8 10z" />
+                          <circle cx="12" cy="11" r="2.5" />
+                        </svg>
+                        {[resolvedCityState, shopOwner?.country].filter(Boolean).join(", ") || "Location not set"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-2 sm:flex-row lg:pb-1">
                   <button
+                    type="button"
                     onClick={() => setIsEditModalOpen(true)}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 px-6 py-3 text-sm font-semibold text-white shadow-md hover:shadow-lg transition-all duration-200 dark:bg-blue-500 dark:hover:bg-blue-600"
+                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-black px-5 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 focus-visible:ring-offset-2 dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus-visible:ring-blue-500"
                   >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                      <path d="M18.5 2.5 a2.121 2.121 0 0 1 3 3 L12 15 l-4 1 l1-4 l9.5-9.5z"></path>
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
                     </svg>
-                    Edit Profile
+                    Edit profile
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => profilePhotoInputRef.current?.click()}
+                    disabled={isUploadingPhoto}
+                    className="inline-flex min-h-11 items-center justify-center rounded-xl border border-gray-300 bg-white px-5 py-3 text-sm font-semibold text-gray-900 transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:hover:bg-gray-800 dark:focus-visible:ring-blue-500"
+                  >
+                    {isUploadingPhoto ? "Uploading..." : "Upload profile photo"}
                   </button>
                 </div>
               </div>
             </div>
 
-            {/* Personal Information */}
-            <div className="bg-white dark:bg-gray-800 dark:bg-opacity-50 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 dark:border-opacity-50 overflow-hidden mb-6">
-              <div className="border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 dark:bg-opacity-80 px-6 py-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg border border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-gray-700">
-                    <svg className="w-5 h-5 text-gray-900 dark:text-gray-100" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <input
+              ref={profilePhotoInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/jpg,image/gif"
+              onChange={handlePhotoUpload}
+              aria-label="Upload profile photo"
+              title="Upload profile photo"
+              className="hidden"
+              disabled={isUploadingPhoto}
+            />
+            <input
+              ref={coverPhotoInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/jpg,image/webp"
+              onChange={handleCoverPhotoUpload}
+              aria-label="Upload cover photo"
+              title="Upload cover photo"
+              className="hidden"
+              disabled={isUploadingCoverPhoto}
+            />
+          </section>
+
+          <nav className="mt-5 overflow-x-auto rounded-xl border border-gray-200 bg-white p-1 shadow-sm dark:border-gray-700 dark:border-opacity-50 dark:bg-gray-800 dark:bg-opacity-50" aria-label="Shop profile sections">
+            <div className="flex min-w-max items-center gap-1">
+              <a href="#overview" className="rounded-lg bg-gray-950 px-4 py-2.5 text-sm font-semibold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 focus-visible:ring-offset-2 dark:bg-blue-600 dark:focus-visible:ring-blue-500">
+                Overview
+              </a>
+              <a href="#address" className="rounded-lg px-4 py-2.5 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white dark:focus-visible:ring-blue-500">
+                Address
+              </a>
+              <a href="#hours" className="rounded-lg px-4 py-2.5 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white dark:focus-visible:ring-blue-500">
+                Hours
+              </a>
+              <a href="#security" className="rounded-lg px-4 py-2.5 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white dark:focus-visible:ring-blue-500">
+                Security
+              </a>
+            </div>
+          </nav>
+
+          <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1.3fr)_minmax(20rem,0.7fr)]">
+            <div className="space-y-5">
+              <section id="overview" className="scroll-mt-6 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:border-opacity-50 dark:bg-gray-800 dark:bg-opacity-50">
+                <SectionHeader
+                  title="Personal information"
+                  description="The public identity and contact details for your shop."
+                  icon={
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                     </svg>
-                  </div>
-                  <h3 className="text-lg font-bold text-gray-900 dark:text-white">
-                    Personal Information
-                  </h3>
-                </div>
-              </div>
-              <div className="p-6">
-                <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-                  <div className="min-w-0">
-                    <InfoField 
-                      label="Shop Name" 
-                      value={shopOwner?.business_name || shopOwner?.name}
-                      icon={
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                        </svg>
-                      }
-                    />
-                  </div>
-                  <div className="min-w-0">
-                    <InfoField 
-                      label="Email address" 
-                      value={shopOwner?.email}
-                      icon={
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                        </svg>
-                      }
-                    />
-                  </div>
-                  <div className="min-w-0">
-                    <InfoField
-                      label="Established"
-                      value={shopOwner?.established_year ? `Est. ${shopOwner.established_year}` : null}
-                      icon={
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10m-13 9h16a2 2 0 002-2V7a2 2 0 00-2-2H4a2 2 0 00-2 2v11a2 2 0 002 2z" />
-                        </svg>
-                      }
-                    />
-                  </div>
-                  <div className="min-w-0">
-                    <InfoField 
-                      label="Phone" 
-                      value={shopOwner?.phone}
-                      icon={
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                        </svg>
-                      }
-                    />
-                  </div>
-                  <div className="min-w-0 lg:col-span-2">
+                  }
+                />
+                <div className="grid gap-3 p-5 sm:grid-cols-2 sm:p-6">
+                  <InfoField
+                    label="Shop name"
+                    value={shopOwner?.business_name || shopOwner?.name}
+                    icon={
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                      </svg>
+                    }
+                  />
+                  <InfoField
+                    label="Email address"
+                    value={shopOwner?.email}
+                    icon={
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5v10a2 2 0 002 2h14" />
+                      </svg>
+                    }
+                  />
+                  <InfoField
+                    label="Established"
+                    value={shopOwner?.established_year ? "Est. " + shopOwner.established_year : null}
+                    icon={
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10m-13 9h16a2 2 0 002-2V7a2 2 0 00-2-2H4a2 2 0 00-2 2v11a2 2 0 002 2z" />
+                      </svg>
+                    }
+                  />
+                  <InfoField
+                    label="Phone"
+                    value={shopOwner?.phone}
+                    icon={
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a2 2 0 012 2v3a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                      </svg>
+                    }
+                  />
+                  <div className="sm:col-span-2">
                     <InfoField
                       label="Bio"
                       value={shopOwner?.bio}
                       icon={
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h10" />
                         </svg>
                       }
                     />
                   </div>
                 </div>
-              </div>
-            </div>
+              </section>
 
-            {/* Address */}
-            <div className="bg-white dark:bg-gray-800 dark:bg-opacity-50 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 dark:border-opacity-50 overflow-hidden mb-6">
-              <div className="border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 dark:bg-opacity-80 px-6 py-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg border border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-gray-700">
-                    <svg className="w-5 h-5 text-gray-900 dark:text-gray-100" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <section id="address" className="scroll-mt-6 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:border-opacity-50 dark:bg-gray-800 dark:bg-opacity-50">
+                <SectionHeader
+                  title="Address information"
+                  description="The location customers and staff associate with this shop."
+                  icon={
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                     </svg>
-                  </div>
-                  <h3 className="text-lg font-bold text-gray-900 dark:text-white">
-                    Address Information
-                  </h3>
+                  }
+                />
+                <div className="grid gap-3 p-5 sm:grid-cols-2 sm:p-6">
+                  <InfoField
+                    label="Address"
+                    value={resolvedAddress}
+                    icon={
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                    }
+                  />
+                  <InfoField
+                    label="Country"
+                    value={shopOwner?.country}
+                    icon={
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    }
+                  />
+                  <InfoField
+                    label="City/State"
+                    value={resolvedCityState}
+                    icon={
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                      </svg>
+                    }
+                  />
+                  <InfoField
+                    label="Postal code"
+                    value={shopOwner?.postal_code}
+                    icon={
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5v10a2 2 0 002 2h14" />
+                      </svg>
+                    }
+                  />
                 </div>
-              </div>
-              <div className="p-6">
-                <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-                  <div className="min-w-0">
-                    <InfoField
-                      label="Address"
-                      value={resolvedAddress}
-                      icon={
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                        </svg>
-                      }
-                    />
-                  </div>
-                  <div className="min-w-0">
-                    <InfoField 
-                      label="Country" 
-                      value={shopOwner?.country}
-                      icon={
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                      }
-                    />
-                  </div>
-                  <div className="min-w-0">
-                    <InfoField 
-                      label="City/State" 
-                      value={resolvedCityState}
-                      icon={
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                        </svg>
-                      }
-                    />
-                  </div>
-                  <div className="min-w-0">
-                    <InfoField 
-                      label="Postal Code" 
-                      value={shopOwner?.postal_code}
-                      icon={
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                        </svg>
-                      }
-                    />
-                  </div>
-                </div>
-              </div>
+              </section>
             </div>
 
-            {/* Security */}
-            <div className="bg-white dark:bg-gray-800 dark:bg-opacity-50 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 dark:border-opacity-50 overflow-hidden mb-6">
-              <div className="border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 dark:bg-opacity-80 px-6 py-4">
-                <h3 className="text-lg font-bold text-gray-900 dark:text-white">Change Password</h3>
-              </div>
-              <div className="p-6">
-                <form onSubmit={handlePasswordSubmit} className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                  <div className="lg:col-span-2">
+            <div className="space-y-5">
+              <section id="hours" className="scroll-mt-6 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:border-opacity-50 dark:bg-gray-800 dark:bg-opacity-50">
+                <SectionHeader
+                  title="Operating hours"
+                  description="Your weekly schedule as shown to customers."
+                  darkIconClassName="dark:bg-purple-900/30 dark:text-purple-300"
+                  icon={
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  }
+                />
+                <div className="space-y-2 p-5 sm:p-6">
+                  {OPERATING_HOUR_ROWS.map(({ day, openKey, closeKey }) => {
+                    const openTime = operatingHours[openKey as keyof OperatingHours];
+                    const closeTime = operatingHours[closeKey as keyof OperatingHours];
+                    const isClosed = !openTime || !closeTime;
+
+                    return (
+                      <div key={day} className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-gray-50/70 px-4 py-3 dark:border-gray-700 dark:bg-gray-800/50">
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-gray-950 dark:text-white">{day}</p>
+                          <p className="mt-1 text-xs text-gray-600 dark:text-gray-300">
+                            {isClosed ? "Not set" : formatTimeTo12Hour(openTime) + " - " + formatTimeTo12Hour(closeTime)}
+                          </p>
+                        </div>
+                        <span className={isClosed
+                          ? "inline-flex shrink-0 rounded-full bg-gray-200 px-2.5 py-1 text-xs font-semibold text-gray-700 dark:bg-red-900/30 dark:text-red-300"
+                          : "inline-flex shrink-0 rounded-full bg-gray-950 px-2.5 py-1 text-xs font-semibold text-white dark:bg-green-900/30 dark:text-green-300"}>
+                          {isClosed ? "Closed" : "Open"}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+
+              <section id="security" className="scroll-mt-6 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:border-opacity-50 dark:bg-gray-800 dark:bg-opacity-50">
+                <SectionHeader
+                  title="Security"
+                  description="Update the password used to access your shop account."
+                  icon={
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-5a2 2 0 00-2-2H6a2 2 0 00-2 2v5a2 2 0 002 2zm10-9V7a4 4 0 00-8 0v3h8z" />
+                    </svg>
+                  }
+                />
+                <div className="border-b border-gray-200 px-5 py-4 dark:border-gray-800 sm:px-6">
+                  <h3 className="text-base font-semibold text-gray-950 dark:text-white">Change password</h3>
+                  <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">Use a strong password you do not reuse elsewhere.</p>
+                </div>
+                <form onSubmit={handlePasswordSubmit} className="space-y-4 p-5 sm:p-6">
+                  <div>
+                    <label htmlFor="shop-profile-current-password" className="mb-1.5 block text-sm font-semibold text-gray-800 dark:text-gray-200">
+                      Current password
+                    </label>
                     <input
+                      id="shop-profile-current-password"
                       type="password"
                       value={currentPassword}
                       onChange={(e) => setCurrentPassword(e.target.value)}
-                      placeholder="Current password"
-                      title="Current password"
-                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none"
+                      autoComplete="current-password"
+                      className="w-full rounded-xl border border-gray-300 bg-white px-3 py-3 text-sm text-gray-950 outline-none transition focus:border-gray-950 focus:ring-2 focus:ring-gray-950/10 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:focus:border-blue-500 dark:focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
+                    <label htmlFor="shop-profile-new-password" className="mb-1.5 block text-sm font-semibold text-gray-800 dark:text-gray-200">
+                      New password
+                    </label>
                     <input
+                      id="shop-profile-new-password"
                       type="password"
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
-                      placeholder="New password"
-                      title="New password"
-                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none"
+                      autoComplete="new-password"
+                      className="w-full rounded-xl border border-gray-300 bg-white px-3 py-3 text-sm text-gray-950 outline-none transition focus:border-gray-950 focus:ring-2 focus:ring-gray-950/10 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:focus:border-blue-500 dark:focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
+                    <label htmlFor="shop-profile-confirm-password" className="mb-1.5 block text-sm font-semibold text-gray-800 dark:text-gray-200">
+                      Confirm new password
+                    </label>
                     <input
+                      id="shop-profile-confirm-password"
                       type="password"
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
-                      placeholder="Confirm new password"
-                      title="Confirm new password"
-                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none"
+                      autoComplete="new-password"
+                      className="w-full rounded-xl border border-gray-300 bg-white px-3 py-3 text-sm text-gray-950 outline-none transition focus:border-gray-950 focus:ring-2 focus:ring-gray-950/10 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:focus:border-blue-500 dark:focus:ring-blue-500/20"
                     />
                   </div>
-                  <div className="lg:col-span-2">
-                    <button
-                      type="submit"
-                      disabled={isPasswordSubmitting}
-                      className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-all hover:bg-blue-700 disabled:opacity-50"
-                    >
-                      {isPasswordSubmitting ? "Updating..." : "Update Password"}
-                    </button>
-                  </div>
+                  <button
+                    type="submit"
+                    disabled={isPasswordSubmitting}
+                    className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-black px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus-visible:ring-blue-500"
+                  >
+                    {isPasswordSubmitting ? "Updating..." : "Update password"}
+                  </button>
                 </form>
-              </div>
-            </div>
-
-            {/* Operating Hours */}
-            <div className="bg-white dark:bg-gray-800 dark:bg-opacity-50 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 dark:border-opacity-50 overflow-hidden">
-              <div className="border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 dark:bg-opacity-80 px-6 py-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-gray-100 dark:bg-purple-900 dark:bg-opacity-30 rounded-lg">
-                    <svg className="w-5 h-5 text-gray-900 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  </div>
-                  <h3 className="text-lg font-bold text-gray-900 dark:text-white">
-                    Operating Hours
-                  </h3>
-                </div>
-              </div>
-              <div className="p-6">
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b border-gray-200 dark:border-gray-700">
-                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
-                          Day
-                        </th>
-                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
-                          Opening Time
-                        </th>
-                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
-                          Closing Time
-                        </th>
-                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
-                          Status
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                      {[
-                        { day: 'Monday', openKey: 'monday_open', closeKey: 'monday_close' },
-                        { day: 'Tuesday', openKey: 'tuesday_open', closeKey: 'tuesday_close' },
-                        { day: 'Wednesday', openKey: 'wednesday_open', closeKey: 'wednesday_close' },
-                        { day: 'Thursday', openKey: 'thursday_open', closeKey: 'thursday_close' },
-                        { day: 'Friday', openKey: 'friday_open', closeKey: 'friday_close' },
-                        { day: 'Saturday', openKey: 'saturday_open', closeKey: 'saturday_close' },
-                        { day: 'Sunday', openKey: 'sunday_open', closeKey: 'sunday_close' },
-                      ].map(({ day, openKey, closeKey }) => {
-                        const openTime = operatingHours[openKey as keyof OperatingHours];
-                        const closeTime = operatingHours[closeKey as keyof OperatingHours];
-                        const isClosed = !openTime || !closeTime;
-
-                        return (
-                          <tr key={day} className="hover:bg-gray-50 dark:hover:bg-gray-800 dark:hover:bg-opacity-50 transition-colors">
-                            <td className="py-4 px-4">
-                              <span className="font-medium text-gray-900 dark:text-white">
-                                {day}
-                              </span>
-                            </td>
-                            <td className="py-4 px-4">
-                              <span className="text-gray-700 dark:text-gray-300">
-                                {openTime ? formatTimeTo12Hour(openTime) : <span className="text-gray-400 italic">Not set</span>}
-                              </span>
-                            </td>
-                            <td className="py-4 px-4">
-                              <span className="text-gray-700 dark:text-gray-300">
-                                {closeTime ? formatTimeTo12Hour(closeTime) : <span className="text-gray-400 italic">Not set</span>}
-                              </span>
-                            </td>
-                            <td className="py-4 px-4">
-                              {isClosed ? (
-                                <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium bg-red-100 dark:bg-red-900 dark:bg-opacity-30 text-red-700 dark:text-red-400">
-                                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                                  </svg>
-                                  Closed
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium bg-green-100 dark:bg-green-900 dark:bg-opacity-30 text-green-700 dark:text-green-400">
-                                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                                  </svg>
-                                  Open
-                                </span>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+              </section>
             </div>
           </div>
 
-          {/* Edit Modal */}
+          <div className="mt-5 flex flex-col gap-3 rounded-2xl border border-dashed border-gray-300 bg-gray-50/80 px-5 py-4 text-sm text-gray-600 dark:border-gray-700 dark:bg-gray-800/50 dark:text-gray-300 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+            <span>Profile photos support JPG, PNG, GIF, and WebP cover images.</span>
+            <button
+              type="button"
+              onClick={() => setIsEditModalOpen(true)}
+              className="inline-flex min-h-11 w-fit items-center justify-center rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-900 transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:hover:bg-gray-800 dark:focus-visible:ring-blue-500"
+            >
+              Edit details
+            </button>
+          </div>
+
           <EditProfileModal
             isOpen={isEditModalOpen}
             onClose={() => setIsEditModalOpen(false)}
@@ -1582,7 +1446,7 @@ const ShopProfile: React.FC = () => {
             operatingHours={operatingHours}
             onOperatingHoursChange={setOperatingHours}
           />
-        </div>
+        </main>
       </div>
     </AppLayoutShopOwner>
   );
