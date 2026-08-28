@@ -25,6 +25,10 @@ it('renders only server-derived module links and marks the current page', () => 
   expect(screen.getByRole('navigation', { name: 'Customers navigation' })).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Dashboard' })).toHaveAttribute('href', '/shop-owner/operate/customers');
   expect(screen.getByRole('link', { name: 'Customers' })).toHaveAttribute('aria-current', 'page');
+  expect(screen.getByRole('link', { name: 'Customers' }))
+    .toHaveClass('border-[#111111]', 'bg-[#111111]', 'text-white');
+  expect(screen.getByRole('link', { name: 'Customers' }))
+    .toHaveClass('dark:border-blue-300', 'dark:bg-blue-500/10', 'dark:text-blue-200');
   expect(screen.getByRole('link', { name: 'Customer Reviews' })).toHaveAttribute('href', '/shop-owner/erp/crm/customer-reviews');
   expect(screen.queryByRole('link', { name: /invoice|expense|approval|audit|create/i })).not.toBeInTheDocument();
 });

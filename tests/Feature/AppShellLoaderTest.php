@@ -142,4 +142,15 @@ class AppShellLoaderTest extends TestCase
         self::assertStringContainsString('hero-description landing-hero-motion', $landing);
         self::assertStringContainsString('landing-hero-motion hero-actions', $landing);
     }
+
+    public function test_monochrome_cards_and_charts_are_scoped_to_light_mode(): void
+    {
+        $styles = $this->readProjectFile('resources/css/app.css');
+
+        self::assertStringContainsString('html:not(.dark) #app .metrics-card', $styles);
+        self::assertStringContainsString('html:not(.dark) #app .erp-theme .apexcharts-series[rel="1"]', $styles);
+        self::assertStringContainsString('stroke: #111111 !important;', $styles);
+        self::assertStringContainsString('fill: #111111 !important;', $styles);
+        self::assertStringNotContainsString('.dark .erp-theme .apexcharts-series', $styles);
+    }
 }

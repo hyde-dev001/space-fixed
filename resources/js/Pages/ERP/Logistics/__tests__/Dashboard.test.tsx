@@ -60,6 +60,10 @@ it('presents named delivery-health metrics instead of raw statistic keys', () =>
   expect(screen.getByTestId('logistics-dashboard')).toHaveClass('w-full');
   expect(screen.getByTestId('logistics-dashboard')).not.toHaveClass('max-w-7xl');
   expect(screen.getByRole('heading', { name: 'Logistics Dashboard' })).toBeInTheDocument();
+  expect(screen.getByTestId('logistics-module-summary'))
+    .toHaveClass('metrics-card', 'border-gray-200', 'bg-white', 'dark:border-gray-800');
+  expect(screen.getByLabelText('Active shipments'))
+    .toHaveClass('metrics-card', 'border-gray-200');
   expect(screen.getByText('Active shipments')).toBeInTheDocument();
   expect(screen.getByText('Due today')).toBeInTheDocument();
   expect(screen.getAllByText('Overdue deliveries')).toHaveLength(2);

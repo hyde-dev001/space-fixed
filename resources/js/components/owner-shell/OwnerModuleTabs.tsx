@@ -32,10 +32,10 @@ const OwnerModuleTabs: React.FC<OwnerModuleTabsProps> = ({ moduleLabel, links, c
               key={link.url}
               href={href}
               aria-current={isCurrent ? 'page' : undefined}
-              className={`inline-flex min-h-11 shrink-0 items-center justify-center rounded-t-lg border-b-2 px-4 py-2 text-sm font-semibold transition-colors motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-950 ${
+              className={`inline-flex min-h-11 shrink-0 items-center justify-center rounded-t-lg border-b-2 px-4 py-2 text-sm font-semibold transition-colors motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] focus-visible:ring-offset-2 dark:focus-visible:ring-blue-300 dark:focus-visible:ring-offset-gray-950 ${
                 isCurrent
-                  ? 'border-blue-600 bg-blue-50 text-blue-700 dark:border-blue-300 dark:bg-blue-500/10 dark:text-blue-200'
-                  : 'border-transparent text-gray-600 hover:border-gray-300 hover:text-gray-900 dark:text-gray-300 dark:hover:border-gray-600 dark:hover:text-white'
+                  ? 'border-[#111111] bg-[#111111] text-white dark:border-blue-300 dark:bg-blue-500/10 dark:text-blue-200'
+                  : 'border-transparent text-gray-600 hover:border-gray-300 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:border-gray-600 dark:hover:bg-transparent dark:hover:text-white'
               }`}
             >
               {link.label}

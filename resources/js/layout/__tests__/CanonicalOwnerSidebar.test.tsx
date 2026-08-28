@@ -180,8 +180,13 @@ it("omits empty groups and explains unavailable items with a management destinat
 it("uses canonical URLs for Home, Reports, Audit, and Settings", () => {
   render(<CanonicalOwnerSidebar metadata={metadata()} />);
 
-  expect(screen.getByRole("link", { name: "SoleSpace" })).toHaveAttribute("href", "/shop-owner/home");
+  expect(screen.getByRole("link", { name: "SoleSpace" }))
+    .toHaveAttribute("href", "/shop-owner/home");
+  expect(screen.getByRole("link", { name: "SoleSpace" }))
+    .toHaveClass("text-[#111111]", "dark:text-blue-300");
   expect(screen.getByRole("link", { name: "Home" })).toHaveAttribute("href", "/shop-owner/home");
+  expect(screen.getByRole("link", { name: "Home" }))
+    .toHaveClass("bg-[#111111]", "text-white", "dark:bg-blue-500/15", "dark:text-blue-300");
   expect(screen.getByRole("link", { name: "Reports" })).toHaveAttribute("href", "/shop-owner/reports");
   expect(screen.getByRole("link", { name: "Audit" })).toHaveAttribute("href", "/shop-owner/audit");
   expect(screen.queryByRole("link", { name: "Profile" })).not.toBeInTheDocument();

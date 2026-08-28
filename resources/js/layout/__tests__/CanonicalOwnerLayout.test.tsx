@@ -122,6 +122,7 @@ it("keeps the canonical frame and reduced-motion transition hooks present", () =
   );
 
   expect(screen.getByTestId("canonical-owner-frame")).toHaveClass("motion-reduce:transition-none");
+  expect(screen.getByTestId("canonical-owner-frame")).toHaveClass("erp-theme", "canonical-owner-theme");
   expect(screen.getByTestId("canonical-owner-sidebar")).toBeInTheDocument();
   expect(screen.getByText("canonical content")).toBeInTheDocument();
 });

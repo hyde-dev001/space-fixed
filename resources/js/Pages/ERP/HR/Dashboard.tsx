@@ -56,15 +56,15 @@ const MetricCard = ({ title, value, change, changeType, icon: Icon, color, descr
   };
 
   return (
-    <div className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-500 hover:shadow-xl hover:border-gray-300 hover:-translate-y-1 dark:border-gray-800 dark:bg-white/[0.03] dark:hover:border-gray-700"
+    <div className="metrics-card group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-500 hover:border-gray-300 hover:shadow-xl dark:border-gray-800 dark:bg-white/[0.03] dark:hover:border-gray-700"
       tabIndex={0} aria-label={`${title}: ${value} (${description})`}>
       {/* Animated background gradient */}
-      <div className={`absolute inset-0 bg-gradient-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
+      <div className={`absolute inset-0 hidden bg-gradient-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 dark:block dark:group-hover:opacity-5`} />
 
       <div className="relative">
         <div className="flex items-center justify-between mb-4">
-          <div className={`flex items-center justify-center w-14 h-14 bg-gradient-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
-            <Icon className="text-white size-7 drop-shadow-sm" />
+          <div className={`flex h-14 w-14 items-center justify-center rounded-2xl bg-gray-100 text-[#111111] transition-all duration-300 dark:bg-gradient-to-br ${getColorClasses()} dark:shadow-lg dark:group-hover:scale-110 dark:group-hover:rotate-6`}>
+            <Icon className="size-7 text-[#111111] dark:text-white dark:drop-shadow-sm" />
           </div>
 
           {change !== undefined && changeType !== undefined && (
