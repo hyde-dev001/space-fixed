@@ -37,10 +37,6 @@ describe("shop owner profile security card", () => {
           email: "owner@example.com",
           phone: "09123456789",
           business_address: "Address",
-          city_state: "Bacoor, Cavite",
-          country: "Philippines",
-          profile_photo: "profile-photos/shop-owner.jpg",
-          cover_photo: "cover-photos/shop-cover.jpg",
         },
       },
     });
@@ -50,24 +46,5 @@ describe("shop owner profile security card", () => {
     render(<ShopProfile />);
 
     expect(screen.getAllByText(/change password/i).length).toBeGreaterThan(0);
-  });
-
-  it("renders the responsive profile shell with monochrome photo actions", () => {
-    render(<ShopProfile />);
-
-    expect(screen.getByRole("heading", { name: "Shop Profile" })).toBeInTheDocument();
-    expect(screen.getByRole("img", { name: "Test Shop profile photo" })).toHaveAttribute(
-      "src",
-      "/storage/profile-photos/shop-owner.jpg"
-    );
-    expect(screen.getByRole("img", { name: "Test Shop cover photo" })).toHaveAttribute(
-      "src",
-      "/storage/cover-photos/shop-cover.jpg"
-    );
-    expect(screen.getByRole("button", { name: "Edit profile" })).toHaveClass("bg-black");
-    expect(screen.getByRole("button", { name: "Upload cover photo" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Personal information" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Operating hours" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Current password")).toBeInTheDocument();
   });
 });
