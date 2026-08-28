@@ -397,7 +397,14 @@ final class OwnerApprovalHistoryService
                     ? $this->dateString($change->approved_at)
                     : $this->dateString($change->rejected_at);
                 $reviewerId = $status === 'approved' ? $change->approved_by : $change->rejected_by;
-                if ($status !== null && $decisionAt !== null && $this->reviewerBelongsToOwner($owner, $reviewerId)) {
+                $ownerReviewerId = $status === 'approved'
+                    ? $change->approved_by_shop_owner_id
+                    : $change->rejected_by_shop_owner_id;
+                $ownerDecisionRecorded = (int) $ownerReviewerId === (int) $owner->getKey();
+
+                if ($status !== null
+                    && $decisionAt !== null
+                    && ($ownerDecisionRecorded || $this->reviewerBelongsToOwner($owner, $reviewerId))) {
                     $ownerApprovalRequired = $change->requires_owner_approval !== false;
                     $items[] = $this->item(
                         'salary_change', (int) $change->getKey(), 'salary_changes',
@@ -413,7 +420,7 @@ final class OwnerApprovalHistoryService
                         $decisionAt, $this->dateString($change->created_at),
                         $this->numericAmount($change->new_salary),
                         $this->text($change->notes ?: $change->reason),
-                        $this->localReviewerName($owner, $reviewerId)
+                        ($ownerDecisionRecorded ? $this->ownerDisplayName($owner) : $this->localReviewerName($owner, $reviewerId))
                             ?? ($ownerApprovalRequired ? null : 'Finance'),
                     );
                 }

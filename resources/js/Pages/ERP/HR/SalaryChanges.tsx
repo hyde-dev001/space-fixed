@@ -25,9 +25,13 @@ interface SalaryChange {
   proposed_by: number;
   proposer?: { id: number; name: string };
   approved_by?: number | null;
+  approved_by_shop_owner_id?: number | null;
   approver?: { id: number; name: string } | null;
+  shop_owner_approver?: { id: number; name?: string; business_name?: string } | null;
   rejected_by?: number | null;
+  rejected_by_shop_owner_id?: number | null;
   rejector?: { id: number; name: string } | null;
+  shop_owner_rejector?: { id: number; name?: string; business_name?: string } | null;
   retroactive_override_by?: number | null;
   retroactive_override_grantor?: { id: number; name: string } | null;
   previous_salary: number;
@@ -45,6 +49,8 @@ interface SalaryChange {
   retroactive_override_reason?: string | null;
   created_at: string;
   updated_at: string;
+  requires_owner_approval?: boolean | null;
+  owner_action_required?: boolean;
 }
 
 interface Summary {
@@ -222,6 +228,24 @@ const normalizeSalaryChange = (raw: any): SalaryChange => ({
         department: raw?.department,
         position: raw?.position,
       },
+  approver: raw?.approver ?? (raw?.shop_owner_approver
+    ? {
+        id: toNumber(raw.shop_owner_approver.id),
+        name:
+          toDisplayName(raw.shop_owner_approver.business_name)
+          || buildEmployeeName(raw.shop_owner_approver)
+          || "Shop Owner",
+      }
+    : null),
+  rejector: raw?.rejector ?? (raw?.shop_owner_rejector
+    ? {
+        id: toNumber(raw.shop_owner_rejector.id),
+        name:
+          toDisplayName(raw.shop_owner_rejector.business_name)
+          || buildEmployeeName(raw.shop_owner_rejector)
+          || "Shop Owner",
+      }
+    : null),
   previous_salary: toNumber(raw?.previous_salary),
   new_salary: toNumber(raw?.new_salary),
   change_percent:
@@ -331,6 +355,19 @@ const SalaryChanges: React.FC = () => {
       return name.includes(q) || dept.includes(q);
     });
   }, [changes, search]);
+
+  const canDecideChange = (change: SalaryChange): boolean => {
+    if (!canApprove || change.status !== "pending" || change.proposed_by === currentUserId) {
+      return false;
+    }
+
+    if (ownerMode) {
+      return change.owner_action_required
+        ?? (change.requires_owner_approval !== false);
+    }
+
+    return change.requires_owner_approval === false;
+  };
 
   // ─── Action Handlers ──────────────────────────────────────────────────────────
 
@@ -701,7 +738,7 @@ const SalaryChanges: React.FC = () => {
 
             {/* Action Buttons */}
             <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-200 dark:border-gray-800">
-              {canApprove && change.status === "pending" && change.proposed_by !== currentUserId && (
+              {canDecideChange(change) && (
                 <>
                   <button
                     onClick={() => handleApprove(change)}
@@ -935,7 +972,7 @@ const SalaryChanges: React.FC = () => {
                             <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                           </svg>
                         </button>
-                        {canApprove && change.status === "pending" && change.proposed_by !== currentUserId && (
+                        {canDecideChange(change) && (
                           <button
                             onClick={() => handleApprove(change)}
                             className="rounded-lg p-2 transition-colors hover:bg-green-50 dark:hover:bg-green-900/20"
@@ -953,7 +990,7 @@ const SalaryChanges: React.FC = () => {
                             <SparklesIcon className="size-5 text-blue-600 dark:text-blue-400" />
                           </button>
                         )}
-                        {change.status === "pending" && (change.proposed_by === currentUserId || canManage || canApprove) && (
+                        {!ownerMode && change.status === "pending" && (change.proposed_by === currentUserId || canManage || canApprove) && (
                           <button
                             onClick={() => handleCancel(change)}
                             className="rounded-lg p-2 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"

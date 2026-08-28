@@ -7,6 +7,7 @@ use App\Models\Employee;
 use App\Models\HR\AuditLog;
 use App\Models\HR\SalaryChange;
 use App\Models\HR\Payroll;
+use App\Models\ShopOwner;
 use App\Models\User;
 use App\Services\HR\SalaryChangeApprovalService;
 use App\Services\ShopOwnerApprovalPolicyService;
@@ -46,11 +47,16 @@ class SalaryChangeController extends Controller
             || ($user?->can('approve-salary-change') ?? false);
     }
 
-    private function isExactShopOwnerActor(?User $user, int $shopOwnerId, bool $viaShopOwnerGuard): bool
+    private function isExactShopOwnerActor(
+        ?User $user,
+        ?ShopOwner $shopOwner,
+        int $shopOwnerId,
+        bool $viaShopOwnerGuard
+    ): bool
     {
         if ($viaShopOwnerGuard) {
-            return $user instanceof User
-                && (int) $user->shop_owner_id === $shopOwnerId;
+            return $shopOwner instanceof ShopOwner
+                && (int) $shopOwner->id === $shopOwnerId;
         }
 
         if (! $user || (int) $user->shop_owner_id !== $shopOwnerId) {
@@ -67,30 +73,46 @@ class SalaryChangeController extends Controller
     private function canDecideSalaryChange(
         SalaryChange $change,
         ?User $user,
+        ?ShopOwner $shopOwner,
         int $shopOwnerId,
         bool $viaShopOwnerGuard
     ): bool {
         if ($change->requires_owner_approval !== false) {
-            return $this->isExactShopOwnerActor($user, $shopOwnerId, $viaShopOwnerGuard);
+            return $this->isExactShopOwnerActor($user, $shopOwner, $shopOwnerId, $viaShopOwnerGuard);
         }
 
         return ! $viaShopOwnerGuard
             && $user instanceof User
             && (int) $user->shop_owner_id === $shopOwnerId
-            && ! $this->isExactShopOwnerActor($user, $shopOwnerId, false)
+            && ! $this->isExactShopOwnerActor($user, null, $shopOwnerId, false)
             && $user->can('approve-salary-change');
     }
 
     private function isOwnerSelfProposed(
         SalaryChange $change,
         ?User $user,
+        ?ShopOwner $shopOwner,
         int $shopOwnerId,
         bool $viaShopOwnerGuard
     ): bool {
-        return $viaShopOwnerGuard
-            && $user instanceof User
-            && $this->isExactShopOwnerActor($user, $shopOwnerId, true)
-            && (int) $change->proposed_by === (int) $user->id;
+        if (! $viaShopOwnerGuard
+            || ! $shopOwner instanceof ShopOwner
+            || ! $this->isExactShopOwnerActor($user, $shopOwner, $shopOwnerId, true)) {
+            return false;
+        }
+
+        if ($user instanceof User && (int) $change->proposed_by === (int) $user->id) {
+            return true;
+        }
+
+        $proposer = $change->relationLoaded('proposer')
+            ? $change->proposer
+            : User::query()->find($change->proposed_by);
+
+        return $proposer instanceof User
+            && (int) $proposer->shop_owner_id === $shopOwnerId
+            && $shopOwner->email !== null
+            && strcasecmp((string) $proposer->email, (string) $shopOwner->email) === 0;
     }
 
     private function hasSalaryChangeColumn(string $column): bool
@@ -132,7 +154,7 @@ class SalaryChangeController extends Controller
     /**
      * Resolve actor and shop context for either auth:user or auth:shop_owner requests.
      *
-     * @return array{actor: ?User, shop_owner_id: ?int, via_shop_owner_guard: bool}
+     * @return array{actor: ?User, shop_owner: ?ShopOwner, shop_owner_id: ?int, via_shop_owner_guard: bool}
      */
     private function resolveAuthContext(): array
     {
@@ -140,19 +162,21 @@ class SalaryChangeController extends Controller
         if ($user instanceof User) {
             return [
                 'actor' => $user,
+                'shop_owner' => null,
                 'shop_owner_id' => (int) $user->shop_owner_id,
                 'via_shop_owner_guard' => false,
             ];
         }
 
         $shopOwner = Auth::guard('shop_owner')->user();
-        if ($shopOwner) {
+        if ($shopOwner instanceof ShopOwner) {
             $ownerUser = User::where('shop_owner_id', $shopOwner->id)
                 ->where('email', $shopOwner->email)
                 ->first();
 
             return [
                 'actor' => $ownerUser,
+                'shop_owner' => $shopOwner,
                 'shop_owner_id' => (int) $shopOwner->id,
                 'via_shop_owner_guard' => true,
             ];
@@ -160,6 +184,7 @@ class SalaryChangeController extends Controller
 
         return [
             'actor' => null,
+            'shop_owner' => null,
             'shop_owner_id' => null,
             'via_shop_owner_guard' => false,
         ];
@@ -175,6 +200,7 @@ class SalaryChangeController extends Controller
     {
         $context = $this->resolveAuthContext();
         $user = $context['actor'];
+        $shopOwner = $context['shop_owner'];
         $shopOwnerId = $context['shop_owner_id'];
         $viaShopOwnerGuard = $context['via_shop_owner_guard'];
 
@@ -195,13 +221,19 @@ class SalaryChangeController extends Controller
                 $employeeSelect[] = 'position';
             }
 
+            $relations = [
+                'employee:' . implode(',', $employeeSelect),
+                'proposer:id,name,email,shop_owner_id',
+                'approver:id,name',
+                'rejector:id,name',
+            ];
+            if ($this->hasSalaryChangeColumn('approved_by_shop_owner_id')) {
+                $relations[] = 'shopOwnerApprover:id,first_name,last_name,business_name';
+                $relations[] = 'shopOwnerRejector:id,first_name,last_name,business_name';
+            }
+
             $query = SalaryChange::forShopOwner($shopOwnerId)
-                ->with([
-                    'employee:' . implode(',', $employeeSelect),
-                    'proposer:id,name',
-                    'approver:id,name',
-                    'rejector:id,name',
-                ])
+                ->with($relations)
                 ->orderByDesc('created_at');
 
             if ($request->filled('status')) {
@@ -232,6 +264,22 @@ class SalaryChangeController extends Controller
 
             $perPage = max(1, min(100, (int) $request->get('per_page', 15)));
             $results = $query->paginate($perPage);
+            $results->getCollection()->transform(function (SalaryChange $change) use (
+                $user,
+                $shopOwner,
+                $shopOwnerId,
+                $viaShopOwnerGuard
+            ): SalaryChange {
+                $change->setAttribute(
+                    'owner_action_required',
+                    $viaShopOwnerGuard
+                        && (string) $change->status === SalaryChange::STATUS_PENDING
+                        && $change->requires_owner_approval !== false
+                        && ! $this->isOwnerSelfProposed($change, $user, $shopOwner, $shopOwnerId, true)
+                );
+
+                return $change;
+            });
 
             // Summary counts
             $baseCount = SalaryChange::forShopOwner($shopOwnerId);
@@ -419,6 +467,7 @@ class SalaryChangeController extends Controller
     {
         $context = $this->resolveAuthContext();
         $user = $context['actor'];
+        $shopOwner = $context['shop_owner'];
         $shopOwnerId = $context['shop_owner_id'];
         $viaShopOwnerGuard = $context['via_shop_owner_guard'];
 
@@ -430,13 +479,29 @@ class SalaryChangeController extends Controller
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
+        $relations = [
+            'employee:id,first_name,last_name,department,position,salary',
+            'proposer:id,name,email,shop_owner_id',
+            'approver:id,name',
+            'rejector:id,name',
+            'retroactiveOverrideGrantor:id,name',
+        ];
+        if ($this->hasSalaryChangeColumn('approved_by_shop_owner_id')) {
+            $relations[] = 'shopOwnerApprover:id,first_name,last_name,business_name';
+            $relations[] = 'shopOwnerRejector:id,first_name,last_name,business_name';
+        }
+
         $change = SalaryChange::forShopOwner($shopOwnerId)
-            ->with(['employee:id,first_name,last_name,department,position,salary',
-                    'proposer:id,name',
-                    'approver:id,name',
-                    'rejector:id,name',
-                    'retroactiveOverrideGrantor:id,name'])
+            ->with($relations)
             ->findOrFail($id);
+
+        $change->setAttribute(
+            'owner_action_required',
+            $viaShopOwnerGuard
+                && (string) $change->status === SalaryChange::STATUS_PENDING
+                && $change->requires_owner_approval !== false
+                && ! $this->isOwnerSelfProposed($change, $user, $shopOwner, $shopOwnerId, true)
+        );
 
         return response()->json(['data' => $change]);
     }
@@ -451,6 +516,7 @@ class SalaryChangeController extends Controller
     {
         $context = $this->resolveAuthContext();
         $user = $context['actor'];
+        $shopOwner = $context['shop_owner'];
         $shopOwnerId = $context['shop_owner_id'];
         $viaShopOwnerGuard = $context['via_shop_owner_guard'];
 
@@ -473,11 +539,11 @@ class SalaryChangeController extends Controller
             ->where('status', SalaryChange::STATUS_PENDING)
             ->findOrFail($id);
 
-        if (! $this->canDecideSalaryChange($change, $user, $shopOwnerId, $viaShopOwnerGuard)) {
+        if (! $this->canDecideSalaryChange($change, $user, $shopOwner, $shopOwnerId, $viaShopOwnerGuard)) {
             return response()->json(['error' => 'This salary change is not awaiting your approval stage.'], 403);
         }
 
-        if ($this->isOwnerSelfProposed($change, $user, $shopOwnerId, $viaShopOwnerGuard)) {
+        if ($this->isOwnerSelfProposed($change, $user, $shopOwner, $shopOwnerId, $viaShopOwnerGuard)) {
             return response()->json([
                 'error' => 'This salary change requires an independent review path and cannot return to its Shop Owner maker.',
             ], 403);
@@ -492,7 +558,8 @@ class SalaryChangeController extends Controller
             $change = $this->salaryChangeApprovalService->approveSalaryChange(
                 $change,
                 $user,
-                $request->notes
+                $request->notes,
+                $viaShopOwnerGuard ? $shopOwner : null
             );
 
             $employee = $change->employee;
@@ -509,6 +576,8 @@ class SalaryChangeController extends Controller
                         'new_salary'       => $change->new_salary,
                         'effective_date'   => $change->effective_date->toDateString(),
                         'applied_now'      => false,
+                        'approved_by_shop_owner_id' => $shopOwner?->id,
+                        'approval_actor_type' => $viaShopOwnerGuard ? 'shop_owner' : 'user',
                     ],
                     'shop_owner_id' => $shopOwnerId,
                     'user_id'       => $user?->id,
@@ -519,11 +588,23 @@ class SalaryChangeController extends Controller
 
             return response()->json([
                 'message' => 'Salary change approved. HR must finalize and apply this request.',
-                'data'    => $change->fresh(['employee:id,first_name,last_name', 'approver:id,name']),
+                'data'    => $change->fresh([
+                    'employee:id,first_name,last_name',
+                    'approver:id,name',
+                    'shopOwnerApprover:id,first_name,last_name,business_name',
+                ]),
             ]);
 
         } catch (\Throwable $e) {
-            return response()->json(['error' => 'Approval failed: ' . $e->getMessage()], 500);
+            Log::error('Salary change approval failed', [
+                'salary_change_id' => $id,
+                'shop_owner_id' => $shopOwnerId,
+                'actor_type' => $viaShopOwnerGuard ? 'shop_owner' : 'user',
+                'actor_id' => $viaShopOwnerGuard ? $shopOwner?->id : $user?->id,
+                'exception' => $e,
+            ]);
+
+            return response()->json(['error' => 'Approval failed. Please try again.'], 500);
         }
     }
 
@@ -536,6 +617,7 @@ class SalaryChangeController extends Controller
     {
         $context = $this->resolveAuthContext();
         $user = $context['actor'];
+        $shopOwner = $context['shop_owner'];
         $shopOwnerId = $context['shop_owner_id'];
         $viaShopOwnerGuard = $context['via_shop_owner_guard'];
 
@@ -558,11 +640,11 @@ class SalaryChangeController extends Controller
             ->where('status', SalaryChange::STATUS_PENDING)
             ->findOrFail($id);
 
-        if (! $this->canDecideSalaryChange($change, $user, $shopOwnerId, $viaShopOwnerGuard)) {
+        if (! $this->canDecideSalaryChange($change, $user, $shopOwner, $shopOwnerId, $viaShopOwnerGuard)) {
             return response()->json(['error' => 'This salary change is not awaiting your approval stage.'], 403);
         }
 
-        if ($this->isOwnerSelfProposed($change, $user, $shopOwnerId, $viaShopOwnerGuard)) {
+        if ($this->isOwnerSelfProposed($change, $user, $shopOwner, $shopOwnerId, $viaShopOwnerGuard)) {
             return response()->json([
                 'error' => 'This salary change requires an independent review path and cannot return to its Shop Owner maker.',
             ], 403);
@@ -572,10 +654,19 @@ class SalaryChangeController extends Controller
             $change = $this->salaryChangeApprovalService->rejectSalaryChange(
                 $change,
                 $user,
-                (string) $request->notes
+                (string) $request->notes,
+                $viaShopOwnerGuard ? $shopOwner : null
             );
         } catch (\Throwable $e) {
-            return response()->json(['error' => 'Rejection failed: ' . $e->getMessage()], 500);
+            Log::error('Salary change rejection failed', [
+                'salary_change_id' => $id,
+                'shop_owner_id' => $shopOwnerId,
+                'actor_type' => $viaShopOwnerGuard ? 'shop_owner' : 'user',
+                'actor_id' => $viaShopOwnerGuard ? $shopOwner?->id : $user?->id,
+                'exception' => $e,
+            ]);
+
+            return response()->json(['error' => 'Rejection failed. Please try again.'], 500);
         }
 
         $employee = $change->employee;
@@ -590,6 +681,8 @@ class SalaryChangeController extends Controller
                 'new_values'  => [
                     'salary_change_id' => $change->id,
                     'rejection_reason' => $request->notes,
+                    'rejected_by_shop_owner_id' => $shopOwner?->id,
+                    'approval_actor_type' => $viaShopOwnerGuard ? 'shop_owner' : 'user',
                 ],
                 'shop_owner_id' => $shopOwnerId,
                 'user_id'       => $user?->id,
@@ -600,7 +693,11 @@ class SalaryChangeController extends Controller
 
         return response()->json([
             'message' => 'Salary change rejected.',
-            'data'    => $change->fresh(['employee:id,first_name,last_name', 'rejector:id,name']),
+            'data'    => $change->fresh([
+                'employee:id,first_name,last_name',
+                'rejector:id,name',
+                'shopOwnerRejector:id,first_name,last_name,business_name',
+            ]),
         ]);
     }
 

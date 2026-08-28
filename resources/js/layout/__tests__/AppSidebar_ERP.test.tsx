@@ -374,10 +374,26 @@ it('keeps Manager self-service payslips visible when Finance is disabled', () =>
   expect(screen.getByRole('link', { name: 'My Payslips' })).toBeInTheDocument();
 });
 
-it('hides only the Manager page whose read capability is missing', () => {
+it('shows Manager operational pages when the Manager role has an incomplete permission payload', () => {
   state.url = '/erp/manager/dashboard';
   state.role = 'MANAGER';
   state.roles = ['MANAGER'];
+  state.shopOwner.business_type = 'both';
+  state.permissions = ['access-manager-dashboard'];
+
+  render(<AppSidebarERP />);
+
+  expect(screen.getByRole('link', { name: 'Job Orders' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Repair Jobs' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Staff & Workload' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Leave Approvals' })).toBeInTheDocument();
+});
+
+it('hides only the Manager page whose read capability is missing', () => {
+  state.url = '/erp/manager/dashboard';
+  state.role = 'OPERATIONS COORDINATOR';
+  state.roles = ['OPERATIONS COORDINATOR'];
+  state.shopOwner.business_type = 'both';
   state.permissions = [
     'access-manager-dashboard',
     'access-manager-repair-jobs',

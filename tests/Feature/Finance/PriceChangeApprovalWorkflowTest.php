@@ -40,7 +40,8 @@ class PriceChangeApprovalWorkflowTest extends TestCase
             'business_type' => 'retail',
         ]);
 
-        // The owner approval endpoint maps shop_owner guard id to User::find($shopOwner->id)
+        // The owner approval endpoint resolves a linked owner actor for the
+        // generic Approval User foreign keys.
         $this->shopOwnerApproverUser = User::factory()->create([
             'id' => $this->shopOwnerAuth->id,
             'shop_owner_id' => $this->shopOwnerAuth->id,
@@ -199,6 +200,103 @@ class PriceChangeApprovalWorkflowTest extends TestCase
         $approval = Approval::findOrFail($priceChange->approval_id);
         $this->assertSame(2, (int) $approval->current_level);
         $this->assertSame('shop_owner', (string) $approval->current_approver_role);
+    }
+
+    public function test_owner_can_approve_price_change_without_an_erp_user_mirror(): void
+    {
+        $owner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'retail',
+        ]);
+        $settings = ProcurementSettings::getForShopOwner($owner->id);
+        $settingsJson = $settings->settings_json;
+        $settingsJson['approval_pages']['price_approval']['enabled'] = true;
+        $settings->update(['settings_json' => $settingsJson]);
+
+        $requester = User::factory()->create(['shop_owner_id' => $owner->id]);
+        $finance = User::factory()->create(['shop_owner_id' => $owner->id]);
+        $finance->assignRole('finance');
+        $product = Product::create([
+            'shop_owner_id' => $owner->id,
+            'name' => 'Owner Mirror Product ' . random_int(1000, 9999),
+            'slug' => 'owner-mirror-product-' . uniqid(),
+            'description' => 'Owner mirror regression product',
+            'price' => 100,
+            'category' => 'shoes',
+            'stock_quantity' => 10,
+            'is_active' => true,
+        ]);
+
+        $this->assertDatabaseMissing('users', [
+            'shop_owner_id' => $owner->id,
+            'email' => $owner->email,
+        ]);
+
+        $this->actingAs($requester, 'user')
+            ->postJson("/api/products/{$product->id}/request-price-change", [
+                'product_name' => $product->name,
+                'current_price' => 100,
+                'proposed_price' => 130,
+                'reason' => 'Owner mirror regression test',
+            ])
+            ->assertStatus(201);
+
+        $priceChange = PriceChangeRequest::query()
+            ->where('product_id', $product->id)
+            ->latest('id')
+            ->firstOrFail();
+        $ownerProxy = User::query()
+            ->where('shop_owner_id', $owner->id)
+            ->where('email', "shopowner+{$owner->id}@solespace.local")
+            ->first();
+
+        $this->assertNotNull($ownerProxy);
+        $this->assertDatabaseHas('approvals', [
+            'id' => $priceChange->approval_id,
+            'shop_owner_id' => $ownerProxy->id,
+        ]);
+
+        $this->actingAs($finance, 'user')
+            ->postJson("/api/finance/price-changes/{$priceChange->id}/approve", [
+                'notes' => 'Finance initial review',
+            ])
+            ->assertOk()
+            ->assertJsonPath('approval_level', 2);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->postJson("/api/shop-owner/price-changes/{$priceChange->id}/approve")
+            ->assertOk()
+            ->assertJsonPath('approval_level', 3);
+    }
+
+    public function test_owner_cannot_approve_a_price_change_from_another_shop(): void
+    {
+        $otherOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'retail',
+        ]);
+        $product = Product::create([
+            'shop_owner_id' => $otherOwner->id,
+            'name' => 'Cross Shop Price Product ' . random_int(1000, 9999),
+            'slug' => 'cross-shop-price-product-' . uniqid(),
+            'description' => 'Cross-shop price approval regression product',
+            'price' => 100,
+            'category' => 'shoes',
+            'stock_quantity' => 10,
+            'is_active' => true,
+        ]);
+        $priceChange = PriceChangeRequest::create([
+            'product_id' => $product->id,
+            'product_name' => $product->name,
+            'current_price' => 100,
+            'proposed_price' => 130,
+            'reason' => 'Cross-shop authorization test',
+            'requested_by' => User::factory()->create(['shop_owner_id' => $otherOwner->id])->id,
+            'status' => 'finance_approved',
+            'shop_owner_id' => $otherOwner->id,
+        ]);
+
+        $this->actingAs($this->shopOwnerAuth, 'shop_owner')
+            ->postJson("/api/shop-owner/price-changes/{$priceChange->id}/approve")
+            ->assertNotFound();
     }
 
     public function test_product_price_workflow_keeps_the_submission_role_map_after_settings_change(): void

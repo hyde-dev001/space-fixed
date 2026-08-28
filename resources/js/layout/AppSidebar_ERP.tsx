@@ -878,7 +878,9 @@ const EmployeeSidebarERP: React.FC = () => {
   const hasRolesArray = normalizedRoles.length > 0;
   const hasCashierRole = normalizedRoles.includes('CASHIER') || (!hasRolesArray && normalizedRole === 'CASHIER');
   const isCashierOnly = hasCashierRole && normalizedRoles.filter((value) => value !== 'CASHIER').length === 0;
-  const hasManagerRole = normalizedRoles.includes('MANAGER') || (!hasRolesArray && normalizedRole === 'MANAGER');
+  // Match ManagerAuthorizationService: the legacy role remains a valid
+  // compatibility source even when a non-empty Spatie roles array is present.
+  const hasManagerRole = normalizedRoles.includes('MANAGER') || normalizedRole === 'MANAGER';
   const hasInventoryManagerRole = normalizedRoles.includes('INVENTORY MANAGER');
   const hasProcurementManagerRole = normalizedRoles.includes('PROCUREMENT MANAGER');
   const hasExplicitStaffRole = normalizedRoles.includes('STAFF') || (!hasRolesArray && normalizedRole === 'STAFF');
@@ -1509,45 +1511,54 @@ const EmployeeSidebarERP: React.FC = () => {
   };
 
   // Filter manager items based on user permissions
+  const hasManagerPageReadAccess = (permission: string, legacyPermission?: string) => {
+    // ManagerAuthorizationService treats a recognized Manager role as authorized
+    // for Manager page reads. Keep the sidebar aligned when deployed permission
+    // payloads are stale or were created before the Manager page permissions.
+    return hasManagerRole
+      || permissions.includes(permission)
+      || (legacyPermission ? permissions.includes(legacyPermission) : false);
+  };
+
   const getFilteredManagerItems = () => {
     return managerItems.filter((item) => {
       if (item.route === 'erp.manager.dashboard') {
-        return permissions.includes('access-manager-dashboard');
+        return hasManagerPageReadAccess('access-manager-dashboard');
       }
 
       if (item.route === 'erp.manager.job-orders') {
-        return isRetailCapableBusiness && permissions.includes('access-manager-job-orders');
+        return isRetailCapableBusiness && hasManagerPageReadAccess('access-manager-job-orders');
       }
 
       if (item.route === 'erp.manager.repair-jobs') {
-        return isRepairCapableBusiness && (
-          permissions.includes('access-manager-repair-jobs') ||
-          permissions.includes('access-repair-reject-review')
+        return isRepairCapableBusiness && hasManagerPageReadAccess(
+          'access-manager-repair-jobs',
+          'access-repair-reject-review',
         );
       }
 
       if (item.route === 'erp.manager.inventory-overview') {
-        return permissions.includes('access-inventory-overview');
+        return hasManagerPageReadAccess('access-inventory-overview');
       }
 
       if (item.route === 'erp.manager.staff-workload') {
-        return permissions.includes('access-manager-staff-workload');
+        return hasManagerPageReadAccess('access-manager-staff-workload');
       }
 
       if (item.route === 'erp.manager.leave-approvals') {
-        return permissions.includes('access-manager-leave-approvals') || permissions.includes('access-leave-approvals');
+        return hasManagerPageReadAccess('access-manager-leave-approvals', 'access-leave-approvals');
       }
 
       if (item.route === 'erp.manager.suspension-approvals') {
-        return permissions.includes('access-manager-suspension-approvals') || permissions.includes('access-suspend-account');
+        return hasManagerPageReadAccess('access-manager-suspension-approvals', 'access-suspend-account');
       }
 
       if (item.route === 'erp.manager.reports') {
-        return permissions.includes('access-manager-reports');
+        return hasManagerPageReadAccess('access-manager-reports');
       }
 
       if (item.route === 'erp.manager.audit-logs') {
-        return permissions.includes('access-audit-logs');
+        return hasManagerPageReadAccess('access-audit-logs');
       }
 
       return false;
