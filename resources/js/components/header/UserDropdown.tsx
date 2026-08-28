@@ -8,9 +8,10 @@ import InlineAccountMenu from "./InlineAccountMenu";
 
 type UserDropdownProps = {
   inline?: boolean;
+  businessStyle?: boolean;
 };
 
-export default function UserDropdown({ inline = false }: UserDropdownProps = {}) {
+export default function UserDropdown({ inline = false, businessStyle = false }: UserDropdownProps = {}) {
   const { auth } = usePage().props as any;
   const [isOpen, setIsOpen] = useState(false);
 
@@ -114,11 +115,15 @@ export default function UserDropdown({ inline = false }: UserDropdownProps = {})
     <div className="relative">
       <button
         onClick={toggleDropdown}
-        className="flex items-center gap-2 px-3 py-2 text-gray-700 rounded-lg transition dropdown-toggle dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
+        className={businessStyle
+          ? "flex items-center gap-2 rounded-full border border-gray-200 bg-white p-1 text-gray-900 transition-colors dropdown-toggle hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
+          : "flex items-center gap-2 px-3 py-2 text-gray-700 rounded-lg transition dropdown-toggle dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"}
       >
-        <div className="flex items-center justify-center w-8 h-8 bg-blue-100 rounded-full dark:bg-blue-900">
+        <div className={businessStyle
+          ? "flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100"
+          : "flex items-center justify-center w-8 h-8 bg-blue-100 rounded-full dark:bg-blue-900"}>
           <svg
-            className="w-5 h-5 text-blue-600 dark:text-blue-300"
+            className={businessStyle ? "h-5 w-5 text-gray-700 dark:text-gray-200" : "w-5 h-5 text-blue-600 dark:text-blue-300"}
             fill="currentColor"
             viewBox="0 0 20 20"
           >

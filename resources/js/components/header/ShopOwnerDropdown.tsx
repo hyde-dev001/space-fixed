@@ -24,16 +24,17 @@ type ShopOwnerAvatarProps = {
   alt: string;
   className: string;
   iconClassName: string;
+  monochrome?: boolean;
 };
 
-const ShopOwnerAvatar = ({ src, alt, className, iconClassName }: ShopOwnerAvatarProps) => {
+const ShopOwnerAvatar = ({ src, alt, className, iconClassName, monochrome = false }: ShopOwnerAvatarProps) => {
   const [imageFailed, setImageFailed] = useState(false);
   const showPhoto = Boolean(src) && !imageFailed;
 
   return (
     <span
       data-testid={imageFailed || !src ? "shop-owner-avatar-fallback" : undefined}
-      className={`flex items-center justify-center overflow-hidden rounded-full bg-gray-100 text-gray-900 dark:bg-purple-900 dark:text-purple-300 ${className}`}
+      className={`flex items-center justify-center overflow-hidden rounded-full bg-gray-100 text-gray-900 ${monochrome ? "dark:bg-gray-800 dark:text-gray-100" : "dark:bg-purple-900 dark:text-purple-300"} ${className}`}
     >
       {showPhoto && (
         <img
@@ -54,9 +55,10 @@ type ShopOwnerDropdownProps = {
   actor?: ErpActor;
   urls?: Partial<ErpUrls>;
   inline?: boolean;
+  businessStyle?: boolean;
 };
 
-export default function ShopOwnerDropdown({ actor, urls, inline = false }: ShopOwnerDropdownProps = {}) {
+export default function ShopOwnerDropdown({ actor, urls, inline = false, businessStyle = false }: ShopOwnerDropdownProps = {}) {
   const { auth } = usePage().props as any;
   const [isOpen, setIsOpen] = useState(false);
 
@@ -145,13 +147,16 @@ export default function ShopOwnerDropdown({ actor, urls, inline = false }: ShopO
         aria-haspopup="menu"
         aria-expanded={isOpen}
         data-testid="shop-owner-account-trigger"
-        className="dropdown-toggle inline-flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white p-1 text-gray-900 transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] dark:h-auto dark:w-auto dark:gap-2 dark:rounded-lg dark:border-transparent dark:bg-transparent dark:px-3 dark:py-2 dark:text-gray-400 dark:hover:bg-gray-800 dark:focus-visible:ring-blue-300"
+        className={businessStyle
+          ? "dropdown-toggle inline-flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white p-1 text-gray-900 transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
+          : "dropdown-toggle inline-flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white p-1 text-gray-900 transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] dark:h-auto dark:w-auto dark:gap-2 dark:rounded-lg dark:border-transparent dark:bg-transparent dark:px-3 dark:py-2 dark:text-gray-400 dark:hover:bg-gray-800 dark:focus-visible:ring-blue-300"}
       >
         <ShopOwnerAvatar
           src={profilePhoto}
           alt={`${userName} profile photo`}
-          className="h-full w-full dark:h-8 dark:w-8"
+          className={businessStyle ? "h-full w-full" : "h-full w-full dark:h-8 dark:w-8"}
           iconClassName="h-5 w-5"
+          monochrome={businessStyle}
         />
         <span className="hidden dark:block">
           <span className="block text-sm font-semibold">{userName}</span>

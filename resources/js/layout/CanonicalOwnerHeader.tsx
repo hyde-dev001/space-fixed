@@ -97,9 +97,13 @@ const CanonicalOwnerHeader: React.FC<CanonicalOwnerHeaderProps> = ({ menuButtonR
         </button>
 
         <div className={`${isApplicationMenuOpen ? "flex" : "hidden"} items-center gap-2 lg:flex`}>
-          <NotificationBell basePath="/api/shop-owner/notifications" iconSize={24} />
+          <NotificationBell
+            basePath="/api/shop-owner/notifications"
+            iconSize={24}
+            className="rounded-full border border-gray-200 bg-white text-gray-900 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
+          />
           <ThemeToggleButton />
-          <ShopOwnerDropdown actor={erpActor} urls={canonicalOwnerUrls} />
+          <ShopOwnerDropdown actor={erpActor} urls={canonicalOwnerUrls} businessStyle />
         </div>
       </div>
     </header>

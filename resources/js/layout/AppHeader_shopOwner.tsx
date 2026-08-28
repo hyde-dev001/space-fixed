@@ -160,6 +160,7 @@ const AppHeader_shopOwner: React.FC = () => {
             <NotificationBell 
               basePath="/api/shop-owner/notifications"
               iconSize={24}
+              className="rounded-full border border-gray-200 bg-white text-gray-900 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
             />
             {/* <!-- Dark Mode Toggler --> */}
             <ThemeToggleButton />
@@ -167,7 +168,7 @@ const AppHeader_shopOwner: React.FC = () => {
             {/* <!-- Notification Menu Area --> */}
           </div>
           {/* <!-- User Area --> */}
-          <ShopOwnerDropdown />
+          <ShopOwnerDropdown businessStyle />
         </div>
       </div>
     </header>
