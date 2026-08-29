@@ -53,13 +53,12 @@ export default function MonthlyTarget({ thisMonth = 0, lastMonth = 0 }: MonthlyT
         startAngle: -85,
         endAngle: 85,
         hollow: {
-          // Keep the progress as a stroke on the track instead of a filled wedge.
-          size: "68%",
+          size: "80%",
         },
         track: {
           background: "#E4E7EC",
           strokeWidth: "100%",
-          margin: 0,
+          margin: 5,
         },
         dataLabels: {
           name: {

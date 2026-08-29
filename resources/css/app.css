@@ -110,10 +110,17 @@ html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden
   transform: none !important;
 }
 
-/* ApexCharts radial progress must be an arc, never a filled sector. */
+/* ApexCharts radial progress must keep its normal track thickness. The light
+   monochrome override must not stroke the path, because Apex includes the
+   inner diagonal boundary in that path and it becomes a black wedge. */
 .dark #app .erp-theme .apexcharts-radialbar-area,
 html:not(.dark) #app .erp-theme .apexcharts-radialbar-area {
   fill: none !important;
+}
+
+html:not(.dark) #app .erp-theme .apexcharts-series[rel="1"] .apexcharts-radialbar-area {
+  fill: #111111 !important;
+  stroke: none !important;
 }
 
 /* ApexCharts renders series colors as SVG attributes. Override those
