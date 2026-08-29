@@ -20,7 +20,7 @@ describe('shared monochrome Light Mode theme', () => {
   });
 
   it('keeps Light Mode radial gauge progress as a stroke instead of a filled wedge', () => {
-    expect(appCss).toContain('html:not(.dark) #app .erp-theme .apexcharts-series .apexcharts-radialbar-area');
+    expect(appCss).toContain('html:not(.dark) #app .erp-theme .apexcharts-series[rel="1"] .apexcharts-radialbar-area');
     expect(appCss).toContain('fill: none !important;');
   });
 
@@ -30,10 +30,10 @@ describe('shared monochrome Light Mode theme', () => {
   });
 
   it('keeps Light Mode native and custom filter options readable', () => {
-    expect(appCss).toContain("html:not(.dark) #app select option");
-    expect(appCss).toContain("html:not(.dark) #app select option:checked");
-    expect(appCss).toContain("html:not(.dark) #app select option:hover");
-    expect(appCss).toContain("html:not(.dark) #app [role='option'][aria-selected='true']");
-    expect(appCss).toContain("html:not(.dark) #app [role='option'][data-highlighted='true']");
+    expect(appCss).toContain("html:not(.dark) #app .erp-theme select option");
+    expect(appCss).toContain("html:not(.dark) #app .erp-theme select option:checked");
+    expect(appCss).toContain("html:not(.dark) #app .erp-theme select option:hover");
+    expect(appCss).toContain("html:not(.dark) #app .erp-theme [role='option'][aria-selected='true']");
+    expect(appCss).toContain("html:not(.dark) #app .erp-theme [role='option'][data-highlighted='true']");
   });
 });

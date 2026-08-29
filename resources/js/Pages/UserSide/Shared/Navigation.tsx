@@ -669,6 +669,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
   }, []);
 
   return (
+    <div className="userside-desktop-scope">
     <nav
       className={`fixed left-0 right-0 z-50 w-full transition-all duration-300 ${catalogMode ? 'top-10' : landingSidebar ? (isScrolled ? 'top-0' : 'top-10') : 'top-0'} ${
         catalogMode ? 'border-b border-[#dedede] bg-white' : landingSidebar || isTransparentNav
@@ -1583,6 +1584,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
         </>
       )}
     </nav>
+    </div>
   );
 };
 export default Navigation;

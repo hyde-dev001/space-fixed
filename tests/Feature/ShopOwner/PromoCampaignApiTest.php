@@ -5,7 +5,6 @@ namespace Tests\Feature\ShopOwner;
 use App\Models\Product;
 use App\Models\ShopOwner;
 use App\Models\ShopOwnerModule;
-use App\Models\Product;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
