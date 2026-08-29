@@ -507,8 +507,8 @@ const Products: React.FC<Props> = () => {
       <div className="userside-products-page min-h-screen bg-white font-outfit antialiased">
         <div className="hidden xl:block">
           <div className="overflow-hidden bg-[#111111] text-white" aria-label="Latest offers">
-            <div className="landing-marquee flex min-w-max items-center gap-16 py-3 text-[11px] font-semibold uppercase tracking-[0.22em]">
-              {['50% off', 'Summer sale', '50% off', 'Summer sale', '50% off', 'Summer sale'].map((message, index) => (
+            <div className="products-marquee flex min-w-max items-center gap-16 py-3 text-[11px] font-semibold uppercase tracking-[0.22em]">
+              {['50% off', 'Summer sale', '50% off', 'Summer sale', '50% off', 'Summer sale', '50% off', 'Summer sale', '50% off', 'Summer sale', '50% off', 'Summer sale'].map((message, index) => (
                 <span key={`${message}-${index}`} className="inline-flex items-center gap-16">
                   {message}<span aria-hidden="true">•</span>
                 </span>
@@ -892,7 +892,7 @@ const Products: React.FC<Props> = () => {
               </p>
             </div>
           ) : (
-            <div className="grid auto-rows-fr grid-cols-2 gap-0 xl:grid-cols-3 2xl:grid-cols-4">
+            <div className="grid auto-rows-fr grid-cols-2 gap-0 xl:grid-cols-4">
               {displayProducts.map((p) => {
                 const productImages = getProductImages(p);
                 const activeImageIndex = activeImageIndexes[p.id] ?? 0;
@@ -953,7 +953,7 @@ const Products: React.FC<Props> = () => {
                       )}
                     </div>
 
-                    <div className="flex min-h-32 flex-col border-t border-gray-300 p-3 xl:min-h-40 xl:p-4">
+                    <div className="flex h-36 flex-col border-t border-gray-300 p-3 xl:h-40 xl:p-4">
                       <div className="flex items-start justify-between gap-2 mb-1">
                         <h3 className="mb-1 min-h-8 line-clamp-2 text-xs font-bold uppercase tracking-[0.06em] text-black flex-1 xl:mb-1.5 xl:min-h-10 xl:text-sm">{p.name}</h3>
                         <div className="shrink-0">
@@ -1117,6 +1117,23 @@ const Products: React.FC<Props> = () => {
             </Link>
           </div>
         </div>
+
+        <style>{`
+          .userside-products-page .products-marquee {
+            animation: products-marquee 24s linear infinite;
+          }
+
+          @keyframes products-marquee {
+            from { transform: translateX(0); }
+            to { transform: translateX(-50%); }
+          }
+
+          @media (prefers-reduced-motion: reduce) {
+            .userside-products-page .products-marquee {
+              animation: none;
+            }
+          }
+        `}</style>
       </div>
     </>
   );
