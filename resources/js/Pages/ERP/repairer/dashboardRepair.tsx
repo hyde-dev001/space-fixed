@@ -124,45 +124,30 @@ const CheckCircleIcon = ({ className }: { className?: string }) => (
 );
 
 const MetricCard = ({ title, value, change, changeType, icon: Icon, color, description }: MetricCardProps) => {
-	const getColorClasses = () => {
-		switch (color) {
-			case "success":
-				return "from-green-500 to-emerald-600";
-			case "error":
-				return "from-red-500 to-rose-600";
-			case "warning":
-				return "from-yellow-500 to-orange-600";
-			case "info":
-				return "from-blue-500 to-indigo-600";
-			default:
-				return "from-gray-500 to-gray-600";
-		}
-	};
-
 	const displayValue = typeof value === "number" ? value.toLocaleString() : value;
 
 	return (
-		<div className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-500 hover:-translate-y-1 hover:border-gray-300 hover:shadow-xl">
-			<div className={`absolute inset-0 bg-gradient-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
-			<div className="relative">
-				<div className="mb-4 flex items-center justify-between">
-					<div className={`flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br ${getColorClasses()} shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
-						<Icon className="size-7 text-white drop-shadow-sm" />
-					</div>
-					<div
-						className={`flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold transition-all duration-300 ${
-							changeType === "increase" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
-						}`}
-					>
-						{changeType === "increase" ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" />}
-						{Math.abs(change)}%
-					</div>
+		<div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+			<div className="flex items-start justify-between gap-4">
+				<div>
+					<p className="text-sm font-medium text-gray-500 dark:text-gray-400">{title}</p>
+					<h3 className="mt-2 text-3xl font-semibold tracking-tight text-gray-950 dark:text-white">{displayValue}</h3>
 				</div>
-				<div className="space-y-2">
-					<p className="text-sm font-medium text-gray-600">{title}</p>
-					<h3 className="text-3xl font-bold text-gray-900">{displayValue}</h3>
-					<p className="text-xs text-gray-500">{description}</p>
+				<div className={`rounded-xl p-3 ${
+					color === "success" ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300" :
+					color === "warning" ? "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300" :
+					color === "error" ? "bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300" :
+					"bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
+				}`}>
+					<Icon className="size-6" />
 				</div>
+			</div>
+			<div className="mt-4 flex items-center justify-between gap-3">
+				<p className="text-xs text-gray-500 dark:text-gray-400">{description}</p>
+				<span className={`inline-flex items-center gap-1 text-xs font-semibold ${changeType === "increase" ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
+					{changeType === "increase" ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" />}
+					{Math.abs(change)}%
+				</span>
 			</div>
 		</div>
 	);

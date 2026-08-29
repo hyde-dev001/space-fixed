@@ -160,6 +160,10 @@ const CanonicalOwnerSidebar = ({ metadata }: CanonicalOwnerSidebarProps) => {
   };
 
   const renderItem = (item: OwnerShellItem): ReactNode => {
+    if (!item.available) {
+      return null;
+    }
+
     const active = item.available && isItemActive(currentPath, item);
     const activeChild = item.available && hasActiveChild(currentPath, item);
     const Icon = ITEM_ICONS[item.key] ?? FileText;
@@ -167,23 +171,6 @@ const CanonicalOwnerSidebar = ({ metadata }: CanonicalOwnerSidebarProps) => {
       ? "menu-item-active bg-[#111111] text-white dark:bg-blue-500/15 dark:text-blue-300"
       : "text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white"
       }`;
-
-    if (!item.available) {
-      return (
-        <li key={item.key} className="space-y-1 rounded-lg px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
-          <span className="block font-medium text-gray-700 dark:text-gray-200" title={item.label}>{item.label}</span>
-          <span className="block text-xs leading-5">{item.unavailable_reason}</span>
-          {item.management_url && (
-            <Link
-              href={item.management_url}
-              className="inline-flex rounded-md text-xs font-semibold text-[#111111] underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] dark:text-blue-300 dark:focus-visible:ring-blue-500"
-            >
-              Manage in Settings
-            </Link>
-          )}
-        </li>
-      );
-    }
 
     return (
       <li key={item.key}>
@@ -229,7 +216,10 @@ const CanonicalOwnerSidebar = ({ metadata }: CanonicalOwnerSidebarProps) => {
 
       <nav data-testid="canonical-owner-primary-navigation" aria-label="Shop Owner navigation" className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-6">
         <ul className="space-y-3">
-          {groups.filter((group) => group.items.length > 0).map((group) => {
+          {groups
+            .map((group) => ({ ...group, items: group.items.filter((item) => item.available) }))
+            .filter((group) => group.items.length > 0)
+            .map((group) => {
             const expanded = expandedGroups.has(group.key);
             const itemsId = `canonical-owner-items-${group.key}`;
 
