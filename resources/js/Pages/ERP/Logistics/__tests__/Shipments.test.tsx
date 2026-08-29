@@ -272,7 +272,7 @@ it('does not navigate when an owner shipment capability is unavailable', () => {
   expect(mocks.get).not.toHaveBeenCalled();
 });
 
-it('keeps server-granted owner dispatch controls visible in owner mode', () => {
+it('keeps owner shipments read-only even when the server sends dispatch flags', () => {
   mocks.props = defaultProps();
   mocks.props.auth = { erpActor: { ownerMode: true } };
   mocks.props.riderMode = false;
@@ -291,11 +291,38 @@ it('keeps server-granted owner dispatch controls visible in owner mode', () => {
   render(<Shipments />);
   fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
 
-  expect(screen.getByLabelText('Choose rider for outbound leg')).toBeVisible();
-  expect(screen.getByRole('button', { name: 'Assign' })).toBeVisible();
+  expect(screen.getByRole('dialog', { name: 'Shipment 1 delivery details' })).toBeInTheDocument();
+  expect(screen.queryByLabelText('Choose rider for outbound leg')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Assign' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Schedule & assign rider' })).not.toBeInTheDocument();
 });
 
-it('keeps server-granted owner rider custody controls visible only in trusted rider mode', () => {
+it('does not expose owner delivery-proof review controls', () => {
+  mocks.props = defaultProps();
+  mocks.props.auth = { erpActor: { ownerMode: true } };
+  mocks.props.riderMode = false;
+  mocks.props.canAssign = true;
+  mocks.props.canUpdateStatus = true;
+  mocks.props.canRecordProof = true;
+  mocks.props.canApproveProof = true;
+  mocks.props.canReportIssue = true;
+  mocks.props.assignableRiders = [{ id: 9, name: 'Rider Nine' }];
+  mocks.props.shipments.data[0].legs = [{
+    ...mocks.props.shipments.data[0].legs[0],
+    status: 'awaiting_proof_approval',
+    assignments: [{ id: 3, status: 'accepted' }],
+    proofs: [{ id: 17, handoff_type: 'delivery', review_status: 'pending', proof_url: '/api/logistics/proofs/17/file' }],
+  }];
+
+  render(<Shipments />);
+  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+
+  expect(screen.queryByRole('button', { name: 'Confirm delivery' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Reject proof' })).not.toBeInTheDocument();
+  expect(screen.getByRole('dialog', { name: 'Shipment 1 delivery details' })).toBeInTheDocument();
+});
+
+it('hides owner rider custody and proof controls even when the server sends rider flags', () => {
   mocks.props = defaultProps();
   mocks.props.auth = { erpActor: { ownerMode: true } };
   mocks.props.riderMode = true;
@@ -313,7 +340,9 @@ it('keeps server-granted owner rider custody controls visible only in trusted ri
   render(<Shipments />);
   fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
 
-  expect(screen.getByRole('button', { name: 'Picked up' })).toBeVisible();
+  expect(screen.queryByRole('button', { name: 'Picked up' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Report issue' })).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Delivery proof photo')).not.toBeInTheDocument();
 });
 
 it('preserves trusted owner rider mode when filters navigate the existing shipment surface', () => {

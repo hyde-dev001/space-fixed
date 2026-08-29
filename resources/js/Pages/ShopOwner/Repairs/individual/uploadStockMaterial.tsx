@@ -216,15 +216,29 @@ export default function UploadStockMaterial() {
   const fetchMaterials = async (archived: boolean = showArchived) => {
     try {
       setLoading(true);
-      const response = await axios.get('/api/shop-owner/inventory/items', {
-        params: {
-          category: 'repair_materials',
-          per_page: 100,
-          ...(archived ? { archived: true } : {}),
-        },
-      });
+      const baseParams = {
+        category: 'repair_materials',
+        per_page: 100,
+        ...(archived ? { archived: true } : {}),
+      };
+      const fetchPage = async (page: number) => {
+        const response = await axios.get('/api/shop-owner/inventory/items', {
+          params: { ...baseParams, page },
+        });
 
-      setMaterials(response.data?.data ?? []);
+        return response.data ?? {};
+      };
+
+      const firstPage = await fetchPage(1);
+      const allMaterials = [...(firstPage.data ?? [])];
+      const lastPage = Math.max(1, Number(firstPage.last_page ?? 1));
+
+      for (let page = 2; page <= lastPage; page += 1) {
+        const nextPage = await fetchPage(page);
+        allMaterials.push(...(nextPage.data ?? []));
+      }
+
+      setMaterials(allMaterials);
     } catch (error) {
       console.error('Failed to load repair materials', error);
       Swal.fire({

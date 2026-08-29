@@ -21,7 +21,7 @@ describe('shared monochrome Light Mode theme', () => {
 
   it('keeps Light Mode radial gauge progress as a stroke instead of a filled wedge', () => {
     expect(appCss).toContain('html:not(.dark) #app .erp-theme .apexcharts-series[rel="1"] .apexcharts-radialbar-area');
-    expect(appCss).toContain('fill: none !important;');
+    expect(appCss).toContain('filter: grayscale(1) brightness(0);');
   });
 
   it('does not match dark-prefixed text utilities as Light Mode link colors', () => {

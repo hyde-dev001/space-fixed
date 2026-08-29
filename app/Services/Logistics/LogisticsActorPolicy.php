@@ -19,15 +19,6 @@ final class LogisticsActorPolicy
 {
     private const BATCH_MANAGEMENT_ACTION = 'batch_manage';
 
-    /** @var array<int, string> */
-    private const OWNER_ACTIONS = [
-        LogisticsAction::ASSIGN_RIDER->value,
-        LogisticsAction::SCHEDULE_DELIVERY->value,
-        LogisticsAction::RESOLVE_EXCEPTION->value,
-        LogisticsAction::REVIEW_PROOF->value,
-        LogisticsAction::CONFIRM_RETURN_RECEIPT->value,
-    ];
-
     /** @var array<string, array<int, string>> */
     private const EMPLOYEE_CAPABILITIES = [
         LogisticsAction::ASSIGN_RIDER->value => ['assign-logistics-deliveries'],
@@ -163,6 +154,10 @@ final class LogisticsActorPolicy
             return $this->deny($action, 'cross_shop');
         }
 
+        if ($actor instanceof ShopOwner) {
+            return $this->deny($action, 'action_not_allowed');
+        }
+
         if ($action === LogisticsAction::REVIEW_PROOF) {
             $proofDecision = $this->reviewProofDecision($actor, $leg, $proof, $action);
             if ($proofDecision !== null) {
@@ -183,12 +178,6 @@ final class LogisticsActorPolicy
             }
 
             return $this->custodyDecision($actor, $shop, $leg, $action);
-        }
-
-        if ($actor instanceof ShopOwner) {
-            return in_array($action->value, self::OWNER_ACTIONS, true)
-                ? $this->allow($action)
-                : $this->deny($action, 'action_not_allowed');
         }
 
         if (! $actor instanceof User || ! $this->hasCapability($actor, $action, $leg)) {
@@ -217,6 +206,10 @@ final class LogisticsActorPolicy
         $contextDecision = $this->custodyContextDecision($actor, $shop, $leg, $action);
         if ($contextDecision !== null) {
             return $contextDecision;
+        }
+
+        if ($actor instanceof ShopOwner) {
+            return $this->deny($action, 'action_not_allowed');
         }
 
         if (! $this->hasValidState($leg, self::CUSTODY_STATES)) {
@@ -252,6 +245,10 @@ final class LogisticsActorPolicy
             return $contextDecision;
         }
 
+        if ($actor instanceof ShopOwner) {
+            return $this->deny($action, 'action_not_allowed');
+        }
+
         if ($leg->leg_type !== 'return_to_shop'
             || (int) $proof->shipment_leg_id !== (int) $leg->id
             || $proof->handoff_type !== 'receive') {
@@ -280,6 +277,10 @@ final class LogisticsActorPolicy
         ShopOwner $shop,
         ShipmentLeg $leg,
     ): ?RiderProfile {
+        if ($actor instanceof ShopOwner) {
+            return null;
+        }
+
         $profile = $this->custodyProfile($actor, $shop);
         if (! $profile) {
             return null;
@@ -297,6 +298,10 @@ final class LogisticsActorPolicy
         Authenticatable $actor,
         ShopOwner $shop,
     ): ?RiderProfile {
+        if ($actor instanceof ShopOwner) {
+            return null;
+        }
+
         return $this->custodyProfile($actor, $shop);
     }
 
@@ -311,10 +316,6 @@ final class LogisticsActorPolicy
     ): bool {
         if (! $this->actorBelongsToShop($actor, $shop)) {
             return false;
-        }
-
-        if ($actor instanceof ShopOwner) {
-            return in_array($action->value, self::OWNER_ACTIONS, true);
         }
 
         return $actor instanceof User && $this->hasCapability($actor, $action);
@@ -339,7 +340,7 @@ final class LogisticsActorPolicy
         }
 
         if ($actor instanceof ShopOwner) {
-            return $this->allow(self::BATCH_MANAGEMENT_ACTION);
+            return $this->deny(self::BATCH_MANAGEMENT_ACTION, 'action_not_allowed');
         }
 
         return $actor instanceof User

@@ -178,9 +178,12 @@ class ShipmentController extends Controller
         $user = Auth::guard('user')->user();
         $isStaffJobOrderProof = $user?->can('access-staff-job-orders')
             && ($isRefundReturn || ($shipment->source_type === 'order' && $shipment->purpose === 'retail_delivery'));
-        $shop = $this->authorizedShop($isStaffJobOrderProof
-            ? 'access-staff-job-orders'
-            : 'assign-logistics-deliveries');
+        $proofPermission = Auth::guard('shop_owner')->check()
+            ? 'view-logistics-shipments'
+            : ($isStaffJobOrderProof
+                ? 'access-staff-job-orders'
+                : 'assign-logistics-deliveries');
+        $shop = $this->authorizedShop($proofPermission);
         $this->abortUnlessTenant((int) $proof->leg->shipment->shop_owner_id, $shop);
         abort_unless($proof->file_path && Storage::disk('local')->exists($proof->file_path), 404);
 
@@ -585,6 +588,8 @@ class ShipmentController extends Controller
     private function authorizedShop(string $permission): ShopOwner
     {
         if ($shop = Auth::guard('shop_owner')->user()) {
+            abort_unless($permission === 'view-logistics-shipments', 403);
+
             return $shop;
         }
 

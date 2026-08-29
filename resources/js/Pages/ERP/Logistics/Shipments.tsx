@@ -139,12 +139,12 @@ export default function Shipments({ children }: React.PropsWithChildren) {
     erpCapabilities?: ErpCapabilities;
   }>().props;
   const ownerMode = auth?.erpActor?.ownerMode === true;
-  const canAssign = serverCanAssign === true;
-  const canUpdateStatus = serverCanUpdateStatus === true;
-  const canRecordProof = serverCanRecordProof === true;
-  const canApproveProof = serverCanApproveProof === true;
+  const canAssign = !ownerMode && serverCanAssign === true;
+  const canUpdateStatus = !ownerMode && serverCanUpdateStatus === true;
+  const canRecordProof = !ownerMode && serverCanRecordProof === true;
+  const canApproveProof = !ownerMode && serverCanApproveProof === true;
   const canResolveDisputes = !ownerMode && serverCanResolveDisputes === true;
-  const canReportIssue = serverCanReportIssue === true;
+  const canReportIssue = !ownerMode && serverCanReportIssue === true;
   const [selectedShipmentId, setSelectedShipmentId] = useState<number | null>(null);
   const [selectedProofUrl, setSelectedProofUrl] = useState<string | null>(null);
   const returnFocusRef = useRef<HTMLButtonElement | null>(null);
@@ -519,11 +519,11 @@ export default function Shipments({ children }: React.PropsWithChildren) {
 
   return (
     <AppLayoutERP>
-      <Head title={riderMode ? "My Deliveries" : "ERP Logistics Shipments"} />
+      <Head title={riderMode ? "My Deliveries" : ownerMode ? "Shipment Monitoring" : "ERP Logistics Shipments"} />
       <div data-testid="shipments-page" className="min-w-0 space-y-6 overflow-x-hidden">
         <div className="min-w-0">
           <h1 className="text-2xl font-bold leading-tight text-gray-950 dark:text-white sm:text-3xl xl:text-2xl">{riderMode ? 'My Deliveries' : 'Shipments'}</h1>
-          <p className="mt-1 max-w-2xl text-sm leading-6 text-gray-500 dark:text-gray-400 xl:mt-0">{riderMode ? 'Process your assigned deliveries.' : 'Assign riders and approve delivery proof.'}</p>
+          <p className="mt-1 max-w-2xl text-sm leading-6 text-gray-500 dark:text-gray-400 xl:mt-0">{riderMode ? 'Process your assigned deliveries.' : ownerMode ? 'Monitor shipment status, delivery proof, and history.' : 'Assign riders and approve delivery proof.'}</p>
         </div>
         {children}
 
@@ -787,7 +787,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                             const failedAttemptCount = leg.failed_attempt_count ?? latestAttempt?.attempt_number ?? 0;
                             const failedPickupCount = leg.failed_pickup_count ?? latestAttempt?.attempt_number ?? 0;
                             const attemptsMaxed = !isPickupAttempt && failedAttemptCount >= maxDeliveryAttempts;
-                            const canAssignLeg = leg.status === 'pending' && !activeAssignment && !attemptsMaxed;
+                            const canAssignLeg = canAssign && leg.status === 'pending' && !activeAssignment && !attemptsMaxed;
                             const isReturnToShop = leg.leg_type === 'return_to_shop';
                             const hasReturnLeg = (shipment.legs ?? []).some((candidate) => candidate.return_for_leg_id === leg.id);
                             const canResolveDelivery = canAssign
@@ -1032,7 +1032,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                       </button>
                                     </div>
                                   )}
-                                  {!riderMode && leg.status === 'delivery_attempted' && <button type="button" onClick={() => void confirmAct(`/api/logistics/legs/${leg.id}/cancel`, 'Cancel delivery?', 'This is the final cancellation action.')} className="rounded-lg border border-red-600 px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50">Cancel delivery</button>}
+                                  {canResolveDisputes && !riderMode && leg.status === 'delivery_attempted' && <button type="button" onClick={() => void confirmAct(`/api/logistics/legs/${leg.id}/cancel`, 'Cancel delivery?', 'This is the final cancellation action.')} className="rounded-lg border border-red-600 px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50">Cancel delivery</button>}
                                 </div>
                                 {canScheduleLeg && (
                                   <div className="flex flex-col gap-3 border-t border-gray-200 pt-3 dark:border-gray-700">

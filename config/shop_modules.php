@@ -1792,7 +1792,7 @@ $ownerModulePageGroups = [
         'shop-owner.erp.logistics.batches' => [
             'label' => 'Batches',
             'order' => 30,
-            'visible' => true,
+            'visible' => false,
             'supporting_routes' => ['shop-owner.erp.logistics.batches'],
         ],
         'shop-owner.erp.logistics.settings' => [
@@ -2418,6 +2418,12 @@ foreach ([
     $routes[$routeName]['registration_types'] = $companySharedRoute
         ? ['individual', 'company']
         : ['individual'];
+    // These legacy inventory-item route names serve the individual repair
+    // material workspace. Keep the company-only inventory module separate;
+    // owner repair-material operations belong to repair_operations.
+    if (str_starts_with($routeName, 'shop_owner.inventory.items.')) {
+        $routes[$routeName]['module_keys'] = ['repair_operations'];
+    }
     $routes[$routeName]['business_types'] = str_starts_with($routeName, 'shop_owner.products.')
         || str_starts_with($routeName, 'shop_owner.orders.')
         ? ['retail', 'both']

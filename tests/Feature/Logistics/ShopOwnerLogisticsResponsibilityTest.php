@@ -24,7 +24,7 @@ final class ShopOwnerLogisticsResponsibilityTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_owner_can_assign_and_schedule_a_same_shop_leg(): void
+    public function test_owner_cannot_assign_or_schedule_a_same_shop_leg(): void
     {
         $shop = $this->shop();
         $leg = $this->leg($shop, 'pending');
@@ -35,7 +35,7 @@ final class ShopOwnerLogisticsResponsibilityTest extends TestCase
                 'assignment_type' => 'internal_rider',
                 'rider_profile_id' => $rider->id,
             ])
-            ->assertOk();
+            ->assertForbidden();
 
         $this->actingAs($shop, 'shop_owner')
             ->postJson('/api/logistics/legs/schedule', [
@@ -43,10 +43,12 @@ final class ShopOwnerLogisticsResponsibilityTest extends TestCase
                 'delivery_window' => 'morning',
                 'leg_ids' => [$leg->id],
             ])
-            ->assertOk();
+            ->assertForbidden();
+
+        self::assertSame(0, $leg->assignments()->count());
     }
 
-    public function test_owner_can_review_a_delivery_proof_but_the_submitter_cannot_review_it(): void
+    public function test_owner_cannot_review_a_delivery_proof_but_the_submitter_cannot_review_it(): void
     {
         $shop = $this->shop();
         $submitter = $this->user($shop);
@@ -65,12 +67,12 @@ final class ShopOwnerLogisticsResponsibilityTest extends TestCase
 
         $this->actingAs($shop, 'shop_owner')
             ->postJson("/api/logistics/proofs/{$proof->id}/approve")
-            ->assertOk();
+            ->assertForbidden();
 
-        self::assertSame('approved', $proof->fresh()->review_status);
+        self::assertSame('pending', $proof->fresh()->review_status);
     }
 
-    public function test_owner_can_resolve_an_exception_for_their_shop(): void
+    public function test_owner_cannot_resolve_an_exception_for_their_shop(): void
     {
         $shop = $this->shop();
         $leg = $this->leg($shop, 'needs_resolution');
@@ -95,10 +97,12 @@ final class ShopOwnerLogisticsResponsibilityTest extends TestCase
                 'resolution' => 'retry',
                 'note' => 'Retry after the vehicle issue was resolved.',
             ])
-            ->assertOk();
+            ->assertForbidden();
+
+        self::assertSame('reported', $incident->fresh()->status);
     }
 
-    public function test_owner_can_confirm_a_return_receipt_after_rider_handoff(): void
+    public function test_owner_cannot_confirm_a_return_receipt_after_rider_handoff(): void
     {
         $shop = $this->shop();
         $original = $this->leg($shop, 'needs_resolution');
@@ -126,10 +130,10 @@ final class ShopOwnerLogisticsResponsibilityTest extends TestCase
 
         $this->actingAs($shop, 'shop_owner')
             ->postJson("/api/logistics/legs/{$return->id}/return-proofs/{$proof->id}/receipt")
-            ->assertOk();
+            ->assertForbidden();
 
-        self::assertSame('delivered', $return->fresh()->status->value);
-        self::assertSame('approved', $proof->fresh()->review_status);
+        self::assertSame('picked_up', $return->fresh()->status->value);
+        self::assertSame('rider_confirmed', $proof->fresh()->review_status);
     }
 
     public function test_owner_guard_alone_cannot_submit_custody_proof(): void
@@ -149,7 +153,7 @@ final class ShopOwnerLogisticsResponsibilityTest extends TestCase
         self::assertDatabaseCount('handoff_proofs', 0);
     }
 
-    public function test_linked_owner_rider_requires_an_active_exact_assignment_for_custody(): void
+    public function test_owner_cannot_submit_custody_proof_even_with_a_linked_rider_profile(): void
     {
         Storage::fake('local');
         $shop = $this->shop();
@@ -184,7 +188,9 @@ final class ShopOwnerLogisticsResponsibilityTest extends TestCase
                 'proof_type' => 'photo',
                 'proof_file' => $this->proofFile('owner-pickup.png'),
             ], ['Accept' => 'application/json'])
-            ->assertCreated();
+            ->assertForbidden();
+
+        self::assertDatabaseCount('handoff_proofs', 0);
     }
 
     public function test_cross_shop_and_terminal_source_denials_are_generic_and_side_effect_free(): void
