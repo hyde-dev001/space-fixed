@@ -619,12 +619,31 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
         <div className={`relative flex items-center justify-center pr-20 sm:pr-24 ${landingSidebar ? 'h-0' : 'h-16 sm:h-20'} ${landingSidebar ? '' : '2xl:pr-0'}`}>
           <Link
             href={route("landing")}
-            className={`absolute left-0 text-xl font-bold tracking-tight transition-opacity hover:opacity-70 sm:text-2xl ${
+            className={`absolute text-xl font-bold tracking-tight transition-opacity hover:opacity-70 sm:text-2xl ${
+              landingSidebar ? 'left-1/2 -translate-x-1/2' : 'left-0'
+            } ${
               landingSidebar || isTransparentNav ? 'text-white' : 'text-gray-900'
             }`}
           >
             SoleSpace
           </Link>
+
+          {landingSidebar && (
+            <button
+              type="button"
+              onClick={() => setLandingSidebarOpen((open) => !open)}
+              className="absolute left-0 top-3 inline-flex h-10 w-10 items-center justify-center p-0 text-white transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white sm:top-5"
+              aria-label={landingSidebarOpen ? 'Close menu' : 'Toggle menu'}
+            >
+              <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                {landingSidebarOpen ? (
+                  <path strokeLinecap="round" strokeWidth={2} d="M6 6l12 12M18 6L6 18" />
+                ) : (
+                  <path strokeLinecap="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                )}
+              </svg>
+            </button>
+          )}
 
           <div className={`absolute right-0 flex items-center gap-1.5 ${landingSidebar ? 'top-3 sm:top-5 2xl:hidden' : '2xl:hidden'}`} ref={mobileUserMenuRef}>
             <Link
@@ -653,29 +672,31 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                 }
               />
             )}
-            <button
-              type="button"
-              onClick={() => landingSidebar ? setLandingSidebarOpen((open) => !open) : setMobileMenuOpen(!mobileMenuOpen)}
-              className={headerIconButtonClasses}
-              aria-label={mobileMenuTriggerIcon === 'hamburger' ? 'Toggle menu' : 'User account menu'}
-            >
-              <svg className={headerIconSvgClasses} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                {landingSidebar || mobileMenuTriggerIcon === 'hamburger' ? (
-                  (landingSidebar ? landingSidebarOpen : mobileMenuOpen) ? (
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            {!landingSidebar && (
+              <button
+                type="button"
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                className={headerIconButtonClasses}
+                aria-label={mobileMenuTriggerIcon === 'hamburger' ? 'Toggle menu' : 'User account menu'}
+              >
+                <svg className={headerIconSvgClasses} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  {mobileMenuTriggerIcon === 'hamburger' ? (
+                    mobileMenuOpen ? (
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    ) : (
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                    )
                   ) : (
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                  )
-                ) : (
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  )}
+                </svg>
+                {mobileMenuTriggerIcon === 'people' && isAuthenticated && visibleUserIconCount > 0 && (
+                  <span className="absolute top-0 right-0 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white transform translate-x-1/2 -translate-y-1/2 bg-red-500 rounded-full">
+                    {visibleUserIconCount}
+                  </span>
                 )}
-              </svg>
-              {mobileMenuTriggerIcon === 'people' && isAuthenticated && visibleUserIconCount > 0 && (
-                <span className="absolute top-0 right-0 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white transform translate-x-1/2 -translate-y-1/2 bg-red-500 rounded-full">
-                  {visibleUserIconCount}
-                </span>
-              )}
-            </button>
+              </button>
+            )}
           </div>
           <div
             className={`relative mt-2 hidden items-center space-x-8 ${landingSidebar ? '' : '2xl:flex'}`}
@@ -917,22 +938,6 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
             })}
           </div>
           <div className={`absolute right-0 hidden items-center gap-3 2xl:flex 2xl:gap-4 ${landingSidebar ? 'top-3 sm:top-5' : ''}`}>
-            {landingSidebar && (
-              <button
-                type="button"
-                onClick={() => setLandingSidebarOpen((open) => !open)}
-                className={headerIconButtonClasses}
-                aria-label={landingSidebarOpen ? 'Close menu' : 'Toggle menu'}
-              >
-                <svg className={headerIconSvgClasses} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  {landingSidebarOpen ? (
-                    <path strokeLinecap="round" strokeWidth={2} d="M6 6l12 12M18 6L6 18" />
-                  ) : (
-                    <path strokeLinecap="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                  )}
-                </svg>
-              </button>
-            )}
             <div className="relative w-[17rem]" ref={searchContainerRef}>
             <form onSubmit={handleSearch} className="relative w-full">
               <span className={`absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none transition-colors duration-300 ${searchIconClasses}`}>
