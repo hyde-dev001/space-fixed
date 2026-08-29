@@ -6,6 +6,19 @@ const navigationSource = readFileSync(
   resolve('resources/js/Pages/UserSide/Shared/Navigation.tsx'),
   'utf8',
 );
+const appCssSource = readFileSync(resolve('resources/css/app.css'), 'utf8');
+const standaloneAccountMenuSources = [
+  'resources/js/Pages/UserSide/Products/Products.tsx',
+  'resources/js/Pages/UserSide/Products/ProductShow.tsx',
+  'resources/js/Pages/UserSide/Repairs/Repair.tsx',
+].map((path) => ({ path, source: readFileSync(resolve(path), 'utf8') }));
+const supportingLabelSources = {
+  shopProfile: readFileSync(resolve('resources/js/Pages/UserSide/Profile/ShopProfile.tsx'), 'utf8'),
+  customerProfile: readFileSync(resolve('resources/js/Pages/UserSide/Profile/customerProfile.tsx'), 'utf8'),
+  repairs: readFileSync(resolve('resources/js/Pages/UserSide/Repairs/myRepairs.tsx'), 'utf8'),
+  paymentSuccess: readFileSync(resolve('resources/js/Pages/UserSide/Orders/PaymentSuccess.tsx'), 'utf8'),
+  productDetails: readFileSync(resolve('resources/js/Pages/UserSide/Products/ProductShow.tsx'), 'utf8'),
+};
 
 describe('user-side navigation shell', () => {
   it('uses the left drawer and right cart motion as the shared default', () => {
@@ -33,12 +46,12 @@ describe('user-side navigation shell', () => {
     );
   });
 
-  it('keeps Download as the last utility link after Bag', () => {
+  it('keeps Download as the last utility link after Cart', () => {
     const sidebarStart = navigationSource.indexOf('aria-label="Site menu"');
     const sidebarSource = navigationSource.slice(sidebarStart, navigationSource.indexOf('</aside>', sidebarStart));
 
     expect(sidebarSource).toContain("href={route('download')}");
-    expect(sidebarSource.indexOf('>Bag')).toBeLessThan(sidebarSource.indexOf('>Download'));
+    expect(sidebarSource.indexOf('>Cart')).toBeLessThan(sidebarSource.indexOf('>Download'));
   });
 
   it('renders the shared moving offers ticker with reduced-motion support', () => {
@@ -49,5 +62,65 @@ describe('user-side navigation shell', () => {
     expect(navigationSource).toContain('Shop the latest drops');
     expect(navigationSource).toContain('landing-marquee');
     expect(navigationSource).toContain('motion-reduce:animate-none');
+  });
+
+  it('pauses the glass offers marquee when hovered or focused', () => {
+    expect(navigationSource).toContain('z-[40]');
+    expect(navigationSource).toContain('bg-[#111111]/70');
+    expect(navigationSource).toContain('backdrop-blur-xl');
+    expect(appCssSource).toContain('.landing-marquee:hover');
+    expect(appCssSource).toContain('.landing-marquee:focus-within');
+    expect(appCssSource).toContain('animation-play-state: paused');
+  });
+
+  it('keeps glass drawers above the ticker stacking context', () => {
+    expect(navigationSource).toContain('fixed inset-0 z-[100]');
+    expect(navigationSource).toContain('fixed right-0 top-0 z-[110]');
+    expect(navigationSource).toContain('fixed left-0 top-0 z-[110]');
+    expect(navigationSource).toContain('bg-white/90');
+    expect(navigationSource).toContain('backdrop-blur-2xl');
+  });
+
+  it('keeps the authenticated account menu focused on profile actions', () => {
+    const desktopMenuStart = navigationSource.indexOf('/* Dropdown Menu */');
+    const desktopMenuEnd = navigationSource.indexOf('/* Messages Icon', desktopMenuStart);
+    const desktopMenuSource = navigationSource.slice(desktopMenuStart, desktopMenuEnd);
+
+    expect(desktopMenuSource).toContain('<span>Edit Profile</span>');
+    expect(desktopMenuSource).toContain('<span>Join Our Team</span>');
+    expect(desktopMenuSource).toContain('<span>Log out</span>');
+    expect(desktopMenuSource).toContain("href={route('shop-owner-register')}");
+    expect(desktopMenuSource).not.toContain('<span>Orders</span>');
+    expect(desktopMenuSource).not.toContain('<span>Repair</span>');
+  });
+
+  it('uses the shortened cart label in the shared cart surface', () => {
+    const cartStart = navigationSource.indexOf('aria-label="Shopping cart"');
+    const cartEnd = navigationSource.indexOf('aria-label="Site menu"', cartStart);
+    const cartSource = navigationSource.slice(cartStart, cartEnd);
+
+    expect(cartSource).toContain('<p className="text-lg font-semibold">Cart</p>');
+    expect(cartSource).toContain('Your cart is empty.');
+    expect(cartSource).not.toContain('>Bag<');
+  });
+
+  it('keeps standalone mobile account menus aligned with the shared account actions', () => {
+    for (const { path, source } of standaloneAccountMenuSources) {
+      expect(source, path).toContain('Edit Profile');
+      expect(source, path).toContain('Join Our Team');
+      expect(source, path).toContain('Log out');
+      expect(source, path).toContain('shop-owner-register');
+      expect(source, path).not.toContain('href="/my-orders"');
+      expect(source, path).not.toContain('href="/my-repairs"');
+    }
+  });
+
+  it('uses the shorter Cart, Orders, and Repairs labels across user-side surfaces', () => {
+    expect(supportingLabelSources.shopProfile).toContain('>Orders</Link>');
+    expect(supportingLabelSources.customerProfile).toContain('>Repairs</h2>');
+    expect(supportingLabelSources.repairs).toContain('<Head title="Repairs" />');
+    expect(supportingLabelSources.repairs).toContain('>Repairs</h1>');
+    expect(supportingLabelSources.paymentSuccess).toContain('View Orders');
+    expect(supportingLabelSources.productDetails).toContain('label="Add to Cart"');
   });
 });

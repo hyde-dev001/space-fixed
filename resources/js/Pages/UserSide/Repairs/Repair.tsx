@@ -354,25 +354,18 @@ const Repair: React.FC<Props> = ({ shops }) => {
                     {isAuthenticated ? (
                       <>
                         <Link
-                          href="/my-orders"
-                          className="flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-sm font-medium text-black hover:bg-gray-50"
-                          onClick={() => setIsAccountMenuOpen(false)}
-                        >
-                          <span>Orders</span>
-                        </Link>
-                        <Link
-                          href="/my-repairs"
-                          className="flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-sm font-medium text-black hover:bg-gray-50"
-                          onClick={() => setIsAccountMenuOpen(false)}
-                        >
-                          <span>Repair</span>
-                        </Link>
-                        <Link
                           href="/customer-profile"
                           className="flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-sm font-medium text-black hover:bg-gray-50"
                           onClick={() => setIsAccountMenuOpen(false)}
                         >
                           <span>Edit Profile</span>
+                        </Link>
+                        <Link
+                          href="/shop-owner-register"
+                          className="flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-sm font-medium text-black hover:bg-gray-50"
+                          onClick={() => setIsAccountMenuOpen(false)}
+                        >
+                          <span>Join Our Team</span>
                         </Link>
                         <button
                           type="button"
