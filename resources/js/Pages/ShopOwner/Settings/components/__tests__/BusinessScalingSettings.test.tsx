@@ -126,11 +126,17 @@ describe('BusinessScalingSettings', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: /submit upgrade request/i }));
 
-    expect(routerPostMock).toHaveBeenCalledWith(
+    await waitFor(() => expect(swalFireMock).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Submit upgrade request?',
+      showCancelButton: true,
+      confirmButtonText: 'Submit request',
+    })));
+
+    await waitFor(() => expect(routerPostMock).toHaveBeenCalledWith(
       '/shop-owner/settings/business-upgrade',
       expect.any(FormData),
       expect.objectContaining({ forceFormData: true }),
-    );
+    ));
     expect(screen.getByRole('button', { name: /submitting/i })).toBeDisabled();
 
     act(() => callbacks.onSuccess?.());

@@ -229,7 +229,7 @@ const BusinessScalingSettings: React.FC<BusinessScalingSettingsProps> = ({ busin
     });
   };
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (submitting || hasPendingRequest || !selectedTransition) return;
 
@@ -245,6 +245,18 @@ const BusinessScalingSettings: React.FC<BusinessScalingSettingsProps> = ({ busin
       setSubmitError('Add each required document before submitting your request.');
       return;
     }
+
+    const confirmation = await Swal.fire({
+      icon: 'question',
+      title: 'Submit upgrade request?',
+      text: 'Your selected business upgrade and documents will be sent for review.',
+      showCancelButton: true,
+      confirmButtonText: 'Submit request',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#111827',
+      cancelButtonColor: '#6b7280',
+    });
+    if (!confirmation.isConfirmed) return;
 
     const payload = new FormData();
     payload.append('requested_registration_type', selectedTransition.requested_registration_type);
