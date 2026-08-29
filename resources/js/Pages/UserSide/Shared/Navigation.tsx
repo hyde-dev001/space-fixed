@@ -99,7 +99,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
   const [cartDrawerOpen, setCartDrawerOpen] = useState(false);
   const [quickCartItems, setQuickCartItems] = useState<QuickCartItem[]>([]);
   const [quickCartLoading, setQuickCartLoading] = useState(false);
-  const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+  const [accountDrawerOpen, setAccountDrawerOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchProducts, setSearchProducts] = useState<SearchSuggestionProduct[]>([]);
   const [searchShops, setSearchShops] = useState<SearchSuggestionShop[]>([]);
@@ -304,11 +304,9 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
     }
   };
   const navRef = useRef<HTMLDivElement>(null);
-  const dropdownRef = useRef<HTMLDivElement>(null);
   const mobileUserMenuRef = useRef<HTMLDivElement>(null);
   const mobileMenuPanelRef = useRef<HTMLDivElement>(null);
   const searchContainerRef = useRef<HTMLDivElement>(null);
-  const hoverCloseTimeoutRef = useRef<number | null>(null);
   const searchAbortRef = useRef<AbortController | null>(null);
   const megaMenuBaseClasses =
     'absolute top-full left-1/2 -translate-x-1/2 mt-0 bg-white text-black shadow-2xl rounded-none w-auto min-w-[700px] max-w-[900px] py-8 px-10 border-t border-gray-200 transition-all duration-200 ease-out';
@@ -629,18 +627,6 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
     setOpenDropdownKey(null);
   };
 
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setUserDropdownOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
   useEffect(() => {
     const onScroll = () => setIsScrolled(window.scrollY > 80);
     onScroll();
@@ -744,7 +730,12 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
               href="/checkout"
               className={`${headerIconButtonClasses} ${landingSidebar ? 'order-3' : ''}`}
               aria-label="Shopping cart"
-              onClick={landingSidebar ? (event) => { event.preventDefault(); setCartDrawerOpen(true); } : undefined}
+              onClick={landingSidebar ? (event) => {
+                event.preventDefault();
+                setLandingSidebarOpen(false);
+                setAccountDrawerOpen(false);
+                setCartDrawerOpen(true);
+              } : undefined}
             >
               <svg className={headerIconSvgClasses} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h2l2.2 10.2a2 2 0 001.96 1.58h7.68a2 2 0 001.95-1.56L21 7H8" />
@@ -1182,31 +1173,19 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                 }
               />
             )}
-            {/* User Icon with Dropdown */}
-            <div
-              className="relative flex shrink-0 items-center justify-center"
-              ref={dropdownRef}
-              onMouseEnter={() => {
-                if (hoverCloseTimeoutRef.current) {
-                  window.clearTimeout(hoverCloseTimeoutRef.current);
-                  hoverCloseTimeoutRef.current = null;
-                }
-                setUserDropdownOpen(true);
-              }}
-              onMouseLeave={() => {
-                // delay closing slightly so clicks can register when moving to the menu
-                if (hoverCloseTimeoutRef.current) window.clearTimeout(hoverCloseTimeoutRef.current);
-                hoverCloseTimeoutRef.current = window.setTimeout(() => {
-                  setUserDropdownOpen(false);
-                  hoverCloseTimeoutRef.current = null;
-                }, 220);
-              }}
-            >
+            {/* User Icon */}
+            <div className="relative flex shrink-0 items-center justify-center">
               <button
                 type="button"
-                onClick={() => setUserDropdownOpen(!userDropdownOpen)}
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  setLandingSidebarOpen(false);
+                  setCartDrawerOpen(false);
+                  setAccountDrawerOpen((open) => !open);
+                }}
                 className={headerIconButtonClasses}
                 aria-label="User account"
+                aria-expanded={accountDrawerOpen}
               >
                 <svg className={headerIconSvgClasses} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
@@ -1217,73 +1196,6 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                   </span>
                 )}
               </button>
-
-              {/* Dropdown Menu */}
-              {userDropdownOpen && (
-                <div
-                  className="absolute right-0 top-full z-50 mt-1 w-52 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[0_18px_35px_-20px_rgba(15,23,42,0.45)]"
-                  onMouseEnter={() => {
-                    if (hoverCloseTimeoutRef.current) {
-                      window.clearTimeout(hoverCloseTimeoutRef.current);
-                      hoverCloseTimeoutRef.current = null;
-                    }
-                  }}
-                  onMouseLeave={() => {
-                    if (hoverCloseTimeoutRef.current) window.clearTimeout(hoverCloseTimeoutRef.current);
-                    hoverCloseTimeoutRef.current = window.setTimeout(() => {
-                      setUserDropdownOpen(false);
-                      hoverCloseTimeoutRef.current = null;
-                    }, 220);
-                  }}
-                >
-                  {isAuthenticated ? (
-                    <>
-                      <Link
-                        href="/customer-profile"
-                        className="flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-sm font-medium text-gray-900 transition-colors hover:bg-gray-50"
-                        onClick={() => setUserDropdownOpen(false)}
-                      >
-                        <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                        </svg>
-                        <span>Edit Profile</span>
-                      </Link>
-                      <Link
-                        href={route('shop-owner-register')}
-                        className={`flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-sm font-medium transition-colors ${
-                          isMobileServicesActive ? 'bg-gray-50 text-gray-900' : 'text-gray-900 hover:bg-gray-50'
-                        }`}
-                        onClick={() => setUserDropdownOpen(false)}
-                      >
-                        <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2m8-8a4 4 0 100-8 4 4 0 000 8zm6-3v6m3-3h-6" />
-                        </svg>
-                        <span>Join Our Team</span>
-                      </Link>
-                      <button
-                        className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
-                        onClick={() => { setUserDropdownOpen(false); handleLogout(); }}
-                      >
-                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                        </svg>
-                        <span>Log out</span>
-                      </button>
-                    </>
-                  ) : (
-                    <Link
-                      href="/login"
-                      className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-gray-900 transition-colors hover:bg-gray-50"
-                      onClick={() => setUserDropdownOpen(false)}
-                    >
-                      <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
-                      </svg>
-                      <span>Customer Login</span>
-                    </Link>
-                  )}
-                </div>
-              )}
             </div>
 
             {/* Messages Icon - Only visible for authenticated customers */}
@@ -1311,7 +1223,12 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
               href="/checkout"
               className={`${headerIconButtonClasses} ${landingSidebar ? 'order-3' : ''}`}
               aria-label="Shopping cart"
-              onClick={landingSidebar ? (event) => { event.preventDefault(); setCartDrawerOpen(true); } : undefined}
+              onClick={landingSidebar ? (event) => {
+                event.preventDefault();
+                setLandingSidebarOpen(false);
+                setAccountDrawerOpen(false);
+                setCartDrawerOpen(true);
+              } : undefined}
             >
               <svg className={headerIconSvgClasses} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h2l2.2 10.2a2 2 0 001.96 1.58h7.68a2 2 0 001.95-1.56L21 7H8" />
@@ -1493,17 +1410,85 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
             </>
           )}
           <>
-              <button
-                type="button"
-                aria-label="Close cart"
-                onClick={() => setCartDrawerOpen(false)}
-                className={`fixed inset-0 z-[100] bg-black/45 backdrop-blur-sm transition-opacity duration-300 motion-reduce:transition-none ${cartDrawerOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
-              />
-              <aside
-                aria-label="Shopping cart"
-                aria-hidden={!cartDrawerOpen}
-                className={`fixed right-0 top-0 z-[110] flex h-dvh w-[min(92vw,30rem)] max-w-[30rem] flex-col border-l border-white/70 bg-white/90 text-[#111111] shadow-2xl backdrop-blur-2xl transition-transform duration-300 ease-out motion-reduce:transition-none ${cartDrawerOpen ? 'translate-x-0' : 'translate-x-full pointer-events-none'}`}
-              >
+            <button
+              type="button"
+              aria-label="Close account"
+              onClick={() => setAccountDrawerOpen(false)}
+              className={`fixed inset-0 z-[100] bg-black/35 backdrop-blur-[2px] transition-opacity duration-300 motion-reduce:transition-none ${accountDrawerOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+            />
+            <aside
+              role="dialog"
+              aria-modal="true"
+              aria-label="Account"
+              aria-hidden={!accountDrawerOpen}
+              className={`fixed right-0 top-0 z-[110] flex h-dvh w-[min(92vw,26rem)] max-w-[26rem] flex-col border-l border-white/60 bg-white/60 text-[#111111] shadow-2xl backdrop-blur-2xl transition-transform duration-300 ease-out motion-reduce:transition-none ${accountDrawerOpen ? 'translate-x-0' : 'translate-x-full pointer-events-none'}`}
+            >
+              <div className="flex items-center justify-between border-b border-white/50 bg-white/10 px-5 py-5 sm:px-7">
+                <div>
+                  <p className="text-lg font-semibold">Account</p>
+                  <p className="mt-1 text-xs uppercase tracking-[0.16em] text-[#777777]">Profile &amp; access</p>
+                </div>
+                <button type="button" onClick={() => setAccountDrawerOpen(false)} className="inline-flex h-10 w-10 items-center justify-center rounded-full hover:bg-white/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111]" aria-label="Close account">
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={1.8} d="M6 6l12 12M18 6L6 18" /></svg>
+                </button>
+              </div>
+              <div className="flex-1 px-5 py-6 sm:px-7">
+                {isAuthenticated ? (
+                  <div className="overflow-hidden rounded-2xl border border-white/60 bg-white/30 shadow-[0_20px_45px_-32px_rgba(15,23,42,0.55)]">
+                    <Link
+                      href="/customer-profile"
+                      className={`flex min-h-14 items-center gap-3 border-b border-white/50 px-4 text-sm font-medium transition-colors ${isMyProfileActive ? 'bg-white/35 text-gray-900' : 'text-gray-900 hover:bg-white/35'}`}
+                      onClick={() => setAccountDrawerOpen(false)}
+                    >
+                      <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                      <span>Edit Profile</span>
+                    </Link>
+                    <Link
+                      href={route('shop-owner-register')}
+                      className={`flex min-h-14 items-center gap-3 border-b border-white/50 px-4 text-sm font-medium transition-colors ${isMobileServicesActive ? 'bg-white/35 text-gray-900' : 'text-gray-900 hover:bg-white/35'}`}
+                      onClick={() => setAccountDrawerOpen(false)}
+                    >
+                      <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2m8-8a4 4 0 100-8 4 4 0 000 8zm6-3v6m3-3h-6" />
+                      </svg>
+                      <span>Join Our Team</span>
+                    </Link>
+                    <button
+                      type="button"
+                      className="flex min-h-14 w-full items-center gap-3 px-4 text-left text-sm font-medium text-red-600 transition-colors hover:bg-red-50/60"
+                      onClick={() => {
+                        setAccountDrawerOpen(false);
+                        handleLogout();
+                      }}
+                    >
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                      </svg>
+                      <span>Log out</span>
+                    </button>
+                  </div>
+                ) : (
+                  <Link href="/login" onClick={() => setAccountDrawerOpen(false)} className="flex min-h-12 items-center justify-center rounded-2xl border border-white/60 bg-white/30 px-4 text-sm font-semibold text-gray-900 transition-colors hover:bg-white/45">
+                    Customer Login
+                  </Link>
+                )}
+              </div>
+            </aside>
+          </>
+          <>
+            <button
+              type="button"
+              aria-label="Close cart"
+              onClick={() => setCartDrawerOpen(false)}
+              className={`fixed inset-0 z-[100] bg-black/35 backdrop-blur-[2px] transition-opacity duration-300 motion-reduce:transition-none ${cartDrawerOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+            />
+            <aside
+              aria-label="Shopping cart"
+              aria-hidden={!cartDrawerOpen}
+              className={`fixed right-0 top-0 z-[110] flex h-dvh w-[min(92vw,30rem)] max-w-[30rem] flex-col border-l border-white/60 bg-white/60 text-[#111111] shadow-2xl backdrop-blur-2xl transition-transform duration-300 ease-out motion-reduce:transition-none ${cartDrawerOpen ? 'translate-x-0' : 'translate-x-full pointer-events-none'}`}
+            >
                 <div className="flex items-center justify-between border-b border-[#dedede] px-5 py-5 sm:px-7">
                   <div><p className="text-lg font-semibold">Cart</p><p className="mt-1 text-xs uppercase tracking-[0.16em] text-[#777777]">{effectiveCartCount} {effectiveCartCount === 1 ? 'item' : 'items'}</p></div>
                   <button type="button" onClick={() => setCartDrawerOpen(false)} className="inline-flex h-10 w-10 items-center justify-center" aria-label="Close cart"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={1.8} d="M6 6l12 12M18 6L6 18" /></svg></button>
@@ -1516,17 +1501,17 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                   </div>}
                 </div>
                 <div className="border-t border-[#dedede] px-5 py-5 sm:px-7"><div className="flex items-center justify-between text-sm font-semibold"><span>Estimated total</span><span>₱{quickCartItems.reduce((total, item) => total + item.price * item.qty, 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span></div><Link href="/checkout" onClick={() => setCartDrawerOpen(false)} className="mt-5 flex min-h-12 items-center justify-center bg-[#111111] text-xs font-semibold uppercase tracking-[0.16em] text-white">Checkout</Link></div>
-              </aside>
+            </aside>
           </>
           <button
             type="button"
             aria-label="Close menu"
             onClick={() => setLandingSidebarOpen(false)}
-            className={`fixed inset-0 z-[100] bg-black/45 backdrop-blur-sm transition-opacity duration-300 motion-reduce:transition-none ${landingSidebarOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+            className={`fixed inset-0 z-[100] bg-black/35 backdrop-blur-[2px] transition-opacity duration-300 motion-reduce:transition-none ${landingSidebarOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
           />
           <aside
             aria-label="Site menu"
-            className={`fixed left-0 top-0 z-[110] flex h-dvh w-[min(88vw,31rem)] flex-col overflow-y-auto border-r border-white/70 bg-white/90 text-[#111111] shadow-2xl backdrop-blur-2xl transition-transform duration-300 ease-out motion-reduce:transition-none ${landingSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
+            className={`fixed left-0 top-0 z-[110] flex h-dvh w-[min(88vw,31rem)] flex-col overflow-y-auto border-r border-white/60 bg-white/60 text-[#111111] shadow-2xl backdrop-blur-2xl transition-transform duration-300 ease-out motion-reduce:transition-none ${landingSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
           >
             <div className="flex items-center justify-between border-b border-[#e5e5e5] px-6 py-6 sm:px-8">
               <Link href={route('landing')} onClick={() => setLandingSidebarOpen(false)} className="text-xl font-black tracking-[-0.06em] sm:text-2xl">
@@ -1568,8 +1553,8 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
               </div>
             </nav>
             <div className="border-t border-[#cacacb] px-6 py-6 sm:px-8">
-              <Link href={isAuthenticated ? '/customer-profile' : route('login')} onClick={() => setLandingSidebarOpen(false)} className="flex min-h-12 items-center gap-3 text-base font-medium hover:opacity-55"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3" strokeWidth={2}/><path strokeLinecap="round" strokeWidth={2} d="M5 20a7 7 0 0 1 14 0"/></svg>{isAuthenticated ? 'Account' : 'Sign in'}</Link>
-              <Link href="/checkout" onClick={() => setLandingSidebarOpen(false)} className="flex min-h-12 items-center gap-3 text-base font-medium hover:opacity-55"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={2} d="M3 4h2l2.2 10.2a2 2 0 0 0 1.96 1.58h7.68a2 2 0 0 0 1.95-1.56L21 7H8"/><circle cx="10" cy="19" r="1.5"/><circle cx="17" cy="19" r="1.5"/></svg>Cart {effectiveCartCount > 0 && `(${effectiveCartCount})`}</Link>
+              <button type="button" onClick={() => { setLandingSidebarOpen(false); setCartDrawerOpen(false); setAccountDrawerOpen(true); }} aria-expanded={accountDrawerOpen} className="flex min-h-12 w-full items-center gap-3 text-left text-base font-medium hover:opacity-55"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3" strokeWidth={2}/><path strokeLinecap="round" strokeWidth={2} d="M5 20a7 7 0 0 1 14 0"/></svg>{isAuthenticated ? 'Account' : 'Sign in'}</button>
+              <button type="button" onClick={() => { setLandingSidebarOpen(false); setAccountDrawerOpen(false); setCartDrawerOpen(true); }} className="flex min-h-12 w-full items-center gap-3 text-left text-base font-medium hover:opacity-55"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={2} d="M3 4h2l2.2 10.2a2 2 0 0 0 1.96 1.58h7.68a2 2 0 0 0 1.95-1.56L21 7H8"/><circle cx="10" cy="19" r="1.5"/><circle cx="17" cy="19" r="1.5"/></svg>Cart {effectiveCartCount > 0 && `(${effectiveCartCount})`}</button>
               <Link href={route('download')} onClick={() => setLandingSidebarOpen(false)} className="flex min-h-12 items-center gap-3 text-base font-medium hover:opacity-55"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14" /></svg>Download</Link>
             </div>
           </aside>
