@@ -691,7 +691,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
             <button
               type="button"
               onClick={() => setLandingSidebarOpen((open) => !open)}
-              className={`absolute left-0 top-3 inline-flex h-10 w-10 items-center justify-center p-0 transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 sm:top-5 ${isTransparentNav ? 'text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.7)] focus-visible:ring-white' : 'text-gray-900 focus-visible:ring-gray-900'}`}
+              className={`absolute left-0 top-3 inline-flex h-10 w-10 -translate-y-px items-center justify-center p-0 transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 sm:top-5 ${isTransparentNav ? 'text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.7)] focus-visible:ring-white' : 'text-gray-900 focus-visible:ring-gray-900'}`}
               aria-label={landingSidebarOpen ? 'Close menu' : 'Toggle menu'}
             >
               <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1006,7 +1006,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                 <button
                   type="button"
                   onClick={() => setIsSearchFocused((focused) => !focused)}
-                  className={headerIconButtonClasses}
+                  className={`${headerIconButtonClasses} -mr-2`}
                   aria-label="Open search"
                   aria-expanded={isSearchFocused}
                 >
