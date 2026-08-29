@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { AlertTriangle, Check, CheckCircle2, FileText, Lock, Upload, X } from 'lucide-react';
+import Swal from 'sweetalert2';
 import { router } from '@inertiajs/react';
 import type { ShopModuleKey, ShopModuleStates } from '../../../../types/shopModules';
 
@@ -136,6 +137,7 @@ const BusinessScalingSettings: React.FC<BusinessScalingSettingsProps> = ({ busin
     ],
   );
   const [selectedTransitionKey, setSelectedTransitionKey] = useState(transitions[0]?.key ?? '');
+  const [isTransitionDropdownOpen, setIsTransitionDropdownOpen] = useState(false);
   const [files, setFiles] = useState<Record<string, File | null>>({});
   const [reuseDocumentIds, setReuseDocumentIds] = useState<Record<string, number>>(() => (
     Object.fromEntries(
@@ -185,16 +187,26 @@ const BusinessScalingSettings: React.FC<BusinessScalingSettingsProps> = ({ busin
     if (!isAllowedDocument(file)) {
       setFiles((previous) => ({ ...previous, [evidenceKey]: null }));
       setRequestErrors((previous) => ({ ...previous, [evidenceKey]: 'Use a PDF, JPG, JPEG, or PNG file.' }));
+      void Swal.fire({ icon: 'error', title: 'Invalid document', text: 'Use a PDF, JPG, JPEG, or PNG file.', confirmButtonColor: '#111827' });
       return;
     }
 
     if (file.size > 10 * 1024 * 1024) {
       setFiles((previous) => ({ ...previous, [evidenceKey]: null }));
       setRequestErrors((previous) => ({ ...previous, [evidenceKey]: 'Each document must be 10 MB or smaller.' }));
+      void Swal.fire({ icon: 'error', title: 'File is too large', text: 'Each document must be 10 MB or smaller.', confirmButtonColor: '#111827' });
       return;
     }
 
     setFiles((previous) => ({ ...previous, [evidenceKey]: file }));
+    const evidence = businessScaling.required_evidence.find((item) => item.key === evidenceKey);
+    void Swal.fire({
+      icon: 'info',
+      title: 'File Attached',
+      text: `${file.name} was added to ${evidence?.title ?? 'the required evidence'}.`,
+      confirmButtonText: 'OK',
+      confirmButtonColor: '#111827',
+    });
   };
 
   const toggleReuseDocument = (evidence: BusinessScalingEvidence) => {
@@ -357,15 +369,39 @@ const BusinessScalingSettings: React.FC<BusinessScalingSettingsProps> = ({ busin
         <form className="mt-5 space-y-5" onSubmit={handleSubmit}>
           <div>
             <label htmlFor="upgrade-choice" className="text-sm font-semibold text-slate-900 dark:text-white">Upgrade choice</label>
-            <select
-              id="upgrade-choice"
-              aria-label="Upgrade choice"
-              value={selectedTransitionKey}
-              onChange={(event) => setSelectedTransitionKey(event.target.value)}
-              className="mt-2 block min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-            >
-              {transitions.map((transition) => <option key={transition.key} value={transition.key}>{transition.label}</option>)}
-            </select>
+            <div className="relative mt-2">
+              <button
+                id="upgrade-choice"
+                type="button"
+                aria-label="Upgrade choice"
+                aria-haspopup="listbox"
+                aria-expanded={isTransitionDropdownOpen}
+                onClick={() => setIsTransitionDropdownOpen((open) => !open)}
+                className="flex min-h-11 w-full items-center justify-between rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-left text-sm text-slate-900 outline-none transition hover:border-slate-500 hover:bg-slate-50 focus:border-slate-500 focus:ring-2 focus:ring-slate-200 dark:border-slate-600 dark:bg-slate-800 dark:text-white dark:hover:border-slate-400 dark:hover:bg-slate-700"
+              >
+                <span>{selectedTransition?.label ?? 'Select an upgrade'}</span>
+                <span aria-hidden="true" className={`text-slate-500 transition-transform ${isTransitionDropdownOpen ? 'rotate-180' : ''}`}>▾</span>
+              </button>
+              {isTransitionDropdownOpen && (
+                <div role="listbox" aria-label="Upgrade choices" className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-lg border border-slate-300 bg-white p-1 shadow-lg dark:border-slate-600 dark:bg-slate-800">
+                  {transitions.map((transition) => (
+                    <button
+                      key={transition.key}
+                      type="button"
+                      role="option"
+                      aria-selected={selectedTransitionKey === transition.key}
+                      onClick={() => {
+                        setSelectedTransitionKey(transition.key);
+                        setIsTransitionDropdownOpen(false);
+                      }}
+                      className={`w-full rounded-md px-3 py-2 text-left text-sm transition-colors ${selectedTransitionKey === transition.key ? 'bg-slate-900 font-semibold text-white dark:bg-white dark:text-slate-900' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-200 dark:hover:bg-slate-700 dark:hover:text-white'}`}
+                    >
+                      {transition.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             {selectedTransition ? <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">Target: {formatState(selectedTransition.requested_registration_type)} {formatState(selectedTransition.requested_business_type)}</p> : null}
           </div>
 

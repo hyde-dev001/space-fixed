@@ -3070,7 +3070,7 @@ const Payment: React.FC = () => {
                               <div
                                 role="listbox"
                                 onKeyDown={(event) => handleListboxKeyDown(event, setIsDesktopProvinceDropdownOpen, desktopProvinceDropdownRef)}
-                                className="hide-scrollbar absolute left-0 right-0 top-full z-40 mt-1 max-h-56 overflow-y-auto rounded border border-gray-300 bg-white shadow-lg"
+                                className="hide-scrollbar absolute left-0 right-0 top-full z-[1001] mt-1 max-h-56 overflow-y-auto rounded border border-gray-300 bg-white shadow-lg"
                               >
                                 {PHILIPPINE_LOCATIONS.map((province) => (
                                   <button
@@ -3110,7 +3110,7 @@ const Payment: React.FC = () => {
                               <div
                                 role="listbox"
                                 onKeyDown={(event) => handleListboxKeyDown(event, setIsDesktopCityDropdownOpen, desktopCityDropdownRef)}
-                                className="hide-scrollbar absolute left-0 right-0 top-full z-40 mt-1 max-h-56 overflow-y-auto rounded border border-gray-300 bg-white shadow-lg"
+                                className="hide-scrollbar absolute left-0 right-0 top-full z-[1001] mt-1 max-h-56 overflow-y-auto rounded border border-gray-300 bg-white shadow-lg"
                               >
                                 <button
                                   type="button"
