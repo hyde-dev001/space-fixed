@@ -4,7 +4,7 @@
 
 **Goal:** Make the shared user-side sidebar and cart visibly glassmorphic, and replace the desktop Account hover dropdown with a Kith-inspired click-open side panel containing the requested account actions.
 
-**Architecture:** Keep the existing `Navigation` state and drawer layering. Add one `accountDrawerOpen` state and render Account as a fixed right-side drawer with the existing cart/sidebar z-index scale. Reuse the current inline SVG icons and Inertia links; use Tailwind opacity, blur, transform, and opacity transitions without adding a dependency.
+**Architecture:** Keep the existing `Navigation` state and drawer layering. Add one `accountDrawerOpen` state and render Account as a fixed child panel immediately after the left sidebar, using the parent sidebar width as its left offset and the existing z-index scale. Reuse the current inline SVG icons and Inertia links; use Tailwind opacity, blur, transform, and opacity transitions without adding a dependency.
 
 **Tech Stack:** Laravel 12, Inertia, React 18, TypeScript, Tailwind CSS 4, Vitest, Vite.
 
@@ -46,9 +46,9 @@ Expected: FAIL because the current implementation still contains the old hover d
 
 Add `accountDrawerOpen`, remove the old dropdown-only refs/effect/timeout, and close Account when opening Cart. Make the sidebar Account utility open the panel while preserving guest login access inside it.
 
-- [x] **Step 2: Render the right Account panel**
+- [x] **Step 2: Render the nested Account child panel**
 
-Render a fixed `right-0 top-0` panel with `role="dialog"`, `aria-modal`, a close button, `translate-x` entry/exit motion, and the authenticated actions `Edit Profile`, `Join Our Team`, and `Log out`.
+Render a fixed `left-[min(88vw,31rem)] top-0` child panel with `role="dialog"`, `aria-modal`, a close button, `translate-x` entry/exit motion, and the authenticated actions `Edit Profile`, `Join Our Team`, and `Log out`. Keep the parent sidebar open while the child panel is visible.
 
 - [x] **Step 3: Make both drawer surfaces visibly glass**
 
