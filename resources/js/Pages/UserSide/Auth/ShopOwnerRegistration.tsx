@@ -1661,7 +1661,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                       Please upload clear photos of the following documents:
                     </p>
                     <ul className="list-disc list-inside text-sm text-gray-600 mb-4 space-y-1">
-                      <li>Business registration (DTI or SEC; choose the issuing authority below)</li>
+                      <li>Business registration (DTI or SEC; choose the issuing authority in Required Documents)</li>
                       <li>Mayor's Permit / Shop Permit</li>
                       <li>BIR Certificate of Registration (COR)</li>
                     </ul>
@@ -1678,34 +1678,34 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                     </ul>
                   </div>
                   <div className="rounded-xl border border-gray-200 bg-white p-4 md:p-5">
-                    <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                    <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                       <h4 className="text-sm font-semibold text-gray-900">Required Documents</h4>
-                      <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-700">
-                        {requiredUploadCount} / 4 uploaded
-                      </span>
+                      <div className="flex items-center gap-3">
+                        <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-700">
+                          {requiredUploadCount} / 4 uploaded
+                        </span>
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={businessRegistrationType === 'sec_registration'}
+                          aria-label="Business registration authority"
+                          onClick={() => setBusinessRegistrationType((current) => current === 'dti_registration' ? 'sec_registration' : 'dti_registration')}
+                          className="inline-flex items-center gap-2 rounded-full border border-gray-300 bg-white px-2 py-1 text-xs font-semibold text-gray-800 shadow-sm transition hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900"
+                        >
+                          <span className={businessRegistrationType === 'dti_registration' ? 'rounded-full bg-gray-900 px-2 py-1 text-white' : 'px-1 py-1 text-gray-500'}>DTI</span>
+                          <span className="relative h-5 w-9 rounded-full bg-gray-300" aria-hidden="true">
+                            <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${businessRegistrationType === 'sec_registration' ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                          </span>
+                          <span className={businessRegistrationType === 'sec_registration' ? 'rounded-full bg-gray-900 px-2 py-1 text-white' : 'px-1 py-1 text-gray-500'}>SEC</span>
+                        </button>
+                      </div>
                     </div>
                     <p className="mb-4 text-xs text-gray-500">
                       Complete all required uploads before proceeding to the review step.
                     </p>
-                    <div className="mb-5 grid grid-cols-1 gap-4 rounded-lg border border-gray-100 bg-gray-50 p-4 md:grid-cols-2">
-                      <div>
-                        <label htmlFor="business_registration_type" className="mb-1 block text-sm font-medium text-gray-700">
-                          Business registration type
-                        </label>
-                        <select
-                          id="business_registration_type"
-                          value={businessRegistrationType}
-                          onChange={(event) => setBusinessRegistrationType(event.target.value as 'dti_registration' | 'sec_registration')}
-                          className="h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 outline-none focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10"
-                        >
-                          <option value="dti_registration">DTI registration</option>
-                          <option value="sec_registration">SEC registration</option>
-                        </select>
-                      </div>
-                      <p className="self-end text-xs text-gray-600">
-                        Submit exactly one business registration document and identify its issuing authority.
-                      </p>
-                    </div>
+                    <p className="mb-5 rounded-lg border border-gray-200 bg-gray-50 p-4 text-xs text-gray-600">
+                      Submit exactly one business registration document and identify its issuing authority using the DTI / SEC switch above.
+                    </p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <Label>{businessRegistrationLabel} {(uploadedDocuments.dti.file || existingDocuments.dti) && <span className="text-green-600 font-bold ml-2">✓ Ready</span>}</Label>
