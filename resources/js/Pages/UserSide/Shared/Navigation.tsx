@@ -183,7 +183,10 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
     if (!landingSidebarOpen) return;
 
     const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setLandingSidebarOpen(false);
+      if (event.key === 'Escape') {
+        setLandingSidebarOpen(false);
+        setAccountDrawerOpen(false);
+      }
     };
 
     document.addEventListener('keydown', handleEscape);
@@ -706,7 +709,10 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
           {landingSidebar && (
             <button
               type="button"
-              onClick={() => setLandingSidebarOpen((open) => !open)}
+              onClick={() => {
+                setLandingSidebarOpen((open) => !open);
+                setAccountDrawerOpen(false);
+              }}
               className={`absolute left-0 top-3 inline-flex h-10 w-10 -translate-y-px items-center justify-center p-0 transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 sm:top-5 ${isTransparentNav ? 'text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.7)] focus-visible:ring-white' : 'text-gray-900 focus-visible:ring-gray-900'}`}
               aria-label={landingSidebarOpen ? 'Close menu' : 'Toggle menu'}
             >
@@ -1179,7 +1185,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                 type="button"
                 onClick={() => {
                   setMobileMenuOpen(false);
-                  setLandingSidebarOpen(false);
+                  setLandingSidebarOpen(true);
                   setCartDrawerOpen(false);
                   setAccountDrawerOpen((open) => !open);
                 }}
@@ -1410,18 +1416,12 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
             </>
           )}
           <>
-            <button
-              type="button"
-              aria-label="Close account"
-              onClick={() => setAccountDrawerOpen(false)}
-              className={`fixed inset-0 z-[100] bg-black/35 backdrop-blur-[2px] transition-opacity duration-300 motion-reduce:transition-none ${accountDrawerOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
-            />
             <aside
               role="dialog"
               aria-modal="true"
-              aria-label="Account"
+              aria-label="Account submenu"
               aria-hidden={!accountDrawerOpen}
-              className={`fixed right-0 top-0 z-[110] flex h-dvh w-[min(92vw,26rem)] max-w-[26rem] flex-col border-l border-white/60 bg-white/60 text-[#111111] shadow-2xl backdrop-blur-2xl transition-transform duration-300 ease-out motion-reduce:transition-none ${accountDrawerOpen ? 'translate-x-0' : 'translate-x-full pointer-events-none'}`}
+              className={`fixed left-[min(88vw,31rem)] top-0 z-[110] flex h-dvh w-[min(88vw,26rem)] max-w-[26rem] flex-col border-l border-white/60 bg-white/60 text-[#111111] shadow-2xl backdrop-blur-2xl transition-transform duration-300 ease-out motion-reduce:transition-none ${accountDrawerOpen ? 'translate-x-0' : '-translate-x-full pointer-events-none'}`}
             >
               <div className="flex items-center justify-between border-b border-white/50 bg-white/10 px-5 py-5 sm:px-7">
                 <div>
@@ -1506,7 +1506,10 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
           <button
             type="button"
             aria-label="Close menu"
-            onClick={() => setLandingSidebarOpen(false)}
+            onClick={() => {
+              setAccountDrawerOpen(false);
+              setLandingSidebarOpen(false);
+            }}
             className={`fixed inset-0 z-[100] bg-black/35 backdrop-blur-[2px] transition-opacity duration-300 motion-reduce:transition-none ${landingSidebarOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
           />
           <aside
@@ -1514,10 +1517,10 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
             className={`fixed left-0 top-0 z-[110] flex h-dvh w-[min(88vw,31rem)] flex-col overflow-y-auto border-r border-white/60 bg-white/60 text-[#111111] shadow-2xl backdrop-blur-2xl transition-transform duration-300 ease-out motion-reduce:transition-none ${landingSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
           >
             <div className="flex items-center justify-between border-b border-[#e5e5e5] px-6 py-6 sm:px-8">
-              <Link href={route('landing')} onClick={() => setLandingSidebarOpen(false)} className="text-xl font-black tracking-[-0.06em] sm:text-2xl">
+              <Link href={route('landing')} onClick={() => { setAccountDrawerOpen(false); setLandingSidebarOpen(false); }} className="text-xl font-semibold tracking-[-0.06em] sm:text-2xl">
                 SOLESPACE
               </Link>
-              <button type="button" onClick={() => setLandingSidebarOpen(false)} className="inline-flex h-11 w-11 items-center justify-center rounded-full hover:bg-[#f5f5f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111]" aria-label="Close menu">
+              <button type="button" onClick={() => { setAccountDrawerOpen(false); setLandingSidebarOpen(false); }} className="inline-flex h-11 w-11 items-center justify-center rounded-full hover:bg-[#f5f5f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111]" aria-label="Close menu">
                 <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 6l12 12M18 6L6 18" /></svg>
               </button>
             </div>
@@ -1530,7 +1533,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                   return (
                     <div key={`${item.label}-${item.dropdownKey ?? 'link'}`}>
                       <div className="flex items-center justify-between">
-                        <Link href={href} onClick={() => setLandingSidebarOpen(false)} className="flex min-h-12 flex-1 items-center text-lg font-semibold tracking-[-0.02em] transition-opacity hover:opacity-55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] sm:text-xl">
+                        <Link href={href} onClick={() => { setAccountDrawerOpen(false); setLandingSidebarOpen(false); }} className="flex min-h-12 flex-1 items-center text-lg font-semibold tracking-[-0.02em] transition-opacity hover:opacity-55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] sm:text-xl">
                           {item.label}
                         </Link>
                         {hasChildren && (
@@ -1541,9 +1544,9 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                       </div>
                       {isExpanded && (
                         <div className="mb-3 ml-4 border-l border-[#cacacb] pl-4">
-                          <Link href={route('products', item.params?.category ? { category: item.params.category } : undefined)} onClick={() => setLandingSidebarOpen(false)} className="flex min-h-10 items-center text-sm font-medium text-[#707072] hover:text-[#111111]">Shop all</Link>
+                          <Link href={route('products', item.params?.category ? { category: item.params.category } : undefined)} onClick={() => { setAccountDrawerOpen(false); setLandingSidebarOpen(false); }} className="flex min-h-10 items-center text-sm font-medium text-[#707072] hover:text-[#111111]">Shop all</Link>
                           {['New arrivals', 'Best sellers', 'Running', 'Basketball', 'Lifestyle'].map((category) => (
-                            <Link key={category} href={route('products', item.params?.category ? { category: item.params.category } : undefined)} onClick={() => setLandingSidebarOpen(false)} className="flex min-h-10 items-center text-sm font-medium text-[#707072] hover:text-[#111111]">{category}</Link>
+                            <Link key={category} href={route('products', item.params?.category ? { category: item.params.category } : undefined)} onClick={() => { setAccountDrawerOpen(false); setLandingSidebarOpen(false); }} className="flex min-h-10 items-center text-sm font-medium text-[#707072] hover:text-[#111111]">{category}</Link>
                           ))}
                         </div>
                       )}
@@ -1553,9 +1556,9 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
               </div>
             </nav>
             <div className="border-t border-[#cacacb] px-6 py-6 sm:px-8">
-              <button type="button" onClick={() => { setLandingSidebarOpen(false); setCartDrawerOpen(false); setAccountDrawerOpen(true); }} aria-expanded={accountDrawerOpen} className="flex min-h-12 w-full items-center gap-3 text-left text-base font-medium hover:opacity-55"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3" strokeWidth={2}/><path strokeLinecap="round" strokeWidth={2} d="M5 20a7 7 0 0 1 14 0"/></svg>{isAuthenticated ? 'Account' : 'Sign in'}</button>
+              <button type="button" onClick={() => { setCartDrawerOpen(false); setAccountDrawerOpen(true); }} aria-expanded={accountDrawerOpen} className="flex min-h-12 w-full items-center gap-3 text-left text-base font-medium hover:opacity-55"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3" strokeWidth={2}/><path strokeLinecap="round" strokeWidth={2} d="M5 20a7 7 0 0 1 14 0"/></svg>{isAuthenticated ? 'Account' : 'Sign in'}</button>
               <button type="button" onClick={() => { setLandingSidebarOpen(false); setAccountDrawerOpen(false); setCartDrawerOpen(true); }} className="flex min-h-12 w-full items-center gap-3 text-left text-base font-medium hover:opacity-55"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={2} d="M3 4h2l2.2 10.2a2 2 0 0 0 1.96 1.58h7.68a2 2 0 0 0 1.95-1.56L21 7H8"/><circle cx="10" cy="19" r="1.5"/><circle cx="17" cy="19" r="1.5"/></svg>Cart {effectiveCartCount > 0 && `(${effectiveCartCount})`}</button>
-              <Link href={route('download')} onClick={() => setLandingSidebarOpen(false)} className="flex min-h-12 items-center gap-3 text-base font-medium hover:opacity-55"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14" /></svg>Download</Link>
+              <Link href={route('download')} onClick={() => { setAccountDrawerOpen(false); setLandingSidebarOpen(false); }} className="flex min-h-12 items-center gap-3 text-base font-medium hover:opacity-55"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14" /></svg>Download</Link>
             </div>
           </aside>
         </>

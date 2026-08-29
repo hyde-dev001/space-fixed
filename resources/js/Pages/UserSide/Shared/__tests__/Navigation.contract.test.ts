@@ -77,33 +77,47 @@ describe('user-side navigation shell', () => {
     expect(navigationSource).toContain('fixed inset-0 z-[100]');
     expect(navigationSource).toContain('fixed right-0 top-0 z-[110]');
     expect(navigationSource).toContain('fixed left-0 top-0 z-[110]');
+    expect(navigationSource).toContain('fixed left-[min(88vw,31rem)] top-0 z-[110]');
     expect(navigationSource).toContain('bg-white/60');
     expect(navigationSource).toContain('bg-black/35');
     expect(navigationSource).toContain('backdrop-blur-2xl');
     expect(navigationSource).not.toContain('fixed right-0 top-full z-50 mt-1 w-52');
   });
 
-  it('opens Account as a click-driven glass side drawer with profile actions', () => {
-    const accountLabelIndex = navigationSource.indexOf('aria-label="Account"');
+  it('opens Account as a click-driven glass child panel with profile actions', () => {
+    const accountLabelIndex = navigationSource.indexOf('aria-label="Account submenu"');
     const accountPanelStart = navigationSource.lastIndexOf('<aside', accountLabelIndex);
     const accountPanelEnd = navigationSource.indexOf('</aside>', accountPanelStart);
     const accountPanelSource = navigationSource.slice(accountPanelStart, accountPanelEnd);
+    const accountUtilityLabelIndex = navigationSource.lastIndexOf("{isAuthenticated ? 'Account' : 'Sign in'}</button>");
+    const accountUtilityStart = navigationSource.lastIndexOf('<button', accountUtilityLabelIndex);
+    const accountUtilitySource = navigationSource.slice(accountUtilityStart, accountUtilityLabelIndex);
 
+    expect(accountLabelIndex).toBeGreaterThan(-1);
+    expect(accountUtilityLabelIndex).toBeGreaterThan(-1);
     expect(navigationSource).toContain('const [accountDrawerOpen, setAccountDrawerOpen] = useState(false);');
     expect(navigationSource).toContain('aria-expanded={accountDrawerOpen}');
     expect(navigationSource).toContain('setAccountDrawerOpen((open) => !open)');
     expect(navigationSource).not.toContain('/* Dropdown Menu */');
     expect(accountPanelSource).toContain('role="dialog"');
     expect(accountPanelSource).toContain('aria-modal="true"');
-    expect(accountPanelSource).toContain('fixed right-0 top-0 z-[110]');
+    expect(accountPanelSource).toContain('fixed left-[min(88vw,31rem)] top-0 z-[110]');
     expect(accountPanelSource).toContain('bg-white/60');
-    expect(accountPanelSource).toContain('accountDrawerOpen ? \'translate-x-0\' : \'translate-x-full pointer-events-none\'');
+    expect(accountPanelSource).toContain('accountDrawerOpen ? \'translate-x-0\' : \'-translate-x-full pointer-events-none\'');
     expect(accountPanelSource).toContain('<span>Edit Profile</span>');
     expect(accountPanelSource).toContain('<span>Join Our Team</span>');
     expect(accountPanelSource).toContain('<span>Log out</span>');
     expect(accountPanelSource).toContain("href={route('shop-owner-register')}");
     expect(accountPanelSource).not.toContain('<span>Orders</span>');
     expect(accountPanelSource).not.toContain('<span>Repair</span>');
+    expect(accountUtilitySource).not.toContain('setLandingSidebarOpen(false)');
+    expect(accountUtilitySource).toContain('setAccountDrawerOpen(true)');
+
+    const siteMenuStart = navigationSource.indexOf('aria-label="Site menu"');
+    const siteMenuEnd = navigationSource.indexOf('</aside>', siteMenuStart);
+    const siteMenuSource = navigationSource.slice(siteMenuStart, siteMenuEnd);
+    expect(siteMenuSource).toContain('text-xl font-semibold');
+    expect(siteMenuSource).not.toContain('font-black');
   });
 
   it('uses the shortened cart label in the shared cart surface', () => {
