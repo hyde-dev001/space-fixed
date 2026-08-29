@@ -289,20 +289,10 @@ const LandingPage: React.FC<Props> = ({ products = [], stats }) => {
   return (
     <>
       <Head title="SoleSpace - Premium Footwear & Expert Repairs" />
-      <div ref={revealRootRef} className="min-h-screen overflow-x-hidden bg-white font-outfit antialiased">
+      <div ref={revealRootRef} className="min-h-screen overflow-x-hidden bg-white pt-10 font-outfit antialiased">
         <Navigation mobileMenuTriggerIcon="hamburger" landingSidebar />
 
       <div>
-        <div className="overflow-hidden bg-[#111111] text-white" aria-label="Latest offers">
-          <div className="landing-marquee flex min-w-max items-center gap-12 py-3 text-[11px] font-semibold uppercase tracking-[0.22em] sm:gap-20 sm:text-xs">
-            {['SoleSpace summer edit', 'Premium footwear', 'Expert repairs', 'Shop the latest drops', 'SoleSpace summer edit', 'Premium footwear', 'Expert repairs', 'Shop the latest drops'].map((message, index) => (
-              <span key={`${message}-${index}`} className="inline-flex items-center gap-12 sm:gap-20">
-                {message}<span aria-hidden="true">•</span>
-              </span>
-            ))}
-          </div>
-        </div>
-
       {/* Hero Section - Full-bleed Background Carousel */}
       <section className="relative flex min-h-[84svh] w-full items-center overflow-hidden sm:min-h-svh">
         <div className="absolute inset-0 z-0">
@@ -683,16 +673,6 @@ const LandingPage: React.FC<Props> = ({ products = [], stats }) => {
             will-change: transform, opacity;
           }
 
-          .landing-marquee {
-            animation: landing-marquee 26s linear infinite;
-            will-change: transform;
-          }
-
-          @keyframes landing-marquee {
-            from { transform: translate3d(0, 0, 0); }
-            to { transform: translate3d(-50%, 0, 0); }
-          }
-
           .hero-line-1 {
             animation-delay: 0ms;
           }
@@ -762,10 +742,6 @@ const LandingPage: React.FC<Props> = ({ products = [], stats }) => {
               animation: none !important;
               transform: none !important;
               opacity: 1 !important;
-            }
-
-            .landing-marquee {
-              animation: none !important;
             }
 
           }

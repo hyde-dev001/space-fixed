@@ -11,6 +11,28 @@ html:not(.dark) #app .super-admin-shell [class~="bg-gray-50"] {
 /* Flatpickr CSS */
 @import 'flatpickr/dist/flatpickr.min.css';
 
+/* Shared user-side promo ticker. The duplicated message set loops cleanly at -50%. */
+.landing-marquee {
+  animation: landing-marquee 26s linear infinite;
+  will-change: transform;
+}
+
+@keyframes landing-marquee {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+
+  to {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-marquee {
+    animation: none;
+  }
+}
+
 /* Shared metrics-card treatment. EcommerceMetrics is the canonical source;
    these selectors keep legacy, page-local metric cards visually consistent. */
 html:not(.dark) #app .metrics-card,

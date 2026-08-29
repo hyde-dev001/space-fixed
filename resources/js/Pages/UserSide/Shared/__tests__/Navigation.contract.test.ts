@@ -32,4 +32,22 @@ describe('user-side navigation shell', () => {
       'className={mobileNavLinkClasses(isMobileHomeActive)}>Home</Link>',
     );
   });
+
+  it('keeps Download as the last utility link after Bag', () => {
+    const sidebarStart = navigationSource.indexOf('aria-label="Site menu"');
+    const sidebarSource = navigationSource.slice(sidebarStart, navigationSource.indexOf('</aside>', sidebarStart));
+
+    expect(sidebarSource).toContain("href={route('download')}");
+    expect(sidebarSource.indexOf('>Bag')).toBeLessThan(sidebarSource.indexOf('>Download'));
+  });
+
+  it('renders the shared moving offers ticker with reduced-motion support', () => {
+    expect(navigationSource).toContain('aria-label="Latest offers"');
+    expect(navigationSource).toContain('SoleSpace summer edit');
+    expect(navigationSource).toContain('Premium footwear');
+    expect(navigationSource).toContain('Expert repairs');
+    expect(navigationSource).toContain('Shop the latest drops');
+    expect(navigationSource).toContain('landing-marquee');
+    expect(navigationSource).toContain('motion-reduce:animate-none');
+  });
 });
