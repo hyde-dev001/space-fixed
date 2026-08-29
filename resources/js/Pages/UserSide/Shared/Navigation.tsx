@@ -56,6 +56,16 @@ type NavigationProps = {
   landingSidebar?: boolean;
 };
 
+type QuickCartItem = {
+  id: string;
+  name: string;
+  price: number;
+  qty: number;
+  image?: string;
+  size?: string;
+  color?: string;
+};
+
 type HeaderSeenCounts = {
   orderSeenCount: number;
   repairSeenCount: number;
@@ -77,6 +87,10 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [landingSidebarOpen, setLandingSidebarOpen] = useState(false);
   const [landingSidebarExpanded, setLandingSidebarExpanded] = useState<string | null>(null);
+  const [searchModalOpen, setSearchModalOpen] = useState(false);
+  const [cartDrawerOpen, setCartDrawerOpen] = useState(false);
+  const [quickCartItems, setQuickCartItems] = useState<QuickCartItem[]>([]);
+  const [quickCartLoading, setQuickCartLoading] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchProducts, setSearchProducts] = useState<SearchSuggestionProduct[]>([]);
@@ -517,6 +531,8 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
   }, [searchQuery]);
 
   useEffect(() => {
+    if (landingSidebar) return;
+
     const handleDocumentClick = (event: MouseEvent) => {
       if (!searchContainerRef.current) return;
       if (!searchContainerRef.current.contains(event.target as Node)) {
@@ -526,7 +542,50 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
 
     document.addEventListener('mousedown', handleDocumentClick);
     return () => document.removeEventListener('mousedown', handleDocumentClick);
-  }, []);
+  }, [landingSidebar]);
+
+  useEffect(() => {
+    if (!cartDrawerOpen) return;
+
+    const loadQuickCart = async () => {
+      setQuickCartLoading(true);
+      try {
+        if (!isAuthenticated) {
+          const raw = localStorage.getItem('ss_cart');
+          const localItems = raw ? JSON.parse(raw) : [];
+          setQuickCartItems(Array.isArray(localItems) ? localItems.map((item: any) => ({
+            id: String(item.id),
+            name: item.name || 'Product',
+            price: Number(item.price) || 0,
+            qty: Math.max(1, Number(item.qty) || 1),
+            image: item.image || item.main_image,
+            size: item.size,
+            color: item.color,
+          })) : []);
+          return;
+        }
+
+        const response = await fetch('/api/cart', { headers: { Accept: 'application/json' }, credentials: 'include' });
+        if (!response.ok) throw new Error('Unable to load cart');
+        const data = await response.json();
+        setQuickCartItems((Array.isArray(data.items) ? data.items : []).map((item: any) => ({
+          id: String(item.id ?? item.product_id),
+          name: item.name || item.product?.name || 'Product',
+          price: Number(item.price ?? item.product?.price) || 0,
+          qty: Math.max(1, Number(item.qty ?? item.quantity) || 1),
+          image: item.image || item.main_image || item.product?.main_image,
+          size: item.size,
+          color: item.color,
+        })));
+      } catch {
+        setQuickCartItems([]);
+      } finally {
+        setQuickCartLoading(false);
+      }
+    };
+
+    loadQuickCart();
+  }, [cartDrawerOpen, isAuthenticated]);
 
   const shouldShowSearchDropdown =
     isSearchFocused &&
@@ -646,10 +705,16 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
           )}
 
           <div className={`absolute right-0 flex items-center gap-1.5 ${landingSidebar ? 'top-3 sm:top-5 2xl:hidden' : '2xl:hidden'}`} ref={mobileUserMenuRef}>
+            {landingSidebar && (
+              <button type="button" onClick={() => setIsSearchFocused(true)} className={headerIconButtonClasses} aria-label="Open search">
+                <svg className={headerIconSvgClasses} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35m1.6-5.4a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+              </button>
+            )}
             <Link
               href="/checkout"
               className={headerIconButtonClasses}
               aria-label="Shopping cart"
+              onClick={landingSidebar ? (event) => { event.preventDefault(); setCartDrawerOpen(true); } : undefined}
             >
               <svg className={headerIconSvgClasses} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h2l2.2 10.2a2 2 0 001.96 1.58h7.68a2 2 0 001.95-1.56L21 7H8" />
@@ -952,19 +1017,6 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35m1.6-5.4a7 7 0 11-14 0 7 7 0 0114 0z" />
                   </svg>
                 </button>
-                {isSearchFocused && (
-                  <form onSubmit={handleSearch} className="absolute right-0 top-[calc(100%+0.75rem)] w-72 rounded-full border border-white/30 bg-black/80 p-1.5 shadow-xl backdrop-blur-xl">
-                    <input
-                      autoFocus
-                      type="text"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="Search products"
-                      className="w-full rounded-full border-0 bg-transparent px-4 py-2 text-sm text-white placeholder:text-white/60 focus:outline-none focus:ring-2 focus:ring-white/60"
-                      aria-label="Search products"
-                    />
-                  </form>
-                )}
               </>
             ) : (
               <form onSubmit={handleSearch} className="relative w-full">
@@ -1254,7 +1306,13 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
             )}
 
             {/* Shopping Cart Icon */}
-            <Link id="cart-icon" href="/checkout" className={headerIconButtonClasses} aria-label="Shopping cart">
+            <Link
+              id="cart-icon"
+              href="/checkout"
+              className={headerIconButtonClasses}
+              aria-label="Shopping cart"
+              onClick={landingSidebar ? (event) => { event.preventDefault(); setCartDrawerOpen(true); } : undefined}
+            >
               <svg className={headerIconSvgClasses} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h2l2.2 10.2a2 2 0 001.96 1.58h7.68a2 2 0 001.95-1.56L21 7H8" />
                 <circle cx="10" cy="19" r="1.5" strokeWidth={2} />
@@ -1407,6 +1465,67 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
       </div>
       {landingSidebar && (
         <>
+          {isSearchFocused && (
+            <>
+              <button
+                type="button"
+                aria-label="Close search"
+                onClick={() => setIsSearchFocused(false)}
+                className="fixed inset-0 z-[61] bg-black/55 backdrop-blur-[2px]"
+              />
+              <div role="dialog" aria-modal="true" aria-label="Search products" className="fixed left-1/2 top-1/2 z-[62] w-[min(92vw,42rem)] -translate-x-1/2 -translate-y-1/2 overflow-hidden bg-white text-[#111111] shadow-2xl">
+                <form onSubmit={handleSearch} className="flex items-center gap-3 border-b border-[#dedede] px-5 py-4 sm:px-7">
+                  <svg className="h-5 w-5 shrink-0 text-[#555555]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M21 21l-4.35-4.35m1.6-5.4a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                  <input
+                    autoFocus
+                    type="text"
+                    value={searchQuery}
+                    onChange={(event) => setSearchQuery(event.target.value)}
+                    placeholder="Search products"
+                    className="min-w-0 flex-1 border-0 bg-transparent text-base outline-none placeholder:text-[#777777]"
+                    aria-label="Search products"
+                  />
+                  <button type="button" onClick={() => setIsSearchFocused(false)} className="inline-flex h-10 w-10 items-center justify-center" aria-label="Close search">
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={1.8} d="M6 6l12 12M18 6L6 18" /></svg>
+                  </button>
+                </form>
+                <div className="max-h-[55vh] overflow-y-auto px-5 py-5 sm:px-7">
+                  {isSearchingSuggestions && <p className="text-sm text-[#777777]">Searching...</p>}
+                  {!isSearchingSuggestions && searchQuery.trim().length >= 2 && searchProducts.length === 0 && searchShops.length === 0 && <p className="text-sm text-[#777777]">No results found.</p>}
+                  {searchProducts.length > 0 && <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                    {searchProducts.map((product) => (
+                      <Link key={`modal-product-${product.id}`} href={product.url} onClick={() => setIsSearchFocused(false)} className="group">
+                        <div className="aspect-square overflow-hidden bg-[#f3f3f3]">
+                          {product.main_image ? <img src={product.main_image} alt={product.name} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" /> : <div className="flex h-full items-center justify-center text-sm text-[#777777]">No image</div>}
+                        </div>
+                        <p className="mt-2 line-clamp-2 text-sm font-medium">{product.name}</p>
+                        {product.shop_name && <p className="mt-1 text-xs text-[#777777]">{product.shop_name}</p>}
+                      </Link>
+                    ))}
+                  </div>}
+                </div>
+              </div>
+            </>
+          )}
+          {cartDrawerOpen && (
+            <>
+              <button type="button" aria-label="Close cart" onClick={() => setCartDrawerOpen(false)} className="fixed inset-0 z-[61] bg-black/45" />
+              <aside aria-label="Shopping cart" className="fixed right-0 top-0 z-[62] flex h-dvh w-[min(92vw,30rem)] max-w-[30rem] flex-col bg-white text-[#111111] shadow-2xl">
+                <div className="flex items-center justify-between border-b border-[#dedede] px-5 py-5 sm:px-7">
+                  <div><p className="text-lg font-semibold">Bag</p><p className="mt-1 text-xs uppercase tracking-[0.16em] text-[#777777]">{effectiveCartCount} {effectiveCartCount === 1 ? 'item' : 'items'}</p></div>
+                  <button type="button" onClick={() => setCartDrawerOpen(false)} className="inline-flex h-10 w-10 items-center justify-center" aria-label="Close cart"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={1.8} d="M6 6l12 12M18 6L6 18" /></svg></button>
+                </div>
+                <div className="flex-1 overflow-y-auto px-5 py-5 sm:px-7">
+                  {quickCartLoading && <p className="text-sm text-[#777777]">Loading your bag...</p>}
+                  {!quickCartLoading && quickCartItems.length === 0 && <div className="py-12 text-center"><p className="text-base font-medium">Your bag is empty.</p><Link href={route('products')} onClick={() => setCartDrawerOpen(false)} className="mt-5 inline-flex min-h-11 items-center justify-center bg-[#111111] px-6 text-xs font-semibold uppercase tracking-[0.16em] text-white">Shop products</Link></div>}
+                  {!quickCartLoading && quickCartItems.length > 0 && <div className="space-y-5">
+                    {quickCartItems.map((item) => <div key={item.id} className="flex gap-4 border-b border-[#ededed] pb-5"><div className="h-24 w-24 shrink-0 overflow-hidden bg-[#f3f3f3]">{item.image ? <img src={item.image} alt={item.name} className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center text-xs text-[#777777]">No image</div>}</div><div className="min-w-0 flex-1"><p className="font-medium">{item.name}</p>{(item.size || item.color) && <p className="mt-1 text-xs text-[#777777]">{[item.size, item.color].filter(Boolean).join(' / ')}</p>}<div className="mt-4 flex items-center justify-between text-sm"><span>Qty {item.qty}</span><span className="font-semibold">₱{item.price.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span></div></div></div>)}
+                  </div>}
+                </div>
+                <div className="border-t border-[#dedede] px-5 py-5 sm:px-7"><div className="flex items-center justify-between text-sm font-semibold"><span>Estimated total</span><span>₱{quickCartItems.reduce((total, item) => total + item.price * item.qty, 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span></div><Link href="/checkout" onClick={() => setCartDrawerOpen(false)} className="mt-5 flex min-h-12 items-center justify-center bg-[#111111] text-xs font-semibold uppercase tracking-[0.16em] text-white">Checkout</Link></div>
+              </aside>
+            </>
+          )}
           <button
             type="button"
             aria-label="Close menu"
