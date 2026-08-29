@@ -1,1 +1,0 @@
-import{r as e}from"./app-CG5Yz2iz.js";const i=()=>{if(typeof window>"u"||!document.referrer)return!1;try{return new URL(document.referrer).origin===window.location.origin}catch{return!1}},t=r=>{if(typeof window>"u"){e.visit(r);return}if(window.history.length>1&&i()){window.history.back();return}e.visit(r)};export{t as n};

@@ -8,6 +8,7 @@ use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
 use App\Models\ShopOwner;
+use App\Models\ShopOwnerModule;
 use App\Models\User;
 use App\Services\Logistics\ProofReviewService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -289,6 +290,11 @@ class ProofReviewFlowTest extends TestCase
     {
         Permission::findOrCreate('record-logistics-proof', 'user');
         $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
+        ShopOwnerModule::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'module_key' => 'logistics',
+            'enabled' => true,
+        ]);
         $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
         $leg = ShipmentLeg::factory()->create([
             'shipment_id' => $shipment->id,
