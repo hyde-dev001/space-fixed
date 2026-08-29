@@ -292,7 +292,7 @@ const LandingPage: React.FC<Props> = ({ products = [], stats }) => {
       <div ref={revealRootRef} className="min-h-screen overflow-x-hidden bg-white font-outfit antialiased">
         <Navigation mobileMenuTriggerIcon="hamburger" landingSidebar />
 
-      <div className="pt-16 sm:pt-20">
+      <div>
         <div className="overflow-hidden bg-[#111111] text-white" aria-label="Latest offers">
           <div className="landing-marquee flex min-w-max items-center gap-12 py-3 text-[11px] font-semibold uppercase tracking-[0.22em] sm:gap-20 sm:text-xs">
             {['SoleSpace summer edit', 'Premium footwear', 'Expert repairs', 'Shop the latest drops', 'SoleSpace summer edit', 'Premium footwear', 'Expert repairs', 'Shop the latest drops'].map((message, index) => (
