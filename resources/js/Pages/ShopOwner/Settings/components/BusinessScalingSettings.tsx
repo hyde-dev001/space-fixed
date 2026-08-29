@@ -286,9 +286,18 @@ const BusinessScalingSettings: React.FC<BusinessScalingSettingsProps> = ({ busin
     if (!current?.eligible || updatingModule) return;
 
     const enabled = !current.enabled;
-    if (!enabled && typeof window !== 'undefined') {
-      const confirmed = window.confirm(`Disable ${MODULE_LABELS[moduleKey]}? Active navigation will be hidden until you enable it again.`);
-      if (!confirmed) return;
+    if (!enabled) {
+      const result = await Swal.fire({
+        icon: 'warning',
+        title: `Disable ${MODULE_LABELS[moduleKey]}?`,
+        text: 'Active navigation will be hidden until you enable it again.',
+        showCancelButton: true,
+        confirmButtonText: 'Disable module',
+        cancelButtonText: 'Cancel',
+        confirmButtonColor: '#111827',
+        cancelButtonColor: '#6b7280',
+      });
+      if (!result.isConfirmed) return;
     }
 
     const previous = moduleStates;
