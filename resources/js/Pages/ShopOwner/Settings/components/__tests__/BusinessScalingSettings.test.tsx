@@ -16,6 +16,10 @@ vi.mock('axios', () => ({
   default: { patch: axiosPatchMock },
 }));
 
+vi.mock('sweetalert2', () => ({
+  default: { fire: vi.fn().mockResolvedValue({ isConfirmed: false }) },
+}));
+
 const state = {
   current: { registration_type: 'individual', business_type: 'retail' },
   available_account_transitions: [
@@ -59,6 +63,7 @@ describe('BusinessScalingSettings', () => {
 
     expect(screen.getByRole('heading', { name: /business scaling/i })).toBeInTheDocument();
     expect(screen.getByText(/individual retail/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /upgrade choice/i }));
     expect(screen.getByRole('option', { name: /^business account$/i })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: /retail \+ repair/i })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: /business account \+ both capabilities/i })).toBeInTheDocument();
@@ -111,7 +116,8 @@ describe('BusinessScalingSettings', () => {
     });
     render(<BusinessScalingSettings businessScaling={state} />);
 
-    fireEvent.change(screen.getByLabelText(/upgrade choice/i), { target: { value: 'individual_to_company' } });
+    fireEvent.click(screen.getByRole('button', { name: /upgrade choice/i }));
+    fireEvent.click(screen.getByRole('option', { name: /^business account$/i }));
     const documentInputs = Array.from(document.querySelectorAll('input[type="file"]'));
     documentInputs.forEach((input) => {
       fireEvent.change(input, { target: { files: [new File(['evidence'], 'evidence.pdf', { type: 'application/pdf' })] } });
