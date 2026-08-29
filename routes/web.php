@@ -1934,6 +1934,9 @@ Route::middleware([
     Route::get('/business-upgrade-requests/{upgradeRequest}/documents/{document}', [SuperAdminShopOwnerUpgradeRequestController::class, 'download'])
         ->middleware('privileged.capability:review_registrations')
         ->name('business-upgrade-requests.documents.download');
+    Route::get('/business-upgrade-requests/{upgradeRequest}/documents/{document}/view', [SuperAdminShopOwnerUpgradeRequestController::class, 'view'])
+        ->middleware('privileged.capability:review_registrations')
+        ->name('business-upgrade-requests.documents.view');
     Route::get('/shops/{id}/details', fn (int $id) => redirect()->route(
         'admin.shops.show',
         ['shopOwner' => $id] + request()->query(),

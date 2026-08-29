@@ -52,6 +52,13 @@ final class ShopOwnerUpgradeReviewTest extends TestCase
 
         $download->assertOk();
         $this->assertStringNotContainsString($document->path, (string) $download->getContent());
+
+        $view = $this->actingAsCompletedPrivileged($admin)
+            ->get(route('admin.business-upgrade-requests.documents.view', [$upgradeRequest, $document]));
+
+        $view->assertOk()
+            ->assertHeader('Content-Disposition', 'inline; filename='.$document->document_type.'.pdf');
+        $this->assertStringNotContainsString($document->path, (string) $view->getContent());
     }
 
     public function test_upgrade_queue_is_capped_and_deterministic_for_equal_timestamps(): void
@@ -132,6 +139,48 @@ final class ShopOwnerUpgradeReviewTest extends TestCase
             ->assertRedirect(route('admin.login'));
     }
 
+    public function test_approval_requires_every_submitted_document_to_be_reviewed(): void
+    {
+        $admin = $this->createAdmin();
+        [$owner, $upgradeRequest] = $this->submitRequest();
+
+        $this->actingAsCompletedPrivileged($admin)
+            ->patchJson(route('admin.business-upgrade-requests.update', $upgradeRequest), [
+                'decision' => 'approved',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('documents');
+
+        $this->assertSame(ShopOwnerUpgradeRequest::STATUS_PENDING, $upgradeRequest->fresh()->status);
+        $this->assertSame('individual', $owner->fresh()->registration_type);
+
+        $partialReview = $this->reviewedDocuments($upgradeRequest);
+        $partialReview[0]['viewed'] = false;
+
+        $this->actingAsCompletedPrivileged($admin)
+            ->patchJson(route('admin.business-upgrade-requests.update', $upgradeRequest), [
+                'decision' => 'approved',
+                'documents' => $partialReview,
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('documents.0.viewed');
+
+        $this->assertSame(ShopOwnerUpgradeRequest::STATUS_PENDING, $upgradeRequest->fresh()->status);
+
+        $reviewWithUnknownDocument = $this->reviewedDocuments($upgradeRequest);
+        $reviewWithUnknownDocument[] = ['id' => 999999, 'viewed' => true];
+
+        $this->actingAsCompletedPrivileged($admin)
+            ->patchJson(route('admin.business-upgrade-requests.update', $upgradeRequest), [
+                'decision' => 'approved',
+                'documents' => $reviewWithUnknownDocument,
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('documents');
+
+        $this->assertSame(ShopOwnerUpgradeRequest::STATUS_PENDING, $upgradeRequest->fresh()->status);
+    }
+
     public function test_approval_updates_owner_provisions_only_new_modules_and_notifies_after_commit(): void
     {
         $admin = $this->createAdmin();
@@ -148,6 +197,7 @@ final class ShopOwnerUpgradeReviewTest extends TestCase
         $response = $this->actingAsCompletedPrivileged($admin)
             ->patchJson(route('admin.business-upgrade-requests.update', $upgradeRequest), [
                 'decision' => 'approved',
+                'documents' => $this->reviewedDocuments($upgradeRequest),
             ]);
 
         $response->assertOk()
@@ -179,6 +229,22 @@ final class ShopOwnerUpgradeReviewTest extends TestCase
             'subject_id' => $upgradeRequest->id,
             'description' => 'shop_owner_upgrade_reviewed',
         ]);
+        $this->assertDatabaseHas('notifications', [
+            'shop_owner_id' => $owner->id,
+            'type' => 'business_upgrade_request_approved',
+            'action_url' => '/shop-owner/settings',
+            'is_read' => false,
+        ]);
+        $this->actingAsCompletedPrivileged($admin)
+            ->getJson(route('admin.business-upgrade-requests.index', ['status' => 'approved']))
+            ->assertOk()
+            ->assertJsonPath('data.0.id', $upgradeRequest->id)
+            ->assertJsonPath('data.0.status', ShopOwnerUpgradeRequest::STATUS_APPROVED);
+        $this->actingAsCompletedPrivileged($admin)
+            ->getJson(route('admin.business-upgrade-requests.index'))
+            ->assertOk()
+            ->assertJsonPath('data.0.id', $upgradeRequest->id)
+            ->assertJsonPath('data.0.status', ShopOwnerUpgradeRequest::STATUS_APPROVED);
     }
 
     public function test_rejection_requires_a_reason_and_leaves_owner_and_modules_unchanged(): void
@@ -210,6 +276,12 @@ final class ShopOwnerUpgradeReviewTest extends TestCase
                 && $job->recipientId === $owner->id
                 && $job->payload['decision'] === ShopOwnerUpgradeRequest::STATUS_REJECTED;
         });
+        $this->assertDatabaseHas('notifications', [
+            'shop_owner_id' => $owner->id,
+            'type' => 'business_upgrade_request_rejected',
+            'action_url' => '/shop-owner/settings',
+            'is_read' => false,
+        ]);
     }
 
     public function test_stale_evidence_blocks_approval_without_changing_owner_state(): void
@@ -222,6 +294,7 @@ final class ShopOwnerUpgradeReviewTest extends TestCase
         $this->actingAsCompletedPrivileged($admin)
             ->patchJson(route('admin.business-upgrade-requests.update', $upgradeRequest), [
                 'decision' => 'approved',
+                'documents' => $this->reviewedDocuments($upgradeRequest),
             ])
             ->assertUnprocessable();
 
@@ -243,6 +316,7 @@ final class ShopOwnerUpgradeReviewTest extends TestCase
         $this->actingAsCompletedPrivileged($admin)
             ->patchJson(route('admin.business-upgrade-requests.update', $upgradeRequest), [
                 'decision' => 'approved',
+                'documents' => $this->reviewedDocuments($upgradeRequest),
             ])
             ->assertStatus(409)
             ->assertJsonPath('request.status', ShopOwnerUpgradeRequest::STATUS_SUPERSEDED);
@@ -258,6 +332,7 @@ final class ShopOwnerUpgradeReviewTest extends TestCase
         $this->actingAsCompletedPrivileged($admin)
             ->patchJson(route('admin.business-upgrade-requests.update', $upgradeRequest), [
                 'decision' => 'approved',
+                'documents' => $this->reviewedDocuments($upgradeRequest),
             ])
             ->assertStatus(409);
 
@@ -310,5 +385,20 @@ final class ShopOwnerUpgradeReviewTest extends TestCase
             'role' => 'super_admin',
             'status' => 'active',
         ]);
+    }
+
+    /**
+     * @return array<int, array{id: int, viewed: bool}>
+     */
+    private function reviewedDocuments(ShopOwnerUpgradeRequest $upgradeRequest): array
+    {
+        return $upgradeRequest->documents()
+            ->orderBy('id')
+            ->get(['id'])
+            ->map(fn ($document): array => [
+                'id' => (int) $document->id,
+                'viewed' => true,
+            ])
+            ->all();
     }
 }

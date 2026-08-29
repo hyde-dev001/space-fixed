@@ -3,8 +3,10 @@
 namespace App\Actions\superAdmin;
 
 use App\Actions\ShopOwner\SubmitShopOwnerUpgradeRequest;
-use App\Exceptions\ShopOwnerUpgradeReviewConflict;
 use App\Enums\PrivilegedDeliveryType;
+use App\Enums\NotificationType;
+use App\Exceptions\ShopOwnerUpgradeReviewConflict;
+use App\Models\Notification;
 use App\Models\ShopOwner;
 use App\Models\ShopOwnerUpgradeRequest;
 use App\Models\SuperAdmin;
@@ -37,6 +39,7 @@ final class ReviewShopOwnerUpgradeRequest
         string $decision,
         ?string $decisionReason = null,
         ?Request $request = null,
+        array $reviewedDocuments = [],
     ): array {
         $decision = strtolower(trim($decision));
         if (! in_array($decision, [ShopOwnerUpgradeRequest::STATUS_APPROVED, ShopOwnerUpgradeRequest::STATUS_REJECTED], true)) {
@@ -53,7 +56,7 @@ final class ReviewShopOwnerUpgradeRequest
 
         $httpRequest = $request ?? Request::create('/admin/business-upgrade-requests', 'PATCH');
         $correlationId = $this->audit->correlationId($httpRequest);
-        $result = DB::transaction(function () use ($upgradeRequest, $reviewer, $decision, $decisionReason, $httpRequest, $correlationId): array {
+        $result = DB::transaction(function () use ($upgradeRequest, $reviewer, $decision, $decisionReason, $reviewedDocuments, $httpRequest, $correlationId): array {
             $ownerId = (int) $upgradeRequest->shop_owner_id;
             $owner = ShopOwner::query()->lockForUpdate()->findOrFail($ownerId);
             $lockedRequest = ShopOwnerUpgradeRequest::query()
@@ -145,7 +148,7 @@ final class ReviewShopOwnerUpgradeRequest
                 requestedRegistrationType: strtolower(trim((string) $lockedRequest->requested_registration_type)),
                 requestedBusinessType: $this->normalizeBusinessType((string) $lockedRequest->requested_business_type),
             );
-            $this->validateEvidence($lockedRequest);
+            $this->validateEvidence($lockedRequest, $reviewedDocuments);
 
             $preEligibleKeys = $this->shopModuleProvisioning->eligibleKeysFor($owner);
             $owner->update([
@@ -210,6 +213,38 @@ final class ReviewShopOwnerUpgradeRequest
         array $newlyEnabledModuleKeys = [],
         bool $dormantEmployeePermissionWarning = false,
     ): void {
+        $decision = (string) $upgradeRequest->status;
+        if (in_array($decision, [
+            ShopOwnerUpgradeRequest::STATUS_APPROVED,
+            ShopOwnerUpgradeRequest::STATUS_REJECTED,
+        ], true)) {
+            $approved = $decision === ShopOwnerUpgradeRequest::STATUS_APPROVED;
+            $reason = trim((string) $upgradeRequest->decision_reason);
+
+            Notification::create([
+                'shop_owner_id' => (int) $owner->getKey(),
+                'type' => $approved
+                    ? NotificationType::BUSINESS_UPGRADE_REQUEST_APPROVED->value
+                    : NotificationType::BUSINESS_UPGRADE_REQUEST_REJECTED->value,
+                'title' => $approved
+                    ? 'Business upgrade request approved'
+                    : 'Business upgrade request rejected',
+                'message' => $approved
+                    ? 'Your business upgrade request has been approved.'
+                    : 'Your business upgrade request was rejected.'.($reason !== '' ? " Reason: {$reason}" : ''),
+                'action_url' => '/shop-owner/settings',
+                'data' => [
+                    'upgrade_request_id' => (int) $upgradeRequest->getKey(),
+                    'decision' => $decision,
+                    'decision_reason' => $upgradeRequest->decision_reason,
+                    'newly_enabled_module_keys' => $newlyEnabledModuleKeys,
+                ],
+                'is_read' => false,
+                'requires_action' => false,
+                'priority' => $approved ? 'high' : 'normal',
+            ]);
+        }
+
         $this->privilegedMailDispatcher->dispatch(
             type: PrivilegedDeliveryType::SHOP_OWNER_UPGRADE_REVIEWED,
             businessEventId: 'shop-owner-upgrade-reviewed:'.$upgradeRequest->getKey(),
@@ -232,7 +267,10 @@ final class ReviewShopOwnerUpgradeRequest
             || $this->normalizeBusinessType($this->ownerValue($owner, 'business_type')) !== $this->normalizeBusinessType((string) $request->current_business_type);
     }
 
-    private function validateEvidence(ShopOwnerUpgradeRequest $request): void
+    /**
+     * @param  array<int, array{id?: mixed, viewed?: mixed}>  $reviewedDocuments
+     */
+    private function validateEvidence(ShopOwnerUpgradeRequest $request, array $reviewedDocuments): void
     {
         $expectedSnapshot = $this->documentRequirements->requirementSnapshot();
         if ($request->required_document_set !== $expectedSnapshot) {
@@ -241,6 +279,43 @@ final class ReviewShopOwnerUpgradeRequest
 
         $requiredTypes = $this->documentRequirements->requiredTypes();
         $documents = $request->documents;
+
+        $storedDocumentIds = $documents
+            ->pluck('id')
+            ->map(fn ($id): int => (int) $id)
+            ->sort()
+            ->values()
+            ->all();
+        $reviewedDocumentIds = [];
+        foreach ($reviewedDocuments as $reviewedDocument) {
+            if (! is_array($reviewedDocument)) {
+                throw ValidationException::withMessages([
+                    'documents' => 'Every submitted document must be opened before approval.',
+                ]);
+            }
+
+            $documentId = filter_var($reviewedDocument['id'] ?? null, FILTER_VALIDATE_INT);
+            $viewed = filter_var(
+                $reviewedDocument['viewed'] ?? null,
+                FILTER_VALIDATE_BOOLEAN,
+                FILTER_NULL_ON_FAILURE,
+            );
+            if ($documentId === false || $documentId < 1 || $viewed !== true) {
+                throw ValidationException::withMessages([
+                    'documents' => 'Every submitted document must be opened before approval.',
+                ]);
+            }
+
+            $reviewedDocumentIds[] = (int) $documentId;
+        }
+
+        sort($reviewedDocumentIds);
+        if ($storedDocumentIds !== $reviewedDocumentIds) {
+            throw ValidationException::withMessages([
+                'documents' => 'Every submitted document must be opened before approval.',
+            ]);
+        }
+
         if ($documents->count() !== count($requiredTypes) || $documents->pluck('document_type')->unique()->count() !== count($requiredTypes)) {
             throw ValidationException::withMessages(['documents' => 'The request does not contain the complete evidence set.']);
         }

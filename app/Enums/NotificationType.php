@@ -83,6 +83,8 @@ enum NotificationType: string
     case SHOP_DOCUMENT_RENEWAL_REVIEWED = 'shop_document_renewal_reviewed';
     case SHOP_DOCUMENT_EXPIRING = 'shop_document_expiring';
     case BUSINESS_UPGRADE_REQUEST_PENDING = 'business_upgrade_request_pending';
+    case BUSINESS_UPGRADE_REQUEST_APPROVED = 'business_upgrade_request_approved';
+    case BUSINESS_UPGRADE_REQUEST_REJECTED = 'business_upgrade_request_rejected';
     case SHOP_REPORT_FILED = 'shop_report_filed';
     case REVIEW_REPORTED = 'review_reported';
     case SUSPENSION_APPEAL_SUBMITTED = 'suspension_appeal_submitted';
@@ -190,6 +192,8 @@ enum NotificationType: string
             self::SHOP_DOCUMENT_RENEWAL_REVIEWED => 'Document Renewal Reviewed',
             self::SHOP_DOCUMENT_EXPIRING => 'Business Document Expiring',
             self::BUSINESS_UPGRADE_REQUEST_PENDING => 'Business Upgrade Request',
+            self::BUSINESS_UPGRADE_REQUEST_APPROVED => 'Business Upgrade Request Approved',
+            self::BUSINESS_UPGRADE_REQUEST_REJECTED => 'Business Upgrade Request Rejected',
             self::SHOP_REPORT_FILED => 'Shop Report Filed',
             self::REVIEW_REPORTED => 'Review Reported',
             self::SUSPENSION_APPEAL_SUBMITTED => 'Suspension Appeal Submitted',
@@ -313,6 +317,8 @@ enum NotificationType: string
             self::CUSTOMER_MESSAGE,
             self::SHOP_DOCUMENT_RENEWAL_REVIEWED,
             self::SHOP_DOCUMENT_EXPIRING,
+            self::BUSINESS_UPGRADE_REQUEST_APPROVED,
+            self::BUSINESS_UPGRADE_REQUEST_REJECTED,
         ]);
     }
 

@@ -122,6 +122,7 @@ class PhaseZeroAuthorizationTest extends TestCase
             'admin.business-upgrade-requests.index' => SuperAdmin::CAP_REVIEW_REGISTRATIONS,
             'admin.business-upgrade-requests.update' => SuperAdmin::CAP_REVIEW_REGISTRATIONS,
             'admin.business-upgrade-requests.documents.download' => SuperAdmin::CAP_REVIEW_REGISTRATIONS,
+            'admin.business-upgrade-requests.documents.view' => SuperAdmin::CAP_REVIEW_REGISTRATIONS,
             'admin.shops.index' => SuperAdmin::CAP_INTERVENE_ACCOUNTS,
             'admin.shops.show' => SuperAdmin::CAP_INTERVENE_ACCOUNTS,
             'admin.shops.suspend' => SuperAdmin::CAP_INTERVENE_ACCOUNTS,
