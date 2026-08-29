@@ -678,10 +678,10 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
         <div className={`relative flex items-center justify-center pr-20 sm:pr-24 ${landingSidebar ? 'h-0' : 'h-16 sm:h-20'} ${landingSidebar ? '' : '2xl:pr-0'}`}>
           <Link
             href={route("landing")}
-            className={`absolute text-xl font-bold tracking-tight transition-opacity hover:opacity-70 sm:text-2xl ${
+            className={`absolute top-3 text-xl font-bold leading-none tracking-tight transition-opacity hover:opacity-70 sm:top-5 sm:text-2xl ${
               landingSidebar ? 'left-1/2 -translate-x-1/2' : 'left-0'
             } ${
-              landingSidebar || isTransparentNav ? 'text-white' : 'text-gray-900'
+              isTransparentNav ? 'text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.7)]' : 'text-gray-900'
             }`}
           >
             SoleSpace
@@ -691,7 +691,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
             <button
               type="button"
               onClick={() => setLandingSidebarOpen((open) => !open)}
-              className="absolute left-0 top-3 inline-flex h-10 w-10 items-center justify-center p-0 text-white transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white sm:top-5"
+              className={`absolute left-0 top-3 inline-flex h-10 w-10 items-center justify-center p-0 transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 sm:top-5 ${isTransparentNav ? 'text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.7)] focus-visible:ring-white' : 'text-gray-900 focus-visible:ring-gray-900'}`}
               aria-label={landingSidebarOpen ? 'Close menu' : 'Toggle menu'}
             >
               <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -712,7 +712,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
             )}
             <Link
               href="/checkout"
-              className={headerIconButtonClasses}
+              className={`${headerIconButtonClasses} ${landingSidebar ? 'order-3' : ''}`}
               aria-label="Shopping cart"
               onClick={landingSidebar ? (event) => { event.preventDefault(); setCartDrawerOpen(true); } : undefined}
             >
@@ -731,10 +731,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
               <NotificationBell
                 basePath="/api/notifications"
                 iconSize={24}
-                className={isTransparentNav
-                  ? 'text-white hover:opacity-70'
-                  : 'text-gray-900 hover:opacity-70'
-                }
+                className={`${isTransparentNav ? 'text-white hover:opacity-70' : 'text-gray-900 hover:opacity-70'} ${landingSidebar ? 'order-2' : ''}`}
               />
             )}
             {!landingSidebar && (
@@ -1002,7 +999,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
               );
             })}
           </div>
-          <div className={`absolute right-0 hidden items-center gap-3 2xl:flex 2xl:gap-4 ${landingSidebar ? 'top-3 sm:top-5' : ''}`}>
+          <div className={`absolute right-0 hidden items-center 2xl:flex ${landingSidebar ? 'top-3 gap-1 sm:top-5 2xl:gap-2' : 'gap-3 2xl:gap-4'}`}>
             <div className={`relative ${landingSidebar ? 'w-10' : 'w-[17rem]'}`} ref={searchContainerRef}>
             {landingSidebar ? (
               <>
@@ -1309,7 +1306,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
             <Link
               id="cart-icon"
               href="/checkout"
-              className={headerIconButtonClasses}
+              className={`${headerIconButtonClasses} ${landingSidebar ? 'order-3' : ''}`}
               aria-label="Shopping cart"
               onClick={landingSidebar ? (event) => { event.preventDefault(); setCartDrawerOpen(true); } : undefined}
             >
