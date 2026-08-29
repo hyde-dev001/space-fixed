@@ -161,12 +161,12 @@ export default function ShopOwnerDropdown({ actor, urls, inline = false, busines
           iconClassName="h-5 w-5"
           monochrome={businessStyle}
         />
-        <span className="hidden dark:block">
+        <span className={businessStyle ? "hidden" : "hidden dark:block"}>
           <span className="block text-sm font-semibold">{userName}</span>
           <span className="text-xs text-gray-500 dark:text-gray-400">Shop Owner</span>
         </span>
         <svg
-          className={`hidden stroke-gray-500 transition-transform duration-200 dark:block dark:stroke-gray-400 ${
+          className={`${businessStyle ? "hidden" : "hidden dark:block"} stroke-gray-500 transition-transform duration-200 dark:stroke-gray-400 ${
             isOpen ? "rotate-180" : ""
           }`}
           width="18"
