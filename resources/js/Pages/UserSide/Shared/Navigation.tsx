@@ -609,24 +609,24 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
 
   return (
     <nav
-      className={`fixed top-0 left-0 right-0 w-full z-50 transition-all duration-300 ${
-        isTransparentNav
+      className={`${landingSidebar ? 'absolute' : 'fixed'} top-0 left-0 right-0 z-50 w-full transition-all duration-300 ${
+        landingSidebar || isTransparentNav
           ? 'bg-transparent'
           : 'border-b border-gray-200/70 bg-white/95 backdrop-blur'
       }`}
     >
-      <div className="mx-auto h-16 w-full max-w-[1920px] px-4 sm:h-20 sm:px-6 lg:px-10 2xl:px-12">
-        <div className={`relative flex h-16 items-center justify-center pr-20 sm:h-20 sm:pr-24 ${landingSidebar ? '' : '2xl:pr-0'}`}>
+      <div className={`mx-auto w-full max-w-[1920px] px-4 sm:px-6 lg:px-10 2xl:px-12 ${landingSidebar ? 'h-0' : 'h-16 sm:h-20'}`}>
+        <div className={`relative flex items-center justify-center pr-20 sm:pr-24 ${landingSidebar ? 'h-0' : 'h-16 sm:h-20'} ${landingSidebar ? '' : '2xl:pr-0'}`}>
           <Link
             href={route("landing")}
             className={`absolute left-0 text-xl font-bold tracking-tight transition-opacity hover:opacity-70 sm:text-2xl ${
-              isTransparentNav ? 'text-white' : 'text-gray-900'
+              landingSidebar || isTransparentNav ? 'text-white' : 'text-gray-900'
             }`}
           >
             SoleSpace
           </Link>
 
-          <div className={`absolute right-0 flex items-center gap-1.5 ${landingSidebar ? '' : '2xl:hidden'}`} ref={mobileUserMenuRef}>
+          <div className={`absolute right-0 flex items-center gap-1.5 ${landingSidebar ? 'top-3 sm:top-5 2xl:hidden' : '2xl:hidden'}`} ref={mobileUserMenuRef}>
             <Link
               href="/checkout"
               className={headerIconButtonClasses}
@@ -916,7 +916,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
               );
             })}
           </div>
-          <div className="absolute right-0 hidden items-center gap-3 2xl:flex 2xl:gap-4">
+          <div className={`absolute right-0 hidden items-center gap-3 2xl:flex 2xl:gap-4 ${landingSidebar ? 'top-3 sm:top-5' : ''}`}>
             {landingSidebar && (
               <button
                 type="button"
