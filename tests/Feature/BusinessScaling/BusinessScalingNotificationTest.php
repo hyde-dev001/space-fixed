@@ -123,6 +123,20 @@ final class BusinessScalingNotificationTest extends TestCase
                 && ! array_key_exists('employee_id', $job->payload);
         });
 
+        $this->assertDatabaseHas('notifications', [
+            'shop_owner_id' => $owner->id,
+            'type' => 'business_upgrade_request_rejected',
+            'title' => 'Business upgrade request rejected',
+            'action_url' => '/shop-owner/settings',
+            'is_read' => false,
+        ]);
+        $this->actingAs($owner, 'shop_owner')
+            ->getJson('/api/shop-owner/notifications')
+            ->assertOk()
+            ->assertJsonPath('data.0.title', 'Business upgrade request rejected')
+            ->assertJsonPath('data.0.message', 'Your business upgrade request was rejected. Reason: Please update the permit.')
+            ->assertJsonPath('data.0.action_url', '/shop-owner/settings');
+
         foreach ($paths as $path) {
             $this->assertStringNotContainsString($path, json_encode($request->fresh()->toArray()));
         }

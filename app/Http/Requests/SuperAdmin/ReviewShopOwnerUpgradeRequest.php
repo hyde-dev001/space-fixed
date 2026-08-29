@@ -42,6 +42,25 @@ final class ReviewShopOwnerUpgradeRequest extends FormRequest
                 'max:1000',
                 'required_if:decision,rejected',
             ],
+            'documents' => [
+                'required_if:decision,approved',
+                'array',
+                'min:1',
+            ],
+            'documents.*' => [
+                'required',
+                'array',
+            ],
+            'documents.*.id' => [
+                'required',
+                'integer',
+                'min:1',
+                'distinct',
+            ],
+            'documents.*.viewed' => [
+                'required',
+                'accepted',
+            ],
             'status' => [
                 'sometimes',
                 'string',

@@ -123,6 +123,7 @@ final class ShopOwnerUpgradeRequestController extends Controller
                 reviewer: $reviewer,
                 decision: (string) $validated['decision'],
                 decisionReason: $validated['decision_reason'] ?? null,
+                reviewedDocuments: $validated['documents'] ?? [],
                 request: $request,
             );
         } catch (ShopOwnerUpgradeReviewConflict $exception) {
@@ -162,6 +163,27 @@ final class ShopOwnerUpgradeRequestController extends Controller
 
     public function download(ShopOwnerUpgradeRequest $upgradeRequest, ShopOwnerUpgradeRequestDocument $document): \Symfony\Component\HttpFoundation\StreamedResponse
     {
+        $file = $this->resolveDocumentFile($upgradeRequest, $document);
+
+        return Storage::disk($file['disk'])->download($file['path'], $file['filename'], [
+            'Content-Type' => $file['mime_type'],
+        ]);
+    }
+
+    public function view(ShopOwnerUpgradeRequest $upgradeRequest, ShopOwnerUpgradeRequestDocument $document): \Symfony\Component\HttpFoundation\StreamedResponse
+    {
+        $file = $this->resolveDocumentFile($upgradeRequest, $document);
+
+        return Storage::disk($file['disk'])->response($file['path'], $file['filename'], [
+            'Content-Type' => $file['mime_type'],
+        ], 'inline');
+    }
+
+    /**
+     * @return array{disk: string, path: string, filename: string, mime_type: string}
+     */
+    private function resolveDocumentFile(ShopOwnerUpgradeRequest $upgradeRequest, ShopOwnerUpgradeRequestDocument $document): array
+    {
         $document = $upgradeRequest->documents()->whereKey($document->id)->firstOrFail();
         $disk = (string) $document->disk;
         $path = (string) $document->getRawOriginal('path');
@@ -171,11 +193,13 @@ final class ShopOwnerUpgradeRequestController extends Controller
         }
 
         $extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
-        $filename = (string) $document->document_type.'.'.$extension;
 
-        return Storage::disk($disk)->download($path, $filename, [
-            'Content-Type' => (string) $document->mime_type,
-        ]);
+        return [
+            'disk' => $disk,
+            'path' => $path,
+            'filename' => (string) $document->document_type.'.'.$extension,
+            'mime_type' => (string) $document->mime_type,
+        ];
     }
 
     /**
@@ -210,6 +234,7 @@ final class ShopOwnerUpgradeRequestController extends Controller
                 'size' => (int) $document->size,
                 'source_status' => $document->source_status,
                 'download_url' => route('admin.business-upgrade-requests.documents.download', [$request, $document]),
+                'view_url' => route('admin.business-upgrade-requests.documents.view', [$request, $document]),
             ])->values()->all(),
         ];
     }

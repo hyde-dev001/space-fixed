@@ -49,7 +49,12 @@ final class ShopOwnerUpgradeConcurrencyTest extends TestCase
         $staleModel = $request->fresh();
         $review = app(ReviewShopOwnerUpgradeRequest::class);
 
-        $review->handle($firstModel, $firstReviewer, ShopOwnerUpgradeRequest::STATUS_APPROVED);
+        $review->handle(
+            upgradeRequest: $firstModel,
+            reviewer: $firstReviewer,
+            decision: ShopOwnerUpgradeRequest::STATUS_APPROVED,
+            reviewedDocuments: $this->reviewedDocuments($request),
+        );
         DB::commit();
 
         try {
@@ -125,6 +130,21 @@ final class ShopOwnerUpgradeConcurrencyTest extends TestCase
             'role' => 'super_admin',
             'status' => 'active',
         ]);
+    }
+
+    /**
+     * @return array<int, array{id: int, viewed: bool}>
+     */
+    private function reviewedDocuments(ShopOwnerUpgradeRequest $request): array
+    {
+        return $request->documents()
+            ->orderBy('id')
+            ->get(['id'])
+            ->map(fn ($document): array => [
+                'id' => (int) $document->id,
+                'viewed' => true,
+            ])
+            ->all();
     }
 
     private function requireMysqlConcurrencySupport(): void

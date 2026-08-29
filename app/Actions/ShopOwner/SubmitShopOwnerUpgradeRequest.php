@@ -103,8 +103,7 @@ final class SubmitShopOwnerUpgradeRequest
                     ->active()
                     ->get()
                     ->filter(fn (SuperAdmin $recipient): bool => $recipient->hasCompletedMfaSetup()
-                        && $recipient->hasCapability(SuperAdmin::CAP_REVIEW_REGISTRATIONS)
-                        && trim((string) $recipient->email) !== '')
+                        && $recipient->hasCapability(SuperAdmin::CAP_REVIEW_REGISTRATIONS))
                     ->each(function (SuperAdmin $recipient) use ($upgradeRequest, $lockedOwner, $businessName, $request): void {
                         AdminNotification::create([
                             'super_admin_id' => (int) $recipient->getKey(),
@@ -122,6 +121,10 @@ final class SubmitShopOwnerUpgradeRequest
                             'requires_action' => true,
                             'priority' => 'high',
                         ]);
+
+                        if (trim((string) $recipient->email) === '') {
+                            return;
+                        }
 
                         $this->privilegedMailDispatcher->dispatch(
                             type: PrivilegedDeliveryType::SHOP_OWNER_UPGRADE_REQUESTED,
