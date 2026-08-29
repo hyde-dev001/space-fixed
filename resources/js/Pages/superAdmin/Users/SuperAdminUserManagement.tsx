@@ -751,14 +751,14 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
                       {user.lastLogin ? new Date(user.lastLogin).toLocaleDateString() : 'Never'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <div className="flex space-x-2 items-center">
+                      <div className="flex items-center gap-2">
                         <button
                           onClick={() => {
                             setSelectedUser(user);
                             setIsDetailsModalOpen(true);
                           }}
                           disabled={isProcessingId === user.id}
-                          className={`inline-flex items-center justify-center w-8 h-8 rounded-md text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 transition-colors ${isProcessingId === user.id ? 'opacity-50 cursor-not-allowed' : ''}`}
+                          className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-950 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white ${isProcessingId === user.id ? 'cursor-not-allowed opacity-50' : ''}`}
                           title="View Registration Details"
                         >
                           <InfoIcon className="h-5 w-5" />
@@ -768,7 +768,7 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
                           <button
                             onClick={() => handleRestore(user)}
                             disabled={isProcessingId === user.id}
-                            className={`inline-flex items-center justify-center w-8 h-8 rounded-md text-purple-600 hover:text-purple-800 dark:text-purple-400 dark:hover:text-purple-300 transition-colors ${isProcessingId === user.id ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-950 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white ${isProcessingId === user.id ? 'cursor-not-allowed opacity-50' : ''}`}
                             title="Restore Account"
                           >
                             <CheckCircleIcon className="h-4 w-4" />
@@ -781,7 +781,7 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
                                 setIsSuspendModalOpen(true);
                               }}
                               disabled={isProcessingId === user.id}
-                              className={`inline-flex items-center justify-center w-8 h-8 rounded-md text-orange-600 hover:text-orange-800 dark:text-orange-400 dark:hover:text-orange-300 transition-colors ${isProcessingId === user.id ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-950 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white ${isProcessingId === user.id ? 'cursor-not-allowed opacity-50' : ''}`}
                               title="Suspend Account"
                             >
                               <AlertIcon className="h-5 w-5" />
@@ -789,7 +789,7 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
                             <button
                               onClick={() => handleArchive(user)}
                               disabled={isProcessingId === user.id}
-                              className={`inline-flex items-center justify-center w-8 h-8 rounded-md text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-300 transition-colors ${isProcessingId === user.id ? 'opacity-50 cursor-not-allowed' : ''}`}
+                              className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-950 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white ${isProcessingId === user.id ? 'cursor-not-allowed opacity-50' : ''}`}
                               title="Archive Account"
                             >
                               <TrashBinIcon className="h-4 w-4" />
@@ -800,7 +800,7 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
                             <button
                               onClick={() => handleReactivate(user)}
                               disabled={isProcessingId === user.id}
-                              className={`inline-flex items-center justify-center w-8 h-8 rounded-md text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300 transition-colors ${isProcessingId === user.id ? 'opacity-50 cursor-not-allowed' : ''}`}
+                              className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-950 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white ${isProcessingId === user.id ? 'cursor-not-allowed opacity-50' : ''}`}
                               title="Reactivate Account"
                             >
                               <CheckCircleIcon className="h-4 w-4" />
@@ -808,7 +808,7 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
                             <button
                               onClick={() => handleArchive(user)}
                               disabled={isProcessingId === user.id}
-                              className={`inline-flex items-center justify-center w-8 h-8 rounded-md text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-300 transition-colors ${isProcessingId === user.id ? 'opacity-50 cursor-not-allowed' : ''}`}
+                              className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-950 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white ${isProcessingId === user.id ? 'cursor-not-allowed opacity-50' : ''}`}
                               title="Archive Account"
                             >
                               <TrashBinIcon className="h-4 w-4" />

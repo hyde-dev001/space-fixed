@@ -54,6 +54,20 @@ const MetricIcon = ({ kind }: { kind: 'users' | 'active' | 'suspended' | 'inacti
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6" aria-hidden="true"><path d={paths[kind]} /></svg>;
 };
 
+const ActionIcon = ({ kind }: { kind: 'send' | 'suspend' | 'deactivate' | 'activate' | 'reset' }) => {
+  const paths = {
+    send: 'M22 2L11 13m0 0l-4 9 4-9 9-4m-9 4L2 7l20-5-5 20-6-9z',
+    suspend: 'M12 9v4m0 4h.01M10.3 3.2L2.6 17a2 2 0 001.75 3h15.3a2 2 0 001.75-3L13.7 3.2a2 2 0 00-3.5 0z',
+    deactivate: 'M6 6l12 12M6 18L18 6',
+    activate: 'M5 13l4 4L19 7',
+    reset: 'M3 12a9 9 0 109-9c-2.4 0-4.6.95-6.2 2.5L3 8m0 0V3m0 5h5',
+  } as const;
+
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5" aria-hidden="true"><path d={paths[kind]} /></svg>;
+};
+
+const actionIconClass = 'inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-800 transition hover:bg-gray-100 hover:text-black focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700 dark:hover:text-white';
+
 function roleLabel(role: string): string {
   return role === 'super_admin' ? 'Super Admin' : 'Admin';
 }
@@ -258,25 +272,21 @@ export default function AdminManagement({ admins = [], stats = {}, filters = {} 
                         <td className="px-5 py-5 align-top">
                           <div className="flex max-w-xs flex-wrap gap-2">
                             {admin.status === 'pending_setup' && (
-                              <button type="button" disabled={actionBusy} onClick={() => runPostAction(admin, 'resend', `/admin/administrators/${admin.id}/setup/resend`)} className="rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold hover:bg-gray-50 disabled:opacity-50">
-                                {action?.key === `${admin.id}:resend` ? 'Sending…' : 'Resend setup'}
+                              <button type="button" aria-label={`Resend setup for ${admin.firstName} ${admin.lastName}`} title="Resend setup" disabled={actionBusy} onClick={() => runPostAction(admin, 'resend', `/admin/administrators/${admin.id}/setup/resend`)} className={actionIconClass}>
+                                <ActionIcon kind="send" />
                               </button>
                             )}
                             {admin.status === 'active' && (
                               <>
-                                <button type="button" title="Suspend Admin" disabled={actionBusy} onClick={() => void confirmAction(`Suspend ${admin.firstName} ${admin.lastName}?`, () => runPostAction(admin, 'suspend', `/admin/administrators/${admin.id}/suspend`))} className="rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-900 hover:bg-gray-100 disabled:opacity-50">Suspend</button>
-                                <button type="button" disabled={actionBusy} onClick={() => void confirmAction(`Deactivate ${admin.firstName} ${admin.lastName}?`, () => runPostAction(admin, 'deactivate', `/admin/administrators/${admin.id}/deactivate`))} className="rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-900 hover:bg-gray-100 disabled:opacity-50">Deactivate</button>
+                                <button type="button" aria-label={`Suspend ${admin.firstName} ${admin.lastName}`} title="Suspend Admin" disabled={actionBusy} onClick={() => void confirmAction(`Suspend ${admin.firstName} ${admin.lastName}?`, () => runPostAction(admin, 'suspend', `/admin/administrators/${admin.id}/suspend`))} className={actionIconClass}><ActionIcon kind="suspend" /></button>
+                                <button type="button" aria-label={`Deactivate ${admin.firstName} ${admin.lastName}`} title="Deactivate administrator" disabled={actionBusy} onClick={() => void confirmAction(`Deactivate ${admin.firstName} ${admin.lastName}?`, () => runPostAction(admin, 'deactivate', `/admin/administrators/${admin.id}/deactivate`))} className={actionIconClass}><ActionIcon kind="deactivate" /></button>
                               </>
                             )}
                             {(admin.status === 'suspended' || admin.status === 'inactive') && (
-                              <button type="button" disabled={actionBusy} onClick={() => runPostAction(admin, 'activate', `/admin/administrators/${admin.id}/activate`)} className="rounded-lg border border-emerald-300 px-3 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-50 disabled:opacity-50">
-                                {action?.key === `${admin.id}:activate` ? 'Activating…' : admin.status === 'inactive' ? 'Return to setup' : 'Activate'}
-                              </button>
+                              <button type="button" aria-label={`${admin.status === 'inactive' ? 'Return to setup' : 'Activate'} ${admin.firstName} ${admin.lastName}`} title={admin.status === 'inactive' ? 'Return to setup' : 'Activate'} disabled={actionBusy} onClick={() => runPostAction(admin, 'activate', `/admin/administrators/${admin.id}/activate`)} className={actionIconClass}><ActionIcon kind="activate" /></button>
                             )}
                             {admin.status !== 'pending_setup' && (
-                              <button type="button" disabled={actionBusy} onClick={() => void confirmAction(`Reset MFA for ${admin.firstName} ${admin.lastName}? They will need to enroll again.`, () => runPostAction(admin, 'mfa-reset', `/admin/administrators/${admin.id}/mfa/reset`))} className="rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-900 hover:bg-gray-100 disabled:opacity-50">
-                                Reset MFA
-                              </button>
+                              <button type="button" aria-label={`Reset MFA for ${admin.firstName} ${admin.lastName}`} title="Reset MFA" disabled={actionBusy} onClick={() => void confirmAction(`Reset MFA for ${admin.firstName} ${admin.lastName}? They will need to enroll again.`, () => runPostAction(admin, 'mfa-reset', `/admin/administrators/${admin.id}/mfa/reset`))} className={actionIconClass}><ActionIcon kind="reset" /></button>
                             )}
                           </div>
                         </td>
