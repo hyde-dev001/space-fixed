@@ -1216,12 +1216,6 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
   const additionalUploadCount = existingAdditionalCount + additionalDocuments.filter((doc) => !!doc.file).length;
   const hasAdditionalDocuments = additionalDocuments.length > 0 || existingAdditionalCount > 0;
   const hasReachedAdditionalLimit = additionalDocuments.length >= MAX_ADDITIONAL_DOCUMENTS;
-  const documentMetadataFields: Array<[FixedDocumentSlot, string]> = [
-    ['business_registration', 'Business registration'],
-    ['mayors_permit', "Mayor's Permit"],
-    ['bir_certificate', 'BIR Certificate'],
-    ['valid_id', 'Valid ID'],
-  ];
   const registrationSteps = [
     { id: 1, label: 'Personal Info', shortLabel: 'Personal' },
     { id: 2, label: 'Shop Info', shortLabel: 'Shop' },
@@ -1686,7 +1680,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                   <div className="rounded-xl border border-gray-200 bg-white p-4 md:p-5">
                     <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
                       <h4 className="text-sm font-semibold text-gray-900">Required Documents</h4>
-                      <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+                      <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-700">
                         {requiredUploadCount} / 4 uploaded
                       </span>
                     </div>
@@ -1702,7 +1696,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                           id="business_registration_type"
                           value={businessRegistrationType}
                           onChange={(event) => setBusinessRegistrationType(event.target.value as 'dti_registration' | 'sec_registration')}
-                          className="h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                          className="h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 outline-none focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10"
                         >
                           <option value="dti_registration">DTI registration</option>
                           <option value="sec_registration">SEC registration</option>
@@ -1712,31 +1706,11 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                         Submit exactly one business registration document and identify its issuing authority.
                       </p>
                     </div>
-                    <div className="mb-5 rounded-lg border border-gray-100 bg-gray-50 p-4">
-                      <h5 className="text-sm font-semibold text-gray-900">Document validity details</h5>
-                      <p className="mt-1 text-xs text-gray-600">Add an issued date when available. Choose an expiration mode for every document. Mayor&apos;s Permit requires a date.</p>
-                      <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2">
-                        {documentMetadataFields.map(([slot, label]) => {
-                          const metadata = documentMetadata[slot];
-
-                          return (
-                            <div key={slot} className="rounded-lg border border-gray-200 bg-white p-3">
-                              <RegistrationDocumentMetadataFields
-                                idPrefix={slot}
-                                label={label}
-                                metadata={metadata}
-                                onChange={(updates) => updateDocumentMetadata(slot, updates)}
-                              />
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <Label>{businessRegistrationLabel} {(uploadedDocuments.dti.file || existingDocuments.dti) && <span className="text-green-600 font-bold ml-2">✓ Ready</span>}</Label>
                       {existingDocuments.dti && !uploadedDocuments.dti.file && (
-                        <p className="mb-2 text-xs text-blue-700">
+                        <p className="mb-2 text-xs text-gray-700">
                           Existing file: <a href={existingDocuments.dti.url} target="_blank" rel="noreferrer" className="underline">{existingDocuments.dti.fileName}</a>
                         </p>
                       )}
@@ -1756,7 +1730,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                               title: 'File Attached',
                               html: `<p><strong>${file.name}</strong> was added to <strong>${businessRegistrationLabel}</strong>.</p><p class="text-sm text-gray-600">Please ensure the correct document is uploaded in this section.</p>`,
                               confirmButtonText: 'OK',
-                              confirmButtonColor: '#3085d6',
+                              confirmButtonColor: '#111827',
                             });
 
                             // Clear error when file is uploaded
@@ -1776,6 +1750,9 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                         previewUrl={uploadedDocuments.dti.previewUrl || existingDocuments.dti?.url || undefined}
                         previewAlt={`${businessRegistrationLabel} preview`}
                       />
+                      <div className="mt-3 rounded-lg border border-gray-200 bg-white p-3">
+                        <RegistrationDocumentMetadataFields idPrefix="business_registration" label={businessRegistrationLabel} metadata={documentMetadata.business_registration} onChange={(updates) => updateDocumentMetadata('business_registration', updates)} />
+                      </div>
                       {(uploadedDocuments.dti.file || existingDocuments.dti) && (
                         <p className="mt-2 text-sm text-green-600 font-semibold flex items-center">
                           <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
@@ -1789,7 +1766,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                     <div>
                       <Label>Mayor's Permit / Shop Permit {(uploadedDocuments.mayors_permit.file || existingDocuments.mayors_permit) && <span className="text-green-600 font-bold ml-2">✓ Ready</span>}</Label>
                       {existingDocuments.mayors_permit && !uploadedDocuments.mayors_permit.file && (
-                        <p className="mb-2 text-xs text-blue-700">
+                        <p className="mb-2 text-xs text-gray-700">
                           Existing file: <a href={existingDocuments.mayors_permit.url} target="_blank" rel="noreferrer" className="underline">{existingDocuments.mayors_permit.fileName}</a>
                         </p>
                       )}
@@ -1808,7 +1785,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                               title: 'File Attached',
                               html: `<p><strong>${file.name}</strong> was added to <strong>Mayor's Permit / Shop Permit</strong>.</p><p class="text-sm text-gray-600">Please ensure the correct document is uploaded in this section.</p>`,
                               confirmButtonText: 'OK',
-                              confirmButtonColor: '#3085d6',
+                              confirmButtonColor: '#111827',
                             });
 
                             // Clear error when file is uploaded
@@ -1828,6 +1805,9 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                         previewUrl={uploadedDocuments.mayors_permit.previewUrl || existingDocuments.mayors_permit?.url || undefined}
                         previewAlt="Mayor's Permit / Shop Permit preview"
                       />
+                      <div className="mt-3 rounded-lg border border-gray-200 bg-white p-3">
+                        <RegistrationDocumentMetadataFields idPrefix="mayors_permit" label="Mayor's Permit / Shop Permit" metadata={documentMetadata.mayors_permit} onChange={(updates) => updateDocumentMetadata('mayors_permit', updates)} />
+                      </div>
                       {(uploadedDocuments.mayors_permit.file || existingDocuments.mayors_permit) && (
                         <p className="mt-2 text-sm text-green-600 font-semibold flex items-center">
                           <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
@@ -1841,7 +1821,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                     <div>
                       <Label>BIR Certificate of Registration (COR) {(uploadedDocuments.bir.file || existingDocuments.bir) && <span className="text-green-600 font-bold ml-2">✓ Ready</span>}</Label>
                       {existingDocuments.bir && !uploadedDocuments.bir.file && (
-                        <p className="mb-2 text-xs text-blue-700">
+                        <p className="mb-2 text-xs text-gray-700">
                           Existing file: <a href={existingDocuments.bir.url} target="_blank" rel="noreferrer" className="underline">{existingDocuments.bir.fileName}</a>
                         </p>
                       )}
@@ -1860,7 +1840,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                               title: 'File Attached',
                               html: `<p><strong>${file.name}</strong> was added to <strong>BIR Certificate of Registration (COR)</strong>.</p><p class="text-sm text-gray-600">Please ensure the correct document is uploaded in this section.</p>`,
                               confirmButtonText: 'OK',
-                              confirmButtonColor: '#3085d6',
+                              confirmButtonColor: '#111827',
                             });
 
                             // Clear error when file is uploaded
@@ -1880,6 +1860,9 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                         previewUrl={uploadedDocuments.bir.previewUrl || existingDocuments.bir?.url || undefined}
                         previewAlt="BIR Certificate of Registration preview"
                       />
+                      <div className="mt-3 rounded-lg border border-gray-200 bg-white p-3">
+                        <RegistrationDocumentMetadataFields idPrefix="bir_certificate" label="BIR Certificate of Registration (COR)" metadata={documentMetadata.bir_certificate} onChange={(updates) => updateDocumentMetadata('bir_certificate', updates)} />
+                      </div>
                       {(uploadedDocuments.bir.file || existingDocuments.bir) && (
                         <p className="mt-2 text-sm text-green-600 font-semibold flex items-center">
                           <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
@@ -1893,7 +1876,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                     <div>
                       <Label>Valid ID of Owner {(uploadedDocuments.valid_id.file || existingDocuments.valid_id) && <span className="text-green-600 font-bold ml-2">✓ Ready</span>}</Label>
                       {existingDocuments.valid_id && !uploadedDocuments.valid_id.file && (
-                        <p className="mb-2 text-xs text-blue-700">
+                        <p className="mb-2 text-xs text-gray-700">
                           Existing file: <a href={existingDocuments.valid_id.url} target="_blank" rel="noreferrer" className="underline">{existingDocuments.valid_id.fileName}</a>
                         </p>
                       )}
@@ -1912,7 +1895,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                               title: 'File Attached',
                               html: `<p><strong>${file.name}</strong> was added to <strong>Valid ID of Owner</strong>.</p><p class="text-sm text-gray-600">Please ensure the correct document is uploaded in this section.</p>`,
                               confirmButtonText: 'OK',
-                              confirmButtonColor: '#3085d6',
+                              confirmButtonColor: '#111827',
                             });
 
                             // Clear error when file is uploaded
@@ -1932,6 +1915,9 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                         previewUrl={uploadedDocuments.valid_id.previewUrl || existingDocuments.valid_id?.url || undefined}
                         previewAlt="Valid ID of Owner preview"
                       />
+                      <div className="mt-3 rounded-lg border border-gray-200 bg-white p-3">
+                        <RegistrationDocumentMetadataFields idPrefix="valid_id" label="Valid ID of Owner" metadata={documentMetadata.valid_id} onChange={(updates) => updateDocumentMetadata('valid_id', updates)} />
+                      </div>
                       {(uploadedDocuments.valid_id.file || existingDocuments.valid_id) && (
                         <p className="mt-2 text-sm text-green-600 font-semibold flex items-center">
                           <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
@@ -1945,7 +1931,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                     </div>
                   </div>
 
-                  <div className="rounded-xl border border-dashed border-blue-200 bg-blue-50/40 p-4 md:p-5">
+                  <div className="rounded-xl border border-dashed border-gray-300 bg-white p-4 md:p-5">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <div>
                         <h4 className="text-sm font-semibold text-gray-900">Other Supporting Documents (Optional)</h4>
@@ -1957,7 +1943,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                         type="button"
                         onClick={handleAddAdditionalDocument}
                         disabled={hasReachedAdditionalLimit}
-                        className="inline-flex items-center justify-center rounded-md border border-blue-600 px-4 py-2 text-sm font-semibold text-blue-700 transition-colors hover:bg-blue-100 disabled:cursor-not-allowed disabled:border-gray-300 disabled:text-gray-400 disabled:hover:bg-transparent"
+                        className="inline-flex items-center justify-center rounded-md border border-gray-900 px-4 py-2 text-sm font-semibold text-gray-900 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:border-gray-300 disabled:text-gray-400 disabled:hover:bg-transparent"
                       >
                         + Others
                       </button>
@@ -1965,15 +1951,15 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
 
                     {hasAdditionalDocuments ? (
                       <>
-                        <p className="mt-4 text-xs font-medium text-blue-700">
+                        <p className="mt-4 text-xs font-medium text-gray-700">
                           {additionalUploadCount} of {existingDocuments.other.length + additionalDocuments.length} optional document(s) available
                         </p>
                         {existingDocuments.other.length > 0 && (
-                          <div className="mt-3 rounded-lg border border-blue-100 bg-white p-3">
+                          <div className="mt-3 rounded-lg border border-gray-200 bg-white p-3">
                             <p className="text-sm font-semibold text-gray-900">Previously Uploaded Optional Documents</p>
                             <div className="mt-2 space-y-1">
                               {existingDocuments.other.map((doc, index) => (
-                                <p key={doc.id} className="text-xs text-blue-700">
+                                <p key={doc.id} className="text-xs text-gray-700">
                                   Existing #{index + 1}: <a href={doc.url} target="_blank" rel="noreferrer" className="underline">{doc.fileName}</a>
                                 </p>
                               ))}
@@ -1996,12 +1982,6 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                                   Remove
                                 </button>
                               </div>
-                              <RegistrationDocumentMetadataFields
-                                idPrefix={`supporting-${doc.id}`}
-                                label={`Supporting document ${index + 1}`}
-                                metadata={doc.metadata}
-                                onChange={(updates) => updateSupportingMetadata(doc.id, updates)}
-                              />
                               <DropzoneComponent
                                 onDrop={(files) => handleAdditionalDocumentDrop(doc.id, files)}
                                 accept={SHOP_OWNER_IMAGE_ACCEPT}
@@ -2015,6 +1995,9 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                                 previewUrl={doc.previewUrl || undefined}
                                 previewAlt={`Supporting document ${index + 1} preview`}
                               />
+                              <div className="mt-3 rounded-lg border border-gray-200 bg-white p-3">
+                                <RegistrationDocumentMetadataFields idPrefix={`supporting-${doc.id}`} label={`Supporting document ${index + 1}`} metadata={doc.metadata} onChange={(updates) => updateSupportingMetadata(doc.id, updates)} />
+                              </div>
                               {doc.file && (
                                 <p className="mt-2 text-sm text-green-600 font-semibold flex items-center">
                                   <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
@@ -2028,7 +2011,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                         </div>
                       </>
                     ) : (
-                      <div className="mt-4 rounded-lg border border-blue-100 bg-white p-4 text-center">
+                      <div className="mt-4 rounded-lg border border-gray-200 bg-white p-4 text-center">
                         <p className="text-sm font-medium text-gray-700">No optional document added yet.</p>
                         <p className="mt-1 text-xs text-gray-500">Use the Others button when you want to attach extra proof files.</p>
                       </div>

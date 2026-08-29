@@ -133,30 +133,23 @@ const XIcon = ({ className }: { className?: string }) => (
 const StatCard = ({
   title,
   value,
-  color,
   icon: Icon,
 }: {
   title: string;
   value: number;
-  color: string;
   icon: React.FC<{ className?: string }>;
 }) => {
-  const gradients: Record<string, string> = {
-    blue: 'from-blue-500 to-blue-700',
-    yellow: 'from-yellow-400 to-orange-500',
-    red: 'from-red-500 to-rose-600',
-    green: 'from-green-500 to-emerald-600',
-  };
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+    <div className="metrics-card overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition hover:border-gray-300 hover:shadow-md dark:border-gray-800 dark:bg-gray-800 dark:hover:border-gray-700">
       <div className="p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div className={`p-3 rounded-xl bg-gradient-to-br ${gradients[color]} shadow-lg`}>
-            <Icon className="w-6 h-6 text-white" />
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-gray-200 bg-gray-100 text-gray-900 dark:border-gray-700 dark:bg-gray-700 dark:text-gray-100">
+            <Icon className="h-6 w-6" />
           </div>
+          <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-600 dark:bg-gray-700 dark:text-gray-300">Snapshot</span>
         </div>
-        <p className="text-sm font-medium text-gray-500 dark:text-gray-400">{title}</p>
-        <p className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{value}</p>
+        <p className="mt-5 text-sm font-medium text-gray-500 dark:text-gray-400">{title}</p>
+        <p className="mt-1 text-3xl font-bold text-gray-900 dark:text-white">{value}</p>
       </div>
     </div>
   );
@@ -717,10 +710,10 @@ export default function ShopReports() {
 
         {/* ── Stats ── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          <StatCard title="Total Reports" value={stats.total_reports} color="blue" icon={FlagIcon} />
-          <StatCard title="Pending Review" value={stats.pending_review} color="yellow" icon={AlertIcon} />
-          <StatCard title="High Priority Shops" value={stats.high_priority} color="red" icon={AlertIcon} />
-          <StatCard title="Resolved" value={stats.resolved} color="green" icon={ShieldIcon} />
+          <StatCard title="Total Reports" value={stats.total_reports} icon={FlagIcon} />
+          <StatCard title="Pending Review" value={stats.pending_review} icon={AlertIcon} />
+          <StatCard title="High Priority Shops" value={stats.high_priority} icon={AlertIcon} />
+          <StatCard title="Resolved" value={stats.resolved} icon={ShieldIcon} />
         </div>
 
         {/* ── Filters ── */}
