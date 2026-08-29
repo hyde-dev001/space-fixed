@@ -1032,7 +1032,7 @@ const ProductShow: React.FC = () => {
       <div className="userside-product-show-page min-h-screen bg-white font-outfit antialiased">
         {/* Desktop Navigation */}
         <div className="hidden xl:block">
-          <Navigation />
+          <Navigation mobileMenuTriggerIcon="hamburger" productPageMode />
         </div>
 
         {/* Mobile / Tablet Top Bar */}
