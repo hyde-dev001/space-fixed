@@ -2415,7 +2415,7 @@ const Payment: React.FC = () => {
       `}</style>
       <Head title="Payment" />
 
-      {!isPremiumPayment && <div className="hidden xl:block"><Navigation /></div>}
+      {!isPremiumPayment && <Navigation />}
 
       <main className={`flex-1 ${!isPremiumPayment ? 'xl:pt-28' : ''}`}>
         <div className="max-w-7xl mx-auto py-0 xl:py-10 px-4 xl:px-8 text-black">

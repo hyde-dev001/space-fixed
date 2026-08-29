@@ -169,30 +169,25 @@ class LandingPageController extends Controller
         $repairQualifier = trim((string) preg_replace('/\brepair(?:er|ers)?\b/i', '', $query));
         $retailQualifier = trim((string) preg_replace('/\bretail\b/i', '', $query));
 
-        if ($query === '') {
-            return response()->json([
-                'query' => $query,
-                'products' => [],
-                'shops' => [],
-                'categories' => [],
-            ]);
-        }
-
-        $products = Product::query()
+        $productsQuery = Product::query()
             ->where('is_active', true)
-            ->where(function ($q) use ($query, $matchedCategoryFromKeyword) {
-                $q->where('name', 'like', "%{$query}%")
-                    ->orWhere('brand', 'like', "%{$query}%")
-                    ->orWhere('description', 'like', "%{$query}%")
-                    ->orWhere('category', 'like', "%{$query}%");
-
-                if ($matchedCategoryFromKeyword !== null) {
-                    $q->orWhereRaw('LOWER(category) = ?', [$matchedCategoryFromKeyword]);
-                }
-            })
             ->whereHas('shopOwner', function ($q) {
                 $q->where('status', 'approved');
             })
+            ->when($query !== '', function ($queryBuilder) use ($query, $matchedCategoryFromKeyword) {
+                $queryBuilder->where(function ($q) use ($query, $matchedCategoryFromKeyword) {
+                    $q->where('name', 'like', "%{$query}%")
+                        ->orWhere('brand', 'like', "%{$query}%")
+                        ->orWhere('description', 'like', "%{$query}%")
+                        ->orWhere('category', 'like', "%{$query}%");
+
+                    if ($matchedCategoryFromKeyword !== null) {
+                        $q->orWhereRaw('LOWER(category) = ?', [$matchedCategoryFromKeyword]);
+                    }
+                });
+            });
+
+        $products = $productsQuery
             ->with('shopOwner:id,business_name')
             ->orderByDesc('created_at')
             ->limit(6)
@@ -206,9 +201,20 @@ class LandingPageController extends Controller
                     'main_image' => $product->main_image_url,
                     'shop_name' => $product->shopOwner?->business_name,
                     'url' => route('products.show', ['slug' => $product->slug]),
+                    'price' => $product->price,
+                    'compare_at_price' => $product->compare_at_price,
                 ];
             })
             ->values();
+
+        if ($query === '') {
+            return response()->json([
+                'query' => $query,
+                'products' => $products,
+                'shops' => [],
+                'categories' => [],
+            ]);
+        }
 
         $searchableCategories = $this->getSearchableStorefrontCategories();
 

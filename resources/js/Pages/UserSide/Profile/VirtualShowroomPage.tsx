@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Head, Link } from '@inertiajs/react';
 import VirtualShowroom from '../Products/VirtualShowroom';
+import Navigation from '../Shared/Navigation';
 
 interface Product {
   id: number;
@@ -42,9 +43,11 @@ const VirtualShowroomPage: React.FC<Props> = ({ shop, products }) => {
     <div className="h-screen overflow-hidden bg-white">
       <Head title={`${shop.name} - Virtual Showroom`} />
 
+      {!isFocusMode && <Navigation />}
+
       <main className="h-screen">
         {!isFocusMode && (
-          <div className="fixed left-4 top-4 z-50">
+          <div className="fixed left-20 top-4 z-50">
             <Link
               href={backHref}
               className="rounded-md border border-gray-300 bg-white/95 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-white"

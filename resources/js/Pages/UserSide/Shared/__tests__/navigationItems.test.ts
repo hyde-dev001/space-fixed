@@ -15,4 +15,9 @@ describe('customer navigation items', () => {
     expect(labels).not.toContain('Services');
     expect(labels).not.toContain('ACCOUNT');
   });
+
+  it('removes Home from both guest and authenticated primary navigation', () => {
+    expect(getCustomerNavItems(false).map((item) => item.label)).not.toContain('Home');
+    expect(getCustomerNavItems(true).map((item) => item.label)).not.toContain('Home');
+  });
 });

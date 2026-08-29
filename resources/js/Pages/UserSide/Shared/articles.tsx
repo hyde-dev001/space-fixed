@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Head, Link } from '@inertiajs/react';
 import Virtual3DShowroom from '../../../components/Virtual3DShowroom';
 import { navigateBackOr } from './backNavigation';
+import Navigation from './Navigation';
 
 const Articles: React.FC = () => {
 	const [isTagalog, setIsTagalog] = useState(false);
@@ -173,6 +174,7 @@ const Articles: React.FC = () => {
 	return (
 		<>
 			<Head title={t.headTitle} />
+			<Navigation />
 
 			<main className="userside-shoe-guide-page min-h-screen bg-slate-50 font-outfit antialiased lg:bg-white">
 				<section className="relative mx-auto max-w-6xl px-5 pb-14 pt-24 sm:px-6 sm:pt-28 md:px-8 lg:px-10 lg:pb-20 lg:pt-32">

@@ -16,6 +16,8 @@ type SearchSuggestionProduct = {
   category?: string | null;
   main_image?: string | null;
   shop_name?: string | null;
+  price?: number | string | null;
+  compare_at_price?: number | string | null;
   url: string;
 };
 
@@ -82,12 +84,11 @@ const toSafeCount = (value: unknown): number => {
   return Math.floor(parsed);
 };
 
-const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people', landingSidebar = false }) => {
+const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people', landingSidebar = true }) => {
   const { cartCount, isLoading: cartLoading } = useCart();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [landingSidebarOpen, setLandingSidebarOpen] = useState(false);
   const [landingSidebarExpanded, setLandingSidebarExpanded] = useState<string | null>(null);
-  const [searchModalOpen, setSearchModalOpen] = useState(false);
   const [cartDrawerOpen, setCartDrawerOpen] = useState(false);
   const [quickCartItems, setQuickCartItems] = useState<QuickCartItem[]>([]);
   const [quickCartLoading, setQuickCartLoading] = useState(false);
@@ -389,7 +390,6 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
       isActive ? 'font-semibold text-gray-900' : 'font-medium text-gray-500 hover:text-gray-700'
     }`;
 
-  const isMobileHomeActive = currentRoute === 'landing';
   const isMobileProductsActive = currentRoute === 'products' && !currentCategory;
   const isMobileMenActive = currentRoute === 'products' && currentCategory === 'men';
   const isMobileWomenActive = currentRoute === 'products' && currentCategory === 'women';
@@ -484,7 +484,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
   useEffect(() => {
     const query = searchQuery.trim();
 
-    if (query.length < 2) {
+    if (!isSearchFocused || query.length === 1) {
       setSearchProducts([]);
       setSearchShops([]);
       setIsSearchingSuggestions(false);
@@ -495,15 +495,17 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
       return;
     }
 
+    setIsSearchingSuggestions(true);
+
     const timeoutId = window.setTimeout(async () => {
+      const controller = new AbortController();
+
       try {
         if (searchAbortRef.current) {
           searchAbortRef.current.abort();
         }
 
-        const controller = new AbortController();
         searchAbortRef.current = controller;
-        setIsSearchingSuggestions(true);
 
         const response = await fetch(`/api/search/suggestions?query=${encodeURIComponent(query)}`, {
           headers: { Accept: 'application/json' },
@@ -517,18 +519,31 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
         const data = await response.json();
         setSearchProducts(Array.isArray(data.products) ? data.products : []);
         setSearchShops(Array.isArray(data.shops) ? data.shops : []);
-      } catch (error: any) {
-        if (error?.name !== 'AbortError') {
+      } catch (error: unknown) {
+        const errorName = error && typeof error === 'object' && 'name' in error
+          ? String(error.name)
+          : undefined;
+
+        if (errorName !== 'AbortError') {
           setSearchProducts([]);
           setSearchShops([]);
         }
       } finally {
-        setIsSearchingSuggestions(false);
+        if (searchAbortRef.current === controller) {
+          searchAbortRef.current = null;
+          setIsSearchingSuggestions(false);
+        }
       }
     }, 220);
 
-    return () => window.clearTimeout(timeoutId);
-  }, [searchQuery]);
+    return () => {
+      window.clearTimeout(timeoutId);
+      if (searchAbortRef.current) {
+        searchAbortRef.current.abort();
+        searchAbortRef.current = null;
+      }
+    };
+  }, [searchQuery, isSearchFocused]);
 
   useEffect(() => {
     if (landingSidebar) return;
@@ -589,7 +604,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
 
   const shouldShowSearchDropdown =
     isSearchFocused &&
-    searchQuery.trim().length >= 2 &&
+    (searchQuery.trim().length === 0 || searchQuery.trim().length >= 2) &&
     (isSearchingSuggestions || searchProducts.length > 0 || searchShops.length > 0);
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
   const isShowroomSearch = normalizedSearchQuery.includes('showroom');
@@ -1347,7 +1362,6 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                   />
                 </form>
                 <div className="mt-4 space-y-3.5 pb-1">
-                  <Link href={route('landing')} onClick={() => setMobileMenuOpen(false)} className={mobileNavLinkClasses(isMobileHomeActive)}>Home</Link>
                   <Link href={route('products')} onClick={() => setMobileMenuOpen(false)} className={mobileNavLinkClasses(isMobileProductsActive)}>Products</Link>
                   <Link href={route('products', { category: 'men' })} onClick={() => setMobileMenuOpen(false)} className={mobileNavLinkClasses(isMobileMenActive)}>Men</Link>
                   <Link href={route('products', { category: 'women' })} onClick={() => setMobileMenuOpen(false)} className={mobileNavLinkClasses(isMobileWomenActive)}>Women</Link>
@@ -1468,9 +1482,9 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                 type="button"
                 aria-label="Close search"
                 onClick={() => setIsSearchFocused(false)}
-                className="fixed inset-0 z-[61] bg-black/55 backdrop-blur-[2px]"
+                className="fixed inset-0 z-[61] bg-black/55 opacity-100 backdrop-blur-[2px] transition-opacity duration-300 motion-reduce:transition-none"
               />
-              <div role="dialog" aria-modal="true" aria-label="Search products" className="fixed left-1/2 top-1/2 z-[62] w-[min(92vw,42rem)] -translate-x-1/2 -translate-y-1/2 overflow-hidden bg-white text-[#111111] shadow-2xl">
+              <div role="dialog" aria-modal="true" aria-label="Search products" className="fixed left-1/2 top-1/2 z-[62] w-[min(92vw,42rem)] -translate-x-1/2 -translate-y-1/2 overflow-hidden bg-white text-[#111111] shadow-2xl transition-all duration-300 ease-out motion-reduce:transition-none">
                 <form onSubmit={handleSearch} className="flex items-center gap-3 border-b border-[#dedede] px-5 py-4 sm:px-7">
                   <svg className="h-5 w-5 shrink-0 text-[#555555]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M21 21l-4.35-4.35m1.6-5.4a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
                   <input
@@ -1487,6 +1501,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                   </button>
                 </form>
                 <div className="max-h-[55vh] overflow-y-auto px-5 py-5 sm:px-7">
+                  <p className="mb-4 text-xs font-semibold uppercase tracking-[0.18em] text-[#555555]">Products</p>
                   {isSearchingSuggestions && <p className="text-sm text-[#777777]">Searching...</p>}
                   {!isSearchingSuggestions && searchQuery.trim().length >= 2 && searchProducts.length === 0 && searchShops.length === 0 && <p className="text-sm text-[#777777]">No results found.</p>}
                   {searchProducts.length > 0 && <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
@@ -1497,6 +1512,16 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                         </div>
                         <p className="mt-2 line-clamp-2 text-sm font-medium">{product.name}</p>
                         {product.shop_name && <p className="mt-1 text-xs text-[#777777]">{product.shop_name}</p>}
+                        {product.price !== null && product.price !== undefined && Number.isFinite(Number(product.price)) && (
+                          <p className="mt-2 text-sm font-semibold">
+                            ₱{Number(product.price).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                            {product.compare_at_price !== null && product.compare_at_price !== undefined && Number(product.compare_at_price) > Number(product.price) && (
+                              <span className="ml-2 text-xs font-normal text-[#999999] line-through">
+                                ₱{Number(product.compare_at_price).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                              </span>
+                            )}
+                          </p>
+                        )}
                       </Link>
                     ))}
                   </div>}
@@ -1504,10 +1529,18 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
               </div>
             </>
           )}
-          {cartDrawerOpen && (
-            <>
-              <button type="button" aria-label="Close cart" onClick={() => setCartDrawerOpen(false)} className="fixed inset-0 z-[61] bg-black/45" />
-              <aside aria-label="Shopping cart" className="fixed right-0 top-0 z-[62] flex h-dvh w-[min(92vw,30rem)] max-w-[30rem] flex-col bg-white text-[#111111] shadow-2xl">
+          <>
+              <button
+                type="button"
+                aria-label="Close cart"
+                onClick={() => setCartDrawerOpen(false)}
+                className={`fixed inset-0 z-[61] bg-black/45 transition-opacity duration-300 motion-reduce:transition-none ${cartDrawerOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+              />
+              <aside
+                aria-label="Shopping cart"
+                aria-hidden={!cartDrawerOpen}
+                className={`fixed right-0 top-0 z-[62] flex h-dvh w-[min(92vw,30rem)] max-w-[30rem] flex-col bg-white text-[#111111] shadow-2xl transition-transform duration-300 ease-out motion-reduce:transition-none ${cartDrawerOpen ? 'translate-x-0' : 'translate-x-full pointer-events-none'}`}
+              >
                 <div className="flex items-center justify-between border-b border-[#dedede] px-5 py-5 sm:px-7">
                   <div><p className="text-lg font-semibold">Bag</p><p className="mt-1 text-xs uppercase tracking-[0.16em] text-[#777777]">{effectiveCartCount} {effectiveCartCount === 1 ? 'item' : 'items'}</p></div>
                   <button type="button" onClick={() => setCartDrawerOpen(false)} className="inline-flex h-10 w-10 items-center justify-center" aria-label="Close cart"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={1.8} d="M6 6l12 12M18 6L6 18" /></svg></button>
@@ -1521,17 +1554,16 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                 </div>
                 <div className="border-t border-[#dedede] px-5 py-5 sm:px-7"><div className="flex items-center justify-between text-sm font-semibold"><span>Estimated total</span><span>₱{quickCartItems.reduce((total, item) => total + item.price * item.qty, 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span></div><Link href="/checkout" onClick={() => setCartDrawerOpen(false)} className="mt-5 flex min-h-12 items-center justify-center bg-[#111111] text-xs font-semibold uppercase tracking-[0.16em] text-white">Checkout</Link></div>
               </aside>
-            </>
-          )}
+          </>
           <button
             type="button"
             aria-label="Close menu"
             onClick={() => setLandingSidebarOpen(false)}
-            className={`fixed inset-0 z-[59] bg-black/45 transition-opacity duration-300 ${landingSidebarOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+            className={`fixed inset-0 z-[59] bg-black/45 transition-opacity duration-300 motion-reduce:transition-none ${landingSidebarOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
           />
           <aside
             aria-label="Site menu"
-            className={`fixed left-0 top-0 z-[60] flex h-dvh w-[min(88vw,31rem)] flex-col overflow-y-auto bg-white text-[#111111] shadow-2xl transition-transform duration-300 ease-out ${landingSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
+            className={`fixed left-0 top-0 z-[60] flex h-dvh w-[min(88vw,31rem)] flex-col overflow-y-auto bg-white text-[#111111] shadow-2xl transition-transform duration-300 ease-out motion-reduce:transition-none ${landingSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
           >
             <div className="flex items-center justify-between border-b border-[#e5e5e5] px-6 py-6 sm:px-8">
               <Link href={route('landing')} onClick={() => setLandingSidebarOpen(false)} className="text-xl font-black tracking-[-0.06em] sm:text-2xl">
@@ -1573,7 +1605,6 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
               </div>
             </nav>
             <div className="border-t border-[#cacacb] px-6 py-6 sm:px-8">
-              <Link href={route('products')} onClick={() => setLandingSidebarOpen(false)} className="flex min-h-12 items-center gap-3 text-base font-medium hover:opacity-55"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" strokeWidth={2}/><path strokeLinecap="round" strokeWidth={2} d="m20 20-4-4"/></svg>Search</Link>
               <Link href={isAuthenticated ? '/customer-profile' : route('login')} onClick={() => setLandingSidebarOpen(false)} className="flex min-h-12 items-center gap-3 text-base font-medium hover:opacity-55"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3" strokeWidth={2}/><path strokeLinecap="round" strokeWidth={2} d="M5 20a7 7 0 0 1 14 0"/></svg>{isAuthenticated ? 'Account' : 'Sign in'}</Link>
               <Link href="/checkout" onClick={() => setLandingSidebarOpen(false)} className="flex min-h-12 items-center gap-3 text-base font-medium hover:opacity-55"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={2} d="M3 4h2l2.2 10.2a2 2 0 0 0 1.96 1.58h7.68a2 2 0 0 0 1.95-1.56L21 7H8"/><circle cx="10" cy="19" r="1.5"/><circle cx="17" cy="19" r="1.5"/></svg>Bag {effectiveCartCount > 0 && `(${effectiveCartCount})`}</Link>
             </div>
