@@ -84,6 +84,13 @@ const toSafeCount = (value: unknown): number => {
   return Math.floor(parsed);
 };
 
+const PROMO_MESSAGES = [
+  'SoleSpace summer edit',
+  'Premium footwear',
+  'Expert repairs',
+  'Shop the latest drops',
+] as const;
+
 const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people', landingSidebar = true }) => {
   const { cartCount, isLoading: cartLoading } = useCart();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -682,13 +689,23 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
   }, []);
 
   return (
-    <nav
-      className={`fixed left-0 right-0 z-50 w-full transition-all duration-300 ${landingSidebar ? (isScrolled ? 'top-0' : 'top-10') : 'top-0'} ${
-        landingSidebar || isTransparentNav
-          ? 'bg-transparent'
-          : 'border-b border-gray-200/70 bg-white/95 backdrop-blur'
-      }`}
-    >
+    <>
+      <div className="fixed inset-x-0 top-0 z-[55] h-10 overflow-hidden bg-[#111111] text-white" aria-label="Latest offers">
+        <div className="landing-marquee flex h-full min-w-max items-center gap-12 py-3 text-[11px] font-semibold uppercase tracking-[0.22em] motion-reduce:animate-none sm:gap-20 sm:text-xs">
+          {[...PROMO_MESSAGES, ...PROMO_MESSAGES].map((message, index) => (
+            <span key={`${message}-${index}`} className="inline-flex items-center gap-12 whitespace-nowrap sm:gap-20">
+              {message}<span aria-hidden="true">•</span>
+            </span>
+          ))}
+        </div>
+      </div>
+      <nav
+        className={`fixed left-0 right-0 top-10 z-50 w-full transition-all duration-300 ${
+          landingSidebar || isTransparentNav
+            ? 'bg-transparent'
+            : 'border-b border-gray-200/70 bg-white/95 backdrop-blur'
+        }`}
+      >
       <div className={`mx-auto w-full max-w-[1920px] px-4 sm:px-6 lg:px-10 2xl:px-12 ${landingSidebar ? 'h-0' : 'h-16 sm:h-20'}`}>
         <div className={`relative flex items-center justify-center pr-20 sm:pr-24 ${landingSidebar ? 'h-0' : 'h-16 sm:h-20'} ${landingSidebar ? '' : '2xl:pr-0'}`}>
           <Link
@@ -1473,8 +1490,8 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
             )}
           </div>
         )}
-      </div>
-      {landingSidebar && (
+        </div>
+        {landingSidebar && (
         <>
           {isSearchFocused && (
             <>
@@ -1607,11 +1624,13 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
             <div className="border-t border-[#cacacb] px-6 py-6 sm:px-8">
               <Link href={isAuthenticated ? '/customer-profile' : route('login')} onClick={() => setLandingSidebarOpen(false)} className="flex min-h-12 items-center gap-3 text-base font-medium hover:opacity-55"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3" strokeWidth={2}/><path strokeLinecap="round" strokeWidth={2} d="M5 20a7 7 0 0 1 14 0"/></svg>{isAuthenticated ? 'Account' : 'Sign in'}</Link>
               <Link href="/checkout" onClick={() => setLandingSidebarOpen(false)} className="flex min-h-12 items-center gap-3 text-base font-medium hover:opacity-55"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={2} d="M3 4h2l2.2 10.2a2 2 0 0 0 1.96 1.58h7.68a2 2 0 0 0 1.95-1.56L21 7H8"/><circle cx="10" cy="19" r="1.5"/><circle cx="17" cy="19" r="1.5"/></svg>Bag {effectiveCartCount > 0 && `(${effectiveCartCount})`}</Link>
+              <Link href={route('download')} onClick={() => setLandingSidebarOpen(false)} className="flex min-h-12 items-center gap-3 text-base font-medium hover:opacity-55"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14" /></svg>Download</Link>
             </div>
           </aside>
         </>
-      )}
-    </nav>
+        )}
+      </nav>
+    </>
   );
 };
 export default Navigation;
