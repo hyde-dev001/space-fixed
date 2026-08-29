@@ -185,7 +185,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
     : 'Shop Registration (DTI)';
   const [documentMetadata, setDocumentMetadata] = useState<Record<FixedDocumentSlot, RegistrationDocumentMetadata>>({
     business_registration: { expirationMode: 'none', expiresOn: '', issuedOn: '' },
-    mayors_permit: { expirationMode: 'dated', expiresOn: '', issuedOn: '' },
+    mayors_permit: { expirationMode: 'none', expiresOn: '', issuedOn: '' },
     bir_certificate: { expirationMode: 'none', expiresOn: '', issuedOn: '' },
     valid_id: { expirationMode: 'none', expiresOn: '', issuedOn: '' },
   });
