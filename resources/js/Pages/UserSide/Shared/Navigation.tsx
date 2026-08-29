@@ -726,7 +726,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
             </button>
           )}
 
-          <div className={`absolute right-0 flex items-center gap-1.5 ${landingSidebar ? 'top-3 sm:top-5 2xl:hidden' : '2xl:hidden'}`} ref={mobileUserMenuRef}>
+          <div className={`absolute right-0 flex items-center gap-3 ${landingSidebar ? 'top-3 sm:top-5 2xl:hidden' : '2xl:hidden'}`} ref={mobileUserMenuRef}>
             {landingSidebar && (
               <button type="button" onClick={() => setIsSearchFocused(true)} className={headerIconButtonClasses} aria-label="Open search">
                 <svg className={headerIconSvgClasses} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35m1.6-5.4a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
@@ -1026,14 +1026,14 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
               );
             })}
           </div>
-          <div className={`absolute right-0 hidden items-center 2xl:flex ${landingSidebar ? 'top-3 gap-1 sm:top-5 2xl:gap-2' : 'gap-3 2xl:gap-4'}`}>
+          <div className={`absolute right-0 hidden items-center 2xl:flex ${landingSidebar ? 'top-3 gap-3 sm:top-5' : 'gap-3 2xl:gap-4'}`}>
             <div className={`relative ${landingSidebar ? 'w-10' : 'w-[17rem]'}`} ref={searchContainerRef}>
             {landingSidebar ? (
               <>
                 <button
                   type="button"
                   onClick={() => setIsSearchFocused((focused) => !focused)}
-                  className={`${headerIconButtonClasses} -mr-2`}
+                  className={headerIconButtonClasses}
                   aria-label="Open search"
                   aria-expanded={isSearchFocused}
                 >
@@ -1168,7 +1168,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
               </div>
             )}
             </div>
-            <div className="flex items-center gap-2 leading-none">
+            <div className="flex items-center gap-3 leading-none">
             {isAuthenticated && (
               <NotificationBell 
                 basePath="/api/notifications"
@@ -1179,31 +1179,6 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                 }
               />
             )}
-            {/* User Icon */}
-            <div className="relative flex shrink-0 items-center justify-center">
-              <button
-                type="button"
-                onClick={() => {
-                  setMobileMenuOpen(false);
-                  setLandingSidebarOpen(true);
-                  setCartDrawerOpen(false);
-                  setAccountDrawerOpen((open) => !open);
-                }}
-                className={headerIconButtonClasses}
-                aria-label="User account"
-                aria-expanded={accountDrawerOpen}
-              >
-                <svg className={headerIconSvgClasses} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                </svg>
-                {isAuthenticated && visibleUserIconCount > 0 && (
-                  <span className="absolute top-0 right-0 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white transform translate-x-1/2 -translate-y-1/2 bg-red-500 rounded-full">
-                    {visibleUserIconCount}
-                  </span>
-                )}
-              </button>
-            </div>
-
             {/* Messages Icon - Only visible for authenticated customers */}
             {isAuthenticated && (
               <Link href="/messages" className={headerIconButtonClasses} aria-label="Messages">
@@ -1421,7 +1396,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
               aria-modal="true"
               aria-label="Account submenu"
               aria-hidden={!accountDrawerOpen}
-              className={`fixed left-[min(88vw,31rem)] top-0 z-[110] flex h-dvh w-[min(88vw,26rem)] max-w-[26rem] flex-col border-l border-white/60 bg-white/60 text-[#111111] shadow-2xl backdrop-blur-2xl transition-[transform,opacity,visibility] duration-300 ease-out motion-reduce:transition-none ${accountDrawerOpen ? 'visible translate-x-0 opacity-100' : 'invisible translate-x-full opacity-0 pointer-events-none'}`}
+              className={`fixed left-[min(88vw,31rem)] top-0 z-[110] flex h-dvh w-[min(88vw,26rem)] max-w-[26rem] flex-col border-l border-white/60 bg-white/60 text-[#111111] shadow-2xl backdrop-blur-2xl transition-[transform,opacity] duration-300 ease-out motion-reduce:transition-none ${accountDrawerOpen ? 'visible translate-x-0 opacity-100' : 'invisible translate-x-full opacity-0 pointer-events-none'}`}
             >
               <div className="flex items-center justify-between border-b border-white/50 bg-white/10 px-5 py-5 sm:px-7">
                 <div>
