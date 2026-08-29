@@ -11,6 +11,8 @@ export type CoordinateValue = { latitude: number; longitude: number } | null;
 export type CustomerAddressMapPickerProps = {
   value: CoordinateValue;
   onChange: (location: RegistrationAddress) => void;
+  allowIncompleteAddress?: boolean;
+  embeddedInForm?: boolean;
   disabled?: boolean;
 };
 
@@ -41,6 +43,8 @@ const sameCoordinates = (left: CoordinateValue, right: CoordinateValue) => (
 export default function CustomerAddressMapPicker({
   value,
   onChange,
+  allowIncompleteAddress = false,
+  embeddedInForm = false,
   disabled = false,
 }: CustomerAddressMapPickerProps) {
   const searchId = useId();
@@ -51,10 +55,12 @@ export default function CustomerAddressMapPicker({
   const markerRef = useRef<import('leaflet').Marker | null>(null);
   const selectedRef = useRef<CoordinateValue>(value);
   const proposedRef = useRef<CoordinateValue>(null);
+  const proposedIncompleteRef = useRef(false);
   const dragOriginRef = useRef<CoordinateValue>(value);
   const pendingRollbackRef = useRef<[number, number] | null>(null);
   const mountedRef = useRef(true);
   const disabledRef = useRef(disabled);
+  const allowIncompleteAddressRef = useRef(allowIncompleteAddress);
   const onChangeRef = useRef(onChange);
   const requestRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
@@ -65,6 +71,7 @@ export default function CustomerAddressMapPicker({
   const [status, setStatus] = useState(value ? 'Selected coordinates shown.' : 'Search for an address or choose a point on the map.');
 
   disabledRef.current = disabled;
+  allowIncompleteAddressRef.current = allowIncompleteAddress;
   onChangeRef.current = onChange;
 
   const restorePendingRollback = () => {
@@ -135,16 +142,24 @@ export default function CustomerAddressMapPicker({
   };
 
   const applyResult = (result: unknown) => {
-    const location = parsePhilippineAddress(result);
+    const location = parsePhilippineAddress(result, {
+      allowIncomplete: allowIncompleteAddressRef.current,
+    });
     if (!location) return false;
 
     const coordinates = { latitude: location.latitude, longitude: location.longitude };
+    const hasCompleteAddress = Boolean(
+      location.region && location.province && location.city && location.barangay,
+    );
     pendingRollbackRef.current = null;
     proposedRef.current = coordinates;
+    proposedIncompleteRef.current = !hasCompleteAddress;
     setQuery(location.displayName);
-    setStatus(sameCoordinates(selectedRef.current, coordinates)
-      ? 'Address selected.'
-      : 'Address found. Waiting for confirmation.');
+    setStatus(hasCompleteAddress
+      ? (sameCoordinates(selectedRef.current, coordinates)
+        ? 'Address selected.'
+        : 'Address found. Waiting for confirmation.')
+      : 'Location pinned. Complete the address details before saving.');
     onChangeRef.current(location);
     showControlledSelection();
     return true;
@@ -196,13 +211,17 @@ export default function CustomerAddressMapPicker({
   useEffect(() => {
     cancelPendingRequest();
     const acceptedProposal = sameCoordinates(value, proposedRef.current);
+    const incompleteProposal = proposedIncompleteRef.current;
     proposedRef.current = null;
+    proposedIncompleteRef.current = false;
     selectedRef.current = value;
     showControlledSelection();
     setStatus(disabledRef.current
       ? (value ? 'Address selection is disabled. Selected coordinates shown.' : 'Address selection is disabled.')
       : value
-        ? (acceptedProposal ? 'Address selected.' : 'Selected coordinates shown.')
+        ? (incompleteProposal
+          ? 'Location pinned. Complete the address details before saving.'
+          : acceptedProposal ? 'Address selected.' : 'Selected coordinates shown.')
         : EMPTY_STATUS);
   }, [value?.latitude, value?.longitude]);
 
@@ -273,8 +292,8 @@ export default function CustomerAddressMapPicker({
     syncInteractions(disabled);
   }, [disabled]);
 
-  const search = async (event: FormEvent) => {
-    event.preventDefault();
+  const search = async (event?: FormEvent) => {
+    event?.preventDefault();
     const address = query.trim();
     if (!address) {
       setStatus('Enter an address to search.');
@@ -307,6 +326,8 @@ export default function CustomerAddressMapPicker({
     }
   };
 
+  const SearchContainer = embeddedInForm ? 'div' : 'form';
+
   const useMyLocation = () => {
     if (!navigator.geolocation) {
       setStatus('Location access is not supported by this browser. Try searching instead.');
@@ -335,7 +356,20 @@ export default function CustomerAddressMapPicker({
 
   return (
     <div className="space-y-3">
-      <form className="space-y-2 sm:flex sm:items-end sm:gap-2 sm:space-y-0" onSubmit={search}>
+      <SearchContainer
+        className="space-y-2 sm:flex sm:items-end sm:gap-2 sm:space-y-0"
+        onKeyDown={(event) => {
+          if (embeddedInForm && event.key === 'Enter') {
+            event.preventDefault();
+            void search();
+          }
+        }}
+        onSubmit={(event) => {
+          event.preventDefault();
+          void search(event);
+        }}
+        role="search"
+      >
         <div className="min-w-0 flex-1">
           <label className="mb-1 block text-sm font-medium text-gray-700" htmlFor={searchId}>
             Search address
@@ -353,7 +387,8 @@ export default function CustomerAddressMapPicker({
         <button
           className="min-h-11 rounded-xl bg-blue-600 px-4 text-white transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
           disabled={disabled || searching}
-          type="submit"
+          onClick={embeddedInForm ? () => void search() : undefined}
+          type={embeddedInForm ? 'button' : 'submit'}
         >
           {searching ? 'Searching…' : 'Search'}
         </button>
@@ -365,7 +400,7 @@ export default function CustomerAddressMapPicker({
         >
           {locating ? 'Locating…' : 'Use My Location'}
         </button>
-      </form>
+      </SearchContainer>
 
       <div
         aria-disabled={disabled || undefined}

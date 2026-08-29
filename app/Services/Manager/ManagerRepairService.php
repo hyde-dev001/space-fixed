@@ -1112,7 +1112,7 @@ final class ManagerRepairService
             : ($status === 'repairer_rejected'
                 ? 'pending_manager_review'
                 : ($repairer === null || ! $decision['eligible'] ? 'reassignment_required' : 'assigned'));
-        $reviewState = in_array($status, ['repairer_rejected', 'reassignment_required'], true)
+        $reviewState = $status === 'repairer_rejected' || $assignmentState === 'reassignment_required'
             ? 'pending_manager_review'
             : ($status === 'owner_approval_pending' ? 'pending_owner_review' : 'none');
         $ageMinutes = max(0, (int) ($repair->created_at?->diffInMinutes(now()) ?? 0));

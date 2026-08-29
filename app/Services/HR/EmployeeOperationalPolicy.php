@@ -17,9 +17,9 @@ final class EmployeeOperationalPolicy
         return $this->accountState($employee) === EmployeeStatus::ACTIVE;
     }
 
-    public function canReceiveNewAssignment(Employee $employee): bool
+    public function canReceiveNewAssignment(Employee $employee, ?CarbonInterface $date = null): bool
     {
-        return $this->accountState($employee) === EmployeeStatus::ACTIVE;
+        return $this->assignmentIneligibilityReason($employee, $date ?? CarbonImmutable::now()) === null;
     }
 
     public function assignmentIneligibilityReason(Employee $employee, CarbonInterface $date): ?string
@@ -37,7 +37,8 @@ final class EmployeeOperationalPolicy
             return $statusReason;
         }
 
-        if ((string) ($employee->getAttributes()['status'] ?? '') === 'on_leave') {
+        $rawStatus = strtolower(trim((string) ($employee->getAttributes()['status'] ?? '')));
+        if (in_array($rawStatus, ['on_leave', 'on-leave'], true)) {
             return 'approved_leave';
         }
 
@@ -100,9 +101,15 @@ final class EmployeeOperationalPolicy
             $rawStatus = $rawStatus->value;
         }
 
-        return is_string($rawStatus)
-            ? EmployeeStatus::tryFrom(strtolower(trim($rawStatus)))
-            : null;
+        if (! is_string($rawStatus)) {
+            return null;
+        }
+
+        $normalizedStatus = strtolower(trim($rawStatus));
+
+        return in_array($normalizedStatus, ['on_leave', 'on-leave'], true)
+            ? EmployeeStatus::ACTIVE
+            : EmployeeStatus::tryFrom($normalizedStatus);
     }
 
     private function leaveCoversDate(LeaveRequest $leaveRequest, CarbonImmutable $date): bool

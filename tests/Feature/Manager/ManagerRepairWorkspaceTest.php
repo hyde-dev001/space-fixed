@@ -91,6 +91,26 @@ final class ManagerRepairWorkspaceTest extends TestCase
         $this->assertSame(1, (int) $response->json('data.total'));
     }
 
+    public function test_inactive_repairer_is_exposed_as_pending_manager_reassignment(): void
+    {
+        $repairer = $this->repairer();
+        $request = $this->activeRepair($repairer, 'pending');
+        $repairer->update(['status' => 'inactive']);
+
+        $response = $this->actingAs($this->manager, 'user')
+            ->getJson('/api/manager/repairs?per_page=25');
+
+        $response->assertOk();
+
+        $row = collect($response->json('data.data'))
+            ->firstWhere('id', $request->id);
+
+        $this->assertIsArray($row);
+        $this->assertSame('reassignment_required', $row['assignment_state']);
+        $this->assertSame('pending_manager_review', $row['review_state']);
+        $this->assertSame('Manager reassignment required', $row['next_action']);
+    }
+
     public function test_new_repair_is_autoassigned_to_the_lowest_active_workload(): void
     {
         $repairerA = $this->repairer();

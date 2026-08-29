@@ -1385,6 +1385,8 @@ const RepairProcess: React.FC = () => {
                         onSelect={handleIntakeAddressSelect}
                         onSelectionCleared={() => setIntakeAddress(null)}
                         initialAddressId={initialAddressId}
+                        allowIncompleteMapAddress
+                        embeddedInForm
                       />
 
                       <div className="grid gap-3 xl:grid-cols-3">
@@ -1435,6 +1437,8 @@ const RepairProcess: React.FC = () => {
                           onSelect={handleReturnAddressSelect}
                           onSelectionCleared={() => setSeparateReturnAddress(null)}
                           initialAddressId={initialAddressId}
+                          allowIncompleteMapAddress
+                          embeddedInForm
                         />
                       )}
 

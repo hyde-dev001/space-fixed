@@ -10,6 +10,7 @@ use App\Http\Requests\Privileged\ResetPrivilegedPasswordRequest;
 use App\Models\PrivilegedSecurityToken;
 use App\Models\SuperAdmin;
 use App\Services\PrivilegedAudit;
+use App\Services\PrivilegedCompletionProofService;
 use App\Services\PrivilegedMailDispatcher;
 use App\Services\PrivilegedSecurityTokenService;
 use App\Services\PrivilegedSessionService;
@@ -28,6 +29,7 @@ final class PrivilegedPasswordResetController extends Controller
 
     public function __construct(
         private readonly PrivilegedSecurityTokenService $tokens,
+        private readonly PrivilegedCompletionProofService $completionProofs,
         private readonly PrivilegedSessionService $sessions,
         private readonly PrivilegedAudit $audit,
         private readonly PrivilegedMailDispatcher $privilegedMailDispatcher,
@@ -115,19 +117,14 @@ final class PrivilegedPasswordResetController extends Controller
                 throw new InvalidArgumentException('Invalid security token.');
             }
 
-            $request->session()->regenerate();
-            $request->session()->put([
-                'privileged_password_reset_authorization' => [
-                    'token_id' => (int) $authorization['token_id'],
-                    'subject_id' => (int) $authorization['subject_id'],
-                    'purpose' => PrivilegedSecurityToken::PURPOSE_PASSWORD_RESET,
-                    'authorized_at' => now()->timestamp,
-                ],
-            ]);
+            $completionProof = $this->completionProofs->issue(
+                tokenId: $authorization['token_id'],
+                subjectId: $authorization['subject_id'],
+                purpose: PrivilegedSecurityToken::PURPOSE_PASSWORD_RESET,
+                tokenExpiresAt: $authorization['expires_at'],
+            );
             $this->audit->privilegedPasswordResetExchangeSucceeded($request, $subject);
         } catch (Throwable) {
-            $request->session()->forget('privileged_password_reset_authorization');
-
             try {
                 $this->audit->privilegedPasswordResetExchangeFailed($request);
             } catch (Throwable) {
@@ -137,15 +134,20 @@ final class PrivilegedPasswordResetController extends Controller
             return $this->invalidResetLink($request);
         }
 
-        return response()->json(['authorized' => true]);
+        return response()->json([
+            'authorized' => true,
+            'completion_proof' => $completionProof,
+        ]);
     }
 
     public function complete(ResetPrivilegedPasswordRequest $request)
     {
-        $authorization = $this->resetAuthorization($request);
-        if ($authorization === null) {
-            $request->session()->forget('privileged_password_reset_authorization');
-
+        try {
+            $authorization = $this->completionProofs->authorization(
+                (string) $request->validated('completion_proof'),
+                PrivilegedSecurityToken::PURPOSE_PASSWORD_RESET,
+            );
+        } catch (InvalidArgumentException) {
             return $this->invalidResetLink($request);
         }
 
@@ -174,8 +176,6 @@ final class PrivilegedPasswordResetController extends Controller
                 },
             );
         } catch (Throwable) {
-            $request->session()->forget('privileged_password_reset_authorization');
-
             return $this->invalidResetLink($request);
         }
 
@@ -189,29 +189,6 @@ final class PrivilegedPasswordResetController extends Controller
         }
 
         return redirect()->route('admin.login')->with('status', 'Your password has been reset.');
-    }
-
-    /** @return array{token_id: int, subject_id: int, purpose: string, authorized_at: int}|null */
-    private function resetAuthorization(Request $request): ?array
-    {
-        $authorization = $request->session()->get('privileged_password_reset_authorization');
-
-        if (! is_array($authorization)
-            || ! isset($authorization['token_id'], $authorization['subject_id'], $authorization['purpose'], $authorization['authorized_at'])
-            || ! is_int($authorization['token_id'])
-            || ! is_int($authorization['subject_id'])
-            || ! is_int($authorization['authorized_at'])
-            || $authorization['purpose'] !== PrivilegedSecurityToken::PURPOSE_PASSWORD_RESET
-            || $authorization['authorized_at'] < now()->subMinutes((int) config('privileged_security.reset_token_minutes', 60))->timestamp) {
-            return null;
-        }
-
-        return [
-            'token_id' => $authorization['token_id'],
-            'subject_id' => $authorization['subject_id'],
-            'purpose' => $authorization['purpose'],
-            'authorized_at' => $authorization['authorized_at'],
-        ];
     }
 
     private function genericForgotResponse(Request $request)

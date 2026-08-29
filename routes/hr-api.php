@@ -59,9 +59,29 @@ Route::prefix('api/hr/notifications')->middleware(['web', 'auth:user', 'shop.iso
 
 /**
  * HR Module Routes
- * All routes require authentication and permission-based access
- * Users must have at least one HR-related permission (view-employees, view-attendance, view-payroll)
+ * Most routes require authentication and permission-based access. The leave
+ * workflow is declared immediately above because it has its own canonical
+ * Manager/HR/Shop Owner authorization checks.
  */
+
+/**
+ * Leave approval routes use the canonical controller authorization because
+ * Manager access is capability-based and does not require the legacy global
+ * HR permission gate. The controller still enforces the exact read/decision
+ * capability, role, and shop scope for every request.
+ */
+Route::prefix('api/hr/leave-requests')->middleware(['web', 'auth:user', 'shop.isolation'])->group(function () {
+    Route::get('/', [LeaveController::class, 'index'])->name('hr.leave.index');
+    Route::post('/', [LeaveController::class, 'store'])->name('hr.leave.store');
+    Route::get('/pending', [LeaveController::class, 'getPending'])->name('hr.leave.pending');
+    Route::get('/employee/{employeeId}/balance', [LeaveController::class, 'getBalance'])->name('hr.leave.balance');
+    Route::get('/{id}', [LeaveController::class, 'show'])->name('hr.leave.show');
+    Route::put('/{id}', [LeaveController::class, 'update'])->name('hr.leave.update');
+    Route::delete('/{id}', [LeaveController::class, 'destroy'])->name('hr.leave.destroy');
+    Route::post('/{id}/approve', [LeaveController::class, 'approve'])->name('hr.leave.approve');
+    Route::post('/{id}/reject', [LeaveController::class, 'reject'])->name('hr.leave.reject');
+});
+
 Route::prefix('api/hr')->middleware(['web', 'auth:user', 'permission:access-hr-dashboard|access-employee-directory|access-attendance-records|access-leave-approvals|access-manager-leave-approvals|decide-manager-leave-approvals|access-overtime-approvals|manage-attendance|access-payslip-generation|access-view-payslip|request-employee-suspensions|manage-salary-changes|approve-salary-change|override-salary-retroactive', 'shop.isolation'])->group(function () {
     // ============================================
     // DASHBOARD & ANALYTICS
@@ -144,21 +164,6 @@ Route::prefix('api/hr')->middleware(['web', 'auth:user', 'permission:access-hr-d
         Route::patch('/{id}', [AttendanceController::class, 'update'])->name('hr.attendance.patch');
         Route::put('/{id}', [AttendanceController::class, 'update'])->name('hr.attendance.update');
         Route::delete('/{id}', [AttendanceController::class, 'destroy'])->name('hr.attendance.destroy');
-    });
-
-    // ============================================
-    // LEAVE MANAGEMENT
-    // ============================================
-    Route::prefix('leave-requests')->group(function () {
-        Route::get('/', [LeaveController::class, 'index'])->name('hr.leave.index');
-        Route::post('/', [LeaveController::class, 'store'])->name('hr.leave.store');
-        Route::get('/pending', [LeaveController::class, 'getPending'])->name('hr.leave.pending');
-        Route::get('/employee/{employeeId}/balance', [LeaveController::class, 'getBalance'])->name('hr.leave.balance');
-        Route::get('/{id}', [LeaveController::class, 'show'])->name('hr.leave.show');
-        Route::put('/{id}', [LeaveController::class, 'update'])->name('hr.leave.update');
-        Route::delete('/{id}', [LeaveController::class, 'destroy'])->name('hr.leave.destroy');
-        Route::post('/{id}/approve', [LeaveController::class, 'approve'])->name('hr.leave.approve');
-        Route::post('/{id}/reject', [LeaveController::class, 'reject'])->name('hr.leave.reject');
     });
 
     // ============================================

@@ -2,6 +2,7 @@ import { Head } from "@inertiajs/react";
 import { useState } from "react";
 import type { FormEvent } from "react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
+import { workflowFeedback } from "../../../utils/workflowFeedback";
 import {
     decideManagerSuspensionRequest,
     useManagerSuspensionApprovals,
@@ -102,15 +103,9 @@ const EmptyState = () => (
 
 const ActionButtons = ({
     request,
-    processing,
-    onApprove,
-    onReject,
     onView,
 }: {
     request: ManagerSuspensionRequest;
-    processing: boolean;
-    onApprove: (request: ManagerSuspensionRequest) => void;
-    onReject: (request: ManagerSuspensionRequest) => void;
     onView: (request: ManagerSuspensionRequest) => void;
 }) => (
     <div className="flex flex-wrap gap-2">
@@ -121,42 +116,14 @@ const ActionButtons = ({
         >
             View details
         </button>
-        {request.workflow_status === "pending_manager" ? (
-            <>
-                <button
-                    type="button"
-                    onClick={() => onApprove(request)}
-                    disabled={processing}
-                    className="min-h-11 rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:focus:ring-offset-gray-950"
-                >
-                    Approve stage
-                </button>
-                <button
-                    type="button"
-                    onClick={() => onReject(request)}
-                    disabled={processing}
-                    className="min-h-11 rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-950/30 dark:focus:ring-offset-gray-950"
-                >
-                    Reject
-                </button>
-            </>
-        ) : (
-            <span className="self-center text-sm text-gray-500 dark:text-gray-400">No Manager action</span>
-        )}
     </div>
 );
 
 const SuspensionRequestCard = ({
     request,
-    processing,
-    onApprove,
-    onReject,
     onView,
 }: {
     request: ManagerSuspensionRequest;
-    processing: boolean;
-    onApprove: (request: ManagerSuspensionRequest) => void;
-    onReject: (request: ManagerSuspensionRequest) => void;
     onView: (request: ManagerSuspensionRequest) => void;
 }) => (
     <article className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
@@ -187,7 +154,7 @@ const SuspensionRequestCard = ({
 
         <p className="mt-4 line-clamp-3 text-sm leading-6 text-gray-700 dark:text-gray-300">{request.reason}</p>
         <div className="mt-4">
-            <ActionButtons request={request} processing={processing} onApprove={onApprove} onReject={onReject} onView={onView} />
+            <ActionButtons request={request} onView={onView} />
         </div>
     </article>
 );
@@ -227,6 +194,11 @@ export default function SuspensionApprovals() {
         setActionError(null);
         try {
             await decideManagerSuspensionRequest(request.id, "approve");
+            setSelectedRequest(null);
+            await workflowFeedback.success({
+                title: "Suspension stage approved",
+                text: "The request was forwarded to Shop Owner review.",
+            });
             await approvals.refetch();
         } catch (error) {
             setActionError(error instanceof Error ? error.message : "Unable to approve this request.");
@@ -254,6 +226,10 @@ export default function SuspensionApprovals() {
             await decideManagerSuspensionRequest(requestToReject.id, "reject", rejectionReason.trim());
             setRequestToReject(null);
             setRejectionReason("");
+            await workflowFeedback.success({
+                title: "Suspension request rejected",
+                text: "The request was rejected and closed at the Manager stage.",
+            });
             await approvals.refetch();
         } catch (error) {
             setActionError(error instanceof Error ? error.message : "Unable to reject this request.");
@@ -383,7 +359,7 @@ export default function SuspensionApprovals() {
                                             <td className="px-3 py-4"><StatusBadge value={request.workflow_status} /></td>
                                             <td className="px-5 py-4">
                                                 <p className="mb-3 text-sm text-gray-700 dark:text-gray-300">{request.next_action}</p>
-                                                <ActionButtons request={request} processing={processingId === request.id} onApprove={approve} onReject={openReject} onView={setSelectedRequest} />
+                                                <ActionButtons request={request} onView={setSelectedRequest} />
                                             </td>
                                         </tr>
                                     ))}
@@ -392,7 +368,7 @@ export default function SuspensionApprovals() {
                         </div>
 
                         <div className="grid gap-4 lg:hidden">
-                            {requests.map((request) => <SuspensionRequestCard key={request.id} request={request} processing={processingId === request.id} onApprove={approve} onReject={openReject} onView={setSelectedRequest} />)}
+                            {requests.map((request) => <SuspensionRequestCard key={request.id} request={request} onView={setSelectedRequest} />)}
                         </div>
 
                         {page && page.last_page > 1 && (
@@ -436,6 +412,26 @@ export default function SuspensionApprovals() {
                                 </ul>
                             </div>
                         </div>
+                        {selectedRequest.workflow_status === "pending_manager" && (
+                            <div className="mt-6 flex flex-col-reverse gap-2 border-t border-gray-200 pt-5 sm:flex-row sm:justify-end dark:border-gray-800">
+                                <button
+                                    type="button"
+                                    onClick={() => openReject(selectedRequest)}
+                                    disabled={processingId === selectedRequest.id}
+                                    className="min-h-11 rounded-lg border border-red-200 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-950/30 dark:focus:ring-offset-gray-900"
+                                >
+                                    Reject request
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => approve(selectedRequest)}
+                                    disabled={processingId === selectedRequest.id}
+                                    className="min-h-11 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:focus:ring-offset-gray-900"
+                                >
+                                    Approve stage
+                                </button>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}

@@ -84,6 +84,11 @@ class SuspensionWorkflowAuthorizationTest extends TestCase
 
     public function test_hr_can_submit_a_request_and_the_requester_and_audit_are_recorded(): void
     {
+        $linkedUser = User::factory()->for($this->shop)->create([
+            'email' => $this->employee->email,
+            'status' => 'active',
+        ]);
+
         $response = $this->actingAs($this->hr, 'user')
             ->postJson('/api/hr/suspension-requests', [
                 'employee_id' => $this->employee->id,
@@ -103,9 +108,10 @@ class SuspensionWorkflowAuthorizationTest extends TestCase
         ]);
 
         $this->assertSame(
-            EmployeeStatus::INACTIVE->value,
+            EmployeeStatus::ACTIVE->value,
             $this->employee->fresh()->status->value,
         );
+        $this->assertSame('active', $linkedUser->fresh()->status);
 
         $this->assertDatabaseHas('hr_audit_logs', [
             'shop_owner_id' => $this->shop->id,
@@ -174,5 +180,28 @@ class SuspensionWorkflowAuthorizationTest extends TestCase
             ->assertJsonPath('code', 'SUSPENSION_WORKFLOW_REQUIRED');
 
         $this->assertSame(EmployeeStatus::ACTIVE->value, $this->employee->fresh()->status->value);
+    }
+
+    public function test_legacy_shop_owner_suspend_and_activate_routes_cannot_bypass_the_workflow(): void
+    {
+        $this->shop->forceFill(['registration_type' => 'company'])->save();
+
+        $this->actingAs($this->shop, 'shop_owner')
+            ->postJson("/shop-owner/employees/{$this->employee->id}/suspend", [
+                'suspension_reason' => 'Legacy direct status changes must use the workflow.',
+            ])
+            ->assertForbidden()
+            ->assertJsonPath('code', 'SUSPENSION_WORKFLOW_REQUIRED');
+
+        $this->assertSame(EmployeeStatus::ACTIVE->value, $this->employee->fresh()->status->value);
+
+        $this->employee->forceFill(['status' => EmployeeStatus::SUSPENDED])->save();
+
+        $this->actingAs($this->shop, 'shop_owner')
+            ->postJson("/shop-owner/employees/{$this->employee->id}/activate")
+            ->assertForbidden()
+            ->assertJsonPath('code', 'SUSPENSION_WORKFLOW_REQUIRED');
+
+        $this->assertSame(EmployeeStatus::SUSPENDED->value, $this->employee->fresh()->status->value);
     }
 }

@@ -10,6 +10,7 @@ use App\Jobs\SendPrivilegedWorkflowMail;
 use App\Mail\SuspensionNoticeMail;
 use App\Models\ShopOwner;
 use App\Models\SuperAdmin;
+use App\Notifications\ShopOwnerApproved;
 use App\Notifications\ShopOwnerUpgradeRequested;
 use App\Services\PrivilegedMailDispatcher;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -176,6 +177,34 @@ final class PrivilegedDeliveryJobTest extends TestCase
 
         Mail::assertSent(SuspensionNoticeMail::class, function (SuspensionNoticeMail $mail): bool {
             return $mail->hasTo('rejected-owner@example.test');
+        });
+    }
+
+    public function test_registration_approval_delivery_sends_the_password_setup_notification_with_the_setup_link(): void
+    {
+        Notification::fake();
+        $owner = ShopOwner::factory()->create([
+            'status' => 'approved',
+            'email' => 'approved-owner@example.test',
+            'password' => null,
+        ]);
+        $rawToken = 'approval-setup-token';
+
+        (new SendPrivilegedWorkflowMail(
+            deliveryType: PrivilegedDeliveryType::SHOP_REGISTRATION_APPROVED,
+            businessEventId: 'shop-registration-approved:'.$owner->id,
+            recipientType: 'shop_owner',
+            recipientId: $owner->id,
+            channel: 'mail',
+            payload: ['setup_token' => $rawToken],
+        ))->handle();
+
+        Notification::assertSentTo($owner, ShopOwnerApproved::class, function (ShopOwnerApproved $notification, array $channels) use ($owner, $rawToken): bool {
+            return $channels === ['mail']
+                && $notification->toMail($owner)->actionUrl === route('shop-owner.password.setup', [
+                    'token' => $rawToken,
+                    'email' => $owner->email,
+                ]);
         });
     }
 

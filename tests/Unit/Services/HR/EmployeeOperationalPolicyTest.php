@@ -128,4 +128,23 @@ final class EmployeeOperationalPolicyTest extends TestCase
             $this->policy->assignmentIneligibilityReason($employee, $date),
         );
     }
+
+    #[Test]
+    public function legacy_on_leave_is_active_for_access_but_ineligible_for_new_assignment(): void
+    {
+        $date = CarbonImmutable::parse('2026-08-16');
+        $employee = new Employee(['status' => 'on_leave']);
+        $employee->setRelation('leaveRequests', collect([
+            new LeaveRequest([
+                'status' => 'approved',
+                'start_date' => '2026-08-15',
+                'end_date' => '2026-08-17',
+            ]),
+        ]));
+
+        $this->assertTrue($this->policy->canAuthenticate($employee));
+        $this->assertFalse($this->policy->canReceiveNewAssignment($employee, $date));
+        $this->assertTrue($this->policy->isEligibleForRoutinePayroll($employee));
+        $this->assertSame('approved_leave', $this->policy->assignmentIneligibilityReason($employee, $date));
+    }
 }

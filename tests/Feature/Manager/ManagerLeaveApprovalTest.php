@@ -13,6 +13,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Notification;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
+use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
 final class ManagerLeaveApprovalTest extends TestCase
@@ -208,6 +209,42 @@ final class ManagerLeaveApprovalTest extends TestCase
             collect($canonical->json('data.0'))->keys()->sort()->values()->all(),
             collect($legacy->json('data.0'))->keys()->sort()->values()->all(),
         );
+    }
+
+    public function test_manager_role_can_read_and_decide_leave_without_legacy_hr_permission(): void
+    {
+        $leaveRequest = $this->createLeaveRequest();
+
+        // The Manager capability middleware and LeaveController authorize the
+        // modern Manager flow. The old HR route gate must not be required for
+        // a Manager whose account predates the legacy permission mapping.
+        $this->manager->syncPermissions([]);
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+        $this->actingAs($this->manager, 'user')
+            ->getJson('/api/hr/leave-requests?status=pending&per_page=10')
+            ->assertOk()
+            ->assertJsonPath('data.0.id', $leaveRequest->id);
+
+        $this->actingAs($this->manager, 'user')
+            ->postJson("/api/hr/leave-requests/{$leaveRequest->id}/approve", [
+                'reason' => 'Coverage confirmed for the requested dates.',
+            ])
+            ->assertOk()
+            ->assertJsonPath('leaveRequest.status', 'approved');
+    }
+
+    public function test_user_without_leave_access_cannot_read_leave_queue(): void
+    {
+        $this->createLeaveRequest();
+        $staff = User::factory()->for($this->shop)->create([
+            'role' => 'STAFF',
+            'status' => 'active',
+        ]);
+
+        $this->actingAs($staff, 'user')
+            ->getJson('/api/hr/leave-requests?status=pending&per_page=10')
+            ->assertForbidden();
     }
 
     private function createLeaveRequest(array $overrides = []): LeaveRequest

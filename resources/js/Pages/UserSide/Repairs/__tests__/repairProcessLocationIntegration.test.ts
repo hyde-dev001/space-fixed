@@ -11,6 +11,8 @@ describe('repair process saved-address integration', () => {
   it('delegates structured location and map pin editing to the shared address manager', () => {
     expect(repairProcessSource).toContain("import CustomerAddressManager");
     expect(repairProcessSource).toContain('<CustomerAddressManager');
+    expect(repairProcessSource).toContain('allowIncompleteMapAddress');
+    expect(repairProcessSource).toContain('embeddedInForm');
     expect(repairProcessSource).toContain('initialAddressId={initialAddressId}');
     expect(repairProcessSource).toContain("submitFormData.append('intake_address_id'");
     expect(repairProcessSource).toContain("submitFormData.append('return_address_id'");

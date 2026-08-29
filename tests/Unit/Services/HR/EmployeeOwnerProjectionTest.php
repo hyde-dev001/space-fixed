@@ -65,4 +65,25 @@ final class EmployeeOwnerProjectionTest extends TestCase
         $this->assertTrue($projection['probation']);
         $this->assertSame('active', $projection['account_state']);
     }
+
+    #[Test]
+    public function legacy_on_leave_projects_as_active_with_a_leave_overlay(): void
+    {
+        $employee = new Employee(['status' => 'on_leave']);
+        $employee->setRelation('leaveRequests', collect([
+            new LeaveRequest([
+                'status' => 'approved',
+                'start_date' => '2026-08-15',
+                'end_date' => '2026-08-17',
+            ]),
+        ]));
+
+        $projection = (new EmployeeOwnerProjection(new EmployeeOperationalPolicy()))->project(
+            $employee,
+            CarbonImmutable::parse('2026-08-16'),
+        );
+
+        $this->assertSame('active', $projection['account_state']);
+        $this->assertTrue($projection['on_leave']);
+    }
 }

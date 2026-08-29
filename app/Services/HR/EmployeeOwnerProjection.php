@@ -53,7 +53,11 @@ final class EmployeeOwnerProjection
             return null;
         }
 
-        return EmployeeStatus::tryFrom(strtolower(trim($rawStatus)))?->value;
+        $normalizedStatus = strtolower(trim($rawStatus));
+
+        return in_array($normalizedStatus, ['on_leave', 'on-leave'], true)
+            ? EmployeeStatus::ACTIVE->value
+            : EmployeeStatus::tryFrom($normalizedStatus)?->value;
     }
 
     private function isOnProbation(Employee $employee, ?string $accountState, CarbonInterface $date): bool

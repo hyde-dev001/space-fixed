@@ -238,6 +238,53 @@ it('opens an existing address for editing and shows server errors', async () => 
   expect(await screen.findByText('Unable to save.')).toBeInTheDocument();
 });
 
+it('saves an existing address when reverse geocoding returns a city alias', async () => {
+  const aliasedAddress = { ...address, city: 'Dasmarinas City' };
+  const savedAddress = { ...aliasedAddress, city: 'Dasmariñas' };
+  vi.mocked(fetch)
+    .mockResolvedValueOnce(response({ addresses: [aliasedAddress] }))
+    .mockResolvedValueOnce(response({ address: savedAddress }))
+    .mockResolvedValueOnce(response({ addresses: [savedAddress] }));
+
+  render(<CustomerAddressManager onSelect={vi.fn()} />);
+  await screen.findByText(/126 Ilang-ilang Street/);
+
+  fireEvent.click(screen.getByRole('button', { name: /edit 126 ilang-ilang street/i }));
+  fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+  await waitFor(() => expect(fetch).toHaveBeenCalledWith(
+    '/api/user/addresses/4',
+    expect.objectContaining({ method: 'PUT' }),
+  ));
+  expect(screen.queryByText('Complete the required address details before saving.')).not.toBeInTheDocument();
+});
+
+it('saves from an embedded repair checkout without creating nested forms', async () => {
+  const savedAddress = { ...address, name: 'Updated Miguel' };
+  vi.mocked(fetch)
+    .mockResolvedValueOnce(response({ addresses: [address] }))
+    .mockResolvedValueOnce(response({ address: savedAddress }))
+    .mockResolvedValueOnce(response({ addresses: [savedAddress] }));
+  const checkoutSubmit = vi.fn((event: React.FormEvent) => event.preventDefault());
+
+  const { container } = render(
+    <form onSubmit={checkoutSubmit}>
+      <CustomerAddressManager embeddedInForm onSelect={vi.fn()} />
+    </form>,
+  );
+  await screen.findByText(/126 Ilang-ilang Street/);
+
+  fireEvent.click(screen.getByRole('button', { name: /edit 126 ilang-ilang street/i }));
+  fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+  await waitFor(() => expect(fetch).toHaveBeenCalledWith(
+    '/api/user/addresses/4',
+    expect.objectContaining({ method: 'PUT' }),
+  ));
+  expect(container.querySelectorAll('form')).toHaveLength(1);
+  expect(checkoutSubmit).not.toHaveBeenCalled();
+});
+
 it('keeps existing saved addresses after creating another address and reloads the server list', async () => {
   const created = { ...secondAddress, id: 9, name: 'Ana Reyes' };
   vi.mocked(fetch)

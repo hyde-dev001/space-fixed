@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Manager;
 
+use App\Enums\EmployeeStatus;
 use App\Enums\SuspensionStatus;
 use App\Models\Employee;
 use App\Models\HR\AuditLog;
@@ -43,7 +44,7 @@ class ManagerSuspensionApprovalTest extends TestCase
         Role::findOrCreate('Manager', 'user');
         $this->manager->assignRole('Manager');
 
-        $this->employee = Employee::factory()
+        $this->employee = Employee::factory()->active()
             ->for($this->shop)
             ->create();
 
@@ -75,6 +76,7 @@ class ManagerSuspensionApprovalTest extends TestCase
         $this->assertNotNull($this->suspension->manager_id);
         $this->assertEquals($this->manager->id, $this->suspension->manager_id);
         $this->assertNotNull($this->suspension->manager_reviewed_at);
+        $this->assertSame(EmployeeStatus::ACTIVE, $this->employee->fresh()->status);
 
         $this->assertDatabaseHas('hr_audit_logs', [
             'shop_owner_id' => $this->shop->id,
@@ -106,6 +108,26 @@ class ManagerSuspensionApprovalTest extends TestCase
         $this->assertEquals(SuspensionStatus::REJECTED_MANAGER, $this->suspension->status);
         $this->assertEquals('rejected', $this->suspension->manager_status);
         $this->assertNotNull($this->suspension->manager_note);
+    }
+
+    /**
+     * A Manager rejection must not reactivate an employee who was already inactive.
+     */
+    public function test_manager_rejection_preserves_the_employee_state_that_existed_before_review(): void
+    {
+        $this->employee->forceFill(['status' => EmployeeStatus::INACTIVE])->save();
+
+        $this->actingAs($this->manager, 'user')
+            ->postJson(
+                "/api/manager/suspension-requests/{$this->suspension->id}/review",
+                [
+                    'action' => 'reject',
+                    'note' => 'Rejected - insufficient evidence',
+                ]
+            )
+            ->assertStatus(200);
+
+        $this->assertSame(EmployeeStatus::INACTIVE, $this->employee->fresh()->status);
     }
 
     /**

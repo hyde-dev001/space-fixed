@@ -18,6 +18,7 @@ export default function PrivilegedResetPassword() {
   const [confirmation, setConfirmation] = useState('');
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string>();
+  const completionProof = exchange.completionProof;
 
   if (exchange.exchanging) {
     return (
@@ -27,7 +28,7 @@ export default function PrivilegedResetPassword() {
     );
   }
 
-  if (!exchange.authorized) {
+  if (!exchange.authorized || !completionProof) {
     return (
       <PrivilegedAuthShell title="Reset link unavailable" description="This link may have expired or already been used." footer={<BackToLogin />}>
         <ErrorSummary message={exchange.error} />
@@ -52,10 +53,11 @@ export default function PrivilegedResetPassword() {
     setError(undefined);
     setProcessing(true);
     router.post('/admin/reset-password/complete', {
+      completion_proof: completionProof,
       password,
       password_confirmation: confirmation,
     }, {
-      onError: (errors) => setError(firstError(errors as FieldErrors, ['password', 'password_confirmation', 'error', 'message']) ?? 'Password reset could not be completed.'),
+      onError: (errors) => setError(firstError(errors as FieldErrors, ['completion_proof', 'password', 'password_confirmation', 'error', 'message']) ?? 'Password reset could not be completed.'),
       onFinish: () => setProcessing(false),
     });
   };

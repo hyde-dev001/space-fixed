@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\ERP\HR;
 
-use App\Enums\EmployeeStatus;
 use App\Enums\SuspensionStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Employee;
@@ -151,11 +150,6 @@ final class SuspensionRequestController extends Controller
                     'manager_status' => 'pending',
                     'owner_status' => 'pending',
                 ]);
-
-                $employee->forceFill([
-                    'status' => EmployeeStatus::INACTIVE,
-                    'privileged_suspension_id' => null,
-                ])->save();
 
                 AuditLog::createLog([
                     'shop_owner_id' => $shopOwnerId,

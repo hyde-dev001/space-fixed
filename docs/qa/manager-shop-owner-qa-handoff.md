@@ -123,10 +123,33 @@ An explicit exceptional owner-approval policy may still route a repair rejection
 - **Dashboard:** operational overview, current-state counts, period metrics, responsible person or waiting-on party, next action, freshness timestamp, and links to the correct page.
 - **Staff & Workload:** shop-scoped staff availability, active orders, active repairs, overdue work, and reassignment exceptions. It is a monitoring page, not a repair assignment page.
 - **Inventory Overview:** server-side inventory totals and product/repair-material visibility based on business type. No stock adjustment or supplier mutation is added to this Manager page.
-- **Leave Approvals:** approve/reject within the Manager policy. Approval is terminal by default, rejection requires a reason, and employees can cancel only their own eligible requests.
-- **Suspension Approvals:** Manager stage of the HR -> Manager -> Shop Owner suspension workflow. This is separate from repair rejection.
+- **Leave Approvals:** approve/reject within the Manager policy. Approval is terminal by default, rejection requires a reason, and employees can cancel only their own eligible requests. The Manager queue uses the canonical Manager capability/role authorization; a missing legacy HR permission must not cause a 403 for an otherwise authorized Manager.
+- **Suspension Approvals:** Manager stage of the HR -> Manager -> Shop Owner suspension workflow. This is separate from repair rejection. The queue row is monitoring-only and exposes **View details**; **Approve stage** and **Reject request** are available inside the details dialog. After a successful decision, a confirmation alert appears and the queue refreshes.
 - **Reports & Analytics:** shop- and period-scoped operational reports with correct staff attribution and truthful report statuses.
 - **Audit Logs:** read-only, tenant-scoped history of assignments, approvals, repair decisions, reports, and other supported events.
+
+### 2.5 Leave and suspension access rules
+
+Approved leave is an overlay, not an account lock:
+
+```text
+Employment: active
+Account:    active
+Leave:      approved
+```
+
+An employee on approved leave can still log in and inspect payslips, requests, and notifications. The employee is excluded from new operational assignments while the approved leave covers the work date. Ending a shift alone does not cause reassignment.
+
+Suspension has two approval stages:
+
+```text
+HR submits request
+  -> Pending Manager review
+  -> Pending Shop Owner review
+  -> Approved or rejected
+```
+
+Pending Manager or Pending Shop Owner status must not disable the employee account. Only final Shop Owner approval changes the employee to suspended and disables the linked login account. A Manager or Shop Owner rejection preserves the employee state that existed before the review. Emergency access suspension, if introduced later, must be a separate explicitly authorized workflow.
 
 ## 3. Shop Owner changes
 
@@ -706,6 +729,26 @@ Expected:
 - Suspension follows HR -> Manager -> Shop Owner.
 - Reports use correct shop, date range, and assigned-staff attribution.
 - Audit records show actor, target, time, state change, reason, and reference where available.
+
+### M-06 - Verify leave overlay and pending suspension access
+
+1. Use an active employee with a linked login account.
+2. Approve a leave request that covers today.
+3. Confirm the employee can still log in and open payslips, requests, and notifications.
+4. Confirm the employee is not selected for new order, repair, or delivery work while the leave is active.
+5. Submit a suspension request for another active employee.
+6. Before either approval stage is completed, confirm that employee can still log in.
+7. Approve the request as Manager, then test login again before Shop Owner approval.
+8. Complete the Shop Owner approval and test login once more.
+9. Repeat with Manager rejection and Shop Owner rejection.
+
+Expected:
+
+- Approved leave does not change the employee or linked account to inactive or suspended.
+- Approved leave blocks new assignment only for the covered work date.
+- Pending Manager and Pending Shop Owner suspension stages do not block login.
+- Final Shop Owner approval changes the employee and linked account to suspended.
+- Either rejection preserves the employee state and does not unexpectedly reactivate or disable the account.
 
 ## 9. Useful routes for QA
 

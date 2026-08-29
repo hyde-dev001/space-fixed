@@ -29,31 +29,60 @@ export const getRegistrationAddressFields = (result: unknown): {
   return { businessAddress, postalCode };
 };
 
-export const parsePhilippineAddress = (result: any): RegistrationAddress | null => {
+export type ParsePhilippineAddressOptions = {
+  allowIncomplete?: boolean;
+};
+
+export const parsePhilippineAddress = (
+  result: any,
+  options: ParsePhilippineAddressOptions = {},
+): RegistrationAddress | null => {
   const latitude = Number(result?.lat);
   const longitude = Number(result?.lon);
   const address = result?.address || {};
-  const province = address.province || address.state || '';
-  const region = address.region || address.state || province;
-  const city = address.city || address.municipality || address.town || address.county || '';
-  const barangay = address.suburb || address.quarter || address.neighbourhood || address.village || '';
+  const firstText = (...values: unknown[]) => values.find(
+    (value) => typeof value === 'string' && value.trim(),
+  ) as string | undefined || '';
+  const province = firstText(address.province, address.state, address.state_district);
+  const region = firstText(address.region, address.state, province);
+  const city = firstText(
+    address.city,
+    address.municipality,
+    address.town,
+    address.locality,
+    address.county,
+    address.state_district,
+  );
+  const barangay = firstText(
+    address.suburb,
+    address.quarter,
+    address.neighbourhood,
+    address.village,
+    address.city_district,
+    address.district,
+    address.hamlet,
+    address.locality,
+  );
+  const countryCode = typeof address.country_code === 'string'
+    ? address.country_code.toLowerCase()
+    : '';
 
   if (
     !Number.isFinite(latitude)
     || !Number.isFinite(longitude)
     || latitude < 4.5 || latitude > 21.5
     || longitude < 116 || longitude > 127
-    || (address.country_code && address.country_code !== 'ph')
-    || !region || !province || !city || !barangay
+    || (countryCode && countryCode !== 'ph')
+    || (!options.allowIncomplete && (!region || !province || !city || !barangay))
   ) return null;
 
   return {
-    displayName: result.display_name || '',
+    displayName: firstText(result.display_name),
     region,
     province,
     city,
     barangay,
-    postalCode: address.postcode || '',
+    postalCode: firstText(address.postcode),
     latitude,
     longitude,
   };

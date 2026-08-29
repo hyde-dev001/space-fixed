@@ -2618,17 +2618,33 @@ export const normalizeProvinceSelection = (value?: string | null) =>
 export const getCityMunicipalityOptions = (province?: string | null) =>
   provinceLookup.get(normalizeLocationKey(province))?.citiesMunicipalities || [];
 
+const citySelectionKeys = (value?: string | null) => {
+  const key = normalizeLocationKey(value);
+  const withoutPrefix = key.replace(/^(city|municipality) of\s+/, '');
+  const withoutSuffix = key.replace(/\s+(city|municipality)$/, '');
+
+  return new Set([
+    key,
+    withoutPrefix,
+    withoutSuffix,
+    withoutPrefix.replace(/\s+(city|municipality)$/, ''),
+  ]);
+};
+
 export const normalizeCityMunicipalitySelection = (
   province: string | null | undefined,
   value: string | null | undefined,
 ) => {
   const provinceOption = provinceLookup.get(normalizeLocationKey(province));
-  const cityKey = normalizeLocationKey(value);
-  if (!provinceOption || !cityKey) return '';
+  const cityKeys = citySelectionKeys(value);
+  if (!provinceOption || !normalizeLocationKey(value)) return '';
 
   for (const city of provinceOption.citiesMunicipalities) {
     const candidates = [city, ...(provinceOption.cityAliases?.[city] || [])];
-    if (candidates.some((candidate) => normalizeLocationKey(candidate) === cityKey)) return city;
+    if (candidates.some((candidate) => {
+      const candidateKeys = citySelectionKeys(candidate);
+      return [...cityKeys].some((key) => candidateKeys.has(key));
+    })) return city;
   }
 
   return '';
