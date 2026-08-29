@@ -1204,7 +1204,7 @@ const ShopProfile: React.FC<Props> = ({ shop, products, repairServices = [], rep
               <nav className="flex flex-col gap-4 text-sm text-gray-700">
                 <Link href="/products" className="hover:text-black transition-colors">Shoes</Link>
                 <Link href="/repair-services" className="hover:text-black transition-colors">Repair Services</Link>
-                <Link href="/my-orders" className="hover:text-black transition-colors">My Orders</Link>
+                <Link href="/my-orders" className="hover:text-black transition-colors">Orders</Link>
               </nav>
             </div>
             <div className="flex flex-col">

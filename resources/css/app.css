@@ -17,6 +17,11 @@ html:not(.dark) #app .super-admin-shell [class~="bg-gray-50"] {
   will-change: transform;
 }
 
+.landing-marquee:hover,
+.landing-marquee:focus-within {
+  animation-play-state: paused;
+}
+
 @keyframes landing-marquee {
   from {
     transform: translate3d(0, 0, 0);

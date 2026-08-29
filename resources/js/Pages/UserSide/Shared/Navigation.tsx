@@ -406,8 +406,6 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
   const isMobileServicesActive = currentRoute === 'services';
   const isMobileAccountActive = currentRoute === 'login';
 
-  const isMyOrdersActive = cleanUrl.startsWith('/my-orders');
-  const isMyRepairsActive = cleanUrl.startsWith('/my-repairs');
   const isMyProfileActive = cleanUrl.startsWith('/customer-profile');
 
   useEffect(() => {
@@ -690,7 +688,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
 
   return (
     <>
-      <div className="fixed inset-x-0 top-0 z-[55] h-10 overflow-hidden bg-[#111111] text-white" aria-label="Latest offers">
+      <div className="fixed inset-x-0 top-0 z-[40] h-10 overflow-hidden border-b border-white/15 bg-[#111111]/70 text-white shadow-[0_8px_24px_-18px_rgba(0,0,0,0.7)] backdrop-blur-xl" aria-label="Latest offers">
         <div className="landing-marquee flex h-full min-w-max items-center gap-12 py-3 text-[11px] font-semibold uppercase tracking-[0.22em] motion-reduce:animate-none sm:gap-20 sm:text-xs">
           {[...PROMO_MESSAGES, ...PROMO_MESSAGES].map((message, index) => (
             <span key={`${message}-${index}`} className="inline-flex items-center gap-12 whitespace-nowrap sm:gap-20">
@@ -1241,33 +1239,6 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                   {isAuthenticated ? (
                     <>
                       <Link
-                        href="/my-orders"
-                        className="flex items-center justify-between gap-3 border-b border-gray-100 px-4 py-3 text-sm font-medium text-gray-900 transition-colors hover:bg-gray-50"
-                        onClick={() => setUserDropdownOpen(false)}
-                      >
-                        <span className="inline-flex items-center gap-3">
-                          <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                          </svg>
-                          <span>Orders</span>
-                        </span>
-                        {visibleOrderStatusCount > 0 && <span className="text-xs font-semibold leading-none text-gray-600">{visibleOrderStatusCount}</span>}
-                      </Link>
-                      <Link
-                        href="/my-repairs"
-                        className="flex items-center justify-between gap-3 border-b border-gray-100 px-4 py-3 text-sm font-medium text-gray-900 transition-colors hover:bg-gray-50"
-                        onClick={() => setUserDropdownOpen(false)}
-                      >
-                        <span className="inline-flex items-center gap-3">
-                          <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                          </svg>
-                          <span>Repair</span>
-                        </span>
-                        {visibleRepairStatusCount > 0 && <span className="text-xs font-semibold leading-none text-gray-600">{visibleRepairStatusCount}</span>}
-                      </Link>
-                      <Link
                         href="/customer-profile"
                         className="flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-sm font-medium text-gray-900 transition-colors hover:bg-gray-50"
                         onClick={() => setUserDropdownOpen(false)}
@@ -1278,7 +1249,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                         <span>Edit Profile</span>
                       </Link>
                       <Link
-                        href="/services"
+                        href={route('shop-owner-register')}
                         className={`flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-sm font-medium transition-colors ${
                           isMobileServicesActive ? 'bg-gray-50 text-gray-900' : 'text-gray-900 hover:bg-gray-50'
                         }`}
@@ -1412,31 +1383,6 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                 {isAuthenticated ? (
                   <>
                     <Link
-                      href="/my-orders"
-                      className={`flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-sm font-medium transition-colors ${
-                        isMyOrdersActive ? 'bg-gray-50 text-gray-900' : 'text-gray-900 hover:bg-gray-50'
-                      }`}
-                      onClick={() => setMobileMenuOpen(false)}
-                    >
-                      <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                      </svg>
-                      <span>Orders</span>
-                    </Link>
-                    <Link
-                      href="/my-repairs"
-                      className={`flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-sm font-medium transition-colors ${
-                        isMyRepairsActive ? 'bg-gray-50 text-gray-900' : 'text-gray-900 hover:bg-gray-50'
-                      }`}
-                      onClick={() => setMobileMenuOpen(false)}
-                    >
-                      <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                      </svg>
-                      <span>Repair</span>
-                    </Link>
-                    <Link
                       href="/customer-profile"
                       className={`flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-sm font-medium transition-colors ${
                         isMyProfileActive ? 'bg-gray-50 text-gray-900' : 'text-gray-900 hover:bg-gray-50'
@@ -1449,7 +1395,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                       <span>Edit Profile</span>
                     </Link>
                     <Link
-                      href="/services"
+                      href={route('shop-owner-register')}
                       className={`flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-sm font-medium transition-colors ${
                         isMobileServicesActive ? 'bg-gray-50 text-gray-900' : 'text-gray-900 hover:bg-gray-50'
                       }`}
@@ -1499,9 +1445,9 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                 type="button"
                 aria-label="Close search"
                 onClick={() => setIsSearchFocused(false)}
-                className="fixed inset-0 z-[61] bg-black/55 opacity-100 backdrop-blur-[2px] transition-opacity duration-300 motion-reduce:transition-none"
+                className="fixed inset-0 z-[120] bg-black/55 opacity-100 backdrop-blur-[2px] transition-opacity duration-300 motion-reduce:transition-none"
               />
-              <div role="dialog" aria-modal="true" aria-label="Search products" className="fixed left-1/2 top-1/2 z-[62] w-[min(92vw,42rem)] -translate-x-1/2 -translate-y-1/2 overflow-hidden bg-white text-[#111111] shadow-2xl transition-all duration-300 ease-out motion-reduce:transition-none">
+              <div role="dialog" aria-modal="true" aria-label="Search products" className="fixed left-1/2 top-1/2 z-[121] w-[min(92vw,42rem)] -translate-x-1/2 -translate-y-1/2 overflow-hidden bg-white text-[#111111] shadow-2xl transition-all duration-300 ease-out motion-reduce:transition-none">
                 <form onSubmit={handleSearch} className="flex items-center gap-3 border-b border-[#dedede] px-5 py-4 sm:px-7">
                   <svg className="h-5 w-5 shrink-0 text-[#555555]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M21 21l-4.35-4.35m1.6-5.4a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
                   <input
@@ -1551,20 +1497,20 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                 type="button"
                 aria-label="Close cart"
                 onClick={() => setCartDrawerOpen(false)}
-                className={`fixed inset-0 z-[61] bg-black/45 transition-opacity duration-300 motion-reduce:transition-none ${cartDrawerOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+                className={`fixed inset-0 z-[100] bg-black/45 backdrop-blur-sm transition-opacity duration-300 motion-reduce:transition-none ${cartDrawerOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
               />
               <aside
                 aria-label="Shopping cart"
                 aria-hidden={!cartDrawerOpen}
-                className={`fixed right-0 top-0 z-[62] flex h-dvh w-[min(92vw,30rem)] max-w-[30rem] flex-col bg-white text-[#111111] shadow-2xl transition-transform duration-300 ease-out motion-reduce:transition-none ${cartDrawerOpen ? 'translate-x-0' : 'translate-x-full pointer-events-none'}`}
+                className={`fixed right-0 top-0 z-[110] flex h-dvh w-[min(92vw,30rem)] max-w-[30rem] flex-col border-l border-white/70 bg-white/90 text-[#111111] shadow-2xl backdrop-blur-2xl transition-transform duration-300 ease-out motion-reduce:transition-none ${cartDrawerOpen ? 'translate-x-0' : 'translate-x-full pointer-events-none'}`}
               >
                 <div className="flex items-center justify-between border-b border-[#dedede] px-5 py-5 sm:px-7">
-                  <div><p className="text-lg font-semibold">Bag</p><p className="mt-1 text-xs uppercase tracking-[0.16em] text-[#777777]">{effectiveCartCount} {effectiveCartCount === 1 ? 'item' : 'items'}</p></div>
+                  <div><p className="text-lg font-semibold">Cart</p><p className="mt-1 text-xs uppercase tracking-[0.16em] text-[#777777]">{effectiveCartCount} {effectiveCartCount === 1 ? 'item' : 'items'}</p></div>
                   <button type="button" onClick={() => setCartDrawerOpen(false)} className="inline-flex h-10 w-10 items-center justify-center" aria-label="Close cart"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={1.8} d="M6 6l12 12M18 6L6 18" /></svg></button>
                 </div>
                 <div className="flex-1 overflow-y-auto px-5 py-5 sm:px-7">
-                  {quickCartLoading && <p className="text-sm text-[#777777]">Loading your bag...</p>}
-                  {!quickCartLoading && quickCartItems.length === 0 && <div className="py-12 text-center"><p className="text-base font-medium">Your bag is empty.</p><Link href={route('products')} onClick={() => setCartDrawerOpen(false)} className="mt-5 inline-flex min-h-11 items-center justify-center bg-[#111111] px-6 text-xs font-semibold uppercase tracking-[0.16em] text-white">Shop products</Link></div>}
+                  {quickCartLoading && <p className="text-sm text-[#777777]">Loading your cart...</p>}
+                  {!quickCartLoading && quickCartItems.length === 0 && <div className="py-12 text-center"><p className="text-base font-medium">Your cart is empty.</p><Link href={route('products')} onClick={() => setCartDrawerOpen(false)} className="mt-5 inline-flex min-h-11 items-center justify-center bg-[#111111] px-6 text-xs font-semibold uppercase tracking-[0.16em] text-white">Shop products</Link></div>}
                   {!quickCartLoading && quickCartItems.length > 0 && <div className="space-y-5">
                     {quickCartItems.map((item) => <div key={item.id} className="flex gap-4 border-b border-[#ededed] pb-5"><div className="h-24 w-24 shrink-0 overflow-hidden bg-[#f3f3f3]">{item.image ? <img src={item.image} alt={item.name} className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center text-xs text-[#777777]">No image</div>}</div><div className="min-w-0 flex-1"><p className="font-medium">{item.name}</p>{(item.size || item.color) && <p className="mt-1 text-xs text-[#777777]">{[item.size, item.color].filter(Boolean).join(' / ')}</p>}<div className="mt-4 flex items-center justify-between text-sm"><span>Qty {item.qty}</span><span className="font-semibold">₱{item.price.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span></div></div></div>)}
                   </div>}
@@ -1576,11 +1522,11 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
             type="button"
             aria-label="Close menu"
             onClick={() => setLandingSidebarOpen(false)}
-            className={`fixed inset-0 z-[59] bg-black/45 transition-opacity duration-300 motion-reduce:transition-none ${landingSidebarOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+            className={`fixed inset-0 z-[100] bg-black/45 backdrop-blur-sm transition-opacity duration-300 motion-reduce:transition-none ${landingSidebarOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
           />
           <aside
             aria-label="Site menu"
-            className={`fixed left-0 top-0 z-[60] flex h-dvh w-[min(88vw,31rem)] flex-col overflow-y-auto bg-white text-[#111111] shadow-2xl transition-transform duration-300 ease-out motion-reduce:transition-none ${landingSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
+            className={`fixed left-0 top-0 z-[110] flex h-dvh w-[min(88vw,31rem)] flex-col overflow-y-auto border-r border-white/70 bg-white/90 text-[#111111] shadow-2xl backdrop-blur-2xl transition-transform duration-300 ease-out motion-reduce:transition-none ${landingSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
           >
             <div className="flex items-center justify-between border-b border-[#e5e5e5] px-6 py-6 sm:px-8">
               <Link href={route('landing')} onClick={() => setLandingSidebarOpen(false)} className="text-xl font-black tracking-[-0.06em] sm:text-2xl">
@@ -1623,7 +1569,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
             </nav>
             <div className="border-t border-[#cacacb] px-6 py-6 sm:px-8">
               <Link href={isAuthenticated ? '/customer-profile' : route('login')} onClick={() => setLandingSidebarOpen(false)} className="flex min-h-12 items-center gap-3 text-base font-medium hover:opacity-55"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3" strokeWidth={2}/><path strokeLinecap="round" strokeWidth={2} d="M5 20a7 7 0 0 1 14 0"/></svg>{isAuthenticated ? 'Account' : 'Sign in'}</Link>
-              <Link href="/checkout" onClick={() => setLandingSidebarOpen(false)} className="flex min-h-12 items-center gap-3 text-base font-medium hover:opacity-55"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={2} d="M3 4h2l2.2 10.2a2 2 0 0 0 1.96 1.58h7.68a2 2 0 0 0 1.95-1.56L21 7H8"/><circle cx="10" cy="19" r="1.5"/><circle cx="17" cy="19" r="1.5"/></svg>Bag {effectiveCartCount > 0 && `(${effectiveCartCount})`}</Link>
+              <Link href="/checkout" onClick={() => setLandingSidebarOpen(false)} className="flex min-h-12 items-center gap-3 text-base font-medium hover:opacity-55"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={2} d="M3 4h2l2.2 10.2a2 2 0 0 0 1.96 1.58h7.68a2 2 0 0 0 1.95-1.56L21 7H8"/><circle cx="10" cy="19" r="1.5"/><circle cx="17" cy="19" r="1.5"/></svg>Cart {effectiveCartCount > 0 && `(${effectiveCartCount})`}</Link>
               <Link href={route('download')} onClick={() => setLandingSidebarOpen(false)} className="flex min-h-12 items-center gap-3 text-base font-medium hover:opacity-55"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14" /></svg>Download</Link>
             </div>
           </aside>

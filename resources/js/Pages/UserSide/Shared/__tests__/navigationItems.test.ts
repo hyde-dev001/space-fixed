@@ -21,10 +21,10 @@ describe('customer navigation items', () => {
     expect(getCustomerNavItems(true).map((item) => item.label)).not.toContain('Home');
   });
 
-  it('adds authenticated order and repair links without putting Download in primary navigation', () => {
+  it('adds authenticated Orders and Repairs links without putting Download in primary navigation', () => {
     const labels = getCustomerNavItems(true).map((item) => item.label);
 
-    expect(labels.slice(-2)).toEqual(['My Orders', 'My Repairs']);
+    expect(labels.slice(-2)).toEqual(['Orders', 'Repairs']);
     expect(labels).not.toContain('Download');
   });
 });

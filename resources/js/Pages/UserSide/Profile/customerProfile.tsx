@@ -442,7 +442,7 @@ const CustomerProfile: React.FC = () => {
 
 					<div className="rounded-[28px] border border-[#dfe4ea] bg-white px-4 py-4 shadow-[0_14px_28px_-24px_rgba(15,23,42,0.6)] md:px-6 md:py-6">
 						<div className="mb-4 flex items-center justify-between">
-							<h2 className="text-[1.02rem] font-semibold text-[#16233b] md:text-[1.3rem]">My Repairs</h2>
+							<h2 className="text-[1.02rem] font-semibold text-[#16233b] md:text-[1.3rem]">Repairs</h2>
 							<a href="/repair-services" className="text-xs font-medium text-[#2e3f5c] hover:text-[#16233b] md:text-base">View History</a>
 						</div>
 						<div className="grid grid-cols-4 gap-2.5 md:gap-3">
