@@ -395,193 +395,34 @@ class EmployeeController extends Controller
     }
 
     /**
-     * Suspend an employee (temporary) and record the reason in AuditLog.
-     *
-     * @param Request $request
-     * @param Employee $employee
-     * @return \Illuminate\Http\JsonResponse
+     * Keep the legacy direct suspension endpoint from bypassing the approval workflow.
      */
     public function suspend(Request $request, Employee $employee)
     {
-        try {
-            if ($employee->shop_owner_id !== $request->user_shop_id) {
-                return response()->json([
-                    'message' => 'Employee not found',
-                    'error' => 'NOT_FOUND',
-                ], Response::HTTP_NOT_FOUND);
-            }
-
-            $validated = $request->validate([
-                'suspension_reason' => 'nullable|string|max:500',
-            ]);
-
-            $employee->update([
-                'status' => EmployeeStatus::SUSPENDED,
-                'privileged_suspension_id' => null,
-            ]);
-            $this->linkedUserSynchronizer->sync($employee);
-
-            // Audit log the suspension
-            try {
-                AuditLog::create([
-                    'shop_owner_id' => $request->user_shop_id,
-                    'actor_user_id' => $request->user()->id ?? null,
-                    'action' => 'employee_suspended',
-                    'target_type' => 'employee',
-                    'target_id' => $employee->id,
-                    'metadata' => [
-                        'reason' => $validated['suspension_reason'] ?? null,
-                    ],
-                ]);
-            } catch (\Exception $e) {
-                // non-fatal
-            }
-
-            // Also audit the linked User record so Super Admin sees the suspension in user management.
-            try {
-                $user = User::query()
-                    ->where('shop_owner_id', $request->user_shop_id)
-                    ->whereRaw('LOWER(email) = ?', [strtolower((string) $employee->email)])
-                    ->first();
-                if ($user) {
-                    // Audit log for user suspension caused by shop owner
-                    try {
-                        AuditLog::create([
-                            'shop_owner_id' => $request->user_shop_id,
-                            'actor_user_id' => $request->user()->id ?? null,
-                            'action' => 'user_suspended_by_shop_owner',
-                            'target_type' => 'user',
-                            'target_id' => $user->id,
-                            'metadata' => [
-                                'email' => $user->email,
-                                'employee_id' => $employee->id,
-                                'reason' => $validated['suspension_reason'] ?? null,
-                            ],
-                        ]);
-                    } catch (\Exception $e) {
-                        // non-fatal
-                    }
-                }
-            } catch (\Exception $e) {
-                // non-fatal
-            }
-
-            // If this was an AJAX/JSON request, return JSON; otherwise redirect back so Inertia receives a proper response
-            if ($request->ajax() || $request->wantsJson()) {
-                return response()->json([
-                    'message' => 'Employee suspended successfully',
-                    'data' => $employee,
-                ], Response::HTTP_OK);
-            }
-
-            return redirect()->back()->with('success', 'Employee suspended successfully');
-        } catch (\Exception $e) {
-            if ($request->ajax() || $request->wantsJson()) {
-                return response()->json([
-                    'message' => 'Error suspending employee',
-                    'error' => $e->getMessage(),
-                ], Response::HTTP_INTERNAL_SERVER_ERROR);
-            }
-
-            return redirect()->back()->withErrors(['error' => 'Error suspending employee']);
-        }
+        return $this->suspensionWorkflowRequiredResponse($request);
     }
 
     /**
-     * Activate an employee - sets status back to 'active'
-     *
-     * @param Request $request
-     * @param Employee $employee
-     * @return \Illuminate\Http\JsonResponse
+     * Keep the legacy direct activation endpoint from bypassing the approval workflow.
      */
     public function activate(Request $request, Employee $employee)
     {
-        try {
-            if ($employee->shop_owner_id !== $request->user_shop_id) {
-                return response()->json([
-                    'message' => 'Employee not found',
-                    'error' => 'NOT_FOUND',
-                ], Response::HTTP_NOT_FOUND);
-            }
+        return $this->suspensionWorkflowRequiredResponse($request);
+    }
 
-            if (! $this->employeePolicy->canChangeAccountState($employee, EmployeeStatus::ACTIVE)) {
-                if ($request->ajax() || $request->wantsJson()) {
-                    return response()->json([
-                        'message' => 'Terminated employees cannot be reactivated.',
-                        'error' => 'EMPLOYEE_TERMINATED',
-                        'code' => 'EMPLOYEE_TERMINATED',
-                    ], Response::HTTP_UNPROCESSABLE_ENTITY);
-                }
+    private function suspensionWorkflowRequiredResponse(Request $request)
+    {
+        $message = 'Employee suspension changes must go through the HR → Manager → Shop Owner workflow.';
 
-                return redirect()->back()->withErrors([
-                    'error' => 'Terminated employees cannot be reactivated.',
-                ]);
-            }
-
-            $employee->update([
-                'status' => 'active',
-                'privileged_suspension_id' => null,
-            ]);
-            $this->linkedUserSynchronizer->sync($employee);
-
-            try {
-                AuditLog::create([
-                    'shop_owner_id' => $request->user_shop_id,
-                    'actor_user_id' => $request->user()->id ?? null,
-                    'action' => 'employee_activated',
-                    'target_type' => 'employee',
-                    'target_id' => $employee->id,
-                    'metadata' => [],
-                ]);
-            } catch (\Exception $e) {
-                // non-fatal
-            }
-
-            // Also audit the linked User record so Super Admin sees the activation in user management.
-            try {
-                $user = User::query()
-                    ->where('shop_owner_id', $request->user_shop_id)
-                    ->whereRaw('LOWER(email) = ?', [strtolower((string) $employee->email)])
-                    ->first();
-                if ($user) {
-                    try {
-                        AuditLog::create([
-                            'shop_owner_id' => $request->user_shop_id,
-                            'actor_user_id' => $request->user()->id ?? null,
-                            'action' => 'user_activated_by_shop_owner',
-                            'target_type' => 'user',
-                            'target_id' => $user->id,
-                            'metadata' => [
-                                'email' => $user->email,
-                                'employee_id' => $employee->id,
-                            ],
-                        ]);
-                    } catch (\Exception $e) {
-                        // non-fatal
-                    }
-                }
-            } catch (\Exception $e) {
-                // non-fatal
-            }
-
-            if ($request->ajax() || $request->wantsJson()) {
-                return response()->json([
-                    'message' => 'Employee activated successfully',
-                    'data' => $employee,
-                ], Response::HTTP_OK);
-            }
-
-            return redirect()->back()->with('success', 'Employee activated successfully');
-        } catch (\Exception $e) {
-            if ($request->ajax() || $request->wantsJson()) {
-                return response()->json([
-                    'message' => 'Error activating employee',
-                    'error' => $e->getMessage(),
-                ], Response::HTTP_INTERNAL_SERVER_ERROR);
-            }
-
-            return redirect()->back()->withErrors(['error' => 'Error activating employee']);
+        if ($request->ajax() || $request->wantsJson()) {
+            return response()->json([
+                'message' => $message,
+                'error' => 'SUSPENSION_WORKFLOW_REQUIRED',
+                'code' => 'SUSPENSION_WORKFLOW_REQUIRED',
+            ], Response::HTTP_FORBIDDEN);
         }
+
+        return redirect()->back()->withErrors(['error' => $message]);
     }
 
     /**

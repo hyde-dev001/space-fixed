@@ -103,6 +103,30 @@ class ShopOwnerSuspensionApprovalScopeTest extends TestCase
     }
 
     #[Test]
+    public function shop_owner_rejection_preserves_the_employee_state_that_existed_before_review(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
+        ]);
+        $employee = Employee::factory()->inactive()->for($shopOwner)->create();
+        $request = SuspensionRequest::factory()
+            ->for($employee)
+            ->create([
+                'status' => SuspensionStatus::PENDING_OWNER,
+                'manager_status' => 'approved',
+            ]);
+
+        $response = $this->actingAs($shopOwner, 'shop_owner')
+            ->postJson("/api/shop-owner/suspension-requests/{$request->id}/review", [
+                'action' => 'reject',
+                'note' => 'The evidence does not support suspension.',
+            ]);
+
+        $response->assertOk()->assertJsonPath('success', true);
+        $this->assertSame('inactive', $employee->fresh()->status->value);
+    }
+
+    #[Test]
     public function shop_owner_repeated_review_returns_a_stable_conflict(): void
     {
         $shopOwner = ShopOwner::factory()->approved()->create([

@@ -232,11 +232,13 @@ class SuspensionFinalApprovalController extends Controller
                     'owner_reviewed_at' => now(),
                 ])->save();
 
-                $employee->forceFill([
-                    'status' => $approved ? EmployeeStatus::SUSPENDED : EmployeeStatus::ACTIVE,
-                    'suspension_reason' => $approved ? $suspensionRequest->reason : null,
-                    'privileged_suspension_id' => null,
-                ])->save();
+                if ($approved) {
+                    $employee->forceFill([
+                        'status' => EmployeeStatus::SUSPENDED,
+                        'suspension_reason' => $suspensionRequest->reason,
+                        'privileged_suspension_id' => null,
+                    ])->save();
+                }
 
                 AuditLog::createLog([
                     'shop_owner_id' => $shopOwnerId,

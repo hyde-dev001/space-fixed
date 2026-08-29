@@ -139,6 +139,82 @@ describe('CustomerAddressMapPicker', () => {
     expect(screen.getByRole('status')).toHaveTextContent(/address found/i);
   });
 
+  it('does not submit the surrounding repair checkout form when embedded', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response([addressResult])));
+    const checkoutSubmit = vi.fn((event: Event) => event.preventDefault());
+    const onChange = vi.fn();
+    const { container } = render(
+      <form onSubmit={checkoutSubmit}>
+        <CustomerAddressMapPicker embeddedInForm value={null} onChange={onChange} />
+      </form>,
+    );
+
+    expect(container.querySelectorAll('form')).toHaveLength(1);
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search address' }), { target: { value: 'Ermita Manila' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+
+    await waitFor(() => expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ city: 'Manila' })));
+    expect(checkoutSubmit).not.toHaveBeenCalled();
+  });
+
+  it('can return coordinates from an incomplete Philippine lookup for repair checkout', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response([{
+      address: {
+        country_code: 'ph',
+        province: 'Cavite',
+        region: 'CALABARZON',
+      },
+      display_name: 'A location in Cavite, Philippines',
+      lat: '14.309844',
+      lon: '120.899874',
+    }])));
+    const onChange = vi.fn();
+    render(<CustomerAddressMapPicker allowIncompleteAddress value={null} onChange={onChange} />);
+
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search address' }), { target: { value: 'Cavite' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+
+    await waitFor(() => expect(onChange).toHaveBeenCalledWith({
+      barangay: '',
+      city: '',
+      displayName: 'A location in Cavite, Philippines',
+      latitude: 14.309844,
+      longitude: 120.899874,
+      postalCode: '',
+      province: 'Cavite',
+      region: 'CALABARZON',
+    }));
+    expect(screen.getByRole('status')).toHaveTextContent(/complete the address details/i);
+  });
+
+  it('keeps the incomplete-pin status when repair checkout echoes the coordinates', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response([{
+      address: {
+        country_code: 'ph',
+        province: 'Cavite',
+        region: 'CALABARZON',
+      },
+      display_name: 'A location in Cavite, Philippines',
+      lat: '14.309844',
+      lon: '120.899874',
+    }])));
+    const onChange = vi.fn();
+    let rerender!: ReturnType<typeof render>['rerender'];
+    onChange.mockImplementation((location) => rerender(
+      <CustomerAddressMapPicker
+        allowIncompleteAddress
+        value={{ latitude: location.latitude, longitude: location.longitude }}
+        onChange={onChange}
+      />,
+    ));
+    ({ rerender } = render(<CustomerAddressMapPicker allowIncompleteAddress value={null} onChange={onChange} />));
+
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search address' }), { target: { value: 'Cavite' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(/complete the address details/i));
+  });
+
   it('keeps the controlled selection when the parent ignores a lookup result', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response([addressResult])));
     const onChange = vi.fn();

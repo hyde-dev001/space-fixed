@@ -47,7 +47,7 @@ final class EmployeeLinkedUserSynchronizer
         }
 
         return match (strtolower(trim((string) $rawStatus))) {
-            'active' => 'active',
+            'active', 'on_leave', 'on-leave' => 'active',
             'inactive', 'terminated' => 'inactive',
             'suspended' => 'suspended',
             default => null,

@@ -28,6 +28,8 @@ type Props = {
   onSelect: (address: CustomerAddress) => void;
   onSelectionCleared?: () => void;
   initialAddressId?: number | null;
+  allowIncompleteMapAddress?: boolean;
+  embeddedInForm?: boolean;
   disabled?: boolean;
   title?: string;
   description?: string;
@@ -73,6 +75,8 @@ export default function CustomerAddressManager({
   onSelect,
   onSelectionCleared,
   initialAddressId = null,
+  allowIncompleteMapAddress = false,
+  embeddedInForm = false,
   disabled = false,
   title = 'Delivery address',
   description = 'Choose where the rider should go. You can still use walk-in or your own courier.',
@@ -446,6 +450,8 @@ export default function CustomerAddressManager({
     </div>
   );
 
+  const AddressFormWrapper = embeddedInForm ? 'div' : 'form';
+
   const addressSummary = (
     <div className="space-y-3 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
       <div className="flex items-start justify-between gap-3">
@@ -543,7 +549,13 @@ export default function CustomerAddressManager({
                   {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
                 </div>
               ) : (
-              <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); void save(); }}>
+              <AddressFormWrapper
+                className="space-y-4"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void save();
+                }}
+              >
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="text-sm font-medium text-gray-800">Full name<input required value={form.name} onChange={(event) => update('name', event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3" /></label>
             <label className="text-sm font-medium text-gray-800">Phone<input required aria-label="Phone" type="tel" inputMode="numeric" pattern="[0-9]*" maxLength={20} value={form.phone} onChange={(event) => update('phone', event.target.value.replace(/\D/g, ''))} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3 transition-shadow focus:border-gray-950 focus:outline-none focus:ring-2 focus:ring-gray-950/10" /><span className="mt-1 block text-xs font-normal text-gray-500">Digits only. Keep the leading 0.</span></label>
@@ -556,14 +568,18 @@ export default function CustomerAddressManager({
           <div>
             <p className="mb-2 text-sm font-medium text-gray-800">Pin the exact delivery entrance</p>
             <CustomerAddressMapPicker
+              allowIncompleteAddress={allowIncompleteMapAddress}
+              embeddedInForm={embeddedInForm}
               value={form.latitude !== null && form.longitude !== null ? { latitude: form.latitude, longitude: form.longitude } : null}
               onChange={(location) => {
-                const province = normalizeProvinceSelection(location.province || location.region) || location.province || location.region;
                 setForm((current) => ({
                   ...current,
-                  province,
-                  region: location.region || province,
-                  city: normalizeCityMunicipalitySelection(province, location.city) || location.city,
+                  province: normalizeProvinceSelection(location.province || location.region) || current.province,
+                  region: location.region || current.region,
+                  city: normalizeCityMunicipalitySelection(
+                    normalizeProvinceSelection(location.province || location.region) || current.province,
+                    location.city,
+                  ) || current.city,
                   barangay: location.barangay || current.barangay,
                   postal_code: location.postalCode || current.postal_code,
                   latitude: location.latitude,
@@ -578,11 +594,16 @@ export default function CustomerAddressManager({
             <button type="button" onClick={closeModal} className="min-h-11 rounded-lg px-4 text-sm font-semibold text-gray-700 underline underline-offset-4 transition-colors hover:text-gray-950 focus:outline-none focus:ring-2 focus:ring-blue-500">
               Cancel
             </button>
-            <button type="submit" disabled={saving} className="min-h-11 rounded-lg bg-gray-950 px-5 text-sm font-semibold text-white transition-colors hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60">
+            <button
+              type={embeddedInForm ? 'button' : 'submit'}
+              onClick={embeddedInForm ? () => void save() : undefined}
+              disabled={saving}
+              className="min-h-11 rounded-lg bg-gray-950 px-5 text-sm font-semibold text-white transition-colors hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60"
+            >
               {saving ? 'Saving…' : editingId ? 'Save changes' : 'Save address'}
             </button>
           </div>
-        </form>
+        </AddressFormWrapper>
               )}
             </div>
           </div>

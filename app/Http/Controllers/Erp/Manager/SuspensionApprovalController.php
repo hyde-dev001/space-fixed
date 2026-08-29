@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\ERP\Manager;
 
-use App\Enums\EmployeeStatus;
 use App\Enums\SuspensionStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Employee;
@@ -187,14 +186,6 @@ final class SuspensionApprovalController extends Controller
                     'manager_note' => $reviewNote !== '' ? $reviewNote : null,
                     'manager_reviewed_at' => now(),
                 ])->save();
-
-                if (! $approved) {
-                    $employee->forceFill([
-                        'status' => EmployeeStatus::ACTIVE,
-                        'suspension_reason' => null,
-                        'privileged_suspension_id' => null,
-                    ])->save();
-                }
 
                 AuditLog::createLog([
                     'shop_owner_id' => $shopOwnerId,

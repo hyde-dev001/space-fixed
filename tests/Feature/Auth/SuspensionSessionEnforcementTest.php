@@ -7,6 +7,7 @@ use App\Models\ShopOwner;
 use App\Models\SuperAdmin;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Route;
 use Spatie\Permission\Models\Permission;
@@ -226,6 +227,81 @@ class SuspensionSessionEnforcementTest extends TestCase
         ])->assertUnprocessable()->assertJsonValidationErrors('email');
 
         $this->assertGuest('user');
+    }
+
+    public function test_legacy_on_leave_employee_can_login_through_the_web_guard(): void
+    {
+        $owner = ShopOwner::factory()->approved()->create();
+        $user = User::factory()->create([
+            'email' => 'leave.employee@example.test',
+            'password' => Hash::make('Password123!'),
+            'status' => 'active',
+            'shop_owner_id' => $owner->id,
+            'email_verified_at' => now(),
+        ]);
+        $employee = Employee::factory()->active()->create([
+            'shop_owner_id' => $owner->id,
+            'email' => $user->email,
+        ]);
+        DB::table('employees')->whereKey($employee->id)->update(['status' => 'on_leave']);
+
+        $this->postJson('/user/login', [
+            'email' => $user->email,
+            'password' => 'Password123!',
+        ])->assertOk();
+
+        $this->assertAuthenticatedAs($user, 'user');
+    }
+
+    public function test_legacy_on_leave_employee_can_login_through_the_api_guard(): void
+    {
+        $owner = ShopOwner::factory()->approved()->create();
+        $user = User::factory()->create([
+            'email' => 'api.leave.employee@example.test',
+            'password' => Hash::make('Password123!'),
+            'status' => 'active',
+            'shop_owner_id' => $owner->id,
+            'email_verified_at' => now(),
+        ]);
+        $employee = Employee::factory()->active()->create([
+            'shop_owner_id' => $owner->id,
+            'email' => $user->email,
+        ]);
+        DB::table('employees')->whereKey($employee->id)->update(['status' => 'on_leave']);
+
+        $this->postJson('/api/login', [
+            'email' => $user->email,
+            'password' => 'Password123!',
+        ])->assertOk()
+            ->assertJsonPath('user.id', $user->id);
+    }
+
+    public function test_api_employee_login_ignores_same_email_record_from_another_shop(): void
+    {
+        $owner = ShopOwner::factory()->approved()->create();
+        $otherOwner = ShopOwner::factory()->approved()->create();
+        $user = User::factory()->create([
+            'email' => 'api.tenant.login@example.test',
+            'password' => Hash::make('Password123!'),
+            'status' => 'active',
+            'shop_owner_id' => $owner->id,
+            'email_verified_at' => now(),
+        ]);
+
+        Employee::factory()->suspended()->create([
+            'shop_owner_id' => $otherOwner->id,
+            'email' => $user->email,
+        ]);
+        Employee::factory()->active()->create([
+            'shop_owner_id' => $owner->id,
+            'email' => $user->email,
+        ]);
+
+        $this->postJson('/api/login', [
+            'email' => $user->email,
+            'password' => 'Password123!',
+        ])->assertOk()
+            ->assertJsonPath('user.id', $user->id);
     }
 
     public function test_shop_owner_login_does_not_probe_user_account_status(): void

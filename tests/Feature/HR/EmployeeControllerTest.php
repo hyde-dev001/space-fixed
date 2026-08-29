@@ -166,7 +166,7 @@ class EmployeeControllerTest extends TestCase
 
         $this->assertDatabaseHas('employees', [
             'id' => $employee->id,
-            'status' => 'inactive',
+            'status' => 'active',
         ]);
 
         $this->actingAs($this->hrUser, 'user')

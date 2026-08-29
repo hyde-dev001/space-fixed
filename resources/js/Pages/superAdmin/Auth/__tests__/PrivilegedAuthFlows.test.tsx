@@ -146,9 +146,11 @@ describe('privileged authentication flows', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('The setup link is invalid or expired.');
   });
 
-  it('uses the same clean-fragment exchange for password reset links', async () => {
+  it('uses the clean-fragment exchange proof to complete password reset', async () => {
     window.history.replaceState(null, '', '/admin/reset-password#token=reset-secret');
-    axiosPostMock.mockResolvedValue({ data: { authorized: true } });
+    axiosPostMock.mockResolvedValue({
+      data: { authorized: true, completion_proof: 'opaque-reset-proof' },
+    });
 
     render(<PrivilegedResetPassword />);
 
@@ -160,6 +162,25 @@ describe('privileged authentication flows', () => {
       expect.any(Object),
     );
     expect(window.location.hash).toBe('');
+    expect(await screen.findByRole('button', { name: /reset password/i })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/new password/i), {
+      target: { value: 'LongEnough-Reset1!' },
+    });
+    fireEvent.change(screen.getByLabelText(/confirm password/i), {
+      target: { value: 'LongEnough-Reset1!' },
+    });
+    fireEvent.submit(screen.getByRole('button', { name: /reset password/i }).closest('form')!);
+
+    expect(routerPostMock).toHaveBeenCalledWith(
+      '/admin/reset-password/complete',
+      {
+        completion_proof: 'opaque-reset-proof',
+        password: 'LongEnough-Reset1!',
+        password_confirmation: 'LongEnough-Reset1!',
+      },
+      expect.any(Object),
+    );
     expect(axiosPostMock).toHaveBeenCalledTimes(1);
   });
 

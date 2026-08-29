@@ -21,7 +21,6 @@ use Illuminate\Session\Store;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Queue;
-use Illuminate\Testing\TestResponse;
 use Spatie\Activitylog\Models\Activity;
 use Tests\Concerns\AuthenticatesPrivilegedUsers;
 use Tests\TestCase;
@@ -106,11 +105,18 @@ final class PrivilegedPasswordRecoveryTest extends TestCase
             ->assertOk()
             ->assertHeader('Cache-Control', 'must-revalidate, no-cache, no-store, private');
         $exchange = $this->postJson('/admin/reset-password/exchange', ['token' => $rawToken]);
-        $exchange->assertOk()->assertJson(['authorized' => true]);
-        $this->syncSessionCookie($exchange);
+        $exchange->assertOk()
+            ->assertJson(['authorized' => true])
+            ->assertJsonStructure(['completion_proof']);
+        $completionProof = $exchange->json('completion_proof');
+        self::assertIsString($completionProof);
+        self::assertNotSame('', $completionProof);
+        self::assertNotSame($rawToken, $completionProof);
+        self::assertNull(session('privileged_password_reset_authorization'));
         self::assertStringNotContainsString($rawToken, serialize(session()->all()));
 
         $response = $this->post('/admin/reset-password/complete', [
+            'completion_proof' => $completionProof,
             'password' => 'Replacement-Password1!',
             'password_confirmation' => 'Replacement-Password1!',
         ]);
@@ -144,7 +150,7 @@ final class PrivilegedPasswordRecoveryTest extends TestCase
         self::assertNull($issued['token']->fresh()?->used_at);
     }
 
-    public function test_failed_password_reset_consumption_clears_the_internal_authorization(): void
+    public function test_failed_password_reset_consumption_does_not_depend_on_exchange_session_authorization(): void
     {
         $admin = SuperAdmin::factory()->mfaEnrolled()->create();
         $issued = app(PrivilegedSecurityTokenService::class)->issue(
@@ -154,11 +160,13 @@ final class PrivilegedPasswordRecoveryTest extends TestCase
         );
 
         $exchange = $this->postJson('/admin/reset-password/exchange', ['token' => $issued['raw_token']])
-            ->assertOk();
-        $this->syncSessionCookie($exchange);
+            ->assertOk()
+            ->assertJsonStructure(['completion_proof']);
+        $completionProof = $exchange->json('completion_proof');
         $admin->forceFill(['status' => SuperAdmin::STATUS_SUSPENDED])->save();
 
         $this->postJson('/admin/reset-password/complete', [
+            'completion_proof' => $completionProof,
             'password' => 'Replacement-Password1!',
             'password_confirmation' => 'Replacement-Password1!',
         ])->assertUnprocessable();
@@ -492,13 +500,4 @@ final class PrivilegedPasswordRecoveryTest extends TestCase
         $this->withCredentials()->withCookie(config('session.cookie'), session()->getId());
     }
 
-    private function syncSessionCookie(TestResponse $response): void
-    {
-        $cookie = collect($response->headers->getCookies())
-            ->first(fn ($candidate): bool => $candidate->getName() === config('session.cookie'));
-
-        if ($cookie !== null) {
-            $this->withCredentials()->withUnencryptedCookie($cookie->getName(), $cookie->getValue());
-        }
-    }
 }
