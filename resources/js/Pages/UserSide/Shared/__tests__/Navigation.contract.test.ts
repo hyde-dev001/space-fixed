@@ -97,13 +97,15 @@ describe('user-side navigation shell', () => {
     expect(accountUtilityLabelIndex).toBeGreaterThan(-1);
     expect(navigationSource).toContain('const [accountDrawerOpen, setAccountDrawerOpen] = useState(false);');
     expect(navigationSource).toContain('aria-expanded={accountDrawerOpen}');
-    expect(navigationSource).toContain('setAccountDrawerOpen((open) => !open)');
     expect(navigationSource).not.toContain('/* Dropdown Menu */');
     expect(accountPanelSource).toContain('role="dialog"');
     expect(accountPanelSource).toContain('aria-modal="true"');
     expect(accountPanelSource).toContain('fixed left-[min(88vw,31rem)] top-0 z-[110]');
     expect(accountPanelSource).toContain('bg-white/60');
+    expect(accountPanelSource).toContain('transition-[transform,opacity] duration-300 ease-out');
+    expect(accountPanelSource).not.toContain('transition-[transform,opacity,visibility]');
     expect(accountPanelSource).toContain('accountDrawerOpen ? \'visible translate-x-0 opacity-100\' : \'invisible translate-x-full opacity-0 pointer-events-none\'');
+    expect(accountPanelSource).toContain('aria-label="Close account"');
     expect(accountPanelSource).toContain('<span>Edit Profile</span>');
     expect(accountPanelSource).toContain('<span>Join Our Team</span>');
     expect(accountPanelSource).toContain('<span>Log out</span>');
@@ -118,6 +120,14 @@ describe('user-side navigation shell', () => {
     const siteMenuSource = navigationSource.slice(siteMenuStart, siteMenuEnd);
     expect(siteMenuSource).toContain('text-xl font-semibold');
     expect(siteMenuSource).not.toContain('font-black');
+  });
+
+  it('removes the desktop People control and keeps header icon spacing consistent', () => {
+    expect(navigationSource).toContain("landingSidebar ? 'top-3 gap-3 sm:top-5'");
+    expect(navigationSource).toContain('absolute right-0 flex items-center gap-3');
+    expect(navigationSource).not.toContain('aria-label="User account"');
+    expect(navigationSource).not.toContain('{/* User Icon */}');
+    expect(navigationSource).not.toContain('className={`${headerIconButtonClasses} -mr-2`}');
   });
 
   it('uses the shortened cart label in the shared cart surface', () => {
