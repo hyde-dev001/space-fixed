@@ -1,5 +1,6 @@
 import { Head, Link, router } from '@inertiajs/react';
 import { useRef, useState } from 'react';
+import Swal from 'sweetalert2';
 import AppLayout from '../../../layout/AppLayout';
 
 interface Administrator {
@@ -128,14 +129,19 @@ export default function AdminManagement({ admins = [], stats = {}, filters = {} 
     });
   };
 
-  const confirmAction = (message: string, callback: () => void) => {
-    if (window.confirm(message)) callback();
+  const confirmAction = async (message: string, callback: () => void) => {
+    const result = await Swal.fire({
+      title: 'Confirm action', text: message, icon: 'warning', showCancelButton: true,
+      confirmButtonColor: '#111827', cancelButtonColor: '#6b7280',
+      confirmButtonText: 'Continue', cancelButtonText: 'Cancel',
+    });
+    if (result.isConfirmed) callback();
   };
 
   return (
     <AppLayout>
       <Head title="Administrator management" />
-      <main className="min-h-screen bg-gray-50 p-6 text-gray-900 dark:bg-gray-900 dark:text-white md:p-8">
+      <main className="min-h-screen bg-white p-6 text-gray-900 dark:bg-gray-900 dark:text-white md:p-8">
         <div className="mx-auto max-w-7xl space-y-8">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
@@ -155,7 +161,7 @@ export default function AdminManagement({ admins = [], stats = {}, filters = {} 
               ['Suspended', stats.suspended ?? visibleAdmins.filter((admin) => admin.status === 'suspended').length],
               ['Inactive', stats.inactive ?? visibleAdmins.filter((admin) => admin.status === 'inactive').length],
             ].map(([label, value]) => (
-              <div key={label as string} className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-800">
+              <div key={label as string} className="metrics-card rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-800">
                 <p className="text-sm text-gray-500 dark:text-gray-400">{label}</p>
                 <p className="mt-2 text-3xl font-bold">{value}</p>
               </div>
@@ -241,8 +247,8 @@ export default function AdminManagement({ admins = [], stats = {}, filters = {} 
                             )}
                             {admin.status === 'active' && (
                               <>
-                                <button type="button" title="Suspend Admin" disabled={actionBusy} onClick={() => confirmAction(`Suspend ${admin.firstName} ${admin.lastName}?`, () => runPostAction(admin, 'suspend', `/admin/administrators/${admin.id}/suspend`))} className="rounded-lg border border-amber-300 px-3 py-2 text-xs font-semibold text-amber-800 hover:bg-amber-50 disabled:opacity-50">Suspend</button>
-                                <button type="button" disabled={actionBusy} onClick={() => confirmAction(`Deactivate ${admin.firstName} ${admin.lastName}?`, () => runPostAction(admin, 'deactivate', `/admin/administrators/${admin.id}/deactivate`))} className="rounded-lg border border-red-300 px-3 py-2 text-xs font-semibold text-red-800 hover:bg-red-50 disabled:opacity-50">Deactivate</button>
+                                <button type="button" title="Suspend Admin" disabled={actionBusy} onClick={() => void confirmAction(`Suspend ${admin.firstName} ${admin.lastName}?`, () => runPostAction(admin, 'suspend', `/admin/administrators/${admin.id}/suspend`))} className="rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-900 hover:bg-gray-100 disabled:opacity-50">Suspend</button>
+                                <button type="button" disabled={actionBusy} onClick={() => void confirmAction(`Deactivate ${admin.firstName} ${admin.lastName}?`, () => runPostAction(admin, 'deactivate', `/admin/administrators/${admin.id}/deactivate`))} className="rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-900 hover:bg-gray-100 disabled:opacity-50">Deactivate</button>
                               </>
                             )}
                             {(admin.status === 'suspended' || admin.status === 'inactive') && (
@@ -251,7 +257,7 @@ export default function AdminManagement({ admins = [], stats = {}, filters = {} 
                               </button>
                             )}
                             {admin.status !== 'pending_setup' && (
-                              <button type="button" disabled={actionBusy} onClick={() => confirmAction(`Reset MFA for ${admin.firstName} ${admin.lastName}? They will need to enroll again.`, () => runPostAction(admin, 'mfa-reset', `/admin/administrators/${admin.id}/mfa/reset`))} className="rounded-lg border border-blue-300 px-3 py-2 text-xs font-semibold text-blue-800 hover:bg-blue-50 disabled:opacity-50">
+                              <button type="button" disabled={actionBusy} onClick={() => void confirmAction(`Reset MFA for ${admin.firstName} ${admin.lastName}? They will need to enroll again.`, () => runPostAction(admin, 'mfa-reset', `/admin/administrators/${admin.id}/mfa/reset`))} className="rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-900 hover:bg-gray-100 disabled:opacity-50">
                                 Reset MFA
                               </button>
                             )}

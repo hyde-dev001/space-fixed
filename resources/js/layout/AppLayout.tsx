@@ -12,7 +12,7 @@ const LayoutContent: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { isExpanded, isHovered, isMobileOpen } = useSidebar();
 
   return (
-    <div className="erp-theme min-h-screen xl:flex bg-white text-gray-900 dark:bg-gray-950 dark:text-gray-100">
+    <div className="erp-theme super-admin-shell min-h-screen xl:flex bg-white text-gray-900 dark:bg-gray-950 dark:text-gray-100">
       <div>
         <AppSidebar />
         <Backdrop />

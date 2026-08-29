@@ -3,6 +3,11 @@ layer(base);
 
 @import "tailwindcss";
 
+/* Super Admin light mode uses white page surfaces; keep this scoped away from the user side. */
+html:not(.dark) #app .super-admin-shell [class~="bg-gray-50"] {
+  background-color: #ffffff !important;
+}
+
 /* Flatpickr CSS */
 @import 'flatpickr/dist/flatpickr.min.css';
 
