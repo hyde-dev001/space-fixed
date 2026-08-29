@@ -200,10 +200,12 @@ class ProofReviewFlowTest extends TestCase
             ['Accept' => 'application/json']
         )->assertCreated()->json('proof');
 
-        $this->actingAs($shop, 'shop_owner')
+        $approver = $this->proofApprover($shop);
+
+        $this->actingAs($approver, 'user')
             ->postJson("/api/logistics/proofs/{$proof['id']}/approve")
             ->assertOk();
-        $this->actingAs($shop, 'shop_owner')
+        $this->actingAs($approver, 'user')
             ->postJson("/api/logistics/proofs/{$proof['id']}/approve")
             ->assertOk();
 
@@ -239,12 +241,14 @@ class ProofReviewFlowTest extends TestCase
             ['Accept' => 'application/json']
         )->assertCreated()->json('proof');
 
-        $this->actingAs($shop, 'shop_owner')
+        $approver = $this->proofApprover($shop);
+
+        $this->actingAs($approver, 'user')
             ->postJson("/api/logistics/proofs/{$proof['id']}/reject", [
                 'rejection_reason' => 'The recipient is not identifiable in the image.',
             ])
             ->assertOk();
-        $this->actingAs($shop, 'shop_owner')
+        $this->actingAs($approver, 'user')
             ->postJson("/api/logistics/proofs/{$proof['id']}/reject", [
                 'rejection_reason' => 'A different reason must not overwrite the review.',
             ])
@@ -261,6 +265,15 @@ class ProofReviewFlowTest extends TestCase
         $this->assertSame($originalScheduledDate, $freshLeg->scheduled_delivery_date);
         $this->assertSame(0, $freshLeg->attempts()->count());
         $this->assertSame(1, $freshLeg->events()->where('event_type', 'proof_rejected')->count());
+    }
+
+    private function proofApprover(ShopOwner $shop): User
+    {
+        Permission::findOrCreate('approve-proof-of-delivery', 'user');
+        $approver = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $approver->givePermissionTo('approve-proof-of-delivery');
+
+        return $approver;
     }
 
     public function test_generic_delivery_proof_approval_does_not_complete_a_receive_leg(): void

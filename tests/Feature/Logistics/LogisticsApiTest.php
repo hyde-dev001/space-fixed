@@ -68,11 +68,12 @@ class LogisticsApiTest extends TestCase
     public function test_schedule_rejects_past_delivery_date(): void
     {
         $shop = ShopOwner::factory()->create();
+        $dispatcher = $this->dispatcher($shop, 'assign-logistics-deliveries');
         $leg = ShipmentLeg::factory()->create([
             'shipment_id' => Shipment::factory()->create(['shop_owner_id' => $shop->id])->id,
         ]);
 
-        $this->actingAs($shop, 'shop_owner')->postJson('/api/logistics/legs/schedule', [
+        $this->actingAs($dispatcher, 'user')->postJson('/api/logistics/legs/schedule', [
             'delivery_date' => now()->subDay()->toDateString(),
             'delivery_window' => 'morning',
             'leg_ids' => [$leg->id],
@@ -89,7 +90,7 @@ class LogisticsApiTest extends TestCase
             ->assertForbidden();
     }
 
-    public function test_shop_owner_can_assign_leg_to_valid_rider(): void
+    public function test_dispatcher_can_assign_leg_to_valid_rider(): void
     {
         $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
         $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
@@ -101,8 +102,9 @@ class LogisticsApiTest extends TestCase
             'linked_type' => User::class,
             'linked_id' => $riderUser->id,
         ]);
+        $dispatcher = $this->dispatcher($shop, 'assign-logistics-deliveries');
 
-        $this->actingAs($shop, 'shop_owner')
+        $this->actingAs($dispatcher, 'user')
             ->postJson("/api/logistics/legs/{$leg->id}/assign", [
                 'assignment_type' => 'internal_rider',
                 'rider_profile_id' => $rider->id,
@@ -118,15 +120,16 @@ class LogisticsApiTest extends TestCase
         $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'status' => 'pending']);
         $first = RiderProfile::factory()->create(['shop_owner_id' => $shop->id]);
         $second = RiderProfile::factory()->create(['shop_owner_id' => $shop->id]);
+        $dispatcher = $this->dispatcher($shop, 'assign-logistics-deliveries');
 
-        $this->actingAs($shop, 'shop_owner')
+        $this->actingAs($dispatcher, 'user')
             ->postJson("/api/logistics/legs/{$leg->id}/assign", [
                 'assignment_type' => 'internal_rider',
                 'rider_profile_id' => $first->id,
             ])
             ->assertOk();
 
-        $this->actingAs($shop, 'shop_owner')
+        $this->actingAs($dispatcher, 'user')
             ->postJson("/api/logistics/legs/{$leg->id}/assign", [
                 'assignment_type' => 'internal_rider',
                 'rider_profile_id' => $second->id,
@@ -1579,9 +1582,10 @@ class LogisticsApiTest extends TestCase
     {
         [$shop, $leg, $rider] = $this->assignedRiderLeg('delivery_attempted');
         $leg->attempts()->create(['attempt_type' => 'delivery', 'status' => 'failed', 'reason_code' => 'recipient_unavailable', 'notes' => 'Private rider note', 'attempted_at' => now()]);
+        $dispatcher = $this->dispatcher($shop, 'resolve-logistics-exceptions');
 
         $this->actingAs($rider, 'user')->postJson("/api/logistics/legs/{$leg->id}/cancel")->assertForbidden();
-        $this->actingAs($shop, 'shop_owner')->postJson("/api/logistics/legs/{$leg->id}/cancel")
+        $this->actingAs($dispatcher, 'user')->postJson("/api/logistics/legs/{$leg->id}/cancel")
             ->assertOk()
             ->assertJsonPath('message', 'Recipient was unavailable');
 
@@ -1593,8 +1597,9 @@ class LogisticsApiTest extends TestCase
     public function test_cancel_requires_a_failed_delivery_attempt_and_maps_each_reason(): void
     {
         $shop = ShopOwner::factory()->create();
+        $dispatcher = $this->dispatcher($shop, 'resolve-logistics-exceptions');
         $withoutAttempt = ShipmentLeg::factory()->create(['shipment_id' => Shipment::factory()->create(['shop_owner_id' => $shop->id])->id, 'status' => 'delivery_attempted']);
-        $this->actingAs($shop, 'shop_owner')->postJson("/api/logistics/legs/{$withoutAttempt->id}/cancel")->assertUnprocessable();
+        $this->actingAs($dispatcher, 'user')->postJson("/api/logistics/legs/{$withoutAttempt->id}/cancel")->assertUnprocessable();
 
         foreach ([
             'recipient_unavailable' => 'Recipient was unavailable',
@@ -1606,7 +1611,7 @@ class LogisticsApiTest extends TestCase
             $leg = ShipmentLeg::factory()->create(['shipment_id' => Shipment::factory()->create(['shop_owner_id' => $shop->id])->id, 'status' => 'delivery_attempted']);
             $leg->attempts()->create(['attempt_type' => 'delivery', 'status' => 'failed', 'reason_code' => $reason, 'attempted_at' => now()]);
 
-            $this->actingAs($shop, 'shop_owner')->postJson("/api/logistics/legs/{$leg->id}/cancel")
+            $this->actingAs($dispatcher, 'user')->postJson("/api/logistics/legs/{$leg->id}/cancel")
                 ->assertOk()
                 ->assertJsonPath('message', $message);
         }
@@ -1638,13 +1643,14 @@ class LogisticsApiTest extends TestCase
     public function test_cancel_uses_the_latest_failed_delivery_attempt_by_time_then_id(): void
     {
         $shop = ShopOwner::factory()->create();
+        $dispatcher = $this->dispatcher($shop, 'resolve-logistics-exceptions');
         $leg = ShipmentLeg::factory()->create(['shipment_id' => Shipment::factory()->create(['shop_owner_id' => $shop->id])->id, 'status' => 'delivery_attempted']);
         $leg->attempts()->create(['attempt_type' => 'delivery', 'status' => 'failed', 'reason_code' => 'recipient_unavailable', 'attempted_at' => now()->subMinute()]);
         $attemptedAt = now();
         $leg->attempts()->create(['attempt_type' => 'delivery', 'status' => 'failed', 'reason_code' => 'recipient_refused', 'attempted_at' => $attemptedAt]);
         $leg->attempts()->create(['attempt_type' => 'delivery', 'status' => 'failed', 'reason_code' => 'other', 'attempted_at' => $attemptedAt]);
 
-        $this->actingAs($shop, 'shop_owner')->postJson("/api/logistics/legs/{$leg->id}/cancel")
+        $this->actingAs($dispatcher, 'user')->postJson("/api/logistics/legs/{$leg->id}/cancel")
             ->assertOk()
             ->assertJsonPath('message', 'Delivery could not be completed');
     }
@@ -1663,6 +1669,14 @@ class LogisticsApiTest extends TestCase
         $leg->assignments()->create(['assignment_type' => 'internal_rider', 'rider_profile_id' => $profile->id, 'status' => 'assigned', 'assigned_at' => now()]);
 
         return [$shop, $leg, $rider];
+    }
+
+    private function dispatcher(ShopOwner $shop, string $permission): User
+    {
+        $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $dispatcher->givePermissionTo(Permission::findOrCreate($permission, 'user'));
+
+        return $dispatcher;
     }
 
     private function assignedRepairPickupLeg(bool $arrived = true, string $status = 'assigned'): array

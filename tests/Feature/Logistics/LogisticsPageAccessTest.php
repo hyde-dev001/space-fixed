@@ -27,7 +27,7 @@ class LogisticsPageAccessTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_company_owner_logistics_props_expose_dispatch_and_review_without_custody_controls(): void
+    public function test_company_owner_logistics_props_are_read_only(): void
     {
         config([
             'shop_modules.enforcement_enabled' => true,
@@ -47,15 +47,15 @@ class LogisticsPageAccessTest extends TestCase
             ->assertOk()
             ->viewData('page')['props'];
 
-        $this->assertTrue($props['canAssign']);
-        $this->assertTrue($props['canApproveProof']);
+        $this->assertFalse($props['canAssign']);
+        $this->assertFalse($props['canApproveProof']);
         $this->assertFalse($props['canUpdateStatus']);
         $this->assertFalse($props['canRecordProof']);
         $this->assertFalse($props['canReportIssue']);
         $this->assertFalse($props['riderMode']);
     }
 
-    public function test_owner_rider_mode_requires_a_trusted_active_assignment(): void
+    public function test_owner_rider_mode_cannot_enable_mutation_controls(): void
     {
         config([
             'shop_modules.enforcement_enabled' => true,
@@ -92,13 +92,78 @@ class LogisticsPageAccessTest extends TestCase
             ->assertOk()
             ->viewData('page')['props'];
 
-        $this->assertTrue($props['riderMode']);
-        $this->assertTrue($props['canUpdateStatus']);
-        $this->assertTrue($props['canRecordProof']);
-        $this->assertTrue($props['canReportIssue']);
+        $this->assertFalse($props['riderMode']);
+        $this->assertFalse($props['canUpdateStatus']);
+        $this->assertFalse($props['canRecordProof']);
+        $this->assertFalse($props['canReportIssue']);
         $this->assertFalse($props['canAssign']);
         $this->assertFalse($props['canApproveProof']);
         $this->assertSame([$leg->shipment_id], collect($props['shipments']['data'])->pluck('id')->all());
+    }
+
+    public function test_owner_can_read_shipments_but_cannot_use_shared_logistics_mutations(): void
+    {
+        config([
+            'shop_modules.enforcement_enabled' => true,
+        ]);
+        $shop = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
+            'business_type' => 'both',
+        ]);
+        ShopOwnerModule::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'module_key' => 'logistics',
+            'enabled' => true,
+        ]);
+        $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
+        $leg = ShipmentLeg::factory()->create([
+            'shipment_id' => $shipment->id,
+            'status' => 'pending',
+        ]);
+        $rider = RiderProfile::factory()->create(['shop_owner_id' => $shop->id]);
+
+        $this->actingAs($shop, 'shop_owner')
+            ->getJson('/api/shop-owner/erp/logistics/shipments')
+            ->assertOk()
+            ->assertJsonPath('data.0.id', $shipment->id);
+
+        $this->actingAs($shop, 'shop_owner')
+            ->getJson("/api/shop-owner/erp/logistics/shipments/{$shipment->id}")
+            ->assertOk()
+            ->assertJsonPath('shipment.id', $shipment->id);
+
+        $this->actingAs($shop, 'shop_owner')
+            ->postJson("/api/logistics/legs/{$leg->id}/assign", [
+                'assignment_type' => 'internal_rider',
+                'rider_profile_id' => $rider->id,
+            ])
+            ->assertForbidden();
+
+        $this->actingAs($shop, 'shop_owner')
+            ->getJson('/api/logistics/batches')
+            ->assertForbidden();
+
+        $this->assertDatabaseCount('delivery_assignments', 0);
+    }
+
+    public function test_owner_batches_page_redirects_to_shipments(): void
+    {
+        config([
+            'shop_modules.enforcement_enabled' => true,
+        ]);
+        $shop = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
+            'business_type' => 'both',
+        ]);
+        ShopOwnerModule::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'module_key' => 'logistics',
+            'enabled' => true,
+        ]);
+
+        $this->actingAs($shop, 'shop_owner')
+            ->get('/shop-owner/erp/logistics/batches')
+            ->assertRedirect(route('shop-owner.erp.logistics.shipments'));
     }
 
     public function test_owner_without_an_active_owner_rider_assignment_cannot_enter_rider_mode(): void

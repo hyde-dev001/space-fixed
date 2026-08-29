@@ -274,7 +274,6 @@ final class OwnerErpPageContractTest extends TestCase
             ],
             'logistics' => [
                 'shop-owner.erp.logistics.shipments',
-                'shop-owner.erp.logistics.batches',
                 'shop-owner.erp.logistics.riders',
             ],
         ];
@@ -383,7 +382,6 @@ final class OwnerErpPageContractTest extends TestCase
             ],
             'logistics' => [
                 'shop-owner.erp.logistics.shipments',
-                'shop-owner.erp.logistics.batches',
                 'shop-owner.erp.logistics.riders',
             ],
         ];
@@ -517,7 +515,6 @@ final class OwnerErpPageContractTest extends TestCase
                 'dashboard' => 'ERP/Logistics/Dashboard',
                 'pages' => [
                     'shop-owner.erp.logistics.shipments',
-                    'shop-owner.erp.logistics.batches',
                     'shop-owner.erp.logistics.riders',
                 ],
             ],
@@ -588,7 +585,6 @@ final class OwnerErpPageContractTest extends TestCase
             ],
             'logistics' => [
                 'shop-owner.erp.logistics.shipments',
-                'shop-owner.erp.logistics.batches',
                 'shop-owner.erp.logistics.riders',
             ],
         ];
@@ -768,7 +764,6 @@ final class OwnerErpPageContractTest extends TestCase
             ['/shop-owner/erp/procurement/suppliers-management', 'procurement', 'ERP/Procurement/SuppliersManagement'],
             ['/shop-owner/erp/logistics/dashboard', 'logistics', 'ERP/Logistics/Dashboard'],
             ['/shop-owner/erp/logistics/shipments', 'logistics', 'ERP/Logistics/Shipments'],
-            ['/shop-owner/erp/logistics/batches', 'logistics', 'ERP/Logistics/Batches'],
             ['/shop-owner/erp/logistics/riders', 'logistics', 'ERP/Logistics/Riders'],
         ];
 

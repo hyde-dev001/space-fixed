@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Services\Logistics\ShipmentLegService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
+use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
 class SingleDeliveryOfferTest extends TestCase
@@ -34,6 +35,9 @@ class SingleDeliveryOfferTest extends TestCase
     public function test_rider_can_accept_or_reject_a_single_delivery_offer(): void
     {
         $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
+        Permission::findOrCreate('assign-logistics-deliveries', 'user');
+        $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $dispatcher->givePermissionTo('assign-logistics-deliveries');
         $user = User::factory()->create(['shop_owner_id' => $shop->id]);
         $rider = RiderProfile::factory()->create([
             'shop_owner_id' => $shop->id,
@@ -61,7 +65,7 @@ class SingleDeliveryOfferTest extends TestCase
             'requires_pickup_proof' => false,
         ]);
 
-        $acceptedAssignmentId = $this->actingAs($shop, 'shop_owner')
+        $acceptedAssignmentId = $this->actingAs($dispatcher, 'user')
             ->postJson("/api/logistics/legs/{$acceptedLeg->id}/assign", [
                 'assignment_type' => 'internal_rider',
                 'rider_profile_id' => $rider->id,
@@ -91,7 +95,7 @@ class SingleDeliveryOfferTest extends TestCase
             'status' => 'accepted',
         ]);
 
-        $rejectedAssignmentId = $this->actingAs($shop, 'shop_owner')
+        $rejectedAssignmentId = $this->actingAs($dispatcher, 'user')
             ->postJson("/api/logistics/legs/{$rejectedLeg->id}/assign", [
                 'assignment_type' => 'internal_rider',
                 'rider_profile_id' => $rider->id,

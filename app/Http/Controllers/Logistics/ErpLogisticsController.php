@@ -81,7 +81,7 @@ class ErpLogisticsController extends Controller
         $actor = $context?->actor() ?? ($ownerMode
             ? Auth::guard('shop_owner')->user()
             : $user);
-        $rider = $actor instanceof Authenticatable
+        $rider = ! $ownerMode && $actor instanceof Authenticatable
             ? $this->trustedRiderProfile($request, $actor, $shop)
             : null;
         $riderMode = $rider instanceof RiderProfile;
@@ -89,17 +89,17 @@ class ErpLogisticsController extends Controller
             $user->can('assign-logistics-deliveries') ||
             $user->can('manage-logistics-riders')
         )));
-        $canAssign = ! $riderMode
+        $canAssign = ! $ownerMode && ! $riderMode
             && $actor instanceof Authenticatable
             && $this->logisticsPolicy->canPerform($actor, $shop, LogisticsAction::ASSIGN_RIDER);
-        $canApproveProof = ! $riderMode
+        $canApproveProof = ! $ownerMode && ! $riderMode
             && $actor instanceof Authenticatable
             && $this->logisticsPolicy->canPerform($actor, $shop, LogisticsAction::REVIEW_PROOF);
-        $canUpdateStatus = $riderMode;
-        $canRecordProof = $riderMode
+        $canUpdateStatus = ! $ownerMode && $riderMode;
+        $canRecordProof = ! $ownerMode && $riderMode
             && $actor instanceof Authenticatable
             && ($actor instanceof ShopOwner || $actor->can('record-logistics-proof'));
-        $canReportIssue = $riderMode;
+        $canReportIssue = ! $ownerMode && $riderMode;
         $riderProfileId = $rider?->id;
         $search = trim((string) ($request->validate([
             'search' => ['nullable', 'string', 'max:100'],
@@ -957,8 +957,12 @@ class ErpLogisticsController extends Controller
         ]);
     }
 
-    public function batches(Request $request): Response
+    public function batches(Request $request): Response|RedirectResponse
     {
+        if ($this->isOwnerMode()) {
+            return redirect()->route('shop-owner.erp.logistics.shipments');
+        }
+
         $shopOwnerId = $this->authorizedShopOwnerId('manage-logistics-batches');
         $shop = ShopOwner::query()->findOrFail($shopOwnerId);
         [$module, $availableModules] = $this->logisticsModuleFilter($shop, (string) $request->query('module', 'all'));

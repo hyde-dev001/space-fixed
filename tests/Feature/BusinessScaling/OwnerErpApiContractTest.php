@@ -76,8 +76,7 @@ final class OwnerErpApiContractTest extends TestCase
 
         $this->actingAs($owner, 'shop_owner')
             ->getJson('/api/logistics/batches')
-            ->assertOk()
-            ->assertJsonStructure(['batches']);
+            ->assertForbidden();
     }
 
     public function test_second_read_api_wave_exposes_owner_hr_finance_and_canonical_audit_get_contract(): void
