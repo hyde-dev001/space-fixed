@@ -103,7 +103,7 @@ describe('user-side navigation shell', () => {
     expect(accountPanelSource).toContain('aria-modal="true"');
     expect(accountPanelSource).toContain('fixed left-[min(88vw,31rem)] top-0 z-[110]');
     expect(accountPanelSource).toContain('bg-white/60');
-    expect(accountPanelSource).toContain('accountDrawerOpen ? \'translate-x-0\' : \'-translate-x-full pointer-events-none\'');
+    expect(accountPanelSource).toContain('accountDrawerOpen ? \'translate-x-0\' : \'translate-x-full pointer-events-none\'');
     expect(accountPanelSource).toContain('<span>Edit Profile</span>');
     expect(accountPanelSource).toContain('<span>Join Our Team</span>');
     expect(accountPanelSource).toContain('<span>Log out</span>');
