@@ -1684,20 +1684,28 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                         <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-700">
                           {requiredUploadCount} / 4 uploaded
                         </span>
-                        <button
-                          type="button"
-                          role="switch"
-                          aria-checked={businessRegistrationType === 'sec_registration'}
-                          aria-label="Business registration authority"
-                          onClick={() => setBusinessRegistrationType((current) => current === 'dti_registration' ? 'sec_registration' : 'dti_registration')}
-                          className="inline-flex items-center gap-2 rounded-full border border-gray-300 bg-white px-2 py-1 text-xs font-semibold text-gray-800 shadow-sm transition hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900"
-                        >
-                          <span className={businessRegistrationType === 'dti_registration' ? 'rounded-full bg-gray-900 px-2 py-1 text-white' : 'px-1 py-1 text-gray-500'}>DTI</span>
-                          <span className="relative h-5 w-9 rounded-full bg-gray-300" aria-hidden="true">
-                            <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${businessRegistrationType === 'sec_registration' ? 'translate-x-4' : 'translate-x-0.5'}`} />
-                          </span>
-                          <span className={businessRegistrationType === 'sec_registration' ? 'rounded-full bg-gray-900 px-2 py-1 text-white' : 'px-1 py-1 text-gray-500'}>SEC</span>
-                        </button>
+                        <div className="group relative">
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={businessRegistrationType === 'sec_registration'}
+                            aria-label="Business registration authority"
+                            aria-describedby="business-registration-help"
+                            onClick={() => setBusinessRegistrationType((current) => current === 'dti_registration' ? 'sec_registration' : 'dti_registration')}
+                            className="inline-flex h-9 items-center gap-2 rounded-full border border-gray-300 bg-white px-2 text-xs font-semibold text-gray-800 shadow-sm transition hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900"
+                          >
+                            <span className={businessRegistrationType === 'dti_registration' ? 'rounded-full bg-gray-900 px-2 py-1 text-white' : 'px-1 py-1 text-gray-500'}>DTI</span>
+                            <span className="relative h-5 w-9 shrink-0 rounded-full bg-gray-300" aria-hidden="true">
+                              <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${businessRegistrationType === 'sec_registration' ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                            </span>
+                            <span className={businessRegistrationType === 'sec_registration' ? 'rounded-full bg-gray-900 px-2 py-1 text-white' : 'px-1 py-1 text-gray-500'}>SEC</span>
+                          </button>
+                          <div id="business-registration-help" role="tooltip" className="pointer-events-none absolute right-0 top-full z-20 mt-2 w-80 rounded-xl border border-gray-200 bg-white p-4 text-left text-xs leading-5 text-gray-700 opacity-0 shadow-xl transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                            <p className="font-semibold text-gray-900">Business registration authority</p>
+                            <p className="mt-1"><strong>DTI</strong> is for a sole proprietorship owned by one person.</p>
+                            <p className="mt-1"><strong>SEC</strong> is for corporations, partnerships, and other registered organizations.</p>
+                          </div>
+                        </div>
                       </div>
                     </div>
                     <p className="mb-4 text-xs text-gray-500">
