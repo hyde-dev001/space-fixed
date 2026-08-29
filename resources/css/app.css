@@ -85,6 +85,37 @@ html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden
   color: #f8fafc !important;
 }
 
+/* All ERP role pages use the same dashboard metric surface, including older
+   page-local cards that do not yet carry the metrics-card marker. Keep this
+   selector inside .erp-theme so the customer/user side is unaffected. */
+.dark #app .erp-theme :is(
+  .metrics-card,
+  [class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"],
+  [class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"]
+) {
+  background-color: #111827 !important;
+  border-color: #1f2937 !important;
+  box-shadow: none !important;
+}
+
+.dark #app .erp-theme :is(
+  .metrics-card,
+  [class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"],
+  [class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"]
+) :is([class*="bg-gradient-to-br"], [class*="bg-linear-to-br"]):not([class*="absolute"]) {
+  background-image: none !important;
+  background-color: #1f2937 !important;
+  color: #e5e7eb !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+/* ApexCharts radial progress must be an arc, never a filled sector. */
+.dark #app .erp-theme .apexcharts-radialbar-area,
+html:not(.dark) #app .erp-theme .apexcharts-radialbar-area {
+  fill: none !important;
+}
+
 /* ApexCharts renders series colors as SVG attributes. Override those
    attributes only in Light Mode so every account uses one monochrome chart
    language while Dark Mode keeps each chart's original palette. */
