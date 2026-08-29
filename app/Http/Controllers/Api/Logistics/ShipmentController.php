@@ -19,7 +19,6 @@ use App\Services\Logistics\ArrivalService;
 use App\Services\Logistics\AssignmentService;
 use App\Services\Logistics\ProofService;
 use App\Services\Logistics\ProofReviewService;
-use App\Services\Logistics\RiderActiveWorkGuard;
 use App\Services\Logistics\LogisticsActorPolicy;
 use App\Services\Logistics\ShipmentLegService;
 use App\Services\RepairDeliveryService;
@@ -36,7 +35,6 @@ use Illuminate\Validation\Rule;
 class ShipmentController extends Controller
 {
     public function __construct(
-        private RiderActiveWorkGuard $activeWork,
         private LogisticsActorPolicy $policy,
     ) {}
 
@@ -147,9 +145,6 @@ class ShipmentController extends Controller
         $rider = $this->assignedRiderProfile($leg);
         $payload['confirmed_by_type'] = $actor::class;
         $payload['confirmed_by_id'] = $actor->getAuthIdentifier();
-        if (blank($payload['replaces_proof_id'] ?? null)) {
-            $this->activeWork->assertCanAdvanceLeg($rider, $leg);
-        }
         $storedPath = $request->file('proof_file')
             ?->store("logistics-proof/{$leg->id}", 'local');
         if ($storedPath) {
