@@ -18,6 +18,7 @@ type InlineAccountMenuProps = {
   actions: InlineAccountAction[];
   error?: string | null;
   avatarUrl?: string | null;
+  businessStyle?: boolean;
 };
 
 const toneClasses: Record<AccountTone, { avatar: string; icon: string; pill: string }> = {
@@ -43,7 +44,7 @@ const toneClasses: Record<AccountTone, { avatar: string; icon: string; pill: str
   },
 };
 
-export default function InlineAccountMenu({ name, email, role, tone, actions, error, avatarUrl }: InlineAccountMenuProps) {
+export default function InlineAccountMenu({ name, email, role, tone, actions, error, avatarUrl, businessStyle = false }: InlineAccountMenuProps) {
   const colors = toneClasses[tone];
   const [avatarFailed, setAvatarFailed] = useState(false);
   const showPhoto = Boolean(avatarUrl) && !avatarFailed;
@@ -52,16 +53,16 @@ export default function InlineAccountMenu({ name, email, role, tone, actions, er
     <div className="w-full">
       <div className="border-b border-gray-200 px-4 py-4 dark:border-gray-700 sm:px-5">
         <div className="flex min-w-0 items-center gap-3">
-          <div className={`flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full ${colors.avatar}`}>
+          <div className={`flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full ${colors.avatar} ${businessStyle ? 'border-2 border-gray-300 shadow-sm dark:border-gray-500' : ''}`}>
             {showPhoto && (
               <img
                 src={avatarUrl ?? ""}
                 alt={`${name} profile photo`}
-                className="h-full w-full object-cover dark:hidden"
+                className={`h-full w-full object-cover ${businessStyle ? '' : 'dark:hidden'}`}
                 onError={() => setAvatarFailed(true)}
               />
             )}
-            <svg className={`h-6 w-6 ${colors.icon}${showPhoto ? ' hidden dark:block' : ''}`} fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+            <svg className={`h-6 w-6 ${colors.icon}${showPhoto && !businessStyle ? ' hidden dark:block' : showPhoto ? ' hidden' : ''}`} fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
               <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
             </svg>
           </div>

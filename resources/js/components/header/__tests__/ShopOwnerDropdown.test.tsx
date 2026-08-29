@@ -43,7 +43,7 @@ it("uses the shop profile photo in an icon-only trigger and keeps identity in th
   const trigger = screen.getByRole("button", { name: "Open account menu for Urban Kicks Store" });
   expect(trigger).toHaveAttribute("data-testid", "shop-owner-account-trigger");
   expect(trigger.querySelector("img")).toHaveAttribute("src", "/storage/profile-photos/urban-kicks.jpg");
-  expect(trigger.querySelector("img")).toHaveClass("dark:hidden");
+  expect(trigger.querySelector("img")).not.toHaveClass("dark:hidden");
   expect(within(trigger).getByText("Urban Kicks Store").parentElement).toHaveClass("hidden", "dark:block");
   expect(trigger).toHaveClass("h-10", "w-10", "dark:bg-transparent");
 
@@ -55,6 +55,16 @@ it("uses the shop profile photo in an icon-only trigger and keeps identity in th
   expect(screen.getByText("Business Settings")).toBeInTheDocument();
   expect(screen.getByText("Sign Out")).toBeInTheDocument();
   expect(trigger).toHaveAttribute("aria-expanded", "true");
+});
+
+it("uses a high-contrast outline for the ERP account trigger", () => {
+  render(<ShopOwnerDropdown businessStyle />);
+
+  expect(screen.getByTestId("shop-owner-account-trigger")).toHaveClass(
+    "border-2",
+    "border-gray-300",
+    "dark:border-gray-500",
+  );
 });
 
 it("falls back to the neutral profile icon when the shop photo cannot load", () => {
@@ -72,12 +82,12 @@ it("falls back to the neutral profile icon when the shop photo cannot load", () 
   );
 });
 
-it("keeps the compact account menu photo-backed and neutral in Light Mode", () => {
-  render(<ShopOwnerDropdown inline />);
+it("keeps the compact ERP account menu photo-backed in both themes", () => {
+  render(<ShopOwnerDropdown inline businessStyle />);
 
   const image = screen.getByRole("img", { name: "Urban Kicks Store profile photo" });
   expect(image).toHaveAttribute("src", "/storage/profile-photos/urban-kicks.jpg");
-  expect(image).toHaveClass("dark:hidden");
-  expect(image.parentElement).toHaveClass("bg-gray-100", "dark:bg-purple-900");
+  expect(image).not.toHaveClass("dark:hidden");
+  expect(image.parentElement).toHaveClass("border-2", "border-gray-300", "dark:border-gray-500");
   expect(screen.getByText("Shop Owner")).toHaveClass("bg-gray-100", "text-gray-900", "dark:bg-purple-900");
 });

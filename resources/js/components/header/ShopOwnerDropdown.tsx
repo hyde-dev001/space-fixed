@@ -40,13 +40,15 @@ const ShopOwnerAvatar = ({ src, alt, className, iconClassName, monochrome = fals
         <img
           src={src ?? ""}
           alt={alt}
-          className="h-full w-full object-cover dark:hidden"
+          className="h-full w-full object-cover"
           onError={() => setImageFailed(true)}
         />
       )}
-      <svg className={`${iconClassName}${showPhoto ? " hidden dark:block" : ""}`} fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
-        <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
-      </svg>
+      {!showPhoto && (
+        <svg className={iconClassName} fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+          <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+        </svg>
+      )}
     </span>
   );
 };
@@ -110,6 +112,7 @@ export default function ShopOwnerDropdown({ actor, urls, inline = false, busines
         role="Shop Owner"
         tone="neutral"
         avatarUrl={profilePhoto}
+        businessStyle={businessStyle}
         actions={[
           {
             label: "Shop Profile",
@@ -148,7 +151,7 @@ export default function ShopOwnerDropdown({ actor, urls, inline = false, busines
         aria-expanded={isOpen}
         data-testid="shop-owner-account-trigger"
         className={businessStyle
-          ? "dropdown-toggle inline-flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white p-1 text-gray-900 transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
+          ? "dropdown-toggle inline-flex h-10 w-10 items-center justify-center rounded-full border-2 border-gray-300 bg-white p-1 text-gray-900 shadow-sm transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-500 dark:border-gray-500 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
           : "dropdown-toggle inline-flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white p-1 text-gray-900 transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] dark:h-auto dark:w-auto dark:gap-2 dark:rounded-lg dark:border-transparent dark:bg-transparent dark:px-3 dark:py-2 dark:text-gray-400 dark:hover:bg-gray-800 dark:focus-visible:ring-blue-300"}
       >
         <ShopOwnerAvatar

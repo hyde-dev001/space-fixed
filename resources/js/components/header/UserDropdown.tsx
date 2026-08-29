@@ -89,6 +89,7 @@ export default function UserDropdown({ inline = false, businessStyle = false }: 
         email={userEmail}
         role={userRole}
         tone="blue"
+        businessStyle={businessStyle}
         actions={[
           {
             label: "Profile & Password",

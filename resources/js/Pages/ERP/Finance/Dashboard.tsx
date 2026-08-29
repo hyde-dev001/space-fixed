@@ -135,15 +135,6 @@ export default function FinanceDashboard() {
                             <Chart options={chartOptions} series={chartSeries} type="area" height={300} />
                         </div>
 
-                        {summary.integrity_warnings.length > 0 && (
-                            <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-amber-900">
-                                <h3 className="font-semibold">Some Finance records need review</h3>
-                                <p className="mt-1 text-sm">Affected source records were excluded from the relevant authoritative metric.</p>
-                                <ul className="mt-3 list-disc pl-5 text-sm">
-                                    {summary.integrity_warnings.map((warning, index) => <li key={`${warning.code}-${warning.source ?? 'record'}-${index}`}>{warning.code}{warning.source ? ` · ${warning.source}` : ''}</li>)}
-                                </ul>
-                            </div>
-                        )}
                     </>
                 )}
             </div>

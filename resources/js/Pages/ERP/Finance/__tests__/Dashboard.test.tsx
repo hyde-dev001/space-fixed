@@ -64,6 +64,18 @@ it('uses the shared dashboard card pattern for all primary metrics', async () =>
   expect(screen.getAllByTestId('finance-metric-icon')).toHaveLength(4);
 });
 
+it('does not render the legacy integrity warning banner', async () => {
+  getSummary.mockResolvedValue({
+    ok: true,
+    status: 200,
+    data: { ...summary, integrity_warnings: [{ code: 'INTEGRITY_WARNING', source: 'order-refund' }] },
+  });
+  renderPage();
+
+  await waitFor(() => expect(screen.getByText('Net revenue')).toBeInTheDocument());
+  expect(screen.queryByText(/some finance records need review/i)).not.toBeInTheDocument();
+});
+
 it('shows a forbidden state without replacing it with empty tax-like data', async () => {
   getSummary.mockResolvedValue({ ok: false, status: 403, error: 'Forbidden' });
   renderPage();
