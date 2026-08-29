@@ -1,5 +1,4 @@
 export const getCustomerNavItems = (isAuthenticated: boolean) => [
-  { route: 'landing', label: 'Home' },
   { route: 'products', label: 'Products', dropdownKey: 'shoes' },
   { route: 'products', label: 'Men', params: { category: 'men' }, dropdownKey: 'men' },
   { route: 'products', label: 'Women', params: { category: 'women' }, dropdownKey: 'women' },
