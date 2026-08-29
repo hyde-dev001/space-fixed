@@ -10,7 +10,20 @@ vi.mock('@inertiajs/react', () => ({
   usePage: () => ({ url: '/notifications', props: {} }),
 }));
 
-vi.mock('sweetalert2', () => ({ default: { fire: vi.fn() } }));
+vi.mock('sweetalert2', () => ({
+  default: {
+    fire: vi.fn(),
+    mixin: vi.fn(() => ({ fire: vi.fn() })),
+  },
+}));
+
+vi.mock('../../../contexts/CartContext', () => ({
+  useCart: () => ({ cartCount: 0, isLoading: false }),
+}));
+
+vi.mock('ziggy-js', () => ({
+  route: (name: string) => `/${name}`,
+}));
 
 vi.mock('../../../hooks/useNotifications', () => ({
   useNotifications: () => ({

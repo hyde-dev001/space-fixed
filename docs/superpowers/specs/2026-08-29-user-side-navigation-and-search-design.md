@@ -1,6 +1,6 @@
 # User-Side Navigation, Cart Drawer, and Search Design
 
-**Date:** 2026-08-29  
+**Date:** 2026-08-29
 **Status:** Approved for implementation
 
 ## Context

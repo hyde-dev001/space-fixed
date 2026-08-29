@@ -89,7 +89,6 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [landingSidebarOpen, setLandingSidebarOpen] = useState(false);
   const [landingSidebarExpanded, setLandingSidebarExpanded] = useState<string | null>(null);
-  const [searchModalOpen, setSearchModalOpen] = useState(false);
   const [cartDrawerOpen, setCartDrawerOpen] = useState(false);
   const [quickCartItems, setQuickCartItems] = useState<QuickCartItem[]>([]);
   const [quickCartLoading, setQuickCartLoading] = useState(false);
