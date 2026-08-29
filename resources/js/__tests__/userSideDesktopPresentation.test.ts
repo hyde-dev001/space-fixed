@@ -32,9 +32,14 @@ describe('desktop user-side presentation', () => {
 
     expect(navigation).toContain('userside-desktop-scope');
     expect(navigation).toContain('productPageMode');
-    expect(navigation).toContain("productPageMode ? 'top-0'");
+    expect(navigation).toContain("productPageMode || catalogMode ? 'top-0'");
 
     const productShow = readProjectFile('resources/js/Pages/UserSide/Products/ProductShow.tsx');
     expect(productShow).toContain('mobileMenuTriggerIcon="hamburger" productPageMode');
+
+    const products = readProjectFile('resources/js/Pages/UserSide/Products/Products.tsx');
+    expect(products).toContain('mobileMenuTriggerIcon="hamburger" landingSidebar catalogMode');
+    expect(products).toContain('<div className="hidden" aria-label="Latest offers">');
+    expect(navigation).toContain("productPageMode || catalogMode ? 'top-0'");
   });
 });

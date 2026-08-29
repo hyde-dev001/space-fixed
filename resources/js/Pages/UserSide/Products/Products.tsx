@@ -506,7 +506,7 @@ const Products: React.FC<Props> = () => {
       <Head title="Products" />
       <div className="userside-products-page min-h-screen bg-white font-outfit antialiased">
         <div className="hidden xl:block">
-          <div className="overflow-hidden bg-[#111111] text-white" aria-label="Latest offers">
+          <div className="hidden" aria-label="Latest offers">
             <div className="products-marquee flex min-w-max items-center gap-16 py-3 text-[11px] font-semibold uppercase tracking-[0.22em]">
               {['50% off', 'Summer sale', '50% off', 'Summer sale', '50% off', 'Summer sale', '50% off', 'Summer sale', '50% off', 'Summer sale', '50% off', 'Summer sale'].map((message, index) => (
                 <span key={`${message}-${index}`} className="inline-flex items-center gap-16">
