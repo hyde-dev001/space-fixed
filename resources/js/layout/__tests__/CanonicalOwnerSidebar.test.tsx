@@ -150,7 +150,7 @@ it("puts Oversee first and expanded for a company owner", () => {
   expect(screen.getByRole("link", { name: "Finance" })).toBeVisible();
 });
 
-it("omits empty groups and explains unavailable items with a management destination", () => {
+it("omits disabled modules and their empty groups from the sidebar", () => {
   const disabledMetadata = metadata({
     groups: metadata().groups.map((group) => group.key === "operate"
       ? {
@@ -167,14 +167,9 @@ it("omits empty groups and explains unavailable items with a management destinat
   render(<CanonicalOwnerSidebar metadata={disabledMetadata} />);
 
   expect(screen.queryByTestId("canonical-owner-group-empty")).not.toBeInTheDocument();
-  const operate = screen.getByTestId("canonical-owner-group-operate").parentElement;
-  expect(operate).not.toBeNull();
-  expect(within(operate as HTMLElement).getByText("This module is disabled for the shop.")).toBeInTheDocument();
-  expect(within(operate as HTMLElement).getByRole("link", { name: /manage in settings/i })).toHaveAttribute(
-    "href",
-    "/shop-owner/settings/modules-team",
-  );
-  expect(within(operate as HTMLElement).queryByRole("link", { name: "Retail" })).not.toBeInTheDocument();
+  expect(screen.queryByTestId("canonical-owner-group-operate")).not.toBeInTheDocument();
+  expect(screen.queryByText("This module is disabled for the shop.")).not.toBeInTheDocument();
+  expect(screen.queryByRole("link", { name: /manage in settings/i })).not.toBeInTheDocument();
 });
 
 it("uses canonical URLs for Home, Reports, Audit, and Settings", () => {
