@@ -506,16 +506,7 @@ const Products: React.FC<Props> = () => {
       <Head title="Products" />
       <div className="userside-products-page min-h-screen bg-white font-outfit antialiased">
         <div className="hidden xl:block">
-          <div className="overflow-hidden bg-[#111111] text-white" aria-label="Latest offers">
-            <div className="products-marquee flex min-w-max items-center gap-16 py-3 text-[11px] font-semibold uppercase tracking-[0.22em]">
-              {['50% off', 'Summer sale', '50% off', 'Summer sale', '50% off', 'Summer sale', '50% off', 'Summer sale', '50% off', 'Summer sale', '50% off', 'Summer sale'].map((message, index) => (
-                <span key={`${message}-${index}`} className="inline-flex items-center gap-16">
-                  {message}<span aria-hidden="true">•</span>
-                </span>
-              ))}
-            </div>
-          </div>
-          <Navigation mobileMenuTriggerIcon="hamburger" landingSidebar catalogMode />
+          <Navigation />
         </div>
 
         <div className="fixed top-0 left-0 right-0 z-50 flex h-16 items-center gap-2 bg-white px-3 shadow-sm xl:hidden">
@@ -892,7 +883,7 @@ const Products: React.FC<Props> = () => {
               </p>
             </div>
           ) : (
-            <div className="grid auto-rows-fr grid-cols-2 gap-0 xl:grid-cols-4">
+            <div className="grid auto-rows-fr grid-cols-2 gap-3 xl:gap-4 xl:grid-cols-3 2xl:grid-cols-4">
               {displayProducts.map((p) => {
                 const productImages = getProductImages(p);
                 const activeImageIndex = activeImageIndexes[p.id] ?? 0;
@@ -906,11 +897,11 @@ const Products: React.FC<Props> = () => {
                 <Link
                   key={p.id}
                   href={productHref}
-                  className="group block h-full border-b border-r border-gray-300 bg-white transition-colors duration-300 hover:bg-gray-50"
+                  className="group block h-full rounded-2xl border border-gray-200 bg-white shadow-[0_12px_28px_-24px_rgba(15,23,42,0.45)] transition-all duration-300 hover:-translate-y-1 hover:border-gray-300 hover:shadow-[0_24px_40px_-24px_rgba(15,23,42,0.55)] xl:rounded-3xl xl:border-gray-300 xl:shadow-[0_16px_35px_-24px_rgba(15,23,42,0.45)]"
                   onMouseEnter={() => startImageCycle(p)}
                   onMouseLeave={() => stopImageCycle(p.id)}
                 >
-                  <div className="relative flex h-full flex-col overflow-hidden bg-white">
+                  <div className="relative flex h-full flex-col overflow-hidden rounded-2xl bg-white xl:rounded-3xl">
                     {p.compare_at_price && p.compare_at_price > p.price && (
                       <div className="absolute left-4 top-4 bg-red-600 text-white text-[10px] px-3 py-1.5 rounded-full font-semibold uppercase tracking-[0.14em] z-10 shadow-sm">
                         SALE
@@ -922,7 +913,7 @@ const Products: React.FC<Props> = () => {
                       </div>
                     )}
 
-                    <div className="relative aspect-square overflow-hidden bg-[#f7f7f7]">
+                    <div className="relative aspect-3/4 overflow-hidden bg-gray-50 xl:aspect-square">
                       {activeImage ? (
                         <>
                           {productImages.map((image, imageIndex) => {
@@ -953,7 +944,7 @@ const Products: React.FC<Props> = () => {
                       )}
                     </div>
 
-                    <div className="flex h-36 flex-col border-t border-gray-300 p-3 xl:h-40 xl:p-4">
+                    <div className="flex min-h-36 flex-col border-t border-gray-200 p-2.5 xl:min-h-48.5 xl:p-3.5">
                       <div className="flex items-start justify-between gap-2 mb-1">
                         <h3 className="mb-1 min-h-8 line-clamp-2 text-xs font-bold uppercase tracking-[0.06em] text-black flex-1 xl:mb-1.5 xl:min-h-10 xl:text-sm">{p.name}</h3>
                         <div className="shrink-0">
@@ -1117,23 +1108,6 @@ const Products: React.FC<Props> = () => {
             </Link>
           </div>
         </div>
-
-        <style>{`
-          .userside-products-page .products-marquee {
-            animation: products-marquee 24s linear infinite;
-          }
-
-          @keyframes products-marquee {
-            from { transform: translateX(0); }
-            to { transform: translateX(-50%); }
-          }
-
-          @media (prefers-reduced-motion: reduce) {
-            .userside-products-page .products-marquee {
-              animation: none;
-            }
-          }
-        `}</style>
       </div>
     </>
   );

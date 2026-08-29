@@ -54,7 +54,6 @@ const resolveCategoryFromSearchQuery = (value: string): string | null => {
 type NavigationProps = {
   mobileMenuTriggerIcon?: 'people' | 'hamburger';
   landingSidebar?: boolean;
-  catalogMode?: boolean;
 };
 
 type QuickCartItem = {
@@ -83,7 +82,7 @@ const toSafeCount = (value: unknown): number => {
   return Math.floor(parsed);
 };
 
-const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people', landingSidebar = false, catalogMode = false }) => {
+const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people', landingSidebar = false }) => {
   const { cartCount, isLoading: cartLoading } = useCart();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [landingSidebarOpen, setLandingSidebarOpen] = useState(false);
@@ -336,8 +335,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
   const cleanUrl = url.split('?')[0]; // Remove query params
   const queryString = url.split('?')[1]; // Extract query string
   const isLandingPage = cleanUrl === '/';
-  const isTransparentNav = isLandingPage && !isScrolled && !catalogMode;
-  const storefrontHeader = landingSidebar || catalogMode;
+  const isTransparentNav = isLandingPage && !isScrolled;
   const headerIconButtonClasses = `relative inline-flex h-10 w-10 shrink-0 items-center justify-center p-0 leading-none transition-all ${
     isTransparentNav
       ? 'text-white hover:opacity-70'
@@ -670,18 +668,18 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
 
   return (
     <nav
-      className={`fixed left-0 right-0 z-50 w-full transition-all duration-300 ${catalogMode ? 'top-10' : landingSidebar ? (isScrolled ? 'top-0' : 'top-10') : 'top-0'} ${
-        catalogMode ? 'border-b border-[#dedede] bg-white' : landingSidebar || isTransparentNav
+      className={`fixed left-0 right-0 z-50 w-full transition-all duration-300 ${landingSidebar ? (isScrolled ? 'top-0' : 'top-10') : 'top-0'} ${
+        landingSidebar || isTransparentNav
           ? 'bg-transparent'
           : 'border-b border-gray-200/70 bg-white/95 backdrop-blur'
       }`}
     >
-      <div className={`mx-auto w-full max-w-[1920px] px-4 sm:px-6 lg:px-10 2xl:px-12 ${landingSidebar && !catalogMode ? 'h-0' : 'h-16 sm:h-20'}`}>
-        <div className={`relative flex items-center justify-center pr-20 sm:pr-24 ${landingSidebar && !catalogMode ? 'h-0' : 'h-16 sm:h-20'} ${landingSidebar && !catalogMode ? '' : '2xl:pr-0'}`}>
+      <div className={`mx-auto w-full max-w-[1920px] px-4 sm:px-6 lg:px-10 2xl:px-12 ${landingSidebar ? 'h-0' : 'h-16 sm:h-20'}`}>
+        <div className={`relative flex items-center justify-center pr-20 sm:pr-24 ${landingSidebar ? 'h-0' : 'h-16 sm:h-20'} ${landingSidebar ? '' : '2xl:pr-0'}`}>
           <Link
             href={route("landing")}
-            className={`absolute top-4 text-xl font-bold leading-none tracking-tight transition-opacity hover:opacity-70 sm:top-6 sm:text-2xl ${
-              storefrontHeader ? 'left-1/2 -translate-x-1/2' : 'left-0'
+            className={`absolute top-3 text-xl font-bold leading-none tracking-tight transition-opacity hover:opacity-70 sm:top-5 sm:text-2xl ${
+              landingSidebar ? 'left-1/2 -translate-x-1/2' : 'left-0'
             } ${
               isTransparentNav ? 'text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.7)]' : 'text-gray-900'
             }`}
@@ -689,7 +687,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
             SoleSpace
           </Link>
 
-          {storefrontHeader && (
+          {landingSidebar && (
             <button
               type="button"
               onClick={() => setLandingSidebarOpen((open) => !open)}
@@ -706,8 +704,8 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
             </button>
           )}
 
-          <div className={`absolute right-0 flex items-center gap-1.5 ${storefrontHeader ? 'top-3 sm:top-5 2xl:hidden' : '2xl:hidden'}`} ref={mobileUserMenuRef}>
-            {storefrontHeader && (
+          <div className={`absolute right-0 flex items-center gap-1.5 ${landingSidebar ? 'top-3 sm:top-5 2xl:hidden' : '2xl:hidden'}`} ref={mobileUserMenuRef}>
+            {landingSidebar && (
               <button type="button" onClick={() => setIsSearchFocused(true)} className={headerIconButtonClasses} aria-label="Open search">
                 <svg className={headerIconSvgClasses} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35m1.6-5.4a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
               </button>
@@ -716,7 +714,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
               href="/checkout"
               className={`${headerIconButtonClasses} ${landingSidebar ? 'order-3' : ''}`}
               aria-label="Shopping cart"
-              onClick={storefrontHeader ? (event) => { event.preventDefault(); setCartDrawerOpen(true); } : undefined}
+              onClick={landingSidebar ? (event) => { event.preventDefault(); setCartDrawerOpen(true); } : undefined}
             >
               <svg className={headerIconSvgClasses} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h2l2.2 10.2a2 2 0 001.96 1.58h7.68a2 2 0 001.95-1.56L21 7H8" />
@@ -733,10 +731,10 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
               <NotificationBell
                 basePath="/api/notifications"
                 iconSize={24}
-              className={`${isTransparentNav ? 'text-white hover:opacity-70' : 'text-gray-900 hover:opacity-70'} ${storefrontHeader ? 'order-2' : ''}`}
+                className={`${isTransparentNav ? 'text-white hover:opacity-70' : 'text-gray-900 hover:opacity-70'} ${landingSidebar ? 'order-2' : ''}`}
               />
             )}
-            {!storefrontHeader && (
+            {!landingSidebar && (
               <button
                 type="button"
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -763,7 +761,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
             )}
           </div>
           <div
-            className={`relative mt-2 hidden items-center space-x-8 ${storefrontHeader ? '' : '2xl:flex'}`}
+            className={`relative mt-2 hidden items-center space-x-8 ${landingSidebar ? '' : '2xl:flex'}`}
             ref={navRef}
             onMouseLeave={handleNavAreaMouseLeave}
           >
@@ -1001,9 +999,9 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
               );
             })}
           </div>
-          <div className={`absolute right-0 hidden items-center 2xl:flex ${storefrontHeader ? 'top-3 gap-1 sm:top-5 2xl:gap-2' : 'gap-3 2xl:gap-4'}`}>
-            <div className={`relative ${storefrontHeader ? 'w-10' : 'w-[17rem]'}`} ref={searchContainerRef}>
-            {storefrontHeader ? (
+          <div className={`absolute right-0 hidden items-center 2xl:flex ${landingSidebar ? 'top-3 gap-1 sm:top-5 2xl:gap-2' : 'gap-3 2xl:gap-4'}`}>
+            <div className={`relative ${landingSidebar ? 'w-10' : 'w-[17rem]'}`} ref={searchContainerRef}>
+            {landingSidebar ? (
               <>
                 <button
                   type="button"
@@ -1035,7 +1033,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                 />
               </form>
             )}
-            {shouldShowSearchDropdown && !storefrontHeader && (
+            {shouldShowSearchDropdown && !landingSidebar && (
               <div className="absolute right-0 top-[calc(100%+10px)] z-50 w-[min(92vw,40rem)] overflow-hidden rounded-2xl border border-gray-200 bg-linear-to-b from-white to-gray-50 shadow-2xl">
                 {isSearchingSuggestions ? (
                   <div className="px-5 py-4 text-sm text-gray-500">Searching suggestions...</div>
@@ -1310,7 +1308,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
               href="/checkout"
               className={`${headerIconButtonClasses} ${landingSidebar ? 'order-3' : ''}`}
               aria-label="Shopping cart"
-              onClick={storefrontHeader ? (event) => { event.preventDefault(); setCartDrawerOpen(true); } : undefined}
+              onClick={landingSidebar ? (event) => { event.preventDefault(); setCartDrawerOpen(true); } : undefined}
             >
               <svg className={headerIconSvgClasses} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h2l2.2 10.2a2 2 0 001.96 1.58h7.68a2 2 0 001.95-1.56L21 7H8" />
@@ -1328,7 +1326,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
             </div>
           </div>
         </div>
-        {mobileMenuOpen && !storefrontHeader && (
+        {mobileMenuOpen && !landingSidebar && (
           <div className="2xl:hidden">
             {mobileMenuTriggerIcon === 'hamburger' ? (
               <div id="mobile-nav-menu" ref={mobileMenuPanelRef} className="mx-auto mt-3 w-full max-w-[430px] rounded-[28px] border border-gray-200 bg-white px-4 py-4 text-center shadow-[0_24px_45px_-28px_rgba(15,23,42,0.45)]">
@@ -1462,7 +1460,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
           </div>
         )}
       </div>
-      {storefrontHeader && (
+      {landingSidebar && (
         <>
           {isSearchFocused && (
             <>
