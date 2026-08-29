@@ -31,5 +31,10 @@ describe('desktop user-side presentation', () => {
     }
 
     expect(navigation).toContain('userside-desktop-scope');
+    expect(navigation).toContain('productPageMode');
+    expect(navigation).toContain("productPageMode ? 'top-0'");
+
+    const productShow = readProjectFile('resources/js/Pages/UserSide/Products/ProductShow.tsx');
+    expect(productShow).toContain('mobileMenuTriggerIcon="hamburger" productPageMode');
   });
 });

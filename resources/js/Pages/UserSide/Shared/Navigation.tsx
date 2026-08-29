@@ -55,6 +55,7 @@ type NavigationProps = {
   mobileMenuTriggerIcon?: 'people' | 'hamburger';
   landingSidebar?: boolean;
   catalogMode?: boolean;
+  productPageMode?: boolean;
 };
 
 type QuickCartItem = {
@@ -83,7 +84,7 @@ const toSafeCount = (value: unknown): number => {
   return Math.floor(parsed);
 };
 
-const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people', landingSidebar = false, catalogMode = false }) => {
+const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people', landingSidebar = false, catalogMode = false, productPageMode = false }) => {
   const { cartCount, isLoading: cartLoading } = useCart();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [landingSidebarOpen, setLandingSidebarOpen] = useState(false);
@@ -337,7 +338,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
   const queryString = url.split('?')[1]; // Extract query string
   const isLandingPage = cleanUrl === '/';
   const isTransparentNav = isLandingPage && !isScrolled && !catalogMode;
-  const storefrontHeader = landingSidebar || catalogMode;
+  const storefrontHeader = landingSidebar || catalogMode || productPageMode;
   const headerIconButtonClasses = `relative inline-flex h-10 w-10 shrink-0 items-center justify-center p-0 leading-none transition-all ${
     isTransparentNav
       ? 'text-white hover:opacity-70'
@@ -671,7 +672,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
   return (
     <div className="userside-desktop-scope">
     <nav
-      className={`fixed left-0 right-0 z-50 w-full transition-all duration-300 ${catalogMode ? 'top-10' : landingSidebar ? (isScrolled ? 'top-0' : 'top-10') : 'top-0'} ${
+      className={`fixed left-0 right-0 z-50 w-full transition-all duration-300 ${productPageMode ? 'top-0' : catalogMode ? 'top-10' : landingSidebar ? (isScrolled ? 'top-0' : 'top-10') : 'top-0'} ${
         catalogMode ? 'border-b border-[#dedede] bg-white' : landingSidebar || isTransparentNav
           ? 'bg-transparent'
           : 'border-b border-gray-200/70 bg-white/95 backdrop-blur'
