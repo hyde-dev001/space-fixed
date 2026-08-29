@@ -65,7 +65,7 @@ export default function RecoveryCodesPanel({
 
   return (
     <div className="space-y-6">
-      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm leading-6 text-amber-950">
+      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm leading-6 text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
         <p className="font-semibold">Save these recovery codes now.</p>
         <p className="mt-1">Each code works once. They will not be shown again after you finish.</p>
       </div>
