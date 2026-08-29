@@ -2390,6 +2390,10 @@ html.userside-dark #app .userside-shoe-guide-page [class~="border-gray-300"] {
     text-transform: uppercase;
   }
 
+  .userside-desktop-scope.userside-catalog-header::before {
+    display: none;
+  }
+
   .userside-desktop-scope > nav {
     border-bottom: 1px solid var(--userside-hairline);
     background: var(--userside-canvas);

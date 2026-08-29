@@ -670,19 +670,19 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
   }, []);
 
   return (
-    <div className="userside-desktop-scope">
+    <div className={`userside-desktop-scope ${catalogMode ? 'userside-catalog-header' : ''}`}>
     <nav
-      className={`fixed left-0 right-0 z-50 w-full transition-all duration-300 ${productPageMode ? 'top-0' : catalogMode ? 'top-10' : landingSidebar ? (isScrolled ? 'top-0' : 'top-10') : 'top-0'} ${
+      className={`fixed left-0 right-0 z-50 w-full transition-all duration-300 ${productPageMode ? 'top-0' : catalogMode ? (isScrolled ? 'top-0' : 'top-10') : landingSidebar ? (isScrolled ? 'top-0' : 'top-10') : 'top-0'} ${
         catalogMode ? 'border-b border-[#dedede] bg-white' : landingSidebar || isTransparentNav
           ? 'bg-transparent'
           : 'border-b border-gray-200/70 bg-white/95 backdrop-blur'
       }`}
     >
-      <div className={`mx-auto w-full max-w-[1920px] px-4 sm:px-6 lg:px-10 2xl:px-12 ${landingSidebar && !catalogMode ? 'h-0' : 'h-16 sm:h-20'}`}>
-        <div className={`relative flex items-center justify-center pr-20 sm:pr-24 ${landingSidebar && !catalogMode ? 'h-0' : 'h-16 sm:h-20'} ${landingSidebar && !catalogMode ? '' : '2xl:pr-0'}`}>
+      <div className={`mx-auto w-full max-w-[1920px] px-4 sm:px-6 lg:px-10 2xl:px-10 ${landingSidebar && !catalogMode ? 'h-0' : catalogMode ? 'h-14' : 'h-16 sm:h-20'}`}>
+        <div className={`relative flex items-center justify-center pr-20 sm:pr-24 ${landingSidebar && !catalogMode ? 'h-0' : catalogMode ? 'h-14' : 'h-16 sm:h-20'} ${landingSidebar && !catalogMode ? '' : '2xl:pr-0'}`}>
           <Link
             href={route("landing")}
-            className={`absolute top-4 text-xl font-bold leading-none tracking-tight transition-opacity hover:opacity-70 sm:top-6 sm:text-2xl ${
+            className={`absolute text-xl font-bold leading-none tracking-tight transition-opacity hover:opacity-70 ${catalogMode ? 'top-[1.125rem] text-[1.35rem]' : 'top-4 sm:top-6 sm:text-2xl'} ${
               storefrontHeader ? 'left-1/2 -translate-x-1/2' : 'left-0'
             } ${
               isTransparentNav ? 'text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.7)]' : 'text-gray-900'
@@ -695,7 +695,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
             <button
               type="button"
               onClick={() => setLandingSidebarOpen((open) => !open)}
-              className={`absolute left-0 top-3 inline-flex h-10 w-10 -translate-y-px items-center justify-center p-0 transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 sm:top-5 ${isTransparentNav ? 'text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.7)] focus-visible:ring-white' : 'text-gray-900 focus-visible:ring-gray-900'}`}
+              className={`absolute left-0 inline-flex h-10 w-10 -translate-y-px items-center justify-center p-0 transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 ${catalogMode ? 'top-2' : 'top-3 sm:top-5'} ${isTransparentNav ? 'text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.7)] focus-visible:ring-white' : 'text-gray-900 focus-visible:ring-gray-900'}`}
               aria-label={landingSidebarOpen ? 'Close menu' : 'Toggle menu'}
             >
               <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1003,7 +1003,10 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
               );
             })}
           </div>
-          <div className={`absolute right-0 hidden items-center 2xl:flex ${storefrontHeader ? 'top-3 gap-1 sm:top-5 2xl:gap-2' : 'gap-3 2xl:gap-4'}`}>
+          <div className={`absolute right-0 hidden items-center 2xl:flex ${storefrontHeader ? `${catalogMode ? 'top-2' : 'top-3 sm:top-5'} gap-1 2xl:gap-2` : 'gap-3 2xl:gap-4'}`}>
+            {catalogMode && (
+              <span className="mr-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-black">PHP</span>
+            )}
             <div className={`relative ${storefrontHeader ? 'w-10' : 'w-[17rem]'}`} ref={searchContainerRef}>
             {storefrontHeader ? (
               <>
