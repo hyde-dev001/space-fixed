@@ -1,5 +1,6 @@
 import { Link, router } from '@inertiajs/react';
 import { useState } from 'react';
+import Swal from 'sweetalert2';
 import AppLayout from '../../../layout/AppLayout';
 
 interface InviteForm {
@@ -12,7 +13,7 @@ interface InviteForm {
 
 type InviteErrors = Record<string, string | string[] | undefined>;
 
-const inputClassName = 'w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-gray-900 outline-none transition focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10 disabled:bg-gray-100';
+const inputClassName = 'w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-gray-900 outline-none transition focus:border-gray-900 focus:ring-4 focus:ring-gray-900/10 disabled:bg-gray-100';
 
 function errorText(errors: InviteErrors, key: string): string | undefined {
   const value = errors[key];
@@ -35,7 +36,7 @@ export default function CreateAdmin() {
     setErrors((current) => ({ ...current, [field]: undefined }));
   };
 
-  const submit = (event: React.FormEvent<HTMLFormElement>) => {
+  const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (processing) return;
 
@@ -44,11 +45,25 @@ export default function CreateAdmin() {
     if (form.last_name.trim().length < 2) nextErrors.last_name = 'Last name is required.';
     if (!form.email.trim()) nextErrors.email = 'Email is required.';
     if (!form.phone.trim()) nextErrors.phone = 'Phone number is required.';
+    else if (!/^\d{10,20}$/.test(form.phone.trim())) nextErrors.phone = 'Phone number must contain 10 to 20 digits only.';
 
     if (Object.keys(nextErrors).length > 0) {
       setErrors(nextErrors);
       return;
     }
+
+    const confirmation = await Swal.fire({
+      title: 'Send invitation?',
+      text: `Send a setup invitation to ${form.email.trim()}?`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Send invitation',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#111827',
+      cancelButtonColor: '#6b7280',
+    });
+
+    if (!confirmation.isConfirmed) return;
 
     setErrors({});
     setProcessing(true);
@@ -103,7 +118,7 @@ export default function CreateAdmin() {
               </div>
               <div>
                 <label htmlFor="invite-phone" className="mb-2 block text-sm font-semibold text-gray-800 dark:text-gray-200">Phone number</label>
-                <input id="invite-phone" type="tel" autoComplete="tel" value={form.phone} onChange={(event) => update('phone', event.target.value)} className={inputClassName} required />
+                <input id="invite-phone" type="tel" inputMode="numeric" pattern="[0-9]*" autoComplete="tel" value={form.phone} onChange={(event) => update('phone', event.target.value.replace(/\D/g, ''))} className={inputClassName} required />
                 {errorText(errors, 'phone') && <p className="mt-1 text-sm text-red-600">{errorText(errors, 'phone')}</p>}
               </div>
             </div>
@@ -117,11 +132,11 @@ export default function CreateAdmin() {
               {errorText(errors, 'role') && <p className="mt-1 text-sm text-red-600">{errorText(errors, 'role')}</p>}
             </div>
 
-            <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm leading-6 text-blue-950">
+            <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm leading-6 text-gray-800 shadow-sm">
               No password is collected here. The invitation recipient creates a server-validated password and completes MFA from the one-time link.
             </div>
 
-            <button type="submit" disabled={processing} className="inline-flex w-full items-center justify-center rounded-xl bg-blue-600 px-4 py-3 font-semibold text-white transition hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-600/20 disabled:cursor-not-allowed disabled:bg-blue-400">
+            <button type="submit" disabled={processing} className="inline-flex w-full items-center justify-center rounded-xl bg-gray-900 px-4 py-3 font-semibold text-white transition hover:bg-black focus:outline-none focus:ring-4 focus:ring-gray-900/20 disabled:cursor-not-allowed disabled:bg-gray-400">
               {processing ? 'Sending invitation…' : 'Send invitation'}
             </button>
           </form>

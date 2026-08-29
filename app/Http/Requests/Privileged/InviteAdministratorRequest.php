@@ -33,7 +33,7 @@ final class InviteAdministratorRequest extends FormRequest
             'first_name' => ['required', 'string', 'min:2', 'max:255'],
             'last_name' => ['required', 'string', 'min:2', 'max:255'],
             'email' => ['required', 'email', 'max:255', Rule::unique('super_admins', 'email')],
-            'phone' => ['required', 'string', 'min:10', 'max:20'],
+            'phone' => ['required', 'digits_between:10,20'],
             'role' => ['required', 'string', Rule::in([
                 SuperAdmin::ROLE_ADMIN,
                 SuperAdmin::ROLE_SUPER_ADMIN,
