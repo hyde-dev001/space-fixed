@@ -609,7 +609,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
 
   return (
     <nav
-      className={`${landingSidebar ? 'absolute' : 'fixed'} top-0 left-0 right-0 z-50 w-full transition-all duration-300 ${
+      className={`fixed left-0 right-0 z-50 w-full transition-all duration-300 ${landingSidebar ? (isScrolled ? 'top-0' : 'top-10') : 'top-0'} ${
         landingSidebar || isTransparentNav
           ? 'bg-transparent'
           : 'border-b border-gray-200/70 bg-white/95 backdrop-blur'
@@ -938,24 +938,53 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
             })}
           </div>
           <div className={`absolute right-0 hidden items-center gap-3 2xl:flex 2xl:gap-4 ${landingSidebar ? 'top-3 sm:top-5' : ''}`}>
-            <div className="relative w-[17rem]" ref={searchContainerRef}>
-            <form onSubmit={handleSearch} className="relative w-full">
-              <span className={`absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none transition-colors duration-300 ${searchIconClasses}`}>
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35m1.6-5.4a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-              </span>
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onFocus={() => setIsSearchFocused(true)}
-                placeholder="Search"
-                className={desktopSearchInputClasses}
-                aria-label="Search"
-              />
-            </form>
-            {shouldShowSearchDropdown && (
+            <div className={`relative ${landingSidebar ? 'w-10' : 'w-[17rem]'}`} ref={searchContainerRef}>
+            {landingSidebar ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setIsSearchFocused((focused) => !focused)}
+                  className={headerIconButtonClasses}
+                  aria-label="Open search"
+                  aria-expanded={isSearchFocused}
+                >
+                  <svg className={headerIconSvgClasses} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35m1.6-5.4a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </button>
+                {isSearchFocused && (
+                  <form onSubmit={handleSearch} className="absolute right-0 top-[calc(100%+0.75rem)] w-72 rounded-full border border-white/30 bg-black/80 p-1.5 shadow-xl backdrop-blur-xl">
+                    <input
+                      autoFocus
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Search products"
+                      className="w-full rounded-full border-0 bg-transparent px-4 py-2 text-sm text-white placeholder:text-white/60 focus:outline-none focus:ring-2 focus:ring-white/60"
+                      aria-label="Search products"
+                    />
+                  </form>
+                )}
+              </>
+            ) : (
+              <form onSubmit={handleSearch} className="relative w-full">
+                <span className={`absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none transition-colors duration-300 ${searchIconClasses}`}>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35m1.6-5.4a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </span>
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onFocus={() => setIsSearchFocused(true)}
+                  placeholder="Search"
+                  className={desktopSearchInputClasses}
+                  aria-label="Search"
+                />
+              </form>
+            )}
+            {shouldShowSearchDropdown && !landingSidebar && (
               <div className="absolute right-0 top-[calc(100%+10px)] z-50 w-[min(92vw,40rem)] overflow-hidden rounded-2xl border border-gray-200 bg-linear-to-b from-white to-gray-50 shadow-2xl">
                 {isSearchingSuggestions ? (
                   <div className="px-5 py-4 text-sm text-gray-500">Searching suggestions...</div>
