@@ -1559,7 +1559,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
             type="button"
             aria-label="Close menu"
             onClick={() => setLandingSidebarOpen(false)}
-            className={`fixed inset-0 z-[59] bg-black/45 transition-opacity duration-300 ${landingSidebarOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+            className={`fixed inset-0 z-[59] bg-black/45 transition-opacity duration-300 motion-reduce:transition-none ${landingSidebarOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
           />
           <aside
             aria-label="Site menu"
