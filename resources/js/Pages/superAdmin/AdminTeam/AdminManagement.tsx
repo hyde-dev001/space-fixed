@@ -43,6 +43,17 @@ function statusLabel(status: string): string {
   return status.replace(/_/g, ' ').replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
+const MetricIcon = ({ kind }: { kind: 'users' | 'active' | 'suspended' | 'inactive' }) => {
+  const paths = {
+    users: 'M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2m7-10a4 4 0 100-8 4 4 0 000 8zm9 10v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75',
+    active: 'M5 13l4 4L19 7',
+    suspended: 'M12 9v4m0 4h.01M10.3 3.2L2.6 17a2 2 0 001.75 3h15.3a2 2 0 001.75-3L13.7 3.2a2 2 0 00-3.5 0z',
+    inactive: 'M6 6l12 12M6 18L18 6',
+  } as const;
+
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6" aria-hidden="true"><path d={paths[kind]} /></svg>;
+};
+
 function roleLabel(role: string): string {
   return role === 'super_admin' ? 'Super Admin' : 'Admin';
 }
@@ -156,14 +167,20 @@ export default function AdminManagement({ admins = [], stats = {}, filters = {} 
 
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {[
-              ['Total administrators', stats.total ?? pageMeta.total],
-              ['Active', stats.active ?? visibleAdmins.filter((admin) => admin.status === 'active').length],
-              ['Suspended', stats.suspended ?? visibleAdmins.filter((admin) => admin.status === 'suspended').length],
-              ['Inactive', stats.inactive ?? visibleAdmins.filter((admin) => admin.status === 'inactive').length],
-            ].map(([label, value]) => (
-              <div key={label as string} className="metrics-card rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-800">
-                <p className="text-sm text-gray-500 dark:text-gray-400">{label}</p>
-                <p className="mt-2 text-3xl font-bold">{value}</p>
+              ['Total administrators', stats.total ?? pageMeta.total, 'users'],
+              ['Active', stats.active ?? visibleAdmins.filter((admin) => admin.status === 'active').length, 'active'],
+              ['Suspended', stats.suspended ?? visibleAdmins.filter((admin) => admin.status === 'suspended').length, 'suspended'],
+              ['Inactive', stats.inactive ?? visibleAdmins.filter((admin) => admin.status === 'inactive').length, 'inactive'],
+            ].map(([label, value, kind]) => (
+              <div key={label as string} className="metrics-card rounded-2xl border border-gray-200 bg-white p-5 shadow-sm transition hover:border-gray-300 hover:shadow-md dark:border-gray-800 dark:bg-gray-800 dark:hover:border-gray-700">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-gray-200 bg-gray-100 text-gray-900 dark:border-gray-700 dark:bg-gray-700 dark:text-gray-100">
+                    <MetricIcon kind={kind as 'users' | 'active' | 'suspended' | 'inactive'} />
+                  </div>
+                  <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-600 dark:bg-gray-700 dark:text-gray-300">Snapshot</span>
+                </div>
+                <p className="mt-5 text-sm font-medium text-gray-500 dark:text-gray-400">{label}</p>
+                <p className="mt-1 text-3xl font-bold text-gray-900 dark:text-white">{value}</p>
               </div>
             ))}
           </div>
