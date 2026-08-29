@@ -13,9 +13,10 @@ type PrivilegedIdentity = {
 
 type SuperAdminDropdownProps = {
   inline?: boolean;
+  compact?: boolean;
 };
 
-export default function SuperAdminDropdown({ inline = false }: SuperAdminDropdownProps = {}) {
+export default function SuperAdminDropdown({ inline = false, compact = false }: SuperAdminDropdownProps = {}) {
   const { auth } = usePage<{ auth?: { super_admin?: PrivilegedIdentity | null } }>().props;
   const [isOpen, setIsOpen] = useState(false);
   const [logoutError, setLogoutError] = useState<string | null>(null);
@@ -96,22 +97,25 @@ export default function SuperAdminDropdown({ inline = false }: SuperAdminDropdow
     <div className="relative">
       <button
         onClick={toggleDropdown}
-        className="flex items-center gap-2 px-3 py-2 text-gray-700 rounded-lg transition dropdown-toggle dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
+        aria-label={`Open account menu for ${userName}`}
+        className={compact
+          ? "dropdown-toggle inline-flex h-11 w-11 items-center justify-center rounded-full border border-gray-200 bg-white p-1 text-gray-900 transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
+          : "flex items-center gap-2 rounded-lg px-3 py-2 text-gray-700 transition dropdown-toggle dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"}
       >
-        <div className="flex items-center justify-center w-8 h-8 bg-red-100 rounded-full dark:bg-red-900">
+        <div className={`flex items-center justify-center rounded-full ${compact ? 'h-full w-full bg-gray-100 dark:bg-gray-800' : 'h-8 w-8 bg-red-100 dark:bg-red-900'}`}>
           <svg
-            className="w-5 h-5 text-red-600 dark:text-red-300"
+            className={`h-5 w-5 ${compact ? 'text-gray-900 dark:text-gray-100' : 'text-red-600 dark:text-red-300'}`}
             fill="currentColor"
             viewBox="0 0 20 20"
           >
             <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
           </svg>
         </div>
-        <div className="hidden sm:block">
+        <div className={`${compact ? 'hidden' : 'hidden sm:block'}`}>
           <span className="block font-semibold text-sm">{userName}</span>
         </div>
         <svg
-          className={`stroke-gray-500 dark:stroke-gray-400 transition-transform duration-200 ${
+          className={`${compact ? 'hidden' : ''} stroke-gray-500 dark:stroke-gray-400 transition-transform duration-200 ${
             isOpen ? "rotate-180" : ""
           }`}
           width="18"
