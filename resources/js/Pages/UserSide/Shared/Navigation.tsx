@@ -680,7 +680,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
         <div className={`relative flex items-center justify-center pr-20 sm:pr-24 ${landingSidebar && !catalogMode ? 'h-0' : 'h-16 sm:h-20'} ${landingSidebar && !catalogMode ? '' : '2xl:pr-0'}`}>
           <Link
             href={route("landing")}
-            className={`absolute top-3 text-xl font-bold leading-none tracking-tight transition-opacity hover:opacity-70 sm:top-5 sm:text-2xl ${
+            className={`absolute top-4 text-xl font-bold leading-none tracking-tight transition-opacity hover:opacity-70 sm:top-6 sm:text-2xl ${
               storefrontHeader ? 'left-1/2 -translate-x-1/2' : 'left-0'
             } ${
               isTransparentNav ? 'text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.7)]' : 'text-gray-900'
