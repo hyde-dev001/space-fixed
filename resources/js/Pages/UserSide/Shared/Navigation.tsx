@@ -53,6 +53,7 @@ const resolveCategoryFromSearchQuery = (value: string): string | null => {
 
 type NavigationProps = {
   mobileMenuTriggerIcon?: 'people' | 'hamburger';
+  landingSidebar?: boolean;
 };
 
 type HeaderSeenCounts = {
@@ -71,9 +72,11 @@ const toSafeCount = (value: unknown): number => {
   return Math.floor(parsed);
 };
 
-const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people' }) => {
+const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people', landingSidebar = false }) => {
   const { cartCount, isLoading: cartLoading } = useCart();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [landingSidebarOpen, setLandingSidebarOpen] = useState(false);
+  const [landingSidebarExpanded, setLandingSidebarExpanded] = useState<string | null>(null);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchProducts, setSearchProducts] = useState<SearchSuggestionProduct[]>([]);
@@ -153,6 +156,21 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
       console.warn('Failed to restore header seen counts:', error);
     }
   }, []);
+
+  useEffect(() => {
+    if (!landingSidebarOpen) return;
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setLandingSidebarOpen(false);
+    };
+
+    document.addEventListener('keydown', handleEscape);
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', handleEscape);
+      document.body.style.overflow = '';
+    };
+  }, [landingSidebarOpen]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -598,7 +616,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
       }`}
     >
       <div className="mx-auto h-16 w-full max-w-[1920px] px-4 sm:h-20 sm:px-6 lg:px-10 2xl:px-12">
-        <div className="relative flex h-16 items-center justify-center pr-20 sm:h-20 sm:pr-24 2xl:pr-0">
+        <div className={`relative flex h-16 items-center justify-center pr-20 sm:h-20 sm:pr-24 ${landingSidebar ? '' : '2xl:pr-0'}`}>
           <Link
             href={route("landing")}
             className={`absolute left-0 text-xl font-bold tracking-tight transition-opacity hover:opacity-70 sm:text-2xl ${
@@ -608,7 +626,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
             SoleSpace
           </Link>
 
-          <div className="absolute right-0 flex items-center gap-1.5 2xl:hidden" ref={mobileUserMenuRef}>
+          <div className={`absolute right-0 flex items-center gap-1.5 ${landingSidebar ? '' : '2xl:hidden'}`} ref={mobileUserMenuRef}>
             <Link
               href="/checkout"
               className={headerIconButtonClasses}
@@ -637,13 +655,13 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
             )}
             <button
               type="button"
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              onClick={() => landingSidebar ? setLandingSidebarOpen((open) => !open) : setMobileMenuOpen(!mobileMenuOpen)}
               className={headerIconButtonClasses}
               aria-label={mobileMenuTriggerIcon === 'hamburger' ? 'Toggle menu' : 'User account menu'}
             >
               <svg className={headerIconSvgClasses} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                {mobileMenuTriggerIcon === 'hamburger' ? (
-                  mobileMenuOpen ? (
+                {landingSidebar || mobileMenuTriggerIcon === 'hamburger' ? (
+                  (landingSidebar ? landingSidebarOpen : mobileMenuOpen) ? (
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   ) : (
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
@@ -660,7 +678,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
             </button>
           </div>
           <div
-            className="relative mt-2 hidden items-center space-x-8 2xl:flex"
+            className={`relative mt-2 hidden items-center space-x-8 ${landingSidebar ? '' : '2xl:flex'}`}
             ref={navRef}
             onMouseLeave={handleNavAreaMouseLeave}
           >
@@ -1203,7 +1221,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
             </div>
           </div>
         </div>
-        {mobileMenuOpen && (
+        {mobileMenuOpen && !landingSidebar && (
           <div className="2xl:hidden">
             {mobileMenuTriggerIcon === 'hamburger' ? (
               <div id="mobile-nav-menu" ref={mobileMenuPanelRef} className="mx-auto mt-3 w-full max-w-[430px] rounded-[28px] border border-gray-200 bg-white px-4 py-4 text-center shadow-[0_24px_45px_-28px_rgba(15,23,42,0.45)]">
@@ -1337,6 +1355,65 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
           </div>
         )}
       </div>
+      {landingSidebar && (
+        <>
+          <button
+            type="button"
+            aria-label="Close menu"
+            onClick={() => setLandingSidebarOpen(false)}
+            className={`fixed inset-0 z-[59] bg-black/45 transition-opacity duration-300 ${landingSidebarOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+          />
+          <aside
+            aria-label="Site menu"
+            className={`fixed left-0 top-0 z-[60] flex h-dvh w-[min(88vw,31rem)] flex-col overflow-y-auto bg-white text-[#111111] shadow-2xl transition-transform duration-300 ease-out ${landingSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
+          >
+            <div className="flex items-center justify-between border-b border-[#e5e5e5] px-6 py-6 sm:px-8">
+              <Link href={route('landing')} onClick={() => setLandingSidebarOpen(false)} className="text-xl font-black tracking-[-0.06em] sm:text-2xl">
+                SOLESPACE
+              </Link>
+              <button type="button" onClick={() => setLandingSidebarOpen(false)} className="inline-flex h-11 w-11 items-center justify-center rounded-full hover:bg-[#f5f5f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111]" aria-label="Close menu">
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 6l12 12M18 6L6 18" /></svg>
+              </button>
+            </div>
+            <nav className="flex-1 px-6 py-7 sm:px-8">
+              <div className="space-y-1">
+                {navItems.map((item) => {
+                  const hasChildren = Boolean(item.dropdownKey);
+                  const href = route(item.route, item.params ?? undefined);
+                  const isExpanded = landingSidebarExpanded === item.dropdownKey;
+                  return (
+                    <div key={`${item.label}-${item.dropdownKey ?? 'link'}`}>
+                      <div className="flex items-center justify-between">
+                        <Link href={href} onClick={() => setLandingSidebarOpen(false)} className="flex min-h-12 flex-1 items-center text-lg font-semibold tracking-[-0.02em] transition-opacity hover:opacity-55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] sm:text-xl">
+                          {item.label}
+                        </Link>
+                        {hasChildren && (
+                          <button type="button" onClick={() => setLandingSidebarExpanded(isExpanded ? null : item.dropdownKey ?? null)} className="inline-flex h-11 w-11 items-center justify-center rounded-full hover:bg-[#f5f5f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111]" aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${item.label}`}>
+                            <svg className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-45' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={2} d="M12 5v14M5 12h14" /></svg>
+                          </button>
+                        )}
+                      </div>
+                      {isExpanded && (
+                        <div className="mb-3 ml-4 border-l border-[#cacacb] pl-4">
+                          <Link href={route('products', item.params?.category ? { category: item.params.category } : undefined)} onClick={() => setLandingSidebarOpen(false)} className="flex min-h-10 items-center text-sm font-medium text-[#707072] hover:text-[#111111]">Shop all</Link>
+                          {['New arrivals', 'Best sellers', 'Running', 'Basketball', 'Lifestyle'].map((category) => (
+                            <Link key={category} href={route('products', item.params?.category ? { category: item.params.category } : undefined)} onClick={() => setLandingSidebarOpen(false)} className="flex min-h-10 items-center text-sm font-medium text-[#707072] hover:text-[#111111]">{category}</Link>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </nav>
+            <div className="border-t border-[#cacacb] px-6 py-6 sm:px-8">
+              <Link href={route('products')} onClick={() => setLandingSidebarOpen(false)} className="flex min-h-12 items-center gap-3 text-base font-medium hover:opacity-55"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" strokeWidth={2}/><path strokeLinecap="round" strokeWidth={2} d="m20 20-4-4"/></svg>Search</Link>
+              <Link href={isAuthenticated ? '/customer-profile' : route('login')} onClick={() => setLandingSidebarOpen(false)} className="flex min-h-12 items-center gap-3 text-base font-medium hover:opacity-55"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3" strokeWidth={2}/><path strokeLinecap="round" strokeWidth={2} d="M5 20a7 7 0 0 1 14 0"/></svg>{isAuthenticated ? 'Account' : 'Sign in'}</Link>
+              <Link href="/checkout" onClick={() => setLandingSidebarOpen(false)} className="flex min-h-12 items-center gap-3 text-base font-medium hover:opacity-55"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={2} d="M3 4h2l2.2 10.2a2 2 0 0 0 1.96 1.58h7.68a2 2 0 0 0 1.95-1.56L21 7H8"/><circle cx="10" cy="19" r="1.5"/><circle cx="17" cy="19" r="1.5"/></svg>Bag {effectiveCartCount > 0 && `(${effectiveCartCount})`}</Link>
+            </div>
+          </aside>
+        </>
+      )}
     </nav>
   );
 };
