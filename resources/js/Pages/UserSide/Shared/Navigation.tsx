@@ -917,6 +917,22 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
             })}
           </div>
           <div className="absolute right-0 hidden items-center gap-3 2xl:flex 2xl:gap-4">
+            {landingSidebar && (
+              <button
+                type="button"
+                onClick={() => setLandingSidebarOpen((open) => !open)}
+                className={headerIconButtonClasses}
+                aria-label={landingSidebarOpen ? 'Close menu' : 'Toggle menu'}
+              >
+                <svg className={headerIconSvgClasses} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  {landingSidebarOpen ? (
+                    <path strokeLinecap="round" strokeWidth={2} d="M6 6l12 12M18 6L6 18" />
+                  ) : (
+                    <path strokeLinecap="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                  )}
+                </svg>
+              </button>
+            )}
             <div className="relative w-[17rem]" ref={searchContainerRef}>
             <form onSubmit={handleSearch} className="relative w-full">
               <span className={`absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none transition-colors duration-300 ${searchIconClasses}`}>
