@@ -1,6 +1,7 @@
 import React, { ChangeEvent, FormEvent, useState } from 'react';
 import { Head, router, usePage } from '@inertiajs/react';
 import AppLayout from '../../../layout/AppLayout';
+import Select from '../../../components/form/Select';
 import {
   Table,
   TableBody,
@@ -200,10 +201,7 @@ export default function PrivilegedAuditHistory() {
             <form onSubmit={applyFilters} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <div>
                 <label htmlFor="event" className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Event</label>
-                <select id="event" value={filterForm.event} onChange={updateFilter('event')} className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white">
-                  <option value="">All events</option>
-                  {eventOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </select>
+                <Select id="event" aria-label="Event" options={eventOptions} placeholder="All events" value={filterForm.event} onChange={(value) => setFilterForm((previous) => ({ ...previous, event: value }))} />
               </div>
               <div>
                 <label htmlFor="actor_id" className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Actor ID</label>
@@ -211,10 +209,7 @@ export default function PrivilegedAuditHistory() {
               </div>
               <div>
                 <label htmlFor="target_type" className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Target type</label>
-                <select id="target_type" value={filterForm.target_type} onChange={updateFilter('target_type')} className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white">
-                  <option value="">All target types</option>
-                  {targetTypeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </select>
+                <Select id="target_type" aria-label="Target type" options={targetTypeOptions} placeholder="All target types" value={filterForm.target_type} onChange={(value) => setFilterForm((previous) => ({ ...previous, target_type: value }))} />
               </div>
               <div>
                 <label htmlFor="target_id" className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Target ID</label>
