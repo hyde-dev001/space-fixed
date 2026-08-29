@@ -115,13 +115,17 @@ export default function UserDropdown({ inline = false, businessStyle = false }: 
   return (
     <div className="relative">
       <button
+        type="button"
         onClick={toggleDropdown}
+        aria-label={`Open account menu for ${userName}`}
+        aria-haspopup="menu"
+        aria-expanded={isOpen}
         className={businessStyle
-          ? "flex items-center gap-2 rounded-full border border-gray-200 bg-white p-1 text-gray-900 transition-colors dropdown-toggle hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
+          ? "dropdown-toggle inline-flex h-10 w-10 items-center justify-center rounded-full border-2 border-gray-300 bg-white p-1 text-gray-900 shadow-sm transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-500 dark:border-gray-500 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
           : "flex items-center gap-2 px-3 py-2 text-gray-700 rounded-lg transition dropdown-toggle dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"}
       >
         <div className={businessStyle
-          ? "flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100"
+          ? "flex h-full w-full items-center justify-center rounded-full bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100"
           : "flex items-center justify-center w-8 h-8 bg-blue-100 rounded-full dark:bg-blue-900"}>
           <svg
             className={businessStyle ? "h-5 w-5 text-gray-700 dark:text-gray-200" : "w-5 h-5 text-blue-600 dark:text-blue-300"}
@@ -131,12 +135,12 @@ export default function UserDropdown({ inline = false, businessStyle = false }: 
             <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
           </svg>
         </div>
-        <div className="hidden sm:block">
+        <div className={businessStyle ? "hidden" : "hidden sm:block"}>
           <span className="block font-semibold text-sm">{userName}</span>
           <span className="text-xs text-gray-500 dark:text-gray-400">{userRole}</span>
         </div>
         <svg
-          className={`stroke-gray-500 dark:stroke-gray-400 transition-transform duration-200 ${
+          className={`${businessStyle ? "hidden" : ""} stroke-gray-500 dark:stroke-gray-400 transition-transform duration-200 ${
             isOpen ? "rotate-180" : ""
           }`}
           width="18"
