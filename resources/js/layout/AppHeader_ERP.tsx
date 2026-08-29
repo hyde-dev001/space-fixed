@@ -42,11 +42,11 @@ const AppHeader_ERP: React.FC = () => {
       : '/api/hr/notifications';
 
   const renderAccountMenu = (inline = false) => ownerMode ? (
-    <ShopOwnerDropdown actor={erpActor} urls={erpUrls} inline={inline} />
+    <ShopOwnerDropdown actor={erpActor} urls={erpUrls} inline={inline} businessStyle />
   ) : auth?.super_admin ? (
     <SuperAdminDropdown inline={inline} />
   ) : auth?.user ? (
-    <UserDropdown inline={inline} />
+    <UserDropdown inline={inline} businessStyle />
   ) : null;
 
   const handleToggle = () => {
@@ -164,7 +164,7 @@ const AppHeader_ERP: React.FC = () => {
             <NotificationBell
               basePath={notificationBasePath}
               iconSize={24}
-              className="rounded-xl border border-gray-200 bg-gray-50 text-gray-900 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700"
+              className="rounded-full border border-gray-200 bg-white text-gray-900 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
             />
             <button
               ref={applicationMenuTriggerRef}
@@ -262,7 +262,7 @@ const AppHeader_ERP: React.FC = () => {
                 <NotificationBell
                   basePath={notificationBasePath}
                   iconSize={24}
-                  className="rounded-xl border border-gray-200 bg-gray-50 text-gray-900 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700 xl:border-0 xl:bg-transparent xl:text-black xl:hover:bg-transparent xl:hover:opacity-70"
+                  className="rounded-full border border-gray-200 bg-white text-gray-900 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
                 />
               </div>
               <div className="hidden items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:shadow-none xl:contents">
