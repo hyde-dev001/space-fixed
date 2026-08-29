@@ -27,7 +27,7 @@ vi.mock('axios', () => ({
 
 vi.mock('sweetalert2', () => ({
   default: {
-    fire: vi.fn(),
+    fire: vi.fn().mockResolvedValue({ isConfirmed: true }),
   },
 }));
 
@@ -267,7 +267,7 @@ describe('privileged authentication flows', () => {
     );
   });
 
-  it('invites administrators without collecting or sending a password', () => {
+  it('invites administrators without collecting or sending a password', async () => {
     render(<CreateAdmin />);
 
     expect(screen.getByRole('heading', { name: /invite administrator/i })).toBeInTheDocument();
@@ -279,7 +279,7 @@ describe('privileged authentication flows', () => {
     fireEvent.change(screen.getByLabelText(/phone number/i), { target: { value: '09123456789' } });
     fireEvent.submit(screen.getByRole('button', { name: /send invitation/i }).closest('form')!);
 
-    expect(routerPostMock).toHaveBeenCalledWith(
+    await waitFor(() => expect(routerPostMock).toHaveBeenCalledWith(
       '/admin/administrators',
       {
         first_name: 'Ada',
@@ -289,7 +289,15 @@ describe('privileged authentication flows', () => {
         role: 'admin',
       },
       expect.any(Object),
-    );
+    ));
     expect(Object.keys(routerPostMock.mock.calls.at(-1)?.[1] ?? {})).not.toContain('password');
+  });
+
+  it('accepts digits only for administrator phone numbers', () => {
+    render(<CreateAdmin />);
+
+    fireEvent.change(screen.getByLabelText(/phone number/i), { target: { value: '09abc-123!' } });
+
+    expect(screen.getByLabelText(/phone number/i)).toHaveValue('09123');
   });
 });

@@ -168,6 +168,24 @@ final class PrivilegedBootstrapAndInvitationTest extends TestCase
         self::assertDatabaseMissing('super_admins', ['email' => 'denied@example.test']);
     }
 
+    public function test_invitation_rejects_phone_numbers_with_non_digit_characters(): void
+    {
+        $actor = SuperAdmin::factory()->superAdmin()->create();
+        $this->actingAsCompletedPrivileged($actor);
+        $this->markRecentlyReauthenticated($actor);
+
+        $this->from('/admin/administrators/create')->post('/admin/administrators', [
+            'first_name' => 'Invalid',
+            'last_name' => 'Phone',
+            'email' => 'invalid-phone@example.test',
+            'phone' => '0917-123-4567',
+            'role' => SuperAdmin::ROLE_ADMIN,
+        ])->assertRedirect('/admin/administrators/create')
+            ->assertSessionHasErrors(['phone']);
+
+        self::assertDatabaseMissing('super_admins', ['email' => 'invalid-phone@example.test']);
+    }
+
     public function test_invitation_resend_replaces_the_old_token_and_keeps_pending_state_when_delivery_is_deferred(): void
     {
         Queue::fake();
