@@ -3,9 +3,10 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import BusinessScalingSettings from '../BusinessScalingSettings';
 
-const { routerPostMock, axiosPatchMock } = vi.hoisted(() => ({
+const { routerPostMock, axiosPatchMock, swalFireMock } = vi.hoisted(() => ({
   routerPostMock: vi.fn(),
   axiosPatchMock: vi.fn(),
+  swalFireMock: vi.fn(),
 }));
 
 vi.mock('@inertiajs/react', () => ({
@@ -17,7 +18,7 @@ vi.mock('axios', () => ({
 }));
 
 vi.mock('sweetalert2', () => ({
-  default: { fire: vi.fn().mockResolvedValue({ isConfirmed: false }) },
+  default: { fire: swalFireMock },
 }));
 
 const state = {
@@ -54,7 +55,8 @@ const state = {
 beforeEach(() => {
   routerPostMock.mockReset();
   axiosPatchMock.mockReset();
-  vi.stubGlobal('confirm', vi.fn(() => true));
+  swalFireMock.mockReset();
+  swalFireMock.mockResolvedValue({ isConfirmed: true });
 });
 
 describe('BusinessScalingSettings', () => {
@@ -143,6 +145,24 @@ describe('BusinessScalingSettings', () => {
 
     await waitFor(() => expect(screen.getByText('This module cannot be changed.')).toBeInTheDocument());
     expect(screen.getByRole('button', { name: /toggle retail operations/i })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('uses a SweetAlert confirmation before disabling a module', async () => {
+    swalFireMock.mockResolvedValueOnce({ isConfirmed: true });
+    axiosPatchMock.mockResolvedValueOnce({ data: { states: state.modules } });
+    render(<BusinessScalingSettings businessScaling={state} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /toggle retail operations/i }));
+
+    await waitFor(() => expect(swalFireMock).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Disable Retail operations?',
+      showCancelButton: true,
+      confirmButtonText: 'Disable module',
+    })));
+    await waitFor(() => expect(axiosPatchMock).toHaveBeenCalledWith(
+      '/shop-owner/settings/modules/retail_operations',
+      { enabled: false },
+    ));
   });
 
   it('shows upload validation and explains disabled or ineligible modules', () => {

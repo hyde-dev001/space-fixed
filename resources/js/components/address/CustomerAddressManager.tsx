@@ -388,14 +388,14 @@ export default function CustomerAddressManager({
         const isMutating = mutating?.id === address.id;
 
         return (
-          <div key={address.id} aria-busy={isMutating} className={`userside-address-card rounded-xl border p-3 transition-colors ${selectedId === address.id ? 'userside-address-card--selected border-blue-600 bg-blue-50' : 'border-gray-200 bg-white'}`}>
+          <div key={address.id} aria-busy={isMutating} className={`userside-address-card rounded-xl border p-3 transition-colors ${selectedId === address.id ? 'userside-address-card--selected border-gray-950 bg-white ring-1 ring-gray-950' : 'border-gray-200 bg-white'}`}>
             <button
               type="button"
               aria-label={`Use address at ${address.address_line}`}
               aria-pressed={selectedId === address.id}
               disabled={disabled}
               onClick={() => select(address)}
-              className="min-h-11 w-full text-left focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="min-h-11 w-full text-left focus:outline-none focus:ring-2 focus:ring-gray-950"
             >
               <span className="flex flex-wrap items-center gap-2 font-semibold text-gray-950">
                 {address.name}
@@ -403,8 +403,8 @@ export default function CustomerAddressManager({
               </span>
               <span className="block text-sm text-gray-700">{fullAddress(address)}</span>
               {address.latitude === null || address.longitude === null
-                ? <span className="mt-1 block text-xs font-semibold text-amber-700">Pin required</span>
-                : <span className="mt-1 block text-xs font-semibold text-green-700">Pinned address</span>}
+                ? <span className="mt-1 block text-xs font-semibold text-gray-600">Pin required</span>
+                : <span className="mt-1 block text-xs font-semibold text-gray-950">Pinned address</span>}
             </button>
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
               <button
@@ -413,7 +413,7 @@ export default function CustomerAddressManager({
                 title="Edit saved address"
                 disabled={disabled || isMutating}
                 onClick={() => openEdit(address)}
-                className="userside-address-icon-button userside-address-icon-button--edit inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-blue-200 bg-white text-blue-700 shadow-sm transition-colors hover:border-blue-400 hover:bg-blue-50 hover:text-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50"
+                className="userside-address-icon-button userside-address-icon-button--edit inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-950 shadow-sm transition-colors hover:border-gray-950 hover:bg-gray-100 hover:text-gray-950 focus:outline-none focus:ring-2 focus:ring-gray-950 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Pencil aria-hidden="true" size={17} strokeWidth={2} />
               </button>
@@ -424,7 +424,7 @@ export default function CustomerAddressManager({
                   title={isMutating && mutating?.action === 'default' ? 'Setting as default address…' : 'Set as default address'}
                   disabled={disabled || isMutating}
                   onClick={() => void setDefault(address)}
-                  className="userside-address-icon-button userside-address-icon-button--default inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-800 shadow-sm transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="userside-address-icon-button userside-address-icon-button--default inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-800 shadow-sm transition-colors hover:border-gray-950 hover:bg-gray-100 hover:text-gray-950 focus:outline-none focus:ring-2 focus:ring-gray-950 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {isMutating && mutating?.action === 'default'
                     ? <LoaderCircle aria-hidden="true" className="animate-spin" size={17} />
@@ -437,7 +437,7 @@ export default function CustomerAddressManager({
                 title={isMutating && mutating?.action === 'delete' ? 'Deleting saved address…' : 'Delete saved address'}
                 disabled={disabled || isMutating}
                 onClick={() => void remove(address)}
-                className="userside-address-icon-button userside-address-icon-button--delete inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-red-200 bg-white text-red-700 shadow-sm transition-colors hover:border-red-400 hover:bg-red-50 hover:text-red-900 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50"
+                className="userside-address-icon-button userside-address-icon-button--delete inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-950 shadow-sm transition-colors hover:border-gray-950 hover:bg-gray-100 hover:text-gray-950 focus:outline-none focus:ring-2 focus:ring-gray-950 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isMutating && mutating?.action === 'delete'
                   ? <LoaderCircle aria-hidden="true" className="animate-spin" size={17} />
@@ -460,7 +460,7 @@ export default function CustomerAddressManager({
           <p className="text-sm text-gray-600">{description}</p>
         </div>
         {showAddTrigger && (
-          <button type="button" disabled={disabled} onClick={openAdd} className="min-h-11 shrink-0 px-1 text-sm font-semibold text-gray-900 underline underline-offset-4 transition-colors hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50">
+          <button type="button" disabled={disabled} onClick={openAdd} className="min-h-11 shrink-0 px-1 text-sm font-semibold text-gray-900 underline underline-offset-4 transition-colors hover:text-gray-950 focus:outline-none focus:ring-2 focus:ring-gray-950 disabled:opacity-50">
             Add address
           </button>
         )}
@@ -499,7 +499,7 @@ export default function CustomerAddressManager({
           >
             <div className="userside-address-modal__header flex items-start justify-between gap-4 border-b border-gray-200 px-4 py-4 sm:px-6">
               <div>
-                <p className="mb-1 text-xs font-semibold uppercase tracking-[0.14em] text-blue-700">Delivery address</p>
+                <p className="mb-1 text-xs font-semibold uppercase tracking-[0.14em] text-gray-950">Delivery address</p>
                 <h2 id="customer-address-modal-title" className="text-xl font-semibold text-gray-950">
                   {visibleModalView === 'list' ? 'Saved delivery addresses' : editingId ? 'Edit delivery address' : 'Add delivery address'}
                 </h2>
@@ -509,17 +509,17 @@ export default function CustomerAddressManager({
               </div>
               <div className="flex shrink-0 items-center gap-1">
                 {showSavedAddressesInModal && visibleModalView === 'list' && (
-                  <button type="button" onClick={openAdd} className="min-h-11 px-2 text-xs font-semibold text-blue-700 underline underline-offset-4 transition-colors hover:text-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-500 sm:text-sm">
+                  <button type="button" onClick={openAdd} className="min-h-11 px-2 text-xs font-semibold text-gray-950 underline underline-offset-4 transition-colors hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-950 sm:text-sm">
                     Add new address
                   </button>
                 )}
                 {showSavedAddressesInModal && visibleModalView === 'form' && (
-                  <button type="button" onClick={openSavedAddresses} className="min-h-11 px-2 text-xs font-semibold text-blue-700 underline underline-offset-4 transition-colors hover:text-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-500 sm:text-sm">
+                  <button type="button" onClick={openSavedAddresses} className="min-h-11 px-2 text-xs font-semibold text-gray-950 underline underline-offset-4 transition-colors hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-950 sm:text-sm">
                     Saved addresses
                   </button>
                 )}
                 {!showSavedAddressesInModal && editingId && (
-                  <button type="button" onClick={openAdd} className="min-h-11 px-2 text-xs font-semibold text-blue-700 underline underline-offset-4 transition-colors hover:text-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-500 sm:text-sm">
+                  <button type="button" onClick={openAdd} className="min-h-11 px-2 text-xs font-semibold text-gray-950 underline underline-offset-4 transition-colors hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-950 sm:text-sm">
                     Add new address
                   </button>
                 )}
@@ -528,7 +528,7 @@ export default function CustomerAddressManager({
                 type="button"
                 aria-label="Close address modal"
                 onClick={closeModal}
-                className="userside-address-modal-close inline-flex min-h-11 min-w-11 items-center justify-center rounded-full text-2xl leading-none text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-950 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="userside-address-modal-close inline-flex min-h-11 min-w-11 items-center justify-center rounded-full text-2xl leading-none text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-950 focus:outline-none focus:ring-2 focus:ring-gray-950"
               >
                 <span aria-hidden="true">×</span>
                 </button>
@@ -591,14 +591,14 @@ export default function CustomerAddressManager({
           <label className="block text-sm font-medium text-gray-800">Delivery instructions (optional)<textarea value={form.delivery_instructions ?? ''} onChange={(event) => update('delivery_instructions', event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2" rows={2} /></label>
           {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
           <div className="flex flex-col-reverse gap-3 border-t border-gray-200 pt-4 sm:flex-row sm:justify-end">
-            <button type="button" onClick={closeModal} className="min-h-11 rounded-lg px-4 text-sm font-semibold text-gray-700 underline underline-offset-4 transition-colors hover:text-gray-950 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <button type="button" onClick={closeModal} className="min-h-11 rounded-lg px-4 text-sm font-semibold text-gray-700 underline underline-offset-4 transition-colors hover:text-gray-950 focus:outline-none focus:ring-2 focus:ring-gray-950">
               Cancel
             </button>
             <button
               type={embeddedInForm ? 'button' : 'submit'}
               onClick={embeddedInForm ? () => void save() : undefined}
               disabled={saving}
-              className="min-h-11 rounded-lg bg-gray-950 px-5 text-sm font-semibold text-white transition-colors hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60"
+              className="min-h-11 rounded-lg bg-gray-950 px-5 text-sm font-semibold text-white transition-colors hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-950 disabled:opacity-60"
             >
               {saving ? 'Saving…' : editingId ? 'Save changes' : 'Save address'}
             </button>
