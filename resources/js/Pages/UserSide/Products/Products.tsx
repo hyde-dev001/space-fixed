@@ -744,8 +744,8 @@ const Products: React.FC<Props> = () => {
           </Link>
         </div>
 
-        <div className="mx-auto w-full max-w-[430px] px-4 pb-24 pt-16 md:max-w-none md:px-5 lg:px-6 xl:max-w-none xl:px-0 xl:pb-20 xl:pt-14 2xl:px-0 2xl:pb-20">
-          <div className="mb-8 w-full md:max-w-none xl:hidden">
+        <div className="mx-auto w-full max-w-[430px] px-4 pb-24 pt-16 md:max-w-none md:px-5 lg:px-6 xl:max-w-[1920px] xl:px-6 xl:pb-20 xl:pt-32 2xl:px-12 2xl:pb-20">
+          <div className="mb-8 w-full md:max-w-none">
             <div className="flex items-center justify-between gap-4 mb-6">
               <nav className="text-[11px] xl:text-xs text-black/55 tracking-[0.18em] uppercase">
                 <Link href="/" className="hover:text-black transition-colors">Home</Link>
@@ -817,10 +817,10 @@ const Products: React.FC<Props> = () => {
             </div>
           )}
 
-          <h1 className="mb-2 text-2xl sm:text-3xl font-bold tracking-tight text-black uppercase xl:hidden">
+          <h1 className="mb-2 text-2xl sm:text-3xl font-bold tracking-tight text-black uppercase xl:mb-3 xl:text-4xl xl:font-bold 2xl:text-5xl">
             {searchQuery ? `Search Results for "${searchQuery}"` : 'ALL SHOES'}
           </h1>
-          <p className="mb-8 max-w-3xl text-sm sm:text-base font-light leading-relaxed text-black/65 xl:hidden">
+          <p className="mb-8 max-w-3xl text-sm sm:text-base font-light leading-relaxed text-black/65 xl:mb-10">
             {searchQuery 
               ? `Showing results matching "${searchQuery}"`
               : 'Discover our curated selection of shoes. Browse by style, price, and location. Click any product to view details and select your size.'}
@@ -892,7 +892,7 @@ const Products: React.FC<Props> = () => {
               </p>
             </div>
           ) : (
-            <div className="grid auto-rows-fr grid-cols-2 gap-0 xl:grid-cols-4 xl:border-l xl:border-t xl:border-black/35">
+            <div className="grid auto-rows-fr grid-cols-2 gap-0 xl:grid-cols-4">
               {displayProducts.map((p) => {
                 const productImages = getProductImages(p);
                 const activeImageIndex = activeImageIndexes[p.id] ?? 0;
@@ -906,23 +906,23 @@ const Products: React.FC<Props> = () => {
                 <Link
                   key={p.id}
                   href={productHref}
-                  className="group block h-full border-b border-r border-gray-300 bg-white transition-colors duration-300 hover:bg-gray-50 xl:border-black/35"
+                  className="group block h-full border-b border-r border-gray-300 bg-white transition-colors duration-300 hover:bg-gray-50"
                   onMouseEnter={() => startImageCycle(p)}
                   onMouseLeave={() => stopImageCycle(p.id)}
                 >
                   <div className="relative flex h-full flex-col overflow-hidden bg-white">
                     {p.compare_at_price && p.compare_at_price > p.price && (
-                      <div className="absolute left-4 top-4 z-10 rounded-full bg-red-600 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-white shadow-sm xl:left-auto xl:right-4 xl:rounded-none xl:bg-transparent xl:p-0 xl:text-[11px] xl:font-normal xl:tracking-normal xl:text-black xl:shadow-none">
+                      <div className="absolute left-4 top-4 bg-red-600 text-white text-[10px] px-3 py-1.5 rounded-full font-semibold uppercase tracking-[0.14em] z-10 shadow-sm">
                         SALE
                       </div>
                     )}
                     {p.stock_quantity === 0 && (
-                      <div className="absolute left-4 top-4 z-10 rounded-full bg-black px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-white shadow-sm xl:left-auto xl:right-4 xl:rounded-none xl:bg-transparent xl:p-0 xl:text-[11px] xl:font-normal xl:tracking-normal xl:text-black xl:shadow-none">
+                      <div className="absolute left-4 top-4 bg-black text-white text-[10px] px-3 py-1.5 rounded-full font-semibold uppercase tracking-[0.14em] z-10 shadow-sm">
                         SOLD OUT
                       </div>
                     )}
 
-                    <div className="relative aspect-square overflow-hidden bg-[#f7f7f7] xl:aspect-[2/3] xl:bg-white">
+                    <div className="relative aspect-square overflow-hidden bg-[#f7f7f7]">
                       {activeImage ? (
                         <>
                           {productImages.map((image, imageIndex) => {
@@ -933,7 +933,7 @@ const Products: React.FC<Props> = () => {
                                 key={`${p.id}-${imageIndex}`}
                                 src={image}
                                 alt={p.name}
-                                className={`absolute inset-0 h-full w-full object-cover transition-all duration-700 ease-in-out xl:object-contain xl:p-[3%] ${
+                                className={`absolute inset-0 h-full w-full object-cover transition-all duration-700 ease-in-out ${
                                   isActiveImage
                                     ? 'opacity-100 scale-100 group-hover:scale-110'
                                     : 'opacity-0 scale-100 pointer-events-none'
@@ -951,31 +951,25 @@ const Products: React.FC<Props> = () => {
                       ) : (
                         <div className="text-gray-400 text-sm">No Image</div>
                       )}
-                      <span className="absolute bottom-4 right-4 hidden h-9 w-9 items-center justify-center rounded-full border border-black/35 bg-white text-black xl:flex" aria-hidden="true">
-                        <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 8h12l-1 12H7L6 8Z" />
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 8a3 3 0 0 1 6 0M12 12v5M9.5 14.5h5" />
-                        </svg>
-                      </span>
                     </div>
 
-                    <div className="flex h-36 flex-col border-t border-gray-300 p-3 xl:h-14 xl:flex-row xl:items-center xl:justify-between xl:gap-3 xl:border-black/35 xl:px-3 xl:py-2">
-                      <div className="mb-1 flex items-start justify-between gap-2 xl:mb-0 xl:min-w-0 xl:flex-1">
-                        <h3 className="mb-1 min-h-8 line-clamp-2 text-xs font-bold uppercase tracking-[0.06em] text-black flex-1 xl:mb-0 xl:min-h-0 xl:truncate xl:text-[11px] xl:font-normal xl:tracking-normal">{p.name}</h3>
-                        <div className="shrink-0 xl:hidden">
+                    <div className="flex h-36 flex-col border-t border-gray-300 p-3 xl:h-40 xl:p-4">
+                      <div className="flex items-start justify-between gap-2 mb-1">
+                        <h3 className="mb-1 min-h-8 line-clamp-2 text-xs font-bold uppercase tracking-[0.06em] text-black flex-1 xl:mb-1.5 xl:min-h-10 xl:text-sm">{p.name}</h3>
+                        <div className="shrink-0">
                           {p.average_rating !== undefined && (
                             <StarRating rating={p.average_rating} size="sm" />
                           )}
                         </div>
                       </div>
                       
-                      <div className="mb-1 min-h-4 xl:hidden">
+                      <div className="mb-1 min-h-4 xl:mb-1.5 xl:min-h-[1.1rem]">
                         {p.brand && (
                           <p className="text-[10px] uppercase tracking-[0.12em] text-black/55 xl:text-xs">{p.brand}</p>
                         )}
                       </div>
                       
-                      <div className="mb-1 hidden min-h-[1.1rem]">
+                      <div className="mb-1 hidden min-h-[1.1rem] xl:mb-1.5 xl:block">
                         {p.shop_owner && (
                           <p className="text-xs text-black/60">
                             Sold by{' '}
@@ -995,20 +989,17 @@ const Products: React.FC<Props> = () => {
 
                       {/* Distance indicator hidden */}
                       
-                      <div className="mt-auto flex items-baseline justify-between border-t border-gray-200 pt-2 xl:mt-0 xl:shrink-0 xl:border-0 xl:p-0">
-                        <div className="flex flex-col gap-0.5 xl:flex-row xl:items-center xl:gap-1 xl:[&>div]:text-[11px] xl:[&>div]:font-normal">
+                      <div className="mt-auto flex items-baseline justify-between border-t border-gray-200 pt-2 xl:pt-3">
+                        <div className="flex flex-col gap-0.5">
                           <div className="text-base font-bold text-black xl:text-lg">₱{p.price.toLocaleString()}</div>
                           {p.compare_at_price && p.compare_at_price > p.price && (
                             <div className="text-xs text-black/40 line-through">₱{p.compare_at_price.toLocaleString()}</div>
                           )}
                         </div>
-                        <div className="text-[10px] uppercase tracking-[0.08em] text-black/55 xl:hidden">
+                        <div className="text-[10px] uppercase tracking-[0.08em] text-black/55 xl:text-xs">
                           {p.stock_quantity > 0 ? `${p.stock_quantity} left` : 'Out of stock'}
                         </div>
                       </div>
-                    </div>
-                    <div className="hidden h-14 items-center justify-end border-t border-black/35 px-4 text-[11px] uppercase xl:flex">
-                      {p.compare_at_price && p.compare_at_price > p.price ? 'Sale' : null}
                     </div>
                   </div>
                 </Link>
@@ -1077,7 +1068,7 @@ const Products: React.FC<Props> = () => {
 
           {/* Results info */}
           {!loading && products.length > 0 && (
-            <div className="hidden">
+            <div className="mt-5 hidden text-center text-xs uppercase tracking-[0.14em] text-black/50 xl:block">
               {sortBy === 'near_me'
                 ? `Showing ${displayProducts.length} products sorted by distance`
                 : `Showing ${products.length} of ${total} products (Page ${currentPage} of ${lastPage})`}
