@@ -1695,46 +1695,46 @@ html:not(.dark) .erp-theme :is(a, [role='tab']):is(
 /* Keep native select interaction states neutral across browsers. Native
    option popovers remain OS-controlled in some browsers, but these styles
    cover the selected option and field focus where the browser allows it. */
-html:not(.dark) #app select:focus {
+html:not(.dark) #app .erp-theme select:focus {
   border-color: #111111 !important;
   outline-color: #111111 !important;
   --tw-ring-color: rgb(17 17 17 / 0.16) !important;
 }
 
-html:not(.dark) #app select option {
+html:not(.dark) #app .erp-theme select option {
   background-color: #ffffff !important;
   color: #111111 !important;
 }
 
-html:not(.dark) #app select option:checked,
-html:not(.dark) #app select option:checked:hover {
+html:not(.dark) #app .erp-theme select option:checked,
+html:not(.dark) #app .erp-theme select option:checked:hover {
   background-color: #111111 !important;
   color: #ffffff !important;
 }
 
-html:not(.dark) #app select option:hover {
+html:not(.dark) #app .erp-theme select option:hover {
   background-color: #f3f4f6 !important;
   color: #111111 !important;
 }
 
 /* Apply the same selection language to accessible custom dropdowns. */
-html:not(.dark) #app [role='combobox']:focus-within > div {
+html:not(.dark) #app .erp-theme [role='combobox']:focus-within > div {
   border-color: #111111 !important;
   --tw-ring-color: rgb(17 17 17 / 0.16) !important;
 }
 
-html:not(.dark) #app [role='option'] {
+html:not(.dark) #app .erp-theme [role='option'] {
   background-color: #ffffff !important;
   color: #111111 !important;
 }
 
-html:not(.dark) #app [role='option'][aria-selected='true'] {
+html:not(.dark) #app .erp-theme [role='option'][aria-selected='true'] {
   background-color: #111111 !important;
   color: #ffffff !important;
 }
 
-html:not(.dark) #app [role='option']:not([aria-selected='true']):hover,
-html:not(.dark) #app [role='option'][data-highlighted='true']:not([aria-selected='true']) {
+html:not(.dark) #app .erp-theme [role='option']:not([aria-selected='true']):hover,
+html:not(.dark) #app .erp-theme [role='option'][data-highlighted='true']:not([aria-selected='true']) {
   background-color: #f3f4f6 !important;
   color: #111111 !important;
 }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Link, usePage } from "@inertiajs/react";
 import { useSidebar } from "../context/SidebarContext";
 import { ThemeToggleButton } from "../components/common/ThemeToggleButton";
@@ -24,23 +24,6 @@ const AppHeader: React.FC = () => {
   const toggleApplicationMenu = () => {
     setApplicationMenuOpen(!isApplicationMenuOpen);
   };
-
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key === "k") {
-        event.preventDefault();
-        inputRef.current?.focus();
-      }
-    };
-
-    document.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, []);
 
   return (
     <header className="sticky top-0 flex w-full bg-white border-gray-200 z-99999 dark:border-gray-800 dark:bg-gray-900 lg:border-b">
@@ -118,7 +101,8 @@ const AppHeader: React.FC = () => {
             </svg>
           </button>
 
-          <div className="hidden lg:block">
+          {/* The admin shell intentionally has no global search field. */}
+          {/*
             <form>
               <div className="relative">
                 <span className="absolute -translate-y-1/2 pointer-events-none left-4 top-1/2">
@@ -151,7 +135,7 @@ const AppHeader: React.FC = () => {
                 </button>
               </div>
             </form>
-          </div>
+          */}
         </div>
         <div
           className={`${
@@ -162,6 +146,10 @@ const AppHeader: React.FC = () => {
             <NotificationCenter
               apiBasePath={auth?.super_admin ? '/api/admin/notifications' : '/api/notifications'}
               viewAllHref={auth?.super_admin ? '/admin/notifications' : '/erp/notifications'}
+              triggerClassName="relative inline-flex h-11 w-11 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-900 transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
+              iconClassName="h-5 w-5 text-gray-900 dark:text-gray-100"
+              unreadIconClassName="h-5 w-5 text-gray-900 dark:text-gray-100"
+              badgeClassName="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-bold text-white"
             />
             {/* <!-- Dark Mode Toggler --> */}
             <ThemeToggleButton />
@@ -170,7 +158,7 @@ const AppHeader: React.FC = () => {
           </div>
           {/* <!-- User Area --> */}
           {auth?.super_admin ? (
-            <SuperAdminDropdown />
+            <SuperAdminDropdown compact />
           ) : auth?.shop_owner ? (
             <ShopOwnerDropdown />
           ) : auth?.user ? (
