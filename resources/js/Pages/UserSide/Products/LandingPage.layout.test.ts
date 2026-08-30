@@ -66,6 +66,8 @@ describe('SoleSpace landing page redesign', () => {
     });
 
     expect(landingSource).toContain('fixed inset-x-0 bottom-0 z-0');
+    expect(landingSource).toContain('overflow-y-auto overscroll-auto');
+    expect(landingSource).not.toContain('overscroll-contain');
     expect(landingSource).toContain('aria-hidden={!footerIsInteractive}');
     expect(landingSource).toContain("toggleAttribute('inert', !footerIsInteractive)");
     expect(landingSource).toContain('prefers-reduced-motion');
