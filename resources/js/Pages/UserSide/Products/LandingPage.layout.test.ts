@@ -43,10 +43,16 @@ describe('SoleSpace landing page redesign', () => {
     expect(landingSource).toContain('html.solespace-first-load:not(.solespace-app-ready) .landing-hero-motion');
   });
 
-  it('uses a SoleSpace sticky footer reveal with responsive navigation', () => {
+  it('uses a measured fixed-footer curtain reveal with responsive navigation', () => {
     [
       'id="landing-footer"',
       'landing-footer',
+      'landing-curtain',
+      'footer-curtain-spacer',
+      'footer-wordmark',
+      '--landing-footer-height',
+      'ResizeObserver',
+      'IntersectionObserver',
       'SOLESPACE',
       'Explore',
       'Support',
@@ -55,20 +61,19 @@ describe('SoleSpace landing page redesign', () => {
       'Language',
       '<details',
       '<summary',
-      'sticky',
-      'footer-reveal-stage',
-      'footer-wordmark',
     ].forEach((marker) => {
       expect(landingSource).toContain(marker);
     });
 
-    expect(landingSource).toContain('className="landing-footer sticky bottom-0 z-0 w-full min-h-[30rem] overflow-hidden bg-white text-black sm:min-h-[34rem]"');
-    expect(landingSource).toContain('className="footer-reveal-stage relative -mt-32 min-h-[30rem] sm:-mt-48 sm:min-h-[34rem]"');
-    expect(landingSource).toContain('<main className="relative z-10">');
+    expect(landingSource).toContain('fixed inset-x-0 bottom-0 z-0');
+    expect(landingSource).toContain('aria-hidden={!footerIsInteractive}');
+    expect(landingSource).toContain("toggleAttribute('inert', !footerIsInteractive)");
     expect(landingSource).toContain('prefers-reduced-motion');
-    expect(landingSource).not.toContain('footerRef');
+    expect(landingSource).not.toContain('footer-reveal-stage');
+    expect(landingSource).not.toContain('-mt-32');
+    expect(landingSource).not.toContain('sticky bottom-0');
+    expect(landingSource).not.toContain("addEventListener('scroll'");
     expect(landingSource).not.toContain('--footer-reveal-progress');
-    expect(landingSource).not.toContain('hidden w-full bg-gray-100');
   });
 
   it('removes the superseded statistics and final CTA copy', () => {
