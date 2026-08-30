@@ -127,7 +127,7 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
       return;
     }
 
-    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const reducedMotion = prefersReducedMotionRef.current;
     let frame = 0;
 
     const updateProgress = () => {
