@@ -11,7 +11,7 @@ The transition policy will cover these customer-facing page paths:
 - `/`, `/products`, `/products/{slug}`
 - `/repair-services`, `/repair-shop/{id}`, `/repair-process`
 - `/shop-profile/{id}`, `/shop-profile/{id}/virtual-showroom`
-- `/services`, `/articles`, `/download`
+- `/services`, `/services/product-image-spin-tutorial` (Articles), `/download`
 - `/checkout`, `/payment`, `/order-success`, `/payment-failed`
 - `/my-orders`, `/my-repairs`, `/customer-profile`
 - `/messages`, `/message/{shopOwnerId?}`, `/customer/conversations`

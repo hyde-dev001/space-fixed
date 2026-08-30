@@ -6,7 +6,7 @@ const CUSTOMER_STATIC_PATHS = new Set([
 	"/repair-services",
 	"/repair-process",
 	"/services",
-	"/articles",
+	"/services/product-image-spin-tutorial",
 	"/download",
 	"/checkout",
 	"/payment",

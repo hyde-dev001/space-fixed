@@ -26,7 +26,7 @@
 **Interfaces:**
 - Tests continue to target `isCustomerTransitionPath(pathname: string): boolean` and `shouldStartCustomerPageTransition(currentUrl: string, destinationUrl: string): boolean`.
 
-- [ ] **Step 1: Add failing tests for every route group.** Add eligible cases for `/repair-process`, `/repair-shop/42`, `/shop-profile/42`, `/shop-profile/42/virtual-showroom`, `/articles`, `/download`, `/checkout`, `/payment`, `/order-success`, `/payment-failed`, `/customer-profile`, `/messages`, `/message`, `/message/42`, `/customer/conversations`, `/tracking/shipments/42`, `/tracking/shipments/42/proofs/7`, `/tracking/shipments/42/attempts/3/proof`, `/notifications`, `/notifications/settings`, `/login`, `/register`, `/forgot-password`, `/otp`, `/new-password`, `/email/verify`, `/shop-owner-register`, and `/shop-owner/two-factor`.
+- [ ] **Step 1: Add failing tests for every route group.** Add eligible cases for `/repair-process`, `/repair-shop/42`, `/shop-profile/42`, `/shop-profile/42/virtual-showroom`, `/services/product-image-spin-tutorial` (Articles), `/download`, `/checkout`, `/payment`, `/order-success`, `/payment-failed`, `/customer-profile`, `/messages`, `/message`, `/message/42`, `/customer/conversations`, `/tracking/shipments/42`, `/tracking/shipments/42/proofs/7`, `/tracking/shipments/42/attempts/3/proof`, `/notifications`, `/notifications/settings`, `/login`, `/register`, `/forgot-password`, `/otp`, `/new-password`, `/email/verify`, `/shop-owner-register`, and `/shop-owner/two-factor`.
 - [ ] **Step 2: Add failing exclusion and depth tests.** Assert false for `/api/search/suggestions`, `/api/customer/badge-counts`, `/apk/download`, `/email/verify/1/hash`, `/repair-shop/1/extra`, `/shop-profile/1/virtual-showroom/extra`, `/tracking/shipments/1/extra`, `/erp/hr`, `/admin`, and `/shop-owner/dashboard`.
 - [ ] **Step 3: Add cross-route behavior tests.** Assert eligible-to-eligible navigation returns true, eligible-to-excluded and excluded-to-eligible return false, and query/hash-only changes return false.
 - [ ] **Step 4: Run the focused test and verify it fails for missing policy coverage.** Run `node_modules/.bin/vitest.cmd run resources/js/utils/__tests__/customerPageTransition.test.ts`. Expected: FAIL on the newly added paths while existing tests still run.
@@ -40,7 +40,7 @@
 **Interfaces:**
 - Preserve both existing exported function names and signatures so `CustomerPageTransition.tsx` requires no interface change.
 
-- [ ] **Step 1: Update the static route set.** Add `/repair-process`, `/articles`, `/download`, `/checkout`, `/payment`, `/order-success`, `/payment-failed`, `/customer-profile`, `/messages`, `/message`, `/customer/conversations`, `/notifications`, `/notifications/settings`, `/login`, `/register`, `/forgot-password`, `/otp`, `/new-password`, `/email/verify`, `/shop-owner-register`, and `/shop-owner/two-factor` to the existing static set.
+- [ ] **Step 1: Update the static route set.** Add `/repair-process`, `/services/product-image-spin-tutorial` (Articles), `/download`, `/checkout`, `/payment`, `/order-success`, `/payment-failed`, `/customer-profile`, `/messages`, `/message`, `/customer/conversations`, `/notifications`, `/notifications/settings`, `/login`, `/register`, `/forgot-password`, `/otp`, `/new-password`, `/email/verify`, `/shop-owner-register`, and `/shop-owner/two-factor` to the existing static set.
 - [ ] **Step 2: Add anchored dynamic patterns.** Extend `isCustomerTransitionPath` with these exact-depth patterns:
 
 ```ts
