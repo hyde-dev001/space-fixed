@@ -13,7 +13,7 @@ Adapt the current SoleSpace landing-page footer to the interaction pattern obser
 
 ## Reference observations
 
-The reference footer currently uses a pale yellow panel with a four-column desktop grid. SoleSpace keeps that structure but uses a white panel so the footer matches the landing page's white storefront sections. The first column is a brand label, followed by compact uppercase link groups. A second row carries copyright, shipping, and language controls, and an oversized brand wordmark is clipped at the bottom edge. The footer is `position: sticky` inside a footer-only reveal stage, so it stays below the landing content at page start and can underlap the final viewport as the visitor reaches the end. At mobile widths, the link groups collapse into compact expandable headings rather than showing every link at once.
+The reference footer currently uses a pale yellow panel with a four-column desktop grid. SoleSpace keeps that structure but uses a white panel so the footer matches the landing page's white storefront sections. The first column is a brand label, followed by compact uppercase link groups. A second row carries copyright, shipping, and language controls, and an oversized brand wordmark is clipped at the bottom edge. The footer is `position: sticky` inside a footer-only reveal stage with a responsive negative top margin, so it stays below the landing content at page start and underlaps the final landing section as the visitor reaches the end. At mobile widths, the link groups collapse into compact expandable headings rather than showing every link at once.
 
 ## Design
 
@@ -29,6 +29,8 @@ The reference footer currently uses a pale yellow panel with a four-column deskt
 ### Scroll interaction
 
 - Make the footer a sticky, bottom-anchored layer inside a bounded reveal stage after the preceding landing sections; it must begin outside the initial viewport.
+- Give the reveal stage a responsive negative top margin (`-mt-32`, `sm:-mt-48`) so the footer panel and wordmark can sit beneath the final landing section during the last scroll interval, matching the reference's underlap rhythm.
+- Offset the footer content inside the panel with responsive top padding (`pt-20`, `sm:pt-48`) so the stacked landing section does not intercept the first footer controls during the overlap interval.
 - Keep the community section and footer content in explicit stacking layers so the content scrolls over the footer and the footer is revealed only near the end of the page.
 - Keep the oversized wordmark anchored in the footer; the reveal animation comes from the sticky footer layer being exposed as the page content scrolls over it.
 - Use native CSS sticky positioning and stacking order for the underlap interaction instead of a page-level scroll-progress listener.
@@ -52,7 +54,7 @@ The reference footer currently uses a pale yellow panel with a four-column deskt
 ## Acceptance criteria
 
 1. The landing page footer visually uses a white panel, compact uppercase link groups, metadata row, and oversized clipped `SOLESPACE` wordmark.
-2. On desktop, the footer starts below the landing content, remains visually underneath it while scrolling, and is revealed in the final footer stage through the native sticky underlap interaction, with the wordmark anchored in place.
+2. On desktop and mobile, the footer starts below the initial viewport, then underlaps the final landing section during the bounded reveal stage through native sticky positioning; the landing content remains above it via `z-10`, the footer remains at `z-0`, and the wordmark stays anchored in place.
 3. On mobile, the footer is present, groups are collapsed by default, and each group can be opened with keyboard and touch input.
 4. No horizontal overflow is introduced at desktop or mobile widths.
 5. Reduced-motion mode renders the footer and wordmark without motion while keeping all content available.

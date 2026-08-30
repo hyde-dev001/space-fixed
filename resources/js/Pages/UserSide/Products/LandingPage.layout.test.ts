@@ -63,7 +63,8 @@ describe('SoleSpace landing page redesign', () => {
     });
 
     expect(landingSource).toContain('className="landing-footer sticky bottom-0 z-0 w-full min-h-[30rem] overflow-hidden bg-white text-black sm:min-h-[34rem]"');
-    expect(landingSource).toContain('className="footer-reveal-stage relative min-h-[30rem] sm:min-h-[34rem]"');
+    expect(landingSource).toContain('className="footer-reveal-stage relative -mt-32 min-h-[30rem] sm:-mt-48 sm:min-h-[34rem]"');
+    expect(landingSource).toContain('<main className="relative z-10">');
     expect(landingSource).toContain('prefers-reduced-motion');
     expect(landingSource).not.toContain('footerRef');
     expect(landingSource).not.toContain('--footer-reveal-progress');
