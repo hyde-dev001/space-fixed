@@ -1743,6 +1743,14 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 		let rafId = 0;
 		let previewFrameTick = 0;
 
+		const clearMovementKeys = () => {
+			keyState.forward = false;
+			keyState.backward = false;
+			keyState.left = false;
+			keyState.right = false;
+			clearJoystickVector();
+		};
+
 		const animate = () => {
 			const delta = Math.min(clock.getDelta(), 0.05);
 			const elapsed = clock.elapsedTime;
@@ -2044,14 +2052,6 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 				default:
 					break;
 			}
-		};
-
-		const clearMovementKeys = () => {
-			keyState.forward = false;
-			keyState.backward = false;
-			keyState.left = false;
-			keyState.right = false;
-			clearJoystickVector();
 		};
 
 		window.addEventListener('resize', handleResize);
