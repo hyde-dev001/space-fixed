@@ -4,7 +4,7 @@
 
 **Goal:** Replace the current landing-page footer with a SoleSpace-owned sticky underlap footer that exposes an anchored oversized wordmark as the page scrolls, matching the interaction rhythm observed on the Axel Arigato storefront.
 
-**Architecture:** Keep the implementation inside the existing `LandingPage.tsx` page to preserve the landing-only boundary. Wrap the existing landing sections in a foreground `<main>` layer, place a native sticky footer inside a footer-only reveal stage after it, and let CSS stacking order reveal the anchored wordmark as the final content passes over the footer. The bounded stage keeps the footer below the initial viewport while preserving the reference underlap at the bottom. Use a desktop link grid and a separate mobile `details`/`summary` presentation so mobile groups are closed by default without hydration-dependent viewport state.
+**Architecture:** Keep the implementation inside the existing `LandingPage.tsx` page to preserve the landing-only boundary. Wrap the existing landing sections in a foreground `<main>` layer, place a native sticky footer inside a bounded footer-only reveal stage after it, and use a responsive negative top margin on that stage to create the final landing-section overlap. CSS stacking order lets the anchored wordmark sit beneath the foreground page content while the sticky layer is revealed at the bottom. Use a desktop link grid and a separate mobile `details`/`summary` presentation so mobile groups are closed by default without hydration-dependent viewport state.
 
 **Tech Stack:** React 18, TypeScript 5.7, Inertia React, Tailwind CSS 4 utility classes, scoped JSX CSS, Vitest, Playwright.
 
@@ -17,6 +17,16 @@
 - Keep the footer horizontally clipped and responsive at desktop and mobile widths.
 - Honor `prefers-reduced-motion: reduce` for the landing page’s existing reveal and control transitions.
 - Use native sticky positioning for the footer underlap; do not add a footer-specific scroll listener or scroll-progress state.
+
+## Follow-up: restore the Axela-style underlap interval
+
+The previous bounded-stage correction stopped the footer from appearing at the top of the landing page, but its stage began only after the main content and therefore removed the visible underlap interval. The approved follow-up keeps that safety boundary and adds only responsive overlap spacing:
+
+- Change the stage class to `footer-reveal-stage relative -mt-32 min-h-[30rem] sm:-mt-48 sm:min-h-[34rem]`.
+- Keep the footer's approved UI structure intact while using `pt-20 sm:pt-48` on its content container so the overlapped controls remain visible and interactive.
+- Keep `<main className="relative z-10">` above the footer and keep the footer at `sticky bottom-0 z-0`.
+- Do not change footer copy, layout, responsive disclosures, wordmark styling, or non-landing files.
+- Add a focused contract assertion for the negative-margin stage and verify the initial, maximum-scroll, mobile, and reduced-motion states in a browser.
 
 ---
 
@@ -54,6 +64,8 @@ Append this test to the existing `describe('SoleSpace landing page redesign', ..
     });
 
     expect(landingSource).toContain('className="landing-footer sticky bottom-0 z-0 w-full min-h-[30rem] overflow-hidden bg-white text-black sm:min-h-[34rem]"');
+    expect(landingSource).toContain('className="footer-reveal-stage relative -mt-32 min-h-[30rem] sm:-mt-48 sm:min-h-[34rem]"');
+    expect(landingSource).toContain('<main className="relative z-10">');
     expect(landingSource).toContain('prefers-reduced-motion');
     expect(landingSource).not.toContain('footerRef');
     expect(landingSource).not.toContain('--footer-reveal-progress');
@@ -69,7 +81,7 @@ Run:
 node_modules/.bin/vitest.cmd run resources/js/Pages/UserSide/Products/LandingPage.layout.test.ts
 ```
 
-Expected: FAIL because the current footer does not yet contain the new landing-footer identifiers, sticky layer, responsive details controls, or anchored wordmark structure.
+For the follow-up, the focused test should fail only because the existing bounded stage does not yet include the responsive negative-margin underlap contract.
 
 - [ ] **Step 3: Commit the failing contract**
 
@@ -112,7 +124,7 @@ Replace the current hidden gray footer with this structure and SoleSpace-owned c
           id="landing-footer"
           className="landing-footer sticky bottom-0 z-0 w-full min-h-[30rem] overflow-hidden bg-white text-black sm:min-h-[34rem]"
         >
-          <div className={`${sectionContainerClass} relative z-10 pt-8 sm:pt-10`}>
+          <div className={`${sectionContainerClass} relative z-10 pt-20 sm:pt-48`}>
             <div className="hidden grid-cols-4 gap-8 lg:grid">
               <div>
                 <Link href={route("landing")} className="text-sm font-semibold uppercase tracking-[0.08em]">
