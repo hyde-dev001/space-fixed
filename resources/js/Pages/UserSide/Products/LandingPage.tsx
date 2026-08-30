@@ -64,6 +64,7 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
 
   const [activeHeroSlide, setActiveHeroSlide] = useState(0);
   const revealRootRef = useRef<HTMLDivElement | null>(null);
+  const footerRef = useRef<HTMLElement | null>(null);
   const prefersReducedMotionRef = useRef(false);
 
   useEffect(() => {
@@ -120,6 +121,51 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
     return () => observer.disconnect();
   }, []);
 
+  useEffect(() => {
+    const footer = footerRef.current;
+    if (!footer) {
+      return;
+    }
+
+    const reducedMotion = prefersReducedMotionRef.current;
+    let frame = 0;
+
+    const updateProgress = () => {
+      const maxScroll = Math.max(document.documentElement.scrollHeight - window.innerHeight, 1);
+      const revealWindow = Math.max(window.innerHeight * 0.72, 1);
+      const revealStart = Math.max(0, maxScroll - revealWindow);
+      const progress = reducedMotion
+        ? 1
+        : Math.min(1, Math.max(0, (window.scrollY - revealStart) / revealWindow));
+
+      footer.style.setProperty('--footer-reveal-progress', progress.toFixed(3));
+    };
+
+    const handleScroll = () => {
+      if (frame) {
+        return;
+      }
+
+      frame = window.requestAnimationFrame(() => {
+        frame = 0;
+        updateProgress();
+      });
+    };
+
+    updateProgress();
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    window.addEventListener('resize', updateProgress);
+
+    return () => {
+      if (frame) {
+        window.cancelAnimationFrame(frame);
+      }
+
+      window.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('resize', updateProgress);
+    };
+  }, []);
+
   const buttonBaseClass =
     'group inline-flex w-full max-w-full items-center justify-center gap-3 rounded-full px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.14em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 sm:w-auto sm:px-10 sm:py-4 sm:text-sm sm:tracking-[0.18em]';
   const buttonLightClass =
@@ -135,7 +181,8 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
       <div ref={revealRootRef} className="min-h-screen overflow-x-hidden bg-white font-outfit antialiased">
         <Navigation mobileMenuTriggerIcon="hamburger" landingSidebar />
 
-      <div>
+       <main className="relative z-10 bg-white">
+       <div>
       {/* Hero Section - Full-bleed Background Carousel */}
       <section className="relative flex min-h-[84svh] w-full items-center overflow-hidden sm:min-h-svh">
         <div className="absolute inset-0 z-0">
@@ -387,76 +434,87 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
             <div className="absolute inset-0 bg-black/20" />
           </div>
         </div>
-      </section>
+       </section>
 
-      {/* Footer - Adidas Style: Clean, Minimal */}
-      <footer data-scroll-reveal className="scroll-reveal hidden w-full bg-gray-100 py-8 text-black md:block md:py-12">
-        <div className={sectionContainerClass}>
-          <div className="mb-6 grid grid-cols-2 gap-5 sm:mb-8 sm:gap-8 lg:grid-cols-4 lg:gap-10">
-            <div className="col-span-2 lg:col-span-1">
-              <Link href={route("landing")} className="mb-3 inline-block text-xl font-bold text-black sm:text-2xl">
-                SoleSpace
-              </Link>
-              <p className="mb-4 max-w-md text-sm leading-relaxed text-black/60 sm:mb-6 sm:text-base">
-                Your premier destination for premium footwear and expert repair services. Experience the perfect blend of style, comfort, and craftsmanship.
-              </p>
-              <div className="flex gap-4">
-                <a href="#" className="flex h-9 w-9 items-center justify-center border border-black/20 transition-colors hover:border-black sm:h-10 sm:w-10" aria-label="Facebook">
-                  <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
-                  </svg>
-                </a>
-                <a href="#" className="flex h-9 w-9 items-center justify-center border border-black/20 transition-colors hover:border-black sm:h-10 sm:w-10" aria-label="Twitter">
-                  <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M23.953 4.57a10 10 0 01-2.825.775 4.958 4.958 0 002.163-2.723c-.951.555-2.005.959-3.127 1.184a4.92 4.92 0 00-8.384 4.482C7.69 8.095 4.067 6.13 1.64 3.162a4.822 4.822 0 00-.666 2.475c0 1.71.87 3.213 2.188 4.096a4.904 4.904 0 01-2.228-.616v.06a4.923 4.923 0 003.946 4.827 4.996 4.996 0 01-2.212.085 4.936 4.936 0 004.604 3.417 9.867 9.867 0 01-6.102 2.105c-.39 0-.779-.023-1.17-.067a13.995 13.995 0 007.557 2.209c9.053 0 13.998-7.496 13.998-13.985 0-.21 0-.42-.015-.63A9.935 9.935 0 0024 4.59z" />
-                  </svg>
-                </a>
-                <a href="#" className="flex h-9 w-9 items-center justify-center border border-black/20 transition-colors hover:border-black sm:h-10 sm:w-10" aria-label="Instagram">
-                  <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M12 0C8.74 0 8.333.015 7.053.072 5.775.132 4.905.333 4.14.63c-.789.306-1.459.717-2.126 1.384S.935 3.35.63 4.14C.333 4.905.131 5.775.072 7.053.012 8.333 0 8.74 0 12s.015 3.667.072 4.947c.06 1.277.261 2.148.558 2.913.306.788.717 1.459 1.384 2.126.667.666 1.336 1.079 2.126 1.384.766.296 1.636.499 2.913.558C8.333 23.988 8.74 24 12 24s3.667-.015 4.947-.072c1.277-.06 2.148-.262 2.913-.558.788-.306 1.459-.718 2.126-1.384.666-.667 1.079-1.335 1.384-2.126.296-.765.499-1.636.558-2.913.06-1.28.072-1.687.072-4.947s-.015-3.667-.072-4.947c-.06-1.277-.262-2.149-.558-2.913-.306-.789-.718-1.459-1.384-2.126C21.319 1.347 20.651.935 19.86.63c-.765-.297-1.636-.499-2.913-.558C15.667.012 15.26 0 12 0zm0 2.16c3.203 0 3.585.016 4.85.071 1.17.055 1.805.249 2.227.415.562.217.96.477 1.382.896.419.42.679.819.896 1.381.164.422.36 1.057.413 2.227.057 1.266.07 1.646.07 4.85s-.015 3.585-.074 4.85c-.061 1.17-.256 1.805-.413 2.227-.217.562-.477.96-.896 1.382-.42.419-.824.679-1.38.896-.42.164-1.065.36-2.235.413-1.274.057-1.649.07-4.859.07-3.211 0-3.586-.015-4.859-.074-1.171-.061-1.816-.256-2.236-.413-.569-.217-.96-.477-1.379-.896-.421-.419-.69-.824-.9-1.38-.165-.42-.359-1.065-.42-2.235-.045-1.26-.061-1.649-.061-4.844 0-3.196.016-3.586.061-4.861.061-1.17.255-1.816.42-2.236.21-.57.479-.96.9-1.381.419-.419.81-.689 1.379-.9.42-.166 1.051-.361 2.221-.421 1.275-.045 1.65-.06 4.859-.06l.045.03zm0 3.678c-3.405 0-6.162 2.76-6.162 6.162 0 3.405 2.76 6.162 6.162 6.162 3.405 0 6.162-2.76 6.162-6.162 0-3.405-2.76-6.162-6.162-6.162zM12 16c-2.21 0-4-1.79-4-4s1.79-4 4-4 4 1.79 4 4-1.79 4-4 4zm7.846-10.405c0 .795-.646 1.44-1.44 1.44-.795 0-1.44-.646-1.44-1.44 0-.794.646-1.439 1.44-1.439.793-.001 1.44.645 1.44 1.439z" />
-                  </svg>
-                </a>
-              </div>
-            </div>
-            <div>
-              <h4 className="mb-3 text-xs font-bold uppercase tracking-wider sm:text-sm">Quick Links</h4>
-              <ul className="space-y-4 text-center sm:text-left">
-                <li><Link href={route("products")} className="text-xs text-black/60 transition-colors hover:text-black sm:text-sm">Products</Link></li>
-                <li><Link href={route("repair")} className="text-xs text-black/60 transition-colors hover:text-black sm:text-sm">Repair Services</Link></li>
-                <li><Link href={route("services")} className="text-xs text-black/60 transition-colors hover:text-black sm:text-sm">Services</Link></li>
-              </ul>
-            </div>
-            <div>
-              <h4 className="mb-3 text-xs font-bold uppercase tracking-wider sm:text-sm">Services</h4>
-              <ul className="space-y-2 text-center sm:space-y-3 sm:text-left">
-                <li><a href="#" className="text-xs text-black/60 transition-colors hover:text-black sm:text-sm">Shoe Repair</a></li>
-                <li><a href="#" className="text-xs text-black/60 transition-colors hover:text-black sm:text-sm">Custom Fitting</a></li>
-                <li><a href="#" className="text-xs text-black/60 transition-colors hover:text-black sm:text-sm">Maintenance</a></li>
-                <li><a href="#" className="text-xs text-black/60 transition-colors hover:text-black sm:text-sm">Consultation</a></li>
-              </ul>
-            </div>
-            <div>
-              <h4 className="mb-3 text-xs font-bold uppercase tracking-wider sm:text-sm">Support</h4>
-              <ul className="space-y-2 text-center sm:space-y-3 sm:text-left">
-                <li><a href="#" className="text-xs text-black/60 transition-colors hover:text-black sm:text-sm">Help Center</a></li>
-                <li><a href="#" className="text-xs text-black/60 transition-colors hover:text-black sm:text-sm">FAQ</a></li>
-                <li><a href="#" className="text-xs text-black/60 transition-colors hover:text-black sm:text-sm">Privacy Policy</a></li>
-                <li><a href="#" className="text-xs text-black/60 transition-colors hover:text-black sm:text-sm">Terms of Service</a></li>
-              </ul>
-            </div>
-          </div>
-          <div className="border-t border-black/10 pt-4 sm:pt-6">
-            <div className="flex flex-col items-start justify-between gap-2 sm:flex-row sm:items-center sm:gap-4">
-              <p className="text-xs text-black/60 sm:text-sm">&copy; 2024 SoleSpace. All rights reserved.</p>
-              <div className="flex flex-wrap items-center gap-4 text-xs text-black/60 sm:gap-6 sm:text-sm">
-                <a href="#" className="hover:text-black transition-colors">Privacy</a>
-                <a href="#" className="hover:text-black transition-colors">Terms</a>
-                <a href="#" className="hover:text-black transition-colors">Cookies</a>
-              </div>
-            </div>
-          </div>
-        </div>
-        </footer>
+       </main>
+
+       <footer
+         id="landing-footer"
+         ref={footerRef}
+         className="landing-footer sticky bottom-0 z-0 w-full min-h-[30rem] overflow-hidden bg-[#f5e9b5] text-black sm:min-h-[34rem]"
+       >
+         <div className={`${sectionContainerClass} relative z-10 pt-8 sm:pt-10`}>
+           <div className="hidden grid-cols-4 gap-8 lg:grid">
+             <div>
+               <Link href={route("landing")} className="text-sm font-semibold uppercase tracking-[0.08em]">
+                 SOLESPACE
+               </Link>
+             </div>
+             <div>
+               <h2 className="mb-4 text-xs font-semibold uppercase tracking-[0.14em]">Explore</h2>
+               <ul className="space-y-2 text-xs font-medium uppercase tracking-[0.08em]">
+                 <li><a href="#landing-new-releases" className="footer-link">New releases</a></li>
+                 <li><a href="#landing-categories" className="footer-link">Shop by category</a></li>
+                 <li><Link href={route("repair")} className="footer-link">Book a repair</Link></li>
+               </ul>
+             </div>
+             <div>
+               <h2 className="mb-4 text-xs font-semibold uppercase tracking-[0.14em]">Support</h2>
+               <ul className="space-y-2 text-xs font-medium uppercase tracking-[0.08em]">
+                 <li><a href="#landing-story" className="footer-link">Our story</a></li>
+                 <li><Link href={route("services")} className="footer-link">Care services</Link></li>
+                 <li><Link href={route("services")} className="footer-link">Contact support</Link></li>
+               </ul>
+             </div>
+             <div>
+               <h2 className="mb-4 text-xs font-semibold uppercase tracking-[0.14em]">Community</h2>
+               <ul className="space-y-2 text-xs font-medium uppercase tracking-[0.08em]">
+                 <li><a href="#landing-community" className="footer-link">Join the community</a></li>
+                 <li><Link href={route("products")} className="footer-link">Shop SoleSpace</Link></li>
+                 <li><Link href={route("services")} className="footer-link">Step in with us</Link></li>
+               </ul>
+             </div>
+           </div>
+
+           <div className="lg:hidden">
+             <p className="mb-7 text-sm font-semibold uppercase tracking-[0.08em]">SOLESPACE</p>
+             <details className="footer-disclosure">
+               <summary>Explore <span aria-hidden="true">+</span></summary>
+               <div className="footer-disclosure__links">
+                 <a href="#landing-new-releases" className="footer-link">New releases</a>
+                 <a href="#landing-categories" className="footer-link">Shop by category</a>
+                 <Link href={route("repair")} className="footer-link">Book a repair</Link>
+               </div>
+             </details>
+             <details className="footer-disclosure">
+               <summary>Support <span aria-hidden="true">+</span></summary>
+               <div className="footer-disclosure__links">
+                 <a href="#landing-story" className="footer-link">Our story</a>
+                 <Link href={route("services")} className="footer-link">Care services</Link>
+                 <Link href={route("services")} className="footer-link">Contact support</Link>
+               </div>
+             </details>
+             <details className="footer-disclosure">
+               <summary>Community <span aria-hidden="true">+</span></summary>
+               <div className="footer-disclosure__links">
+                 <a href="#landing-community" className="footer-link">Join the community</a>
+                 <Link href={route("products")} className="footer-link">Shop SoleSpace</Link>
+                 <Link href={route("services")} className="footer-link">Step in with us</Link>
+               </div>
+             </details>
+           </div>
+
+           <div className="mt-12 grid grid-cols-1 gap-4 border-t border-black/15 py-5 text-[11px] font-medium uppercase tracking-[0.08em] sm:grid-cols-3 sm:gap-8">
+             <p>Copyright &copy; 2024 SoleSpace</p>
+             <p>Shipping to <span aria-hidden="true">&rsaquo;</span> Philippines</p>
+             <p>Language <span aria-hidden="true">&rsaquo;</span> English</p>
+           </div>
+         </div>
+
+         <div aria-hidden="true" className="footer-wordmark">
+           SOLESPACE
+         </div>
+       </footer>
         <style>{`
           .scroll-reveal {
             opacity: 0;
@@ -477,11 +535,112 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
             transform: scale(1.04);
           }
 
-          .scroll-reveal--scale.is-visible {
-            transform: scale(1);
-          }
+           .scroll-reveal--scale.is-visible {
+             transform: scale(1);
+           }
 
-          .hero-headline-line {
+           .landing-footer {
+             --footer-reveal-progress: 0;
+           }
+
+           .footer-link {
+             display: inline-block;
+             transition: opacity 180ms ease, transform 180ms ease;
+           }
+
+           .footer-link:hover {
+             opacity: 0.55;
+             transform: translateX(3px);
+           }
+
+           .footer-link:focus-visible,
+           .footer-disclosure summary:focus-visible {
+             outline: 2px solid currentColor;
+             outline-offset: 4px;
+           }
+
+           .footer-disclosure {
+             border-top: 1px solid rgb(0 0 0 / 15%);
+           }
+
+           .footer-disclosure:last-of-type {
+             border-bottom: 1px solid rgb(0 0 0 / 15%);
+           }
+
+           .footer-disclosure summary {
+             display: flex;
+             min-height: 44px;
+             cursor: pointer;
+             list-style: none;
+             align-items: center;
+             justify-content: space-between;
+             padding: 14px 0;
+             font-size: 0.75rem;
+             font-weight: 600;
+             letter-spacing: 0.12em;
+             text-transform: uppercase;
+           }
+
+           .footer-disclosure summary::-webkit-details-marker {
+             display: none;
+           }
+
+           .footer-disclosure[open] summary span {
+             transform: rotate(45deg);
+           }
+
+           .footer-disclosure summary span {
+             font-size: 1.25rem;
+             font-weight: 400;
+             line-height: 1;
+             transition: transform 180ms ease;
+           }
+
+           .footer-disclosure__links {
+             display: grid;
+             gap: 10px;
+             padding: 0 0 18px;
+             font-size: 0.7rem;
+             font-weight: 500;
+             letter-spacing: 0.08em;
+             text-transform: uppercase;
+           }
+
+           .footer-wordmark {
+             position: relative;
+             z-index: 0;
+             width: max-content;
+             min-width: 100%;
+             padding: 2.2rem 0 0;
+             overflow: hidden;
+             white-space: nowrap;
+             font-size: clamp(7rem, 25vw, 26rem);
+             font-weight: 700;
+             line-height: 0.68;
+             letter-spacing: -0.105em;
+             transform: translate3d(
+               calc((1 - var(--footer-reveal-progress)) * 7vw),
+               calc((1 - var(--footer-reveal-progress)) * 20%),
+               0
+             );
+             transform-origin: center bottom;
+             transition: transform 120ms linear;
+             will-change: transform;
+           }
+
+           @media (prefers-reduced-motion: reduce) {
+             .footer-link,
+             .footer-disclosure summary span,
+             .footer-wordmark {
+               transition: none;
+             }
+
+             .footer-wordmark {
+               transform: translate3d(0, 0, 0);
+             }
+           }
+
+           .hero-headline-line {
             display: block;
             opacity: 0;
             transform: translate3d(0, 28px, 0);
