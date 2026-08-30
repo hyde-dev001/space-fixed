@@ -14,14 +14,6 @@ import { syncPageTheme } from './utils/pageTheme';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 const USER_SIDE_SCROLLBAR_CLASS = 'userside-hide-scrollbar';
-const USER_SIDE_PAGE_CLASS = 'userside-page';
-const USER_SIDE_PAGE_ENTER_CLASS = 'userside-page-enter';
-const USER_SIDE_PAGE_LEAVING_CLASS = 'userside-page-leaving';
-let userSidePageTransitionTimeout;
-
-const isUserSideComponent = (componentName = '') => (
-    componentName.startsWith('UserSide/') || componentName.startsWith('Notifications/Customer')
-);
 
 const syncUserSideScrollbar = (componentName = '') => {
     const isUserSidePage = componentName.startsWith('UserSide/');
@@ -30,30 +22,8 @@ const syncUserSideScrollbar = (componentName = '') => {
 };
 
 const syncPagePresentation = (componentName = '') => {
-    const isUserSidePage = isUserSideComponent(componentName);
     syncUserSideScrollbar(componentName);
     syncPageTheme(componentName);
-    document.documentElement.classList.toggle(USER_SIDE_PAGE_CLASS, isUserSidePage);
-
-    if (!isUserSidePage) {
-        document.documentElement.classList.remove(USER_SIDE_PAGE_ENTER_CLASS, USER_SIDE_PAGE_LEAVING_CLASS);
-    }
-};
-
-const triggerUserSidePageEnter = (componentName = '') => {
-    if (!isUserSideComponent(componentName)) {
-        return;
-    }
-
-    window.clearTimeout(userSidePageTransitionTimeout);
-    document.documentElement.classList.remove(USER_SIDE_PAGE_LEAVING_CLASS, USER_SIDE_PAGE_ENTER_CLASS);
-
-    window.requestAnimationFrame(() => {
-        document.documentElement.classList.add(USER_SIDE_PAGE_ENTER_CLASS);
-        userSidePageTransitionTimeout = window.setTimeout(() => {
-            document.documentElement.classList.remove(USER_SIDE_PAGE_ENTER_CLASS);
-        }, 280);
-    });
 };
 
 const ApplicationProviders = ({ initialComponent, children }) => {
@@ -82,12 +52,6 @@ const ApplicationProviders = ({ initialComponent, children }) => {
 };
 
 // Update CSRF token after each Inertia navigation
-router.on('start', () => {
-    if (document.documentElement.classList.contains(USER_SIDE_PAGE_CLASS)) {
-        document.documentElement.classList.add(USER_SIDE_PAGE_LEAVING_CLASS);
-    }
-});
-
 router.on('navigate', (event) => {
     const page = event.detail?.page;
     const csrfToken = page?.props?.csrf_token;
@@ -99,7 +63,6 @@ router.on('navigate', (event) => {
     }
 
     syncPagePresentation(page?.component ?? '');
-    triggerUserSidePageEnter(page?.component ?? '');
 });
 
 createInertiaApp({
