@@ -692,13 +692,13 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
       </div>
       <nav
         className={`fixed left-0 right-0 z-50 w-full transition-[top,background-color,border-color] duration-300 ${isPromoTickerAtTop ? 'top-10' : 'top-0'} ${
-          landingSidebar || isTransparentNav
+          isTransparentNav
             ? 'bg-transparent'
             : 'border-b border-gray-200/70 bg-white/95 backdrop-blur'
         }`}
       >
-      <div className={`mx-auto w-full max-w-[1920px] px-4 sm:px-6 lg:px-10 2xl:px-12 ${landingSidebar ? 'h-0' : 'h-16 sm:h-20'}`}>
-        <div className={`relative flex items-center justify-center pr-20 sm:pr-24 ${landingSidebar ? 'h-0' : 'h-16 sm:h-20'} ${landingSidebar ? '' : '2xl:pr-0'}`}>
+      <div className="mx-auto h-16 w-full max-w-[1920px] px-4 sm:h-20 sm:px-6 lg:px-10 2xl:px-12">
+        <div className={`relative flex h-16 items-center justify-center pr-20 sm:h-20 sm:pr-24 ${landingSidebar ? '' : '2xl:pr-0'}`}>
           <Link
             href={route("landing")}
             className={`absolute top-3 text-xl font-bold leading-none tracking-tight transition-opacity hover:opacity-70 sm:top-5 sm:text-2xl ${

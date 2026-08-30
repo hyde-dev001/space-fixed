@@ -81,6 +81,14 @@ describe('user-side navigation shell', () => {
     expect(appCssSource).toContain('animation-play-state: paused');
   });
 
+  it('uses a full-height opaque header outside the landing page', () => {
+    expect(navigationSource).toContain('isTransparentNav\n            ? \'bg-transparent\'');
+    expect(navigationSource).toContain(": 'border-b border-gray-200/70 bg-white/95 backdrop-blur'");
+    expect(navigationSource).toContain('mx-auto h-16 w-full max-w-[1920px] px-4 sm:h-20 sm:px-6 lg:px-10 2xl:px-12');
+    expect(navigationSource).not.toContain("landingSidebar || isTransparentNav\n            ? 'bg-transparent'");
+    expect(navigationSource).not.toContain("${landingSidebar ? 'h-0' : 'h-16 sm:h-20'}");
+  });
+
   it('does not reserve the former fixed-ticker space above the landing page', () => {
     expect(landingPageSource).not.toContain('bg-white pt-10 font-outfit antialiased');
   });
