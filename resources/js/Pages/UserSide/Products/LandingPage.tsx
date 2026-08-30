@@ -289,7 +289,7 @@ const LandingPage: React.FC<Props> = ({ products = [], stats }) => {
   return (
     <>
       <Head title="SoleSpace - Premium Footwear & Expert Repairs" />
-      <div ref={revealRootRef} className="min-h-screen overflow-x-hidden bg-white pt-10 font-outfit antialiased">
+      <div ref={revealRootRef} className="min-h-screen overflow-x-hidden bg-white font-outfit antialiased">
         <Navigation mobileMenuTriggerIcon="hamburger" landingSidebar />
 
       <div>

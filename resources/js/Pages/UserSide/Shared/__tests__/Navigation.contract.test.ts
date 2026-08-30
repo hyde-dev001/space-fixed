@@ -7,6 +7,10 @@ const navigationSource = readFileSync(
   'utf8',
 );
 const appCssSource = readFileSync(resolve('resources/css/app.css'), 'utf8');
+const landingPageSource = readFileSync(
+  resolve('resources/js/Pages/UserSide/Products/LandingPage.tsx'),
+  'utf8',
+);
 const standaloneAccountMenuSources = [
   'resources/js/Pages/UserSide/Products/Products.tsx',
   'resources/js/Pages/UserSide/Products/ProductShow.tsx',
@@ -75,6 +79,10 @@ describe('user-side navigation shell', () => {
     expect(appCssSource).toContain('.landing-marquee:hover');
     expect(appCssSource).toContain('.landing-marquee:focus-within');
     expect(appCssSource).toContain('animation-play-state: paused');
+  });
+
+  it('does not reserve the former fixed-ticker space above the landing page', () => {
+    expect(landingPageSource).not.toContain('bg-white pt-10 font-outfit antialiased');
   });
 
   it('removes the SoleSpace logo shadow and hides the search results scrollbar UI', () => {
