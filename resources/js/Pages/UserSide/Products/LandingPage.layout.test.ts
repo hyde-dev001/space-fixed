@@ -56,12 +56,14 @@ describe('SoleSpace landing page redesign', () => {
       '<details',
       '<summary',
       'sticky',
+      'footer-reveal-stage',
       'footer-wordmark',
     ].forEach((marker) => {
       expect(landingSource).toContain(marker);
     });
 
     expect(landingSource).toContain('className="landing-footer sticky bottom-0 z-0 w-full min-h-[30rem] overflow-hidden bg-white text-black sm:min-h-[34rem]"');
+    expect(landingSource).toContain('className="footer-reveal-stage relative min-h-[30rem] sm:min-h-[34rem]"');
     expect(landingSource).toContain('prefers-reduced-motion');
     expect(landingSource).not.toContain('footerRef');
     expect(landingSource).not.toContain('--footer-reveal-progress');
