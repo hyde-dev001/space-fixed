@@ -797,14 +797,16 @@ const Products: React.FC<Props> = () => {
             </div>
           )}
 
-          <h1 className="mb-2 text-2xl sm:text-3xl font-bold tracking-tight text-black uppercase xl:mb-3 xl:text-4xl xl:font-bold 2xl:text-5xl">
-            {searchQuery ? `Search Results for "${searchQuery}"` : 'ALL SHOES'}
-          </h1>
-          <p className="mb-8 max-w-3xl text-sm sm:text-base font-light leading-relaxed text-black/65 xl:mb-10">
-            {searchQuery 
-              ? `Showing results matching "${searchQuery}"`
-              : 'Discover our curated selection of shoes. Browse by style, price, and location. Click any product to view details and select your size.'}
-          </p>
+          {searchQuery && (
+            <>
+              <h1 className="mb-2 text-2xl sm:text-3xl font-bold tracking-tight text-black uppercase xl:mb-3 xl:text-4xl xl:font-bold 2xl:text-5xl">
+                Search Results for "{searchQuery}"
+              </h1>
+              <p className="mb-8 max-w-3xl text-sm sm:text-base font-light leading-relaxed text-black/65 xl:mb-10">
+                Showing results matching "{searchQuery}"
+              </p>
+            </>
+          )}
 
           {searchQuery && (
             <div className="mb-10">

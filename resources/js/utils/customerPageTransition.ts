@@ -25,8 +25,9 @@ const CUSTOMER_STATIC_PATHS = new Set([
 	"/new-password",
 	"/email/verify",
 	"/shop-owner-register",
-	"/shop-owner/two-factor",
+"/shop-owner/two-factor",
 ]);
+const PRODUCT_CATEGORIES = new Set(["men", "women", "kids", "sports"]);
 
 function pathnameOf(url: string): string {
 	return new URL(url, "http://localhost").pathname.replace(/\/$/, "") || "/";
@@ -44,10 +45,16 @@ export function isCustomerTransitionPath(pathname: string): boolean {
 }
 
 export function shouldStartCustomerPageTransition(currentUrl: string, destinationUrl: string): boolean {
+	const current = new URL(currentUrl, "http://localhost");
+	const destination = new URL(destinationUrl, "http://localhost");
 	const currentPath = pathnameOf(currentUrl);
 	const destinationPath = pathnameOf(destinationUrl);
+	const isProductCategorySwitch = currentPath === "/products"
+		&& destinationPath === "/products"
+		&& PRODUCT_CATEGORIES.has(destination.searchParams.get("category")?.toLowerCase() ?? "")
+		&& current.searchParams.get("category")?.toLowerCase() !== destination.searchParams.get("category")?.toLowerCase();
 
-	return currentPath !== destinationPath
+	return (currentPath !== destinationPath || isProductCategorySwitch)
 		&& isCustomerTransitionPath(currentPath)
 		&& isCustomerTransitionPath(destinationPath);
 }
