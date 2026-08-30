@@ -63,7 +63,11 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
   ];
 
   const [activeHeroSlide, setActiveHeroSlide] = useState(0);
+  const [footerIsInteractive, setFooterIsInteractive] = useState(false);
+  const landingRootRef = useRef<HTMLDivElement | null>(null);
   const revealRootRef = useRef<HTMLDivElement | null>(null);
+  const footerRef = useRef<HTMLElement | null>(null);
+  const footerRevealSpacerRef = useRef<HTMLDivElement | null>(null);
   const prefersReducedMotionRef = useRef(false);
 
   useEffect(() => {
@@ -120,6 +124,55 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
     return () => observer.disconnect();
   }, []);
 
+  useEffect(() => {
+    const landingRoot = landingRootRef.current;
+    const footer = footerRef.current;
+    const spacer = footerRevealSpacerRef.current;
+
+    if (!landingRoot || !footer || !spacer) {
+      return;
+    }
+
+    const updateFooterHeight = () => {
+      const footerHeight = Math.ceil(footer.getBoundingClientRect().height);
+      landingRoot.style.setProperty('--landing-footer-height', `${footerHeight}px`);
+    };
+
+    updateFooterHeight();
+
+    const resizeObserver = typeof ResizeObserver === 'undefined'
+      ? null
+      : new ResizeObserver(updateFooterHeight);
+
+    resizeObserver?.observe(footer);
+
+    if (typeof IntersectionObserver === 'undefined') {
+      setFooterIsInteractive(true);
+
+      return () => {
+        resizeObserver?.disconnect();
+        landingRoot.style.removeProperty('--landing-footer-height');
+      };
+    }
+
+    const revealObserver = new IntersectionObserver(
+      ([entry]) => setFooterIsInteractive(entry?.isIntersecting ?? false),
+      { threshold: 0 },
+    );
+
+    revealObserver.observe(spacer);
+
+    return () => {
+      revealObserver.disconnect();
+      resizeObserver?.disconnect();
+      landingRoot.style.removeProperty('--landing-footer-height');
+    };
+  }, []);
+
+  useEffect(() => {
+    footerRef.current?.toggleAttribute('inert', !footerIsInteractive);
+  }, [footerIsInteractive]);
+
   const buttonBaseClass =
     'group inline-flex w-full max-w-full items-center justify-center gap-3 rounded-full px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.14em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 sm:w-auto sm:px-10 sm:py-4 sm:text-sm sm:tracking-[0.18em]';
   const buttonLightClass =
@@ -132,10 +185,11 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
   return (
     <>
       <Head title="SoleSpace - Premium Footwear & Expert Repairs" />
-      <div ref={revealRootRef} className="min-h-screen overflow-x-hidden bg-white font-outfit antialiased">
-        <Navigation mobileMenuTriggerIcon="hamburger" landingSidebar />
+      <div ref={landingRootRef} className="landing-page relative min-h-screen overflow-x-hidden font-outfit antialiased">
+        <div ref={revealRootRef} className="landing-curtain relative z-10 bg-white">
+          <Navigation mobileMenuTriggerIcon="hamburger" landingSidebar />
 
-       <main className="relative z-10">
+       <main>
        <div>
       {/* Hero Section - Full-bleed Background Carousel */}
       <section className="relative flex min-h-[84svh] w-full items-center overflow-hidden sm:min-h-svh">
@@ -391,14 +445,21 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
        </section>
 
        </main>
-      </div>
+        </div>
 
-        <div className="footer-reveal-stage relative -mt-32 min-h-[30rem] sm:-mt-48 sm:min-h-[34rem]">
+        <div
+          ref={footerRevealSpacerRef}
+          aria-hidden="true"
+          className="footer-curtain-spacer pointer-events-none relative z-0"
+        />
+
          <footer
+           ref={footerRef}
            id="landing-footer"
-           className="landing-footer sticky bottom-0 z-0 w-full min-h-[30rem] overflow-hidden bg-white text-black sm:min-h-[34rem]"
+           aria-hidden={!footerIsInteractive}
+           className={`landing-footer fixed inset-x-0 bottom-0 z-0 w-full max-h-[100svh] min-h-[min(30rem,100svh)] overflow-x-hidden overflow-y-auto overscroll-contain bg-white text-black sm:min-h-[min(34rem,100svh)] ${footerIsInteractive ? 'pointer-events-auto' : 'pointer-events-none'}`}
          >
-          <div className={`${sectionContainerClass} relative z-10 pt-20 sm:pt-48`}>
+          <div className={`${sectionContainerClass} relative z-10 pt-8 sm:pt-10`}>
            <div className="hidden grid-cols-4 gap-8 lg:grid">
              <div>
                <Link href={route("landing")} className="text-sm font-semibold uppercase tracking-[0.08em]">
@@ -470,7 +531,7 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
            SOLESPACE
          </div>
          </footer>
-       </div>
+      </div>
         <style>{`
           .scroll-reveal {
             opacity: 0;
@@ -493,6 +554,20 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
 
            .scroll-reveal--scale.is-visible {
              transform: scale(1);
+           }
+
+           .landing-page {
+             --landing-footer-height: min(30rem, 100svh);
+           }
+
+           .footer-curtain-spacer {
+             height: var(--landing-footer-height);
+           }
+
+           @media (min-width: 640px) {
+             .landing-page {
+               --landing-footer-height: min(34rem, 100svh);
+             }
            }
 
            .footer-link {
