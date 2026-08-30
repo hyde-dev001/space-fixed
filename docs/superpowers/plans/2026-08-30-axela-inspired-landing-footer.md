@@ -4,7 +4,7 @@
 
 **Goal:** Replace the current landing-page footer with a SoleSpace-owned sticky underlap footer that exposes an anchored oversized wordmark as the page scrolls, matching the interaction rhythm observed on the Axel Arigato storefront.
 
-**Architecture:** Keep the implementation inside the existing `LandingPage.tsx` page to preserve the landing-only boundary. Wrap the existing landing sections in a foreground `<main>` layer, place a native sticky footer behind it, and let CSS stacking order reveal the anchored wordmark as the content passes over the footer. Use a desktop link grid and a separate mobile `details`/`summary` presentation so mobile groups are closed by default without hydration-dependent viewport state.
+**Architecture:** Keep the implementation inside the existing `LandingPage.tsx` page to preserve the landing-only boundary. Wrap the existing landing sections in a foreground `<main>` layer, place a native sticky footer inside a footer-only reveal stage after it, and let CSS stacking order reveal the anchored wordmark as the final content passes over the footer. The bounded stage keeps the footer below the initial viewport while preserving the reference underlap at the bottom. Use a desktop link grid and a separate mobile `details`/`summary` presentation so mobile groups are closed by default without hydration-dependent viewport state.
 
 **Tech Stack:** React 18, TypeScript 5.7, Inertia React, Tailwind CSS 4 utility classes, scoped JSX CSS, Vitest, Playwright.
 

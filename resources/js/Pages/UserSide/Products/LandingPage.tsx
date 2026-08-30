@@ -393,10 +393,11 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
        </main>
       </div>
 
-       <footer
-         id="landing-footer"
-         className="landing-footer sticky bottom-0 z-0 w-full min-h-[30rem] overflow-hidden bg-white text-black sm:min-h-[34rem]"
-       >
+       <div className="footer-reveal-stage relative min-h-[30rem] sm:min-h-[34rem]">
+         <footer
+           id="landing-footer"
+           className="landing-footer sticky bottom-0 z-0 w-full min-h-[30rem] overflow-hidden bg-white text-black sm:min-h-[34rem]"
+         >
          <div className={`${sectionContainerClass} relative z-10 pt-8 sm:pt-10`}>
            <div className="hidden grid-cols-4 gap-8 lg:grid">
              <div>
@@ -468,7 +469,8 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
          <div aria-hidden="true" className="footer-wordmark">
            SOLESPACE
          </div>
-       </footer>
+         </footer>
+       </div>
         <style>{`
           .scroll-reveal {
             opacity: 0;
