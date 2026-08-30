@@ -457,7 +457,7 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
            ref={footerRef}
            id="landing-footer"
            aria-hidden={!footerIsInteractive}
-           className={`landing-footer fixed inset-x-0 bottom-0 z-0 w-full max-h-[100svh] min-h-[min(30rem,100svh)] overflow-x-hidden overflow-y-auto overscroll-contain bg-white text-black sm:min-h-[min(34rem,100svh)] ${footerIsInteractive ? 'pointer-events-auto' : 'pointer-events-none'}`}
+           className={`landing-footer fixed inset-x-0 bottom-0 z-0 w-full max-h-[100svh] min-h-[min(30rem,100svh)] overflow-x-hidden overflow-y-auto overscroll-auto bg-white text-black sm:min-h-[min(34rem,100svh)] ${footerIsInteractive ? 'pointer-events-auto' : 'pointer-events-none'}`}
          >
           <div className={`${sectionContainerClass} relative z-10 pt-8 sm:pt-10`}>
            <div className="hidden grid-cols-4 gap-8 lg:grid">
