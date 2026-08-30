@@ -11,6 +11,7 @@ import { QueryProvider } from './providers/QueryProvider';
 import { CartProvider } from './contexts/CartContext';
 import { dismissAppLoader } from './utils/appLoader';
 import { syncPageTheme } from './utils/pageTheme';
+import { CustomerPageTransition } from './components/common/CustomerPageTransition';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 const USER_SIDE_SCROLLBAR_CLASS = 'userside-hide-scrollbar';
@@ -45,6 +46,7 @@ const ApplicationProviders = ({ initialComponent, children }) => {
                     <CartProvider syncEnabled={isUserSidePage && !isUserAuthPage}>
                         {children}
                     </CartProvider>
+                    <CustomerPageTransition />
                 </SidebarProvider>
             </ThemeProvider>
         </QueryProvider>
