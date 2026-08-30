@@ -2247,7 +2247,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 				}
 			`}</style>
 		<section className={isStandalonePage
-			? 'h-screen w-screen bg-white'
+			? 'h-dvh w-full bg-white'
 			: 'relative left-1/2 right-1/2 -mx-[50vw] w-screen border-y border-gray-200 bg-white py-4 md:py-6'}>
 			{!isStandalonePage && (
 				<div className="mb-4 flex flex-col gap-2 px-4 md:flex-row md:items-center md:justify-between md:px-8">
@@ -2284,7 +2284,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 			)}
 
 			<div
-				className={`relative ${isStandalonePage ? 'h-screen min-h-0' : 'h-[calc(100vh-180px)] min-h-170'} w-full touch-none overflow-hidden ${isStandalonePage ? '' : 'border-y border-gray-200'} bg-slate-200 ${isPickupAnimating ? 'cursor-progress' : isDragging ? 'cursor-grabbing' : focusedShoeIndex !== null ? 'cursor-ew-resize' : 'cursor-grab'}`}
+				className={`relative ${isStandalonePage ? 'h-dvh min-h-0' : 'h-[calc(100vh-180px)] min-h-170'} w-full touch-none overflow-hidden ${isStandalonePage ? '' : 'border-y border-gray-200'} bg-slate-200 ${isPickupAnimating ? 'cursor-progress' : isDragging ? 'cursor-grabbing' : focusedShoeIndex !== null ? 'cursor-ew-resize' : 'cursor-grab'}`}
 				onPointerDown={(event) => {
 					if (activePointerIdRef.current !== null) return;
 					activePointerIdRef.current = event.pointerId;

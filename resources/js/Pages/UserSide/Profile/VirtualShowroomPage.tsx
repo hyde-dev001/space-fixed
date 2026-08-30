@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Head, Link } from '@inertiajs/react';
 import VirtualShowroom from '../Products/VirtualShowroom';
-import Navigation from '../Shared/Navigation';
 
 interface Product {
   id: number;
@@ -40,12 +39,10 @@ const VirtualShowroomPage: React.FC<Props> = ({ shop, products }) => {
   const backLabel = fromShopOwnerPremium ? 'Back to Premium Benefits' : 'Back to Shop Profile';
 
   return (
-    <div className="h-screen overflow-hidden bg-white">
+    <div className="h-dvh overflow-hidden bg-white">
       <Head title={`${shop.name} - Virtual Showroom`} />
 
-      {!isFocusMode && <Navigation />}
-
-      <main className="h-screen">
+      <main className="h-dvh">
         {!isFocusMode && (
           <div className="fixed left-20 top-4 z-50">
             <Link
