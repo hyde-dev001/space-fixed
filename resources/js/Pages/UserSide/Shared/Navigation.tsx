@@ -112,6 +112,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [isHovering, setIsHovering] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
+  const [isPromoTickerAtTop, setIsPromoTickerAtTop] = useState(true);
   const page = usePage();
   const { url } = page;
   const { auth } = page.props as any;
@@ -631,7 +632,10 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
   };
 
   useEffect(() => {
-    const onScroll = () => setIsScrolled(window.scrollY > 80);
+    const onScroll = () => {
+      setIsScrolled(window.scrollY > 80);
+      setIsPromoTickerAtTop(window.scrollY < 40);
+    };
     onScroll();
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
@@ -677,7 +681,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
 
   return (
     <>
-      <div className="fixed inset-x-0 top-0 z-[40] h-10 overflow-hidden border-b border-white/15 bg-[#111111]/70 text-white shadow-[0_8px_24px_-18px_rgba(0,0,0,0.7)] backdrop-blur-xl" aria-label="Latest offers">
+      <div className="relative z-[40] h-10 overflow-hidden border-b border-white/15 bg-[#111111] text-white" aria-label="Latest offers">
         <div className="landing-marquee flex h-full min-w-max items-center gap-12 py-3 text-[11px] font-semibold uppercase tracking-[0.22em] motion-reduce:animate-none sm:gap-20 sm:text-xs">
           {[...PROMO_MESSAGES, ...PROMO_MESSAGES].map((message, index) => (
             <span key={`${message}-${index}`} className="inline-flex items-center gap-12 whitespace-nowrap sm:gap-20">
@@ -687,7 +691,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
         </div>
       </div>
       <nav
-        className={`fixed left-0 right-0 top-10 z-50 w-full transition-all duration-300 ${
+        className={`fixed left-0 right-0 z-50 w-full transition-[top,background-color,border-color] duration-300 ${isPromoTickerAtTop ? 'top-10' : 'top-0'} ${
           landingSidebar || isTransparentNav
             ? 'bg-transparent'
             : 'border-b border-gray-200/70 bg-white/95 backdrop-blur'
@@ -700,7 +704,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
             className={`absolute top-3 text-xl font-bold leading-none tracking-tight transition-opacity hover:opacity-70 sm:top-5 sm:text-2xl ${
               landingSidebar ? 'left-1/2 -translate-x-1/2' : 'left-0'
             } ${
-              isTransparentNav ? 'text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.7)]' : 'text-gray-900'
+              isTransparentNav ? 'text-white' : 'text-gray-900'
             }`}
           >
             SoleSpace
@@ -1361,7 +1365,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                     <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={1.8} d="M6 6l12 12M18 6L6 18" /></svg>
                   </button>
                 </form>
-                <div className="max-h-[55vh] overflow-y-auto px-5 py-5 sm:px-7">
+                <div className="max-h-[55vh] overflow-y-auto no-scrollbar px-5 py-5 sm:px-7">
                   <p className="mb-4 text-xs font-semibold uppercase tracking-[0.18em] text-[#555555]">Products</p>
                   {isSearchingSuggestions && <p className="text-sm text-[#777777]">Searching...</p>}
                   {!isSearchingSuggestions && searchQuery.trim().length >= 2 && searchProducts.length === 0 && searchShops.length === 0 && <p className="text-sm text-[#777777]">No results found.</p>}
@@ -1409,7 +1413,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
               </div>
               <div className="flex-1 px-5 py-6 sm:px-7">
                 {isAuthenticated ? (
-                  <div className="overflow-hidden rounded-2xl border border-white/60 bg-white/30 shadow-[0_20px_45px_-32px_rgba(15,23,42,0.55)]">
+                  <div className="border-y border-white/50">
                     <Link
                       href="/customer-profile"
                       className={`flex min-h-14 items-center gap-3 border-b border-white/50 px-4 text-sm font-medium transition-colors ${isMyProfileActive ? 'bg-white/35 text-gray-900' : 'text-gray-900 hover:bg-white/35'}`}
@@ -1445,7 +1449,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                     </button>
                   </div>
                 ) : (
-                  <Link href="/login" onClick={() => setAccountDrawerOpen(false)} className="flex min-h-12 items-center justify-center rounded-2xl border border-white/60 bg-white/30 px-4 text-sm font-semibold text-gray-900 transition-colors hover:bg-white/45">
+                  <Link href="/login" onClick={() => setAccountDrawerOpen(false)} className="flex min-h-14 items-center gap-3 border-y border-white/50 px-4 text-sm font-medium text-gray-900 transition-colors hover:bg-white/35">
                     Customer Login
                   </Link>
                 )}

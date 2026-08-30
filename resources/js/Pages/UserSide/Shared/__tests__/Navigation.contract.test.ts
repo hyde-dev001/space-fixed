@@ -64,13 +64,23 @@ describe('user-side navigation shell', () => {
     expect(navigationSource).toContain('motion-reduce:animate-none');
   });
 
-  it('pauses the glass offers marquee when hovered or focused', () => {
-    expect(navigationSource).toContain('z-[40]');
-    expect(navigationSource).toContain('bg-[#111111]/70');
-    expect(navigationSource).toContain('backdrop-blur-xl');
+  it('keeps the solid offers marquee at page top and moves the fixed header up after scrolling', () => {
+    expect(navigationSource).toContain('const [isPromoTickerAtTop, setIsPromoTickerAtTop] = useState(true);');
+    expect(navigationSource).toContain('window.scrollY < 40');
+    expect(navigationSource).toContain('relative z-[40] h-10');
+    expect(navigationSource).toContain('bg-[#111111]');
+    expect(navigationSource).not.toContain('bg-[#111111]/70');
+    expect(navigationSource).not.toContain('fixed inset-x-0 top-0 z-[40]');
+    expect(navigationSource).toContain("isPromoTickerAtTop ? 'top-10' : 'top-0'");
     expect(appCssSource).toContain('.landing-marquee:hover');
     expect(appCssSource).toContain('.landing-marquee:focus-within');
     expect(appCssSource).toContain('animation-play-state: paused');
+  });
+
+  it('removes the SoleSpace logo shadow and hides the search results scrollbar UI', () => {
+    expect(navigationSource).toContain("isTransparentNav ? 'text-white' : 'text-gray-900'");
+    expect(navigationSource).not.toContain("isTransparentNav ? 'text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.7)]' : 'text-gray-900'");
+    expect(navigationSource).toContain('max-h-[55vh] overflow-y-auto no-scrollbar px-5 py-5 sm:px-7');
   });
 
   it('keeps glass drawers above the ticker stacking context', () => {
@@ -106,6 +116,9 @@ describe('user-side navigation shell', () => {
     expect(accountPanelSource).not.toContain('transition-[transform,opacity,visibility]');
     expect(accountPanelSource).toContain('accountDrawerOpen ? \'visible translate-x-0 opacity-100\' : \'invisible translate-x-full opacity-0 pointer-events-none\'');
     expect(accountPanelSource).toContain('aria-label="Close account"');
+    expect(accountPanelSource).toContain('<div className="border-y border-white/50">');
+    expect(accountPanelSource).not.toContain('rounded-2xl border border-white/60 bg-white/30');
+    expect(accountPanelSource).not.toContain('shadow-[0_20px_45px_-32px_rgba(15,23,42,0.55)]');
     expect(accountPanelSource).toContain('<span>Edit Profile</span>');
     expect(accountPanelSource).toContain('<span>Join Our Team</span>');
     expect(accountPanelSource).toContain('<span>Log out</span>');
