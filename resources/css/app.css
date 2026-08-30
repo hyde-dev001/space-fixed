@@ -38,36 +38,6 @@ html:not(.dark) #app .super-admin-shell [class~="bg-gray-50"] {
   }
 }
 
-/* Shared user-side Inertia navigation motion. Opacity-only animation keeps fixed
-   headers, drawers, and checkout controls in their existing coordinate system. */
-html.userside-page-leaving #app {
-  opacity: 0.86;
-  transition: opacity 150ms ease-out;
-}
-
-html.userside-page-enter #app {
-  animation: userside-page-enter 280ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-@keyframes userside-page-enter {
-  from {
-    opacity: 0.82;
-  }
-
-  to {
-    opacity: 1;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  html.userside-page-leaving #app,
-  html.userside-page-enter #app {
-    animation: none;
-    opacity: 1;
-    transition: none;
-  }
-}
-
 /* Shared metrics-card treatment. EcommerceMetrics is the canonical source;
    these selectors keep legacy, page-local metric cards visually consistent. */
 html:not(.dark) #app .metrics-card,

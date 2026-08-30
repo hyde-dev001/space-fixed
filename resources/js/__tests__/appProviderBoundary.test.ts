@@ -21,12 +21,4 @@ describe('application provider boundaries', () => {
     expect(providers).toContain('<CartProvider syncEnabled={isUserSidePage && !isUserAuthPage}>');
     expect(providers).not.toContain('{isUserSidePage ? (');
   });
-
-  it('uses Inertia lifecycle events for reduced-motion-safe user-side page transitions', () => {
-    expect(source).toContain("componentName.startsWith('Notifications/Customer')");
-    expect(source).toContain("const USER_SIDE_PAGE_ENTER_CLASS = 'userside-page-enter'");
-    expect(source).toContain("router.on('start'");
-    expect(source).toContain('triggerUserSidePageEnter(page?.component ?? \'\')');
-    expect(source).toContain("document.documentElement.classList.add(USER_SIDE_PAGE_ENTER_CLASS)");
-  });
 });
