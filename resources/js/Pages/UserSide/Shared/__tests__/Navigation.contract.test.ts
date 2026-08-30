@@ -64,13 +64,23 @@ describe('user-side navigation shell', () => {
     expect(navigationSource).toContain('motion-reduce:animate-none');
   });
 
-  it('pauses the glass offers marquee when hovered or focused', () => {
-    expect(navigationSource).toContain('z-[40]');
-    expect(navigationSource).toContain('bg-[#111111]/70');
-    expect(navigationSource).toContain('backdrop-blur-xl');
+  it('keeps the solid offers marquee at page top and moves the fixed header up after scrolling', () => {
+    expect(navigationSource).toContain('const [isPromoTickerAtTop, setIsPromoTickerAtTop] = useState(true);');
+    expect(navigationSource).toContain('window.scrollY < 40');
+    expect(navigationSource).toContain('relative z-[40] h-10');
+    expect(navigationSource).toContain('bg-[#111111]');
+    expect(navigationSource).not.toContain('bg-[#111111]/70');
+    expect(navigationSource).not.toContain('fixed inset-x-0 top-0 z-[40]');
+    expect(navigationSource).toContain("isPromoTickerAtTop ? 'top-10' : 'top-0'");
     expect(appCssSource).toContain('.landing-marquee:hover');
     expect(appCssSource).toContain('.landing-marquee:focus-within');
     expect(appCssSource).toContain('animation-play-state: paused');
+  });
+
+  it('removes the SoleSpace logo shadow and hides the search results scrollbar UI', () => {
+    expect(navigationSource).toContain("isTransparentNav ? 'text-white' : 'text-gray-900'");
+    expect(navigationSource).not.toContain("isTransparentNav ? 'text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.7)]' : 'text-gray-900'");
+    expect(navigationSource).toContain('max-h-[55vh] overflow-y-auto no-scrollbar px-5 py-5 sm:px-7');
   });
 
   it('keeps glass drawers above the ticker stacking context', () => {
