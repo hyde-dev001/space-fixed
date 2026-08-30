@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace the current landing-page footer with a SoleSpace-owned sticky underlap footer that reveals an oversized wordmark on scroll, matching the interaction rhythm observed on the Axel Arigato storefront.
+**Goal:** Replace the current landing-page footer with a SoleSpace-owned sticky underlap footer that exposes an anchored oversized wordmark as the page scrolls, matching the interaction rhythm observed on the Axel Arigato storefront.
 
-**Architecture:** Keep the implementation inside the existing `LandingPage.tsx` page to preserve the landing-only boundary. Wrap the existing landing sections in a foreground `<main>` layer, place a sticky footer behind it, and drive only the wordmark’s reveal progress with a passive scroll listener and a CSS custom property. Use a desktop link grid and a separate mobile `details`/`summary` presentation so mobile groups are closed by default without hydration-dependent viewport state.
+**Architecture:** Keep the implementation inside the existing `LandingPage.tsx` page to preserve the landing-only boundary. Wrap the existing landing sections in a foreground `<main>` layer, place a native sticky footer behind it, and let CSS stacking order reveal the anchored wordmark as the content passes over the footer. Use a desktop link grid and a separate mobile `details`/`summary` presentation so mobile groups are closed by default without hydration-dependent viewport state.
 
 **Tech Stack:** React 18, TypeScript 5.7, Inertia React, Tailwind CSS 4 utility classes, scoped JSX CSS, Vitest, Playwright.
 
@@ -12,11 +12,11 @@
 
 - Modify the footer rendered by `resources/js/Pages/UserSide/Products/LandingPage.tsx` only, plus its focused contract test, design/plan documentation, and generated build output.
 - Keep global navigation, product, repair, services, backend routes, and non-landing pages unchanged.
-- Use SoleSpace copy, existing routes, existing local assets, and the exact footer accent `#f5e9b5`; do not copy Axel Arigato brand text, assets, or implementation code.
+- Use SoleSpace copy, existing routes, existing local assets, and the exact white footer background `#ffffff`; do not copy Axel Arigato brand text, assets, or implementation code.
 - Preserve existing landing section order, hero behavior, and existing scroll-reveal behavior outside the footer.
 - Keep the footer horizontally clipped and responsive at desktop and mobile widths.
-- Honor `prefers-reduced-motion: reduce` by showing the final wordmark position without transform transitions.
-- Use passive scroll listeners and `requestAnimationFrame` throttling for footer progress updates.
+- Honor `prefers-reduced-motion: reduce` for the landing page’s existing reveal and control transitions.
+- Use native sticky positioning for the footer underlap; do not add a footer-specific scroll listener or scroll-progress state.
 
 ---
 
@@ -49,13 +49,14 @@ Append this test to the existing `describe('SoleSpace landing page redesign', ..
       '<summary',
       'sticky',
       'footer-wordmark',
-      '--footer-reveal-progress',
     ].forEach((marker) => {
       expect(landingSource).toContain(marker);
     });
 
-    expect(landingSource).toContain('bg-[#f5e9b5]');
+    expect(landingSource).toContain('className="landing-footer sticky bottom-0 z-0 w-full min-h-[30rem] overflow-hidden bg-white text-black sm:min-h-[34rem]"');
     expect(landingSource).toContain('prefers-reduced-motion');
+    expect(landingSource).not.toContain('footerRef');
+    expect(landingSource).not.toContain('--footer-reveal-progress');
     expect(landingSource).not.toContain('hidden w-full bg-gray-100');
   });
 ```
@@ -68,7 +69,7 @@ Run:
 node_modules/.bin/vitest.cmd run resources/js/Pages/UserSide/Products/LandingPage.layout.test.ts
 ```
 
-Expected: FAIL because the current footer does not yet contain the new landing-footer identifiers, sticky layer, responsive details controls, or wordmark progress property.
+Expected: FAIL because the current footer does not yet contain the new landing-footer identifiers, sticky layer, responsive details controls, or anchored wordmark structure.
 
 - [ ] **Step 3: Commit the failing contract**
 
@@ -84,71 +85,18 @@ git commit -m "test: define landing footer reveal contract"
 
 **Interfaces:**
 - Consumes: existing `sectionContainerClass`, Inertia `Link`, current landing routes, and existing `prefersReducedMotionRef`/reveal observer.
-- Produces: `footerRef`, `landing-footer`, `footer-wordmark`, a sticky footer layer, desktop link grid, mobile native disclosure groups, and reduced-motion-safe scroll progress.
+- Produces: `landing-footer`, `footer-wordmark`, a native sticky footer layer, desktop link grid, and mobile native disclosure groups.
 
-- [ ] **Step 1: Add the footer ref and progress effect**
+- [ ] **Step 1: Keep the footer reveal native**
 
-Add this ref beside `revealRootRef`:
-
-```tsx
-  const footerRef = useRef<HTMLElement | null>(null);
-```
-
-Add this effect after the existing scroll-reveal observer effect:
-
-```tsx
-  useEffect(() => {
-    const footer = footerRef.current;
-    if (!footer) {
-      return;
-    }
-
-    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    let frame = 0;
-
-    const updateProgress = () => {
-      const maxScroll = Math.max(document.documentElement.scrollHeight - window.innerHeight, 1);
-      const revealWindow = Math.max(window.innerHeight * 0.72, 1);
-      const revealStart = Math.max(0, maxScroll - revealWindow);
-      const progress = reducedMotion
-        ? 1
-        : Math.min(1, Math.max(0, (window.scrollY - revealStart) / revealWindow));
-
-      footer.style.setProperty('--footer-reveal-progress', progress.toFixed(3));
-    };
-
-    const handleScroll = () => {
-      if (frame) {
-        return;
-      }
-
-      frame = window.requestAnimationFrame(() => {
-        frame = 0;
-        updateProgress();
-      });
-    };
-
-    updateProgress();
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    window.addEventListener('resize', updateProgress);
-
-    return () => {
-      if (frame) {
-        window.cancelAnimationFrame(frame);
-      }
-
-      window.removeEventListener('scroll', handleScroll);
-      window.removeEventListener('resize', updateProgress);
-    };
-  }, []);
-```
+Do not add a footer ref or footer-specific scroll effect. The native `sticky bottom-0 z-0` positioning handles the underlap reveal while the foreground `z-10` content stays above it and the wordmark stays anchored.
 
 - [ ] **Step 2: Put the existing landing content in a foreground layer**
 
 Inside the root landing `<div>`, place the current hero and all five landing sections inside:
 
 ```tsx
-        <main className="relative z-10 bg-white">
+        <main className="relative z-10">
           {/* existing hero and landing sections, unchanged in order */}
         </main>
 ```
@@ -162,8 +110,7 @@ Replace the current hidden gray footer with this structure and SoleSpace-owned c
 ```tsx
         <footer
           id="landing-footer"
-          ref={footerRef}
-          className="landing-footer sticky bottom-0 z-0 w-full min-h-[30rem] overflow-hidden bg-[#f5e9b5] text-black sm:min-h-[34rem]"
+          className="landing-footer sticky bottom-0 z-0 w-full min-h-[30rem] overflow-hidden bg-white text-black sm:min-h-[34rem]"
         >
           <div className={`${sectionContainerClass} relative z-10 pt-8 sm:pt-10`}>
             <div className="hidden grid-cols-4 gap-8 lg:grid">
@@ -246,10 +193,6 @@ The desktop grid is visible from `lg` upward; the mobile disclosure groups are v
 Add these rules inside the existing JSX `<style>` block:
 
 ```css
-          .landing-footer {
-            --footer-reveal-progress: 0;
-          }
-
           .footer-link {
             display: inline-block;
             transition: opacity 180ms ease, transform 180ms ease;
@@ -325,25 +268,12 @@ Add these rules inside the existing JSX `<style>` block:
             font-weight: 700;
             line-height: 0.68;
             letter-spacing: -0.105em;
-            transform: translate3d(
-              calc((1 - var(--footer-reveal-progress)) * 7vw),
-              calc((1 - var(--footer-reveal-progress)) * 20%),
-              0
-            );
-            transform-origin: center bottom;
-            transition: transform 120ms linear;
-            will-change: transform;
           }
 
           @media (prefers-reduced-motion: reduce) {
             .footer-link,
-            .footer-disclosure summary span,
-            .footer-wordmark {
+            .footer-disclosure summary span {
               transition: none;
-            }
-
-            .footer-wordmark {
-              transform: translate3d(0, 0, 0);
             }
           }
 ```
