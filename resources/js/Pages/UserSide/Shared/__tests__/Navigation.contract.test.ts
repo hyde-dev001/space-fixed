@@ -106,6 +106,9 @@ describe('user-side navigation shell', () => {
     expect(accountPanelSource).not.toContain('transition-[transform,opacity,visibility]');
     expect(accountPanelSource).toContain('accountDrawerOpen ? \'visible translate-x-0 opacity-100\' : \'invisible translate-x-full opacity-0 pointer-events-none\'');
     expect(accountPanelSource).toContain('aria-label="Close account"');
+    expect(accountPanelSource).toContain('<div className="border-y border-white/50">');
+    expect(accountPanelSource).not.toContain('rounded-2xl border border-white/60 bg-white/30');
+    expect(accountPanelSource).not.toContain('shadow-[0_20px_45px_-32px_rgba(15,23,42,0.55)]');
     expect(accountPanelSource).toContain('<span>Edit Profile</span>');
     expect(accountPanelSource).toContain('<span>Join Our Team</span>');
     expect(accountPanelSource).toContain('<span>Log out</span>');

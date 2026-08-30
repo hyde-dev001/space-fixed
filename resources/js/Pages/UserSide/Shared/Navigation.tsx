@@ -1409,7 +1409,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
               </div>
               <div className="flex-1 px-5 py-6 sm:px-7">
                 {isAuthenticated ? (
-                  <div className="overflow-hidden rounded-2xl border border-white/60 bg-white/30 shadow-[0_20px_45px_-32px_rgba(15,23,42,0.55)]">
+                  <div className="border-y border-white/50">
                     <Link
                       href="/customer-profile"
                       className={`flex min-h-14 items-center gap-3 border-b border-white/50 px-4 text-sm font-medium transition-colors ${isMyProfileActive ? 'bg-white/35 text-gray-900' : 'text-gray-900 hover:bg-white/35'}`}
@@ -1445,7 +1445,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                     </button>
                   </div>
                 ) : (
-                  <Link href="/login" onClick={() => setAccountDrawerOpen(false)} className="flex min-h-12 items-center justify-center rounded-2xl border border-white/60 bg-white/30 px-4 text-sm font-semibold text-gray-900 transition-colors hover:bg-white/45">
+                  <Link href="/login" onClick={() => setAccountDrawerOpen(false)} className="flex min-h-14 items-center gap-3 border-y border-white/50 px-4 text-sm font-medium text-gray-900 transition-colors hover:bg-white/35">
                     Customer Login
                   </Link>
                 )}
