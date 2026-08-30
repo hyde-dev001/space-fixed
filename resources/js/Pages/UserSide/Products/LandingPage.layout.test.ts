@@ -43,6 +43,30 @@ describe('SoleSpace landing page redesign', () => {
     expect(landingSource).toContain('html.solespace-first-load:not(.solespace-app-ready) .landing-hero-motion');
   });
 
+  it('uses a SoleSpace sticky footer reveal with responsive navigation', () => {
+    [
+      'id="landing-footer"',
+      'landing-footer',
+      'SOLESPACE',
+      'Explore',
+      'Support',
+      'Community',
+      'Shipping to',
+      'Language',
+      '<details',
+      '<summary',
+      'sticky',
+      'footer-wordmark',
+      '--footer-reveal-progress',
+    ].forEach((marker) => {
+      expect(landingSource).toContain(marker);
+    });
+
+    expect(landingSource).toContain('bg-[#f5e9b5]');
+    expect(landingSource).toContain('prefers-reduced-motion');
+    expect(landingSource).not.toContain('hidden w-full bg-gray-100');
+  });
+
   it('removes the superseded statistics and final CTA copy', () => {
     expect(landingSource).not.toContain('Satisfaction');
     expect(landingSource).not.toContain('READY TO STEP INTO STYLE?');
