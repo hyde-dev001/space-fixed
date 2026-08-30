@@ -907,6 +907,53 @@ html.userside-dark #app .userside-auth-ghost:hover {
   color: #ffffff !important;
 }
 
+/* Fast curtain for eligible customer-side Inertia navigation. */
+.customer-page-transition {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  background: #ffffff;
+  color: #000000;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(100%);
+  transition: opacity 220ms ease, transform 220ms ease, visibility 0s linear 220ms;
+  will-change: opacity, transform;
+}
+
+.customer-page-transition[data-state="visible"] {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateY(0);
+  transition-delay: 0s;
+}
+
+.customer-page-transition[data-state="leaving"] {
+  opacity: 0;
+  visibility: visible;
+  transform: translateY(-8%);
+  transition-delay: 0s;
+  transition-duration: 260ms;
+}
+
+.customer-page-transition__wordmark {
+  font-size: clamp(2.5rem, 10vw, 9rem);
+  font-weight: 800;
+  letter-spacing: -0.08em;
+  line-height: 0.8;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .customer-page-transition {
+    transition-duration: 1ms;
+    transition-delay: 0s;
+  }
+}
+
 /* Server-rendered first-open experience. React removes it after its first render. */
 .solespace-app-loader {
   position: fixed;
