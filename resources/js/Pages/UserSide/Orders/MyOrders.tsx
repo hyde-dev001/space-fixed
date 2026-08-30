@@ -1781,20 +1781,6 @@ const MyOrders: React.FC = () => {
 
       <main className="flex-1">
         <div className="w-full pb-16 pt-24 sm:px-6 xl:pt-32 xl:px-10 2xl:px-14">
-          <div className="mb-5 hidden max-w-6xl select-none rounded-3xl border border-gray-200 bg-white px-4 py-5 shadow-[0_14px_40px_-30px_rgba(15,23,42,0.35)] sm:mb-8 sm:px-6 sm:py-7 xl:mb-10 mx-auto xl:rounded-none xl:border-0 xl:bg-transparent xl:px-0 xl:py-0 xl:shadow-none xl:block">
-            <h1 className="text-3xl font-extrabold tracking-tight text-[#16233b] sm:text-5xl xl:text-center xl:text-6xl xl:font-bold">My Purchases</h1>
-            <p className="max-w-2xl text-xs text-black/55 sm:text-base xl:mx-auto xl:mt-2 xl:text-center">
-              Manage deliveries, returns, and refunds with clear real-time order progress.
-            </p>
-          </div>
-
-          <div className="xl:hidden px-4 pb-2">
-            <h1 className="mb-1 text-xl font-extrabold tracking-tight text-[#16233b]">My Purchases</h1>
-            <p className="text-xs text-black/55">
-              Manage deliveries, returns, and refunds with clear real-time order progress.
-            </p>
-          </div>
-
           <div className="flex w-full gap-2 overflow-x-auto pb-3 pl-4 pr-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden xl:hidden">
               {ORDER_TABS.map((tab) => (
                 <button
