@@ -29,7 +29,8 @@ export function CustomerPageTransition() {
 		const unsubs = [
 			router.on("start", (event) => {
 				const destinationUrl = event.detail?.visit?.url;
-				if (typeof destinationUrl !== "string" || !shouldStartCustomerPageTransition(window.location.href, destinationUrl)) {
+				if (!(typeof destinationUrl === "string" || destinationUrl instanceof URL)
+					|| !shouldStartCustomerPageTransition(window.location.href, destinationUrl.toString())) {
 					return;
 				}
 

@@ -51,6 +51,14 @@ describe("CustomerPageTransition", () => {
 		expect(screen.getByTestId("customer-page-transition")).toHaveAttribute("data-state", "hidden");
 	});
 
+	it("accepts the URL object emitted by Inertia", () => {
+		render(<CustomerPageTransition />);
+
+		act(() => emit("start", { detail: { visit: { url: new URL("/services", window.location.origin) } } }));
+
+		expect(screen.getByTestId("customer-page-transition")).toHaveAttribute("data-state", "visible");
+	});
+
 	it.each(["error", "cancel"])("closes after %s", (eventName) => {
 		render(<CustomerPageTransition />);
 		act(() => emit("start", { detail: { visit: { url: "/services" } } }));
