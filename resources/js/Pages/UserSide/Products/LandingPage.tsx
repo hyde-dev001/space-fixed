@@ -8,27 +8,36 @@ interface Product {
   slug: string;
   description: string;
   price: number;
-  compare_at_price: number | null;
   main_image: string;
-  hover_image?: string | null;
-  gallery_images?: string[];
   stock_quantity: number;
-  shop_owner: {
-    id: number;
-    business_name: string;
-  };
 }
 
 interface Props {
   products: Product[];
-  stats?: {
-    products_count?: number;
-    customers_count?: number;
-    satisfaction_rate?: number;
-  };
 }
 
-const LandingPage: React.FC<Props> = ({ products = [], stats }) => {
+const categoryCards = [
+  {
+    title: 'Shoes',
+    routeName: 'products',
+    image: '/images/shop/p1.jpg',
+    alt: 'SoleSpace footwear collection',
+  },
+  {
+    title: 'Repair',
+    routeName: 'repair',
+    image: '/images/shop/p2.jpg',
+    alt: 'SoleSpace shoe repair service',
+  },
+  {
+    title: 'Services',
+    routeName: 'services',
+    image: '/images/shop/p3.jpg',
+    alt: 'SoleSpace footwear care services',
+  },
+] as const;
+
+const LandingPage: React.FC<Props> = ({ products = [] }) => {
   const heroSlides = [
     {
       src: '/images/shop/p1.jpg',
@@ -53,53 +62,12 @@ const LandingPage: React.FC<Props> = ({ products = [], stats }) => {
 
   ];
 
-  const [activeImageIndexes, setActiveImageIndexes] = useState<Record<number, number>>({});
   const [activeHeroSlide, setActiveHeroSlide] = useState(0);
-  const [statsValues, setStatsValues] = useState([0, 0, 0]);
-  const hoverTimersRef = useRef<Record<number, number>>({});
   const revealRootRef = useRef<HTMLDivElement | null>(null);
-  const statsSectionRef = useRef<HTMLElement | null>(null);
-  const statsAnimationRef = useRef<number | null>(null);
-  const statsHasAnimatedRef = useRef(false);
   const prefersReducedMotionRef = useRef(false);
-
-  const statsTargets = [
-    Math.max(0, Number(stats?.products_count ?? 0)),
-    Math.max(0, Number(stats?.customers_count ?? 0)),
-    Math.min(100, Math.max(0, Number(stats?.satisfaction_rate ?? 0))),
-  ];
-
-  const formatCompactNumber = (value: number) => {
-    if (value >= 1000000) {
-      const normalized = value >= 10000000 ? (value / 1000000).toFixed(0) : (value / 1000000).toFixed(1);
-      return `${normalized.replace(/\.0$/, '')}M`;
-    }
-
-    if (value >= 1000) {
-      const normalized = value >= 10000 ? (value / 1000).toFixed(0) : (value / 1000).toFixed(1);
-      return `${normalized.replace(/\.0$/, '')}K`;
-    }
-
-    return `${Math.floor(value)}`;
-  };
-
-  const formatStatValue = (value: number, index: number) => {
-    if (index === 2) {
-      return `${Math.min(Math.round(value), 100)}%`;
-    }
-
-    return `${formatCompactNumber(value)}+`;
-  };
 
   useEffect(() => {
     prefersReducedMotionRef.current = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      Object.values(hoverTimersRef.current).forEach((timerId) => window.clearInterval(timerId));
-      hoverTimersRef.current = {};
-    };
   }, []);
 
   useEffect(() => {
@@ -151,131 +119,6 @@ const LandingPage: React.FC<Props> = ({ products = [], stats }) => {
 
     return () => observer.disconnect();
   }, []);
-
-  useEffect(() => {
-    const statsSection = statsSectionRef.current;
-    if (!statsSection) {
-      return;
-    }
-
-    const targets = statsTargets;
-
-    statsHasAnimatedRef.current = false;
-    setStatsValues([0, 0, 0]);
-
-    if (statsAnimationRef.current !== null) {
-      window.clearInterval(statsAnimationRef.current);
-      statsAnimationRef.current = null;
-    }
-
-    const startAnimation = () => {
-      if (statsHasAnimatedRef.current) {
-        return;
-      }
-
-      statsHasAnimatedRef.current = true;
-
-      if (prefersReducedMotionRef.current) {
-        setStatsValues(targets);
-        return;
-      }
-
-      const increments = targets.map((target, index) => {
-        if (target <= 0) {
-          return 0;
-        }
-
-        if (index === 2) {
-          return Math.max(1, Math.ceil(target / 60));
-        }
-
-        return Math.max(1, Math.ceil(target / 75));
-      });
-
-      statsAnimationRef.current = window.setInterval(() => {
-        setStatsValues((currentValues) => {
-          const nextValues = currentValues.map((value, index) => {
-            const nextValue = value + increments[index];
-            return nextValue >= targets[index] ? targets[index] : nextValue;
-          });
-
-          if (nextValues.every((value, index) => value === targets[index])) {
-            window.clearInterval(statsAnimationRef.current ?? undefined);
-            statsAnimationRef.current = null;
-          }
-
-          return nextValues;
-        });
-      }, 28);
-    };
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          window.setTimeout(startAnimation, 220);
-          observer.disconnect();
-        }
-      },
-      {
-        threshold: 0.2,
-      }
-    );
-
-    observer.observe(statsSection);
-
-    const fallbackTimer = window.setTimeout(() => {
-      startAnimation();
-      observer.disconnect();
-    }, 650);
-
-    return () => {
-      observer.disconnect();
-      window.clearTimeout(fallbackTimer);
-      if (statsAnimationRef.current !== null) {
-        window.clearInterval(statsAnimationRef.current);
-      }
-    };
-  }, [statsTargets[0], statsTargets[1], statsTargets[2]]);
-
-  const getProductImages = (product: Product) => {
-    const images = [
-      product.main_image,
-      product.hover_image,
-      ...(product.gallery_images ?? []),
-    ].filter(Boolean) as string[];
-
-    return Array.from(new Set(images));
-  };
-
-  const startImageCycle = (product: Product) => {
-    const images = getProductImages(product);
-    if (images.length <= 1) return;
-
-    setActiveImageIndexes((prev) => ({ ...prev, [product.id]: 1 }));
-
-    if (hoverTimersRef.current[product.id]) {
-      window.clearInterval(hoverTimersRef.current[product.id]);
-    }
-
-    hoverTimersRef.current[product.id] = window.setInterval(() => {
-      setActiveImageIndexes((prev) => {
-        const currentIndex = prev[product.id] ?? 1;
-        return {
-          ...prev,
-          [product.id]: (currentIndex + 1) % images.length,
-        };
-      });
-    }, 800);
-  };
-
-  const stopImageCycle = (productId: number) => {
-    if (hoverTimersRef.current[productId]) {
-      window.clearInterval(hoverTimersRef.current[productId]);
-      delete hoverTimersRef.current[productId];
-    }
-
-    setActiveImageIndexes((prev) => ({ ...prev, [productId]: 0 }));
-  };
 
   const buttonBaseClass =
     'group inline-flex w-full max-w-full items-center justify-center gap-3 rounded-full px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.14em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 sm:w-auto sm:px-10 sm:py-4 sm:text-sm sm:tracking-[0.18em]';
@@ -359,228 +202,189 @@ const LandingPage: React.FC<Props> = ({ products = [], stats }) => {
       </section>
       </div>
 
-      {/* Stats Section - Adidas Style: Clean, Bold Numbers */}
-      <section ref={statsSectionRef} data-scroll-reveal className="scroll-reveal w-full bg-gray-100 py-14 text-black sm:py-20">
+      <section id="landing-new-releases" data-scroll-reveal className="scroll-reveal w-full bg-white py-16 text-black sm:py-24 lg:py-32">
         <div className={sectionContainerClass}>
-          <div className="grid grid-cols-3 gap-4 text-center sm:gap-10 lg:gap-20">
-            <div>
-              <div className="mb-2 text-3xl font-bold sm:mb-4 sm:text-5xl lg:text-7xl">{formatStatValue(statsValues[0], 0)}</div>
-              <div className="text-sm uppercase tracking-wider text-black/70">Products</div>
-            </div>
-            <div>
-              <div className="mb-2 text-3xl font-bold sm:mb-4 sm:text-5xl lg:text-7xl">{formatStatValue(statsValues[1], 1)}</div>
-              <div className="text-sm uppercase tracking-wider text-black/70">Customers</div>
-            </div>
-            <div>
-              <div className="mb-2 text-3xl font-bold sm:mb-4 sm:text-5xl lg:text-7xl">{formatStatValue(statsValues[2], 2)}</div>
-              <div className="text-sm uppercase tracking-wider text-black/70">Satisfaction</div>
+          <div data-scroll-reveal className="scroll-reveal mb-10 flex flex-col gap-6 sm:mb-16 sm:flex-row sm:items-end sm:justify-between">
+            <h2 className="text-5xl font-normal tracking-[-0.06em] sm:text-7xl lg:text-8xl">New releases</h2>
+            <div className="flex flex-wrap gap-x-7 gap-y-3 text-sm font-semibold sm:gap-x-10 sm:text-base">
+              <Link href={route("products")} className="group inline-flex items-center gap-4 transition-opacity hover:opacity-60">
+                Men's products
+                <span aria-hidden="true" className="text-2xl font-normal leading-none transition-transform duration-300 group-hover:translate-x-1">→</span>
+              </Link>
+              <Link href={route("products")} className="group inline-flex items-center gap-4 transition-opacity hover:opacity-60">
+                Women's products
+                <span aria-hidden="true" className="text-2xl font-normal leading-none transition-transform duration-300 group-hover:translate-x-1">→</span>
+              </Link>
             </div>
           </div>
-        </div>
-      </section>
 
-      {/* Features Section - Adidas Style: Minimal, Clean */}
-      <section data-scroll-reveal className="scroll-reveal w-full bg-white py-16 sm:py-24 lg:py-32">
-        <div className={sectionContainerClass}>
-          <div className="grid grid-cols-1 gap-8 text-center sm:grid-cols-2 sm:gap-10 lg:grid-cols-3 lg:gap-24">
-            <div className="text-center">
-              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full border-2 border-black sm:mb-8 sm:h-20 sm:w-20">
-                <svg className="h-7 w-7 text-black sm:h-10 sm:w-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 13l4 4L19 7" />
-                </svg>
-              </div>
-              <h3 className="mb-2 text-lg font-bold uppercase tracking-wide text-black sm:mb-4 sm:text-2xl">Quality Assured</h3>
-              <p className="text-sm leading-relaxed text-black/70 sm:text-base">Premium materials and craftsmanship guaranteed</p>
-            </div>
-            <div className="text-center">
-              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full border-2 border-black sm:mb-8 sm:h-20 sm:w-20">
-                <svg className="h-7 w-7 text-black sm:h-10 sm:w-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-              <h3 className="mb-2 text-lg font-bold uppercase tracking-wide text-black sm:mb-4 sm:text-2xl">Fast Delivery</h3>
-              <p className="text-sm leading-relaxed text-black/70 sm:text-base">Quick and reliable shipping to your doorstep</p>
-            </div>
-            <div className="text-center">
-              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full border-2 border-black sm:mb-8 sm:h-20 sm:w-20">
-                <svg className="h-7 w-7 text-black sm:h-10 sm:w-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                </svg>
-              </div>
-              <h3 className="mb-2 text-lg font-bold uppercase tracking-wide text-black sm:mb-4 sm:text-2xl">Secure Payment</h3>
-              <p className="text-sm leading-relaxed text-black/70 sm:text-base">Safe and encrypted transaction processing</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Featured Products Section - Adidas Style: Large, Bold */}
-      <section className="w-full bg-white py-16 sm:py-24 lg:py-32">
-        <div className={sectionContainerClass}>
-          <div data-scroll-reveal className="scroll-reveal mb-12 text-center sm:mb-20">
-            <h2 className="mb-4 text-3xl font-bold tracking-tight text-black sm:mb-6 sm:text-5xl lg:text-7xl">
-              PREMIUM FOOTWEAR
-            </h2>
-            <p className="mx-auto max-w-2xl text-base font-light leading-relaxed text-black/70 sm:text-xl">
-              Discover our handpicked selection of high-quality shoes designed for comfort, style, and performance.
-            </p>
-          </div>
-          <div className="flex snap-x snap-mandatory gap-4 overflow-x-auto pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:grid md:grid-cols-2 md:gap-8 md:overflow-visible md:pb-0 lg:grid-cols-3">
+          <div className="flex snap-x snap-mandatory gap-4 overflow-x-auto pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:grid md:grid-cols-3 md:gap-7 md:overflow-visible md:pb-0">
             {products.length > 0 ? (
-              products.map((product, index) => {
-                const productImages = getProductImages(product);
-                const imageIndex = activeImageIndexes[product.id] ?? 0;
-                const currentImage = productImages[imageIndex] || product.main_image || './images/product/default.jpg';
-
-                return (
+              products.map((product, index) => (
                 <Link
                   key={product.id}
                   href={route('products.show', product.slug)}
                   data-scroll-reveal
-                  data-scroll-delay={Math.min(index * 90, 320)}
-                  className="scroll-reveal group min-w-[84%] snap-start overflow-hidden rounded-3xl border border-slate-300 bg-white shadow-[0_16px_35px_-24px_rgba(15,23,42,0.45)] transition-all duration-300 hover:-translate-y-1 hover:border-slate-400 hover:shadow-[0_28px_48px_-24px_rgba(15,23,42,0.55)] sm:min-w-[58%] md:min-w-0"
-                  onMouseEnter={() => startImageCycle(product)}
-                  onMouseLeave={() => stopImageCycle(product.id)}
+                  data-scroll-delay={Math.min(index * 90, 270)}
+                  className="scroll-reveal group min-w-[84%] snap-start sm:min-w-[58%] md:min-w-0"
                 >
-                  <div className="relative bg-white overflow-hidden aspect-square">
+                  <div className="relative aspect-[4/5] overflow-hidden bg-[#f3f3f1]">
                     <img
-                      src={currentImage}
+                      src={product.main_image || '/images/product/product-01.jpg'}
                       alt={product.name}
-                      className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
+                      className="h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
                       loading="lazy"
                       decoding="async"
-                      sizes="(max-width: 767px) 100vw, (max-width: 1279px) 50vw, 33vw"
+                      sizes="(max-width: 767px) 84vw, (max-width: 1279px) 33vw, 30vw"
                     />
                     {index === 0 && (
-                      <div className="absolute right-4 top-4 bg-black px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-white sm:right-6 sm:top-6 sm:px-4 sm:py-2 sm:text-xs">
+                      <span className="absolute right-4 top-4 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-black sm:right-5 sm:top-5">
                         New
-                      </div>
+                      </span>
                     )}
                     {product.stock_quantity === 0 && (
-                      <div className="absolute inset-0 bg-black/70 flex items-center justify-center">
-                        <span className="text-xl font-bold uppercase tracking-wider text-white sm:text-2xl">Out of Stock</span>
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/65">
+                        <span className="text-sm font-semibold uppercase tracking-[0.12em] text-white sm:text-base">Out of stock</span>
                       </div>
                     )}
                   </div>
-                  <div className="border-t border-slate-200 p-5 sm:p-8">
-                    <h3 className="mb-2 line-clamp-1 text-lg font-bold uppercase tracking-wide text-black sm:mb-3 sm:text-2xl">{product.name}</h3>
-                    <p className="mb-4 line-clamp-2 text-sm leading-relaxed text-black/70 sm:mb-6">
-                      {product.description || 'Premium footwear designed for comfort and style.'}
-                    </p>
-                    <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
-                      <div className="flex flex-col">
-                        <span className="text-2xl font-bold text-black sm:text-3xl">₱{product.price.toLocaleString()}</span>
-                        {product.compare_at_price && product.compare_at_price > product.price && (
-                          <span className="text-sm text-black/50 line-through">₱{product.compare_at_price.toLocaleString()}</span>
-                        )}
-                      </div>
-                      <div className="inline-flex items-center justify-center rounded-full border border-[#16233b] bg-[#16233b] px-5 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white shadow-[0_10px_24px_-18px_rgba(22,35,59,0.9)] transition-all duration-300 group-hover:-translate-y-0.5 group-hover:bg-black">
-                        View
-                      </div>
+                  <div className="flex items-start justify-between gap-4 border-b border-black/15 py-4 sm:py-5">
+                    <div className="min-w-0">
+                      <h3 className="truncate text-sm font-semibold sm:text-base">{product.name}</h3>
+                      <p className="mt-1 line-clamp-1 text-xs text-black/55 sm:text-sm">
+                        {product.description || 'Premium footwear for every step.'}
+                      </p>
                     </div>
+                    <span className="shrink-0 text-sm font-medium sm:text-base">₱{product.price.toLocaleString()}</span>
                   </div>
                 </Link>
-                );
-              })
+              ))
             ) : (
               <div className="w-full py-12 text-center md:col-span-full">
-                <p className="text-black/50 text-lg">No products available at the moment.</p>
+                <p className="text-lg text-black/50">No products available at the moment.</p>
               </div>
             )}
           </div>
-          <div data-scroll-reveal className="scroll-reveal mt-12 text-center sm:mt-16">
-            <Link
-              href={route("products")}
-              className={`${buttonBaseClass} ${buttonDarkClass}`}
-            >
-              View All Products
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
-              </svg>
+
+          <div data-scroll-reveal className="scroll-reveal mt-10 sm:mt-14">
+            <Link href={route("products")} className="group inline-flex items-center gap-4 border-b border-black pb-2 text-sm font-semibold uppercase tracking-[0.14em] transition-opacity hover:opacity-60">
+              View all products
+              <span aria-hidden="true" className="text-xl font-normal leading-none transition-transform duration-300 group-hover:translate-x-1">→</span>
             </Link>
           </div>
         </div>
       </section>
 
-      {/* Services Section - Adidas Style: Full Width Split */}
-      <section data-scroll-reveal className="scroll-reveal w-full bg-gray-100 py-16 text-black sm:py-24 lg:py-32">
+      <section id="landing-categories" data-scroll-reveal className="scroll-reveal w-full bg-white pb-16 text-black sm:pb-24 lg:pb-32">
         <div className={sectionContainerClass}>
-          <div className="mb-12 text-center sm:mb-20">
-            <h2 className="mb-4 text-3xl font-bold tracking-tight text-black sm:mb-6 sm:text-5xl lg:text-7xl">
-              COMPLETE SHOE SOLUTIONS
-            </h2>
-            <p className="mx-auto max-w-2xl text-base font-light leading-relaxed text-black/70 sm:text-xl">
-              From retail excellence to expert repairs, we provide comprehensive footwear services tailored to your needs.
-            </p>
+          <div data-scroll-reveal className="scroll-reveal mb-10 flex flex-col gap-5 sm:mb-16 sm:flex-row sm:items-end sm:justify-between">
+            <h2 className="text-5xl font-normal tracking-[-0.06em] sm:text-7xl lg:text-8xl">Shop by category</h2>
+            <Link href={route("products")} className="group inline-flex items-center gap-4 text-sm font-semibold transition-opacity hover:opacity-60 sm:text-base">
+              Explore the collection
+              <span aria-hidden="true" className="text-2xl font-normal leading-none transition-transform duration-300 group-hover:translate-x-1">→</span>
+            </Link>
           </div>
-          <div className="flex snap-x snap-mandatory gap-4 overflow-x-auto pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:grid md:grid-cols-2 md:gap-8 md:overflow-visible md:pb-0 lg:gap-16">
-            <div className="min-w-[84%] snap-start border-2 border-gray-300 bg-white p-7 text-black sm:min-w-[58%] sm:p-10 md:min-w-0 lg:p-12">
-              <div className="w-16 h-16 border-2 border-black rounded-full flex items-center justify-center mb-8">
-                <svg className="w-8 h-8 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
-                </svg>
-              </div>
-              <h3 className="mb-4 text-2xl font-bold uppercase tracking-wide text-black sm:mb-6 sm:text-3xl">Premium Retail</h3>
-              <p className="mb-6 text-base leading-relaxed text-black/70 sm:mb-8 sm:text-lg">
-                Discover an extensive collection of high-quality footwear from renowned brands. Our integrated platform offers personalized recommendations, competitive pricing, and seamless shopping experiences.
-              </p>
-                <Link
-                  href={route("products")}
-                  className={`${buttonBaseClass} ${buttonDarkClass}`}
-                >
-                Explore Collection
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
-                </svg>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {categoryCards.map((card, index) => (
+              <Link
+                key={card.title}
+                href={route(card.routeName)}
+                data-scroll-reveal
+                data-scroll-delay={Math.min(index * 100, 200)}
+                className="scroll-reveal group relative min-h-[30rem] overflow-hidden bg-[#e7e7e3] sm:min-h-[38rem]"
+              >
+                <img
+                  src={card.image}
+                  alt={card.alt}
+                  className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
+                  loading="lazy"
+                  decoding="async"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
+                <div className="absolute inset-x-6 bottom-6 flex items-center justify-between gap-4 text-white sm:inset-x-8 sm:bottom-8">
+                  <h3 className="text-xl font-semibold sm:text-2xl">{card.title}</h3>
+                  <span aria-hidden="true" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/20 text-2xl font-light backdrop-blur-sm transition-transform duration-300 group-hover:translate-x-1">→</span>
+                </div>
               </Link>
-            </div>
-            <div className="min-w-[84%] snap-start border-2 border-gray-300 bg-white p-7 text-black sm:min-w-[58%] sm:p-10 md:min-w-0 lg:p-12">
-              <div className="w-16 h-16 border-2 border-black rounded-full flex items-center justify-center mb-8">
-                <svg className="w-8 h-8 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-              </div>
-              <h3 className="mb-4 text-2xl font-bold uppercase tracking-wide text-black sm:mb-6 sm:text-3xl">Expert Repairs</h3>
-              <p className="mb-6 text-base leading-relaxed text-black/70 sm:mb-8 sm:text-lg">
-                Professional shoe repair services powered by intelligent decision support systems. Get expert recommendations for the best repair options that extend the life of your favorite footwear.
-              </p>
-                <Link
-                  href={route("repair")}
-                  className={`${buttonBaseClass} ${buttonDarkClass}`}
-                >
-                Learn More
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
-                </svg>
+            ))}
+          </div>
+        </div>
+      </section>
+
+
+      <section id="landing-story" data-scroll-reveal className="scroll-reveal w-full bg-black text-white">
+        <div className="relative min-h-[34rem] overflow-hidden sm:min-h-[44rem]">
+          <img src="/images/shop/p4.jpg" alt="SoleSpace craftsmanship in motion" className="absolute inset-0 h-full w-full object-cover opacity-75" loading="lazy" decoding="async" />
+          <div className="absolute inset-0 bg-gradient-to-r from-black/80 via-black/35 to-black/25" />
+          <div className={`${sectionContainerClass} relative flex min-h-[34rem] items-end pb-10 pt-24 sm:min-h-[44rem] sm:pb-16 lg:pb-20`}>
+            <div data-scroll-reveal className="scroll-reveal scroll-reveal--side max-w-3xl">
+              <p className="mb-5 text-xs font-semibold uppercase tracking-[0.2em] text-white/70">KEEP EVERY STEP GOING</p>
+              <h2 className="max-w-3xl text-4xl font-normal leading-[0.95] tracking-[-0.05em] sm:text-6xl lg:text-8xl">Find a pair worth keeping.</h2>
+              <Link href={route("products")} className="group mt-9 inline-flex items-center gap-4 text-sm font-semibold uppercase tracking-[0.14em] transition-opacity hover:opacity-60 sm:mt-12">
+                Discover SoleSpace
+                <span aria-hidden="true" className="text-2xl font-normal leading-none transition-transform duration-300 group-hover:translate-x-1">→</span>
               </Link>
             </div>
           </div>
         </div>
       </section>
 
-      {/* CTA Section - Adidas Style: Bold, Full Width */}
-      <section data-scroll-reveal className="scroll-reveal w-full bg-white py-16 sm:py-24 lg:py-32">
-        <div className={`${sectionContainerClass} text-center`}>
-          <h2 className="mb-6 text-3xl font-bold tracking-tight text-black sm:mb-8 sm:text-5xl lg:text-7xl">
-            READY TO STEP INTO STYLE?
-          </h2>
-          <p className="mx-auto mb-10 max-w-2xl text-base font-light leading-relaxed text-black/70 sm:mb-12 sm:text-xl">
-            Join thousands of satisfied customers and discover the perfect pair today.
-          </p>
-          <div className="flex flex-col justify-center gap-3 sm:flex-row sm:gap-4">
-            <Link
-              href={route("products")}
-              className={`${buttonBaseClass} ${buttonLightClass} w-full sm:w-auto`}
-            >
-              Shop Now
-            </Link>
-            <Link
-              href={route("repair")}
-              className={`${buttonBaseClass} ${buttonDarkClass} w-full sm:w-auto`}
-            >
-              Book Repair
-            </Link>
+      <section id="landing-benefits" data-scroll-reveal className="scroll-reveal w-full bg-white py-20 text-black sm:py-28 lg:py-36">
+        <div className={sectionContainerClass}>
+          <div className="grid grid-cols-1 gap-14 text-center sm:grid-cols-3 sm:gap-8 lg:gap-20">
+            <div data-scroll-reveal data-scroll-delay="0" className="scroll-reveal">
+              <div className="mx-auto mb-7 flex h-12 w-12 items-center justify-center sm:mb-9 sm:h-16 sm:w-16">
+                <svg className="h-10 w-10" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.25} d="M3 7h11v10H3zM14 10h3l4 4v3h-7zM6 17a2 2 0 104 0M17 17a2 2 0 104 0" />
+                </svg>
+              </div>
+              <h3 className="mb-3 text-xl font-semibold tracking-tight sm:text-2xl">Curated footwear</h3>
+              <p className="mx-auto max-w-xs text-base leading-relaxed text-black/60">Pieces chosen for comfort, character, and the way you move.</p>
+            </div>
+            <div data-scroll-reveal data-scroll-delay="100" className="scroll-reveal">
+              <div className="mx-auto mb-7 flex h-12 w-12 items-center justify-center sm:mb-9 sm:h-16 sm:w-16">
+                <svg className="h-10 w-10" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.25} d="M4 5h16v14H4zM8 9h8M8 13h5M8 17h3" />
+                </svg>
+              </div>
+              <h3 className="mb-3 text-xl font-semibold tracking-tight sm:text-2xl">Expert repairs</h3>
+              <p className="mx-auto max-w-xs text-base leading-relaxed text-black/60">Thoughtful care that helps your favorite pairs go further.</p>
+            </div>
+            <div data-scroll-reveal data-scroll-delay="200" className="scroll-reveal">
+              <div className="mx-auto mb-7 flex h-12 w-12 items-center justify-center sm:mb-9 sm:h-16 sm:w-16">
+                <svg className="h-10 w-10" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.25} d="M12 3l7 4v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V7zM9 12l2 2 4-4" />
+                </svg>
+              </div>
+              <h3 className="mb-3 text-xl font-semibold tracking-tight sm:text-2xl">One space for every step</h3>
+              <p className="mx-auto max-w-xs text-base leading-relaxed text-black/60">Shop, repair, and care for footwear in one considered place.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="landing-community" data-scroll-reveal className="scroll-reveal w-full bg-black text-white">
+        <div className={`${sectionContainerClass} grid min-h-[34rem] grid-cols-1 gap-10 py-12 sm:min-h-[42rem] sm:py-16 lg:grid-cols-[minmax(0,1.25fr)_minmax(18rem,0.75fr)] lg:gap-16 lg:py-20`}>
+          <div className="flex flex-col justify-between">
+            <div data-scroll-reveal className="scroll-reveal">
+              <p className="mb-8 text-xs font-semibold uppercase tracking-[0.2em] text-white/65">JOIN THE SOLESPACE COMMUNITY</p>
+              <h2 className="max-w-5xl text-[3.4rem] font-normal leading-[0.82] tracking-[-0.07em] sm:text-7xl lg:text-[8.5rem]">STEP INTO SOLESPACE</h2>
+            </div>
+            <div data-scroll-reveal data-scroll-delay="120" className="scroll-reveal mt-12 flex flex-col gap-5 sm:flex-row sm:items-center sm:gap-8">
+              <Link href={route("products")} className="group inline-flex items-center gap-4 text-sm font-semibold uppercase tracking-[0.14em] transition-opacity hover:opacity-60">
+                Shop products
+                <span aria-hidden="true" className="text-2xl font-normal leading-none transition-transform duration-300 group-hover:translate-x-1">→</span>
+              </Link>
+              <Link href={route("repair")} className="group inline-flex items-center gap-4 text-sm font-semibold uppercase tracking-[0.14em] transition-opacity hover:opacity-60">
+                Book a repair
+                <span aria-hidden="true" className="text-2xl font-normal leading-none transition-transform duration-300 group-hover:translate-x-1">→</span>
+              </Link>
+            </div>
+          </div>
+          <div data-scroll-reveal className="scroll-reveal scroll-reveal--scale relative min-h-[18rem] overflow-hidden bg-[#1b1b1b] lg:min-h-0">
+            <img src="/images/shop/p2.jpg" alt="SoleSpace community on the move" className="absolute inset-0 h-full w-full object-cover opacity-75 transition-transform duration-700 ease-out hover:scale-105" loading="lazy" decoding="async" />
+            <div className="absolute inset-0 bg-black/20" />
           </div>
         </div>
       </section>
@@ -663,6 +467,18 @@ const LandingPage: React.FC<Props> = ({ products = [], stats }) => {
           .scroll-reveal.is-visible {
             opacity: 1;
             transform: translate3d(0, 0, 0);
+          }
+
+          .scroll-reveal--side {
+            transform: translate3d(32px, 0, 0);
+          }
+
+          .scroll-reveal--scale {
+            transform: scale(1.04);
+          }
+
+          .scroll-reveal--scale.is-visible {
+            transform: scale(1);
           }
 
           .hero-headline-line {
