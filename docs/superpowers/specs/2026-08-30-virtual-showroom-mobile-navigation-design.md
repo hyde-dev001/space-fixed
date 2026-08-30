@@ -1,6 +1,6 @@
 # Virtual Showroom Mobile and Navigation Design
 
-**Date:** 2026-08-30  
+**Date:** 2026-08-30
 **Status:** Approved by user
 
 ## Goal
