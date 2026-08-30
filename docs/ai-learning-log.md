@@ -39,3 +39,7 @@
 
 - Retiring an owner presentation requires removing its flag, payload/API, metadata, middleware, generated route map, and orphaned types together; retain only an explicit, one-way GET compatibility redirect when old bookmarks still matter.
 - A catalog validator should distinguish navigation-only core routes from record pages that require supporting API evidence; an empty supporting-route list must not be solved by inventing a picker API.
+
+## 2026-08-30 - Render-loop callback initialization
+
+- In a React effect, declare callbacks used by the first animation-frame invocation before calling the loop; a source-order regression contract protects against minified temporal-dead-zone failures.
