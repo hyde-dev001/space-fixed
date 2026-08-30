@@ -71,4 +71,12 @@ describe("customer page transition route policy", () => {
 	it("rejects same-path navigation", () => {
 		expect(shouldStartCustomerPageTransition("/products?sort=new", "/products?sort=sale")).toBe(false);
 	});
+
+	it.each(["men", "women", "kids", "sports"])("animates the %s category switch", (category) => {
+		expect(shouldStartCustomerPageTransition("/products", `/products?category=${category}`)).toBe(true);
+	});
+
+	it("animates between product categories", () => {
+		expect(shouldStartCustomerPageTransition("/products?category=men", "/products?category=women")).toBe(true);
+	});
 });
