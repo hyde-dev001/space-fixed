@@ -64,7 +64,6 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
 
   const [activeHeroSlide, setActiveHeroSlide] = useState(0);
   const revealRootRef = useRef<HTMLDivElement | null>(null);
-  const footerRef = useRef<HTMLElement | null>(null);
   const prefersReducedMotionRef = useRef(false);
 
   useEffect(() => {
@@ -121,51 +120,6 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
     return () => observer.disconnect();
   }, []);
 
-  useEffect(() => {
-    const footer = footerRef.current;
-    if (!footer) {
-      return;
-    }
-
-    const reducedMotion = prefersReducedMotionRef.current;
-    let frame = 0;
-
-    const updateProgress = () => {
-      const maxScroll = Math.max(document.documentElement.scrollHeight - window.innerHeight, 1);
-      const revealWindow = Math.max(window.innerHeight * 0.72, 1);
-      const revealStart = Math.max(0, maxScroll - revealWindow);
-      const progress = reducedMotion
-        ? 1
-        : Math.min(1, Math.max(0, (window.scrollY - revealStart) / revealWindow));
-
-      footer.style.setProperty('--footer-reveal-progress', progress.toFixed(3));
-    };
-
-    const handleScroll = () => {
-      if (frame) {
-        return;
-      }
-
-      frame = window.requestAnimationFrame(() => {
-        frame = 0;
-        updateProgress();
-      });
-    };
-
-    updateProgress();
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    window.addEventListener('resize', updateProgress);
-
-    return () => {
-      if (frame) {
-        window.cancelAnimationFrame(frame);
-      }
-
-      window.removeEventListener('scroll', handleScroll);
-      window.removeEventListener('resize', updateProgress);
-    };
-  }, []);
-
   const buttonBaseClass =
     'group inline-flex w-full max-w-full items-center justify-center gap-3 rounded-full px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.14em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 sm:w-auto sm:px-10 sm:py-4 sm:text-sm sm:tracking-[0.18em]';
   const buttonLightClass =
@@ -181,7 +135,7 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
       <div ref={revealRootRef} className="min-h-screen overflow-x-hidden bg-white font-outfit antialiased">
         <Navigation mobileMenuTriggerIcon="hamburger" landingSidebar />
 
-       <main className="relative z-10 bg-white">
+       <main className="relative z-10">
        <div>
       {/* Hero Section - Full-bleed Background Carousel */}
       <section className="relative flex min-h-[84svh] w-full items-center overflow-hidden sm:min-h-svh">
@@ -437,11 +391,11 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
        </section>
 
        </main>
+      </div>
 
        <footer
          id="landing-footer"
-         ref={footerRef}
-         className="landing-footer sticky bottom-0 z-0 w-full min-h-[30rem] overflow-hidden bg-[#f5e9b5] text-black sm:min-h-[34rem]"
+         className="landing-footer sticky bottom-0 z-0 w-full min-h-[30rem] overflow-hidden bg-white text-black sm:min-h-[34rem]"
        >
          <div className={`${sectionContainerClass} relative z-10 pt-8 sm:pt-10`}>
            <div className="hidden grid-cols-4 gap-8 lg:grid">
@@ -539,10 +493,6 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
              transform: scale(1);
            }
 
-           .landing-footer {
-             --footer-reveal-progress: 0;
-           }
-
            .footer-link {
              display: inline-block;
              transition: opacity 180ms ease, transform 180ms ease;
@@ -618,25 +568,12 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
              font-weight: 700;
              line-height: 0.68;
              letter-spacing: -0.105em;
-             transform: translate3d(
-               calc((1 - var(--footer-reveal-progress)) * 7vw),
-               calc((1 - var(--footer-reveal-progress)) * 20%),
-               0
-             );
-             transform-origin: center bottom;
-             transition: transform 120ms linear;
-             will-change: transform;
            }
 
            @media (prefers-reduced-motion: reduce) {
              .footer-link,
-             .footer-disclosure summary span,
-             .footer-wordmark {
+             .footer-disclosure summary span {
                transition: none;
-             }
-
-             .footer-wordmark {
-               transform: translate3d(0, 0, 0);
              }
            }
 
@@ -721,7 +658,6 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
 
           }
         `}</style>
-      </div>
     </>
   );
 };

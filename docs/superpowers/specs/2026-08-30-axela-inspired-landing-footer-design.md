@@ -13,14 +13,14 @@ Adapt the current SoleSpace landing-page footer to the interaction pattern obser
 
 ## Reference observations
 
-The reference footer currently uses a pale yellow panel with a four-column desktop grid. The first column is a brand label, followed by compact uppercase link groups. A second row carries copyright, shipping, and language controls, and an oversized brand wordmark is clipped at the bottom edge. The footer is `position: sticky` with a bottom offset and a negative stacking layer, so the page content passes over it before the footer becomes visually exposed. At mobile widths, the link groups collapse into compact expandable headings rather than showing every link at once.
+The reference footer currently uses a pale yellow panel with a four-column desktop grid. SoleSpace keeps that structure but uses a white panel so the footer matches the landing page's white storefront sections. The first column is a brand label, followed by compact uppercase link groups. A second row carries copyright, shipping, and language controls, and an oversized brand wordmark is clipped at the bottom edge. The footer is `position: sticky` with a bottom offset and a negative stacking layer, so the page content passes over it before the footer becomes visually exposed. At mobile widths, the link groups collapse into compact expandable headings rather than showing every link at once.
 
 ## Design
 
 ### Desktop layout
 
 - Render the footer on desktop and mobile instead of hiding it below the existing `md` breakpoint.
-- Give the footer a warm SoleSpace accent background of `#f5e9b5` with black text.
+- Give the footer a white background of `#ffffff` with black text so it matches the landing page palette.
 - Use a four-column grid: SoleSpace label, Explore, Support, and Community.
 - Keep labels and links uppercase, compact, and left aligned to match the reference rhythm.
 - Add a metadata row for copyright, shipping region, and language.
@@ -30,9 +30,10 @@ The reference footer currently uses a pale yellow panel with a four-column deskt
 
 - Make the footer a sticky, bottom-anchored layer beneath the preceding landing sections.
 - Keep the community section and footer content in explicit stacking layers so the content scrolls over the footer and the footer is revealed only near the end of the page.
-- Animate the wordmark from a slightly lowered/translated state to its resting position when the footer reveal state becomes visible.
-- Reuse the existing landing reveal observer where it remains appropriate, but keep the sticky-underlap interaction independent so it is not triggered immediately by the footer’s viewport position.
-- Honor `prefers-reduced-motion: reduce` by disabling transform transitions and showing the wordmark in its resting position.
+- Keep the oversized wordmark anchored in the footer; the reveal animation comes from the sticky footer layer being exposed as the page content scrolls over it.
+- Use native CSS sticky positioning and stacking order for the underlap interaction instead of a page-level scroll-progress listener.
+- Keep the footer layer at `z-0` with foreground landing content at `z-10` so the Inertia app shell does not block footer links and mobile disclosures.
+- Honor `prefers-reduced-motion: reduce` for the landing page’s existing reveal and control transitions; the footer wordmark itself has no motion transform to disable.
 
 ### Mobile layout
 
@@ -50,8 +51,8 @@ The reference footer currently uses a pale yellow panel with a four-column deskt
 
 ## Acceptance criteria
 
-1. The landing page footer visually uses a warm accent panel, compact uppercase link groups, metadata row, and oversized clipped `SOLESPACE` wordmark.
-2. On desktop, the footer remains visually underneath the landing content while scrolling and is revealed at the end of the page with a smooth wordmark motion.
+1. The landing page footer visually uses a white panel, compact uppercase link groups, metadata row, and oversized clipped `SOLESPACE` wordmark.
+2. On desktop, the footer remains visually underneath the landing content while scrolling and is revealed at the end of the page through the native sticky underlap interaction, with the wordmark anchored in place.
 3. On mobile, the footer is present, groups are collapsed by default, and each group can be opened with keyboard and touch input.
 4. No horizontal overflow is introduced at desktop or mobile widths.
 5. Reduced-motion mode renders the footer and wordmark without motion while keeping all content available.
