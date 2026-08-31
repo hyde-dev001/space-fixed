@@ -854,7 +854,7 @@ class RepairerWorkflowTest extends TestCase
         $this->assertSame(2.0, (float) $planItem->actual_quantity);
     }
 
-    public function test_repairer_must_activate_receive_before_customer_can_confirm_delivery(): void
+    public function test_assigned_repairer_records_customer_courier_handover_before_customer_can_confirm_delivery(): void
     {
         $shopOwner = $this->createRepairShop();
         $customer = $this->createCustomer([
@@ -921,11 +921,18 @@ class RepairerWorkflowTest extends TestCase
 
         $confirmBeforeActivation->assertStatus(422);
 
-        $activateResponse = $this->actingAs($repairer, 'user')->postJson(
+        $shopOwnerActivation = $this->actingAs($shopOwner, 'shop_owner')->postJson(
+            "/api/shop-owner/repairs/{$repairRequest->id}/activate-pickup"
+        );
+
+        $shopOwnerActivation->assertRedirect();
+        $this->assertFalse((bool) $repairRequest->fresh()->pickup_enabled);
+
+        $repairerActivation = $this->actingAs($repairer, 'user')->postJson(
             "/api/repairer/repairs/{$repairRequest->id}/activate-pickup"
         );
 
-        $activateResponse->assertStatus(200)
+        $repairerActivation->assertStatus(200)
             ->assertJsonPath('success', true);
 
         $repairRequest->refresh();
@@ -945,7 +952,7 @@ class RepairerWorkflowTest extends TestCase
         $this->assertNotNull($repairRequest->picked_up_at);
     }
 
-    public function test_warranty_return_activation_sends_customer_notification_for_receive_confirmation(): void
+    public function test_repairer_warranty_return_activation_sends_customer_notification_for_receive_confirmation(): void
     {
         $shopOwner = $this->createRepairShop();
         $customer = $this->createCustomer([
@@ -979,6 +986,10 @@ class RepairerWorkflowTest extends TestCase
             ->where('user_id', $customer->id)
             ->where('type', 'repair_status_update')
             ->count();
+
+        $this->actingAs($shopOwner, 'shop_owner')
+            ->postJson("/api/shop-owner/repairs/{$repairRequest->id}/activate-pickup")
+            ->assertRedirect();
 
         $activateResponse = $this->actingAs($repairer, 'user')->postJson(
             "/api/repairer/repairs/{$repairRequest->id}/activate-pickup"

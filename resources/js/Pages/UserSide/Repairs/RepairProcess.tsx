@@ -81,7 +81,7 @@ const coverageMessage = (quote: DeliveryQuote): string => {
   if (quote.available) return `Within coverage${quote.distance_km != null ? ` · ${quote.distance_km} km` : ''}${quote.fee != null ? ` · ₱${Number(quote.fee).toLocaleString('en-PH')}` : ''}`;
   if (quote.reason === 'address_needs_pin') return 'Pin required';
   if (quote.reason === 'outside_coverage') return 'Outside coverage';
-  return 'Shop-owned logistics unavailable';
+  return 'Shop rider delivery unavailable';
 };
 
 const getEffectivePackagePrice = (pkg: RepairPackage): number => {

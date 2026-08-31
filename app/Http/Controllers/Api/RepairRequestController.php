@@ -122,7 +122,7 @@ class RepairRequestController extends Controller
             if (in_array($intakeDeliveryMethod, ['shop_pickup'], true)
                 || in_array($returnDeliveryMethod, ['shop_delivery'], true)) {
                 if (! $request->filled('shop_owner_id')) {
-                    $logisticsErrors['shop_owner_id'][] = 'Choose a shop before using shop-owned logistics.';
+                    $logisticsErrors['shop_owner_id'][] = 'Choose a shop before using shop rider delivery.';
                 }
             }
         } elseif ($request->filled('return_delivery_method') && $returnDeliveryMethod !== 'walk_in') {
@@ -962,10 +962,11 @@ class RepairRequestController extends Controller
                 $displayPaidAmount = (bool) ($repair->is_warranty_job ?? false)
                     ? round(max($resolvedPaidAmount, $parentStoredPaidAmount), 2)
                     : $resolvedPaidAmount;
+                $collectionSummary = $settlementService->repairCollectionSummary($repair);
                 $refundPaymentProfile = $this->resolveRefundPaymentProfile($repair, $resolvedPaidAmount);
                 $returnHandoff = $repairDeliveryService->returnHandoff(
                     $repair,
-                    $settlementService->isRepairSettled($repair),
+                    (bool) $collectionSummary['fully_paid'],
                 );
                 $returnRecovery = $returnHandoff['recovery'] ?? null;
                 $pickupRecovery = $repairDeliveryService->activePickupRecovery($repair);
@@ -1060,6 +1061,13 @@ class RepairRequestController extends Controller
                     'assigned_repairer_id' => $repair->assigned_repairer_id,
                     'repairer_name' => $repair->repairer ? $repair->repairer->name : null,
                     'payment_policy' => $repair->payment_policy ?? 'deposit_50',
+                    'collection_summary' => $collectionSummary,
+                    'collectible' => (bool) $collectionSummary['collectible'],
+                    'collectible_amount' => (float) $collectionSummary['collectible_amount'],
+                    'outstanding_balance' => (float) $collectionSummary['outstanding_balance'],
+                    'due_type' => $collectionSummary['due_type'],
+                    'phase' => $collectionSummary['phase'],
+                    'fully_paid' => (bool) $collectionSummary['fully_paid'],
                     'is_warranty_job' => (bool) ($repair->is_warranty_job ?? false),
                     'parent_repair_request_id' => $repair->parent_repair_request_id,
                     'billing_mode' => $repair->billing_mode,
@@ -1762,7 +1770,7 @@ class RepairRequestController extends Controller
                     $quote = $delivery->quote($repair->shopOwner, $address);
                     if (! ($quote['available'] ?? false)) {
                         throw \Illuminate\Validation\ValidationException::withMessages([
-                            "{$leg}_address_id" => ['The selected address is not covered by shop-owned logistics.'],
+                            "{$leg}_address_id" => ['The selected address is not covered by the shop rider service.'],
                         ]);
                     }
                     $fee = (float) $quote['fee'];
@@ -2071,7 +2079,7 @@ class RepairRequestController extends Controller
         ]);
     }
 
-    public function updateExternalTracking(Request $request, $id)
+    public function updateExternalTracking(Request $request, $id, PaymentSettlementService $settlementService)
     {
         $user = Auth::guard('user')->user();
         abort_unless($user, 401);
@@ -2083,7 +2091,7 @@ class RepairRequestController extends Controller
             'tracking_url' => ['nullable', 'url', 'max:500'],
         ]);
 
-        $repair = DB::transaction(function () use ($id, $user, $validated): RepairRequest {
+        $repair = DB::transaction(function () use ($id, $user, $validated, $settlementService): RepairRequest {
             $repair = RepairRequest::query()
                 ->whereKey($id)
                 ->forCustomer($user->id)
@@ -2100,6 +2108,14 @@ class RepairRequestController extends Controller
             if ($method !== $requiredMethod) {
                 throw \Illuminate\Validation\ValidationException::withMessages([
                     'leg' => ['External tracking is available only for customer-arranged delivery.'],
+                ]);
+            }
+            $collectionSummary = $settlementService->repairCollectionSummary($repair);
+            if (! $isIntake
+                && $method === 'customer_pickup'
+                && ! (bool) $collectionSummary['fully_paid']) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'payment' => ['Complete the remaining payment before arranging the return courier.'],
                 ]);
             }
             $shopSponsoredWarranty = (bool) ($repair->is_warranty_job ?? false)
@@ -2140,12 +2156,17 @@ class RepairRequestController extends Controller
     /**
      * Confirm customer receipt after the shop records the exact return handoff.
      */
-    public function confirmPickup(Request $request, $id, RepairDeliveryService $repairDeliveryService)
+    public function confirmPickup(
+        Request $request,
+        $id,
+        RepairDeliveryService $repairDeliveryService,
+        PaymentSettlementService $settlementService,
+    )
     {
         $user = Auth::guard('user')->user();
         abort_unless($user, 401);
 
-        $repair = DB::transaction(function () use ($id, $user, $repairDeliveryService): RepairRequest {
+        $repair = DB::transaction(function () use ($id, $user, $repairDeliveryService, $settlementService): RepairRequest {
             $repair = RepairRequest::query()
                 ->whereKey($id)
                 ->forCustomer($user->id)
@@ -2164,6 +2185,12 @@ class RepairRequestController extends Controller
             if (! in_array((string) $repair->status, $allowedStatuses, true)) {
                 throw \Illuminate\Validation\ValidationException::withMessages([
                     'status' => ['This repair is not awaiting customer receipt confirmation.'],
+                ]);
+            }
+            $collectionSummary = $settlementService->repairCollectionSummary($repair);
+            if (! (bool) $collectionSummary['fully_paid']) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'payment' => ['Complete the remaining payment before confirming receipt.'],
                 ]);
             }
             if (! (bool) $repair->pickup_enabled || $repair->return_logistics_locked_at === null) {
@@ -2565,10 +2592,11 @@ class RepairRequestController extends Controller
             }
 
             $policy = $this->normalizeRepairPaymentPolicy($repair->payment_policy ?? 'deposit_50');
+            $collectionSummary = $settlementService->repairCollectionSummary($repair);
             $pickupRetry = app(RepairDeliveryService::class)
                 ->activePickupRecovery($repair, 'awaiting_payment');
 
-            if ($this->isRepairPaymentSettled($repair, $policy)) {
+            if ((bool) $collectionSummary['fully_paid']) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Repair is already fully paid',
@@ -2642,6 +2670,10 @@ class RepairRequestController extends Controller
                     'vat_amount' => 0,
                     'vat_rate' => self::REPAIR_VAT_RATE_PERCENT,
                     'total_amount' => 0,
+                    'collectible_amount' => 0,
+                    'outstanding_balance' => (float) $collectionSummary['outstanding_balance'],
+                    'due_type' => $phaseBreakdown['due_type'],
+                    'phase' => $phaseBreakdown['phase'],
                     'tax_mode' => $taxMode,
                 ]);
             }
@@ -2825,6 +2857,10 @@ class RepairRequestController extends Controller
                 'vat_amount' => $vatAmount,
                 'vat_rate' => self::REPAIR_VAT_RATE_PERCENT,
                 'total_amount' => $amount,
+                'collectible_amount' => (float) $phaseBreakdown['total_amount'],
+                'outstanding_balance' => (float) $collectionSummary['outstanding_balance'],
+                'due_type' => $phaseBreakdown['due_type'],
+                'phase' => $phaseBreakdown['phase'],
                 'tax_mode' => $taxMode,
             ]);
         } catch (\Illuminate\Validation\ValidationException $e) {
@@ -3784,8 +3820,8 @@ class RepairRequestController extends Controller
         ]);
 
         foreach ([
-            'Shop-owned intake pickup' => $deliveryFees['intake'],
-            'Shop-owned return delivery' => $deliveryFees['return'],
+            'Shop rider pickup' => $deliveryFees['intake'],
+            'Shop rider return delivery' => $deliveryFees['return'],
         ] as $description => $fee) {
             if ($fee <= 0) {
                 continue;
@@ -3853,10 +3889,10 @@ class RepairRequestController extends Controller
     private function repairLogisticsValidationFailure(string $field, ?string $reason)
     {
         $message = match ($reason) {
-            'address_needs_pin' => 'Pin the exact address before choosing shop-owned logistics.',
-            'outside_coverage' => 'This address is outside the shop coverage. Choose walk-in or a third-party courier.',
-            'shop_needs_pin' => 'The shop must pin its location before shop-owned logistics can be used.',
-            default => 'Shop-owned logistics is unavailable for this address.',
+            'address_needs_pin' => 'Pin the exact address before choosing shop rider delivery.',
+            'outside_coverage' => 'This address is outside the shop rider coverage. Choose walk-in or a customer-arranged courier.',
+            'shop_needs_pin' => 'The shop must pin its location before shop rider delivery can be used.',
+            default => 'Shop rider delivery is unavailable for this address.',
         };
 
         return response()->json([

@@ -8,19 +8,20 @@ use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
 use App\Models\RepairRequest;
 use App\Models\ShopOwner;
+use App\Models\ShopOwnerModule;
 use App\Models\User;
-use App\Services\Logistics\ShipmentLegService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
 class RepairReturnHandoffTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_customer_courier_tracking_handoff_and_receipt_are_customer_owned_and_idempotent(): void
+    public function test_customer_courier_tracking_handoff_is_recorded_by_the_assigned_repairer_and_receipt_is_customer_owned(): void
     {
-        [$repair, $customer, $repairer] = $this->repairFixture('customer_pickup');
+        [$repair, $customer, $repairer, $shop] = $this->repairFixture('customer_pickup');
 
         $this->actingAs($customer, 'user')
             ->postJson("/api/customer/repairs/{$repair->id}/external-tracking", [
@@ -41,6 +42,10 @@ class RepairReturnHandoffTest extends TestCase
         $this->actingAs($customer, 'user')
             ->postJson("/api/customer/repairs/{$repair->id}/confirm-pickup")
             ->assertUnprocessable();
+
+        $this->actingAs($shop, 'shop_owner')
+            ->postJson("/api/shop-owner/repairs/{$repair->id}/activate-pickup")
+            ->assertRedirect();
 
         $this->actingAs($repairer, 'user')
             ->postJson("/api/repairer/repairs/{$repair->id}/activate-pickup")
@@ -76,11 +81,15 @@ class RepairReturnHandoffTest extends TestCase
 
     public function test_walk_in_requires_staff_release_then_customer_confirmation(): void
     {
-        [$repair, $customer, $repairer] = $this->repairFixture('walk_in');
+        [$repair, $customer, $repairer, $shop] = $this->repairFixture('walk_in');
 
         $this->actingAs($customer, 'user')
             ->postJson("/api/customer/repairs/{$repair->id}/confirm-pickup")
             ->assertUnprocessable();
+
+        $this->actingAs($shop, 'shop_owner')
+            ->postJson("/api/shop-owner/repairs/{$repair->id}/activate-pickup")
+            ->assertRedirect();
 
         $this->actingAs($repairer, 'user')
             ->postJson("/api/repairer/repairs/{$repair->id}/activate-pickup")
@@ -103,29 +112,38 @@ class RepairReturnHandoffTest extends TestCase
 
     public function test_shop_delivery_plan_lock_does_not_block_handoff_after_dispatcher_approval(): void
     {
-        [$repair, $customer, $repairer] = $this->repairFixture('shop_delivery', 'shipped');
+        [$repair, $customer, $repairer, $shop] = $this->repairFixture('shop_delivery', 'shipped');
         $repair->update(['return_logistics_locked_at' => now()]);
         [$shipment, $leg] = $this->returnShipment($repair, 'active', 'delivered');
         $proof = HandoffProof::factory()->create([
             'shipment_leg_id' => $leg->id,
             'handoff_type' => 'delivery',
             'review_status' => 'pending',
+            'confirmed_by_type' => User::class,
+            'confirmed_by_id' => $repairer->id,
         ]);
 
+        ShopOwnerModule::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'module_key' => 'logistics',
+            'enabled' => true,
+        ]);
+        Permission::findOrCreate('approve-proof-of-delivery', 'user');
+        $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $dispatcher->givePermissionTo('approve-proof-of-delivery');
+
         $this->actingAs($repairer, 'user')
             ->postJson("/api/repairer/repairs/{$repair->id}/activate-pickup")
-            ->assertUnprocessable();
+            ->assertNotFound();
 
         $leg->update(['status' => 'awaiting_proof_approval', 'requires_delivery_proof' => true]);
-        $proof->update(['review_status' => 'approved', 'reviewed_at' => now()]);
-        app(ShipmentLegService::class)->markDelivered($leg->fresh());
 
         $this->assertSame('shipped', $repair->fresh()->status);
-        $this->assertTrue(app(\App\Services\RepairDeliveryService::class)
+        $this->assertFalse(app(\App\Services\RepairDeliveryService::class)
             ->returnHandoff($repair->fresh(), true)['can_release']);
 
-        $this->actingAs($repairer, 'user')
-            ->postJson("/api/repairer/repairs/{$repair->id}/activate-pickup")
+        $this->actingAs($dispatcher, 'user')
+            ->postJson("/api/logistics/proofs/{$proof->id}/approve")
             ->assertOk();
 
         $this->assertTrue((bool) $repair->fresh()->pickup_enabled);
@@ -141,7 +159,7 @@ class RepairReturnHandoffTest extends TestCase
 
     public function test_picked_up_repair_invoice_separates_locked_shop_owned_delivery_fees(): void
     {
-        [$repair, $customer, $repairer] = $this->repairFixture('shop_delivery', 'shipped');
+        [$repair, $customer, , $shop] = $this->repairFixture('shop_delivery', 'shipped');
         $repair->update([
             'intake_delivery_method' => 'shop_pickup',
             'intake_delivery_fee' => 50,
@@ -158,8 +176,17 @@ class RepairReturnHandoffTest extends TestCase
         ]);
         $shipment->update(['completed_at' => now()]);
 
-        $this->actingAs($repairer, 'user')
-            ->postJson("/api/repairer/repairs/{$repair->id}/activate-pickup")
+        ShopOwnerModule::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'module_key' => 'logistics',
+            'enabled' => true,
+        ]);
+        Permission::findOrCreate('approve-proof-of-delivery', 'user');
+        $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $dispatcher->givePermissionTo('approve-proof-of-delivery');
+
+        $this->actingAs($dispatcher, 'user')
+            ->postJson("/api/logistics/proofs/{$leg->proofs()->firstOrFail()->id}/approve")
             ->assertOk();
         $this->actingAs($customer, 'user')
             ->postJson("/api/customer/repairs/{$repair->id}/confirm-pickup")
@@ -175,12 +202,12 @@ class RepairReturnHandoffTest extends TestCase
         $this->assertSame(120.0, (float) data_get($invoice->meta, 'shipping_fee'));
         $this->assertDatabaseHas('finance_invoice_items', [
             'invoice_id' => $invoice->id,
-            'description' => 'Shop-owned intake pickup',
+            'description' => 'Shop rider pickup',
             'amount' => 50,
         ]);
         $this->assertDatabaseHas('finance_invoice_items', [
             'invoice_id' => $invoice->id,
-            'description' => 'Shop-owned return delivery',
+            'description' => 'Shop rider return delivery',
             'amount' => 70,
         ]);
     }
@@ -194,7 +221,10 @@ class RepairReturnHandoffTest extends TestCase
             'role' => 'REPAIRER',
             'status' => 'active',
         ]);
-        $otherShop = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        $otherShop = ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'registration_type' => 'individual',
+        ]);
 
         $this->actingAs($otherCustomer, 'user')
             ->postJson("/api/customer/repairs/{$repair->id}/confirm-pickup")
@@ -209,7 +239,8 @@ class RepairReturnHandoffTest extends TestCase
         $repair->update(['status' => 'in_progress']);
         $this->actingAs($repairer, 'user')
             ->postJson("/api/repairer/repairs/{$repair->id}/activate-pickup")
-            ->assertUnprocessable();
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('status');
 
         $repair->refresh();
         $this->assertSame('in_progress', $repair->status);
@@ -346,7 +377,8 @@ class RepairReturnHandoffTest extends TestCase
 
         $this->actingAs($repairer, 'user')
             ->postJson("/api/repairer/repairs/{$repair->id}/activate-pickup")
-            ->assertUnprocessable();
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('status');
 
         $repair->refresh();
         $this->assertFalse((bool) $repair->pickup_enabled);
@@ -366,6 +398,28 @@ class RepairReturnHandoffTest extends TestCase
             ->assertJsonPath('data.0.return_handoff.action_label', 'Confirm courier handoff');
     }
 
+    public function test_individual_shop_owner_return_handoff_remains_available(): void
+    {
+        [$repair, $customer, , $shop] = $this->repairFixture(
+            'customer_pickup',
+            'ready_for_pickup',
+            'individual',
+        );
+
+        $this->actingAs($shop, 'shop_owner')
+            ->postJson('/api/shop-owner/repairs/' . $repair->id . '/activate-pickup')
+            ->assertOk()
+            ->assertJsonPath('success', true);
+
+        $repair->refresh();
+        $this->assertTrue((bool) $repair->pickup_enabled);
+        $this->assertSame('shipped', (string) $repair->status);
+
+        $this->actingAs($customer, 'user')
+            ->postJson('/api/customer/repairs/' . $repair->id . '/confirm-pickup')
+            ->assertOk();
+    }
+
     public static function sponsoredIntakeWarrantyMarkers(): array
     {
         return [
@@ -380,9 +434,16 @@ class RepairReturnHandoffTest extends TestCase
         ];
     }
 
-    private function repairFixture(string $method, string $status = 'ready_for_pickup'): array
+    private function repairFixture(
+        string $method,
+        string $status = 'ready_for_pickup',
+        string $registrationType = 'company',
+    ): array
     {
-        $shop = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        $shop = ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'registration_type' => $registrationType,
+        ]);
         $repairer = User::factory()->create([
             'shop_owner_id' => $shop->id,
             'role' => 'REPAIRER',

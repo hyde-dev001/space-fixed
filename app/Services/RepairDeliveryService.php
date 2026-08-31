@@ -114,7 +114,7 @@ final class RepairDeliveryService
             throw ValidationException::withMessages([
                 $field => [($quote['reason'] ?? null) === 'outside_coverage'
                     ? 'The address is now outside shop delivery coverage. Choose another delivery method.'
-                    : 'Shop-owned delivery is currently unavailable for this address.'],
+                    : 'Shop rider delivery is currently unavailable for this address.'],
             ]);
         }
 
@@ -670,7 +670,7 @@ final class RepairDeliveryService
 
             if ($method !== $expectedMethod || $lockedRepair->{$lockField} === null || (float) $lockedRepair->{$feeField} <= 0) {
                 throw ValidationException::withMessages([
-                    $phase => ['Only a paid, locked shop-owned delivery leg can be cancelled.'],
+                    $phase => ['Only a paid, locked shop rider delivery leg can be cancelled.'],
                 ]);
             }
 
@@ -940,6 +940,138 @@ final class RepairDeliveryService
                 'created_at' => optional($event->created_at)->toISOString(),
             ])->values()->all(),
         ];
+    }
+
+    public function activateReturnHandoff(
+        RepairRequest $repair,
+        User|ShopOwner $actor,
+        PaymentSettlementService $settlementService,
+        ?string $expectedMethod = null,
+    ): array {
+        $result = DB::transaction(function () use ($repair, $actor, $settlementService, $expectedMethod): array {
+            $lockedRepair = RepairRequest::query()
+                ->with(['user', 'services', 'shopOwner'])
+                ->whereKey($repair->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+            $method = match ((string) ($lockedRepair->return_delivery_method
+                ?: (($lockedRepair->delivery_method ?? null) === 'walk_in' ? 'walk_in' : 'customer_pickup'))) {
+                'pickup' => 'customer_pickup',
+                default => (string) ($lockedRepair->return_delivery_method
+                    ?: (($lockedRepair->delivery_method ?? null) === 'walk_in' ? 'walk_in' : 'customer_pickup')),
+            };
+
+            $isIndividualShopOwner = $actor instanceof ShopOwner
+                && (int) $lockedRepair->shop_owner_id === (int) $actor->id
+                && $actor->isIndividual();
+            $isAssignedRepairer = $actor instanceof User
+                && $method !== 'shop_delivery'
+                && (int) $lockedRepair->assigned_repairer_id === (int) $actor->id;
+            $isDispatcher = $actor instanceof User
+                && $method === 'shop_delivery'
+                && ($actor->can('approve-proof-of-delivery')
+                    || $actor->can('assign-logistics-deliveries'));
+
+            if (! $isIndividualShopOwner && ! $isAssignedRepairer && ! $isDispatcher) {
+                throw ValidationException::withMessages([
+                    'actor' => ['Only the assigned Repairer or an authorized Dispatcher can record this repair handoff.'],
+                ]);
+            }
+
+            if ($expectedMethod !== null && $method !== $expectedMethod) {
+                throw ValidationException::withMessages([
+                    'method' => ['This handoff operation is not available for the selected return method.'],
+                ]);
+            }
+
+            $allowedStatuses = $method === 'shop_delivery'
+                ? ['shipped']
+                : ['ready_for_pickup', 'ready-for-pickup'];
+            $sponsoredNonShopPlan = $method !== 'shop_delivery' && $this->isSponsoredWarranty($lockedRepair);
+
+            if (! in_array((string) $lockedRepair->status, $allowedStatuses, true)) {
+                throw ValidationException::withMessages([
+                    'status' => ['The repair is not ready for this return handoff.'],
+                ]);
+            }
+
+            if ((bool) $lockedRepair->pickup_enabled) {
+                return [
+                    'repair' => $lockedRepair->fresh(),
+                    'replayed' => true,
+                ];
+            }
+
+            if ($method !== 'shop_delivery'
+                && $lockedRepair->return_logistics_locked_at !== null
+                && ! $sponsoredNonShopPlan) {
+                throw ValidationException::withMessages([
+                    'status' => ['Customer receipt confirmation is already active.'],
+                ]);
+            }
+
+            $summary = $settlementService->repairCollectionSummary($lockedRepair);
+            if (! (bool) ($summary['fully_paid'] ?? false)) {
+                throw ValidationException::withMessages([
+                    'payment' => ['Final payment must be settled before release.'],
+                ]);
+            }
+
+            if ($method === 'shop_delivery'
+                && ! $this->hasApprovedProof($lockedRepair, 'repair_return')) {
+                throw ValidationException::withMessages([
+                    'proof' => ['Dispatcher approval of the rider delivery proof is required before handoff.'],
+                ]);
+            }
+
+            $lockedRepair->update([
+                'pickup_enabled' => true,
+                'pickup_enabled_at' => now(),
+                'pickup_enabled_by' => $actor->id,
+                'return_logistics_locked_at' => $lockedRepair->return_logistics_locked_at ?? now(),
+                ...($method === 'customer_pickup' ? [
+                    'status' => 'shipped',
+                    'shipped_at' => $lockedRepair->shipped_at ?? now(),
+                ] : []),
+            ]);
+
+            return [
+                'repair' => $lockedRepair->fresh(),
+                'replayed' => false,
+            ];
+        }, 3);
+
+        if (! $result['replayed']) {
+            $this->notifyReturnHandoffActivated($result['repair']);
+        }
+
+        return $result;
+    }
+
+    public function notifyReturnHandoffActivated(RepairRequest $repair): void
+    {
+        $customerId = (int) ($repair->user_id ?? 0);
+        if ($customerId <= 0) {
+            return;
+        }
+
+        try {
+            $this->notifications->notifyRepairReceiveConfirmationActivated($customerId, [
+                'repair_id' => $repair->id,
+                'order_number' => $repair->request_id,
+                'status' => (string) ($repair->status ?? ''),
+                'pickup_enabled' => true,
+                'return_delivery_method' => (string) ($repair->return_delivery_method ?? ''),
+                'is_warranty_job' => (bool) ($repair->is_warranty_job ?? false),
+                'billing_mode' => $repair->billing_mode,
+            ]);
+        } catch (\Throwable $exception) {
+            \Log::warning('Failed to send receive-confirmation activation notification', [
+                'repair_id' => $repair->id,
+                'customer_id' => $customerId,
+                'error' => $exception->getMessage(),
+            ]);
+        }
     }
 
     public function resolveReturnRecovery(

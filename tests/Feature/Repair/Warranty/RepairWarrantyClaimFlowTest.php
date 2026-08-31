@@ -255,6 +255,11 @@ class RepairWarrantyClaimFlowTest extends TestCase
         $this->assertTrue($fallback->intake_logistics_locked_at->equalTo($intakeLock));
         $this->assertTrue($delivery->returnHandoff($fallback, true)['can_release']);
 
+        $shopOwner = ShopOwner::query()->findOrFail($linked->shop_owner_id);
+        $this->actingAs($shopOwner, 'shop_owner')
+            ->postJson("/api/shop-owner/repairs/{$linked->id}/activate-pickup")
+            ->assertRedirect();
+
         $this->actingAs($repairer, 'user')
             ->postJson("/api/repairer/repairs/{$linked->id}/activate-pickup")
             ->assertOk();

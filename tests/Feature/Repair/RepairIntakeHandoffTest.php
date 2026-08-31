@@ -180,7 +180,10 @@ class RepairIntakeHandoffTest extends TestCase
     public function test_owning_shop_owner_can_confirm_but_another_shop_cannot(): void
     {
         [$repair, , $shop] = $this->repairFixture('walk_in');
-        $otherShop = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        $otherShop = ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'registration_type' => 'individual',
+        ]);
 
         $this->actingAs($otherShop, 'shop_owner')
             ->postJson("/api/shop-owner/repairs/{$repair->id}/mark-received")
@@ -258,7 +261,10 @@ class RepairIntakeHandoffTest extends TestCase
 
     public function test_job_order_handoff_queries_do_not_grow_per_repair(): void
     {
-        $shop = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        $shop = ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'registration_type' => 'individual',
+        ]);
         $repairer = User::factory()->create([
             'shop_owner_id' => $shop->id,
             'role' => 'REPAIRER',
@@ -322,7 +328,10 @@ class RepairIntakeHandoffTest extends TestCase
 
     private function repairFixture(string $method): array
     {
-        $shop = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        $shop = ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'registration_type' => 'individual',
+        ]);
         $repairer = User::factory()->create([
             'shop_owner_id' => $shop->id,
             'role' => 'REPAIRER',

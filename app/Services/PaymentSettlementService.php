@@ -81,6 +81,62 @@ class PaymentSettlementService
         ];
     }
 
+    public function repairCollectionSummary(RepairRequest $repair): array
+    {
+        $policy = $this->normalizeRepairPaymentPolicy($repair->payment_policy_snapshot ?: $repair->payment_policy);
+        $grandTotal = $this->resolveRepairServiceTotal($repair, $policy, 'initial');
+        $totalPaidAmount = $this->resolveRepairTotalPaidAmount($repair, $grandTotal, $policy);
+        $status = strtolower((string) ($repair->status ?? ''));
+        $paymentStatus = strtolower((string) ($repair->payment_status ?? ''));
+        $nonCollectible = data_get($repair->logistics_payment_reconciliation, 'status') === 'pending'
+            || in_array($status, ['cancelled', 'rejected', 'repairer_rejected', 'owner_rejected'], true)
+            || in_array($paymentStatus, ['refunded'], true);
+        $fullyPaid = ! $nonCollectible && $this->isRepairSettled($repair, $policy);
+        $serviceBalance = $nonCollectible ? 0.0 : $this->outstandingRepairServiceBalance($repair);
+
+        $summary = [
+            'collectible' => false,
+            'due_type' => null,
+            'phase' => null,
+            'collectible_amount' => 0.0,
+            'outstanding_balance' => 0.0,
+            'service_amount' => 0.0,
+            'delivery_amount' => 0.0,
+            'total_paid_amount' => $totalPaidAmount,
+            'grand_total' => $grandTotal,
+            'fully_paid' => $fullyPaid,
+        ];
+
+        if ($nonCollectible || $fullyPaid) {
+            return $summary;
+        }
+
+        $summary['outstanding_balance'] = round($serviceBalance, 2);
+        if (! $this->isRepairPaymentDueNow($repair, $policy)) {
+            return $summary;
+        }
+
+        try {
+            $breakdown = $this->repairPaymentBreakdown($repair);
+        } catch (ValidationException) {
+            return $summary;
+        }
+
+        $collectibleAmount = round((float) ($breakdown['total_amount'] ?? 0), 2);
+        $deliveryAmount = round((float) ($breakdown['delivery_amount'] ?? 0), 2);
+
+        return [
+            ...$summary,
+            'collectible' => $collectibleAmount > 0,
+            'due_type' => $breakdown['due_type'] ?? null,
+            'phase' => $breakdown['phase'] ?? null,
+            'collectible_amount' => $collectibleAmount,
+            'outstanding_balance' => round($serviceBalance + $deliveryAmount, 2),
+            'service_amount' => round((float) ($breakdown['service_amount'] ?? 0), 2),
+            'delivery_amount' => $deliveryAmount,
+        ];
+    }
+
     public function settleRepairPhasePaid(RepairRequest $repair, array $breakdown, ?string $paymentReference = null): RepairRequest
     {
         $phase = (string) $breakdown['phase'];
@@ -737,6 +793,34 @@ class PaymentSettlementService
         $servicePaid = max($fallbackServicePaid, $posServicePaid + $sessionServicePaid + $credits);
 
         return max(0, round($serviceTotal - $servicePaid, 2));
+    }
+
+    private function resolveRepairTotalPaidAmount(RepairRequest $repair, float $grandTotal, string $policy): float
+    {
+        $storedPaidAmount = round((float) ($repair->total_paid_amount ?? 0), 2);
+        $posLedgerPaidAmount = array_key_exists('pos_paid_amount', $repair->getAttributes())
+            ? round((float) ($repair->pos_paid_amount ?? 0), 2)
+            : (float) PosTransaction::query()
+                ->where('module_type', 'repair')
+                ->where('module_reference_id', $repair->id)
+                ->whereIn('status', ['paid', 'partially_refunded', 'refunded'])
+                ->sum('paid_amount');
+        $resolved = max(0.0, $storedPaidAmount, $posLedgerPaidAmount);
+        $paymentStatus = strtolower(trim((string) ($repair->payment_status ?? 'pending')));
+
+        if ($paymentStatus === 'completed') {
+            return round(max($resolved, $grandTotal), 2);
+        }
+
+        if (in_array($paymentStatus, ['paid', 'partially_paid'], true)) {
+            $phaseAmount = $policy === 'full_upfront'
+                ? $grandTotal
+                : round($grandTotal * 0.5, 2);
+
+            return round(max($resolved, $phaseAmount), 2);
+        }
+
+        return round($resolved, 2);
     }
 
     private function hasResolvedDeliveryCompensation(RepairRequest $repair, string $phase): bool

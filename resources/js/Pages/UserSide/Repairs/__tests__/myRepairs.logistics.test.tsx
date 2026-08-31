@@ -63,6 +63,29 @@ vi.mock("@/components/address/CustomerAddressManager", () => ({
       >
         {title === "Saved pickup address" ? "Use saved pickup address" : "Use saved return address"}
       </button>
+      {title === "Saved return address" && (
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => onSelect({
+            id: 43,
+            name: "Rina Santos",
+            phone: "09171234567",
+            address_line: "43 Alternate Return Street",
+            barangay: "Poblacion",
+            city: "Makati",
+            province: "Metro Manila",
+            region: "NCR",
+            postal_code: "1201",
+            latitude: 14.6,
+            longitude: 121.1,
+            delivery_instructions: "Guard desk",
+            is_default: false,
+          })}
+        >
+          Use alternate return address
+        </button>
+      )}
     </div>
   ),
 }));
@@ -82,6 +105,24 @@ const repair = (overrides: Record<string, unknown> = {}) => ({
   display_total_paid_amount: 1000,
   payment_status: "paid",
   payment_policy: "deposit_50",
+  collection_summary: {
+    collectible: true,
+    due_type: "balance",
+    phase: "final",
+    collectible_amount: 635,
+    outstanding_balance: 635,
+    service_amount: 500,
+    delivery_amount: 135,
+    total_paid_amount: 1000,
+    grand_total: 1500,
+    fully_paid: false,
+  },
+  collectible: true,
+  collectible_amount: 635,
+  outstanding_balance: 635,
+  due_type: "balance",
+  phase: "final",
+  fully_paid: false,
   created_at: "2026-07-20T08:00:00.000Z",
   shop_id: 9,
   shop_owner_id: 9,
@@ -122,7 +163,7 @@ const repair = (overrides: Record<string, unknown> = {}) => ({
     distance_km: 7.25,
     coverage_radius_km: 15,
     fee: 135,
-    address_version: "return-v1",
+    address_version: "intake-v1",
     method: "shop_delivery",
   },
   intake_logistics_locked_at: "2026-07-21T08:00:00.000Z",
@@ -338,7 +379,7 @@ describe("MyRepairs return logistics", () => {
     expect(screen.getByText("Within coverage")).toBeInTheDocument();
     expect(screen.getByText("Distance: 7.25 km")).toBeInTheDocument();
     expect(screen.getByText("Accepted return fee: ₱135")).toBeInTheDocument();
-    expect(screen.getByText("Final amount: ₱885")).toBeInTheDocument();
+    expect(screen.getByText("Final amount: ₱635")).toBeInTheDocument();
 
     const intakeTimeline = await screen.findByRole("region", { name: "Intake pickup tracking" });
     const returnTimeline = screen.getByRole("region", { name: "Return delivery tracking" });
@@ -372,7 +413,7 @@ describe("MyRepairs return logistics", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Use saved return address" }));
     fireEvent.click(screen.getByRole("radio", { name: /Customer-arranged courier/i }));
     expect(screen.queryByText("Accepted return fee: ₱135")).not.toBeInTheDocument();
-    expect(screen.getByText("Estimated return fee: ₱0")).toBeInTheDocument();
+    expect(screen.getByText("Shop rider fee not applicable: ₱0")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Save & review delivery plan" }));
 
     await waitFor(() => expect(mocks.patch).toHaveBeenCalledWith(
@@ -385,7 +426,7 @@ describe("MyRepairs return logistics", () => {
     ));
     expect(mocks.post).not.toHaveBeenCalled();
     expect(await screen.findByText("Delivery plan updated. Review the new fee, then confirm.")).toBeInTheDocument();
-    expect(screen.getByText("Accepted return fee: ₱0")).toBeInTheDocument();
+    expect(screen.getByText("Shop rider fee not applicable: ₱0")).toBeInTheDocument();
 
     const confirmButton = screen.getByRole("button", { name: "Confirm address & delivery" });
     expect(confirmButton).toBeEnabled();
@@ -396,8 +437,108 @@ describe("MyRepairs return logistics", () => {
     expect(await screen.findByText("Return delivery confirmed.")).toBeInTheDocument();
   });
 
+  it("recalculates shop rider coverage and fee when the address changes from A to B and back to A", async () => {
+    mocks.fetch.mockImplementation(async (url: string) => {
+      if (url.endsWith("address_id=43")) {
+        return {
+          ok: true,
+          json: async () => ({
+            available: false,
+            reason: "Outside shop rider coverage.",
+            distance_km: 20,
+            coverage_radius_km: 15,
+            fee: 0,
+          }),
+        };
+      }
+
+      if (url.endsWith("address_id=42")) {
+        return {
+          ok: true,
+          json: async () => ({
+            available: true,
+            reason: null,
+            distance_km: 3.2,
+            coverage_radius_km: 15,
+            fee: 111,
+          }),
+        };
+      }
+
+      return {
+        ok: true,
+        json: async () => ({
+          available: true,
+          reason: null,
+          distance_km: 7.25,
+          coverage_radius_km: 15,
+          fee: 135,
+        }),
+      };
+    });
+
+    await renderReadyRepair();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Same as intake address" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Use saved return address" }));
+
+    expect(await screen.findByText("Within coverage")).toBeInTheDocument();
+    expect(screen.getByText("Estimated return fee: \u20B1111")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Use alternate return address" }));
+    expect(await screen.findByText("Outside shop rider coverage.")).toBeInTheDocument();
+    expect(screen.getByText("Estimated return fee: \u20B10")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Use saved return address" }));
+    expect(await screen.findByText("Within coverage")).toBeInTheDocument();
+    expect(screen.getByText("Estimated return fee: \u20B1111")).toBeInTheDocument();
+  });
+
+  it("requires full payment before arranging a third-party return courier", async () => {
+    mocks.repair = repair({
+      return_delivery_method: "customer_pickup",
+      return_delivery_fee: 0,
+      return_logistics_quote: null,
+      same_as_intake_address: false,
+      payment_enabled: true,
+      collection_summary: {
+        collectible: true,
+        due_type: "balance",
+        phase: "final",
+        collectible_amount: 500,
+        outstanding_balance: 500,
+        service_amount: 500,
+        delivery_amount: 0,
+        total_paid_amount: 1000,
+        grand_total: 1500,
+        fully_paid: false,
+      },
+    });
+
+    await renderReadyRepair();
+
+    expect(screen.getByRole("button", { name: "Pay Remaining Balance" })).toBeEnabled();
+    const tracking = screen.getByRole("region", { name: "Return courier tracking" });
+    expect(within(tracking).getByRole("alert")).toHaveTextContent(
+      "Complete the remaining payment before arranging the return courier.",
+    );
+    expect(within(tracking).queryByLabelText("Return carrier")).not.toBeInTheDocument();
+    expect(within(tracking).queryByRole("button", { name: "Save return tracking" })).not.toBeInTheDocument();
+  });
+
   it("does not infer a lock from payment status and displays server errors inline", async () => {
     mocks.repair = repair({ payment_status: "completed", return_logistics_locked_at: null });
+    mocks.repair.collection_summary = {
+      collectible: false,
+      due_type: null,
+      phase: null,
+      collectible_amount: 0,
+      outstanding_balance: 0,
+      service_amount: 0,
+      delivery_amount: 0,
+      total_paid_amount: 1500,
+      grand_total: 1500,
+      fully_paid: true,
+    };
     mocks.patch.mockRejectedValue({
       response: { data: { message: "The return delivery plan changed. Refresh and try again." } },
     });
@@ -419,6 +560,18 @@ describe("MyRepairs return logistics", () => {
       return_delivery_fee: 0,
       return_logistics_quote: null,
       same_as_intake_address: false,
+      collection_summary: {
+        collectible: false,
+        due_type: null,
+        phase: null,
+        collectible_amount: 0,
+        outstanding_balance: 0,
+        service_amount: 0,
+        delivery_amount: 0,
+        total_paid_amount: 1500,
+        grand_total: 1500,
+        fully_paid: true,
+      },
     });
     mocks.post.mockResolvedValueOnce({
       data: { success: true, message: "Tracking details saved." },
@@ -467,6 +620,18 @@ describe("MyRepairs return logistics", () => {
       return_delivery_method: "customer_pickup",
       return_logistics_locked_at: "2026-07-26T10:00:00.000Z",
       pickup_enabled: true,
+      collection_summary: {
+        collectible: false,
+        due_type: null,
+        phase: null,
+        collectible_amount: 0,
+        outstanding_balance: 0,
+        service_amount: 0,
+        delivery_amount: 0,
+        total_paid_amount: 1500,
+        grand_total: 1500,
+        fully_paid: true,
+      },
       return_address: {
         address_id: 5,
         version: "return-v1",
@@ -758,6 +923,18 @@ describe("MyRepairs warranty logistics", () => {
       billing_mode: "warranty_no_charge",
       payment_status: "completed",
       payment_enabled: false,
+      collection_summary: {
+        collectible: false,
+        due_type: null,
+        phase: null,
+        collectible_amount: 0,
+        outstanding_balance: 0,
+        service_amount: 0,
+        delivery_amount: 0,
+        total_paid_amount: 1500,
+        grand_total: 1500,
+        fully_paid: true,
+      },
       return_delivery_method: "customer_pickup",
       return_logistics_locked_at: "2026-07-26T10:00:00.000Z",
     };
@@ -948,7 +1125,7 @@ describe("MyRepairs warranty logistics", () => {
     expect(within(recovery).getByRole("button", { name: "Pay pickup shipping fee" })).toBeEnabled();
   });
 
-  it("reuses the pinned repair address and exposes shop-owned and third-party choices", async () => {
+  it("reuses the pinned repair address and exposes shop-rider and third-party choices", async () => {
     mocks.repair = repair({
       status: "picked_up",
       picked_up_at: "2026-07-26T10:00:00.000Z",

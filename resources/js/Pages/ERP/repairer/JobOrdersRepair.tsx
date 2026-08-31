@@ -108,6 +108,11 @@ type RepairOrder = {
   paymongo_payment_id?: string | null;
   payment_policy?: 'deposit_50' | 'full_upfront';
   totalPaidAmount?: number | string | null;
+  collectible?: boolean;
+  collectibleAmount?: number | string | null;
+  outstandingBalance?: number | string | null;
+  fullyPaid?: boolean;
+  paymentPhase?: string | null;
   totalRefundedAmount?: number | string | null;
   pickup_enabled?: boolean;
   pickup_enabled_at?: string | null;
@@ -903,7 +908,12 @@ export default function JobOrdersRepair() {
           conversation_id: repair.conversation_id,
           payment_enabled: repair.payment_enabled || false,
           payment_status: repair.payment_status || 'pending',
-          totalPaidAmount: toNumber(repair.total_paid_amount),
+          totalPaidAmount: toNumber(repair.collection_summary?.total_paid_amount ?? repair.total_paid_amount),
+          collectible: Boolean(repair.collectible ?? repair.collection_summary?.collectible),
+          collectibleAmount: toNumber(repair.collectible_amount ?? repair.collection_summary?.collectible_amount),
+          outstandingBalance: toNumber(repair.outstanding_balance ?? repair.collection_summary?.outstanding_balance),
+          fullyPaid: Boolean(repair.fully_paid ?? repair.collection_summary?.fully_paid),
+          paymentPhase: repair.phase ?? repair.collection_summary?.phase ?? null,
           totalRefundedAmount: toNumber(repair.total_refunded_amount),
           paymongo_payment_id: repair.paymongo_payment_id || null,
           payment_policy: repair.payment_policy || 'deposit_50',
@@ -1363,55 +1373,15 @@ export default function JobOrdersRepair() {
     return toNumber(order.grandTotal) ?? toNumber(order.total) ?? 0;
   };
 
+  const isWaitingForPayment = (order: Pick<RepairOrder, 'status' | 'outstandingBalance'>) => {
+    const status = String(order.status ?? '').toLowerCase();
+    return (status === 'ready-for-pickup' || status === 'ready_for_pickup')
+      && (toNumber(order.outstandingBalance) ?? 0) > 0;
+  };
+
   function isWarrantyNoChargeOrder(order: Pick<RepairOrder, 'isWarrantyJob' | 'billingMode'>) {
     return Boolean(order.isWarrantyJob) || String(order.billingMode ?? '').toLowerCase() === 'warranty_no_charge';
   }
-
-  const getDisplayedPaidAmount = (order: Pick<RepairOrder, 'totalPaidAmount' | 'payment_status' | 'payment_policy' | 'grandTotal' | 'total'>) => {
-    const recordedPaid = toNumber(order.totalPaidAmount);
-    const resolvedRecordedPaid = recordedPaid !== null && recordedPaid > 0 ? recordedPaid : 0;
-
-    const status = (order.payment_status ?? '').toLowerCase();
-    const policy = order.payment_policy ?? 'deposit_50';
-    const grandTotal = getOrderGrandTotalValue(order);
-
-    let inferredPaid = 0;
-
-    if (status === 'completed') {
-      inferredPaid = grandTotal;
-      return Math.max(resolvedRecordedPaid, inferredPaid);
-    }
-
-    if (status === 'paid' || status === 'partially_paid') {
-      if (policy === 'full_upfront') {
-        inferredPaid = grandTotal;
-        return Math.max(resolvedRecordedPaid, inferredPaid);
-      }
-
-      inferredPaid = Math.round(grandTotal * 0.5 * 100) / 100;
-      return Math.max(resolvedRecordedPaid, inferredPaid);
-    }
-
-    return resolvedRecordedPaid;
-  };
-
-  const isFullyPaidForRelease = (order: Pick<RepairOrder, 'payment_policy' | 'payment_status'>) => {
-    const policy = order.payment_policy ?? 'deposit_50';
-    const normalizedStatus = (order.payment_status || '').toLowerCase();
-
-    return normalizedStatus === 'completed' || (policy !== 'deposit_50' && normalizedStatus === 'paid');
-  };
-
-  const getReleasePaymentBlockedMessage = (order: Pick<RepairOrder, 'payment_policy'>) => {
-    switch (order.payment_policy ?? 'deposit_50') {
-      case 'deposit_50':
-        return 'Waiting for customer to pay the remaining 50% balance';
-      case 'full_upfront':
-        return 'Waiting for customer payment to be completed';
-      default:
-        return 'Waiting for customer payment to be completed';
-    }
-  };
 
   const canMarkReceived = (order: Pick<RepairOrder, 'intakeHandoff'>) => {
     return Boolean(order.intakeHandoff?.can_confirm_receipt);
@@ -1437,15 +1407,12 @@ export default function JobOrdersRepair() {
     return isWalkInIntake(order) && String(order.id || '').toUpperCase().startsWith('REP-POS-');
   };
 
-  const canActivateOnlineRemainingBalance = (order: Pick<RepairOrder, 'status' | 'payment_policy' | 'payment_status' | 'returnDeliveryMethod' | 'serviceType' | 'payment_enabled'>) => {
-    const paymentPolicy = order.payment_policy ?? 'deposit_50';
-    const paymentStatus = (order.payment_status ?? '').toLowerCase();
+  const canActivateOnlineRemainingBalance = (order: Pick<RepairOrder, 'status' | 'returnDeliveryMethod' | 'serviceType' | 'payment_enabled' | 'outstandingBalance'>) => {
     const orderStatus = (order.status ?? '').toLowerCase();
 
     return !isWalkInReturn(order)
-      && paymentPolicy === 'deposit_50'
-      && (paymentStatus === 'paid' || paymentStatus === 'partially_paid')
       && (orderStatus === 'ready-for-pickup' || orderStatus === 'ready_for_pickup')
+      && (toNumber(order.outstandingBalance) ?? 0) > 0
       && !Boolean(order.payment_enabled);
   };
 
@@ -1789,13 +1756,19 @@ export default function JobOrdersRepair() {
     }
   };
 
-  const handleMarkReady = async (orderId: string) => {
+  const handleMarkReady = async (
+    orderId: string,
+    returnDeliveryMethod?: RepairOrder['returnDeliveryMethod'],
+  ) => {
+    const releasingForDispatch = returnDeliveryMethod === 'shop_delivery';
     const result = await Swal.fire({
-      title: 'Mark as Ready for Pickup',
-      text: 'Are you sure you want to mark this repair as ready for pickup?',
+      title: releasingForDispatch ? 'Release for Dispatch' : 'Mark as Ready for Pickup',
+      text: releasingForDispatch
+        ? 'Release this repaired item to the Dispatcher queue for shop-rider delivery?'
+        : 'Are you sure you want to mark this repair as ready for pickup?',
       icon: 'question',
       showCancelButton: true,
-      confirmButtonText: 'Mark Ready',
+      confirmButtonText: releasingForDispatch ? 'Release for Dispatch' : 'Mark Ready',
       cancelButtonText: 'Cancel',
       confirmButtonColor: '#10b981',
     });
@@ -1835,8 +1808,10 @@ export default function JobOrdersRepair() {
         setViewOrder(null);
 
         await Swal.fire({
-          title: 'Ready for Pickup!',
-          text: 'Customer will be notified to pick up their item.',
+          title: releasingForDispatch ? 'Released for Dispatch!' : 'Ready for Pickup!',
+          text: releasingForDispatch
+            ? 'The Dispatcher can now schedule and assign the shop rider.'
+            : 'Customer will be notified to pick up their item.',
           icon: 'success',
           confirmButtonColor: '#2563eb',
         });
@@ -1863,8 +1838,10 @@ export default function JobOrdersRepair() {
             setViewOrder(null);
 
             await Swal.fire({
-              title: 'Ready for Pickup!',
-              text: 'Customer will be notified to pick up their item.',
+              title: releasingForDispatch ? 'Released for Dispatch!' : 'Ready for Pickup!',
+              text: releasingForDispatch
+                ? 'The Dispatcher can now schedule and assign the shop rider.'
+                : 'Customer will be notified to pick up their item.',
               icon: 'success',
               confirmButtonColor: '#2563eb',
             });
@@ -1883,8 +1860,10 @@ export default function JobOrdersRepair() {
                 setViewOrder(null);
 
                 await Swal.fire({
-                  title: 'Ready for Pickup!',
-                  text: 'Customer will be notified to pick up their item.',
+                  title: releasingForDispatch ? 'Released for Dispatch!' : 'Ready for Pickup!',
+                  text: releasingForDispatch
+                    ? 'The Dispatcher can now schedule and assign the shop rider.'
+                    : 'Customer will be notified to pick up their item.',
                   icon: 'success',
                   confirmButtonColor: '#2563eb',
                 });
@@ -1923,8 +1902,10 @@ export default function JobOrdersRepair() {
             setViewOrder(null);
 
             await Swal.fire({
-              title: 'Ready for Pickup!',
-              text: 'Customer will be notified to pick up their item.',
+              title: releasingForDispatch ? 'Released for Dispatch!' : 'Ready for Pickup!',
+              text: releasingForDispatch
+                ? 'The Dispatcher can now schedule and assign the shop rider.'
+                : 'Customer will be notified to pick up their item.',
               icon: 'success',
               confirmButtonColor: '#2563eb',
             });
@@ -1949,13 +1930,18 @@ export default function JobOrdersRepair() {
     }
   };
 
-  const handleActivatePickup = async (targetOrder: RepairOrder) => {
+  const handleRecordReturnHandoff = async (targetOrder: RepairOrder) => {
+    const returnMethod = getReturnDeliveryMethod(targetOrder);
+    if (!['walk_in', 'customer_pickup'].includes(returnMethod)) return;
+
     const handoff = targetOrder.returnHandoff;
-    const actionLabel = handoff?.action_label || 'Record return handoff';
+    const actionLabel = returnMethod === 'walk_in'
+      ? 'Release to customer'
+      : 'Confirm courier handoff';
 
     if (!handoff?.can_release) {
       await Swal.fire({
-        title: 'Handoff not available',
+        title: 'Handover not available',
         text: handoff?.blocked_reason || 'Refresh the repair and check the return requirements.',
         icon: 'warning',
         confirmButtonColor: '#2563eb',
@@ -1964,10 +1950,10 @@ export default function JobOrdersRepair() {
     }
 
     const result = await Swal.fire({
-      title: `${actionLabel}?`,
-      text: targetOrder.returnDeliveryMethod === 'walk_in'
+      title: actionLabel + '?',
+      text: returnMethod === 'walk_in'
         ? 'Confirm that the repaired shoes are being released directly to the customer.'
-        : 'Confirm that the repaired shoes were handed to the correct courier or rider.',
+        : 'Confirm that the repaired shoes were handed to the customer-arranged courier.',
       icon: 'question',
       showCancelButton: true,
       confirmButtonText: actionLabel,
@@ -1978,11 +1964,13 @@ export default function JobOrdersRepair() {
     if (!result.isConfirmed) return;
 
     try {
-      const response = await axios.post(`/api/repairer/repairs/${targetOrder.database_id}/activate-pickup`);
-      
+      const response = await axios.post(
+        '/api/repairer/repairs/' + targetOrder.database_id + '/activate-pickup',
+      );
+
       if (response.data.success) {
         await Swal.fire({
-          title: 'Handoff recorded',
+          title: 'Handover recorded',
           text: 'The customer can now confirm receipt of the repaired shoes.',
           icon: 'success',
           confirmButtonColor: '#2563eb',
@@ -1992,7 +1980,7 @@ export default function JobOrdersRepair() {
     } catch (error: any) {
       await Swal.fire({
         title: 'Error',
-        text: error.response?.data?.message || 'Failed to record the return handoff.',
+        text: error.response?.data?.message || 'Failed to record the return handover.',
         icon: 'error',
       });
     }
@@ -2908,6 +2896,11 @@ export default function JobOrdersRepair() {
                           <span className={`px-2.5 py-1 inline-flex w-fit max-w-max whitespace-nowrap text-xs leading-5 font-semibold rounded-full ${getStatusColor(order.status)}`}>
                             {getRepairStatusLabel(order.status)}
                           </span>
+                          {isWaitingForPayment(order) && (
+                            <span className="px-2.5 py-1 inline-flex w-fit max-w-max whitespace-nowrap text-xs leading-5 font-semibold rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                              Waiting for Payment
+                            </span>
+                          )}
                           {getPaymentStatusBadgeLabel(order.payment_status) && (
                             <span className="px-2.5 py-1 inline-flex w-fit max-w-max whitespace-nowrap text-xs leading-5 font-semibold rounded-full bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300">
                               {getPaymentStatusBadgeLabel(order.payment_status)}
@@ -2952,7 +2945,7 @@ export default function JobOrdersRepair() {
                           <span className="text-rose-600 dark:text-rose-400">Partially Refunded</span>
                         ) : (
                           (() => {
-                            const paidAmount = getDisplayedPaidAmount(order);
+                            const paidAmount = toNumber(order.totalPaidAmount) ?? 0;
 
                             if (paidAmount <= 0) {
                               return <span className="text-gray-400 dark:text-gray-500">—</span>;
@@ -3052,10 +3045,10 @@ export default function JobOrdersRepair() {
 
                           {(order.status === "in-progress" || order.status === "completed") && (
                             <button
-                              onClick={() => handleMarkReady(String(order.database_id))}
+                              onClick={() => handleMarkReady(String(order.database_id), getReturnDeliveryMethod(order))}
                               className="inline-flex items-center justify-center p-2 text-green-600 hover:text-green-700 hover:bg-green-50 dark:text-green-400 dark:hover:text-green-300 dark:hover:bg-green-900/30 rounded-lg transition-colors"
-                              title="Ready for Pickup"
-                              aria-label="Ready for Pickup"
+                              title={getReturnDeliveryMethod(order) === 'shop_delivery' ? 'Release for Dispatch' : 'Ready for Pickup'}
+                              aria-label={getReturnDeliveryMethod(order) === 'shop_delivery' ? 'Release for Dispatch' : 'Ready for Pickup'}
                             >
                               <CheckCircleIcon className="size-5" />
                             </button>
@@ -3087,17 +3080,21 @@ export default function JobOrdersRepair() {
                           {order.returnHandoff
                             && order.returnHandoff.visible !== false
                             && !order.returnHandoff.recovery
-                            && ["ready-for-pickup", "shipped"].includes(order.status) && (
+                            && ['walk_in', 'customer_pickup'].includes(getReturnDeliveryMethod(order))
+                            && ['ready-for-pickup', 'ready_for_pickup', 'shipped'].includes(order.status)
+                            && !order.returnHandoff.can_confirm_receipt && (
                             <button
-                              onClick={() => handleActivatePickup(order)}
+                              onClick={() => handleRecordReturnHandoff(order)}
                               disabled={!order.returnHandoff.can_release}
-                              className={`inline-flex items-center justify-center p-2 rounded-lg transition-colors ${
-                                order.returnHandoff.can_release
-                                  ? 'text-purple-600 hover:text-purple-700 hover:bg-purple-50 dark:text-purple-400 dark:hover:text-purple-300 dark:hover:bg-purple-900/30'
-                                  : 'text-gray-400 cursor-not-allowed'
-                              }`}
-                              title={order.returnHandoff.blocked_reason || order.returnHandoff.action_label}
-                              aria-label={order.returnHandoff.action_label || 'Record return handoff'}
+                              className={order.returnHandoff.can_release
+                                ? 'inline-flex items-center justify-center p-2 rounded-lg text-purple-600 hover:text-purple-700 hover:bg-purple-50 dark:text-purple-400 dark:hover:text-purple-300 dark:hover:bg-purple-900/30 transition-colors'
+                                : 'inline-flex items-center justify-center p-2 rounded-lg text-gray-400 cursor-not-allowed'}
+                              title={order.returnHandoff.blocked_reason || (getReturnDeliveryMethod(order) === 'walk_in'
+                                ? 'Release to customer'
+                                : 'Confirm courier handoff')}
+                              aria-label={getReturnDeliveryMethod(order) === 'walk_in'
+                                ? 'Release to customer'
+                                : 'Confirm courier handoff'}
                             >
                               <PackageIcon className="size-5" />
                             </button>
@@ -3204,6 +3201,11 @@ export default function JobOrdersRepair() {
                     <span className={`px-2.5 py-1 inline-flex w-fit max-w-max whitespace-nowrap text-xs font-semibold rounded-full ${getStatusColor(viewOrder.status)}`}>
                       {getRepairStatusLabel(viewOrder.status)}
                     </span>
+                    {isWaitingForPayment(viewOrder) && (
+                      <span className="px-2.5 py-1 inline-flex w-fit max-w-max whitespace-nowrap text-xs font-semibold rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                        Waiting for Payment
+                      </span>
+                    )}
                     {getPaymentStatusBadgeLabel(viewOrder.payment_status) && (
                       <span className="px-2.5 py-1 inline-flex w-fit max-w-max whitespace-nowrap text-xs font-semibold rounded-full bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300">
                         {getPaymentStatusBadgeLabel(viewOrder.payment_status)}
@@ -3438,16 +3440,6 @@ export default function JobOrdersRepair() {
                                 ? "The re-delivery fee is paid. The Dispatcher can assign the new delivery."
                                 : "Customer must choose re-delivery or shop pickup in My Repairs."}
                         </p>
-                        {viewOrder.returnHandoff.recovery.state === "shop_pickup" && (
-                          <button
-                            type="button"
-                            onClick={() => handleActivatePickup(viewOrder)}
-                            disabled={!viewOrder.returnHandoff.can_release}
-                            className="mt-4 min-h-11 w-full rounded-md bg-purple-600 px-4 py-2 font-semibold text-white hover:bg-purple-700 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:text-gray-600"
-                          >
-                            {viewOrder.returnHandoff.action_label || "Release to customer"}
-                          </button>
-                        )}
                       </div>
                     ) : (
                     <div className="rounded-lg border border-purple-200 bg-purple-50 p-4 text-sm dark:border-purple-800 dark:bg-purple-900/20">
@@ -3462,19 +3454,23 @@ export default function JobOrdersRepair() {
                             </p>
                           )}
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => handleActivatePickup(viewOrder)}
-                          disabled={!viewOrder.returnHandoff.can_release}
-                          aria-label={viewOrder.returnHandoff.action_label || 'Record return handoff'}
-                          className={`rounded-md px-3 py-2 font-semibold ${
-                            viewOrder.returnHandoff.can_release
-                              ? 'bg-purple-600 text-white hover:bg-purple-700'
-                              : 'cursor-not-allowed bg-gray-200 text-gray-500 dark:bg-gray-800 dark:text-gray-400'
-                          }`}
-                        >
-                          {viewOrder.returnHandoff.action_label || 'Record return handoff'}
-                        </button>
+                        {['walk_in', 'customer_pickup'].includes(getReturnDeliveryMethod(viewOrder))
+                          && !viewOrder.returnHandoff.recovery
+                          && !viewOrder.returnHandoff.can_confirm_receipt && (
+                          <button
+                            type="button"
+                            onClick={() => handleRecordReturnHandoff(viewOrder)}
+                            disabled={!viewOrder.returnHandoff.can_release}
+                            aria-label={getReturnDeliveryMethod(viewOrder) === 'walk_in'
+                              ? 'Release to customer'
+                              : 'Confirm courier handoff'}
+                            className="rounded-md bg-purple-600 px-3 py-2 font-semibold text-white hover:bg-purple-700 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:text-gray-600"
+                          >
+                            {getReturnDeliveryMethod(viewOrder) === 'walk_in'
+                              ? 'Release to customer'
+                              : 'Confirm courier handoff'}
+                          </button>
+                        )}
                       </div>
 
                       {viewOrder.returnDeliveryMethod === 'customer_pickup' && (
