@@ -201,6 +201,37 @@ describe('JobOrdersRepair intake logistics', () => {
     expect(screen.queryByRole('button', { name: 'Ship this repair order' })).not.toBeInTheDocument();
   });
 
+  it('releases shop-rider returns for Dispatcher delivery without a customer handoff action', async () => {
+    mocks.repair = {
+      ...repair('shop_pickup'),
+      status: 'completed',
+      return_delivery_method: 'shop_delivery',
+      intake_handoff: null,
+      return_handoff: {
+        visible: true,
+        method: 'shop_delivery',
+        can_release: false,
+        can_confirm_receipt: false,
+        action_label: 'Confirm delivered handoff',
+        blocked_reason: 'Waiting for the shop return delivery to be dispatched.',
+        external_tracking: null,
+        events: [],
+      },
+    };
+
+    render(<JobOrdersRepair />);
+    fireEvent.click(await screen.findByRole('button', { name: /^All Services \(1\)$/ }));
+    await screen.findByText('Rina Santos');
+
+    expect(screen.getByRole('button', { name: 'Release for Dispatch' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Confirm delivered handoff' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTitle('View details'));
+    await screen.findByRole('heading', { name: 'Repair Service Details' });
+    expect(screen.getByText('Waiting for the shop return delivery to be dispatched.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Confirm delivered handoff' })).not.toBeInTheDocument();
+  });
+
   it('shows customer courier tracking read-only and records the server-approved handoff', async () => {
     mocks.repair = {
       ...repair('customer_delivery'),

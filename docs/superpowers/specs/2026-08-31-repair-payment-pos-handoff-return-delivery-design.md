@@ -1,6 +1,6 @@
 # Repair Payment, POS, Handoff, and Return-Delivery Workflow Dead Ends
 
-Date: 2026-08-31  
+Date: 2026-08-31
 Status: Approved design
 
 ## Goal
@@ -16,13 +16,25 @@ This change covers:
 
 - bring-to-shop intake with customer self-pickup;
 - derived payment status shown to Repairers;
-- removal of the Repairer customer-receive activation action;
+- separation of the Repairer release/handover action from Dispatcher delivery;
 - unpaid third-party return delivery;
 - POS repair-order collection eligibility and amount display; and
-- stale Shop-owned rider coverage after address or return-method changes.
+- stale shop-rider coverage after address or return-method changes.
 
 Unrelated repair lifecycle, payment provider, logistics, and POS flows remain
 unchanged.
+
+Terminology: `shop_delivery` means the selected shop provides delivery with its
+own rider or delivery arrangement. SoleSpace does not provide that logistics
+service. `customer_pickup` means the customer arranges and pays for a
+third-party courier.
+
+Actor scope: the changed Repairer/Dispatcher authority applies to company
+registration accounts that operate through employee Repairer and Dispatcher
+users. Existing individual Shop Owner repair operations remain available,
+including the Shop Owner's existing return-handoff action. The Shop Owner-side
+projection for `both` business accounts is also not converted into the company
+Repairer flow.
 
 ## Findings from the current implementation
 
@@ -33,9 +45,11 @@ The existing dead ends have these causes:
    or amount from the settlement service, so accepted repairs and ready repairs
    can be omitted or charged incorrectly.
 2. `RepairWorkflowController::activatePickup` accepts both Shop Owner and
-   assigned Repairer callers. The Repairer UI calls the same mutation and can
-   write `pickup_enabled`, which makes a customer-side receive action available
-   to the wrong role.
+   assigned Repairer callers without distinguishing a pre-dispatch release from
+   a post-delivery customer handover. In company accounts, the Repairer UI can
+   write `pickup_enabled` for a shop-rider delivery that should first go
+   through the Dispatcher. Individual Shop Owner routing remains a compatibility
+   path and is not removed.
 3. Customer external tracking and pickup confirmation do not consistently
    re-check the authoritative outstanding balance at the mutation boundary.
 4. Customer repair presentation duplicates paid/total inference instead of
@@ -157,32 +171,49 @@ This is presentation only. It does not add or persist `waiting_for_payment`.
 When the balance reaches zero, the indicator disappears on the next response and
 the existing handoff/dispatch state is shown.
 
-### 5. Handoff authority
+### 5. Repairer release and Dispatcher handoff authority
 
-Remove the Repairer route, authorization branch, UI action, and direct mutation
-path for `activatePickup`. A Repairer must receive a denied/not-found response
-even when manually calling the old endpoint shape.
+The return flow has two different shop-side actions: releasing the repaired
+item into the correct next step, and recording that the customer or courier
+actually received it. They must not share an ambiguous authorization rule.
 
-Keep the existing Shop Owner handoff mutation for non-dispatcher return methods
-(`walk_in` and `customer_pickup`), because those flows have no Shop-owned
-shipment leg requiring dispatcher review.
+The authority matrix is:
 
-The authority matrix is intentionally:
+| Return method | Release/handover authority | Next step |
+| --- | --- | --- |
+| Walk-in/direct shop release | Assigned Repairer records the actual customer handover | Customer confirms receipt |
+| Customer-arranged courier | Assigned Repairer records the actual courier handover | Customer confirms receipt |
+| Shop rider delivery | Assigned Repairer releases the ready repair for dispatch; Dispatcher controls delivery | Dispatcher approves delivery proof, then customer confirms receipt |
 
-| Return method | Handoff authority |
-| --- | --- |
-| Customer pickup at shop | Shop Owner / authorized shop-side actor |
-| Walk-in/direct shop release | Shop Owner / authorized shop-side actor |
-| Shop rider delivery | Dispatcher through proof approval |
-| Third-party courier | Customer/courier workflow after payment |
+For company accounts, the Shop Owner is not the operational actor for the
+repair return. The company Repairer/Dispatcher route is changed while the
+existing individual Shop Owner repair-management and return-handoff operations
+remain unchanged. The Shop Owner-side projection for `both` accounts remains
+read-only as before.
 
-For `shop_delivery`, the existing dispatcher proof-approval flow remains the
-authoritative logistics boundary. Once a repair-return delivery proof is
-approved, the dispatcher-controlled transaction invokes the existing handoff
-state mutation through a shared domain operation after checking the canonical
-full-payment summary. It sets the existing `pickup_enabled`/lock fields,
-preserves the current notification and audit conventions, and does not create a
-new status. The Repairer cannot perform this transition before or after approval.
+For a company account using `shop_delivery`, `markReadyForPickup` is the
+Repairer's pre-dispatch release. It keeps the canonical `ready_for_pickup`
+status and must not set `pickup_enabled`. Once the full payment and exact
+return plan are valid, the existing return-shipment service places the
+`repair_return` leg in the Dispatcher queue. The Dispatcher then schedules,
+assigns, and dispatches the shop's own rider through the existing logistics
+services. Individual Shop Owner accounts keep their existing handoff route.
+
+The Dispatcher proof-approval transaction remains the post-delivery authority.
+After an approved `repair_return` delivery proof, it invokes the shared handoff
+mutation after checking the canonical full-payment summary. That mutation sets
+the existing `pickup_enabled`/lock fields, preserves current notification and
+audit conventions, and does not create a new repair status. A company Repairer cannot
+use the customer-handover action for a `shop_delivery` repair before or after
+Dispatcher delivery; the Repairer's release is the separate `markReadyForPickup`
+step.
+
+For company `walk_in` and `customer_pickup` (customer-arranged courier), the
+assigned Repairer may record the actual handover only after the repair is ready
+and fully paid. This sets the existing customer-receive readiness fields;
+payment alone never does so. The customer then confirms receipt. These methods
+do not create a shop-rider shipment or enter the Dispatcher delivery queue.
+Individual Shop Owner accounts retain their current direct handoff behavior.
 
 The following invariants remain enforced server-side:
 
@@ -190,13 +221,13 @@ The following invariants remain enforced server-side:
 - payment does not imply physical receipt;
 - ready does not imply fully paid;
 - fully paid does not imply handed off;
-- dispatcher handoff does not imply repair completion; and
+- Dispatcher delivery approval does not imply repair completion; and
 - tracking submission does not imply payment confirmation.
 
 All state-changing operations use the existing transaction/row-lock patterns.
 
 Required outstanding balance greater than zero means no physical release, no
-customer pickup confirmation, no courier handoff, and no Shop-rider dispatch,
+customer pickup confirmation, no courier handoff, and no shop-rider dispatch,
 except where an existing canonical no-charge, warranty, or recovery rule
 explicitly permits the operation.
 
@@ -237,7 +268,7 @@ frontend may represent this as a key such as
 longer match the current method/address/revision key, so a delayed response for
 an earlier selection cannot overwrite the current state.
 
-Shop-owned coverage and fee requests run only for `shop_delivery`. Customer
+Shop-rider coverage and fee requests run only for `shop_delivery`. Customer
 pickup/walk-in methods do not display Shop-rider validation errors. The backend
 continues to revalidate coverage, address snapshots, method, and accepted fee
 when the plan is saved or a shipment/payment is created.
@@ -286,10 +317,12 @@ parallel test harness.
 - duplicate checkout/retry remains idempotent;
 - customer third-party tracking and handoff mutations reject unpaid repairs and
   unlock after full settlement;
-- Repairer cannot invoke `activatePickup`, including direct endpoint calls;
-- Shop Owner remains valid for non-dispatcher handoff;
+- the assigned company Repairer can record walk-in/customer-courier handover;
+- individual Shop Owner accounts retain their existing repair-return handoff
+  route, while company Shop Owner access does not replace the company Repairer
+  flow;
 - dispatcher proof approval activates the existing customer receive state for
-  Shop-owned repair returns, while unpaid or unapproved returns remain blocked;
+  shop-rider repair returns, while unpaid or unapproved returns remain blocked;
 - existing dispatcher, shipment, refund, warranty, intake, and private-storage
   behavior remains green.
 

@@ -279,6 +279,7 @@ class RepairWorkflowController extends Controller
             };
 
             $isShopOwnerContext = $this->isShopOwnerRouteContext($request);
+            $scope = trim((string) $request->query('scope', ''));
 
             if ($isShopOwnerContext) {
                 $shopOwner = Auth::guard('shop_owner')->user();
@@ -308,7 +309,7 @@ class RepairWorkflowController extends Controller
                     ->get();
 
                 $repairs->transform(function (RepairRequest $repair): RepairRequest {
-                    $repair->setAttribute('total_paid_amount', $this->resolveJobOrderTotalPaidAmount($repair));
+                    $collectionSummary = $this->attachRepairCollectionSummary($repair);
                     $this->normalizeRepairTaxModeForPayload($repair);
                     $repair->setAttribute('intake_handoff', $this->repairDeliveryService->intakeHandoff(
                         $repair,
@@ -316,11 +317,19 @@ class RepairWorkflowController extends Controller
                     ));
                     $repair->setAttribute('return_handoff', $this->repairDeliveryService->returnHandoff(
                         $repair,
-                        $this->isRepairFullyPaidForRelease($repair),
+                        (bool) $collectionSummary['fully_paid'],
                     ));
 
                     return $repair;
                 });
+
+                if ($scope === 'pos_checkout') {
+                    $repairs = $repairs
+                        ->filter(fn (RepairRequest $repair): bool => $this->isOrdinaryPosCollection(
+                            (array) $repair->getAttribute('collection_summary'),
+                        ))
+                        ->values();
+                }
                 
                 return response()->json([
                     'success' => true,
@@ -337,7 +346,6 @@ class RepairWorkflowController extends Controller
                 ], 401);
             }
 
-            $scope = trim((string) $request->query('scope', ''));
             if ($scope === 'pos_checkout') {
                 $shopOwnerId = (int) ($user->shop_owner_id ?? 0);
 
@@ -366,7 +374,7 @@ class RepairWorkflowController extends Controller
                     ->get();
 
                 $repairs->transform(function (RepairRequest $repair): RepairRequest {
-                    $repair->setAttribute('total_paid_amount', $this->resolveJobOrderTotalPaidAmount($repair));
+                    $collectionSummary = $this->attachRepairCollectionSummary($repair);
                     $this->normalizeRepairTaxModeForPayload($repair);
                     $repair->setAttribute('intake_handoff', $this->repairDeliveryService->intakeHandoff(
                         $repair,
@@ -374,11 +382,17 @@ class RepairWorkflowController extends Controller
                     ));
                     $repair->setAttribute('return_handoff', $this->repairDeliveryService->returnHandoff(
                         $repair,
-                        $this->isRepairFullyPaidForRelease($repair),
+                        (bool) $collectionSummary['fully_paid'],
                     ));
 
                     return $repair;
                 });
+
+                $repairs = $repairs
+                    ->filter(fn (RepairRequest $repair): bool => $this->isOrdinaryPosCollection(
+                        (array) $repair->getAttribute('collection_summary'),
+                    ))
+                    ->values();
 
                 return response()->json([
                     'success' => true,
@@ -404,7 +418,7 @@ class RepairWorkflowController extends Controller
                 ->get();
 
             $repairs->transform(function (RepairRequest $repair): RepairRequest {
-                $repair->setAttribute('total_paid_amount', $this->resolveJobOrderTotalPaidAmount($repair));
+                $collectionSummary = $this->attachRepairCollectionSummary($repair);
                 $this->normalizeRepairTaxModeForPayload($repair);
                 $repair->setAttribute('intake_handoff', $this->repairDeliveryService->intakeHandoff(
                     $repair,
@@ -412,7 +426,7 @@ class RepairWorkflowController extends Controller
                 ));
                 $repair->setAttribute('return_handoff', $this->repairDeliveryService->returnHandoff(
                     $repair,
-                    $this->isRepairFullyPaidForRelease($repair),
+                    (bool) $collectionSummary['fully_paid'],
                 ));
 
                 return $repair;
@@ -451,29 +465,26 @@ class RepairWorkflowController extends Controller
         }
     }
 
-    private function resolveJobOrderTotalPaidAmount(RepairRequest $repair): float
+    private function attachRepairCollectionSummary(RepairRequest $repair): array
     {
-        $grandTotal = round((float) ($repair->final_total ?? $repair->total ?? 0), 2);
-        $storedPaidAmount = round((float) ($repair->total_paid_amount ?? 0), 2);
-        $posLedgerPaidAmount = round((float) ($repair->pos_paid_amount ?? 0), 2);
-        $resolved = max(0.0, $storedPaidAmount, $posLedgerPaidAmount);
+        $summary = $this->paymentSettlementService->repairCollectionSummary($repair);
+        $repair->setAttribute('collection_summary', $summary);
+        $repair->setAttribute('collectible', (bool) $summary['collectible']);
+        $repair->setAttribute('collectible_amount', (float) $summary['collectible_amount']);
+        $repair->setAttribute('outstanding_balance', (float) $summary['outstanding_balance']);
+        $repair->setAttribute('due_type', $summary['due_type']);
+        $repair->setAttribute('phase', $summary['phase']);
+        $repair->setAttribute('fully_paid', (bool) $summary['fully_paid']);
+        $repair->setAttribute('total_paid_amount', (float) $summary['total_paid_amount']);
 
-        $paymentStatus = strtolower(trim((string) ($repair->payment_status ?? 'pending')));
-        $policy = $this->paymentSettlementService->normalizeRepairPaymentPolicy((string) ($repair->payment_policy ?? 'deposit_50'));
+        return $summary;
+    }
 
-        if ($paymentStatus === 'completed') {
-            return round(max($resolved, $grandTotal), 2);
-        }
-
-        if ($paymentStatus === 'paid' || $paymentStatus === 'partially_paid') {
-            $phaseAmount = $policy === 'full_upfront'
-                ? $grandTotal
-                : round($grandTotal * 0.5, 2);
-
-            return round(max($resolved, $phaseAmount), 2);
-        }
-
-        return round($resolved, 2);
+    private function isOrdinaryPosCollection(array $summary): bool
+    {
+        return (bool) ($summary['collectible'] ?? false)
+            && (float) ($summary['collectible_amount'] ?? 0) > 0
+            && in_array((string) ($summary['due_type'] ?? ''), ['deposit', 'full', 'balance'], true);
     }
 
     private function buildRepairNotificationPayload(RepairRequest $repairRequest, array $overrides = []): array
@@ -526,30 +537,6 @@ class RepairWorkflowController extends Controller
             \Log::warning('Failed to send repair lifecycle notification', [
                 'repair_id' => $repairRequest->id,
                 'status' => $normalizedStatus,
-                'customer_id' => $customerId,
-                'error' => $exception->getMessage(),
-            ]);
-        }
-    }
-
-    private function notifyCustomerReceiveConfirmationActivated(RepairRequest $repairRequest): void
-    {
-        $customerId = (int) ($repairRequest->user_id ?? 0);
-        if ($customerId <= 0) {
-            return;
-        }
-
-        $payload = $this->buildRepairNotificationPayload($repairRequest, [
-            'status' => (string) ($repairRequest->status ?? ''),
-            'pickup_enabled' => true,
-            'return_delivery_method' => (string) ($repairRequest->return_delivery_method ?? ''),
-        ]);
-
-        try {
-            $this->notificationService->notifyRepairReceiveConfirmationActivated($customerId, $payload);
-        } catch (\Throwable $exception) {
-            \Log::warning('Failed to send receive-confirmation activation notification', [
-                'repair_id' => $repairRequest->id,
                 'customer_id' => $customerId,
                 'error' => $exception->getMessage(),
             ]);
@@ -688,7 +675,8 @@ class RepairWorkflowController extends Controller
                 // Determine next status based on delivery method
                 // Walk-in: Customer needs to confirm/bring item → 'pending'
                 // Pickup: Awaiting pickup confirmation → 'repairer_accepted'
-                $nextStatus = $repairRequest->delivery_method === 'walk_in' 
+                $intakeDeliveryMethod = $this->resolveRepairIntakeMethod($repairRequest);
+                $nextStatus = $intakeDeliveryMethod === 'walk_in'
                     ? 'pending' 
                     : 'repairer_accepted';
                 
@@ -700,12 +688,12 @@ class RepairWorkflowController extends Controller
                 
                 // Send automatic system message about the repair
                 $repairType = $repairRequest->repair_type ?? 'Repair';
-                $deliveryMethod = $repairRequest->delivery_method === 'walk_in' ? 'Walk-in' : 'Pickup';
+                $deliveryMethod = $intakeDeliveryMethod === 'walk_in' ? 'Walk-in' : 'Pickup';
                 $systemMessage = "🔧 **New Repair Order Accepted**\n\n";
                 $systemMessage .= "**Type:** {$repairType}\n";
                 $systemMessage .= "**Delivery:** {$deliveryMethod}\n";
                 $systemMessage .= "**Status:** " . ($nextStatus === 'pending' ? 'Waiting for item drop-off' : 'Accepted') . "\n\n";
-                $systemMessage .= $repairRequest->delivery_method === 'walk_in' 
+                $systemMessage .= $intakeDeliveryMethod === 'walk_in'
                     ? "Please bring your item to our shop at your convenience." 
                     : "We'll pick up your item as scheduled.";
                 
@@ -737,9 +725,7 @@ class RepairWorkflowController extends Controller
                     }
                 }
 
-                $message = $repairRequest->delivery_method === 'walk_in' 
-                    ? 'Repair accepted. Waiting for customer to bring the item in.'
-                    : 'Repair accepted. Chat conversation updated with customer.';
+                $message = $this->acceptedRepairMessage($repairRequest->fresh());
                 
                 return response()->json([
                     'success' => true,
@@ -815,7 +801,8 @@ class RepairWorkflowController extends Controller
             // Determine next status based on delivery method
             // Walk-in: Customer needs to confirm/bring item → 'pending'
             // Pickup: Awaiting pickup confirmation → 'repairer_accepted'
-            $nextStatus = $repairRequest->delivery_method === 'walk_in' 
+            $intakeDeliveryMethod = $this->resolveRepairIntakeMethod($repairRequest);
+            $nextStatus = $intakeDeliveryMethod === 'walk_in'
                 ? 'pending' 
                 : 'repairer_accepted';
             
@@ -827,13 +814,13 @@ class RepairWorkflowController extends Controller
             
             // Send automatic system message about the repair
             $repairType = $repairRequest->repair_type ?? 'Repair';
-            $deliveryMethod = $repairRequest->delivery_method === 'walk_in' ? 'Walk-in' : 'Pickup';
+            $deliveryMethod = $intakeDeliveryMethod === 'walk_in' ? 'Walk-in' : 'Pickup';
             $repairerName = $user->name ?? 'Repairer';
             $systemMessage = "🔧 **Repair Order Accepted by {$repairerName}**\n\n";
             $systemMessage .= "**Type:** {$repairType}\n";
             $systemMessage .= "**Delivery:** {$deliveryMethod}\n";
             $systemMessage .= "**Status:** " . ($nextStatus === 'pending' ? 'Waiting for item drop-off' : 'Accepted') . "\n\n";
-            $systemMessage .= $repairRequest->delivery_method === 'walk_in' 
+            $systemMessage .= $intakeDeliveryMethod === 'walk_in'
                 ? "Please bring your item to our shop at your convenience." 
                 : "We'll pick up your item as scheduled.";
             
@@ -865,9 +852,7 @@ class RepairWorkflowController extends Controller
                 }
             }
 
-            $message = $repairRequest->delivery_method === 'walk_in' 
-                ? 'Repair accepted. Waiting for customer to bring the item in.'
-                : 'Repair accepted. Chat conversation updated with customer.';
+            $message = $this->acceptedRepairMessage($repairRequest->fresh());
             
             return response()->json([
                 'success' => true,
@@ -895,6 +880,33 @@ class RepairWorkflowController extends Controller
                 'error' => $exception->getMessage(),
             ]);
         }
+    }
+
+    private function resolveRepairIntakeMethod(RepairRequest $repair): string
+    {
+        $explicitMethod = strtolower(trim((string) ($repair->intake_delivery_method ?? '')));
+        if (in_array($explicitMethod, ['walk_in', 'customer_delivery', 'shop_pickup'], true)) {
+            return $explicitMethod;
+        }
+
+        return (string) ($repair->delivery_method ?? '') === 'walk_in'
+            ? 'walk_in'
+            : 'customer_delivery';
+    }
+
+    private function acceptedRepairMessage(RepairRequest $repair): string
+    {
+        if ($this->resolveRepairIntakeMethod($repair) !== 'walk_in') {
+            return 'Repair accepted. Chat conversation updated with customer.';
+        }
+
+        $summary = $this->paymentSettlementService->repairCollectionSummary($repair);
+        if ((string) ($summary['phase'] ?? '') === 'initial'
+            && (float) ($summary['collectible_amount'] ?? 0) > 0) {
+            return 'Repair request accepted. Bring your shoes to the shop and complete the required payment so the shop can receive the item.';
+        }
+
+        return 'Repair request accepted. Bring your shoes to the shop so the shop can receive the item.';
     }
     
     /**
@@ -2661,7 +2673,11 @@ class RepairWorkflowController extends Controller
     }
 
     /**
-     * Activate pickup confirmation for customer (Shop Owner or Repairer)
+     * Record the actual non-dispatcher return handover.
+     *
+     * Repairer mark-ready is the pre-dispatch release for shop-rider returns.
+     * This action is only for the later physical handover to a walk-in customer
+     * or a customer-arranged courier.
      */
     public function activatePickup(Request $request, $id)
     {
@@ -2670,98 +2686,54 @@ class RepairWorkflowController extends Controller
         $user = $shopOwnerContext ? null : Auth::guard('user')->user();
         abort_unless($shopOwner || $user, 401);
 
-        $repair = DB::transaction(function () use ($id, $shopOwner, $user): RepairRequest {
-            $repair = RepairRequest::query()->whereKey($id)->lockForUpdate()->firstOrFail();
+        $repair = RepairRequest::query()
+            ->with('shopOwner')
+            ->whereKey($id)
+            ->firstOrFail();
 
-            if ($shopOwner) {
-                abort_unless((int) $repair->shop_owner_id === (int) $shopOwner->id, 403);
-            } else {
-                abort_unless(
-                    (int) $repair->shop_owner_id === (int) $user->shop_owner_id
-                    && (int) $repair->assigned_repairer_id === (int) $user->id
-                    && $this->userCanConfirmRepairIntake($user),
-                    403,
-                );
-            }
+        if ($shopOwner) {
+            abort_unless((int) $repair->shop_owner_id === (int) $shopOwner->id, 403);
+        } else {
+            abort_unless(
+                (int) $repair->shop_owner_id === (int) $user->shop_owner_id
+                && (int) $repair->assigned_repairer_id === (int) $user->id
+                && $this->userCanConfirmRepairIntake($user),
+                403,
+            );
+        }
 
-            $method = match ((string) ($repair->return_delivery_method
-                ?: (($repair->delivery_method ?? null) === 'walk_in' ? 'walk_in' : 'customer_pickup'))) {
-                'pickup' => 'customer_pickup',
-                default => (string) ($repair->return_delivery_method
-                    ?: (($repair->delivery_method ?? null) === 'walk_in' ? 'walk_in' : 'customer_pickup')),
-            };
-            $allowedStatuses = $method === 'shop_delivery'
-                ? ['shipped']
-                : ['ready_for_pickup', 'ready-for-pickup'];
-            $sponsoredNonShopPlan = $method !== 'shop_delivery'
-                && ((bool) ($repair->is_warranty_job ?? false)
-                    || (string) ($repair->billing_mode ?? '') === 'warranty_no_charge');
+        $method = match ((string) ($repair->return_delivery_method
+            ?: (($repair->delivery_method ?? null) === 'walk_in' ? 'walk_in' : 'customer_pickup'))) {
+            'pickup' => 'customer_pickup',
+            default => (string) ($repair->return_delivery_method
+                ?: (($repair->delivery_method ?? null) === 'walk_in' ? 'walk_in' : 'customer_pickup')),
+        };
 
-            if (! in_array((string) $repair->status, $allowedStatuses, true)) {
-                throw ValidationException::withMessages([
-                    'status' => ['The repair is not ready for this return handoff.'],
-                ]);
-            }
-            if ((bool) $repair->pickup_enabled
-                || ($method !== 'shop_delivery'
-                    && $repair->return_logistics_locked_at !== null
-                    && ! $sponsoredNonShopPlan)) {
-                throw ValidationException::withMessages([
-                    'status' => ['Customer receipt confirmation is already active.'],
-                ]);
-            }
-            if (! $this->isRepairFullyPaidForRelease($repair)) {
-                throw ValidationException::withMessages([
-                    'payment' => [$this->getReleasePaymentRequiredMessage($repair)],
-                ]);
-            }
-            if ($method === 'shop_delivery'
-                && ! $this->repairDeliveryService->hasApprovedProof($repair, 'repair_return')) {
-                throw ValidationException::withMessages([
-                    'proof' => ['Dispatcher approval of the rider delivery proof is required before handoff.'],
-                ]);
-            }
+        // Company repair accounts use the assigned Repairer for direct customer
+        // or courier handover. Shop-rider delivery is released for Dispatcher
+        // processing instead of being activated through this route.
+        if ($user
+            && $repair->shopOwner?->isCompany()
+            && $method === 'shop_delivery') {
+            abort(404);
+        }
 
-            $updates = [
-                'pickup_enabled' => true,
-                'pickup_enabled_at' => now(),
-                'pickup_enabled_by' => $shopOwner?->id ?? $user->id,
-                'return_logistics_locked_at' => $repair->return_logistics_locked_at ?? now(),
-            ];
-            if ($method === 'customer_pickup') {
-                $updates['status'] = 'shipped';
-                $updates['shipped_at'] = $repair->shipped_at ?? now();
-            }
-            $repair->update($updates);
-
-            return $repair->fresh(['user', 'services', 'shopOwner']);
-        }, 3);
-
-        $this->notifyCustomerReceiveConfirmationActivated($repair);
+        $result = $this->repairDeliveryService->activateReturnHandoff(
+            $repair,
+            $shopOwner ?: $user,
+            $this->paymentSettlementService,
+            $method,
+        );
 
         return response()->json([
             'success' => true,
-            'message' => 'Return handoff recorded. Customer can now confirm receipt.',
-            'repair' => $repair,
+            'message' => $result['replayed']
+                ? 'Return handover was already recorded.'
+                : ($method === 'walk_in'
+                    ? 'Customer handover recorded. Customer can now confirm receipt.'
+                    : 'Courier handover recorded. Customer can now confirm receipt.'),
+            'repair' => $result['repair'],
         ]);
-    }
-
-    private function isRepairFullyPaidForRelease(RepairRequest $repairRequest): bool
-    {
-        $paymentStatus = strtolower((string) ($repairRequest->payment_status ?? ''));
-        $paymentPolicy = $repairRequest->payment_policy ?? 'deposit_50';
-
-        return $paymentStatus === 'completed'
-            || ($paymentPolicy !== 'deposit_50' && $paymentStatus === 'paid');
-    }
-
-    private function getReleasePaymentRequiredMessage(RepairRequest $repairRequest): string
-    {
-        return match ($repairRequest->payment_policy ?? 'deposit_50') {
-            'deposit_50' => 'Customer must pay the remaining 50% balance before receive confirmation can be activated.',
-            'full_upfront' => 'Customer payment must be completed before receive confirmation can be activated.',
-            default => 'Customer payment must be completed before receive confirmation can be activated.',
-        };
     }
 
     /**
@@ -3187,10 +3159,11 @@ class RepairWorkflowController extends Controller
                 }
             }
 
-            if (!$this->isRepairFullyPaidForRelease($repairRequest)) {
+            $collectionSummary = $this->paymentSettlementService->repairCollectionSummary($repairRequest);
+            if (! $collectionSummary['fully_paid']) {
                 return response()->json([
                     'success' => false,
-                    'message' => $this->getReleasePaymentRequiredMessage($repairRequest),
+                    'message' => 'Final payment must be settled before the repair can be shipped.',
                 ], 422);
             }
 

@@ -2,7 +2,7 @@
 
 > For agentic workers: REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox syntax for tracking.
 
-Goal: Make repair payment collection, physical intake, customer return handoff, POS eligibility, and Shop-rider coverage follow the existing authoritative services and role boundaries without adding a repair status.
+Goal: Make repair payment collection, physical intake, Repairer release, Dispatcher delivery, customer return handoff, POS eligibility, and shop-rider coverage follow the existing authoritative services and role boundaries without adding a repair status.
 
 Architecture: Add one associative-array summary method to PaymentSettlementService that exposes both the total unpaid balance and the exact amount collectible in the current phase. Existing repair, POS, and logistics controllers consume that summary for response shaping and server-side guards; existing checkout, shipment, and idempotency mechanisms remain authoritative. Frontend pages render server-provided values and invalidate coverage by the complete current method/address key.
 
@@ -16,11 +16,11 @@ Backend:
 
 - app/Services/PaymentSettlementService.php — authoritative repair payment summary.
 - app/Services/RepairDeliveryService.php — shared transactional customer return-handoff mutation and existing logistics/payment-plan rules.
-- app/Http/Controllers/Api/RepairWorkflowController.php — Repairer/shop-owner response mapping, intake/release guards, and removal of the Repairer activation branch.
+- app/Http/Controllers/Api/RepairWorkflowController.php — Repairer/shop-owner response mapping, company Repairer release/handover authorization, intake/release guards, and Dispatcher handoff integration.
 - app/Http/Controllers/Api/RepairRequestController.php — customer response mapping and remaining-payment/tracking/pickup guards.
-- app/Http/Controllers/Api/Logistics/ShipmentController.php — dispatcher proof-approval integration for Shop-owned repair returns.
-- routes/web.php — remove only the Repairer activate-pickup route.
-- routes/shop-owner-api.php — preserve the existing Shop Owner repair handoff route.
+- app/Http/Controllers/Api/Logistics/ShipmentController.php — dispatcher proof-approval integration for shop-rider repair returns.
+- routes/web.php — keep the Repairer route for non-dispatcher physical handover only; reject it for shop-rider delivery.
+- routes/shop-owner-api.php — preserve the individual Shop Owner repair handoff route.
 
 Frontend:
 
@@ -176,7 +176,7 @@ Files:
     git add app/Http/Controllers/Api/RepairWorkflowController.php tests/Feature/Repair/RepairLogisticsIntakeTest.php tests/Feature/RepairPosPaymentFlowTest.php tests/Feature/Repair/RepairLogisticsPaymentTest.php
     git commit -m "fix: make accepted repairs collectible in POS"
 
-## Task 5: Move return-handoff activation out of Repairer authority
+## Task 5: Separate Repairer release from Dispatcher delivery handoff
 
 Files:
 - Modify app/Services/RepairDeliveryService.php.
@@ -191,8 +191,11 @@ Files:
 - Update resources/js/Pages/ERP/repairer/__tests__/JobOrdersRepair.logistics.test.tsx.
 
 - [ ] Add failing tests asserting:
-  - assigned Repairer calls to the old activate-pickup path are denied and cannot mutate pickup_enabled;
-  - Shop Owner remains authorized for walk-in/customer-pickup release;
+  - the assigned Repairer can record actual walk-in/customer-courier handover after full payment;
+  - the assigned Repairer cannot use that customer-handover action for shop-rider delivery;
+  - individual Shop Owner can retain the existing repair handoff route;
+  - company Shop Owner access does not replace the company Repairer flow;
+  - Repairer mark-ready is the pre-dispatch shop-rider release and does not set pickup_enabled;
   - dispatcher approval of an approved repair_return proof activates the existing customer receive state for shop delivery only after full payment;
   - unapproved proof, unpaid balance, wrong tenant, and replay remain blocked/idempotent; and
   - warranty notification behavior remains intact.
@@ -201,22 +204,22 @@ Files:
 
     php artisan test tests/Feature/Repair/RepairReturnHandoffTest.php tests/Feature/Repairer/RepairerWorkflowTest.php tests/Feature/Repair/Warranty/RepairWarrantyClaimFlowTest.php
 
-    Expected: failure because the Repairer mutation is still available and dispatcher approval does not activate the repair handoff.
+    Expected: failure because the Repairer release/handoff boundary and Dispatcher approval path do not yet match the approved actor matrix.
 
-- [ ] Extract the common transactional pickup_enabled/timestamp/actor/lock updates, method/status/proof/full-payment validation, notification, and audit behavior into RepairDeliveryService. Accept actor type/id at the controller boundary; keep existing fields/statuses.
+- [ ] Extract the common transactional pickup_enabled/timestamp/actor/lock updates, method/status/proof/full-payment validation, notification, and audit behavior into RepairDeliveryService. Accept the assigned Repairer actor for walk-in/customer-courier handover and the authorized Dispatcher actor for approved shop-rider delivery; keep existing fields/statuses.
 
-- [ ] Keep Shop Owner calling this operation for walk_in and customer_pickup. Remove the assigned-user authorization branch from RepairWorkflowController::activatePickup rather than leaving a hidden bypass.
+- [ ] Keep the individual Shop Owner path compatible, while making the company Repairer path method-aware: allow assigned Repairer walk_in/customer_pickup actual handover, and reject company Repairer shop_delivery so it cannot mark customer receipt before Dispatcher delivery.
 
-- [ ] Delete only the Repairer activate-pickup route and all Repairer handlers/buttons/modal actions. Preserve read-only handoff/proof information, the Shop Owner route, and logistics routes.
+- [ ] Keep a clearly labeled Repairer handover action for walk_in/customer_pickup, remove any shop-rider handoff button, and keep read-only shop-rider shipment/proof information. Preserve Dispatcher logistics routes.
 
 - [ ] Within the existing dispatcher proof-approval transaction, after approving and marking a repair_return leg delivered, invoke the shared operation for the linked repair. Restrict it to source_type repair_request and purpose repair_return; leave retail, intake, return-to-shop, and unrelated proof flows unchanged.
 
-- [ ] Rerun focused tests. Expected: Repairer direct calls fail 403/404, Shop Owner non-dispatcher handoff passes, dispatcher shop delivery approval activates receive, and proof/notification/warranty tests stay green.
+- [ ] Rerun focused tests. Expected: company Repairer non-dispatcher handover passes, company Repairer shop-rider handoff calls fail without mutation, individual Shop Owner handoff remains valid, Dispatcher shop delivery approval activates receive, and proof/notification/warranty tests stay green.
 
 - [ ] Commit:
 
     git add app/Services/RepairDeliveryService.php app/Http/Controllers/Api/RepairWorkflowController.php app/Http/Controllers/Api/Logistics/ShipmentController.php routes/web.php routes/shop-owner-api.php tests/Feature/Repair/RepairReturnHandoffTest.php tests/Feature/Repairer/RepairerWorkflowTest.php tests/Feature/Repair/Warranty/RepairWarrantyClaimFlowTest.php resources/js/Pages/ERP/repairer/JobOrdersRepair.tsx resources/js/Pages/ERP/repairer/__tests__/JobOrdersRepair.logistics.test.tsx
-    git commit -m "fix: remove Repairer return handoff activation"
+    git commit -m "fix: route repair handoff through Repairer and Dispatcher"
 
 ## Task 6: Enforce unpaid third-party return gates
 
@@ -357,7 +360,7 @@ Files: only changed files if review discovers a real issue.
 
     Expected: applicable commands pass. Report exact unrelated baseline failures instead of masking them.
 
-- [ ] Scan changed areas for activate-pickup, computeDueAmountForOrder, resolveOutstandingDueType, old frontend balance inference, and coverage state that omits return method. Confirm only legitimate Shop Owner/staff routes remain.
+- [ ] Scan changed areas for activate-pickup, computeDueAmountForOrder, resolveOutstandingDueType, old frontend balance inference, and coverage state that omits return method. Confirm company Repairer physical handover and Dispatcher shop-rider delivery routes remain, and the individual Shop Owner repair handoff route is preserved.
 
 - [ ] Add a short non-sensitive docs/ai-learning-log.md entry only if this work reveals a durable rule not already documented; otherwise leave it unchanged.
 
@@ -368,3 +371,12 @@ Files: only changed files if review discovers a real issue.
 
     Final report must identify six root causes, changed files, eligibility/payment rules, tests, quality-gate results, and remaining edge cases. Do not claim completion without fresh evidence.
 
+## Completion record
+
+- Implementation completed in the isolated `fix/repair-payment-pos-handoff-return-delivery` worktree.
+- Focused Laravel repair/payment/handoff suite passed: 91 tests, 876 assertions. Existing fixture `file_get_contents` warnings remain.
+- Focused frontend repair/POS/logistics suite passed: 5 files, 61 tests. The cashier endpoint regression also passed independently: 2 tests.
+- `git diff --check`, PHP syntax checks for changed backend files, and `pnpm run build` passed. Generated `public/build` output was cleaned after the build.
+- The separate `RepairPosPaymentFlowTest` regression still has the two pre-existing Shop Owner guard failures (expected 409/200, received 302); no unrelated Shop Owner behavior was changed to mask them.
+- Full `composer test` was attempted but timed out after 300 seconds with unrelated route-catalog and logistics-actor-policy failures.
+- No code commit was created; the worktree contains the implementation changes for review.

@@ -776,8 +776,8 @@ class RepairWarrantyService
         if (! ($quote['available'] ?? false)) {
             throw ValidationException::withMessages([
                 $field => [($quote['reason'] ?? null) === 'outside_coverage'
-                    ? 'The selected address is outside the shop-owned delivery coverage. Choose walk-in or third-party delivery.'
-                    : 'Shop-owned delivery is currently unavailable for the selected address.'],
+                    ? 'The selected address is outside the shop rider coverage. Choose walk-in or customer-arranged delivery.'
+                    : 'Shop rider delivery is currently unavailable for the selected address.'],
             ]);
         }
 

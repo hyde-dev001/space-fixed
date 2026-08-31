@@ -4,8 +4,11 @@ namespace App\Services\Logistics;
 
 use App\Models\Logistics\HandoffProof;
 use App\Models\Logistics\ShipmentLeg;
+use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use App\Models\User;
+use App\Services\PaymentSettlementService;
+use App\Services\RepairDeliveryService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -14,6 +17,8 @@ class ProofReviewService
     public function __construct(
         private ShipmentLegService $legs,
         private DeliveryEventService $events,
+        private RepairDeliveryService $repairDeliveries,
+        private PaymentSettlementService $settlementService,
     ) {}
 
     /**
@@ -78,6 +83,20 @@ class ProofReviewService
                     'created_by_type' => $actor::class,
                     'created_by_id' => $actor->id,
                 ]);
+            }
+
+            if ($delivered->shipment->source_type === 'repair_request'
+                && $delivered->shipment->purpose === 'repair_return') {
+                $repair = RepairRequest::query()->findOrFail($delivered->shipment->source_id);
+
+                if ($repair->shopOwner?->isCompany()) {
+                    $this->repairDeliveries->activateReturnHandoff(
+                        $repair,
+                        $actor,
+                        $this->settlementService,
+                        'shop_delivery',
+                    );
+                }
             }
 
             return [

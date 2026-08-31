@@ -200,7 +200,7 @@ export default function ShipmentTrackingPanel({
                 {isReturn ? 'Open return tracking' : 'Open courier page'}
               </a>
             ) : (
-              <p className="mt-1 text-sm font-semibold text-gray-900">SoleSpace Shop Logistics</p>
+              <p className="mt-1 text-sm font-semibold text-gray-900">Shop rider delivery</p>
             )}
           </div>
         </div>

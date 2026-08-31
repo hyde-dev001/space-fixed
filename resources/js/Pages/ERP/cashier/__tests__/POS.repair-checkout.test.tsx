@@ -70,11 +70,11 @@ describe("Cashier POS repair checkout", () => {
     swalFireMock.mockResolvedValue({ isConfirmed: true });
   });
 
-  it("loads repair orders through the shop-owner endpoint", async () => {
+  it("loads repair orders through the company repairer endpoint", async () => {
     render(<CashierPOS />);
 
     await waitFor(() => {
-      expect(axiosGetMock).toHaveBeenCalledWith("/api/shop-owner/repairs", {
+      expect(axiosGetMock).toHaveBeenCalledWith("/api/repairer/repairs", {
         params: { scope: "pos_checkout" },
       });
     });

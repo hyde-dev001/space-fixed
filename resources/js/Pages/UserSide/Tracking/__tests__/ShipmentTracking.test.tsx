@@ -56,8 +56,8 @@ describe('ShipmentTracking', () => {
 
     expect(screen.getByText('SHP-1')).toBeInTheDocument();
     expect(screen.getByText('Delivery Method')).toBeInTheDocument();
-    expect(screen.getByText('SoleSpace Shop Logistics')).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Open SoleSpace tracking' })).not.toBeInTheDocument();
+    expect(screen.getByText('Shop rider delivery')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Open shop tracking' })).not.toBeInTheDocument();
   });
 
   it('shows repair source details and returns to repairs', () => {

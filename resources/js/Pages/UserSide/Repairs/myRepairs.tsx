@@ -188,6 +188,24 @@ type RepairOrder = {
   assigned_repairer_id?: number | null;
   repairer_name?: string | null;
   payment_policy?: 'deposit_50' | 'full_upfront';
+  collection_summary?: {
+    collectible?: boolean;
+    due_type?: string | null;
+    phase?: string | null;
+    collectible_amount?: number | null;
+    outstanding_balance?: number | null;
+    service_amount?: number | null;
+    delivery_amount?: number | null;
+    total_paid_amount?: number | null;
+    grand_total?: number | null;
+    fully_paid?: boolean;
+  } | null;
+  collectible?: boolean;
+  collectible_amount?: number | null;
+  outstanding_balance?: number | null;
+  due_type?: string | null;
+  phase?: string | null;
+  fully_paid?: boolean;
   is_warranty_job?: boolean;
   parent_repair_request_id?: number | null;
   billing_mode?: string | null;
@@ -332,35 +350,34 @@ const getOrderGrandTotal = (order: RepairOrder) => {
 };
 
 const getOrderDisplayedPaidAmount = (order: RepairOrder) => {
-  const displayPaid = Number(order.display_total_paid_amount ?? 0);
-  const safeDisplayPaid = Number.isFinite(displayPaid) && displayPaid > 0 ? displayPaid : 0;
-  if (safeDisplayPaid > 0) {
-    return safeDisplayPaid;
+  const paid = Number(
+    order.collection_summary?.total_paid_amount
+      ?? order.display_total_paid_amount
+      ?? order.total_paid_amount
+      ?? 0,
+  );
+
+  return Number.isFinite(paid) && paid > 0 ? paid : 0;
+};
+
+const getOrderOutstandingBalance = (order: RepairOrder): number => {
+  const outstanding = Number(
+    order.collection_summary?.outstanding_balance
+      ?? order.outstanding_balance
+      ?? 0,
+  );
+
+  return Number.isFinite(outstanding) && outstanding > 0 ? outstanding : 0;
+};
+
+const isInitialPaymentDue = (order: RepairOrder): boolean => {
+  if (order.collection_summary !== undefined) {
+    return order.collection_summary?.phase === 'initial'
+      && Boolean(order.collection_summary?.collectible)
+      && Number(order.collection_summary?.collectible_amount ?? 0) > 0;
   }
 
-  const recordedPaid = Number(order.total_paid_amount ?? 0);
-  const safeRecordedPaid = Number.isFinite(recordedPaid) && recordedPaid > 0 ? recordedPaid : 0;
-  const paymentStatus = String(order.payment_status ?? '').toLowerCase();
-  const paymentPolicy = order.payment_policy ?? 'deposit_50';
-  const grandTotal = getOrderGrandTotal(order);
-
-  if (safeRecordedPaid > 0) {
-    return safeRecordedPaid;
-  }
-
-  if (paymentStatus === 'completed') {
-    return grandTotal;
-  }
-
-  if (paymentStatus === 'paid') {
-    if (paymentPolicy === 'full_upfront') {
-      return grandTotal;
-    }
-
-    return Math.round(grandTotal * 0.5 * 100) / 100;
-  }
-
-  return 0;
+  return !['paid', 'completed'].includes(String(order.payment_status ?? '').toLowerCase());
 };
 
 const isWarrantyNoChargeOrder = (order: RepairOrder): boolean => {
@@ -416,22 +433,20 @@ const getReturnMethod = (order: RepairOrder): 'walk_in' | 'customer_pickup' | 's
     return order.return_delivery_method;
   }
 
-  return order.delivery_method === 'walk_in' ? 'walk_in' : 'shop_delivery';
+  // The legacy delivery_method describes intake only. A missing return method
+  // must never silently opt a repair into shop rider delivery.
+  return order.delivery_method === 'walk_in' ? 'walk_in' : 'customer_pickup';
 };
 
 const isOnlineIntakeFlow = (order: RepairOrder): boolean => {
   return getIntakeMethod(order) !== 'walk_in';
 };
 
-const isOnlineReturnFlow = (order: RepairOrder): boolean => {
-  return getReturnMethod(order) === 'shop_delivery';
-};
-
 const getIntakeMethodLabel = (order: RepairOrder): string => {
   const method = getIntakeMethod(order);
   if (method === 'walk_in') return 'Walk-in Delivery to Shop';
   if (method === 'shop_pickup') return 'Shop rider pickup';
-  return 'Customer Arranges Delivery to Shop';
+  return 'Customer-arranged delivery';
 };
 
 const getReturnMethodLabel = (order: RepairOrder): string => {
@@ -448,6 +463,35 @@ const getReturnMethodLabel = (order: RepairOrder): string => {
 
 type IntakeDeliveryMethod = 'walk_in' | 'customer_delivery' | 'shop_pickup';
 type ReturnDeliveryMethod = 'walk_in' | 'customer_pickup' | 'shop_delivery';
+
+type CoverageAddress = {
+  id?: number | null;
+  address_id?: number | null;
+  version?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  address_line?: string | null;
+  barangay?: string | null;
+  city?: string | null;
+  province?: string | null;
+  region?: string | null;
+  postal_code?: string | null;
+};
+
+const getCoverageAddressKey = (
+  address?: CoverageAddress | null,
+  fallbackId?: number | null,
+): string => [
+  Number(fallbackId ?? address?.id ?? address?.address_id ?? 0),
+  address?.version ?? '',
+  address?.latitude ?? '',
+  address?.longitude ?? '',
+  address?.address_line ?? '',
+  address?.barangay ?? '',
+  address?.city ?? '',
+  address?.province ?? address?.region ?? '',
+  address?.postal_code ?? '',
+].join('|');
 
 const formatRepairAddress = (address?: RepairAddressSnapshot | null): string => {
   return [
@@ -889,24 +933,45 @@ const ReturnDeliveryPlanCard: React.FC<{
   order: RepairOrder;
   onRefresh: () => Promise<unknown>;
 }> = ({ order, onRefresh }) => {
-  const [method, setMethod] = useState<ReturnDeliveryMethod>(() => getReturnMethod(order));
-  const [sameAsIntake, setSameAsIntake] = useState(order.same_as_intake_address ?? true);
-  const [selectedAddress, setSelectedAddress] = useState<CustomerAddress | null>(null);
-  const [coverage, setCoverage] = useState<DeliveryQuote | null>(order.return_logistics_quote ?? null);
-  const [coverageAddressId, setCoverageAddressId] = useState<number | null>(
-    order.return_logistics_quote && order.return_address?.address_id
+  const initialMethod = getReturnMethod(order);
+  const initialSameAsIntake = order.same_as_intake_address ?? true;
+  const initialAddress = initialSameAsIntake ? order.intake_address : order.return_address;
+  const initialAddressId = initialSameAsIntake
+    ? order.intake_address?.address_id
+      ? Number(order.intake_address.address_id)
+      : null
+    : order.return_address?.address_id
       ? Number(order.return_address.address_id)
-      : null,
+      : null;
+  const initialQuote = order.return_logistics_quote;
+  const initialCoverageKey = initialMethod === 'shop_delivery'
+    && initialQuote
+    && initialAddressId
+    && (!initialQuote.method || initialQuote.method === 'shop_delivery')
+    && (!initialQuote.address_version
+      || !initialAddress?.version
+      || initialQuote.address_version === initialAddress.version)
+    ? ['shop_delivery', getCoverageAddressKey(initialAddress, initialAddressId)].join(':')
+    : null;
+  const [method, setMethod] = useState<ReturnDeliveryMethod>(initialMethod);
+  const [sameAsIntake, setSameAsIntake] = useState(initialSameAsIntake);
+  const [selectedAddress, setSelectedAddress] = useState<CustomerAddress | null>(null);
+  const [coverage, setCoverage] = useState<DeliveryQuote | null>(
+    initialCoverageKey ? initialQuote : null,
   );
+  const [coverageKey, setCoverageKey] = useState<string | null>(initialCoverageKey);
   const [coverageLoading, setCoverageLoading] = useState(false);
   const [coverageError, setCoverageError] = useState<string | null>(null);
-  const [acceptedFee, setAcceptedFee] = useState(Number(order.return_delivery_fee ?? 0));
+  const [acceptedFee, setAcceptedFee] = useState(
+    initialMethod === 'shop_delivery' ? Number(order.return_delivery_fee ?? 0) : 0,
+  );
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [planSavedLocally, setPlanSavedLocally] = useState(false);
   const [confirmedLocally, setConfirmedLocally] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const coverageRequestKeyRef = useRef<string | null>(null);
 
   const locked = Boolean(order.return_logistics_locked_at);
   const returnAddressId = order.return_address?.address_id
@@ -918,35 +983,55 @@ const ReturnDeliveryPlanCard: React.FC<{
   const effectiveAddressId = sameAsIntake
     ? intakeAddressId
     : selectedAddress?.id ?? returnAddressId;
+  const effectiveAddress = sameAsIntake
+    ? order.intake_address
+    : selectedAddress ?? order.return_address;
   const shopId = order.shop_owner_id ?? order.shop_id;
+  const currentCoverageKey = method === 'shop_delivery' && shopId && effectiveAddressId
+    ? ['shop_delivery', getCoverageAddressKey(effectiveAddress, effectiveAddressId)].join(':')
+    : null;
   const serverConfirmationIsCurrent = Boolean(
     order.return_address_confirmed_at
     && order.return_address_confirmed_version
     && order.return_address_confirmed_version === order.return_address?.version,
   );
   const isConfirmed = confirmedLocally || (!dirty && !planSavedLocally && serverConfirmationIsCurrent);
-  const recordedPaidAmount = Number(order.total_paid_amount ?? 0);
-  const servicePaidAmount = recordedPaidAmount > 0
-    ? Math.max(0, recordedPaidAmount - Number(order.intake_delivery_fee ?? 0))
-    : getOrderDisplayedPaidAmount(order);
-  const displayedFee = dirty
-    ? method === 'shop_delivery'
-      ? Number(coverage?.fee ?? 0)
-      : 0
-    : acceptedFee;
-  const remainingServiceAmount = order.redelivery_payment_due
-    ? 0
-    : Math.max(0, getOrderGrandTotal(order) - servicePaidAmount);
-  const finalAmount = remainingServiceAmount + displayedFee;
+  const serverOutstandingBalance = getOrderOutstandingBalance(order);
+  const serverDeliveryAmount = Number(order.collection_summary?.delivery_amount ?? 0);
+  const serviceOutstandingBalance = Math.max(0, serverOutstandingBalance - serverDeliveryAmount);
+  const displayedFee = method === 'shop_delivery'
+    ? (dirty ? Number(coverage?.fee ?? 0) : acceptedFee)
+    : 0;
+  const finalAmount = order.redelivery_payment_due
+    ? displayedFee
+    : dirty
+      ? serviceOutstandingBalance + displayedFee
+      : serverOutstandingBalance;
 
   useEffect(() => {
-    if (!shopId || !effectiveAddressId || coverageAddressId === effectiveAddressId) {
+    coverageRequestKeyRef.current = currentCoverageKey;
+
+    if (!currentCoverageKey || !effectiveAddressId) {
+      setCoverage(null);
+      setCoverageKey(null);
+      setCoverageError(null);
+      setCoverageLoading(false);
+      setAcceptedFee(0);
+      return;
+    }
+
+    if (coverageKey === currentCoverageKey && coverage) {
+      setCoverageLoading(false);
       return;
     }
 
     let active = true;
+    const requestKey = currentCoverageKey;
     setCoverageLoading(true);
+    setCoverage(null);
+    setCoverageKey(null);
     setCoverageError(null);
+    setAcceptedFee(0);
 
     fetch(`/api/repair/shops/${shopId}/delivery-quote?address_id=${effectiveAddressId}`, {
       headers: { Accept: 'application/json' },
@@ -960,23 +1045,24 @@ const ReturnDeliveryPlanCard: React.FC<{
         return (payload?.data ?? payload) as DeliveryQuote;
       })
       .then((quote) => {
-        if (!active) return;
+        if (!active || coverageRequestKeyRef.current !== requestKey) return;
         setCoverage(quote);
-        setCoverageAddressId(effectiveAddressId);
+        setCoverageKey(requestKey);
       })
       .catch((reason: Error) => {
-        if (!active) return;
+        if (!active || coverageRequestKeyRef.current !== requestKey) return;
         setCoverage(null);
+        setCoverageKey(null);
         setCoverageError(reason.message || 'Unable to check shop rider coverage.');
       })
       .finally(() => {
-        if (active) setCoverageLoading(false);
+        if (active && coverageRequestKeyRef.current === requestKey) setCoverageLoading(false);
       });
 
     return () => {
       active = false;
     };
-  }, [coverageAddressId, effectiveAddressId, shopId]);
+  }, [currentCoverageKey, effectiveAddressId, shopId]);
 
   const markEdited = () => {
     setDirty(true);
@@ -986,22 +1072,35 @@ const ReturnDeliveryPlanCard: React.FC<{
     setSuccess(null);
   };
 
+  const invalidateCoverage = useCallback(() => {
+    coverageRequestKeyRef.current = null;
+    setCoverage(null);
+    setCoverageKey(null);
+    setCoverageLoading(false);
+    setCoverageError(null);
+    setAcceptedFee(0);
+  }, []);
+
   const handleAddressSelect = useCallback((address: CustomerAddress) => {
     setSelectedAddress(address);
-    setCoverage(null);
-    setCoverageAddressId(null);
+    invalidateCoverage();
     setDirty(true);
     setPlanSavedLocally(false);
     setConfirmedLocally(false);
     setError(null);
     setSuccess(null);
-  }, []);
+  }, [invalidateCoverage]);
 
   const handleSameAsIntakeChange = (checked: boolean) => {
     setSameAsIntake(checked);
     setSelectedAddress(null);
-    setCoverage(null);
-    setCoverageAddressId(null);
+    invalidateCoverage();
+    markEdited();
+  };
+
+  const handleAddressCleared = () => {
+    setSelectedAddress(null);
+    invalidateCoverage();
     markEdited();
   };
 
@@ -1031,14 +1130,29 @@ const ReturnDeliveryPlanCard: React.FC<{
           same_as_intake_address: sameAsIntake,
         });
         const updated = response.data ?? {};
+        const nextMethod: ReturnDeliveryMethod = [
+          'walk_in',
+          'customer_pickup',
+          'shop_delivery',
+        ].includes(updated.return_delivery_method)
+          ? updated.return_delivery_method
+          : method;
+        const nextAddress = updated.return_address ?? effectiveAddress;
+        const nextAddressId = Number(
+          nextAddress?.address_id ?? effectiveAddressId ?? 0,
+        ) || null;
+        const nextCoverageKey = nextMethod === 'shop_delivery' && nextAddressId
+          ? ['shop_delivery', getCoverageAddressKey(nextAddress, nextAddressId)].join(':')
+          : null;
 
-        if (typeof updated.return_delivery_fee === 'number') {
-          setAcceptedFee(updated.return_delivery_fee);
-        }
-        setCoverage(updated.return_logistics_quote ?? null);
-        setCoverageAddressId(effectiveAddressId);
-        if (updated.return_delivery_method) {
-          setMethod(updated.return_delivery_method);
+        setMethod(nextMethod);
+        if (nextMethod === 'shop_delivery') {
+          const nextQuote = updated.return_logistics_quote ?? null;
+          setCoverage(nextQuote);
+          setCoverageKey(nextQuote && nextCoverageKey ? nextCoverageKey : null);
+          setAcceptedFee(Number(updated.return_delivery_fee ?? 0));
+        } else {
+          invalidateCoverage();
         }
         setDirty(false);
         setPlanSavedLocally(true);
@@ -1093,6 +1207,7 @@ const ReturnDeliveryPlanCard: React.FC<{
             disabled={locked || saving}
             onChange={() => {
               setMethod('walk_in');
+              invalidateCoverage();
               markEdited();
             }}
           />
@@ -1110,6 +1225,7 @@ const ReturnDeliveryPlanCard: React.FC<{
             disabled={locked || saving}
             onChange={() => {
               setMethod('customer_pickup');
+              invalidateCoverage();
               markEdited();
             }}
           />
@@ -1118,22 +1234,23 @@ const ReturnDeliveryPlanCard: React.FC<{
             <span className="text-xs text-gray-500">Arrange and pay for your own third-party courier.</span>
           </span>
         </label>
-        {coverage?.available && (
+        {(coverage?.available || method === 'shop_delivery' || Boolean(effectiveAddressId)) && (
           <label className="flex items-start gap-3 text-sm text-gray-800">
             <input
               type="radio"
               name={`return-method-${order.id}`}
               value="shop_delivery"
               checked={method === 'shop_delivery'}
-              disabled={locked || saving}
+              disabled={locked || saving || !effectiveAddressId}
               onChange={() => {
                 setMethod('shop_delivery');
+                invalidateCoverage();
                 markEdited();
               }}
             />
             <span>
               <span className="block font-semibold">Shop rider delivery</span>
-              <span className="text-xs text-gray-500">The shop dispatches an available Logistics rider.</span>
+              <span className="text-xs text-gray-500">The shop handles this return with its own rider after coverage is confirmed.</span>
             </span>
           </label>
         )}
@@ -1157,7 +1274,7 @@ const ReturnDeliveryPlanCard: React.FC<{
         <div className="mt-4">
           <CustomerAddressManager
             onSelect={handleAddressSelect}
-            onSelectionCleared={() => setSelectedAddress(null)}
+            onSelectionCleared={handleAddressCleared}
             initialAddressId={returnAddressId}
             disabled={locked || saving}
             title="Saved return address"
@@ -1168,7 +1285,13 @@ const ReturnDeliveryPlanCard: React.FC<{
 
       <div className="mt-5 grid gap-3 rounded-xl border border-gray-200 bg-white p-4 text-sm sm:grid-cols-2">
         <div>
-          {coverageLoading ? (
+          {method !== 'shop_delivery' ? (
+            <p className="font-semibold text-gray-600">
+              {method === 'customer_pickup'
+                ? 'Third-party courier selected. Shop rider coverage and fee do not apply.'
+                : 'Customer pickup selected. Shop rider coverage and fee do not apply.'}
+            </p>
+          ) : coverageLoading ? (
             <p className="font-semibold text-gray-600">Checking coverage…</p>
           ) : coverage?.available ? (
             <>
@@ -1182,11 +1305,15 @@ const ReturnDeliveryPlanCard: React.FC<{
               {coverage?.reason || 'Shop rider coverage is not available for this address.'}
             </p>
           )}
-          {coverageError && <p className="mt-1 text-sm text-red-700">{coverageError}</p>}
+          {method === 'shop_delivery' && coverageError && (
+            <p className="mt-1 text-sm text-red-700">{coverageError}</p>
+          )}
         </div>
         <div className="sm:text-right">
           <p className="font-semibold text-gray-800">
-            {dirty ? 'Estimated return fee' : 'Accepted return fee'}: {formatCurrency(displayedFee)}
+            {method === 'shop_delivery'
+              ? (dirty ? 'Estimated return fee' : 'Accepted return fee')
+              : 'Shop rider fee not applicable'}: {formatCurrency(displayedFee)}
           </p>
           <p className="mt-1 font-bold text-black">Final amount: {formatCurrency(finalAmount)}</p>
         </div>
@@ -1239,6 +1366,9 @@ const CustomerExternalTrackingCard: React.FC<{
       && (!isWarrantyNoChargeOrder(order) || order.received_at)
     : order.return_logistics_locked_at
       && (!isWarrantyNoChargeOrder(order) || order.pickup_enabled));
+  const unpaidThirdPartyReturn = !isIntake
+    && getReturnMethod(order) === 'customer_pickup'
+    && getOrderOutstandingBalance(order) > 0;
   const title = `${isIntake ? 'Intake' : 'Return'} courier tracking`;
   const fieldPrefix = isIntake ? 'Intake' : 'Return';
   const [carrier, setCarrier] = useState(tracking?.carrier ?? '');
@@ -1257,6 +1387,11 @@ const CustomerExternalTrackingCard: React.FC<{
   if (!enabled) return null;
 
   const save = async () => {
+    if (unpaidThirdPartyReturn) {
+      setError('Complete the remaining payment before arranging the return courier.');
+      return;
+    }
+
     setSaving(true);
     setMessage(null);
     setError(null);
@@ -1285,7 +1420,9 @@ const CustomerExternalTrackingCard: React.FC<{
         <div>
           <h4 className="font-bold text-black">{title}</h4>
           <p className="mt-1 text-xs text-gray-500">
-            Add the details from the courier you arranged. The shop can view them but cannot edit them.
+            {unpaidThirdPartyReturn
+              ? 'Complete the remaining payment before arranging the return courier.'
+              : 'Add the details from the courier you arranged. The shop can view them but cannot edit them.'}
           </p>
         </div>
         {locked && (
@@ -1295,7 +1432,11 @@ const CustomerExternalTrackingCard: React.FC<{
         )}
       </div>
 
-      {locked ? (
+      {unpaidThirdPartyReturn ? (
+        <p role="alert" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800">
+          Complete the remaining payment before arranging the return courier.
+        </p>
+      ) : locked ? (
         tracking?.tracking_number ? (
           <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
             <div>
@@ -3533,7 +3674,12 @@ const MyRepairs: React.FC = () => {
       return 'Refund Failed';
     }
 
-    const isPaymentSettled = order.payment_status === 'paid' || order.payment_status === 'completed';
+    const hasCollectionSummary = order.collection_summary !== undefined
+      || order.outstanding_balance !== undefined;
+    const hasOutstandingBalance = getOrderOutstandingBalance(order) > 0;
+    const isPaymentSettled = hasCollectionSummary
+      ? !hasOutstandingBalance
+      : order.payment_status === 'paid' || order.payment_status === 'completed';
 
     if (
       order.status === 'repairer_accepted' &&
@@ -3546,6 +3692,10 @@ const MyRepairs: React.FC = () => {
       !processingPayment
     ) {
       return 'PAY NOW';
+    }
+
+    if (order.status === 'ready_for_pickup' && hasOutstandingBalance) {
+      return '📦 Ready for Pickup · Waiting for Payment';
     }
 
     switch (order.status) {
@@ -4124,6 +4274,16 @@ const MyRepairs: React.FC = () => {
 
                   {/* Order Details */}
                   <div className="p-3 sm:p-8">
+                    {order.status === 'repairer_accepted' && getIntakeMethod(order) === 'walk_in' && (
+                      <div className="mb-5 rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+                        <p className="font-semibold">Accepted — Bring Item to Shop</p>
+                        <p className="mt-1">
+                          {isInitialPaymentDue(order)
+                            ? 'Repair request accepted. Bring your shoes to the shop and complete the required payment so the shop can receive the item.'
+                            : 'Repair request accepted. Bring your shoes to the shop so the shop can receive the item.'}
+                        </p>
+                      </div>
+                    )}
                     <div className="rounded-2xl border border-gray-200 bg-gray-50 p-3 xl:hidden">
                       <div className="flex items-start gap-3">
                         <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-gray-200 bg-white">
@@ -4691,7 +4851,9 @@ const MyRepairs: React.FC = () => {
                               {processingPayment ? 'PROCESSING...' : 'Pay new shipping fee'}
                             </button>
                           )}
-                          {!order.redelivery_payment_due && order.status === 'ready_for_pickup' && isOnlineReturnFlow(order) && (order.payment_policy ?? 'deposit_50') !== 'full_upfront' && order.payment_status !== 'completed' && (
+                          {!order.redelivery_payment_due
+                            && order.status === 'ready_for_pickup'
+                            && getOrderOutstandingBalance(order) > 0 && (
                             <button
                               onClick={() => handlePayNow(order.id)}
                               disabled={!order.payment_enabled || processingPayment}
@@ -4701,7 +4863,7 @@ const MyRepairs: React.FC = () => {
                                   : actionButtonDisabledClass
                               }`}
                             >
-                              {processingPayment ? 'PROCESSING...' : (isWarrantyNoChargeOrder(order) ? 'Pay return shipping fee' : 'PAY NOW')}
+                              {processingPayment ? 'PROCESSING...' : (isWarrantyNoChargeOrder(order) ? 'Pay return shipping fee' : 'Pay Remaining Balance')}
                             </button>
                           )}
                           {(!order.return_recovery || order.return_recovery.state === 'shop_pickup') && (() => {

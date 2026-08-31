@@ -574,7 +574,7 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                       : 'border-gray-200 bg-gray-50 text-gray-800'
                 }`} role="status" aria-live="polite">
                   <p className="font-semibold">
-                    {coverageQuote.status === 'loading' && 'Checking shop-owned logistics coverage...'}
+                    {coverageQuote.status === 'loading' && 'Checking shop rider coverage...'}
                     {coverageQuote.status === 'error' && 'Coverage unavailable'}
                     {coverageQuote.status === 'ready' && coverageQuote.available && 'Within coverage'}
                     {coverageQuote.status === 'ready' && coverageQuote.reason === 'outside_coverage' && 'Outside coverage'}
