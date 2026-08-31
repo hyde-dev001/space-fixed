@@ -12,6 +12,7 @@ use App\Services\HR\EmployeeOwnerProjection;
 use App\Services\HR\EmployeeOperationalPolicy;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -407,7 +408,64 @@ class EmployeeController extends Controller
      */
     public function activate(Request $request, Employee $employee)
     {
-        return $this->suspensionWorkflowRequiredResponse($request);
+        $shopOwnerId = (int) $request->user_shop_id;
+
+        if ((int) $employee->shop_owner_id !== $shopOwnerId) {
+            return response()->json([
+                'message' => 'Employee not found',
+                'error' => 'NOT_FOUND',
+            ], Response::HTTP_NOT_FOUND);
+        }
+
+        if (! $this->employeePolicy->canChangeAccountState($employee, EmployeeStatus::ACTIVE)) {
+            return response()->json([
+                'message' => 'Terminated employees cannot be reactivated.',
+                'error' => 'EMPLOYEE_TERMINATED',
+                'code' => 'EMPLOYEE_TERMINATED',
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        $oldValues = [
+            'status' => $employee->getRawOriginal('status'),
+            'suspension_reason' => $employee->getRawOriginal('suspension_reason'),
+        ];
+
+        $employee = DB::transaction(function () use ($employee, $shopOwnerId): Employee {
+            $lockedEmployee = Employee::query()
+                ->whereKey($employee->getKey())
+                ->where('shop_owner_id', $shopOwnerId)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $lockedEmployee->forceFill([
+                'status' => EmployeeStatus::ACTIVE,
+                'suspension_reason' => null,
+                'privileged_suspension_id' => null,
+            ])->save();
+
+            $this->linkedUserSynchronizer->sync($lockedEmployee);
+
+            return $lockedEmployee->fresh();
+        });
+
+        AuditLog::create([
+            'shop_owner_id' => $shopOwnerId,
+            'actor_user_id' => $request->user()?->id,
+            'action' => 'employee_activated',
+            'target_type' => 'employee',
+            'target_id' => $employee->id,
+            'metadata' => [],
+        ]);
+
+        if ($request->ajax() || $request->wantsJson()) {
+            return response()->json([
+                'message' => 'Employee account reactivated successfully',
+                'employee' => $employee,
+                'data' => $employee,
+            ], Response::HTTP_OK);
+        }
+
+        return redirect()->back()->with('success', 'Employee account reactivated successfully');
     }
 
     private function suspensionWorkflowRequiredResponse(Request $request)
