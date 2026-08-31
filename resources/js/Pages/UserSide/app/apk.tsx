@@ -1,6 +1,7 @@
 import React from 'react';
 import { Head } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
+import CustomerFooter from '../../../components/common/CustomerFooter';
 
 const apkDownloadPath = '/apk/download';
 const apkScanDownloadPath = '/apk/scan-download';
@@ -98,6 +99,7 @@ const ApkPage: React.FC = () => {
 						<div className="absolute -right-2 bottom-4 h-20 w-4xl rounded-l-[44px] bg-[#2e2f78]" />
 					</section>
 				</main>
+				<CustomerFooter className="mt-24" />
 			</div>
 
 			<style>{`

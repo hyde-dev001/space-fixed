@@ -18,6 +18,7 @@ import {
 import RegistrationDocumentMetadataFields from '@/components/form/RegistrationDocumentMetadataFields';
 import { GPS_POSITION_OPTIONS, getCurrentPositionWithTimeout } from '@/utils/geolocation';
 import { getRegistrationAddressFields } from './registrationAddress';
+import CustomerFooter from '../../../components/common/CustomerFooter';
 
 const CAVITE_CENTER = {
   lat: '14.28140000',
@@ -2109,6 +2110,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
             )}
           </div>
         </div>
+        <CustomerFooter className="mt-24" />
       </div>
 
       {/* Success Modal */}

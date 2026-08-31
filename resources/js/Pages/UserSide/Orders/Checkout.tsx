@@ -6,6 +6,7 @@ import Swal from '@/Pages/UserSide/Shared/UserModal';
 import axios from 'axios';
 import { dispatchCartAddedEvent } from '../../../types/cart-events';
 import CustomerAddressMapPicker from '@/components/address/CustomerAddressMapPicker';
+import CustomerFooter from '../../../components/common/CustomerFooter';
 
 type CartItem = {
   id: string;
@@ -2130,63 +2131,9 @@ const Checkout: React.FC = () => {
         </div>
       </main>
 
-      <div className="hidden xl:block">
-        <CheckoutFooter />
-      </div>
+      <CustomerFooter className="mt-24" />
     </div>
   );
 };
 
 export default Checkout;
-
-// Footer: replicated SoleSpace footer used across the site
-// If a shared footer component exists later, replace this markup with that component.
-export const CheckoutFooter: React.FC = () => {
-  return (
-    <footer className="mt-48 bg-gray-100 text-slate-900">
-      <div className="max-w-7xl mx-auto px-6 py-16">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          <div>
-            <div className="text-2xl font-bold mb-4">SoleSpace</div>
-            <p className="text-sm text-slate-700 max-w-sm">Your premier destination for premium footwear and expert repair services. Experience the perfect blend of style, comfort, and craftsmanship.</p>
-
-            <div className="flex gap-3 mt-6">
-              <button className="w-10 h-10 border border-slate-300 rounded flex items-center justify-center text-slate-700">f</button>
-              <button className="w-10 h-10 border border-slate-300 rounded flex items-center justify-center text-slate-700">t</button>
-              <button className="w-10 h-10 border border-slate-300 rounded flex items-center justify-center text-slate-700">ig</button>
-            </div>
-          </div>
-
-          <div className="flex flex-col">
-            <h3 className="text-sm uppercase text-slate-700 font-semibold mb-4">Quick Links</h3>
-            <nav className="flex flex-col gap-3 text-sm text-slate-700">
-              <a href="/products">Products</a>
-              <a href="/repair-services">Repair Services</a>
-              <a href="/services">Services</a>
-              <a href="/contact">Contact</a>
-            </nav>
-          </div>
-
-          <div className="flex flex-col">
-            <h3 className="text-sm uppercase text-slate-700 font-semibold mb-4">Services</h3>
-            <nav className="flex flex-col gap-3 text-sm text-slate-700">
-              <a href="#">Shoe Repair</a>
-              <a href="#">Custom Fitting</a>
-              <a href="#">Maintenance</a>
-              <a href="#">Consultation</a>
-            </nav>
-          </div>
-        </div>
-
-        <div className="border-t border-slate-300 mt-10 pt-6 text-sm text-slate-700 flex items-center justify-between">
-          <div>© 2024 SoleSpace. All rights reserved.</div>
-          <div className="flex gap-6">
-            <a href="#" className="hover:underline">Privacy</a>
-            <a href="#" className="hover:underline">Terms</a>
-            <a href="#" className="hover:underline">Cookies</a>
-          </div>
-        </div>
-      </div>
-    </footer>
-  );
-};
