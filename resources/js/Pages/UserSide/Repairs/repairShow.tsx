@@ -793,10 +793,10 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                         key={pkg.id}
                         type="button"
                         onClick={() => handlePackageToggle(pkg.id)}
-                        className={`w-75 min-w-75 sm:w-85 sm:min-w-85 xl:w-full xl:min-w-0 h-62.5 sm:h-65 xl:h-full shrink-0 bg-white rounded-2xl p-5 xl:p-6 border-2 transition-all cursor-pointer text-left snap-start ${
+                        className={`repair-package-card w-75 min-w-75 sm:w-85 sm:min-w-85 xl:w-full xl:min-w-0 h-62.5 sm:h-65 xl:h-full shrink-0 bg-white rounded-2xl p-5 xl:p-6 border-2 transition-all cursor-pointer text-left snap-start ${
                           isSelected
-                            ? 'border-black shadow-md'
-                            : 'border-gray-200 hover:border-gray-300 hover:shadow-lg'
+                            ? 'repair-package-card--selected border-black shadow-md dark:border-[#7da2ff] dark:bg-[#1b2f50]'
+                            : 'border-gray-200 hover:border-gray-300 hover:shadow-lg dark:border-slate-700 dark:hover:border-slate-500'
                         }`}
                       >
                         <div className="flex flex-col h-full">
@@ -808,12 +808,12 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                               <h3 className="text-base xl:text-lg font-bold text-black leading-snug wrap-break-word">{pkg.name}</h3>
                               <p className="text-sm text-gray-600 mt-1 leading-5 wrap-break-word">{pkg.description || 'Repair package offer'}</p>
                             </div>
-                            <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
+                            <div className={`repair-package-selection-indicator w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
                               isSelected
-                                ? 'border-black bg-black'
-                                : 'border-gray-300'
+                                ? 'repair-package-selection-indicator--selected border-black bg-black dark:border-[#b8cdff] dark:bg-[#b8cdff]'
+                                : 'border-gray-300 dark:border-slate-600'
                             }`}>
-                              {isSelected && <span className="block w-2 h-2 rounded-full bg-white" />}
+                              {isSelected && <span className="block w-2 h-2 rounded-full bg-white dark:bg-slate-950" />}
                             </div>
                           </div>
 

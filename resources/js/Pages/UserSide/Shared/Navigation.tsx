@@ -1400,12 +1400,12 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
               aria-modal="true"
               aria-label="Account submenu"
               aria-hidden={!accountDrawerOpen}
-              className={`fixed left-[min(88vw,31rem)] top-0 z-[110] flex h-dvh w-[min(88vw,26rem)] max-w-[26rem] flex-col border-l border-white/60 bg-white/60 text-[#111111] shadow-2xl backdrop-blur-2xl transition-[transform,opacity] duration-300 ease-out motion-reduce:transition-none ${accountDrawerOpen ? 'visible translate-x-0 opacity-100' : 'invisible translate-x-full opacity-0 pointer-events-none'}`}
+              className={`userside-customer-drawer fixed left-[min(88vw,31rem)] top-0 z-[110] flex h-dvh w-[min(88vw,26rem)] max-w-[26rem] flex-col border-l border-white/60 bg-white/60 text-[#111111] dark:border-slate-700 dark:bg-slate-900/95 dark:text-white shadow-2xl backdrop-blur-2xl transition-[transform,opacity] duration-300 ease-out motion-reduce:transition-none ${accountDrawerOpen ? 'visible translate-x-0 opacity-100' : 'invisible translate-x-full opacity-0 pointer-events-none'}`}
             >
-              <div className="flex items-center justify-between border-b border-white/50 bg-white/10 px-5 py-5 sm:px-7">
+              <div className="flex items-center justify-between border-b border-white/50 bg-white/10 px-5 py-5 sm:px-7 dark:border-slate-700 dark:bg-slate-800/50">
                 <div>
                   <p className="text-lg font-semibold">Account</p>
-                  <p className="mt-1 text-xs uppercase tracking-[0.16em] text-[#777777]">Profile &amp; access</p>
+                  <p className="mt-1 text-xs uppercase tracking-[0.16em] text-[#777777] dark:text-slate-400">Profile &amp; access</p>
                 </div>
                 <button type="button" onClick={() => setAccountDrawerOpen(false)} className="inline-flex h-10 w-10 items-center justify-center rounded-full hover:bg-white/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111]" aria-label="Close account">
                   <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={1.8} d="M6 6l12 12M18 6L6 18" /></svg>
@@ -1416,27 +1416,27 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                   <div className="border-y border-white/50">
                     <Link
                       href="/customer-profile"
-                      className={`flex min-h-14 items-center gap-3 border-b border-white/50 px-4 text-sm font-medium transition-colors ${isMyProfileActive ? 'bg-white/35 text-gray-900' : 'text-gray-900 hover:bg-white/35'}`}
+                      className={`flex min-h-14 items-center gap-3 border-b border-white/50 px-4 text-sm font-medium transition-colors dark:border-slate-700 dark:text-white ${isMyProfileActive ? 'bg-white/35 text-gray-900 dark:bg-slate-800 dark:text-white' : 'text-gray-900 hover:bg-white/35 dark:hover:bg-slate-800'}`}
                       onClick={() => setAccountDrawerOpen(false)}
                     >
-                      <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="h-4 w-4 text-gray-500 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                       </svg>
                       <span>Edit Profile</span>
                     </Link>
                     <Link
                       href={route('shop-owner-register')}
-                      className={`flex min-h-14 items-center gap-3 border-b border-white/50 px-4 text-sm font-medium transition-colors ${isMobileServicesActive ? 'bg-white/35 text-gray-900' : 'text-gray-900 hover:bg-white/35'}`}
+                      className={`flex min-h-14 items-center gap-3 border-b border-white/50 px-4 text-sm font-medium transition-colors dark:border-slate-700 dark:text-white ${isMobileServicesActive ? 'bg-white/35 text-gray-900 dark:bg-slate-800 dark:text-white' : 'text-gray-900 hover:bg-white/35 dark:hover:bg-slate-800'}`}
                       onClick={() => setAccountDrawerOpen(false)}
                     >
-                      <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="h-4 w-4 text-gray-500 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2m8-8a4 4 0 100-8 4 4 0 000 8zm6-3v6m3-3h-6" />
                       </svg>
                       <span>Join Our Team</span>
                     </Link>
                     <button
                       type="button"
-                      className="flex min-h-14 w-full items-center gap-3 px-4 text-left text-sm font-medium text-red-600 transition-colors hover:bg-red-50/60"
+                      className="flex min-h-14 w-full items-center gap-3 px-4 text-left text-sm font-medium text-red-600 transition-colors hover:bg-red-50/60 dark:hover:bg-red-950/40"
                       onClick={() => {
                         setAccountDrawerOpen(false);
                         handleLogout();
@@ -1449,7 +1449,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                     </button>
                   </div>
                 ) : (
-                  <Link href="/login" onClick={() => setAccountDrawerOpen(false)} className="flex min-h-14 items-center gap-3 border-y border-white/50 px-4 text-sm font-medium text-gray-900 transition-colors hover:bg-white/35">
+                  <Link href="/login" onClick={() => setAccountDrawerOpen(false)} className="flex min-h-14 items-center gap-3 border-y border-white/50 px-4 text-sm font-medium text-gray-900 transition-colors hover:bg-white/35 dark:border-slate-700 dark:text-white dark:hover:bg-slate-800">
                     Customer Login
                   </Link>
                 )}
@@ -1466,15 +1466,15 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
             <aside
               aria-label="Shopping cart"
               aria-hidden={!cartDrawerOpen}
-              className={`fixed right-0 top-0 z-[110] flex h-dvh w-[min(92vw,30rem)] max-w-[30rem] flex-col border-l border-white/60 bg-white/60 text-[#111111] shadow-2xl backdrop-blur-2xl transition-transform duration-300 ease-out motion-reduce:transition-none ${cartDrawerOpen ? 'translate-x-0' : 'translate-x-full pointer-events-none'}`}
+              className={`userside-customer-drawer fixed right-0 top-0 z-[110] flex h-dvh w-[min(92vw,30rem)] max-w-[30rem] flex-col border-l border-white/60 bg-white/60 text-[#111111] dark:border-slate-700 dark:bg-slate-900/95 dark:text-white shadow-2xl backdrop-blur-2xl transition-transform duration-300 ease-out motion-reduce:transition-none ${cartDrawerOpen ? 'translate-x-0' : 'translate-x-full pointer-events-none'}`}
             >
-                <div className="flex items-center justify-between border-b border-[#dedede] px-5 py-5 sm:px-7">
-                  <div><p className="text-lg font-semibold">Cart</p><p className="mt-1 text-xs uppercase tracking-[0.16em] text-[#777777]">{effectiveCartCount} {effectiveCartCount === 1 ? 'item' : 'items'}</p></div>
+                <div className="flex items-center justify-between border-b border-[#dedede] px-5 py-5 sm:px-7 dark:border-slate-700">
+                  <div><p className="text-lg font-semibold">Cart</p><p className="mt-1 text-xs uppercase tracking-[0.16em] text-[#777777] dark:text-slate-400">{effectiveCartCount} {effectiveCartCount === 1 ? 'item' : 'items'}</p></div>
                   <button type="button" onClick={() => setCartDrawerOpen(false)} className="inline-flex h-10 w-10 items-center justify-center" aria-label="Close cart"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={1.8} d="M6 6l12 12M18 6L6 18" /></svg></button>
                 </div>
                 <div className="flex-1 overflow-y-auto px-5 py-5 sm:px-7">
-                  {quickCartLoading && <p className="text-sm text-[#777777]">Loading your cart...</p>}
-                  {!quickCartLoading && quickCartItems.length === 0 && <div className="py-12 text-center"><p className="text-base font-medium">Your cart is empty.</p><Link href={route('products')} onClick={() => setCartDrawerOpen(false)} className="mt-5 inline-flex min-h-11 items-center justify-center bg-[#111111] px-6 text-xs font-semibold uppercase tracking-[0.16em] text-white">Shop products</Link></div>}
+                  {quickCartLoading && <p className="text-sm text-[#777777] dark:text-slate-400">Loading your cart...</p>}
+                  {!quickCartLoading && quickCartItems.length === 0 && <div className="py-12 text-center"><p className="text-base font-medium dark:text-white">Your cart is empty.</p><Link href={route('products')} onClick={() => setCartDrawerOpen(false)} className="mt-5 inline-flex min-h-11 items-center justify-center bg-[#111111] px-6 text-xs font-semibold uppercase tracking-[0.16em] text-white dark:bg-slate-100 dark:text-slate-950">Shop products</Link></div>}
                   {!quickCartLoading && quickCartItems.length > 0 && <div className="space-y-5">
                     {quickCartItems.map((item) => <div key={item.id} className="flex gap-4 border-b border-[#ededed] pb-5"><div className="h-24 w-24 shrink-0 overflow-hidden bg-[#f3f3f3]">{item.image ? <img src={item.image} alt={item.name} className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center text-xs text-[#777777]">No image</div>}</div><div className="min-w-0 flex-1"><p className="font-medium">{item.name}</p>{(item.size || item.color) && <p className="mt-1 text-xs text-[#777777]">{[item.size, item.color].filter(Boolean).join(' / ')}</p>}<div className="mt-4 flex items-center justify-between text-sm"><span>Qty {item.qty}</span><span className="font-semibold">₱{item.price.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span></div></div></div>)}
                   </div>}
@@ -1493,13 +1493,13 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
           />
           <aside
             aria-label="Site menu"
-            className={`fixed left-0 top-0 z-[110] flex h-dvh w-[min(88vw,31rem)] flex-col overflow-y-auto border-r border-white/60 bg-white/60 text-[#111111] shadow-2xl backdrop-blur-2xl transition-transform duration-300 ease-out motion-reduce:transition-none ${landingSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
+            className={`userside-customer-drawer fixed left-0 top-0 z-[110] flex h-dvh w-[min(88vw,31rem)] flex-col overflow-y-auto border-r border-white/60 bg-white/60 text-[#111111] dark:border-slate-700 dark:bg-slate-900/95 dark:text-white shadow-2xl backdrop-blur-2xl transition-transform duration-300 ease-out motion-reduce:transition-none ${landingSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
           >
-            <div className="flex items-center justify-between border-b border-[#e5e5e5] px-6 py-6 sm:px-8">
+            <div className="flex items-center justify-between border-b border-[#e5e5e5] px-6 py-6 sm:px-8 dark:border-slate-700">
               <Link href={route('landing')} onClick={() => { setAccountDrawerOpen(false); setLandingSidebarOpen(false); }} className="text-xl font-semibold tracking-[-0.06em] sm:text-2xl">
                 SOLESPACE
               </Link>
-              <button type="button" onClick={() => { setAccountDrawerOpen(false); setLandingSidebarOpen(false); }} className="inline-flex h-11 w-11 items-center justify-center rounded-full hover:bg-[#f5f5f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111]" aria-label="Close menu">
+              <button type="button" onClick={() => { setAccountDrawerOpen(false); setLandingSidebarOpen(false); }} className="inline-flex h-11 w-11 items-center justify-center rounded-full hover:bg-[#f5f5f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] dark:hover:bg-slate-800 dark:focus-visible:ring-slate-300" aria-label="Close menu">
                 <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 6l12 12M18 6L6 18" /></svg>
               </button>
             </div>
@@ -1522,10 +1522,10 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                         )}
                       </div>
                       {isExpanded && (
-                        <div className="mb-3 ml-4 border-l border-[#cacacb] pl-4">
-                          <Link href={route('products', item.params?.category ? { category: item.params.category } : undefined)} onClick={() => { setAccountDrawerOpen(false); setLandingSidebarOpen(false); }} className="flex min-h-10 items-center text-sm font-medium text-[#707072] hover:text-[#111111]">Shop all</Link>
+                        <div className="mb-3 ml-4 border-l border-[#cacacb] pl-4 dark:border-slate-700">
+                          <Link href={route('products', item.params?.category ? { category: item.params.category } : undefined)} onClick={() => { setAccountDrawerOpen(false); setLandingSidebarOpen(false); }} className="flex min-h-10 items-center text-sm font-medium text-[#707072] hover:text-[#111111] dark:text-slate-400 dark:hover:text-white">Shop all</Link>
                           {['New arrivals', 'Best sellers', 'Running', 'Basketball', 'Lifestyle'].map((category) => (
-                            <Link key={category} href={route('products', item.params?.category ? { category: item.params.category } : undefined)} onClick={() => { setAccountDrawerOpen(false); setLandingSidebarOpen(false); }} className="flex min-h-10 items-center text-sm font-medium text-[#707072] hover:text-[#111111]">{category}</Link>
+                            <Link key={category} href={route('products', item.params?.category ? { category: item.params.category } : undefined)} onClick={() => { setAccountDrawerOpen(false); setLandingSidebarOpen(false); }} className="flex min-h-10 items-center text-sm font-medium text-[#707072] hover:text-[#111111] dark:text-slate-400 dark:hover:text-white">{category}</Link>
                           ))}
                         </div>
                       )}
@@ -1534,7 +1534,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                 })}
               </div>
             </nav>
-            <div className="border-t border-[#cacacb] px-6 py-6 sm:px-8">
+            <div className="border-t border-[#cacacb] px-6 py-6 sm:px-8 dark:border-slate-700">
               <button type="button" onClick={() => { setCartDrawerOpen(false); setAccountDrawerOpen(true); }} aria-expanded={accountDrawerOpen} className="flex min-h-12 w-full items-center gap-3 text-left text-base font-medium hover:opacity-55"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3" strokeWidth={2}/><path strokeLinecap="round" strokeWidth={2} d="M5 20a7 7 0 0 1 14 0"/></svg>{isAuthenticated ? 'Account' : 'Sign in'}</button>
               <button type="button" onClick={() => { setLandingSidebarOpen(false); setAccountDrawerOpen(false); setCartDrawerOpen(true); }} className="flex min-h-12 w-full items-center gap-3 text-left text-base font-medium hover:opacity-55"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={2} d="M3 4h2l2.2 10.2a2 2 0 0 0 1.96 1.58h7.68a2 2 0 0 0 1.95-1.56L21 7H8"/><circle cx="10" cy="19" r="1.5"/><circle cx="17" cy="19" r="1.5"/></svg>Cart {effectiveCartCount > 0 && `(${effectiveCartCount})`}</button>
               <Link href={route('download')} onClick={() => { setAccountDrawerOpen(false); setLandingSidebarOpen(false); }} className="flex min-h-12 items-center gap-3 text-base font-medium hover:opacity-55"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14" /></svg>Download</Link>
