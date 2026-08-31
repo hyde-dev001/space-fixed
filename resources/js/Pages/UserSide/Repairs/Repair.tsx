@@ -6,7 +6,7 @@ import { useCart } from '../../../contexts/CartContext';
 import NotificationBell from '../../../components/common/NotificationBell';
 import { useBadgeCounts } from '../../../hooks/useBadgeCounts';
 import CustomerAddressManager, { type CustomerAddress } from '@/components/address/CustomerAddressManager';
-import CustomerFooter from '../../../components/common/CustomerFooter';
+import { CustomerFooterReveal } from '../../../components/common/CustomerFooter';
 
 interface Shop {
   id: number;
@@ -290,6 +290,7 @@ const Repair: React.FC<Props> = ({ shops }) => {
   return (
     <>
       <Head title="Repair Services - SoleSpace" />
+      <CustomerFooterReveal>
       <div className="userside-repair-list-page min-h-screen bg-white font-outfit antialiased">
         <div className="hidden xl:block">
           <Navigation />
@@ -552,8 +553,6 @@ const Repair: React.FC<Props> = ({ shops }) => {
 
         </div>
 
-        <CustomerFooter className="mt-24" />
-
         <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-gray-200 bg-white xl:hidden">
           <div className="mx-auto grid w-full max-w-107.5 grid-cols-5 px-2 py-2 text-[11px] text-gray-600 sm:max-w-170 md:max-w-225 lg:max-w-5xl">
             <Link href="/" className={mobileNavItemClasses(activeMobileTab === 'home')}>
@@ -596,6 +595,7 @@ const Repair: React.FC<Props> = ({ shops }) => {
           </div>
         </div>
       </div>
+      </CustomerFooterReveal>
     </>
   );
 };
