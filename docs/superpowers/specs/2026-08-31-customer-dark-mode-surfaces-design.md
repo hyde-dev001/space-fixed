@@ -47,4 +47,3 @@ This keeps the diff local to the three affected customer surfaces, reuses the ex
 ## Verification
 
 Run the focused Vitest contracts first, then the full frontend suite and Vite build. Use Playwright against the local application when the required server/auth data are available to inspect the three rendered dark-mode surfaces and confirm light mode remains unchanged.
-
