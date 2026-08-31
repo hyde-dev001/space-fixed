@@ -18,6 +18,8 @@ final class RecipientResolver
             'salary_change_submitted',
             'refund_request',
             'employee_suspension_request',
+            'employee_termination_request',
+            'employee_rehire_request',
             'high_value_approval',
             'repair_reject_approval',
         ];

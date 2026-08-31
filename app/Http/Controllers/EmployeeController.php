@@ -109,6 +109,14 @@ class EmployeeController extends Controller
                 'salary.numeric' => 'Salary must be a valid number',
             ]);
 
+            if (($validated['status'] ?? null) === EmployeeStatus::TERMINATED->value) {
+                return response()->json([
+                    'message' => 'Employment termination must go through the HR → Manager → Company Shop Owner workflow.',
+                    'error' => 'TERMINATION_WORKFLOW_REQUIRED',
+                    'code' => 'TERMINATION_WORKFLOW_REQUIRED',
+                ], Response::HTTP_FORBIDDEN);
+            }
+
             // Automatically assign to user's shop
             $validated['shop_owner_id'] = $request->user_shop_id;
 
@@ -261,6 +269,14 @@ class EmployeeController extends Controller
                 'status' => ['sometimes', Rule::enum(EmployeeStatus::class)],
             ]);
 
+            if (($validated['status'] ?? null) === EmployeeStatus::TERMINATED->value) {
+                return response()->json([
+                    'message' => 'Employment termination must go through the HR → Manager → Shop Owner workflow.',
+                    'error' => 'TERMINATION_WORKFLOW_REQUIRED',
+                    'code' => 'TERMINATION_WORKFLOW_REQUIRED',
+                ], Response::HTTP_FORBIDDEN);
+            }
+
             $salaryAuditData = null;
 
             if (array_key_exists('salary', $validated)) {
@@ -314,9 +330,9 @@ class EmployeeController extends Controller
             if (array_key_exists('status', $employeeUpdateData)) {
                 if (! $this->employeePolicy->canChangeAccountState($employee, $employeeUpdateData['status'])) {
                     return response()->json([
-                        'message' => 'Terminated employees cannot be reactivated.',
-                        'error' => 'EMPLOYEE_TERMINATED',
-                        'code' => 'EMPLOYEE_TERMINATED',
+                        'message' => 'Terminated employees must use the Rehire / Reinstate Employee workflow.',
+                        'error' => 'EMPLOYEE_REHIRE_REQUIRED',
+                        'code' => 'EMPLOYEE_REHIRE_REQUIRED',
                     ], Response::HTTP_UNPROCESSABLE_ENTITY);
                 }
 
@@ -419,9 +435,9 @@ class EmployeeController extends Controller
 
         if (! $this->employeePolicy->canChangeAccountState($employee, EmployeeStatus::ACTIVE)) {
             return response()->json([
-                'message' => 'Terminated employees cannot be reactivated.',
-                'error' => 'EMPLOYEE_TERMINATED',
-                'code' => 'EMPLOYEE_TERMINATED',
+                'message' => 'Terminated employees must use the Rehire / Reinstate Employee workflow.',
+                'error' => 'EMPLOYEE_REHIRE_REQUIRED',
+                'code' => 'EMPLOYEE_REHIRE_REQUIRED',
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 

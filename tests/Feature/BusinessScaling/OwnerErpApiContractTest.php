@@ -234,7 +234,7 @@ final class OwnerErpApiContractTest extends TestCase
                 'status' => 'active',
             ])
             ->assertStatus(422)
-            ->assertJsonPath('code', 'EMPLOYEE_TERMINATED');
+            ->assertJsonPath('code', 'EMPLOYEE_REHIRE_REQUIRED');
 
         $this->assertDatabaseHas('employees', [
             'id' => $employee->id,

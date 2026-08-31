@@ -2241,6 +2241,10 @@ Route::prefix('erp/manager')->name('erp.manager.')->middleware([
     Route::get('/suspend-approval', function () {
         return redirect()->route('erp.manager.suspension-approvals');
     })->middleware('manager.capability:suspension-approvals-read')->name('suspend-approval');
+    Route::get('/termination-approvals', [\App\Http\Controllers\Erp\ReadPageController::class, 'managerTerminationApprovals'])
+        ->middleware('manager.capability:termination-approvals-read')->name('termination-approvals');
+    Route::get('/rehire-approvals', [\App\Http\Controllers\Erp\ReadPageController::class, 'managerRehireApprovals'])
+        ->middleware('manager.capability:rehire-approvals-read')->name('rehire-approvals');
     Route::get('/shoe-pricing', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
@@ -2774,6 +2778,25 @@ Route::prefix('api/manager')->name('api.manager.')->middleware([
             ->middleware('manager.capability:suspension-approvals-read')->name('suspension_requests.show');
         Route::post('/{id}/review', [\App\Http\Controllers\Erp\Manager\SuspensionApprovalController::class, 'review'])
             ->middleware('manager.capability:suspension-decision')->name('suspension_requests.review');
+    });
+
+    // Employee lifecycle approval routes
+    Route::prefix('termination-requests')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Erp\Manager\EmployeeLifecycleApprovalController::class, 'indexTermination'])
+            ->middleware('manager.capability:termination-approvals-read')->name('termination_requests.index');
+        Route::get('/{id}', [\App\Http\Controllers\Erp\Manager\EmployeeLifecycleApprovalController::class, 'showTermination'])
+            ->whereNumber('id')->middleware('manager.capability:termination-approvals-read')->name('termination_requests.show');
+        Route::post('/{id}/review', [\App\Http\Controllers\Erp\Manager\EmployeeLifecycleApprovalController::class, 'reviewTermination'])
+            ->whereNumber('id')->middleware('manager.capability:termination-decision')->name('termination_requests.review');
+    });
+
+    Route::prefix('rehire-requests')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Erp\Manager\EmployeeLifecycleApprovalController::class, 'indexRehire'])
+            ->middleware('manager.capability:rehire-approvals-read')->name('rehire_requests.index');
+        Route::get('/{id}', [\App\Http\Controllers\Erp\Manager\EmployeeLifecycleApprovalController::class, 'showRehire'])
+            ->whereNumber('id')->middleware('manager.capability:rehire-approvals-read')->name('rehire_requests.show');
+        Route::post('/{id}/review', [\App\Http\Controllers\Erp\Manager\EmployeeLifecycleApprovalController::class, 'reviewRehire'])
+            ->whereNumber('id')->middleware('manager.capability:rehire-decision')->name('rehire_requests.review');
     });
 });
 

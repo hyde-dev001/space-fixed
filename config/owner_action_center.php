@@ -14,6 +14,8 @@ return [
         'expenses' => true,
         'purchase_requests' => true,
         'suspensions' => true,
+        'terminations' => true,
+        'rehires' => true,
         'repair_rejections' => true,
     ],
     'buckets' => [

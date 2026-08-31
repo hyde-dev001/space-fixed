@@ -87,7 +87,13 @@ class EmployeeController extends Controller
         }
 
         $query = Employee::byShop($user->shop_owner_id)
-            ->with(['attendanceRecords', 'leaveRequests', 'performanceReviews', 'user']);
+            ->with([
+                'attendanceRecords',
+                'leaveRequests',
+                'performanceReviews',
+                'employmentPeriods' => fn ($query) => $query->orderByDesc('start_date'),
+                'user',
+            ]);
 
         // Apply filters
         if ($request->filled('department')) {
@@ -345,6 +351,9 @@ class EmployeeController extends Controller
                 'performanceReviews' => function ($query) {
                     $query->latest()->take(5);
                 },
+                'employmentPeriods' => function ($query) {
+                    $query->orderByDesc('start_date');
+                },
                 'leaveBalances' => function ($query) {
                     $query->where('year', date('Y'));
                 },
@@ -377,6 +386,11 @@ class EmployeeController extends Controller
         }
 
         $employee = Employee::forShopOwner($user->shop_owner_id)->findOrFail($id);
+
+        if ($request->has('status')
+            && EmployeeStatus::tryFrom(strtolower(trim((string) $request->input('status')))) === EmployeeStatus::TERMINATED) {
+            return $this->terminationWorkflowRequiredResponse();
+        }
 
         if ($request->has('status') && $this->isDirectSuspensionStateMutation($employee, (string) $request->input('status'))) {
             return $this->suspensionWorkflowRequiredResponse();
@@ -417,8 +431,8 @@ class EmployeeController extends Controller
 
         if ($request->has('status') && ! $this->employeePolicy->canChangeAccountState($employee, (string) $request->status)) {
             return response()->json([
-                'error' => 'Terminated employees cannot be reactivated.',
-                'code' => 'EMPLOYEE_TERMINATED',
+                'error' => 'Terminated employees must use the Rehire / Reinstate Employee workflow.',
+                'code' => 'EMPLOYEE_REHIRE_REQUIRED',
             ], 422);
         }
 
@@ -509,7 +523,7 @@ class EmployeeController extends Controller
     }
 
     /**
-     * Suspend an employee.
+     * Keep the legacy direct suspension endpoint from bypassing the approval workflow.
      */
     public function suspend(Request $request, $id): JsonResponse
     {
@@ -531,8 +545,8 @@ class EmployeeController extends Controller
 
         if (! $this->employeePolicy->canChangeAccountState($employee, EmployeeStatus::ACTIVE)) {
             return response()->json([
-                'error' => 'Terminated employees cannot be reactivated.',
-                'code' => 'EMPLOYEE_TERMINATED',
+                'error' => 'Terminated employees must use the Rehire / Reinstate Employee workflow.',
+                'code' => 'EMPLOYEE_REHIRE_REQUIRED',
             ], 422);
         }
 
@@ -593,6 +607,14 @@ class EmployeeController extends Controller
         return response()->json([
             'error' => 'Employee suspension changes must go through the HR → Manager → Shop Owner workflow.',
             'code' => 'SUSPENSION_WORKFLOW_REQUIRED',
+        ], 403);
+    }
+
+    private function terminationWorkflowRequiredResponse(): JsonResponse
+    {
+        return response()->json([
+            'error' => 'Employment termination must go through the HR → Manager → Shop Owner workflow.',
+            'code' => 'TERMINATION_WORKFLOW_REQUIRED',
         ], 403);
     }
 

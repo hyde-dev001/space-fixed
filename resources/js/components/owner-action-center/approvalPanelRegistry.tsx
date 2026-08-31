@@ -9,6 +9,7 @@ import RefundApprovalDetails from "./approvals/RefundApprovalDetails";
 import RepairRejectApprovalDetails from "./approvals/RepairRejectApprovalDetails";
 import SalaryAdjustmentApprovalDetails from "./approvals/SalaryAdjustmentApprovalDetails";
 import SuspensionApprovalDetails from "./approvals/SuspensionApprovalDetails";
+import EmployeeLifecycleApprovalDetails from "./approvals/EmployeeLifecycleApprovalDetails";
 
 export type ApprovalAction = "approve" | "reject";
 
@@ -191,6 +192,42 @@ export const approvalPanelRegistry: Record<ApprovalSourceType, ApprovalPanelDefi
       maxLength: 1000,
     },
     consequence: "suspend or keep the employee active through the authoritative HR workflow",
+  }),
+  termination_request: definition({
+    sourceType: "termination_request",
+    label: "Employee termination approval",
+    noun: "Employee termination",
+    detailPath: (id) => `/api/shop-owner/termination-requests/${id}`,
+    renderer: EmployeeLifecycleApprovalDetails,
+    approve: {
+      path: (id) => `/api/shop-owner/termination-requests/${id}/review`,
+      body: () => ({ action: "approve", note: "" }),
+    },
+    reject: {
+      path: (id) => `/api/shop-owner/termination-requests/${id}/review`,
+      body: (reason) => ({ action: "reject", note: reason ?? "" }),
+      maxLength: 1000,
+      minLength: 3,
+    },
+    consequence: "close the employment period and disable the linked employee account",
+  }),
+  rehire_request: definition({
+    sourceType: "rehire_request",
+    label: "Employee rehire approval",
+    noun: "Employee rehire",
+    detailPath: (id) => `/api/shop-owner/rehire-requests/${id}`,
+    renderer: EmployeeLifecycleApprovalDetails,
+    approve: {
+      path: (id) => `/api/shop-owner/rehire-requests/${id}/review`,
+      body: () => ({ action: "approve", note: "" }),
+    },
+    reject: {
+      path: (id) => `/api/shop-owner/rehire-requests/${id}/review`,
+      body: (reason) => ({ action: "reject", note: reason ?? "" }),
+      maxLength: 1000,
+      minLength: 3,
+    },
+    consequence: "open a new employment period with the reviewed role and permissions",
   }),
   expense: definition({
     sourceType: "expense",

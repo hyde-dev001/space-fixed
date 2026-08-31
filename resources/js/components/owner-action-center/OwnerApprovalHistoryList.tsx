@@ -13,6 +13,8 @@ const sourceLabels: Record<OwnerApprovalHistoryItem["coverage_source"], string> 
   salary_changes: "Salary adjustments",
   purchase_requests: "Purchase requests",
   suspensions: "Suspension requests",
+  terminations: "Termination requests",
+  rehires: "Rehire requests",
   expenses: "Expenses",
   repair_rejections: "Repair rejections",
   compliance: "Compliance",

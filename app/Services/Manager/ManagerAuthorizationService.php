@@ -14,6 +14,8 @@ final class ManagerAuthorizationService
     public const STAFF_WORKLOAD_READ = 'staff-workload-read';
     public const LEAVE_APPROVALS_READ = 'leave-approvals-read';
     public const SUSPENSION_APPROVALS_READ = 'suspension-approvals-read';
+    public const TERMINATION_APPROVALS_READ = 'termination-approvals-read';
+    public const REHIRE_APPROVALS_READ = 'rehire-approvals-read';
     public const REPORTS_READ = 'reports-read';
     public const REPORTS_GENERATE = 'reports-generate';
     public const REPORTS_REVIEW = 'reports-review';
@@ -23,6 +25,8 @@ final class ManagerAuthorizationService
     public const REPAIR_REVIEW = 'repair-review';
     public const LEAVE_DECISION = 'leave-decision';
     public const SUSPENSION_DECISION = 'suspension-decision';
+    public const TERMINATION_DECISION = 'termination-decision';
+    public const REHIRE_DECISION = 'rehire-decision';
 
     /**
      * The capabilities understood by the Manager middleware.
@@ -40,6 +44,8 @@ final class ManagerAuthorizationService
         self::STAFF_WORKLOAD_READ,
         self::LEAVE_APPROVALS_READ,
         self::SUSPENSION_APPROVALS_READ,
+        self::TERMINATION_APPROVALS_READ,
+        self::REHIRE_APPROVALS_READ,
         self::REPORTS_READ,
         self::REPORTS_GENERATE,
         self::REPORTS_REVIEW,
@@ -48,6 +54,8 @@ final class ManagerAuthorizationService
         self::REPAIR_REVIEW,
         self::LEAVE_DECISION,
         self::SUSPENSION_DECISION,
+        self::TERMINATION_DECISION,
+        self::REHIRE_DECISION,
     ];
 
     /**
@@ -88,6 +96,15 @@ final class ManagerAuthorizationService
         }
 
         return $shopOwnerId;
+    }
+
+    /**
+     * Employee lifecycle approvals are available only to company accounts.
+     */
+    public function isCompanyShop(User $user): bool
+    {
+        return $this->shopOwnerId($user) !== null
+            && strtolower(trim((string) $user->shopOwner?->registration_type)) === 'company';
     }
 
     /**
@@ -155,6 +172,8 @@ final class ManagerAuthorizationService
             self::STAFF_WORKLOAD_READ,
             self::LEAVE_APPROVALS_READ,
             self::SUSPENSION_APPROVALS_READ,
+            self::TERMINATION_APPROVALS_READ,
+            self::REHIRE_APPROVALS_READ,
             self::REPORTS_READ,
             self::AUDIT_READ,
         ] as $capability) {
@@ -191,6 +210,8 @@ final class ManagerAuthorizationService
                 // Compatibility read alias for the former suspension page.
                 'access-suspend-account',
             ],
+            self::TERMINATION_APPROVALS_READ => ['access-manager-termination-approvals'],
+            self::REHIRE_APPROVALS_READ => ['access-manager-rehire-approvals'],
             self::REPORTS_READ => ['access-manager-reports'],
             self::REPORTS_GENERATE => ['generate-manager-reports'],
             self::REPORTS_REVIEW => ['review-manager-reports'],
@@ -199,6 +220,8 @@ final class ManagerAuthorizationService
             self::REPAIR_REVIEW => ['review-manager-repair-jobs'],
             self::LEAVE_DECISION => ['decide-manager-leave-approvals'],
             self::SUSPENSION_DECISION => ['decide-manager-suspension-approvals'],
+            self::TERMINATION_DECISION => ['decide-manager-termination-approvals'],
+            self::REHIRE_DECISION => ['decide-manager-rehire-approvals'],
             default => [],
         };
     }

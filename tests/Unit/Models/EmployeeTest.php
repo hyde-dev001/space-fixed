@@ -10,6 +10,7 @@ use App\Models\Employee;
 use App\Models\HR\Department;
 use App\Models\HR\LeaveBalance;
 use App\Models\HR\AttendanceRecord;
+use App\Repositories\HR\EmployeeRepository;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -148,6 +149,34 @@ class EmployeeTest extends TestCase
         $this->employee->activate();
 
         $this->assertSame(EmployeeStatus::ACTIVE, $this->employee->fresh()->status);
+    }
+
+    #[Test]
+    public function terminated_employee_cannot_use_model_activation_or_suspension_helpers()
+    {
+        $this->employee->update(['status' => EmployeeStatus::TERMINATED]);
+
+        try {
+            $this->employee->suspend();
+            $this->fail('A terminated employee must not be suspended through the model helper.');
+        } catch (\LogicException) {
+            // Expected: terminated employment must use the rehire workflow.
+        }
+
+        $this->expectException(\LogicException::class);
+        $this->employee->activate();
+    }
+
+    #[Test]
+    public function legacy_repository_helpers_cannot_change_terminated_employment()
+    {
+        $this->employee->update(['status' => EmployeeStatus::TERMINATED]);
+
+        $repository = app(EmployeeRepository::class);
+
+        $this->assertFalse($repository->suspend($this->employee->id, $this->shopOwner->id));
+        $this->assertFalse($repository->activate($this->employee->id, $this->shopOwner->id));
+        $this->assertSame(EmployeeStatus::TERMINATED, $this->employee->fresh()->status);
     }
 
     #[Test]

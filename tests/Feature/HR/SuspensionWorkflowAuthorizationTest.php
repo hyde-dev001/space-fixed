@@ -139,7 +139,7 @@ class SuspensionWorkflowAuthorizationTest extends TestCase
             ->assertForbidden();
     }
 
-    public function test_broad_hr_permissions_cannot_directly_suspend_or_activate_employees(): void
+    public function test_broad_hr_permissions_cannot_directly_suspend_but_can_activate_suspended_employees(): void
     {
         foreach ([
             'access-employee-directory',
@@ -164,10 +164,10 @@ class SuspensionWorkflowAuthorizationTest extends TestCase
 
         $this->actingAs($this->hr, 'user')
             ->postJson("/api/hr/employees/{$this->employee->id}/activate")
-            ->assertForbidden()
-            ->assertJsonPath('code', 'SUSPENSION_WORKFLOW_REQUIRED');
+            ->assertOk()
+            ->assertJsonPath('employee.status', EmployeeStatus::ACTIVE->value);
 
-        $this->assertSame(EmployeeStatus::SUSPENDED->value, $this->employee->fresh()->status->value);
+        $this->assertSame(EmployeeStatus::ACTIVE->value, $this->employee->fresh()->status->value);
     }
 
     public function test_employee_status_update_cannot_bypass_suspension_workflow(): void
@@ -182,7 +182,7 @@ class SuspensionWorkflowAuthorizationTest extends TestCase
         $this->assertSame(EmployeeStatus::ACTIVE->value, $this->employee->fresh()->status->value);
     }
 
-    public function test_legacy_shop_owner_suspend_and_activate_routes_cannot_bypass_the_workflow(): void
+    public function test_legacy_shop_owner_suspend_route_cannot_bypass_workflow_and_activation_remains_available(): void
     {
         $this->shop->forceFill(['registration_type' => 'company'])->save();
 
@@ -199,9 +199,9 @@ class SuspensionWorkflowAuthorizationTest extends TestCase
 
         $this->actingAs($this->shop, 'shop_owner')
             ->postJson("/shop-owner/employees/{$this->employee->id}/activate")
-            ->assertForbidden()
-            ->assertJsonPath('code', 'SUSPENSION_WORKFLOW_REQUIRED');
+            ->assertOk()
+            ->assertJsonPath('data.status', EmployeeStatus::ACTIVE->value);
 
-        $this->assertSame(EmployeeStatus::SUSPENDED->value, $this->employee->fresh()->status->value);
+        $this->assertSame(EmployeeStatus::ACTIVE->value, $this->employee->fresh()->status->value);
     }
 }

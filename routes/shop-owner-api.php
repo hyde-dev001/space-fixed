@@ -20,6 +20,7 @@ use App\Http\Controllers\ActivityLogController as CanonicalActivityLogController
 use App\Http\Controllers\Api\PriceChangeRequestController;
 use App\Http\Controllers\Api\RepairServiceController;
 use App\Http\Controllers\ShopOwner\SuspensionFinalApprovalController;
+use App\Http\Controllers\ShopOwner\EmployeeLifecycleFinalApprovalController;
 use App\Http\Controllers\ShopOwner\PurchaseRequestController as ShopOwnerPurchaseRequestController;
 use App\Http\Controllers\ShopOwner\ExpenseController as ShopOwnerExpenseController;
 use App\Http\Controllers\ShopOwner\PremiumCheckoutController;
@@ -217,6 +218,21 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
         Route::get('/', [SuspensionFinalApprovalController::class, 'index'])->name('shop_owner.suspension_requests.index');
         Route::get('/{id}', [SuspensionFinalApprovalController::class, 'show'])->name('shop_owner.suspension_requests.show');
         Route::post('/{id}/review', [SuspensionFinalApprovalController::class, 'review'])->name('shop_owner.suspension_requests.review');
+    });
+
+    // ============================================
+    // EMPLOYEE LIFECYCLE FINAL APPROVAL (Company Shop Owner)
+    // ============================================
+    Route::prefix('termination-requests')->group(function () {
+        Route::get('/', [EmployeeLifecycleFinalApprovalController::class, 'indexTermination'])->name('shop_owner.termination_requests.index');
+        Route::get('/{id}', [EmployeeLifecycleFinalApprovalController::class, 'showTermination'])->whereNumber('id')->name('shop_owner.termination_requests.show');
+        Route::post('/{id}/review', [EmployeeLifecycleFinalApprovalController::class, 'reviewTermination'])->whereNumber('id')->name('shop_owner.termination_requests.review');
+    });
+
+    Route::prefix('rehire-requests')->group(function () {
+        Route::get('/', [EmployeeLifecycleFinalApprovalController::class, 'indexRehire'])->name('shop_owner.rehire_requests.index');
+        Route::get('/{id}', [EmployeeLifecycleFinalApprovalController::class, 'showRehire'])->whereNumber('id')->name('shop_owner.rehire_requests.show');
+        Route::post('/{id}/review', [EmployeeLifecycleFinalApprovalController::class, 'reviewRehire'])->whereNumber('id')->name('shop_owner.rehire_requests.review');
     });
 
     // ============================================

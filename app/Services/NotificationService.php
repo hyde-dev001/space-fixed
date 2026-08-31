@@ -46,6 +46,8 @@ class NotificationService
             'expense',
             'repair_rejection',
             'suspension_request',
+            'termination_request',
+            'rehire_request',
         ];
 
         if (! in_array($sourceType, $allowedSourceTypes, true)) {
@@ -1282,6 +1284,74 @@ class NotificationService
         );
     }
 
+    /** Notify Manager role users when HR submits a termination or rehire request. */
+    public function notifyEmployeeLifecycleSubmitted(int $shopId, array $lifecycleData): void
+    {
+        $requestType = strtolower(trim((string) ($lifecycleData['request_type'] ?? '')));
+        $isRehire = $requestType === 'rehire';
+        $type = $isRehire ? NotificationType::REHIRE_REQUEST_PENDING : NotificationType::TERMINATION_REQUEST_PENDING;
+        $label = $isRehire ? 'rehire' : 'termination';
+
+        $this->sendToErpRole(
+            roleName: 'Manager',
+            shopId: $shopId,
+            type: $type,
+            title: ucfirst($label).' Request Pending',
+            message: 'A '.$label.' request has been submitted for '.($lifecycleData['employee_name'] ?? 'an employee').'.',
+            data: $lifecycleData,
+            actionUrl: $isRehire ? '/erp/manager/rehire-approvals' : '/erp/manager/termination-approvals',
+            priority: 'high',
+            requiresAction: true,
+        );
+    }
+
+    /** Notify the next reviewer and the submitting HR user after a lifecycle decision. */
+    public function notifyEmployeeLifecycleReviewed(int $shopId, array $lifecycleData): ?Notification
+    {
+        $requestType = strtolower(trim((string) ($lifecycleData['request_type'] ?? '')));
+        $isRehire = $requestType === 'rehire';
+        $ownerType = $isRehire
+            ? NotificationType::EMPLOYEE_REHIRE_REQUEST
+            : NotificationType::EMPLOYEE_TERMINATION_REQUEST;
+        $label = $isRehire ? 'rehire' : 'termination';
+        $employeeName = (string) ($lifecycleData['employee_name'] ?? 'the employee');
+        $notification = null;
+
+        if (($lifecycleData['manager_decision'] ?? null) === 'approved') {
+            $notification = $this->sendToResolvedShopOwnerRecipients(
+                eventType: $isRehire ? 'employee_rehire_request' : 'employee_termination_request',
+                shopOwnerId: $shopId,
+                type: $ownerType,
+                title: ucfirst($label).' Approval Required',
+                message: 'Review the '.$label.' request for '.$employeeName.'.',
+                data: $lifecycleData,
+                actionUrl: $this->ownerApprovalActionUrl(
+                    $isRehire ? 'rehire_request' : 'termination_request',
+                    $lifecycleData['employee_lifecycle_request_id'] ?? null,
+                ),
+                priority: 'high',
+                requiresAction: true,
+            );
+        }
+
+        $requesterId = (int) ($lifecycleData['requester_id'] ?? 0);
+        $decision = $lifecycleData['owner_decision'] ?? $lifecycleData['manager_decision'] ?? null;
+        if ($requesterId > 0 && is_string($decision) && $decision !== '') {
+            $this->sendToUser(
+                userId: $requesterId,
+                type: $ownerType,
+                title: ucfirst($label).' Request '.ucfirst($decision),
+                message: 'The '.$label.' request for '.$employeeName.' was '.$decision.'.',
+                data: $lifecycleData,
+                actionUrl: '/erp/hr/employees',
+                shopId: $shopId,
+                priority: 'medium',
+            );
+        }
+
+        return $notification;
+    }
+
     /** Notify Manager role users when a repairer rejects a repair (needs review) */
     public function notifyRepairRejectedToManager(int $shopId, array $repairData): void
     {
@@ -2243,6 +2313,8 @@ class NotificationService
             'refund_request' => 'browser_approvals',
             'low_stock_alert' => 'browser_alerts',
             'employee_suspension_request' => 'browser_approvals',
+            'employee_termination_request' => 'browser_approvals',
+            'employee_rehire_request' => 'browser_approvals',
             'customer_message' => 'browser_alerts',
             // Finance/HR/Staff notifications
             'expense_approval' => 'browser_expense_approval',
@@ -2257,6 +2329,8 @@ class NotificationService
             'overtime_submitted' => 'browser_hr_updates',
             'expense_request_pending' => 'browser_expense_approval',
             'suspension_request_pending' => 'browser_approvals',
+            'termination_request_pending' => 'browser_approvals',
+            'rehire_request_pending' => 'browser_approvals',
             'delegation_assigned' => 'browser_delegation_assigned',
             'task_assigned' => 'browser_tasks',
             'repair_assigned_to_me' => 'browser_tasks',
@@ -2306,6 +2380,8 @@ class NotificationService
             'refund_request' => 'email_approvals',
             'low_stock_alert' => 'email_alerts',
             'employee_suspension_request' => 'email_approvals',
+            'employee_termination_request' => 'email_approvals',
+            'employee_rehire_request' => 'email_approvals',
             'customer_message' => 'email_alerts',
             // Finance/HR/Staff notifications
             'expense_approval' => 'email_expense_approval',
@@ -2320,6 +2396,8 @@ class NotificationService
             'overtime_submitted' => 'email_hr_updates',
             'expense_request_pending' => 'email_expense_approval',
             'suspension_request_pending' => 'email_approvals',
+            'termination_request_pending' => 'email_approvals',
+            'rehire_request_pending' => 'email_approvals',
             'delegation_assigned' => 'email_delegation_assigned',
             'task_assigned' => 'email_tasks',
             'repair_assigned_to_me' => 'email_tasks',

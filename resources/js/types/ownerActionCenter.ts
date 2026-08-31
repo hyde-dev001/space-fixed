@@ -7,6 +7,8 @@ export type OwnerActionCenterCoverage =
   | "expenses"
   | "purchase_requests"
   | "suspensions"
+  | "terminations"
+  | "rehires"
   | "repair_rejections"
   | "compliance"
   | "logistics";
@@ -24,6 +26,8 @@ export type OwnerAttentionCoverageSource =
   | "expenses"
   | "purchase_requests"
   | "suspensions"
+  | "terminations"
+  | "rehires"
   | "repair_rejections"
   | "compliance"
   | "logistics";
@@ -37,6 +41,8 @@ export type OwnerAttentionAdapterKey =
   | "expenses"
   | "purchase_requests"
   | "suspension_requests"
+  | "termination_requests"
+  | "rehire_requests"
   | "repair_rejections"
   | "compliance_documents"
   | "failed_order_refunds"
@@ -58,6 +64,8 @@ export type OwnerAttentionSourceType =
   | "expense"
   | "purchase_request"
   | "suspension_request"
+  | "termination_request"
+  | "rehire_request"
   | "repair_rejection"
   | "compliance_document"
   | "logistics_failure";

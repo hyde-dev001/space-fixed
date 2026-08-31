@@ -1,1 +1,5 @@
+<<<<<<<< HEAD:public/build/assets/supplierApi-Dfbw3P8Y.js
 import{b as t}from"./app-D3W7vG2M.js";const a="/api/erp/procurement/suppliers",r=e=>e.data??e,p={async getAll(e,s=a){return(await t.get(s,{params:e})).data},async getById(e){const s=await t.get(`${a}/${e}`);return r(s.data)},async create(e){const s=await t.post(a,e);return r(s.data)},async update(e,s){const n=await t.put(`${a}/${e}`,s);return r(n.data)},async delete(e){return(await t.delete(`${a}/${e}`)).data},async restore(e){return(await t.post(`${a}/${e}/restore`)).data}};export{p as s};
+========
+import{b as t}from"./app-Db-bqOr-.js";const a="/api/erp/procurement/suppliers",r=e=>e.data??e,p={async getAll(e,s=a){return(await t.get(s,{params:e})).data},async getById(e){const s=await t.get(`${a}/${e}`);return r(s.data)},async create(e){const s=await t.post(a,e);return r(s.data)},async update(e,s){const n=await t.put(`${a}/${e}`,s);return r(n.data)},async delete(e){return(await t.delete(`${a}/${e}`)).data},async restore(e){return(await t.post(`${a}/${e}/restore`)).data}};export{p as s};
+>>>>>>>> 121a9a5f0 (feat: add employee termination and rehire workflow):public/build/assets/supplierApi-Cisi6kUb.js

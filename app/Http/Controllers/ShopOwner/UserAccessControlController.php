@@ -336,6 +336,20 @@ class UserAccessControlController extends Controller
                 'role.in' => 'Role must be Manager, Finance, HR, CRM, Staff, Repairer, Cashier, Inventory, Procurement, or Logistics',
             ]);
 
+            if (($validated['status'] ?? null) === EmployeeStatus::TERMINATED->value) {
+                $message = 'Employment termination must go through the HR → Manager → Company Shop Owner workflow.';
+
+                if ($request->wantsJson()) {
+                    return response()->json([
+                        'message' => $message,
+                        'error' => 'TERMINATION_WORKFLOW_REQUIRED',
+                        'code' => 'TERMINATION_WORKFLOW_REQUIRED',
+                    ], 403);
+                }
+
+                return back()->withErrors(['status' => $message])->withInput();
+            }
+
             // Normalize role to uppercase snake case to match legacy enum style.
             $validated['role'] = strtoupper(str_replace(' ', '_', (string) $validated['role']));
 
@@ -637,18 +651,32 @@ class UserAccessControlController extends Controller
                 'salary.numeric' => 'Salary must be a valid number',
             ]);
 
+            if (($validated['status'] ?? null) === EmployeeStatus::TERMINATED->value) {
+                $terminationMessage = 'Employment termination must go through the HR → Manager → Shop Owner workflow.';
+
+                if ($request->wantsJson()) {
+                    return response()->json([
+                        'message' => $terminationMessage,
+                        'error' => 'TERMINATION_WORKFLOW_REQUIRED',
+                        'code' => 'TERMINATION_WORKFLOW_REQUIRED',
+                    ], 403);
+                }
+
+                return back()->withErrors(['status' => $terminationMessage]);
+            }
+
             if (array_key_exists('status', $validated)
                 && ! $this->employeePolicy->canChangeAccountState($employee, (string) $validated['status'])) {
                 if ($request->wantsJson()) {
                     return response()->json([
-                        'message' => 'Terminated employees cannot be reactivated.',
-                        'error' => 'EMPLOYEE_TERMINATED',
-                        'code' => 'EMPLOYEE_TERMINATED',
+                        'message' => 'Terminated employees must use the Rehire / Reinstate Employee workflow.',
+                        'error' => 'EMPLOYEE_REHIRE_REQUIRED',
+                        'code' => 'EMPLOYEE_REHIRE_REQUIRED',
                     ], 422);
                 }
 
                 return back()->withErrors([
-                    'status' => 'Terminated employees cannot be reactivated.',
+                    'status' => 'Terminated employees must use the Rehire / Reinstate Employee workflow.',
                 ]);
             }
 

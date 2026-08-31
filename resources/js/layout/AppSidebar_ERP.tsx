@@ -450,6 +450,26 @@ const managerItems: NavItem[] = [
   {
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 3v18M3 12h18"></path>
+      </svg>
+    ),
+    name: "Termination Approvals",
+    route: "erp.manager.termination-approvals",
+    managerSection: "people",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 3v18M3 12h18"></path>
+      </svg>
+    ),
+    name: "Rehire Approvals",
+    route: "erp.manager.rehire-approvals",
+    managerSection: "people",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M3 3v18h18"></path>
         <path d="M7 15l3-3 3 2 4-6"></path>
       </svg>
@@ -1008,6 +1028,8 @@ const EmployeeSidebarERP: React.FC = () => {
     "erp.manager.staff-workload": "/erp/manager/staff-workload",
     "erp.manager.leave-approvals": "/erp/manager/leave-approvals",
     "erp.manager.suspension-approvals": "/erp/manager/suspension-approvals",
+    "erp.manager.termination-approvals": "/erp/manager/termination-approvals",
+    "erp.manager.rehire-approvals": "/erp/manager/rehire-approvals",
     "erp.manager.reports": "/erp/manager/reports",
     "erp.manager.shoe-pricing": "/erp/manager/shoe-pricing",
     "erp.manager.inventory-dashboard": "/erp/manager/inventory-dashboard",
@@ -1444,6 +1466,8 @@ const EmployeeSidebarERP: React.FC = () => {
       'access-manager-staff-workload',
       'access-manager-leave-approvals',
       'access-manager-suspension-approvals',
+      'access-manager-termination-approvals',
+      'access-manager-rehire-approvals',
       'access-audit-logs',
       'access-manager-reports',
       'access-repair-reject-review',
@@ -1551,6 +1575,14 @@ const EmployeeSidebarERP: React.FC = () => {
 
       if (item.route === 'erp.manager.suspension-approvals') {
         return hasManagerPageReadAccess('access-manager-suspension-approvals', 'access-suspend-account');
+      }
+
+      if (item.route === 'erp.manager.termination-approvals') {
+        return hasManagerPageReadAccess('access-manager-termination-approvals');
+      }
+
+      if (item.route === 'erp.manager.rehire-approvals') {
+        return hasManagerPageReadAccess('access-manager-rehire-approvals');
       }
 
       if (item.route === 'erp.manager.reports') {

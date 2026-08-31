@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\ERP\HR;
 
+use App\Enums\EmployeeStatus;
 use App\Enums\SuspensionStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Employee;
@@ -117,6 +118,10 @@ final class SuspensionRequestController extends Controller
                     ->lockForUpdate()
                     ->firstOrFail();
 
+                if ($employee->status === EmployeeStatus::TERMINATED) {
+                    throw new \LogicException('Terminated employees must use the Rehire / Reinstate Employee workflow.');
+                }
+
                 $employeeEmail = Str::lower(trim((string) $employee->getAttribute('email')));
                 $actorEmail = Str::lower(trim((string) $actor->getAttribute('email')));
                 $linkedUserId = (int) (User::query()
@@ -180,7 +185,12 @@ final class SuspensionRequestController extends Controller
                 'code' => $exception->getStatusCode() === 403
                     ? 'SUSPENSION_REQUEST_FORBIDDEN'
                     : 'SUSPENSION_REQUEST_ALREADY_PENDING',
-            ], $exception->getStatusCode());
+                ], $exception->getStatusCode());
+        } catch (\LogicException $exception) {
+            return response()->json([
+                'message' => $exception->getMessage(),
+                'code' => 'EMPLOYEE_REHIRE_REQUIRED',
+            ], 409);
         } catch (\Throwable $exception) {
             Log::error('Failed to submit suspension request.', [
                 'actor_id' => $actor->getKey(),

@@ -24,6 +24,8 @@ type Employee = {
   // optional metadata supplied by the backend
   createdBy?: string;
   linkedUser?: string | number; // username or id of linked user account
+  terminatedAt?: string;
+  employmentHistory?: EmploymentPeriod[];
 };
 
 type EmployeeSummaryStats = {
@@ -46,6 +48,31 @@ type MetricCardProps = {
 type FieldValidationState = {
   status: "idle" | "checking" | "valid" | "error";
   message: string;
+};
+
+type EmploymentPeriod = {
+  id: number;
+  startDate: string;
+  endDate?: string | null;
+  endReason?: string | null;
+  position?: string | null;
+  department?: string | null;
+  role?: string | null;
+  salary?: string | number | null;
+};
+
+type LifecycleRequestForm = {
+  reason: string;
+  evidence: string;
+};
+
+type RehireRequestForm = LifecycleRequestForm & {
+  rehireStartDate: string;
+  rehirePosition: string;
+  rehireDepartment: string;
+  rehireFunctionalRole: string;
+  rehireSalary: string;
+  rehireRole: string;
 };
 
 // Portal wrapper to mirror the registration modal layering and avoid navbar stacking issues
@@ -331,6 +358,17 @@ const parseLinkedUserId = (linkedUser?: string | number) => {
 const isRepairerRole = (roleValue?: string) => (roleValue || '').trim().toLowerCase() === 'repairer';
 const isCashierRole = (roleValue?: string) => (roleValue || '').trim().toLowerCase() === 'cashier';
 
+const transformEmploymentPeriodFromApi = (period: any): EmploymentPeriod => ({
+  id: Number(period.id),
+  startDate: period.start_date || period.startDate,
+  endDate: period.end_date || period.endDate || null,
+  endReason: period.end_reason || period.endReason || null,
+  position: period.position || null,
+  department: period.department || null,
+  role: period.role || null,
+  salary: period.salary ?? null,
+});
+
 // Transform snake_case API response to camelCase for frontend
 const transformEmployeeFromApi = (apiEmployee: any): Employee => {
   // Handle name splitting if first_name/last_name are missing but name exists
@@ -351,6 +389,7 @@ const transformEmployeeFromApi = (apiEmployee: any): Employee => {
   const projection = apiEmployee.owner_projection || apiEmployee.ownerProjection || {};
   const rawStatus = String(apiEmployee.status ?? '').trim().toLowerCase();
   const legacyOnLeave = rawStatus === 'on_leave' || rawStatus === 'on-leave';
+  const employmentPeriods = apiEmployee.employment_periods || apiEmployee.employmentPeriods;
 
   return {
     id: apiEmployee.id,
@@ -369,6 +408,10 @@ const transformEmployeeFromApi = (apiEmployee: any): Employee => {
     location: apiEmployee.location || apiEmployee.address,
     createdBy: apiEmployee.created_by || apiEmployee.createdBy,
     linkedUser: apiEmployee.linked_user || apiEmployee.linkedUser,
+    terminatedAt: apiEmployee.terminated_at || apiEmployee.terminatedAt,
+    employmentHistory: Array.isArray(employmentPeriods)
+      ? employmentPeriods.map(transformEmploymentPeriodFromApi)
+      : undefined,
   };
 };
 
@@ -392,6 +435,12 @@ export const EmployeeManagement: React.FC<{
   const employeeApiBase = ownerMode ? '/shop-owner/employees' : '/api/hr/employees';
   const invitationApiBase = ownerMode ? '/api/shop-owner/employees' : '/api/hr/employees';
   const shopOwner = auth?.shop_owner || auth?.user?.shop_owner || pageProps?.shop_owner;
+  const isCompanyShop = String(
+    shopOwner?.registration_type
+    ?? auth?.registration_type
+    ?? auth?.user?.registration_type
+    ?? ''
+  ).toLowerCase().trim() === 'company';
   const rawBusinessType = String(
     shopOwner?.business_type
     ?? auth?.business_type
@@ -412,6 +461,20 @@ export const EmployeeManagement: React.FC<{
   const isCashierCapableBusiness = isRepairCapableBusiness || isRetailCapableBusiness;
   const currentUserId = Number(auth?.user?.id ?? 0);
   const currentUserEmail = String(auth?.user?.email ?? '').trim().toLowerCase();
+  const actorRole = String(auth?.user?.role ?? '').trim().toLowerCase();
+  const actorRoles = Array.isArray(auth?.user?.roles)
+    ? auth.user.roles.map((role: unknown) => String(role).trim().toLowerCase())
+    : [];
+  const actorPermissions = [
+    ...(Array.isArray(auth?.permissions) ? auth.permissions : []),
+    ...(Array.isArray(auth?.user?.permissions) ? auth.user.permissions : []),
+  ].map((permission: unknown) => String(permission).trim());
+  const canRequestEmployeeLifecycle = isCompanyShop && !ownerMode && (
+    actorRole === 'hr'
+    || actorRoles.includes('hr')
+    || actorPermissions.includes('request-employee-terminations')
+    || actorPermissions.includes('request-employee-rehires')
+  );
   
   // Check for flash data with employee credentials
   const success = pageProps.success || flash?.success;
@@ -612,6 +675,24 @@ export const EmployeeManagement: React.FC<{
   const [suspensionRequestForm, setSuspensionRequestForm] = useState({
     reason: "",
     evidence: "",
+  });
+  const [isTerminationRequestModalOpen, setIsTerminationRequestModalOpen] = useState(false);
+  const [employeeToTerminate, setEmployeeToTerminate] = useState<Employee | null>(null);
+  const [terminationRequestForm, setTerminationRequestForm] = useState<LifecycleRequestForm>({
+    reason: "",
+    evidence: "",
+  });
+  const [isRehireRequestModalOpen, setIsRehireRequestModalOpen] = useState(false);
+  const [employeeToRehire, setEmployeeToRehire] = useState<Employee | null>(null);
+  const [rehireRequestForm, setRehireRequestForm] = useState<RehireRequestForm>({
+    reason: "",
+    evidence: "",
+    rehireStartDate: "",
+    rehirePosition: "",
+    rehireDepartment: "",
+    rehireFunctionalRole: "",
+    rehireSalary: "",
+    rehireRole: "",
   });
   
   // Position Templates State
@@ -1063,6 +1144,191 @@ export const EmployeeManagement: React.FC<{
     const linkedUserId = Number(employee.linkedUser ?? 0);
     return (linkedUserId > 0 && linkedUserId === currentUserId)
       || (employeeEmail !== '' && employeeEmail === currentUserEmail);
+  };
+
+  const submitLifecycleRequest = async ({
+    endpoint,
+    employeeId,
+    body,
+    successTitle,
+    successFallback,
+    onSubmitted,
+  }: {
+    endpoint: string;
+    employeeId: number;
+    body: Record<string, unknown>;
+    successTitle: string;
+    successFallback: string;
+    onSubmitted: () => void;
+  }) => {
+    if (isProcessingId === employeeId) return;
+
+    try {
+      setIsProcessingId(employeeId);
+      setApiError(null);
+
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest',
+          ...(csrfToken && { 'X-CSRF-TOKEN': csrfToken }),
+        },
+        credentials: 'include',
+        body: JSON.stringify(body),
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        const validationMessage = data?.errors && typeof data.errors === 'object'
+          ? Object.values(data.errors as Record<string, unknown>)
+              .flatMap((value) => Array.isArray(value) ? value : [value])
+              .filter((value): value is string => typeof value === 'string')
+              .join(' ')
+          : '';
+        throw new Error(validationMessage || data?.message || 'Failed to submit employee lifecycle request.');
+      }
+
+      onSubmitted();
+      await Swal.fire({
+        icon: 'success',
+        title: successTitle,
+        text: data?.message || successFallback,
+        confirmButtonColor: '#10b981',
+      });
+    } catch (error: unknown) {
+      const message = error instanceof Error
+        ? error.message
+        : 'Failed to submit employee lifecycle request.';
+      setApiError(message);
+      await Swal.fire({
+        title: 'Error',
+        text: message,
+        icon: 'error',
+        confirmButtonColor: '#ef4444',
+      });
+    } finally {
+      setIsProcessingId(null);
+    }
+  };
+
+  const handleTerminateClick = (employee: Employee) => {
+    if (!canRequestEmployeeLifecycle || employee.status === 'terminated') return;
+
+    if (isSelfEmployeeAccount(employee)) {
+      void Swal.fire({
+        icon: 'info',
+        title: 'Action Blocked',
+        text: 'You cannot file a termination request for the account you are currently using.',
+      });
+      return;
+    }
+
+    setEmployeeToTerminate(employee);
+    setTerminationRequestForm({ reason: '', evidence: '' });
+    setIsViewModalOpen(false);
+    setIsTerminationRequestModalOpen(true);
+  };
+
+  const handleTerminationRequestSubmit = async () => {
+    const employee = employeeToTerminate;
+    const reason = terminationRequestForm.reason.trim();
+    if (!employee) return;
+
+    if (reason.length < 3) {
+      await Swal.fire({
+        title: 'Reason Required',
+        text: 'Please provide a termination reason with at least 3 characters.',
+        icon: 'warning',
+        confirmButtonColor: '#f59e0b',
+      });
+      return;
+    }
+
+    await submitLifecycleRequest({
+      endpoint: '/api/hr/termination-requests',
+      employeeId: employee.id,
+      body: {
+        employee_id: employee.id,
+        reason,
+        evidence: terminationRequestForm.evidence.trim() || null,
+      },
+      successTitle: 'Termination Request Submitted',
+      successFallback: 'The request will be reviewed by the Manager, then the Company Shop Owner.',
+      onSubmitted: () => {
+        setIsTerminationRequestModalOpen(false);
+        setEmployeeToTerminate(null);
+        setTerminationRequestForm({ reason: '', evidence: '' });
+      },
+    });
+  };
+
+  const handleRehireClick = (employee: Employee) => {
+    if (!canRequestEmployeeLifecycle || employee.status !== 'terminated') return;
+
+    setEmployeeToRehire(employee);
+    setRehireRequestForm({
+      reason: '',
+      evidence: '',
+      rehireStartDate: '',
+      rehirePosition: employee.position || '',
+      rehireDepartment: employee.department || '',
+      rehireFunctionalRole: '',
+      rehireSalary: '',
+      rehireRole: '',
+    });
+    setIsViewModalOpen(false);
+    setIsRehireRequestModalOpen(true);
+  };
+
+  const handleRehireRequestSubmit = async () => {
+    const employee = employeeToRehire;
+    const reason = rehireRequestForm.reason.trim();
+    if (!employee) return;
+
+    if (reason.length < 3 || !rehireRequestForm.rehireStartDate || !rehireRequestForm.rehirePosition.trim() || !rehireRequestForm.rehireRole.trim()) {
+      await Swal.fire({
+        title: 'Complete Rehire Details',
+        text: 'Provide a reason, new start date, position, and role before submitting.',
+        icon: 'warning',
+        confirmButtonColor: '#f59e0b',
+      });
+      return;
+    }
+
+    await submitLifecycleRequest({
+      endpoint: '/api/hr/rehire-requests',
+      employeeId: employee.id,
+      body: {
+        employee_id: employee.id,
+        reason,
+        evidence: rehireRequestForm.evidence.trim() || null,
+        rehire_start_date: rehireRequestForm.rehireStartDate,
+        rehire_position: rehireRequestForm.rehirePosition.trim(),
+        rehire_department: rehireRequestForm.rehireDepartment.trim() || null,
+        rehire_functional_role: rehireRequestForm.rehireFunctionalRole.trim() || null,
+        rehire_salary: rehireRequestForm.rehireSalary.trim() || null,
+        rehire_role: rehireRequestForm.rehireRole.trim(),
+      },
+      successTitle: 'Rehire Request Submitted',
+      successFallback: 'The request will be reviewed by the Manager, then the Company Shop Owner.',
+      onSubmitted: () => {
+        setIsRehireRequestModalOpen(false);
+        setEmployeeToRehire(null);
+        setRehireRequestForm({
+          reason: '',
+          evidence: '',
+          rehireStartDate: '',
+          rehirePosition: '',
+          rehireDepartment: '',
+          rehireFunctionalRole: '',
+          rehireSalary: '',
+          rehireRole: '',
+        });
+      },
+    });
   };
 
   const handleSuspendClick = (employee: Employee) => {
@@ -2395,6 +2661,30 @@ export const EmployeeManagement: React.FC<{
                               Activate Account
                             </button>
                           )}
+                          {canRequestEmployeeLifecycle && employee.status === 'terminated' && (
+                            <button
+                              onClick={() => handleRehireClick(employee)}
+                              className="inline-flex items-center justify-center rounded-md px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                              title="Submit Rehire Request"
+                              aria-label={"Submit Rehire Request for " + buildName(employee)}
+                              disabled={isProcessingId === employee.id}
+                            >
+                              Request Rehire
+                            </button>
+                          )}
+                          {canRequestEmployeeLifecycle && employee.status !== 'terminated' && (
+                            <button
+                              onClick={() => handleTerminateClick(employee)}
+                              className="inline-flex items-center justify-center rounded-md px-2 py-1 text-xs font-medium text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                              title={isSelfEmployeeAccount(employee)
+                                ? 'You cannot terminate your own account'
+                                : 'Submit Termination Request'}
+                              aria-label={"Submit Termination Request for " + buildName(employee)}
+                              disabled={isProcessingId === employee.id || isSelfEmployeeAccount(employee)}
+                            >
+                              Request Termination
+                            </button>
+                          )}
                           {!ownerReadOnly && (
                             <>
                           <button
@@ -2545,16 +2835,68 @@ export const EmployeeManagement: React.FC<{
                       <p className="text-base text-gray-500 dark:text-gray-400">Hired</p>
                       <p className="text-base font-medium text-gray-900 dark:text-white">{formatDate(selectedEmployee.hiredAt)}</p>
                     </div>
+                    {selectedEmployee.status === "terminated" && (
+                      <div>
+                        <p className="text-base text-gray-500 dark:text-gray-400">Employment Terminated</p>
+                        <p className="text-base font-medium text-gray-900 dark:text-white">{formatDate(selectedEmployee.terminatedAt)}</p>
+                      </div>
+                    )}
                     <div>
                       <p className="text-base text-gray-500 dark:text-gray-400">Last Active</p>
                       <p className="text-base font-medium text-gray-900 dark:text-white">{formatDate(selectedEmployee.lastActiveAt)}</p>
                     </div>
+                    {selectedEmployee.employmentHistory && selectedEmployee.employmentHistory.length > 0 && (
+                      <div className="md:col-span-2 border-t border-gray-200 dark:border-gray-700 pt-5">
+                        <p className="text-base font-semibold text-gray-900 dark:text-white mb-3">Employment History</p>
+                        <div className="space-y-3">
+                          {selectedEmployee.employmentHistory.map((period) => (
+                            <div key={period.id} className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/40 p-4">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                                  {formatDate(period.startDate)} — {period.endDate ? formatDate(period.endDate) : 'Present'}
+                                </p>
+                                <span className="text-xs font-medium text-gray-600 dark:text-gray-300">
+                                  {period.role || 'Role not recorded'}
+                                </span>
+                              </div>
+                              <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">
+                                {period.position || 'Position not recorded'}
+                                {period.department ? ' · ' + period.department : ''}
+                              </p>
+                              {period.endReason && (
+                                <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">
+                                  Closed: {period.endReason}
+                                </p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                     <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
                       <div className="flex justify-end gap-2">
                         {['inactive', 'suspended'].includes(selectedEmployee.status) && (
                           <Button variant="success" onClick={() => handleActivate(selectedEmployee.id, buildName(selectedEmployee))} className="mr-2" disabled={isProcessingId === selectedEmployee.id}>
                             {isProcessingId === selectedEmployee.id ? 'Processing...' : 'Activate Account'}
+                          </Button>
+                        )}
+                        {canRequestEmployeeLifecycle && selectedEmployee.status === 'terminated' && (
+                          <Button
+                            variant="primary"
+                            onClick={() => handleRehireClick(selectedEmployee)}
+                            disabled={isProcessingId === selectedEmployee.id}
+                          >
+                            Request Rehire
+                          </Button>
+                        )}
+                        {canRequestEmployeeLifecycle && selectedEmployee.status !== 'terminated' && (
+                          <Button
+                            variant="danger"
+                            onClick={() => handleTerminateClick(selectedEmployee)}
+                            disabled={isProcessingId === selectedEmployee.id || isSelfEmployeeAccount(selectedEmployee)}
+                          >
+                            Request Termination
                           </Button>
                         )}
                         <Button variant="secondary" onClick={() => setIsViewModalOpen(false)}>
@@ -2664,6 +3006,280 @@ export const EmployeeManagement: React.FC<{
                   </div>
               </div>
             </div>
+            </div>
+          </ModalPortal>
+        )}
+
+        {isTerminationRequestModalOpen && employeeToTerminate && (
+          <ModalPortal>
+            <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-xl w-full">
+                <div className="p-6">
+                  <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+                    Request Employee Termination
+                  </h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-5">
+                    This starts the HR lifecycle approval process. The employee remains active until the Manager and Company Shop Owner approve the request.
+                  </p>
+
+                  <div className="mb-4 rounded-lg bg-gray-50 dark:bg-gray-700/50 p-4">
+                    <p className="text-sm text-gray-700 dark:text-gray-300">
+                      <span className="font-medium">Employee:</span> {buildName(employeeToTerminate)}
+                    </p>
+                    <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">
+                      <span className="font-medium">Position:</span> {employeeToTerminate.position || 'N/A'}
+                    </p>
+                  </div>
+
+                  <div className="mb-4">
+                    <label htmlFor="termination-reason" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Reason for Termination <span className="text-red-500">*</span>
+                    </label>
+                    <textarea
+                      id="termination-reason"
+                      value={terminationRequestForm.reason}
+                      onChange={(event) => setTerminationRequestForm({ ...terminationRequestForm, reason: event.target.value })}
+                      rows={4}
+                      maxLength={2000}
+                      placeholder="Document the employment decision and relevant facts..."
+                      className="w-full px-4 py-2 border-2 border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-red-500 focus:border-transparent dark:bg-gray-700 dark:text-white resize-none"
+                    />
+                  </div>
+
+                  <div className="mb-5">
+                    <label htmlFor="termination-evidence" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Evidence / Notes (Optional)
+                    </label>
+                    <textarea
+                      id="termination-evidence"
+                      value={terminationRequestForm.evidence}
+                      onChange={(event) => setTerminationRequestForm({ ...terminationRequestForm, evidence: event.target.value })}
+                      rows={3}
+                      maxLength={5000}
+                      placeholder="Add supporting records or context for the reviewers..."
+                      className="w-full px-4 py-2 border-2 border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-red-500 focus:border-transparent dark:bg-gray-700 dark:text-white resize-none"
+                    />
+                  </div>
+
+                  <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-900/60 dark:bg-red-900/20">
+                    <p className="text-sm font-semibold text-red-900 dark:text-red-300">What happens after approval</p>
+                    <p className="text-sm text-red-800 dark:text-red-200 mt-1">
+                      The employment period is closed, the account is disabled, and the termination remains in employment history. Reopening later requires Request Rehire.
+                    </p>
+                  </div>
+
+                  <div className="flex justify-end gap-3">
+                    <button
+                      onClick={() => {
+                        setIsTerminationRequestModalOpen(false);
+                        setEmployeeToTerminate(null);
+                        setTerminationRequestForm({ reason: '', evidence: '' });
+                      }}
+                      className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleTerminationRequestSubmit}
+                      disabled={isProcessingId === employeeToTerminate.id || terminationRequestForm.reason.trim().length < 3}
+                      className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isProcessingId === employeeToTerminate.id ? 'Submitting...' : 'Submit Termination Request'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </ModalPortal>
+        )}
+
+        {isRehireRequestModalOpen && employeeToRehire && (
+          <ModalPortal>
+            <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full max-h-[95vh] overflow-y-auto">
+                <div className="p-6">
+                  <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+                    Request Rehire / Reinstate Employee
+                  </h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-5">
+                    This creates a new employment period. Previous permissions are not restored automatically; review the new assignment before submitting.
+                  </p>
+
+                  <div className="mb-5 rounded-lg bg-gray-50 dark:bg-gray-700/50 p-4">
+                    <p className="text-sm text-gray-700 dark:text-gray-300">
+                      <span className="font-medium">Employee:</span> {buildName(employeeToRehire)}
+                    </p>
+                    <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">
+                      <span className="font-medium">Previous termination:</span> {formatDate(employeeToRehire.terminatedAt)}
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
+                    <div>
+                      <label htmlFor="rehire-start-date" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        New Start Date <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        id="rehire-start-date"
+                        type="date"
+                        value={rehireRequestForm.rehireStartDate}
+                        onChange={(event) => setRehireRequestForm({ ...rehireRequestForm, rehireStartDate: event.target.value })}
+                        className="w-full px-4 py-2 border-2 border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="rehire-role" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        New Account Role <span className="text-red-500">*</span>
+                      </label>
+                      {availableRoles.length > 0 ? (
+                        <select
+                          id="rehire-role"
+                          value={rehireRequestForm.rehireRole}
+                          onChange={(event) => setRehireRequestForm({ ...rehireRequestForm, rehireRole: event.target.value })}
+                          className="w-full px-4 py-2 border-2 border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                        >
+                          <option value="">Select a role</option>
+                          {availableRoles
+                            .filter((role) => !['shop owner', 'super admin'].includes(role.name.trim().toLowerCase()))
+                            .map((role) => (
+                              <option key={role.name} value={role.name}>{role.name}</option>
+                            ))}
+                        </select>
+                      ) : (
+                        <input
+                          id="rehire-role"
+                          type="text"
+                          value={rehireRequestForm.rehireRole}
+                          onChange={(event) => setRehireRequestForm({ ...rehireRequestForm, rehireRole: event.target.value })}
+                          placeholder="e.g. Repairer or Staff"
+                          className="w-full px-4 py-2 border-2 border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                        />
+                      )}
+                    </div>
+                    <div>
+                      <label htmlFor="rehire-position" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        New Position <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        id="rehire-position"
+                        type="text"
+                        value={rehireRequestForm.rehirePosition}
+                        onChange={(event) => setRehireRequestForm({ ...rehireRequestForm, rehirePosition: event.target.value })}
+                        maxLength={100}
+                        className="w-full px-4 py-2 border-2 border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="rehire-department" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Department
+                      </label>
+                      <input
+                        id="rehire-department"
+                        type="text"
+                        value={rehireRequestForm.rehireDepartment}
+                        onChange={(event) => setRehireRequestForm({ ...rehireRequestForm, rehireDepartment: event.target.value })}
+                        maxLength={100}
+                        className="w-full px-4 py-2 border-2 border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="rehire-functional-role" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Functional Role
+                      </label>
+                      <input
+                        id="rehire-functional-role"
+                        type="text"
+                        value={rehireRequestForm.rehireFunctionalRole}
+                        onChange={(event) => setRehireRequestForm({ ...rehireRequestForm, rehireFunctionalRole: event.target.value })}
+                        maxLength={100}
+                        placeholder="Optional responsibility"
+                        className="w-full px-4 py-2 border-2 border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="rehire-salary" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Salary
+                      </label>
+                      <input
+                        id="rehire-salary"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={rehireRequestForm.rehireSalary}
+                        onChange={(event) => setRehireRequestForm({ ...rehireRequestForm, rehireSalary: event.target.value })}
+                        placeholder="Review and enter salary"
+                        className="w-full px-4 py-2 border-2 border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="mb-4">
+                    <label htmlFor="rehire-reason" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Reason for Rehire <span className="text-red-500">*</span>
+                    </label>
+                    <textarea
+                      id="rehire-reason"
+                      value={rehireRequestForm.reason}
+                      onChange={(event) => setRehireRequestForm({ ...rehireRequestForm, reason: event.target.value })}
+                      rows={3}
+                      maxLength={2000}
+                      placeholder="Explain the rehire or reinstatement decision..."
+                      className="w-full px-4 py-2 border-2 border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white resize-none"
+                    />
+                  </div>
+
+                  <div className="mb-5">
+                    <label htmlFor="rehire-evidence" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Evidence / Notes (Optional)
+                    </label>
+                    <textarea
+                      id="rehire-evidence"
+                      value={rehireRequestForm.evidence}
+                      onChange={(event) => setRehireRequestForm({ ...rehireRequestForm, evidence: event.target.value })}
+                      rows={3}
+                      maxLength={5000}
+                      placeholder="Add the approved terms or supporting context..."
+                      className="w-full px-4 py-2 border-2 border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white resize-none"
+                    />
+                  </div>
+
+                  <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-900/60 dark:bg-blue-900/20">
+                    <p className="text-sm font-semibold text-blue-900 dark:text-blue-300">Approval Process</p>
+                    <p className="text-sm text-blue-800 dark:text-blue-200 mt-1">
+                      The Manager reviews this request first. The Company Shop Owner gives final approval, then the account is enabled with only the newly approved role and permissions.
+                    </p>
+                  </div>
+
+                  <div className="flex justify-end gap-3">
+                    <button
+                      onClick={() => {
+                        setIsRehireRequestModalOpen(false);
+                        setEmployeeToRehire(null);
+                        setRehireRequestForm({
+                          reason: '',
+                          evidence: '',
+                          rehireStartDate: '',
+                          rehirePosition: '',
+                          rehireDepartment: '',
+                          rehireFunctionalRole: '',
+                          rehireSalary: '',
+                          rehireRole: '',
+                        });
+                      }}
+                      className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleRehireRequestSubmit}
+                      disabled={isProcessingId === employeeToRehire.id || rehireRequestForm.reason.trim().length < 3 || !rehireRequestForm.rehireStartDate || !rehireRequestForm.rehirePosition.trim() || !rehireRequestForm.rehireRole.trim()}
+                      className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isProcessingId === employeeToRehire.id ? 'Submitting...' : 'Submit Rehire Request'}
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           </ModalPortal>
         )}

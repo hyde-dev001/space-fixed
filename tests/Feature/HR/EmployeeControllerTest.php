@@ -147,7 +147,8 @@ class EmployeeControllerTest extends TestCase
         $response = $this->actingAs($this->hrUser, 'user')
             ->postJson("/api/hr/employees/{$employee->id}/suspend", ['reason' => 'Policy violation']);
 
-        $response->assertStatus(404);
+        $response->assertForbidden()
+            ->assertJsonPath('code', 'SUSPENSION_WORKFLOW_REQUIRED');
 
         $this->assertDatabaseHas('employees', [
             'id' => $employee->id,
@@ -247,9 +248,10 @@ class EmployeeControllerTest extends TestCase
 
         $this->actingAs($this->hrUser, 'user')
             ->putJson("/api/hr/employees/{$employee->id}", ['status' => 'terminated'])
-            ->assertOk();
+            ->assertForbidden()
+            ->assertJsonPath('code', 'TERMINATION_WORKFLOW_REQUIRED');
 
-        $this->assertSame('inactive', $linkedUser->fresh()->status);
+        $this->assertSame('active', $linkedUser->fresh()->status);
     }
 
     #[Test]
@@ -263,7 +265,7 @@ class EmployeeControllerTest extends TestCase
         $this->actingAs($this->hrUser, 'user')
             ->putJson("/api/hr/employees/{$employee->id}", ['status' => 'active'])
             ->assertStatus(422)
-            ->assertJsonPath('code', 'EMPLOYEE_TERMINATED');
+            ->assertJsonPath('code', 'EMPLOYEE_REHIRE_REQUIRED');
 
         $this->assertDatabaseHas('employees', [
             'id' => $employee->id,
@@ -273,7 +275,7 @@ class EmployeeControllerTest extends TestCase
         $this->actingAs($this->hrUser, 'user')
             ->postJson("/api/hr/employees/{$employee->id}/activate")
             ->assertStatus(422)
-            ->assertJsonPath('code', 'EMPLOYEE_TERMINATED');
+            ->assertJsonPath('code', 'EMPLOYEE_REHIRE_REQUIRED');
     }
 
     #[Test]
