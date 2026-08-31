@@ -4,6 +4,7 @@ import Navigation from '../Shared/Navigation';
 import Swal from '../Shared/UserModal';
 import RefundEligibilityTooltip from '@/components/common/RefundEligibilityTooltip';
 import ShipmentTrackingModal from '@/components/logistics/ShipmentTrackingModal';
+import CustomerFooter from '../../../components/common/CustomerFooter';
 
 const MAX_REFUND_IMAGE_SIZE_BYTES = 20 * 1024 * 1024;
 const MAX_REFUND_VIDEO_SIZE_BYTES = 256 * 1024 * 1024;
@@ -3232,6 +3233,7 @@ const MyOrders: React.FC = () => {
         />
         </div>
       </main>
+      <CustomerFooter className="mt-24" />
     </div>
   );
 };

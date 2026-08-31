@@ -6,6 +6,7 @@ import NotificationBell from "../../../components/common/NotificationBell";
 import StarRating from '../../../components/common/StarRating';
 import { useBadgeCounts } from '../../../hooks/useBadgeCounts';
 import { GPS_POSITION_OPTIONS, getCurrentPositionWithTimeout } from '@/utils/geolocation';
+import CustomerFooter from '../../../components/common/CustomerFooter';
 
 type Product = {
   id: number;
@@ -1057,6 +1058,8 @@ const Products: React.FC<Props> = () => {
             </div>
           )}
         </div>
+
+        <CustomerFooter className="mt-24" />
 
         <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-gray-200 bg-white xl:hidden">
           <div className="mx-auto grid w-full max-w-[430px] grid-cols-5 px-2 py-2 text-[11px] text-gray-600 md:max-w-none md:px-4">

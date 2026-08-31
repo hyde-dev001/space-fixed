@@ -8,6 +8,7 @@ import type { TrackingShipment } from '@/types/logistics';
 import { refundStageLabel } from './refundWorkflow';
 import { buildRepairBreakdown, type RepairTaxMode } from '../../../utils/repairPricing';
 import type { PreferredReturnChannel } from './refundPayloadBuilder';
+import CustomerFooter from '../../../components/common/CustomerFooter';
 
 const MAX_REFUND_IMAGE_SIZE_BYTES = 20 * 1024 * 1024;
 const MAX_REFUND_VIDEO_SIZE_BYTES = 256 * 1024 * 1024;
@@ -5875,6 +5876,7 @@ const MyRepairs: React.FC = () => {
           </div>
         )}
       </main>
+      <CustomerFooter className="mt-24" />
     </div>
   );
 };

@@ -38,6 +38,166 @@ html:not(.dark) #app .super-admin-shell [class~="bg-gray-50"] {
   }
 }
 
+/* Shared customer footer for non-landing pages. The landing page keeps its
+   fixed curtain footer because it needs a different stacking context. */
+.customer-footer {
+  overflow: hidden;
+  background: #fff;
+  color: #000;
+  opacity: 0;
+  transform: translateY(2rem);
+  transition: opacity 700ms ease, transform 900ms cubic-bezier(.22, 1, .36, 1);
+}
+
+.customer-footer--visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.customer-footer__content {
+  position: relative;
+  z-index: 1;
+  max-width: 1800px;
+  margin: 0 auto;
+  padding: 2rem 1rem 0;
+}
+
+.customer-footer__desktop-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 2rem;
+}
+
+.customer-footer__brand,
+.customer-footer__desktop-grid h2,
+.customer-footer__desktop-grid ul,
+.customer-footer__meta,
+.customer-footer__mobile-links summary {
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+
+.customer-footer__brand {
+  display: inline-block;
+  font-size: .875rem;
+  font-weight: 700;
+}
+
+.customer-footer__desktop-grid h2 {
+  margin: 0 0 1rem;
+  font-size: .75rem;
+  font-weight: 600;
+}
+
+.customer-footer__desktop-grid ul {
+  display: grid;
+  gap: .5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: .75rem;
+  font-weight: 500;
+}
+
+.customer-footer__desktop-grid a,
+.customer-footer__mobile-links a {
+  display: inline-block;
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.customer-footer__desktop-grid a:hover,
+.customer-footer__desktop-grid a:focus-visible,
+.customer-footer__mobile-links a:hover,
+.customer-footer__mobile-links a:focus-visible {
+  opacity: .55;
+  transform: translateX(.2rem);
+}
+
+.customer-footer__meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 3rem;
+  padding: 1.25rem 0;
+  border-top: 1px solid rgb(0 0 0 / 15%);
+  font-size: .6875rem;
+  font-weight: 500;
+}
+
+.customer-footer__wordmark {
+  width: max-content;
+  min-width: 100%;
+  padding-top: 2.2rem;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: clamp(7rem, 25vw, 26rem);
+  font-weight: 700;
+  line-height: .68;
+  letter-spacing: -.105em;
+}
+
+.customer-footer__mobile-links {
+  display: none;
+}
+
+@media (max-width: 1023px) {
+  .customer-footer {
+    padding-bottom: 5rem;
+  }
+
+  .customer-footer__desktop-grid {
+    display: none;
+  }
+
+  .customer-footer__mobile-links {
+    display: block;
+  }
+
+  .customer-footer__mobile-links .customer-footer__brand {
+    margin-bottom: 1rem;
+  }
+
+  .customer-footer__mobile-links details {
+    border-top: 1px solid rgb(0 0 0 / 15%);
+  }
+
+  .customer-footer__mobile-links summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 0;
+    cursor: pointer;
+    font-size: .75rem;
+    font-weight: 600;
+    list-style: none;
+  }
+
+  .customer-footer__mobile-links summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .customer-footer__mobile-links details > div {
+    display: grid;
+    gap: .65rem;
+    padding: 0 0 1rem;
+    font-size: .75rem;
+  }
+
+  .customer-footer__meta {
+    grid-template-columns: 1fr;
+    gap: .65rem;
+    margin-top: 1.5rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .customer-footer,
+  .customer-footer__desktop-grid a,
+  .customer-footer__mobile-links a {
+    transition: none;
+  }
+}
+
 /* Shared metrics-card treatment. EcommerceMetrics is the canonical source;
    these selectors keep legacy, page-local metric cards visually consistent. */
 html:not(.dark) #app .metrics-card,
