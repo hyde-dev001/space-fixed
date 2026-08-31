@@ -3,7 +3,11 @@ import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import Swal from "sweetalert2";
-import { computeCanPay, getPhoneDisplayForReceipt } from "../../Repairs/posPaymentValidation";
+import {
+	computeCanPay,
+	getPhoneDisplayForReceipt,
+	normalizeOptionalCustomerId,
+} from "../../Repairs/posPaymentValidation";
 import { repairPosHistoryApi } from "../../../services/repairPosHistoryApi";
 import { buildRepairBreakdown } from "../../../utils/repairPricing";
 import { PosMode, resolveAllowedModes } from "./posModeResolver";
@@ -644,7 +648,7 @@ const PointOfSalePage = () => {
 								id: String(entry?.id ?? `R-${index}`),
 								requestNumber: String(entry?.request_id ?? "").trim() || undefined,
 								customer: String(entry?.customer ?? entry?.customer_name ?? "Walk-in Customer"),
-								customerId: Number.isFinite(Number(entry?.customer_id ?? entry?.user_id)) ? Number(entry?.customer_id ?? entry?.user_id) : null,
+								customerId: normalizeOptionalCustomerId(entry?.customer_id ?? entry?.user_id),
 								paymentPolicy: normalizePaymentPolicy(entry?.payment_policy_snapshot ?? entry?.payment_policy ?? entry?.shop_owner?.repair_payment_policy),
 								paymentStatus: String(entry?.payment_status ?? "pending"),
 								status: String(entry?.status ?? ""),
@@ -672,7 +676,7 @@ const PointOfSalePage = () => {
 								id: String(row?.id ?? `MQ-${index}`),
 								requestNumber: requestNo,
 								customer: String(row?.customer_name ?? "Walk-in Customer"),
-								customerId: null,
+								customerId: normalizeOptionalCustomerId(row?.customer_id),
 								paymentPolicy: normalizePaymentPolicy(row?.payment_policy),
 								paymentStatus: queueDueType === null ? "completed" : "partially_paid",
 								status: String(row?.status ?? ""),

@@ -116,6 +116,32 @@ class RepairPosManualQueueTest extends TestCase
     }
 
     #[Test]
+    public function manual_queue_exposes_the_linked_registered_customer_id(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'registration_type' => 'company',
+        ]);
+        /** @var User $cashier */
+        $cashier = User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $customer = User::factory()->create();
+
+        $repair = $this->createRepairRequest([
+            'shop_owner_id' => $shopOwner->id,
+            'user_id' => $customer->id,
+            'request_id' => 'REP-POS-20260406-CUSTOMER-ID',
+            'manual_pos_queue_enabled' => true,
+            'status' => 'pending',
+        ]);
+
+        $response = $this->actingAs($cashier, 'user')->getJson('/api/repair-pos/manual-queue');
+
+        $response->assertOk()
+            ->assertJsonPath('data.0.id', (int) $repair->id)
+            ->assertJsonPath('data.0.customer_id', (int) $customer->id);
+    }
+
+    #[Test]
     public function manual_queue_excludes_assigned_rep_pos_records(): void
     {
         $shopOwner = ShopOwner::factory()->approved()->create([

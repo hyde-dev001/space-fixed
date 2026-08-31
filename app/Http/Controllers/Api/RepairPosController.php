@@ -25,6 +25,11 @@ class RepairPosController extends Controller
 {
     public function checkout(Request $request, RepairPosPaymentService $service)
     {
+        if ($request->input('customer_type') === 'walk_in'
+            && (int) ($request->input('customer_id') ?? 0) <= 0) {
+            $request->merge(['customer_id' => null]);
+        }
+
         $validated = $request->validate([
             'repair_request_id' => ['nullable', 'integer', 'exists:repair_requests,id'],
             'due_type' => ['required', 'string', 'in:deposit,balance,full'],
@@ -713,6 +718,7 @@ class RepairPosController extends Controller
                 'id' => (int) $repair->id,
                 'request_id' => (string) $repair->request_id,
                 'customer_name' => (string) $repair->customer_name,
+                'customer_id' => $repair->user_id !== null ? (int) $repair->user_id : null,
                 'phone' => (string) ($repair->phone ?? ''),
                 'status' => $status,
                 'payment_policy' => $normalizedPolicy,

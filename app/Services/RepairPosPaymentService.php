@@ -72,6 +72,7 @@ class RepairPosPaymentService
 
         return DB::transaction(function () use ($repair, $payload, $actorId, $paidAmount, $dueType) {
             $lockedRepair = RepairRequest::query()->lockForUpdate()->findOrFail($repair->id);
+            $canonicalCustomer = $this->canonicalizeRepairCustomer($lockedRepair, $payload);
             $phaseBreakdown = $this->paymentSettlementService->repairPaymentBreakdown($lockedRepair, $dueType);
             $serviceTax = VatInclusiveCalculator::extract((float) $phaseBreakdown['service_amount'], self::VAT_RATE_PERCENT);
             $dueSubtotal = round((float) $serviceTax['net'] + (float) $phaseBreakdown['delivery_amount'], 2);
@@ -107,11 +108,11 @@ class RepairPosPaymentService
                 'shop_owner_id' => $lockedRepair->shop_owner_id,
                 'module_type' => 'repair',
                 'module_reference_id' => $lockedRepair->id,
-                'customer_type' => (string) $payload['customer_type'],
-                'customer_id' => $payload['customer_id'] ?? null,
-                'walk_in_name' => $payload['walk_in_name'] ?? null,
-                'walk_in_phone' => $payload['walk_in_phone'] ?? null,
-                'walk_in_email' => $payload['walk_in_email'] ?? null,
+                'customer_type' => $canonicalCustomer['customer_type'],
+                'customer_id' => $canonicalCustomer['customer_id'],
+                'walk_in_name' => $canonicalCustomer['walk_in_name'],
+                'walk_in_phone' => $canonicalCustomer['walk_in_phone'],
+                'walk_in_email' => $canonicalCustomer['walk_in_email'],
                 'due_type' => $dueType,
                 'subtotal' => $dueSubtotal,
                 'tax_amount' => $vatAmount,
@@ -166,6 +167,58 @@ class RepairPosPaymentService
 
             return $transaction->fresh(['paymentLines']);
         });
+    }
+
+    private function canonicalizeRepairCustomer(RepairRequest $repair, array $payload): array
+    {
+        $repairCustomerId = (int) ($repair->user_id ?? 0);
+        $requestedCustomerType = (string) ($payload['customer_type'] ?? '');
+        $requestedCustomerId = $payload['customer_id'] ?? null;
+        $requestedCustomerId = $requestedCustomerId === null || $requestedCustomerId === ''
+            ? null
+            : (int) $requestedCustomerId;
+
+        if ($repairCustomerId > 0) {
+            if ($requestedCustomerType !== 'registered') {
+                throw ValidationException::withMessages([
+                    'customer_type' => ['This repair is linked to a registered customer.'],
+                ]);
+            }
+
+            if ($requestedCustomerId !== $repairCustomerId) {
+                throw ValidationException::withMessages([
+                    'customer_id' => ['The selected customer does not own this repair.'],
+                ]);
+            }
+
+            return [
+                'customer_type' => 'registered',
+                'customer_id' => $repairCustomerId,
+                'walk_in_name' => null,
+                'walk_in_phone' => null,
+                'walk_in_email' => null,
+            ];
+        }
+
+        if ($requestedCustomerType !== 'walk_in') {
+            throw ValidationException::withMessages([
+                'customer_type' => ['This repair is a walk-in repair and has no registered customer.'],
+            ]);
+        }
+
+        if ($requestedCustomerId !== null) {
+            throw ValidationException::withMessages([
+                'customer_id' => ['Walk-in repairs cannot be linked to a registered customer.'],
+            ]);
+        }
+
+        return [
+            'customer_type' => 'walk_in',
+            'customer_id' => null,
+            'walk_in_name' => $repair->customer_name ?: ($payload['walk_in_name'] ?? null),
+            'walk_in_phone' => $repair->phone ?: ($payload['walk_in_phone'] ?? null),
+            'walk_in_email' => $repair->email ?: ($payload['walk_in_email'] ?? null),
+        ];
     }
 
     public function verifyPaymentLine(PosPaymentLine $line, array $payload, int $actorId): array

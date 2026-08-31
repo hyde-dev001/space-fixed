@@ -43,3 +43,8 @@
 ## 2026-08-30 - Render-loop callback initialization
 
 - In a React effect, declare callbacks used by the first animation-frame invocation before calling the loop; a source-order regression contract protects against minified temporal-dead-zone failures.
+
+## 2026-09-01 - Repair courier handoff gates
+
+- Keep payment, delivery-plan locking, external courier tracking, and physical repair handoff as separate gates. Customer-arranged return tracking remains editable after balance payment and becomes immutable only after the employee records the handoff.
+- Derive repair POS customer identity from the locked repair request. Never persist UI sentinel IDs or caller-supplied guest details when the repair already contains the authoritative customer snapshot.

@@ -359,7 +359,7 @@ class RepairReturnHandoffTest extends TestCase
         $this->assertFalse((bool) $repair->pickup_enabled);
     }
 
-    public function test_non_warranty_return_plan_lock_still_blocks_tracking_and_handoff(): void
+    public function test_paid_non_warranty_return_plan_lock_allows_tracking_until_handoff(): void
     {
         [$repair, $customer, $repairer] = $this->repairFixture('customer_pickup');
         $repair->update(['return_logistics_locked_at' => now()]);
@@ -367,35 +367,64 @@ class RepairReturnHandoffTest extends TestCase
         $this->assertFalse(app(\App\Services\RepairDeliveryService::class)
             ->returnHandoff($repair->fresh(), true)['can_release']);
 
+        $this->actingAs($repairer, 'user')
+            ->postJson("/api/repairer/repairs/{$repair->id}/activate-pickup")
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('tracking');
+
         $this->actingAs($customer, 'user')
             ->postJson("/api/customer/repairs/{$repair->id}/external-tracking", [
                 'leg' => 'return',
                 'carrier' => 'Lalamove',
                 'tracking_number' => 'PAID-RETURN-123',
             ])
-            ->assertUnprocessable();
+            ->assertOk();
+
+        $this->assertTrue(app(\App\Services\RepairDeliveryService::class)
+            ->returnHandoff($repair->fresh(), true)['can_release']);
 
         $this->actingAs($repairer, 'user')
             ->postJson("/api/repairer/repairs/{$repair->id}/activate-pickup")
-            ->assertUnprocessable()
-            ->assertJsonValidationErrors('status');
+            ->assertOk()
+            ->assertJsonPath('repair.status', 'shipped');
 
         $repair->refresh();
-        $this->assertFalse((bool) $repair->pickup_enabled);
-        $this->assertSame('ready_for_pickup', (string) $repair->status);
-        $this->assertNull(data_get($repair->return_address, 'external_tracking'));
+        $this->assertTrue((bool) $repair->pickup_enabled);
+        $this->assertSame('shipped', (string) $repair->status);
+
+        $this->actingAs($customer, 'user')
+            ->postJson("/api/customer/repairs/{$repair->id}/external-tracking", [
+                'leg' => 'return',
+                'carrier' => 'Grab Express',
+                'tracking_number' => 'CHANGED-AFTER-HANDOFF',
+            ])
+            ->assertUnprocessable();
     }
 
     public function test_job_order_payload_exposes_the_authoritative_return_handoff_gate(): void
     {
-        [$repair, , $repairer] = $this->repairFixture('customer_pickup');
+        [$repair, $customer, $repairer] = $this->repairFixture('customer_pickup');
 
         $this->actingAs($repairer, 'user')
             ->getJson('/api/repairer/repairs')
             ->assertOk()
             ->assertJsonPath('data.0.return_handoff.method', 'customer_pickup')
-            ->assertJsonPath('data.0.return_handoff.can_release', true)
+            ->assertJsonPath('data.0.return_handoff.can_release', false)
+            ->assertJsonPath('data.0.return_handoff.blocked_reason', 'Courier tracking details are required before handoff.')
             ->assertJsonPath('data.0.return_handoff.action_label', 'Confirm courier handoff');
+
+        $this->actingAs($customer, 'user')
+            ->postJson("/api/customer/repairs/{$repair->id}/external-tracking", [
+                'leg' => 'return',
+                'carrier' => 'Lalamove',
+                'tracking_number' => 'RETURN-PAYMENT-123',
+            ])
+            ->assertOk();
+
+        $this->actingAs($repairer, 'user')
+            ->getJson('/api/repairer/repairs')
+            ->assertOk()
+            ->assertJsonPath('data.0.return_handoff.can_release', true);
     }
 
     public function test_individual_shop_owner_return_handoff_remains_available(): void
@@ -405,6 +434,14 @@ class RepairReturnHandoffTest extends TestCase
             'ready_for_pickup',
             'individual',
         );
+
+        $this->actingAs($customer, 'user')
+            ->postJson('/api/customer/repairs/' . $repair->id . '/external-tracking', [
+                'leg' => 'return',
+                'carrier' => 'Lalamove',
+                'tracking_number' => 'INDIVIDUAL-RETURN-123',
+            ])
+            ->assertOk();
 
         $this->actingAs($shop, 'shop_owner')
             ->postJson('/api/shop-owner/repairs/' . $repair->id . '/activate-pickup')

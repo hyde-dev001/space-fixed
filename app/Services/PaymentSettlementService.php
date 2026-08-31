@@ -52,6 +52,15 @@ class PaymentSettlementService
         if ($shopSponsoredWarranty) {
             $serviceTotal = $serviceAmount = 0.0;
         }
+        if ($phase === 'initial'
+            && $delivery['method'] === 'customer_delivery'
+            && ! $shopSponsoredWarranty
+            && round($serviceAmount + $deliveryAmount, 2) > 0
+            && ! $this->repairDeliveryService->hasRequiredExternalTracking($repair, 'intake')) {
+            throw ValidationException::withMessages([
+                'intake_tracking' => ['Add the courier carrier and tracking number before proceeding to payment.'],
+            ]);
+        }
         $redelivery = $phase === 'redelivery'
             ? $this->repairDeliveryService->activeRedeliveryRequirement($repair)
             : null;

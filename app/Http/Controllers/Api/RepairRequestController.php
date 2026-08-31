@@ -2099,8 +2099,13 @@ class RepairRequestController extends Controller
                 ->firstOrFail();
             $isIntake = $validated['leg'] === 'intake';
             $method = (string) ($isIntake
-                ? $repair->intake_delivery_method
-                : $repair->return_delivery_method);
+                ? ($repair->intake_delivery_method
+                    ?: (($repair->delivery_method ?? null) === 'walk_in' ? 'walk_in' : 'customer_delivery'))
+                : ($repair->return_delivery_method
+                    ?: (($repair->delivery_method ?? null) === 'walk_in' ? 'walk_in' : 'customer_pickup')));
+            if (! $isIntake && $method === 'pickup') {
+                $method = 'customer_pickup';
+            }
             $requiredMethod = $isIntake ? 'customer_delivery' : 'customer_pickup';
             $lockField = $isIntake ? 'intake_logistics_locked_at' : 'return_logistics_locked_at';
             $addressField = $isIntake ? 'intake_address' : 'return_address';
@@ -2126,7 +2131,11 @@ class RepairRequestController extends Controller
             $sponsoredReturnAwaitingHandoff = ! $isIntake
                 && ! (bool) $repair->pickup_enabled
                 && $shopSponsoredWarranty;
-            if ($repair->{$lockField} !== null
+            $trackingLocked = $isIntake
+                ? $repair->{$lockField} !== null
+                : (bool) $repair->pickup_enabled
+                    || ($repair->{$lockField} !== null && $method !== 'customer_pickup');
+            if ($trackingLocked
                 && ! $sponsoredIntakeAwaitingReceipt
                 && ! $sponsoredReturnAwaitingHandoff) {
                 throw \Illuminate\Validation\ValidationException::withMessages([
@@ -3082,6 +3091,11 @@ class RepairRequestController extends Controller
 
     public function checkoutViaPos(Request $request, RepairPosPaymentService $service)
     {
+        if ($request->input('customer_type') === 'walk_in'
+            && (int) ($request->input('customer_id') ?? 0) <= 0) {
+            $request->merge(['customer_id' => null]);
+        }
+
         $validated = $request->validate([
             'repair_request_id' => ['required', 'integer', 'exists:repair_requests,id'],
             'due_type' => ['required', 'string', 'in:deposit,balance,full'],
