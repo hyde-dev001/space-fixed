@@ -38,6 +38,39 @@ html:not(.dark) #app .super-admin-shell [class~="bg-gray-50"] {
   }
 }
 
+/* Shared customer-page entrance motion. Pages opt in with data-scroll-reveal. */
+.scroll-reveal {
+  opacity: 0;
+  transform: translate3d(0, 40px, 0);
+  transition: opacity 700ms ease, transform 800ms cubic-bezier(.22, 1, .36, 1);
+}
+
+.scroll-reveal.is-visible {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+}
+
+.scroll-reveal--side {
+  transform: translate3d(32px, 0, 0);
+}
+
+.scroll-reveal--scale {
+  transform: scale(1.04);
+}
+
+.scroll-reveal--scale.is-visible {
+  transform: scale(1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scroll-reveal,
+  .scroll-reveal.is-visible {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+}
+
 /* Shared customer footer for non-landing pages. The landing page keeps its
    fixed curtain footer because it needs a different stacking context. */
 .customer-footer {

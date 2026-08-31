@@ -43,6 +43,13 @@ describe('SoleSpace landing page redesign', () => {
     expect(landingSource).toContain('html.solespace-first-load:not(.solespace-app-ready) .landing-hero-motion');
   });
 
+  it('uses the shared customer scroll-reveal behavior', () => {
+    expect(landingSource).toContain("import { useScrollReveal } from '../Shared/useScrollReveal';");
+    expect(landingSource).toContain('useScrollReveal(revealRootRef);');
+    expect(landingSource).not.toContain("root.querySelectorAll<HTMLElement>('[data-scroll-reveal]')");
+    expect(landingSource).not.toContain('.scroll-reveal {');
+  });
+
   it('uses a measured fixed-footer curtain reveal with responsive navigation', () => {
     [
       'id="landing-footer"',

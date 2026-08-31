@@ -15,4 +15,14 @@ describe('Products page layout', () => {
     expect(productsSource).toContain('Search Results for');
     expect(productsSource).toContain('Showing results matching');
   });
+
+  it('opts the catalog and dynamic product cards into the shared scroll reveal', () => {
+    expect(productsSource).toContain("import { useScrollReveal } from '../Shared/useScrollReveal';");
+    expect(productsSource).toContain('const revealRootRef = useRef<HTMLDivElement | null>(null);');
+    expect(productsSource).toContain('useScrollReveal(revealRootRef);');
+    expect(productsSource).toContain('ref={revealRootRef}');
+    expect(productsSource.match(/data-scroll-reveal/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+    expect(productsSource).toContain('data-scroll-reveal className="scroll-reveal h-full"');
+    expect(productsSource).toContain('className="group block h-full');
+  });
 });
