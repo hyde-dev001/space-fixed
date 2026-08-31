@@ -27,6 +27,21 @@ const item = (overrides: Partial<OwnerAttentionItem> = {}): OwnerAttentionItem =
 
 const selection: ApprovalSelection = { sourceType: "expense", sourceId: 12 };
 
+const suspensionSelection: ApprovalSelection = { sourceType: "suspension_request", sourceId: 3 };
+
+const suspensionItem = (overrides: Partial<OwnerAttentionItem> = {}): OwnerAttentionItem => item({
+  attention_key: "suspension_request:3:owner_approval",
+  source_type: "suspension_request",
+  source_id: 3,
+  category: "suspension_request",
+  module: "hr",
+  title: "Employee suspension approval",
+  concise_summary: "Review the employee suspension request.",
+  coverage_source: "suspensions",
+  destination_url: "/shop-owner/action-center?approval=suspension_request%3A3",
+  ...overrides,
+});
+
 describe("OwnerApprovalDetailPanel", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -127,5 +142,119 @@ describe("OwnerApprovalDetailPanel", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(/changed before the decision was saved/i);
     expect(screen.getByText("Supplier expense")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Refresh$/i })).toBeInTheDocument();
+  });
+
+  it("sends the required action with Shop Owner suspension decisions", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ data: { id: 3, status: "pending", reason: "Policy violation" } }),
+      })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ success: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <OwnerApprovalDetailPanel
+        item={suspensionItem()}
+        selection={suspensionSelection}
+        onClose={vi.fn()}
+        onDecisionComplete={vi.fn()}
+      />,
+    );
+
+    await screen.findByRole("heading", { name: "Decision summary" });
+    fireEvent.click(screen.getByRole("button", { name: /^Approve$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Confirm approval/i }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(fetchMock.mock.calls[1][0]).toBe("/api/shop-owner/suspension-requests/3/review");
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ action: "approve", note: "" });
+  });
+
+  it("sends the rejection action and note for Shop Owner suspension decisions", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ data: { id: 3, status: "pending", reason: "Policy violation" } }),
+      })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ success: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <OwnerApprovalDetailPanel
+        item={suspensionItem()}
+        selection={suspensionSelection}
+        onClose={vi.fn()}
+        onDecisionComplete={vi.fn()}
+      />,
+    );
+
+    await screen.findByRole("heading", { name: "Decision summary" });
+    fireEvent.click(screen.getByRole("button", { name: /^Reject$/i }));
+    fireEvent.change(screen.getByRole("textbox", { name: /Rejection reason/i }), { target: { value: "Insufficient evidence" } });
+    fireEvent.click(screen.getByRole("button", { name: /Confirm rejection/i }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(fetchMock.mock.calls[1][0]).toBe("/api/shop-owner/suspension-requests/3/review");
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ action: "reject", note: "Insufficient evidence" });
+  });
+
+  it("shows the HR reason and evidence in the Shop Owner approval details", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: {
+          id: 3,
+          status: "pending",
+          reason: "Repeated policy violations",
+          evidence: "Incident report #42",
+          manager_note: "Approved by manager",
+        },
+      }),
+    }));
+
+    render(
+      <OwnerApprovalDetailPanel
+        item={suspensionItem()}
+        selection={suspensionSelection}
+        onClose={vi.fn()}
+        onDecisionComplete={vi.fn()}
+      />,
+    );
+
+    await screen.findByRole("heading", { name: "HR request and review notes" });
+    expect(screen.getByText("Repeated policy violations")).toBeInTheDocument();
+    expect(screen.getByText("Incident report #42")).toBeInTheDocument();
+    expect(screen.getByText("Approved by manager")).toBeInTheDocument();
+  });
+
+  it("shows server validation errors instead of treating them as stale decisions", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ data: { id: 3, status: "pending", reason: "Policy violation" } }),
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 422,
+        json: async () => ({ message: "The action field is required.", errors: { action: ["The action field is required."] } }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <OwnerApprovalDetailPanel
+        item={suspensionItem()}
+        selection={suspensionSelection}
+        onClose={vi.fn()}
+        onDecisionComplete={vi.fn()}
+      />,
+    );
+
+    await screen.findByRole("heading", { name: "Decision summary" });
+    fireEvent.click(screen.getByRole("button", { name: /^Approve$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Confirm approval/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("The action field is required.");
+    expect(screen.getByRole("alert")).not.toHaveTextContent(/changed before the decision was saved/i);
   });
 });

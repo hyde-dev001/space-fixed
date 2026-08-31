@@ -26,4 +26,11 @@ describe("Manager suspension approvals page contract", () => {
         expect(source).toContain("Suspension stage approved");
         expect(source).toContain("Suspension request rejected");
     });
+
+    it("labels the HR-provided reason and evidence in the Manager details", () => {
+        expect(source).toContain("HR suspension reason");
+        expect(source).toContain("HR evidence / details");
+        expect(source).toContain("request.reason");
+        expect(source).toContain("request.evidence");
+    });
 });

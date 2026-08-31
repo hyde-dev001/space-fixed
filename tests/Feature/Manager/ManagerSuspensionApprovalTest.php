@@ -295,6 +295,11 @@ class ManagerSuspensionApprovalTest extends TestCase
      */
     public function test_manager_can_view_suspension_details(): void
     {
+        $this->suspension->forceFill([
+            'reason' => 'Repeated policy violations',
+            'evidence' => 'HR incident report #42',
+        ])->save();
+
         $response = $this->actingAs($this->manager, 'user')
             ->getJson("/api/manager/suspension-requests/{$this->suspension->id}");
 
@@ -307,6 +312,8 @@ class ManagerSuspensionApprovalTest extends TestCase
             'requestedAt',
             'status',
         ]);
+        $response->assertJsonPath('reason', 'Repeated policy violations');
+        $response->assertJsonPath('evidence', 'HR incident report #42');
     }
 
     /**

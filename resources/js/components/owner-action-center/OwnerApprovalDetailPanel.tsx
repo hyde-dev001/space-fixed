@@ -65,8 +65,26 @@ const responseMessage = (status: number): string => {
   return "The approval record could not be loaded. Refresh to try again.";
 };
 
+const validationMessage = (payload: unknown): string => {
+  if (isRecord(payload)) {
+    if (typeof payload.message === "string" && payload.message.trim() !== "") {
+      return payload.message;
+    }
+
+    if (isRecord(payload.errors)) {
+      for (const value of Object.values(payload.errors)) {
+        if (!Array.isArray(value)) continue;
+        const message = value.find((entry) => typeof entry === "string" && entry.trim() !== "");
+        if (typeof message === "string") return message;
+      }
+    }
+  }
+
+  return "The decision could not be saved. Check the submitted values and try again.";
+};
+
 const mutationMessage = (status: number): string => {
-  if (status === 409 || status === 422) return "This approval changed before the decision was saved. The selected record is still open; refresh to load its current state.";
+  if (status === 409) return "This approval changed before the decision was saved. The selected record is still open; refresh to load its current state.";
   return "The decision could not be saved. The selected record is still open; refresh and try again.";
 };
 
@@ -191,13 +209,27 @@ export default function OwnerApprovalDetailPanel({
         body: JSON.stringify(config.body?.(reason) ?? {}),
       });
 
-      if (!response.ok) throw { status: response.status };
+      if (!response.ok) {
+        let payload: unknown = null;
+        try {
+          payload = await response.json();
+        } catch {
+          // Keep the generic mutation message when the server has no JSON error body.
+        }
+        throw { status: response.status, payload };
+      }
 
       setAnnouncement(`${action === "approve" ? "Approval" : "Rejection"} saved.`);
       onDecisionComplete();
     } catch (caught) {
       const status = isRecord(caught) && typeof caught.status === "number" ? caught.status : null;
-      setError({ status, message: status === null ? "The decision could not be saved. The selected record is still open; refresh and try again." : mutationMessage(status) });
+      const payload = isRecord(caught) ? caught.payload : null;
+      const message = status === 422
+        ? validationMessage(payload)
+        : status === null
+          ? "The decision could not be saved. The selected record is still open; refresh and try again."
+          : mutationMessage(status);
+      setError({ status, message });
       setAnnouncement("The decision could not be saved.");
     } finally {
       setSubmitting(false);
