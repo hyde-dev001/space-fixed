@@ -7,6 +7,7 @@ import NotificationBell from '../../../components/common/NotificationBell';
 import { useBadgeCounts } from '../../../hooks/useBadgeCounts';
 import CustomerAddressManager, { type CustomerAddress } from '@/components/address/CustomerAddressManager';
 import { CustomerFooterReveal } from '../../../components/common/CustomerFooter';
+import { useScrollReveal } from '../Shared/useScrollReveal';
 
 interface Shop {
   id: number;
@@ -97,6 +98,8 @@ const Repair: React.FC<Props> = ({ shops }) => {
   const [coverageByShop, setCoverageByShop] = useState<Record<number, CoverageQuote>>({});
   const sortMenuRef = useRef<HTMLDivElement | null>(null);
   const accountMenuRef = useRef<HTMLDivElement | null>(null);
+  const revealRootRef = useRef<HTMLDivElement | null>(null);
+  useScrollReveal(revealRootRef);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
 
   const handleImageError = (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
@@ -291,7 +294,7 @@ const Repair: React.FC<Props> = ({ shops }) => {
     <>
       <Head title="Repair Services - SoleSpace" />
       <CustomerFooterReveal>
-      <div className="userside-repair-list-page min-h-screen bg-white font-outfit antialiased">
+      <div ref={revealRootRef} className="userside-repair-list-page min-h-screen bg-white font-outfit antialiased">
         <div className="hidden xl:block">
           <Navigation />
         </div>
@@ -406,7 +409,7 @@ const Repair: React.FC<Props> = ({ shops }) => {
 
         <div className="mx-auto w-full max-w-107.5 px-4 pb-24 pt-16 sm:max-w-170 md:max-w-225 lg:max-w-5xl xl:max-w-480 xl:px-6 xl:pt-32 xl:pb-20 2xl:px-12">
           {/* Header row */}
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 sm:mb-5">
+          <div data-scroll-reveal className="scroll-reveal mb-4 flex flex-wrap items-center justify-between gap-3 sm:mb-5">
             <div className="text-[11px] sm:text-xs text-black/55 tracking-[0.18em] uppercase">Home / All Repair</div>
             <div className="flex items-center gap-3 sm:gap-4">
               {isAuthenticated && (
@@ -500,8 +503,8 @@ const Repair: React.FC<Props> = ({ shops }) => {
             ) : (
               <div className="grid grid-cols-2 gap-3 xl:gap-4 xl:grid-cols-3 2xl:grid-cols-4">
                 {displayShops.map((shop) => (
+                  <div key={shop.id} data-scroll-reveal className="scroll-reveal h-full">
                   <Link
-                    key={shop.id}
                     href={`/repair-shop/${shop.id}${selectedAddress ? `?address_id=${selectedAddress.id}` : ''}`}
                     className="group flex h-full flex-col rounded-2xl border border-gray-200 bg-white shadow-[0_12px_28px_-24px_rgba(15,23,42,0.45)] transition-all duration-300 hover:-translate-y-1 hover:border-gray-300 hover:shadow-[0_24px_40px_-24px_rgba(15,23,42,0.55)] xl:rounded-3xl xl:border-gray-300 xl:shadow-[0_16px_35px_-24px_rgba(15,23,42,0.45)]"
                   >
@@ -546,6 +549,7 @@ const Repair: React.FC<Props> = ({ shops }) => {
                       </div>
                     </div>
                   </Link>
+                  </div>
                 ))}
               </div>
             )}

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, Head } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
+import { useScrollReveal } from '../Shared/useScrollReveal';
 
 interface Product {
   id: number;
@@ -68,11 +69,7 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
   const revealRootRef = useRef<HTMLDivElement | null>(null);
   const footerRef = useRef<HTMLElement | null>(null);
   const footerRevealSpacerRef = useRef<HTMLDivElement | null>(null);
-  const prefersReducedMotionRef = useRef(false);
-
-  useEffect(() => {
-    prefersReducedMotionRef.current = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  }, []);
+  useScrollReveal(revealRootRef);
 
   useEffect(() => {
     const heroTimer = window.setInterval(() => {
@@ -81,48 +78,6 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
 
     return () => window.clearInterval(heroTimer);
   }, [heroSlides.length]);
-
-  useEffect(() => {
-    const root = revealRootRef.current;
-    if (!root) {
-      return;
-    }
-
-    const revealElements = Array.from(root.querySelectorAll<HTMLElement>('[data-scroll-reveal]'));
-
-    revealElements.forEach((element) => {
-      const delay = Number(element.dataset.scrollDelay ?? 0);
-      if (delay > 0) {
-        element.style.transitionDelay = `${delay}ms`;
-      }
-    });
-
-    if (prefersReducedMotionRef.current) {
-      revealElements.forEach((element) => element.classList.add('is-visible'));
-      return;
-    }
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (!entry.isIntersecting) {
-            return;
-          }
-
-          entry.target.classList.add('is-visible');
-          observer.unobserve(entry.target);
-        });
-      },
-      {
-        threshold: 0.16,
-        rootMargin: '0px 0px -10% 0px',
-      }
-    );
-
-    revealElements.forEach((element) => observer.observe(element));
-
-    return () => observer.disconnect();
-  }, []);
 
   useEffect(() => {
     const landingRoot = landingRootRef.current;
@@ -533,29 +488,6 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
          </footer>
       </div>
         <style>{`
-          .scroll-reveal {
-            opacity: 0;
-            transform: translate3d(0, 40px, 0);
-            transition: opacity 700ms ease, transform 800ms cubic-bezier(0.22, 1, 0.36, 1);
-          }
-
-          .scroll-reveal.is-visible {
-            opacity: 1;
-            transform: translate3d(0, 0, 0);
-          }
-
-          .scroll-reveal--side {
-            transform: translate3d(32px, 0, 0);
-          }
-
-          .scroll-reveal--scale {
-            transform: scale(1.04);
-          }
-
-           .scroll-reveal--scale.is-visible {
-             transform: scale(1);
-           }
-
            .landing-page {
              --landing-footer-height: min(30rem, 100svh);
            }
@@ -717,13 +649,6 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
           }
 
           @media (prefers-reduced-motion: reduce) {
-            .scroll-reveal,
-            .scroll-reveal.is-visible {
-              transition: none !important;
-              transform: none !important;
-              opacity: 1 !important;
-            }
-
             .landing-hero-motion,
             .landing-hero-motion.hero-headline-line,
             .landing-hero-motion.hero-description,

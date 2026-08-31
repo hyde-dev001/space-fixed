@@ -9,6 +9,7 @@ import { refundStageLabel } from './refundWorkflow';
 import { buildRepairBreakdown, type RepairTaxMode } from '../../../utils/repairPricing';
 import type { PreferredReturnChannel } from './refundPayloadBuilder';
 import { CustomerFooterReveal } from '../../../components/common/CustomerFooter';
+import { useScrollReveal } from '../Shared/useScrollReveal';
 
 const MAX_REFUND_IMAGE_SIZE_BYTES = 20 * 1024 * 1024;
 const MAX_REFUND_VIDEO_SIZE_BYTES = 256 * 1024 * 1024;
@@ -1730,6 +1731,8 @@ const getStaticRepairOrders = (): RepairOrder[] => {
 
 const MyRepairs: React.FC = () => {
   const isPollingRepairsRef = useRef(false);
+  const revealRootRef = useRef<HTMLDivElement | null>(null);
+  useScrollReveal(revealRootRef);
   const [orders, setOrders] = useState<RepairOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedTab, setSelectedTab] = useState<RepairTab>('new_request');
@@ -3995,14 +3998,14 @@ const MyRepairs: React.FC = () => {
 
   return (
     <CustomerFooterReveal>
-    <div className="min-h-screen flex flex-col bg-[#f3f4f6] xl:bg-white">
+    <div ref={revealRootRef} className="min-h-screen flex flex-col bg-[#f3f4f6] xl:bg-white">
       <Head title="Repairs" />
       <Navigation />
 
       <main className="flex-1">
         <div className="w-full pb-16 pt-24 sm:px-6 xl:pt-32 xl:px-10 2xl:px-14">
           {/* Mobile Tabs */}
-          <div className="flex w-full gap-2 overflow-x-auto pb-3 pl-4 pr-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden xl:hidden">
+          <div data-scroll-reveal className="scroll-reveal flex w-full gap-2 overflow-x-auto pb-3 pl-4 pr-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden xl:hidden">
             {REPAIR_TABS.map((tab) => (
               <button
                 key={tab}
@@ -4021,7 +4024,7 @@ const MyRepairs: React.FC = () => {
           </div>
 
           {/* Desktop Tabs */}
-          <div className="mb-6 hidden w-full gap-2 overflow-x-auto pb-2 pt-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden xl:mb-12 xl:flex xl:gap-3 xl:pt-2">
+          <div data-scroll-reveal className="scroll-reveal mb-6 hidden w-full gap-2 overflow-x-auto pb-2 pt-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden xl:mb-12 xl:flex xl:gap-3 xl:pt-2">
             <button
               onClick={() => setSelectedTab('new_request')}
               className={`${tabButtonBaseClass} ${
@@ -4163,7 +4166,7 @@ const MyRepairs: React.FC = () => {
 
           {/* Loading State */}
           {loading && (
-            <div className="text-center py-32">
+            <div data-scroll-reveal className="scroll-reveal text-center py-32">
               <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-black"></div>
               <p className="mt-6 text-gray-500 text-sm">Loading your repairs...</p>
             </div>
@@ -4171,7 +4174,7 @@ const MyRepairs: React.FC = () => {
 
           {/* Empty State */}
           {!loading && filteredOrders.length === 0 && (
-            <div className="rounded-3xl border border-gray-200 bg-white px-5 py-14 text-center shadow-[0_20px_40px_-36px_rgba(15,23,42,0.7)] xl:rounded-none xl:border-0 xl:bg-gray-50 xl:py-20 xl:shadow-none">
+            <div data-scroll-reveal className="scroll-reveal rounded-3xl border border-gray-200 bg-white px-5 py-14 text-center shadow-[0_20px_40px_-36px_rgba(15,23,42,0.7)] xl:rounded-none xl:border-0 xl:bg-gray-50 xl:py-20 xl:shadow-none">
               <div className="mb-6">
                 <svg className="w-24 h-24 mx-auto text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
@@ -4195,7 +4198,8 @@ const MyRepairs: React.FC = () => {
                 <div
                   key={order.id}
                   data-repair-id={order.id}
-                  className={`border overflow-hidden transition-shadow duration-300 rounded-3xl bg-white shadow-[0_12px_35px_-32px_rgba(15,23,42,0.75)] hover:shadow-[0_18px_45px_-30px_rgba(15,23,42,0.65)] xl:rounded-none xl:shadow-none xl:hover:shadow-lg ${
+                  data-scroll-reveal
+                  className={`scroll-reveal border overflow-hidden transition-shadow duration-300 rounded-3xl bg-white shadow-[0_12px_35px_-32px_rgba(15,23,42,0.75)] hover:shadow-[0_18px_45px_-30px_rgba(15,23,42,0.65)] xl:rounded-none xl:shadow-none xl:hover:shadow-lg ${
                     highlightRepairId === order.id ? 'border-black bg-gray-50/40 xl:bg-gray-50/30' : 'border-gray-200'
                   }`}
                 >

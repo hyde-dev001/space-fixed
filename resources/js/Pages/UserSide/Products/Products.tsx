@@ -7,6 +7,7 @@ import StarRating from '../../../components/common/StarRating';
 import { useBadgeCounts } from '../../../hooks/useBadgeCounts';
 import { GPS_POSITION_OPTIONS, getCurrentPositionWithTimeout } from '@/utils/geolocation';
 import { CustomerFooterReveal } from '../../../components/common/CustomerFooter';
+import { useScrollReveal } from '../Shared/useScrollReveal';
 
 type Product = {
   id: number;
@@ -109,6 +110,8 @@ const Products: React.FC<Props> = () => {
   const mobileSearchContainerRef = useRef<HTMLDivElement | null>(null);
   const mobileSearchAbortRef = useRef<AbortController | null>(null);
   const hoverTimersRef = useRef<Record<number, number>>({});
+  const revealRootRef = useRef<HTMLDivElement | null>(null);
+  useScrollReveal(revealRootRef);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -506,7 +509,7 @@ const Products: React.FC<Props> = () => {
     <>
       <Head title="Products" />
       <CustomerFooterReveal>
-      <div className="userside-products-page min-h-screen bg-white font-outfit antialiased">
+      <div ref={revealRootRef} className="userside-products-page min-h-screen bg-white font-outfit antialiased">
         <div className="hidden xl:block">
           <Navigation />
         </div>
@@ -727,7 +730,7 @@ const Products: React.FC<Props> = () => {
         </div>
 
         <div className="mx-auto w-full max-w-[430px] px-4 pb-24 pt-16 md:max-w-none md:px-5 lg:px-6 xl:max-w-[1920px] xl:px-6 xl:pb-20 xl:pt-32 2xl:px-12 2xl:pb-20">
-          <div className="mb-8 w-full md:max-w-none">
+          <div data-scroll-reveal className="scroll-reveal mb-8 w-full md:max-w-none">
             <div className="flex items-center justify-between gap-4 mb-6">
               <nav className="text-[11px] xl:text-xs text-black/55 tracking-[0.18em] uppercase">
                 <Link href="/" className="hover:text-black transition-colors">Home</Link>
@@ -887,8 +890,8 @@ const Products: React.FC<Props> = () => {
                   : `/products/${p.slug}`;
 
                 return (
+                <div key={p.id} data-scroll-reveal className="scroll-reveal h-full">
                 <Link
-                  key={p.id}
                   href={productHref}
                   className="group block h-full rounded-2xl border border-gray-200 bg-white shadow-[0_12px_28px_-24px_rgba(15,23,42,0.45)] transition-all duration-300 hover:-translate-y-1 hover:border-gray-300 hover:shadow-[0_24px_40px_-24px_rgba(15,23,42,0.55)] xl:rounded-3xl xl:border-gray-300 xl:shadow-[0_16px_35px_-24px_rgba(15,23,42,0.45)]"
                   onMouseEnter={() => startImageCycle(p)}
@@ -987,6 +990,7 @@ const Products: React.FC<Props> = () => {
                     </div>
                   </div>
                 </Link>
+                </div>
                 );
               })}
             </div>
