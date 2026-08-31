@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\ERP\Manager;
 
+use App\Enums\EmployeeStatus;
 use App\Enums\SuspensionStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Employee;
@@ -171,6 +172,10 @@ final class SuspensionApprovalController extends Controller
                     throw new \RuntimeException('This request has already reached a decision.', 409);
                 }
 
+                if ($employee->status === EmployeeStatus::TERMINATED) {
+                    throw new \LogicException('Terminated employees must use the Rehire / Reinstate Employee workflow.');
+                }
+
                 $oldValues = [
                     'status' => $suspensionRequest->status->value,
                     'manager_status' => $suspensionRequest->manager_status,
@@ -218,6 +223,11 @@ final class SuspensionApprovalController extends Controller
             });
         } catch (ModelNotFoundException) {
             return response()->json(['message' => 'Suspension request not found.'], 404);
+        } catch (\LogicException $exception) {
+            return response()->json([
+                'message' => $exception->getMessage(),
+                'code' => 'EMPLOYEE_REHIRE_REQUIRED',
+            ], 409);
         } catch (\RuntimeException $exception) {
             if ($exception->getCode() === 409) {
                 return response()->json([

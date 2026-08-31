@@ -20,6 +20,8 @@ final readonly class OwnerApprovalHistoryItem
         'salary_change',
         'purchase_request',
         'suspension_request',
+        'termination_request',
+        'rehire_request',
         'expense',
         'repair_rejection',
     ];
@@ -32,6 +34,8 @@ final readonly class OwnerApprovalHistoryItem
         'salary_changes',
         'purchase_requests',
         'suspensions',
+        'terminations',
+        'rehires',
         'expenses',
         'repair_rejections',
     ];
@@ -67,6 +71,8 @@ final readonly class OwnerApprovalHistoryItem
             'salary_change' => 'salary_changes',
             'purchase_request' => 'purchase_requests',
             'suspension_request' => 'suspensions',
+            'termination_request' => 'terminations',
+            'rehire_request' => 'rehires',
             'expense' => 'expenses',
             'repair_rejection' => 'repair_rejections',
         };

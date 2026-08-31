@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Builder;
 use App\Enums\EmployeeStatus;
 use App\Casts\EmployeeStatusCast;
+use App\Models\EmployeeEmploymentPeriod;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Activitylog\LogOptions;
 
@@ -61,6 +62,7 @@ class Employee extends Model
         'other_allowances',
         'hire_date',
         'status',
+        'terminated_at',
         'suspension_reason',
     ];
 
@@ -75,6 +77,7 @@ class Employee extends Model
      */
     protected $casts = [
         'hire_date' => 'date',
+        'terminated_at' => 'datetime',
         'salary' => 'decimal:2',
         'sales_commission_rate' => 'decimal:4',
         'performance_bonus_rate' => 'decimal:4',
@@ -97,6 +100,8 @@ class Employee extends Model
      */
     public function suspend(): void
     {
+        $this->assertNotTerminated();
+
         $this->forceFill([
             'status' => 'suspended',
             'privileged_suspension_id' => null,
@@ -108,10 +113,19 @@ class Employee extends Model
      */
     public function activate(): void
     {
+        $this->assertNotTerminated();
+
         $this->forceFill([
             'status' => 'active',
             'privileged_suspension_id' => null,
         ])->save();
+    }
+
+    private function assertNotTerminated(): void
+    {
+        if ($this->status === EmployeeStatus::TERMINATED) {
+            throw new \LogicException('Terminated employees must use the Rehire / Reinstate Employee workflow.');
+        }
     }
 
     /**
@@ -128,6 +142,15 @@ class Employee extends Model
     public function shopOwner(): BelongsTo
     {
         return $this->belongsTo(ShopOwner::class);
+    }
+
+    /**
+     * Retain each employment period when the employee is terminated and later
+     * rehired. The Employee row represents the latest employment state.
+     */
+    public function employmentPeriods(): HasMany
+    {
+        return $this->hasMany(EmployeeEmploymentPeriod::class);
     }
 
     /**

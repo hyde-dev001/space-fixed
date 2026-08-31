@@ -33,6 +33,8 @@ enum NotificationType: string
     case REFUND_REQUEST = 'refund_request';
     case LOW_STOCK_ALERT = 'low_stock_alert';
     case EMPLOYEE_SUSPENSION_REQUEST = 'employee_suspension_request';
+    case EMPLOYEE_TERMINATION_REQUEST = 'employee_termination_request';
+    case EMPLOYEE_REHIRE_REQUEST = 'employee_rehire_request';
     case CUSTOMER_MESSAGE = 'customer_message';
     
     // ==================== ERP STAFF NOTIFICATIONS ====================
@@ -64,6 +66,8 @@ enum NotificationType: string
     case OVERTIME_REQUEST_PENDING = 'overtime_request_pending';
     case EXPENSE_REQUEST_PENDING = 'expense_request_pending';
     case SUSPENSION_REQUEST_PENDING = 'suspension_request_pending';
+    case TERMINATION_REQUEST_PENDING = 'termination_request_pending';
+    case REHIRE_REQUEST_PENDING = 'rehire_request_pending';
     case PERFORMANCE_REVIEW_DUE = 'performance_review_due';
 
     // ==================== HR NOTIFICATIONS ====================
@@ -142,6 +146,8 @@ enum NotificationType: string
             self::REFUND_REQUEST => 'Refund Request',
             self::LOW_STOCK_ALERT => 'Low Stock Alert',
             self::EMPLOYEE_SUSPENSION_REQUEST => 'Employee Suspension Request',
+            self::EMPLOYEE_TERMINATION_REQUEST => 'Employee Termination Request',
+            self::EMPLOYEE_REHIRE_REQUEST => 'Employee Rehire Request',
             self::CUSTOMER_MESSAGE => 'Customer Message',
             
             // Staff notifications
@@ -163,6 +169,8 @@ enum NotificationType: string
             self::OVERTIME_REQUEST_PENDING => 'Overtime Request Pending',
             self::EXPENSE_REQUEST_PENDING => 'Expense Request Pending',
             self::SUSPENSION_REQUEST_PENDING => 'Suspension Request Pending',
+            self::TERMINATION_REQUEST_PENDING => 'Termination Request Pending',
+            self::REHIRE_REQUEST_PENDING => 'Rehire Request Pending',
             self::PERFORMANCE_REVIEW_DUE => 'Performance Review Due',
 
             // ERP Employee (self) notifications
@@ -249,7 +257,9 @@ enum NotificationType: string
             self::SALARY_CHANGE_SUBMITTED, self::SALARY_CHANGE_APPROVED,
             self::OVERTIME_REQUEST_APPROVED, self::OVERTIME_REQUEST_REJECTED,
             self::ATTENDANCE_REMINDER, self::DOCUMENT_EXPIRING,
-            self::PAYROLL_GENERATED, self::PAYSLIP_READY, self::PAYSLIP_REJECTED, self::TRAINING_ASSIGNED => 'hr',
+            self::PAYROLL_GENERATED, self::PAYSLIP_READY, self::PAYSLIP_REJECTED, self::TRAINING_ASSIGNED,
+            self::EMPLOYEE_TERMINATION_REQUEST, self::EMPLOYEE_REHIRE_REQUEST,
+            self::TERMINATION_REQUEST_PENDING, self::REHIRE_REQUEST_PENDING => 'hr',
             
             self::NEW_LEAD, self::LEAD_UPDATED, self::OPPORTUNITY_CREATED,
             self::CUSTOMER_SUPPORT_TICKET => 'crm',
@@ -313,6 +323,8 @@ enum NotificationType: string
             self::REFUND_REQUEST,
             self::LOW_STOCK_ALERT,
             self::EMPLOYEE_SUSPENSION_REQUEST,
+            self::EMPLOYEE_TERMINATION_REQUEST,
+            self::EMPLOYEE_REHIRE_REQUEST,
             self::SALARY_CHANGE_SUBMITTED,
             self::CUSTOMER_MESSAGE,
             self::SHOP_DOCUMENT_RENEWAL_REVIEWED,
@@ -335,10 +347,14 @@ enum NotificationType: string
             self::HIGH_VALUE_APPROVAL,
             self::REFUND_REQUEST,
             self::EMPLOYEE_SUSPENSION_REQUEST,
+            self::EMPLOYEE_TERMINATION_REQUEST,
+            self::EMPLOYEE_REHIRE_REQUEST,
             self::REPAIR_REJECTION_REVIEW,
             self::LEAVE_REQUEST_PENDING,
             self::EXPENSE_REQUEST_PENDING,
             self::SUSPENSION_REQUEST_PENDING,
+            self::TERMINATION_REQUEST_PENDING,
+            self::REHIRE_REQUEST_PENDING,
             self::SALARY_CHANGE_SUBMITTED,
             self::SHOP_REGISTRATION_PENDING,
             self::SHOP_DOCUMENT_RENEWAL_PENDING,

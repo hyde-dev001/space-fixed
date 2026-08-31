@@ -37,6 +37,7 @@ use App\Http\Controllers\Erp\HR\AuditLogController as HRAuditLogController;
 use App\Http\Controllers\Erp\HR\NotificationController;
 use App\Http\Controllers\Erp\HR\HRAnalyticsController;
 use App\Http\Controllers\Erp\HR\SuspensionRequestController;
+use App\Http\Controllers\Erp\HR\EmployeeLifecycleRequestController;
 use App\Http\Controllers\Erp\HR\SalaryChangeController;
 use App\Http\Controllers\Erp\HR\HolidayCalendarController;
 
@@ -82,7 +83,7 @@ Route::prefix('api/hr/leave-requests')->middleware(['web', 'auth:user', 'shop.is
     Route::post('/{id}/reject', [LeaveController::class, 'reject'])->name('hr.leave.reject');
 });
 
-Route::prefix('api/hr')->middleware(['web', 'auth:user', 'permission:access-hr-dashboard|access-employee-directory|access-attendance-records|access-leave-approvals|access-manager-leave-approvals|decide-manager-leave-approvals|access-overtime-approvals|manage-attendance|access-payslip-generation|access-view-payslip|request-employee-suspensions|manage-salary-changes|approve-salary-change|override-salary-retroactive', 'shop.isolation'])->group(function () {
+Route::prefix('api/hr')->middleware(['web', 'auth:user', 'permission:access-hr-dashboard|access-employee-directory|access-attendance-records|access-leave-approvals|access-manager-leave-approvals|decide-manager-leave-approvals|access-overtime-approvals|manage-attendance|access-payslip-generation|access-view-payslip|request-employee-suspensions|request-employee-terminations|request-employee-rehires|manage-salary-changes|approve-salary-change|override-salary-retroactive', 'shop.isolation'])->group(function () {
     // ============================================
     // DASHBOARD & ANALYTICS
     // ============================================
@@ -99,6 +100,7 @@ Route::prefix('api/hr')->middleware(['web', 'auth:user', 'permission:access-hr-d
         Route::put('/{id}', [EmployeeController::class, 'update'])->name('hr.employees.update');
         Route::delete('/{id}', [EmployeeController::class, 'destroy'])->name('hr.employees.destroy');
         Route::post('/{id}/activate', [EmployeeController::class, 'activate'])->name('hr.employees.activate');
+        Route::post('/{id}/suspend', [EmployeeController::class, 'suspend'])->name('hr.employees.suspend');
         Route::post('/{userId}/roles/sync', [\App\Http\Controllers\ShopOwner\UserAccessControlController::class, 'syncAdditionalRoles'])->name('hr.employees.roles.sync');
         
         // Invitation Management
@@ -115,6 +117,21 @@ Route::prefix('api/hr')->middleware(['web', 'auth:user', 'permission:access-hr-d
         Route::get('/', [SuspensionRequestController::class, 'index'])->name('hr.suspension_requests.index');
         Route::post('/', [SuspensionRequestController::class, 'store'])->name('hr.suspension_requests.store');
         Route::get('/{id}', [SuspensionRequestController::class, 'show'])->name('hr.suspension_requests.show');
+    });
+
+    // ============================================
+    // EMPLOYEE LIFECYCLE REQUESTS (HR -> Manager -> Company Shop Owner)
+    // ============================================
+    Route::prefix('termination-requests')->group(function () {
+        Route::get('/', [EmployeeLifecycleRequestController::class, 'indexTermination'])->name('hr.termination_requests.index');
+        Route::post('/', [EmployeeLifecycleRequestController::class, 'storeTermination'])->name('hr.termination_requests.store');
+        Route::get('/{id}', [EmployeeLifecycleRequestController::class, 'showTermination'])->whereNumber('id')->name('hr.termination_requests.show');
+    });
+
+    Route::prefix('rehire-requests')->group(function () {
+        Route::get('/', [EmployeeLifecycleRequestController::class, 'indexRehire'])->name('hr.rehire_requests.index');
+        Route::post('/', [EmployeeLifecycleRequestController::class, 'storeRehire'])->name('hr.rehire_requests.store');
+        Route::get('/{id}', [EmployeeLifecycleRequestController::class, 'showRehire'])->whereNumber('id')->name('hr.rehire_requests.show');
     });
 
     // ============================================

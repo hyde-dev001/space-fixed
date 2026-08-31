@@ -118,7 +118,8 @@ class EmployeeSuspensionWorkflowTest extends TestCase
             ->postJson("/api/hr/employees/{$employee->id}/suspend", [
                 'reason' => 'Direct mutation must be rejected',
             ])
-            ->assertNotFound();
+            ->assertForbidden()
+            ->assertJsonPath('code', 'SUSPENSION_WORKFLOW_REQUIRED');
 
         $this->actingAs($this->hr, 'user')
             ->postJson("/api/hr/employees/{$employee->id}/activate")

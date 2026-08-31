@@ -38,6 +38,8 @@ const approvalCoverage = (sourceType: OwnerAttentionItem["source_type"]): OwnerA
   if (sourceType === "salary_change") return "salary_changes";
   if (sourceType === "purchase_request") return "purchase_requests";
   if (sourceType === "suspension_request") return "suspensions";
+  if (sourceType === "termination_request") return "terminations";
+  if (sourceType === "rehire_request") return "rehires";
   if (sourceType === "expense") return "expenses";
   if (sourceType === "repair_rejection") return "repair_rejections";
   return "refunds";

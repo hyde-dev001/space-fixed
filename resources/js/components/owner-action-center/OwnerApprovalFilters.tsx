@@ -14,6 +14,8 @@ export const filterLabels: Array<{ key: OwnerAttentionCoverageSource; label: str
   { key: "salary_changes", label: "Salary Adjustments" },
   { key: "purchase_requests", label: "Purchase Requests" },
   { key: "suspensions", label: "Suspension Requests" },
+  { key: "terminations", label: "Termination Requests" },
+  { key: "rehires", label: "Rehire Requests" },
   { key: "expenses", label: "Expenses" },
   { key: "repair_rejections", label: "Repair Rejections" },
   { key: "compliance", label: "Compliance" },
@@ -30,6 +32,8 @@ export const adapterCoverage = (key: OwnerAttentionAdapterKey): OwnerAttentionCo
   if (key === "expenses") return "expenses";
   if (key === "purchase_requests") return "purchase_requests";
   if (key === "suspension_requests") return "suspensions";
+  if (key === "termination_requests") return "terminations";
+  if (key === "rehire_requests") return "rehires";
   if (key === "repair_rejections") return "repair_rejections";
   if (["compliance_documents", "pending_compliance_renewals"].includes(key)) return "compliance";
   if (["unowned_logistics_failures", "active_logistics_recovery"].includes(key)) return "logistics";
@@ -37,7 +41,7 @@ export const adapterCoverage = (key: OwnerAttentionAdapterKey): OwnerAttentionCo
 };
 
 export const bucketCoverages: Record<OwnerAttentionBucket, OwnerAttentionCoverageSource[]> = {
-  needs_my_decision: ["refunds", "prices", "payslips", "salary_changes", "purchase_requests", "suspensions", "expenses", "repair_rejections"],
+  needs_my_decision: ["refunds", "prices", "payslips", "salary_changes", "purchase_requests", "suspensions", "terminations", "rehires", "expenses", "repair_rejections"],
   urgent_exceptions: ["compliance", "refunds", "logistics"],
   waiting_on_others: ["compliance", "refunds", "logistics"],
 };

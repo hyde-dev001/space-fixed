@@ -14,6 +14,7 @@ use App\Models\RepairRequest;
 use App\Models\RepairService;
 use App\Models\ShopOwner;
 use App\Models\SuspensionRequest;
+use App\Models\EmployeeLifecycleRequest;
 use App\Models\User;
 use App\Models\Finance\Expense;
 use App\Models\HR\Payroll;
@@ -340,6 +341,44 @@ final class OwnerApprovalHistoryService
                         'Suspension request #'.$request->getKey(),
                         'Employee suspension decision recorded by the shop owner.', $status,
                         $decisionAt, $this->dateString($request->created_at), null,
+                        $this->text($request->owner_note ?: $request->reason),
+                        $this->ownerDisplayName($owner),
+                    );
+                }
+            }
+        }
+
+        if (in_array('terminations', $enabledCoverages, true)
+            || in_array('rehires', $enabledCoverages, true)) {
+            foreach (EmployeeLifecycleRequest::query()
+                ->where('owner_id', $owner->getKey())
+                ->whereIn('request_type', ['termination', 'rehire'])
+                ->with('employee:id,first_name,last_name,name')
+                ->get() as $request) {
+                $coverage = $request->request_type === 'rehire' ? 'rehires' : 'terminations';
+                if (! in_array($coverage, $enabledCoverages, true)) {
+                    continue;
+                }
+
+                $status = $this->decisionStatus($request->owner_status);
+                $decisionAt = $this->dateString($request->owner_reviewed_at);
+                if ($status !== null && $decisionAt !== null) {
+                    $employeeName = trim((string) ($request->employee?->name ?: implode(' ', array_filter([
+                        $request->employee?->first_name,
+                        $request->employee?->last_name,
+                    ])))) ?: 'Employee';
+                    $label = $request->request_type === 'rehire' ? 'Rehire' : 'Termination';
+
+                    $items[] = $this->item(
+                        $request->request_type === 'rehire' ? 'rehire_request' : 'termination_request',
+                        (int) $request->getKey(),
+                        $coverage,
+                        $label.' request #'.$request->getKey(),
+                        $label.' request for '.$employeeName.' decided by the shop owner.',
+                        $status,
+                        $decisionAt,
+                        $this->dateString($request->created_at),
+                        null,
                         $this->text($request->owner_note ?: $request->reason),
                         $this->ownerDisplayName($owner),
                     );
@@ -916,6 +955,8 @@ final class OwnerApprovalHistoryService
             'salary_changes' => 'Salary Adjustments',
             'purchase_requests' => 'Purchase Requests',
             'suspensions' => 'Suspension Requests',
+            'terminations' => 'Termination Requests',
+            'rehires' => 'Rehire Requests',
             'expenses' => 'Expenses',
             'repair_rejections' => 'Repair Rejections',
         ];

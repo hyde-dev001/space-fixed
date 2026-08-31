@@ -183,6 +183,7 @@ final class ReadPageController extends Controller
 
         $initialEmployees = Employee::query()
             ->where('shop_owner_id', $this->shopOwnerId())
+            ->with(['employmentPeriods' => fn ($query) => $query->orderByDesc('start_date')])
             ->orderBy('name')
             ->get()
             ->map(static fn (Employee $employee): array => [
@@ -196,6 +197,17 @@ final class ReadPageController extends Controller
                 'position' => $employee->position,
                 'status' => $employee->status,
                 'hiredAt' => optional($employee->hire_date)->toDateString(),
+                'terminatedAt' => optional($employee->terminated_at)->toISOString(),
+                'employmentHistory' => $employee->employmentPeriods->map(static fn ($period): array => [
+                    'id' => $period->id,
+                    'start_date' => optional($period->start_date)->toDateString(),
+                    'end_date' => optional($period->end_date)->toDateString(),
+                    'end_reason' => $period->end_reason,
+                    'position' => $period->position,
+                    'department' => $period->department,
+                    'role' => $period->role,
+                    'salary' => $period->salary,
+                ])->values()->all(),
                 'lastActiveAt' => null,
                 'location' => null,
                 'linkedUser' => null,
@@ -320,6 +332,16 @@ final class ReadPageController extends Controller
     public function managerSuspensionApprovals(): Response|RedirectResponse
     {
         return $this->renderEmployeePage('ERP/Manager/SuspensionApprovals');
+    }
+
+    public function managerTerminationApprovals(): Response|RedirectResponse
+    {
+        return $this->renderEmployeePage('ERP/Manager/EmploymentLifecycleApprovals');
+    }
+
+    public function managerRehireApprovals(): Response|RedirectResponse
+    {
+        return $this->renderEmployeePage('ERP/Manager/EmploymentLifecycleApprovals');
     }
 
     public function managerAuditLogs(): Response|RedirectResponse

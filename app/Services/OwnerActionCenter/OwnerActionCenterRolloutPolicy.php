@@ -83,6 +83,8 @@ final class OwnerActionCenterRolloutPolicy
             'salary_changes',
             'purchase_requests',
             'suspensions',
+            'terminations',
+            'rehires',
             'expenses',
             'repair_rejections',
         ] as $family) {

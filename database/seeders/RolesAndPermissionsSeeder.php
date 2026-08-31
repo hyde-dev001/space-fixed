@@ -42,6 +42,8 @@ class RolesAndPermissionsSeeder extends Seeder
             'access-payslip-generation',
             'access-view-payslip',
             'request-employee-suspensions',
+            'request-employee-terminations',
+            'request-employee-rehires',
             
             // ===== CRM MODULE =====
             'access-crm-dashboard',
@@ -57,6 +59,8 @@ class RolesAndPermissionsSeeder extends Seeder
             'access-manager-staff-workload',
             'access-manager-leave-approvals',
             'access-manager-suspension-approvals',
+            'access-manager-termination-approvals',
+            'access-manager-rehire-approvals',
             'access-audit-logs',
             'access-manager-reports',
             'access-inventory-overview',
@@ -64,6 +68,8 @@ class RolesAndPermissionsSeeder extends Seeder
             'review-manager-repair-jobs',
             'decide-manager-leave-approvals',
             'decide-manager-suspension-approvals',
+            'decide-manager-termination-approvals',
+            'decide-manager-rehire-approvals',
             'generate-manager-reports',
             'review-manager-reports',
             'access-product-upload-manager',
@@ -170,6 +176,8 @@ class RolesAndPermissionsSeeder extends Seeder
             'access-manager-staff-workload',
             'access-manager-leave-approvals',
             'access-manager-suspension-approvals',
+            'access-manager-termination-approvals',
+            'access-manager-rehire-approvals',
             'access-audit-logs',
             'access-manager-reports',
             'generate-manager-reports',
@@ -180,6 +188,8 @@ class RolesAndPermissionsSeeder extends Seeder
             'review-manager-repair-jobs',
             'decide-manager-leave-approvals',
             'decide-manager-suspension-approvals',
+            'decide-manager-termination-approvals',
+            'decide-manager-rehire-approvals',
             // Global Access
             'access-global-search',
             'access-notification-center',
@@ -221,6 +231,8 @@ class RolesAndPermissionsSeeder extends Seeder
             'access-payslip-generation',
             'access-view-payslip',
             'request-employee-suspensions',
+            'request-employee-terminations',
+            'request-employee-rehires',
             // Salary Change Workflow
             'manage-salary-changes',
             // RBAC & Permissions Management

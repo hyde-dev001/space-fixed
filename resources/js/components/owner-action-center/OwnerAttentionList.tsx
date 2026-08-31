@@ -18,6 +18,8 @@ const sourceLabels: Record<OwnerAttentionSourceType, string> = {
   expense: "Expense",
   purchase_request: "Purchase Request",
   suspension_request: "Employee Suspension",
+  termination_request: "Employee Termination",
+  rehire_request: "Employee Rehire",
   repair_rejection: "Repair Rejection",
   compliance_document: "Compliance Document",
   logistics_failure: "Logistics Failure",

@@ -216,6 +216,10 @@ class SuspensionFinalApprovalController extends Controller
                     throw new \RuntimeException('This request is not ready for Shop Owner review.', 409);
                 }
 
+                if ($employee->status === EmployeeStatus::TERMINATED) {
+                    throw new \LogicException('Terminated employees must use the Rehire / Reinstate Employee workflow.');
+                }
+
                 $approved = $validated['action'] === 'approve';
                 $newStatus = $approved ? SuspensionStatus::APPROVED : SuspensionStatus::REJECTED_OWNER;
                 $oldValues = [
@@ -327,6 +331,12 @@ class SuspensionFinalApprovalController extends Controller
                 'success' => false,
                 'message' => 'Suspension request not found',
             ], 404);
+        } catch (\LogicException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+                'code' => 'EMPLOYEE_REHIRE_REQUIRED',
+            ], 409);
         } catch (\RuntimeException $e) {
             if ($e->getCode() === 409) {
                 return response()->json([

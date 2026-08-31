@@ -15,6 +15,8 @@ const APPROVAL_SOURCE_TYPES: ReadonlySet<string> = new Set([
   "salary_change",
   "purchase_request",
   "suspension_request",
+  "termination_request",
+  "rehire_request",
   "expense",
   "repair_rejection",
 ]);

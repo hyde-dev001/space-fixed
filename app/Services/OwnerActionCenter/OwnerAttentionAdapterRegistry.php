@@ -86,6 +86,22 @@ final class OwnerAttentionAdapterRegistry
                     'bucket' => 'needs_my_decision',
                 ],
             ],
+            'terminations' => [
+                [
+                    'class' => 'App\\Services\\OwnerActionCenter\\Adapters\\TerminationAttentionAdapter',
+                    'key' => 'termination_requests',
+                    'coverage' => 'terminations',
+                    'bucket' => 'needs_my_decision',
+                ],
+            ],
+            'rehires' => [
+                [
+                    'class' => 'App\\Services\\OwnerActionCenter\\Adapters\\RehireAttentionAdapter',
+                    'key' => 'rehire_requests',
+                    'coverage' => 'rehires',
+                    'bucket' => 'needs_my_decision',
+                ],
+            ],
         ],
         'urgent_exceptions' => [
             'compliance' => [
@@ -181,7 +197,7 @@ final class OwnerAttentionAdapterRegistry
             if (! array_key_exists($family, $configuredCoverage)) {
                 // Older test/runtime overrides may intentionally provide a partial
                 // coverage map. New optional sources stay disabled unless enabled.
-                if ($family === 'suspensions') {
+                if (in_array($family, ['suspensions', 'terminations', 'rehires'], true)) {
                     continue;
                 }
 
