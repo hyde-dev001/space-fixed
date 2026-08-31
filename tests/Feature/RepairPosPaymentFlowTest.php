@@ -14,7 +14,10 @@ class RepairPosPaymentFlowTest extends TestCase
     #[Test]
     public function shop_owner_guard_can_checkout_walk_in_without_unauthorized_response(): void
     {
-        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'registration_type' => 'individual',
+        ]);
 
         $response = $this->actingAs($shopOwner, 'shop_owner')->postJson('/api/repair-pos/checkout', [
             'repair_request_id' => null,
@@ -44,7 +47,10 @@ class RepairPosPaymentFlowTest extends TestCase
     #[Test]
     public function shop_owner_guard_can_checkout_owner_approved_job_order(): void
     {
-        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'registration_type' => 'individual',
+        ]);
         /** @var \App\Models\User $customer */
         $customer = \App\Models\User::factory()->create();
 
@@ -57,6 +63,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'description' => 'Owner approved checkout regression test',
             'shop_owner_id' => $shopOwner->id,
             'user_id' => $customer->id,
+            'intake_delivery_method' => 'walk_in',
             'images' => [],
             'total' => 1000,
             'final_total' => 1000,
@@ -83,7 +90,10 @@ class RepairPosPaymentFlowTest extends TestCase
     #[Test]
     public function manual_pos_walk_in_repair_cannot_activate_payment(): void
     {
-        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'registration_type' => 'individual',
+        ]);
 
         $checkoutResponse = $this->actingAs($shopOwner, 'shop_owner')->postJson('/api/repair-pos/checkout', [
             'repair_request_id' => null,
@@ -118,7 +128,10 @@ class RepairPosPaymentFlowTest extends TestCase
     #[Test]
     public function shop_owner_can_activate_remaining_balance_when_payment_status_is_partially_paid(): void
     {
-        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'registration_type' => 'individual',
+        ]);
 
         $repair = \App\Models\RepairRequest::create([
             'request_id' => 'REP-REM-PARTIAL-001',
@@ -570,6 +583,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'description' => 'Inclusive VAT test',
             'shop_owner_id' => $shopOwner->id,
             'user_id' => $customer->id,
+            'intake_delivery_method' => 'walk_in',
             'images' => json_encode([]),
             'total' => 1000,
             'final_total' => 1000,
@@ -618,6 +632,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'description' => 'Idempotency replay test',
             'shop_owner_id' => $shopOwner->id,
             'user_id' => $customer->id,
+            'intake_delivery_method' => 'walk_in',
             'images' => json_encode([]),
             'total' => 1000,
             'final_total' => 1000,
@@ -630,8 +645,8 @@ class RepairPosPaymentFlowTest extends TestCase
         $payload = [
             'repair_request_id' => $repair->id,
             'due_type' => 'deposit',
-            'customer_type' => 'walk_in',
-            'walk_in_name' => 'Replay Test',
+            'customer_type' => 'registered',
+            'customer_id' => $customer->id,
             'idempotency_key' => 'idem-phase-001',
             'payment_lines' => [
                 ['tender_type' => 'cash', 'amount' => 500],
@@ -672,6 +687,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'description' => 'Receipt customer identity test',
             'shop_owner_id' => $shopOwner->id,
             'user_id' => $customer->id,
+            'intake_delivery_method' => 'walk_in',
             'images' => json_encode([]),
             'total' => 1000,
             'final_total' => 1000,
@@ -725,6 +741,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'description' => 'Canonical status sync test',
             'shop_owner_id' => $shopOwner->id,
             'user_id' => $customer->id,
+            'intake_delivery_method' => 'walk_in',
             'images' => json_encode([]),
             'total' => 1000,
             'final_total' => 1000,
@@ -768,6 +785,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'description' => 'Mixed online then POS payment aggregation test',
             'shop_owner_id' => $shopOwner->id,
             'user_id' => $customer->id,
+            'intake_delivery_method' => 'walk_in',
             'images' => json_encode([]),
             'total' => 1000,
             'final_total' => 1000,
@@ -825,6 +843,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'description' => 'Online settlement should persist paid totals per phase',
             'shop_owner_id' => $shopOwner->id,
             'user_id' => $customer->id,
+            'intake_delivery_method' => 'walk_in',
             'images' => json_encode([]),
             'total' => 1000,
             'final_total' => 1000,
@@ -870,6 +889,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'description' => 'Job order payload reconciliation for stale mixed payment totals',
             'shop_owner_id' => $shopOwner->id,
             'user_id' => $customer->id,
+            'intake_delivery_method' => 'walk_in',
             'images' => json_encode([]),
             'total' => 1000,
             'final_total' => 1000,
@@ -923,6 +943,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'description' => 'POS relation test',
             'shop_owner_id' => $shopOwner->id,
             'user_id' => $customer->id,
+            'intake_delivery_method' => 'walk_in',
             'images' => json_encode([]),
             'total' => 1000,
             'final_total' => 1000,
@@ -950,6 +971,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'description' => 'POS payment test',
             'shop_owner_id' => $shopOwner->id,
             'user_id' => $customer->id,
+            'intake_delivery_method' => 'walk_in',
             'images' => json_encode([]),
             'total' => 1000,
             'final_total' => 1000,
@@ -998,6 +1020,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'description' => 'Manual payment block test',
             'shop_owner_id' => $shopOwner->id,
             'user_id' => $customer->id,
+            'intake_delivery_method' => 'walk_in',
             'images' => json_encode([]),
             'total' => 1500,
             'final_total' => 1500,
@@ -1031,6 +1054,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'description' => 'Receipt generation test',
             'shop_owner_id' => $shopOwner->id,
             'user_id' => $customer->id,
+            'intake_delivery_method' => 'walk_in',
             'images' => json_encode([]),
             'total' => 1000,
             'final_total' => 1000,
@@ -1078,6 +1102,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'description' => 'Deposit then balance lifecycle test',
             'shop_owner_id' => $shopOwner->id,
             'user_id' => $customer->id,
+            'intake_delivery_method' => 'walk_in',
             'images' => json_encode([]),
             'total' => 1000,
             'final_total' => 1000,
@@ -1134,6 +1159,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'description' => 'Full upfront lifecycle test',
             'shop_owner_id' => $shopOwner->id,
             'user_id' => $customer->id,
+            'intake_delivery_method' => 'walk_in',
             'images' => json_encode([]),
             'total' => 1200,
             'final_total' => 1200,
@@ -1177,6 +1203,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'description' => 'Non-cash ref required test',
             'shop_owner_id' => $shopOwner->id,
             'user_id' => $customer->id,
+            'intake_delivery_method' => 'walk_in',
             'images' => json_encode([]),
             'total' => 1000,
             'final_total' => 1000,
@@ -1219,6 +1246,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'description' => 'Non-cash ref success test',
             'shop_owner_id' => $shopOwner->id,
             'user_id' => $customer->id,
+            'intake_delivery_method' => 'walk_in',
             'images' => json_encode([]),
             'total' => 1000,
             'final_total' => 1000,
@@ -1266,6 +1294,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'description' => 'Policy/due type guard test (full_upfront)',
             'shop_owner_id' => $shopOwner->id,
             'user_id' => $customer->id,
+            'intake_delivery_method' => 'walk_in',
             'images' => json_encode([]),
             'total' => 1000,
             'final_total' => 1000,
@@ -1308,6 +1337,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'description' => 'Policy/due type guard test (deposit_50)',
             'shop_owner_id' => $shopOwner->id,
             'user_id' => $customer->id,
+            'intake_delivery_method' => 'walk_in',
             'images' => json_encode([]),
             'total' => 1000,
             'final_total' => 1000,
@@ -1350,6 +1380,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'description' => 'Payment status sync (deposit)',
             'shop_owner_id' => $shopOwner->id,
             'user_id' => $customer->id,
+            'intake_delivery_method' => 'walk_in',
             'images' => json_encode([]),
             'total' => 1000,
             'final_total' => 1000,
@@ -1392,6 +1423,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'description' => 'Payment status sync (full upfront)',
             'shop_owner_id' => $shopOwner->id,
             'user_id' => $customer->id,
+            'intake_delivery_method' => 'walk_in',
             'images' => json_encode([]),
             'total' => 1000,
             'final_total' => 1000,
@@ -1439,6 +1471,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'description' => 'Refund lifecycle test',
             'shop_owner_id' => $shopOwner->id,
             'user_id' => $customer->id,
+            'intake_delivery_method' => 'walk_in',
             'images' => json_encode([]),
             'total' => 1000,
             'final_total' => 1000,
@@ -1522,6 +1555,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'description' => 'Refund visibility test',
             'shop_owner_id' => $shopOwner->id,
             'user_id' => $customer->id,
+            'intake_delivery_method' => 'walk_in',
             'images' => json_encode([]),
             'total' => 1000,
             'final_total' => 1000,
@@ -1540,6 +1574,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'description' => 'Other refund visibility test',
             'shop_owner_id' => $shopOwner->id,
             'user_id' => $otherCustomer->id,
+            'intake_delivery_method' => 'walk_in',
             'images' => json_encode([]),
             'total' => 1000,
             'final_total' => 1000,

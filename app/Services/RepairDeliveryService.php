@@ -74,7 +74,11 @@ final class RepairDeliveryService
     public function paymentDetails(RepairRequest $repair, string $leg): array
     {
         $isIntake = $leg === 'intake';
-        $method = (string) ($isIntake ? $repair->intake_delivery_method : $repair->return_delivery_method);
+        $method = (string) ($isIntake
+            ? ($repair->intake_delivery_method
+                ?: (($repair->delivery_method ?? null) === 'walk_in' ? 'walk_in' : 'customer_delivery'))
+            : ($repair->return_delivery_method
+                ?: (($repair->delivery_method ?? null) === 'walk_in' ? 'walk_in' : 'customer_pickup')));
         $snapshot = $isIntake ? $repair->intake_address : $repair->return_address;
         $storedFee = round((float) ($isIntake ? $repair->intake_delivery_fee : $repair->return_delivery_fee), 2);
         $shopOwned = $method === ($isIntake ? 'shop_pickup' : 'shop_delivery');
@@ -132,6 +136,18 @@ final class RepairDeliveryService
             'delivery_amount' => $currentFee,
             'quote' => $quote,
         ];
+    }
+
+    public function hasRequiredExternalTracking(RepairRequest $repair, string $leg): bool
+    {
+        if (! in_array($leg, ['intake', 'return'], true)) {
+            return false;
+        }
+
+        $snapshot = $leg === 'intake' ? $repair->intake_address : $repair->return_address;
+
+        return trim((string) data_get($snapshot, 'external_tracking.carrier')) !== ''
+            && trim((string) data_get($snapshot, 'external_tracking.tracking_number')) !== '';
     }
 
     public function recordPickupRecovery(RepairRequest $repair, int $shipmentId, int $failedLegId): ?array
@@ -800,7 +816,8 @@ final class RepairDeliveryService
 
     public function intakeHandoff(RepairRequest $repair, bool $paymentSatisfied): array
     {
-        $method = (string) ($repair->intake_delivery_method ?: 'customer_delivery');
+        $method = (string) ($repair->intake_delivery_method
+            ?: (($repair->delivery_method ?? null) === 'walk_in' ? 'walk_in' : 'customer_delivery'));
         $state = $method === 'shop_pickup'
             ? $this->handoffState($repair, 'repair_pickup')
             : [
@@ -861,10 +878,11 @@ final class RepairDeliveryService
             && $repair->received_at === null
             && ! $this->hasApprovedProof($repair, 'repair_pickup')
         );
-        $method = match ((string) ($repair->return_delivery_method ?: 'customer_pickup')) {
-            'pickup' => 'customer_pickup',
-            default => (string) ($repair->return_delivery_method ?: 'customer_pickup'),
-        };
+        $method = (string) ($repair->return_delivery_method
+            ?: (($repair->delivery_method ?? null) === 'walk_in' ? 'walk_in' : 'customer_pickup'));
+        if ($method === 'pickup') {
+            $method = 'customer_pickup';
+        }
         $state = $method === 'shop_delivery'
             ? $this->handoffState($repair, 'repair_return')
             : [
@@ -881,18 +899,16 @@ final class RepairDeliveryService
             : ($method === 'customer_pickup'
                 ? ['ready_for_pickup', 'ready-for-pickup']
                 : ['shipped']);
-        $sponsoredNonShopPlan = $method !== 'shop_delivery' && $this->isSponsoredWarranty($repair);
+        $trackingComplete = $method !== 'customer_pickup'
+            || $this->hasRequiredExternalTracking($repair, 'return');
         $canRelease = in_array((string) $repair->status, $expectedStatuses, true)
             && $paymentSatisfied
             && ! (bool) $repair->pickup_enabled
-            && ($method === 'shop_delivery' || $repair->return_logistics_locked_at === null || $sponsoredNonShopPlan)
+            && $trackingComplete
             && ($method !== 'shop_delivery' || $state['approved']);
 
         $blockedReason = null;
-        if ((bool) $repair->pickup_enabled
-            || ($method !== 'shop_delivery'
-                && $repair->return_logistics_locked_at !== null
-                && ! $sponsoredNonShopPlan)) {
+        if ((bool) $repair->pickup_enabled) {
             $blockedReason = 'Customer receipt confirmation is already active.';
         } elseif (! in_array((string) $repair->status, $expectedStatuses, true)) {
             $blockedReason = $method === 'shop_delivery'
@@ -900,6 +916,8 @@ final class RepairDeliveryService
                 : 'This repair is not ready for release.';
         } elseif (! $paymentSatisfied) {
             $blockedReason = 'Final payment must be settled before release.';
+        } elseif ($method === 'customer_pickup' && ! $trackingComplete) {
+            $blockedReason = 'Courier tracking details are required before handoff.';
         } elseif ($method === 'shop_delivery' && ! $state['shipment']) {
             $blockedReason = 'Waiting for the shop return delivery to be dispatched.';
         } elseif ($method === 'shop_delivery' && $state['proof_correction_required']) {
@@ -954,12 +972,11 @@ final class RepairDeliveryService
                 ->whereKey($repair->id)
                 ->lockForUpdate()
                 ->firstOrFail();
-            $method = match ((string) ($lockedRepair->return_delivery_method
-                ?: (($lockedRepair->delivery_method ?? null) === 'walk_in' ? 'walk_in' : 'customer_pickup'))) {
-                'pickup' => 'customer_pickup',
-                default => (string) ($lockedRepair->return_delivery_method
-                    ?: (($lockedRepair->delivery_method ?? null) === 'walk_in' ? 'walk_in' : 'customer_pickup')),
-            };
+            $method = (string) ($lockedRepair->return_delivery_method
+                ?: (($lockedRepair->delivery_method ?? null) === 'walk_in' ? 'walk_in' : 'customer_pickup'));
+            if ($method === 'pickup') {
+                $method = 'customer_pickup';
+            }
 
             $isIndividualShopOwner = $actor instanceof ShopOwner
                 && (int) $lockedRepair->shop_owner_id === (int) $actor->id
@@ -987,8 +1004,6 @@ final class RepairDeliveryService
             $allowedStatuses = $method === 'shop_delivery'
                 ? ['shipped']
                 : ['ready_for_pickup', 'ready-for-pickup'];
-            $sponsoredNonShopPlan = $method !== 'shop_delivery' && $this->isSponsoredWarranty($lockedRepair);
-
             if (! in_array((string) $lockedRepair->status, $allowedStatuses, true)) {
                 throw ValidationException::withMessages([
                     'status' => ['The repair is not ready for this return handoff.'],
@@ -1002,18 +1017,17 @@ final class RepairDeliveryService
                 ];
             }
 
-            if ($method !== 'shop_delivery'
-                && $lockedRepair->return_logistics_locked_at !== null
-                && ! $sponsoredNonShopPlan) {
-                throw ValidationException::withMessages([
-                    'status' => ['Customer receipt confirmation is already active.'],
-                ]);
-            }
-
             $summary = $settlementService->repairCollectionSummary($lockedRepair);
             if (! (bool) ($summary['fully_paid'] ?? false)) {
                 throw ValidationException::withMessages([
                     'payment' => ['Final payment must be settled before release.'],
+                ]);
+            }
+
+            if ($method === 'customer_pickup'
+                && ! $this->hasRequiredExternalTracking($lockedRepair, 'return')) {
+                throw ValidationException::withMessages([
+                    'tracking' => ['Courier tracking details are required before handoff.'],
                 ]);
             }
 

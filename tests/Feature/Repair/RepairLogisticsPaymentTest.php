@@ -77,6 +77,121 @@ class RepairLogisticsPaymentTest extends TestCase
         );
     }
 
+    public function test_initial_customer_arranged_payment_requires_intake_tracking_before_checkout(): void
+    {
+        [$repair, $customer] = $this->coveredRepair('deposit_50', 1000);
+        $repair->update([
+            'intake_delivery_method' => 'customer_delivery',
+            'intake_address' => [
+                ...($repair->intake_address ?? []),
+                'external_tracking' => null,
+            ],
+        ]);
+        Http::fake([
+            'https://api.paymongo.com/v1/checkout_sessions' => Http::response([
+                'data' => [
+                    'id' => 'cs_customer_arranged_tracking_gate',
+                    'attributes' => ['checkout_url' => 'https://checkout.test/customer-arranged'],
+                ],
+            ]),
+        ]);
+
+        $this->actingAs($customer, 'user')
+            ->postJson("/api/customer/repairs/{$repair->id}/retry-payment-session")
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('intake_tracking');
+
+        Http::assertNothingSent();
+        $this->assertDatabaseCount('repair_payment_sessions', 0);
+
+        $intakeAddress = $repair->intake_address;
+        $intakeAddress['external_tracking'] = [
+            'carrier' => 'J&T',
+            'tracking_number' => 'INTAKE-READY-123',
+        ];
+        $repair->update(['intake_address' => $intakeAddress]);
+
+        $this->actingAs($customer, 'user')
+            ->postJson("/api/customer/repairs/{$repair->id}/retry-payment-session")
+            ->assertOk()
+            ->assertJsonPath('checkout_url', 'https://checkout.test/customer-arranged');
+
+        Http::assertSentCount(1);
+        $this->assertDatabaseHas('repair_payment_sessions', [
+            'repair_request_id' => $repair->id,
+            'provider_link_id' => 'cs_customer_arranged_tracking_gate',
+            'phase' => 'initial',
+        ]);
+    }
+
+    public function test_pos_repair_checkout_uses_the_canonical_guest_identity(): void
+    {
+        [$repair, , $actor] = $this->coveredRepair('full_upfront', 1000);
+        $repair->update([
+            'user_id' => null,
+            'customer_name' => 'POS Walk-in Snapshot',
+            'email' => 'pos-walk-in@example.test',
+            'phone' => '09170001111',
+            'delivery_method' => 'walk_in',
+            'intake_delivery_method' => 'walk_in',
+            'intake_address' => null,
+            'intake_delivery_fee' => 0,
+            'intake_logistics_quote' => null,
+        ]);
+        $due = 1000;
+
+        $response = $this->actingAs($actor, 'user')->postJson('/api/repair-pos/checkout', [
+            'repair_request_id' => $repair->id,
+            'due_type' => 'full',
+            'customer_type' => 'walk_in',
+            'customer_id' => null,
+            'walk_in_name' => 'Client supplied name',
+            'walk_in_phone' => '09000000000',
+            'walk_in_email' => 'client@example.test',
+            'idempotency_key' => 'repair-guest-identity-001',
+            'payment_lines' => [['tender_type' => 'cash', 'amount' => $due]],
+        ]);
+
+        $response->assertOk();
+        $transaction = PosTransaction::findOrFail((int) $response->json('transaction_id'));
+        $this->assertSame('walk_in', $transaction->customer_type);
+        $this->assertNull($transaction->customer_id);
+        $this->assertSame('POS Walk-in Snapshot', $transaction->walk_in_name);
+        $this->assertSame('09170001111', $transaction->walk_in_phone);
+        $this->assertSame('pos-walk-in@example.test', $transaction->walk_in_email);
+    }
+
+    public function test_repair_pos_projection_exposes_the_canonical_registered_customer_id(): void
+    {
+        [$repair, $customer, $actor] = $this->coveredRepair('full_upfront', 1000);
+
+        $this->actingAs($actor, 'user')
+            ->getJson('/api/repairer/repairs?scope=pos_checkout')
+            ->assertOk()
+            ->assertJsonPath('data.0.id', (int) $repair->id)
+            ->assertJsonPath('data.0.customer_id', (int) $customer->id)
+            ->assertJsonPath('data.0.customer_name', (string) $repair->customer_name);
+    }
+
+    public function test_pos_repair_checkout_rejects_a_registered_customer_that_does_not_own_the_repair(): void
+    {
+        [$repair, $customer, $actor] = $this->coveredRepair('full_upfront', 1000);
+        $otherCustomer = User::factory()->create();
+        $due = 1000 + (float) $repair->intake_delivery_fee;
+
+        $this->actingAs($actor, 'user')->postJson('/api/repair-pos/checkout', [
+            'repair_request_id' => $repair->id,
+            'due_type' => 'full',
+            'customer_type' => 'registered',
+            'customer_id' => $otherCustomer->id,
+            'idempotency_key' => 'repair-mismatched-identity-001',
+            'payment_lines' => [['tender_type' => 'cash', 'amount' => $due]],
+        ])->assertUnprocessable()->assertJsonValidationErrors('customer_id');
+
+        $this->assertDatabaseCount('pos_transactions', 0);
+        $this->assertSame($customer->id, $repair->fresh()->user_id);
+    }
+
     public function test_paymongo_session_persists_exact_initial_components_before_returning_checkout_url(): void
     {
         [$repair, $customer] = $this->coveredRepair('deposit_50', 1000);

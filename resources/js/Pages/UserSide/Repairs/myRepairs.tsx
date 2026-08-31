@@ -1365,11 +1365,15 @@ const CustomerExternalTrackingCard: React.FC<{
   const locked = Boolean(isIntake
     ? order.intake_logistics_locked_at
       && (!isWarrantyNoChargeOrder(order) || order.received_at)
-    : order.return_logistics_locked_at
-      && (!isWarrantyNoChargeOrder(order) || order.pickup_enabled));
+    : order.pickup_enabled);
   const unpaidThirdPartyReturn = !isIntake
     && getReturnMethod(order) === 'customer_pickup'
     && getOrderOutstandingBalance(order) > 0;
+  const trackingGuidance = isIntake
+    ? 'Add the details from the courier you arranged. The shop can view them but cannot edit them.'
+    : unpaidThirdPartyReturn
+      ? 'Complete the remaining payment first. Then enter the courier details below.'
+      : 'Enter the courier carrier and tracking number before the shop records the return handoff.';
   const title = `${isIntake ? 'Intake' : 'Return'} courier tracking`;
   const fieldPrefix = isIntake ? 'Intake' : 'Return';
   const [carrier, setCarrier] = useState(tracking?.carrier ?? '');
@@ -1421,9 +1425,7 @@ const CustomerExternalTrackingCard: React.FC<{
         <div>
           <h4 className="font-bold text-black">{title}</h4>
           <p className="mt-1 text-xs text-gray-500">
-            {unpaidThirdPartyReturn
-              ? 'Complete the remaining payment before arranging the return courier.'
-              : 'Add the details from the courier you arranged. The shop can view them but cannot edit them.'}
+            {trackingGuidance}
           </p>
         </div>
         {locked && (
@@ -1435,7 +1437,7 @@ const CustomerExternalTrackingCard: React.FC<{
 
       {unpaidThirdPartyReturn ? (
         <p role="alert" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800">
-          Complete the remaining payment before arranging the return courier.
+          Complete the remaining payment first. After payment, enter the courier carrier and tracking number here.
         </p>
       ) : locked ? (
         tracking?.tracking_number ? (
@@ -3095,11 +3097,21 @@ const MyRepairs: React.FC = () => {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json().catch(() => ({}));
         if (errorData.error === 'shop_payment_not_configured') {
           throw new Error('This shop has not set up online payments yet. Please contact the shop directly to arrange payment.');
         }
-        throw new Error(errorData.error || 'Failed to create payment link');
+        const firstValidationError = Object.values(errorData.errors ?? {}).flat().find(
+          (entry) => typeof entry === 'string' && entry.trim(),
+        );
+        const message = typeof firstValidationError === 'string'
+          ? firstValidationError
+          : typeof errorData.error === 'string'
+            ? errorData.error
+            : typeof errorData.message === 'string'
+              ? errorData.message
+              : 'Failed to create payment link';
+        throw new Error(message);
       }
 
       const paymentData = await response.json();

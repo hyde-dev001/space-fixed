@@ -365,6 +365,40 @@ describe("MyRepairs intake payment", () => {
 
     expect(await screen.findByRole("button", { name: "PAY NOW" })).toBeEnabled();
   });
+
+  it("shows the intake tracking requirement when payment is blocked by the server", async () => {
+    mocks.repair = repair({
+      status: "repairer_accepted",
+      payment_status: "pending",
+      payment_enabled: true,
+      conversation_id: 15,
+      logistics_shipments: [],
+      intake_delivery_method: "customer_delivery",
+      intake_logistics_locked_at: null,
+    });
+    mocks.fetch.mockResolvedValueOnce({
+      ok: false,
+      status: 422,
+      json: async () => ({
+        message: "The given data was invalid.",
+        errors: {
+          intake_tracking: ["Add the courier carrier and tracking number before proceeding to payment."],
+        },
+      }),
+    });
+
+    render(<MyRepairs />);
+    const pendingTabs = await screen.findAllByRole("button", { name: /Pending/i });
+    fireEvent.click(pendingTabs[0]);
+    fireEvent.click(await screen.findByRole("button", { name: "PAY NOW" }));
+
+    await waitFor(() => expect(mocks.swal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Payment Failed",
+        text: "Add the courier carrier and tracking number before proceeding to payment.",
+      }),
+    ));
+  });
 });
 
 describe("MyRepairs return logistics", () => {
@@ -519,7 +553,7 @@ describe("MyRepairs return logistics", () => {
     expect(screen.getByRole("button", { name: "Pay Remaining Balance" })).toBeEnabled();
     const tracking = screen.getByRole("region", { name: "Return courier tracking" });
     expect(within(tracking).getByRole("alert")).toHaveTextContent(
-      "Complete the remaining payment before arranging the return courier.",
+      "Complete the remaining payment first. After payment, enter the courier carrier and tracking number here.",
     );
     expect(within(tracking).queryByLabelText("Return carrier")).not.toBeInTheDocument();
     expect(within(tracking).queryByRole("button", { name: "Save return tracking" })).not.toBeInTheDocument();
@@ -599,19 +633,52 @@ describe("MyRepairs return logistics", () => {
     expect(await screen.findByText("Tracking details saved.")).toBeInTheDocument();
   });
 
-  it("keeps an ordinary paid locked return plan read-only before handoff", async () => {
+  it("keeps paid third-party return tracking editable after the plan lock until handoff", async () => {
     mocks.repair = repair({
       return_delivery_method: "customer_pickup",
       return_logistics_locked_at: "2026-07-26T10:00:00.000Z",
       pickup_enabled: false,
+      collection_summary: {
+        collectible: false,
+        due_type: null,
+        phase: null,
+        collectible_amount: 0,
+        outstanding_balance: 0,
+        service_amount: 0,
+        delivery_amount: 0,
+        total_paid_amount: 1500,
+        grand_total: 1500,
+        fully_paid: true,
+      },
     });
 
     await renderReadyRepair();
 
     const tracking = screen.getByRole("region", { name: "Return courier tracking" });
-    expect(within(tracking).getByText("Locked after handoff")).toBeInTheDocument();
-    expect(within(tracking).queryByLabelText("Return carrier")).not.toBeInTheDocument();
-    expect(within(tracking).queryByRole("button", { name: "Save return tracking" })).not.toBeInTheDocument();
+    expect(within(tracking).queryByText("Locked after handoff")).not.toBeInTheDocument();
+    expect(within(tracking).getByLabelText("Return carrier")).toBeInTheDocument();
+    const saveButton = within(tracking).getByRole("button", { name: "Save return tracking" });
+    expect(saveButton).toBeDisabled();
+
+    fireEvent.change(within(tracking).getByLabelText("Return carrier"), {
+      target: { value: "Lalamove" },
+    });
+    fireEvent.change(within(tracking).getByLabelText("Return tracking number"), {
+      target: { value: "RETURN-PAID-123" },
+    });
+
+    expect(saveButton).toBeEnabled();
+    fireEvent.click(saveButton);
+
+    await waitFor(() => expect(mocks.post).toHaveBeenCalledWith(
+      "/api/customer/repairs/77/external-tracking",
+      {
+        leg: "return",
+        carrier: "Lalamove",
+        tracking_number: "RETURN-PAID-123",
+        tracking_url: null,
+      },
+    ));
   });
 
   it("shows locked customer tracking read-only and uses an explicit receipt confirmation label", async () => {

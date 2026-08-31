@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { computeCanPay, getPhoneDisplayForReceipt } from '../posPaymentValidation';
+import {
+  computeCanPay,
+  getPhoneDisplayForReceipt,
+  normalizeOptionalCustomerId,
+} from '../posPaymentValidation';
 
 describe('computeCanPay', () => {
   it('requires proof reference for non-cash', () => {
@@ -48,5 +52,15 @@ describe('computeCanPay', () => {
 describe('getPhoneDisplayForReceipt', () => {
   it('returns N/A for non-cash when phone missing', () => {
     expect(getPhoneDisplayForReceipt('gcash', '')).toBe('N/A');
+  });
+});
+
+describe('normalizeOptionalCustomerId', () => {
+  it('maps guest and invalid identifiers to null while preserving registered IDs', () => {
+    expect(normalizeOptionalCustomerId(null)).toBeNull();
+    expect(normalizeOptionalCustomerId(0)).toBeNull();
+    expect(normalizeOptionalCustomerId('')).toBeNull();
+    expect(normalizeOptionalCustomerId('42')).toBe(42);
+    expect(normalizeOptionalCustomerId(42.5)).toBeNull();
   });
 });

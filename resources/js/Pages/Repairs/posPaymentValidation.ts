@@ -12,6 +12,12 @@ type CanPayInput = {
 
 export const isCashPhoneValid = (phone: string): boolean => phone.length === 11;
 
+export const normalizeOptionalCustomerId = (value: unknown): number | null => {
+  const numericValue = Number(value);
+
+  return Number.isInteger(numericValue) && numericValue > 0 ? numericValue : null;
+};
+
 export const computeCanPay = (input: CanPayInput): boolean => {
   const hasItems = input.itemsCount > 0;
   const hasName = input.customerName.trim().length > 0;

@@ -311,6 +311,8 @@ class RepairWorkflowController extends Controller
                 $repairs->transform(function (RepairRequest $repair): RepairRequest {
                     $collectionSummary = $this->attachRepairCollectionSummary($repair);
                     $this->normalizeRepairTaxModeForPayload($repair);
+                    $customerId = (int) ($repair->user_id ?? 0);
+                    $repair->setAttribute('customer_id', $customerId > 0 ? $customerId : null);
                     $repair->setAttribute('intake_handoff', $this->repairDeliveryService->intakeHandoff(
                         $repair,
                         $this->isPaymentSatisfiedForRepairProgress($repair),
@@ -376,6 +378,8 @@ class RepairWorkflowController extends Controller
                 $repairs->transform(function (RepairRequest $repair): RepairRequest {
                     $collectionSummary = $this->attachRepairCollectionSummary($repair);
                     $this->normalizeRepairTaxModeForPayload($repair);
+                    $customerId = (int) ($repair->user_id ?? 0);
+                    $repair->setAttribute('customer_id', $customerId > 0 ? $customerId : null);
                     $repair->setAttribute('intake_handoff', $this->repairDeliveryService->intakeHandoff(
                         $repair,
                         $this->isPaymentSatisfiedForRepairProgress($repair),
@@ -420,6 +424,8 @@ class RepairWorkflowController extends Controller
             $repairs->transform(function (RepairRequest $repair): RepairRequest {
                 $collectionSummary = $this->attachRepairCollectionSummary($repair);
                 $this->normalizeRepairTaxModeForPayload($repair);
+                $customerId = (int) ($repair->user_id ?? 0);
+                $repair->setAttribute('customer_id', $customerId > 0 ? $customerId : null);
                 $repair->setAttribute('intake_handoff', $this->repairDeliveryService->intakeHandoff(
                     $repair,
                     $this->isPaymentSatisfiedForRepairProgress($repair),
