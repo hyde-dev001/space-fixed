@@ -447,7 +447,6 @@ $routeBuckets = [
         'hr.employees.show',
         'hr.employees.statistics',
         'hr.employees.store',
-        'hr.employees.suspend',
         'hr.employees.update',
         'hr.holidays.destroy',
         'hr.holidays.index',

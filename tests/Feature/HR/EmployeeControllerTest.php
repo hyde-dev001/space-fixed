@@ -7,6 +7,7 @@ use Tests\TestCase;
 use App\Models\User;
 use App\Models\ShopOwner;
 use App\Models\Employee;
+use App\Enums\EmployeeStatus;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Testing\WithFaker;
 use Spatie\Permission\Models\Permission;
@@ -146,8 +147,7 @@ class EmployeeControllerTest extends TestCase
         $response = $this->actingAs($this->hrUser, 'user')
             ->postJson("/api/hr/employees/{$employee->id}/suspend", ['reason' => 'Policy violation']);
 
-        $response->assertStatus(403)
-            ->assertJsonPath('code', 'SUSPENSION_WORKFLOW_REQUIRED');
+        $response->assertStatus(404);
 
         $this->assertDatabaseHas('employees', [
             'id' => $employee->id,
@@ -169,10 +169,24 @@ class EmployeeControllerTest extends TestCase
             'status' => 'active',
         ]);
 
+        $linkedUser = User::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'email' => 'reactivate.employee@example.com',
+            'status' => 'suspended',
+        ]);
+        $suspendedEmployee = Employee::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'email' => $linkedUser->email,
+            'status' => 'suspended',
+        ]);
+
         $this->actingAs($this->hrUser, 'user')
-            ->postJson("/api/hr/employees/{$employee->id}/activate")
-            ->assertStatus(403)
-            ->assertJsonPath('code', 'SUSPENSION_WORKFLOW_REQUIRED');
+            ->postJson("/api/hr/employees/{$suspendedEmployee->id}/activate")
+            ->assertOk()
+            ->assertJsonPath('message', 'Employee account reactivated successfully');
+
+        $this->assertSame(EmployeeStatus::ACTIVE, $suspendedEmployee->fresh()->status);
+        $this->assertSame('active', $linkedUser->fresh()->getRawOriginal('status'));
     }
 
     #[Test]
@@ -258,8 +272,8 @@ class EmployeeControllerTest extends TestCase
 
         $this->actingAs($this->hrUser, 'user')
             ->postJson("/api/hr/employees/{$employee->id}/activate")
-            ->assertStatus(403)
-            ->assertJsonPath('code', 'SUSPENSION_WORKFLOW_REQUIRED');
+            ->assertStatus(422)
+            ->assertJsonPath('code', 'EMPLOYEE_TERMINATED');
     }
 
     #[Test]

@@ -238,6 +238,8 @@ class SuspensionFinalApprovalController extends Controller
                         'suspension_reason' => $suspensionRequest->reason,
                         'privileged_suspension_id' => null,
                     ])->save();
+
+                    $this->linkedUserSynchronizer->sync($employee);
                 }
 
                 AuditLog::createLog([
@@ -274,8 +276,6 @@ class SuspensionFinalApprovalController extends Controller
             $suspensionRequest = $result['request'];
             $employeeName = (string) ($suspensionRequest->employee?->name ?? 'Employee');
             $decisionText = $result['approved'] ? 'approved' : 'rejected';
-
-            $this->linkedUserSynchronizer->sync($suspensionRequest->employee);
 
             try {
                 $this->notificationService->notifyEmployeeSuspensionRequest($shopOwnerId, [

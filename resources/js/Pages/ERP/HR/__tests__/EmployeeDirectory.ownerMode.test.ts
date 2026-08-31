@@ -29,4 +29,11 @@ describe('shop-owner HR employee directory routes', () => {
     expect(typesSource).toContain("status: 'active' | 'inactive' | 'suspended' | 'terminated';");
     expect(typesSource).not.toContain("'on-leave'");
   });
+
+  it('exposes company-scoped account activation instead of platform-admin activation', () => {
+    expect(source).toContain('const handleActivate =');
+    expect(source).toContain('Activate Account');
+    expect(source).toContain('${employeeApiBase}/${employeeId}/activate');
+    expect(source).not.toContain('/admin/users/');
+  });
 });
