@@ -1192,7 +1192,7 @@ const Checkout: React.FC = () => {
 
   return (
     <CustomerFooterReveal>
-    <div className="min-h-screen flex flex-col bg-white">
+    <div className="userside-checkout-page min-h-screen flex flex-col bg-white">
       <style>{`
         select {
           position: relative;

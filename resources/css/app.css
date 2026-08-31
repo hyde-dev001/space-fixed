@@ -2652,3 +2652,91 @@ html.userside-dark #app .userside-shoe-guide-page [class~="border-gray-300"] {
 .dark #app .repair-dashboard [class~="text-green-600"] {
   color: #86efac !important;
 }
+
+/* Keep customer-side drawers readable when their light-mode arbitrary utilities
+   are rendered inside the userside dark theme. */
+html.userside-dark #app .userside-customer-drawer {
+  background-color: rgb(15 23 42 / 0.96) !important;
+  border-color: #334155 !important;
+  color: #f8fafc !important;
+}
+
+html.userside-dark #app .userside-customer-drawer [class~="text-[#555555]"],
+html.userside-dark #app .userside-customer-drawer [class~="text-[#777777]"],
+html.userside-dark #app .userside-customer-drawer [class~="text-[#707072]"],
+html.userside-dark #app .userside-customer-drawer [class~="text-[#999999]"] {
+  color: #94a3b8 !important;
+}
+
+html.userside-dark #app .userside-customer-drawer [class~="border-[#dedede]"],
+html.userside-dark #app .userside-customer-drawer [class~="border-[#ededed]"],
+html.userside-dark #app .userside-customer-drawer [class~="border-[#e5e5e5]"],
+html.userside-dark #app .userside-customer-drawer [class~="border-[#cacacb]"] {
+  border-color: #334155 !important;
+}
+
+html.userside-dark #app .userside-customer-drawer [class~="bg-[#f3f3f3]"],
+html.userside-dark #app .userside-customer-drawer [class~="bg-[#f5f5f5]"] {
+  background-color: #1f2937 !important;
+}
+
+html.userside-dark #app .userside-customer-drawer [class~="bg-[#111111]"] {
+  background-color: #f8fafc !important;
+  color: #0b1220 !important;
+}
+
+/* Checkout contains a few light-only gradients and arbitrary text utilities
+   that are intentionally kept local to the customer checkout surface. */
+html.userside-dark #app .userside-checkout-page {
+  background-color: #0b1220 !important;
+  color: #f8fafc;
+}
+
+html.userside-dark #app .userside-checkout-page [class~="bg-white"] {
+  background-color: #111827 !important;
+}
+
+html.userside-dark #app .userside-checkout-page [class~="bg-gray-50"],
+html.userside-dark #app .userside-checkout-page [class*="bg-gray-50/"] {
+  background-color: #151f32 !important;
+}
+
+html.userside-dark #app .userside-checkout-page [class~="bg-linear-to-b"][class~="from-white"][class~="to-slate-50"] {
+  background-image: linear-gradient(180deg, #111827 0%, #0f172a 100%) !important;
+}
+
+html.userside-dark #app .userside-checkout-page [class~="bg-linear-to-br"][class~="from-slate-100"][class~="to-slate-200"] {
+  background-image: linear-gradient(135deg, #1b2a41 0%, #253550 100%) !important;
+}
+
+html.userside-dark #app .userside-checkout-page [class~="text-black"] {
+  color: #f8fafc !important;
+}
+
+html.userside-dark #app .userside-checkout-page [class~="text-gray-600"] {
+  color: #cbd5e1 !important;
+}
+
+html.userside-dark #app .userside-checkout-page [class~="text-gray-500"] {
+  color: #94a3b8 !important;
+}
+
+html.userside-dark #app .userside-checkout-page [class~="border-gray-100"],
+html.userside-dark #app .userside-checkout-page [class~="border-gray-200"],
+html.userside-dark #app .userside-checkout-page [class~="border-gray-300"],
+html.userside-dark #app .userside-checkout-page [class~="border-slate-200"] {
+  border-color: #2f405a !important;
+}
+
+/* Preserve a clear selected state for repair packages after the shared
+   dark-mode mappings neutralize their light-mode black/white utilities. */
+html.userside-dark #app .userside-repair-shop-page .repair-package-card--selected {
+  background-color: #1b2f50 !important;
+  border-color: #7da2ff !important;
+  box-shadow: 0 12px 28px -24px rgba(125, 162, 255, 0.9);
+}
+
+html.userside-dark #app .userside-repair-shop-page .repair-package-selection-indicator--selected {
+  background-color: #b8cdff !important;
+  border-color: #b8cdff !important;
+}

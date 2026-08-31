@@ -161,6 +161,18 @@ describe('user-side navigation shell', () => {
     expect(cartSource).not.toContain('>Bag<');
   });
 
+  it('keeps customer drawers readable in dark mode', () => {
+    const cartStart = navigationSource.indexOf('aria-label="Shopping cart"');
+    const cartEnd = navigationSource.indexOf('aria-label="Site menu"', cartStart);
+    const cartSource = navigationSource.slice(cartStart, cartEnd);
+
+    expect(cartSource).toContain('userside-customer-drawer');
+    expect(cartSource).toContain('dark:text-white');
+    expect(cartSource).toContain('dark:text-slate-400');
+    expect(appCssSource).toContain('.userside-customer-drawer');
+    expect(appCssSource).toContain('[class~="text-[#777777]"]');
+  });
+
   it('keeps standalone mobile account menus aligned with the shared account actions', () => {
     for (const { path, source } of standaloneAccountMenuSources) {
       expect(source, path).toContain('Edit Profile');
