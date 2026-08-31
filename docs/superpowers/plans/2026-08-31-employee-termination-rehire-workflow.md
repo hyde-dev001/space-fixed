@@ -33,4 +33,3 @@
 - Focused Laravel termination/rehire and existing employee workflow tests.
 - Focused frontend approval/directory tests.
 - `git diff --check` and the repository frontend build.
-
