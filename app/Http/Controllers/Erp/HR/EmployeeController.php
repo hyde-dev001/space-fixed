@@ -521,7 +521,56 @@ class EmployeeController extends Controller
      */
     public function activate(Request $request, $id): JsonResponse
     {
-        return $this->suspensionWorkflowRequiredResponse();
+        $user = Auth::guard('user')->user();
+
+        if (! $user || (! $user->hasRole('Manager') && ! $user->can('access-employee-directory') && ! $user->can('access-attendance-records') && ! $user->can('access-payslip-generation'))) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        $employee = Employee::forShopOwner($user->shop_owner_id)->findOrFail($id);
+
+        if (! $this->employeePolicy->canChangeAccountState($employee, EmployeeStatus::ACTIVE)) {
+            return response()->json([
+                'error' => 'Terminated employees cannot be reactivated.',
+                'code' => 'EMPLOYEE_TERMINATED',
+            ], 422);
+        }
+
+        $oldValues = [
+            'status' => $employee->getRawOriginal('status'),
+            'suspension_reason' => $employee->getRawOriginal('suspension_reason'),
+        ];
+
+        $employee = DB::transaction(function () use ($employee): Employee {
+            $lockedEmployee = Employee::query()
+                ->whereKey($employee->getKey())
+                ->where('shop_owner_id', $employee->shop_owner_id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $lockedEmployee->forceFill([
+                'status' => EmployeeStatus::ACTIVE,
+                'suspension_reason' => null,
+                'privileged_suspension_id' => null,
+            ])->save();
+
+            $this->linkedUserSynchronizer->sync($lockedEmployee);
+
+            return $lockedEmployee->fresh();
+        });
+
+        $this->auditUpdated(
+            AuditLog::MODULE_EMPLOYEE,
+            $employee,
+            $oldValues,
+            "Employee account activated: {$employee->first_name} {$employee->last_name}",
+            ['employee_management', 'account_state']
+        );
+
+        return response()->json([
+            'message' => 'Employee account reactivated successfully',
+            'employee' => $employee,
+        ]);
     }
 
     private function isDirectSuspensionStateMutation(Employee $employee, string $targetStatus): bool

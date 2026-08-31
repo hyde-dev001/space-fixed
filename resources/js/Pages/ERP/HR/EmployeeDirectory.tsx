@@ -1130,33 +1130,6 @@ export const EmployeeManagement: React.FC<{
       }
 
       const data = await response.json();
-      const targetEmployeeId = employeeToSuspend.id;
-      const investigationReason = suspensionRequestForm.reason.trim();
-
-      // Reflect status change immediately in the table without requiring a manual refresh.
-      setRows((prev) =>
-        prev.map((row) =>
-          row.id === targetEmployeeId
-            ? {
-                ...row,
-                status: ownerMode ? "suspended" : row.status,
-                suspensionReason: investigationReason,
-              }
-            : row
-        )
-      );
-
-      if (selectedEmployee && selectedEmployee.id === targetEmployeeId) {
-        setSelectedEmployee((prev) =>
-          prev
-            ? {
-                ...prev,
-                status: ownerMode ? "suspended" : prev.status,
-                suspensionReason: investigationReason,
-              }
-            : prev
-        );
-      }
 
       setIsSuspensionRequestModalOpen(false);
       setEmployeeToSuspend(null);
@@ -2411,6 +2384,17 @@ export const EmployeeManagement: React.FC<{
                           >
                             <InfoIcon className="h-5 w-5" />
                           </button>
+                          {['inactive', 'suspended'].includes(employee.status) && (
+                            <button
+                              onClick={() => handleActivate(employee.id, buildName(employee))}
+                              className={`inline-flex items-center justify-center rounded-md px-2 py-1 text-xs font-medium text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300 transition-colors ${isProcessingId === employee.id ? 'opacity-50 cursor-not-allowed' : ''}`}
+                              title="Activate Account"
+                              aria-label={`Activate Account for ${buildName(employee)}`}
+                              disabled={isProcessingId === employee.id}
+                            >
+                              Activate Account
+                            </button>
+                          )}
                           {!ownerReadOnly && (
                             <>
                           <button
@@ -2568,9 +2552,9 @@ export const EmployeeManagement: React.FC<{
                   </div>
                     <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
                       <div className="flex justify-end gap-2">
-                        {!ownerReadOnly && ['inactive', 'suspended'].includes(selectedEmployee.status) && (
+                        {['inactive', 'suspended'].includes(selectedEmployee.status) && (
                           <Button variant="success" onClick={() => handleActivate(selectedEmployee.id, buildName(selectedEmployee))} className="mr-2" disabled={isProcessingId === selectedEmployee.id}>
-                            {isProcessingId === selectedEmployee.id ? 'Processing...' : 'Activate'}
+                            {isProcessingId === selectedEmployee.id ? 'Processing...' : 'Activate Account'}
                           </Button>
                         )}
                         <Button variant="secondary" onClick={() => setIsViewModalOpen(false)}>
