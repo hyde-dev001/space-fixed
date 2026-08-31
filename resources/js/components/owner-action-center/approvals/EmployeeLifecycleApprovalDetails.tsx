@@ -39,7 +39,6 @@ export default function EmployeeLifecycleApprovalDetails({ detail, item }: Appro
             {isRehire && <DetailNote label="New start date" value={formatDate(pick(detail, "rehire_start_date", "rehire.start_date"))} />}
             {isRehire && <DetailNote label="New position" value={pick(detail, "rehire_position", "rehire.position")} />}
             {isRehire && <DetailNote label="New department" value={pick(detail, "rehire_department", "rehire.department")} />}
-            {isRehire && <DetailNote label="New functional role" value={pick(detail, "rehire_functional_role", "rehire.functional_role")} />}
             {isRehire && <DetailNote label="New access role" value={pick(detail, "rehire_role", "rehire.role")} />}
             {isRehire && <DetailNote label="New salary" value={pick(detail, "rehire_salary", "rehire.salary")} />}
           </dl>

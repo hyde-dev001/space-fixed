@@ -186,7 +186,12 @@ export default function SuspensionApprovals() {
     };
 
     const approve = async (request: ManagerSuspensionRequest) => {
-        if (!window.confirm(`Approve the Manager stage for ${request.name || "this employee"}? The request will move to Shop Owner review.`)) {
+        const confirmation = await workflowFeedback.confirm({
+            title: "Approve suspension stage?",
+            text: `Approve the Manager stage for ${request.name || "this employee"}? The request will move to Shop Owner review.`,
+            confirmButtonText: "Approve stage",
+        });
+        if (!confirmation.isConfirmed) {
             return;
         }
 
@@ -201,7 +206,9 @@ export default function SuspensionApprovals() {
             });
             await approvals.refetch();
         } catch (error) {
-            setActionError(error instanceof Error ? error.message : "Unable to approve this request.");
+            const message = error instanceof Error ? error.message : "Unable to approve this request.";
+            setActionError(message);
+            await workflowFeedback.error(message, "Suspension approval failed");
         } finally {
             setProcessingId(null);
         }
@@ -232,7 +239,9 @@ export default function SuspensionApprovals() {
             });
             await approvals.refetch();
         } catch (error) {
-            setActionError(error instanceof Error ? error.message : "Unable to reject this request.");
+            const message = error instanceof Error ? error.message : "Unable to reject this request.";
+            setActionError(message);
+            await workflowFeedback.error(message, "Suspension rejection failed");
         } finally {
             setProcessingId(null);
         }
