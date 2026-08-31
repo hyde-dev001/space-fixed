@@ -28,6 +28,17 @@ export default function SuspensionApprovalDetails({ detail, item }: ApprovalDeta
         </DetailGrid>
       </DetailSection>
 
+      {hasEvidence && (
+        <DetailSection title="HR request and review notes">
+          <dl className="space-y-3">
+            {hasAny(detail, "reason") && <DetailNote label="HR suspension reason" value={pick(detail, "reason")} />}
+            {hasAny(detail, "evidence") && <DetailNote label="HR evidence / details" value={pick(detail, "evidence")} />}
+            {hasAny(detail, "manager_note") && <DetailNote label="Manager note" value={pick(detail, "manager_note")} />}
+            {hasAny(detail, "owner_note") && <DetailNote label="Owner note" value={pick(detail, "owner_note")} />}
+          </dl>
+        </DetailSection>
+      )}
+
       <DetailSection title="Employee details">
         <DetailGrid>
           <DetailField label="Employee" value={stringValue(pick(detail, "name", "employee.name"), "Employee")} />
@@ -37,17 +48,6 @@ export default function SuspensionApprovalDetails({ detail, item }: ApprovalDeta
           <DetailField label="Submitted" value={formatDate(pick(detail, "requested_at", "created_at", "submitted_at"))} />
         </DetailGrid>
       </DetailSection>
-
-      {hasEvidence && (
-        <DetailSection title="Reason and review notes">
-          <dl className="space-y-3">
-            {hasAny(detail, "reason") && <DetailNote label="Reason" value={pick(detail, "reason")} />}
-            {hasAny(detail, "evidence") && <DetailNote label="Evidence" value={pick(detail, "evidence")} />}
-            {hasAny(detail, "manager_note") && <DetailNote label="Manager note" value={pick(detail, "manager_note")} />}
-            {hasAny(detail, "owner_note") && <DetailNote label="Owner note" value={pick(detail, "owner_note")} />}
-          </dl>
-        </DetailSection>
-      )}
     </div>
   );
 }

@@ -39,6 +39,11 @@ const noteBody = (key: string) => (reason?: string): Record<string, unknown> => 
   [key]: reason ?? "",
 });
 
+const suspensionDecisionBody = (action: ApprovalAction) => (note?: string): Record<string, unknown> => ({
+  action,
+  note: note ?? "",
+});
+
 const definition = (config: ApprovalPanelDefinition): ApprovalPanelDefinition => config;
 
 export const approvalPanelRegistry: Record<ApprovalSourceType, ApprovalPanelDefinition> = {
@@ -178,11 +183,11 @@ export const approvalPanelRegistry: Record<ApprovalSourceType, ApprovalPanelDefi
     renderer: SuspensionApprovalDetails,
     approve: {
       path: (id) => `/api/shop-owner/suspension-requests/${id}/review`,
-      body: noteBody("note"),
+      body: suspensionDecisionBody("approve"),
     },
     reject: {
       path: (id) => `/api/shop-owner/suspension-requests/${id}/review`,
-      body: noteBody("note"),
+      body: suspensionDecisionBody("reject"),
       maxLength: 1000,
     },
     consequence: "suspend or keep the employee active through the authoritative HR workflow",

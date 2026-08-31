@@ -335,7 +335,7 @@ export default function SuspensionApprovals() {
                                     <tr>
                                         <th scope="col" className="w-[18%] px-5 py-4 font-semibold">Employee</th>
                                         <th scope="col" className="w-[15%] px-3 py-4 font-semibold">Requester</th>
-                                        <th scope="col" className="w-[19%] px-3 py-4 font-semibold">Reason / evidence</th>
+                                        <th scope="col" className="w-[19%] px-3 py-4 font-semibold">HR reason / evidence</th>
                                         <th scope="col" className="w-[12%] px-3 py-4 font-semibold">Age</th>
                                         <th scope="col" className="w-[16%] px-3 py-4 font-semibold">Stage</th>
                                         <th scope="col" className="w-[20%] px-5 py-4 font-semibold">Next action</th>
@@ -402,8 +402,8 @@ export default function SuspensionApprovals() {
                             <div><p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Requested at</p><p className="mt-1 text-sm text-gray-800 dark:text-gray-200">{formatDateTime(selectedRequest.requested_at)}</p></div>
                         </div>
                         <div className="mt-5 space-y-4 text-sm">
-                            <div><h3 className="font-semibold text-gray-900 dark:text-white">Reason</h3><p className="mt-1 leading-6 text-gray-700 dark:text-gray-300">{selectedRequest.reason}</p></div>
-                            <div><h3 className="font-semibold text-gray-900 dark:text-white">Evidence</h3><p className="mt-1 leading-6 text-gray-700 dark:text-gray-300">{selectedRequest.evidence || "No evidence supplied."}</p></div>
+                            <div><h3 className="font-semibold text-gray-900 dark:text-white">HR suspension reason</h3><p className="mt-1 leading-6 text-gray-700 dark:text-gray-300">{selectedRequest.reason || "No reason supplied."}</p></div>
+                            <div><h3 className="font-semibold text-gray-900 dark:text-white">HR evidence / details</h3><p className="mt-1 leading-6 text-gray-700 dark:text-gray-300">{selectedRequest.evidence || "No evidence supplied."}</p></div>
                             <div><h3 className="font-semibold text-gray-900 dark:text-white">Next action</h3><p className="mt-1 leading-6 text-gray-700 dark:text-gray-300">{selectedRequest.next_action}</p></div>
                             <div>
                                 <h3 className="font-semibold text-gray-900 dark:text-white">Previous decisions</h3>
