@@ -4,7 +4,7 @@ import Navigation from '../Shared/Navigation';
 import Swal from '../Shared/UserModal';
 import RefundEligibilityTooltip from '@/components/common/RefundEligibilityTooltip';
 import ShipmentTrackingModal from '@/components/logistics/ShipmentTrackingModal';
-import CustomerFooter from '../../../components/common/CustomerFooter';
+import { CustomerFooterReveal } from '../../../components/common/CustomerFooter';
 
 const MAX_REFUND_IMAGE_SIZE_BYTES = 20 * 1024 * 1024;
 const MAX_REFUND_VIDEO_SIZE_BYTES = 256 * 1024 * 1024;
@@ -1776,6 +1776,7 @@ const MyOrders: React.FC = () => {
     'relative inline-flex min-w-[96px] shrink-0 flex-col items-center justify-center gap-1.5 overflow-visible rounded-2xl border pl-3 pr-5 py-3 text-[10px] font-semibold tracking-[0.01em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2';
 
   return (
+    <CustomerFooterReveal>
     <div className="min-h-screen flex flex-col bg-[#f3f4f6] xl:bg-white">
       <Head title="My Purchases" />
       <Navigation />
@@ -3233,8 +3234,8 @@ const MyOrders: React.FC = () => {
         />
         </div>
       </main>
-      <CustomerFooter className="mt-24" />
     </div>
+    </CustomerFooterReveal>
   );
 };
 

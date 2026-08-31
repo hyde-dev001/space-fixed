@@ -6,7 +6,7 @@ import Swal from '@/Pages/UserSide/Shared/UserModal';
 import axios from 'axios';
 import { dispatchCartAddedEvent } from '../../../types/cart-events';
 import CustomerAddressMapPicker from '@/components/address/CustomerAddressMapPicker';
-import CustomerFooter from '../../../components/common/CustomerFooter';
+import { CustomerFooterReveal } from '../../../components/common/CustomerFooter';
 
 type CartItem = {
   id: string;
@@ -1191,6 +1191,7 @@ const Checkout: React.FC = () => {
   };
 
   return (
+    <CustomerFooterReveal>
     <div className="min-h-screen flex flex-col bg-white">
       <style>{`
         select {
@@ -2131,8 +2132,8 @@ const Checkout: React.FC = () => {
         </div>
       </main>
 
-      <CustomerFooter className="mt-24" />
     </div>
+    </CustomerFooterReveal>
   );
 };
 

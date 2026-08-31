@@ -54,6 +54,54 @@ html:not(.dark) #app .super-admin-shell [class~="bg-gray-50"] {
   transform: translateY(0);
 }
 
+.customer-footer-page {
+  position: relative;
+  min-height: 100%;
+  overflow-x: hidden;
+  --customer-footer-height: min(30rem, 100svh);
+}
+
+.customer-footer-page__curtain {
+  position: relative;
+  z-index: 10;
+  background: #fff;
+}
+
+.customer-footer-page__spacer {
+  position: relative;
+  z-index: 0;
+  height: var(--customer-footer-height);
+  pointer-events: none;
+}
+
+.customer-footer--fixed {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 0;
+  width: 100%;
+  max-height: 100svh;
+  min-height: min(30rem, 100svh);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: auto;
+  pointer-events: none;
+}
+
+.customer-footer--fixed.customer-footer--interactive {
+  pointer-events: auto;
+}
+
+@media (min-width: 640px) {
+  .customer-footer-page {
+    --customer-footer-height: min(34rem, 100svh);
+  }
+
+  .customer-footer--fixed {
+    min-height: min(34rem, 100svh);
+  }
+}
+
 .customer-footer__content {
   position: relative;
   z-index: 1;

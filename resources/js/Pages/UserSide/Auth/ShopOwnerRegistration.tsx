@@ -18,7 +18,7 @@ import {
 import RegistrationDocumentMetadataFields from '@/components/form/RegistrationDocumentMetadataFields';
 import { GPS_POSITION_OPTIONS, getCurrentPositionWithTimeout } from '@/utils/geolocation';
 import { getRegistrationAddressFields } from './registrationAddress';
-import CustomerFooter from '../../../components/common/CustomerFooter';
+import { CustomerFooterReveal } from '../../../components/common/CustomerFooter';
 
 const CAVITE_CENTER = {
   lat: '14.28140000',
@@ -1227,6 +1227,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
   return (
     <>
       <Head title={isResubmission ? "Shop Owner Resubmission" : "Shop Owner Registration"} />
+      <CustomerFooterReveal>
       <div className="userside-shop-owner-registration-page min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
         <Navigation />
         <div className="max-w-6xl mx-auto px-4 lg:px-8 pt-24 pb-8 md:pt-28 md:pb-12 lg:pt-32">
@@ -2110,8 +2111,8 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
             )}
           </div>
         </div>
-        <CustomerFooter className="mt-24" />
       </div>
+      </CustomerFooterReveal>
 
       {/* Success Modal */}
       {showSuccessModal && (

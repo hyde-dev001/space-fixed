@@ -1,5 +1,5 @@
 import { Link } from '@inertiajs/react';
-import { useEffect, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useRef, useState, type ReactNode, type Ref } from 'react';
 
 const FOOTER_GROUPS: Array<{
   title: string;
@@ -31,11 +31,34 @@ const FOOTER_GROUPS: Array<{
   },
 ];
 
-export default function CustomerFooter({ className = '' }: { className?: string }) {
+type CustomerFooterProps = {
+  className?: string;
+  fixed?: boolean;
+  interactive?: boolean;
+};
+
+const CustomerFooter = forwardRef<HTMLElement, CustomerFooterProps>(function CustomerFooter(
+  { className = '', fixed = false, interactive = false },
+  forwardedRef: Ref<HTMLElement>,
+) {
   const footerRef = useRef<HTMLElement | null>(null);
   const [isVisible, setIsVisible] = useState(false);
 
+  const setFooterRef = useCallback((element: HTMLElement | null) => {
+    footerRef.current = element;
+
+    if (typeof forwardedRef === 'function') {
+      forwardedRef(element);
+    } else if (forwardedRef) {
+      (forwardedRef as { current: HTMLElement | null }).current = element;
+    }
+  }, [forwardedRef]);
+
   useEffect(() => {
+    if (fixed) {
+      return;
+    }
+
     const footer = footerRef.current;
     if (!footer || typeof IntersectionObserver === 'undefined') {
       setIsVisible(true);
@@ -51,10 +74,23 @@ export default function CustomerFooter({ className = '' }: { className?: string 
 
     observer.observe(footer);
     return () => observer.disconnect();
-  }, []);
+  }, [fixed]);
+
+  useEffect(() => {
+    if (!fixed) {
+      return;
+    }
+
+    footerRef.current?.toggleAttribute('inert', !interactive);
+  }, [fixed, interactive]);
 
   return (
-    <footer ref={footerRef} aria-label="SoleSpace footer" className={`customer-footer ${isVisible ? 'customer-footer--visible' : ''} ${className}`}>
+    <footer
+      ref={setFooterRef}
+      aria-label="SoleSpace footer"
+      aria-hidden={fixed ? !interactive : undefined}
+      className={`customer-footer ${fixed ? 'customer-footer--fixed customer-footer--visible' : isVisible ? 'customer-footer--visible' : ''} ${fixed && interactive ? 'customer-footer--interactive' : ''} ${className}`}
+    >
       <div className="customer-footer__content">
         <div className="customer-footer__desktop-grid">
           <div><Link href="/" className="customer-footer__brand">SoleSpace</Link></div>
@@ -104,5 +140,76 @@ export default function CustomerFooter({ className = '' }: { className?: string 
       </div>
       <div aria-hidden="true" className="customer-footer__wordmark">SOLESPACE</div>
     </footer>
+  );
+});
+
+CustomerFooter.displayName = 'CustomerFooter';
+
+export default CustomerFooter;
+
+type CustomerFooterRevealProps = {
+  children: ReactNode;
+  className?: string;
+};
+
+export function CustomerFooterReveal({ children, className = '' }: CustomerFooterRevealProps) {
+  const shellRef = useRef<HTMLDivElement | null>(null);
+  const spacerRef = useRef<HTMLDivElement | null>(null);
+  const footerRef = useRef<HTMLElement | null>(null);
+  const [footerIsInteractive, setFooterIsInteractive] = useState(false);
+
+  useEffect(() => {
+    const shell = shellRef.current;
+    const footer = footerRef.current;
+    const spacer = spacerRef.current;
+
+    if (!shell || !footer || !spacer) {
+      return;
+    }
+
+    const updateFooterHeight = () => {
+      const footerHeight = Math.ceil(footer.getBoundingClientRect().height);
+      shell.style.setProperty('--customer-footer-height', `${footerHeight}px`);
+    };
+
+    updateFooterHeight();
+
+    const resizeObserver = typeof ResizeObserver === 'undefined'
+      ? null
+      : new ResizeObserver(updateFooterHeight);
+
+    resizeObserver?.observe(footer);
+
+    if (typeof IntersectionObserver === 'undefined') {
+      setFooterIsInteractive(true);
+
+      return () => {
+        resizeObserver?.disconnect();
+        shell.style.removeProperty('--customer-footer-height');
+      };
+    }
+
+    const revealObserver = new IntersectionObserver(
+      ([entry]) => setFooterIsInteractive(entry?.isIntersecting ?? false),
+      { threshold: 0 },
+    );
+
+    revealObserver.observe(spacer);
+
+    return () => {
+      revealObserver.disconnect();
+      resizeObserver?.disconnect();
+      shell.style.removeProperty('--customer-footer-height');
+    };
+  }, []);
+
+  return (
+    <div ref={shellRef} className={`customer-footer-page ${className}`}>
+      <div className="customer-footer-page__curtain">
+        {children}
+      </div>
+      <div ref={spacerRef} aria-hidden="true" className="customer-footer-page__spacer" />
+      <CustomerFooter ref={footerRef} fixed interactive={footerIsInteractive} />
+    </div>
   );
 }

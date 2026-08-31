@@ -3,7 +3,7 @@ import { Head, Link, router, usePage } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 import Swal from '../Shared/UserModal';
 import { useBadgeCounts } from '../../../hooks/useBadgeCounts';
-import CustomerFooter from '../../../components/common/CustomerFooter';
+import { CustomerFooterReveal } from '../../../components/common/CustomerFooter';
 
 type ProfileData = {
 	firstName: string;
@@ -361,6 +361,7 @@ const CustomerProfile: React.FC = () => {
 	}, [flash]);
 
 	return (
+		<CustomerFooterReveal>
 		<div className="min-h-screen bg-gray-50">
 			<Head title="Edit Profile" />
 			<Navigation />
@@ -617,8 +618,6 @@ const CustomerProfile: React.FC = () => {
 				</div>
 			</div>
 
-			<CustomerFooter className="mt-24" />
-
 			<div className="fixed bottom-0 left-0 right-0 z-40 border-t border-gray-200 bg-white xl:hidden">
 				<div className="mx-auto grid max-w-[480px] grid-cols-5 px-2 py-2 text-[11px] text-gray-600 md:max-w-none md:px-4">
 					<a href="/" className={mobileNavItemClasses(activeMobileTab === 'home')}>
@@ -656,6 +655,7 @@ const CustomerProfile: React.FC = () => {
 				</div>
 			</div>
 		</div>
+		</CustomerFooterReveal>
 	);
 };
 
