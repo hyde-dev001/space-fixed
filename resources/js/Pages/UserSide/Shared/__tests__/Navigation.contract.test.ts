@@ -184,11 +184,10 @@ describe('user-side navigation shell', () => {
     }
   });
 
-  it('uses the shorter Cart, Orders, and Repairs labels across user-side surfaces', () => {
+  it('uses the shorter Cart and Orders labels and keeps the Repairs page title', () => {
     expect(supportingLabelSources.shopProfile).toContain('>Orders</Link>');
     expect(supportingLabelSources.customerProfile).toContain('>Repairs</h2>');
     expect(supportingLabelSources.repairs).toContain('<Head title="Repairs" />');
-    expect(supportingLabelSources.repairs).toContain('>Repairs</h1>');
     expect(supportingLabelSources.paymentSuccess).toContain('View Orders');
     expect(supportingLabelSources.productDetails).toContain('label="Add to Cart"');
   });

@@ -341,6 +341,8 @@ it('renders the approved Manager workspace in the required groups and order', ()
     'Staff & Workload',
     'Leave Approvals',
     'Suspension Approvals',
+    'Termination Approvals',
+    'Rehire Approvals',
     'Reports & Analytics',
     'Audit Logs',
   ]);
@@ -352,6 +354,8 @@ it('renders the approved Manager workspace in the required groups and order', ()
   expect(screen.getByRole('link', { name: 'Staff & Workload' })).toHaveAttribute('href', '/erp/manager/staff-workload');
   expect(screen.getByRole('link', { name: 'Leave Approvals' })).toHaveAttribute('href', '/erp/manager/leave-approvals');
   expect(screen.getByRole('link', { name: 'Suspension Approvals' })).toHaveAttribute('href', '/erp/manager/suspension-approvals');
+  expect(screen.getByRole('link', { name: 'Termination Approvals' })).toHaveAttribute('href', '/erp/manager/termination-approvals');
+  expect(screen.getByRole('link', { name: 'Rehire Approvals' })).toHaveAttribute('href', '/erp/manager/rehire-approvals');
   expect(screen.getByRole('link', { name: 'Reports & Analytics' })).toHaveAttribute('href', '/erp/manager/reports');
   expect(screen.getByRole('link', { name: 'Audit Logs' })).toHaveAttribute('href', '/erp/manager/audit-logs');
   expect(screen.getByRole('link', { name: 'Log Attendance' })).toHaveAttribute('href', '/erp/time-in');
