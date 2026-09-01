@@ -1019,7 +1019,7 @@ export default function JobOrdersPage() {
 
       if (financeStatus !== 'approved') {
         return {
-          label: 'Awaiting Finance Authorization',
+          label: 'Awaiting Finance',
           className: 'bg-orange-50 text-orange-700 ring-1 ring-inset ring-orange-200 dark:bg-orange-900/20 dark:text-orange-300 dark:ring-orange-700/40',
         };
       }
@@ -2324,7 +2324,7 @@ export default function JobOrdersPage() {
                           }
 
                           return (
-                            <span className={`inline-flex items-center px-2.5 py-1 text-xs font-semibold rounded-full whitespace-nowrap ${refundReturn.className}`}>
+                            <span className={`inline-flex max-w-full flex-wrap items-center justify-center px-2.5 py-1 text-center text-xs font-semibold leading-tight rounded-full whitespace-normal break-words ${refundReturn.className}`}>
                               {refundReturn.label}
                             </span>
                           );
