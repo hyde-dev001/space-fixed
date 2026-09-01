@@ -1,7 +1,7 @@
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import MyOrders from '../MyOrders';
+import MyOrders, { resolveRefundableOrderTotal } from '../MyOrders';
 
 const order: any = {
   id: 7,
@@ -251,7 +251,42 @@ describe('MyOrders delivery tracking', () => {
     expect(screen.getByText('TRK-THIRD-PARTY-002')).toBeInTheDocument();
     expect(screen.getByText('Maria Rider')).toBeInTheDocument();
     expect(screen.queryByText('Shop-Owned Return Pickup')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Track Return' })).not.toBeInTheDocument();
+    const trackReturn = screen.getByRole('link', { name: 'Track Return' });
+    expect(trackReturn).toHaveAttribute('href', 'https://example.test/returns/TRK-THIRD-PARTY-002');
+    expect(trackReturn).toHaveAttribute('target', '_blank');
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      '/tracking/shipments/5',
+      expect.anything(),
+    );
+  });
+
+  it('does not render unsafe third-party return tracking links', () => {
+    order.status = 'delivered';
+    order.refund_stage = {
+      id: 5,
+      logistics_shipment_id: null,
+      return_delivery_method: 'third_party',
+      status: 'processing',
+      shop_owner_status: 'approved',
+      finance_status: 'approved',
+      return_status: 'in_transit',
+      return_source: 'customer',
+      customer_return_tracking_number: 'TRK-THIRD-PARTY-003',
+      customer_return_tracking_link: 'javascript:alert(1)',
+    };
+
+    render(<MyOrders />);
+
+    expect(screen.queryByRole('link', { name: 'Track Return' })).not.toBeInTheDocument();
+  });
+
+  it('calculates the refundable order total without original shipping', () => {
+    expect(resolveRefundableOrderTotal({
+      total_amount: 3481.25,
+      shipping_fee: 226,
+      vat_amount: 417.75,
+      grand_total: 4125,
+    } as any)).toBeCloseTo(3899, 2);
   });
 
   it('flags a failed attempt and links to its shipment details', () => {

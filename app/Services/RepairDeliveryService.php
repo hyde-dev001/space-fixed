@@ -883,6 +883,7 @@ final class RepairDeliveryService
         if ($method === 'pickup') {
             $method = 'customer_pickup';
         }
+        $isAnonymousWalkIn = $method === 'walk_in' && (int) ($repair->user_id ?? 0) <= 0;
         $state = $method === 'shop_delivery'
             ? $this->handoffState($repair, 'repair_return')
             : [
@@ -903,12 +904,12 @@ final class RepairDeliveryService
             || $this->hasRequiredExternalTracking($repair, 'return');
         $canRelease = in_array((string) $repair->status, $expectedStatuses, true)
             && $paymentSatisfied
-            && ! (bool) $repair->pickup_enabled
+            && (! (bool) $repair->pickup_enabled || $isAnonymousWalkIn)
             && $trackingComplete
             && ($method !== 'shop_delivery' || $state['approved']);
 
         $blockedReason = null;
-        if ((bool) $repair->pickup_enabled) {
+        if ((bool) $repair->pickup_enabled && ! $isAnonymousWalkIn) {
             $blockedReason = 'Customer receipt confirmation is already active.';
         } elseif (! in_array((string) $repair->status, $expectedStatuses, true)) {
             $blockedReason = $method === 'shop_delivery'
@@ -931,7 +932,8 @@ final class RepairDeliveryService
             'recovery' => $visible ? $recovery : null,
             'method' => $method,
             'can_release' => $canRelease,
-            'can_confirm_receipt' => (bool) $repair->pickup_enabled
+            'can_confirm_receipt' => ! $isAnonymousWalkIn
+                && (bool) $repair->pickup_enabled
                 && $repair->return_logistics_locked_at !== null
                 && ($method !== 'shop_delivery' || $state['approved']),
             'action_label' => match ($method) {
@@ -977,6 +979,7 @@ final class RepairDeliveryService
             if ($method === 'pickup') {
                 $method = 'customer_pickup';
             }
+            $isAnonymousWalkIn = $method === 'walk_in' && (int) ($lockedRepair->user_id ?? 0) <= 0;
 
             $isIndividualShopOwner = $actor instanceof ShopOwner
                 && (int) $lockedRepair->shop_owner_id === (int) $actor->id
@@ -1010,7 +1013,7 @@ final class RepairDeliveryService
                 ]);
             }
 
-            if ((bool) $lockedRepair->pickup_enabled) {
+            if ((bool) $lockedRepair->pickup_enabled && ! $isAnonymousWalkIn) {
                 return [
                     'repair' => $lockedRepair->fresh(),
                     'replayed' => true,
@@ -1038,14 +1041,19 @@ final class RepairDeliveryService
                 ]);
             }
 
+            $handoffAt = now();
             $lockedRepair->update([
-                'pickup_enabled' => true,
-                'pickup_enabled_at' => now(),
-                'pickup_enabled_by' => $actor->id,
-                'return_logistics_locked_at' => $lockedRepair->return_logistics_locked_at ?? now(),
+                'pickup_enabled' => ! $isAnonymousWalkIn,
+                'pickup_enabled_at' => $isAnonymousWalkIn ? null : $handoffAt,
+                'pickup_enabled_by' => $isAnonymousWalkIn ? null : $actor->id,
+                'return_logistics_locked_at' => $lockedRepair->return_logistics_locked_at ?? $handoffAt,
+                ...($isAnonymousWalkIn ? [
+                    'status' => 'picked_up',
+                    'picked_up_at' => $lockedRepair->picked_up_at ?? $handoffAt,
+                ] : []),
                 ...($method === 'customer_pickup' ? [
                     'status' => 'shipped',
-                    'shipped_at' => $lockedRepair->shipped_at ?? now(),
+                    'shipped_at' => $lockedRepair->shipped_at ?? $handoffAt,
                 ] : []),
             ]);
 

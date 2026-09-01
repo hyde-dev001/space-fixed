@@ -110,6 +110,58 @@ class RepairReturnHandoffTest extends TestCase
         $this->assertDatabaseCount('finance_invoices', 1);
     }
 
+    public function test_no_account_walk_in_release_completes_without_customer_confirmation(): void
+    {
+        $shop = ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'registration_type' => 'company',
+        ]);
+        $repairer = User::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'role' => 'REPAIRER',
+            'status' => 'active',
+        ]);
+        $repair = RepairRequest::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'user_id' => null,
+            'assigned_repairer_id' => $repairer->id,
+            'status' => 'ready_for_pickup',
+            'payment_status' => 'completed',
+            'payment_policy' => 'full_upfront',
+            'payment_policy_snapshot' => 'full_upfront',
+            'payment_completed_at' => now(),
+            'delivery_method' => 'walk_in',
+            'intake_delivery_method' => 'walk_in',
+            'return_delivery_method' => 'walk_in',
+            'return_logistics_locked_at' => now(),
+            'pickup_enabled' => true,
+            'pickup_enabled_at' => now(),
+            'pickup_enabled_by' => $repairer->id,
+            'total' => 1000,
+            'final_total' => 1000,
+            'total_paid_amount' => 1000,
+            'pricing_breakdown' => ['base_total' => 1000, 'final_total' => 1000],
+        ]);
+
+        $handoff = app(\App\Services\RepairDeliveryService::class)
+            ->returnHandoff($repair, true);
+        $this->assertTrue($handoff['can_release']);
+        $this->assertFalse($handoff['can_confirm_receipt']);
+
+        $this->actingAs($repairer, 'user')
+            ->postJson('/api/repairer/repairs/' . $repair->id . '/activate-pickup')
+            ->assertOk()
+            ->assertJsonPath('repair.status', 'picked_up')
+            ->assertJsonPath('message', 'No-account customer handoff recorded. Repair is completed.');
+
+        $repair->refresh();
+        $this->assertSame('picked_up', $repair->status);
+        $this->assertNotNull($repair->picked_up_at);
+        $this->assertFalse((bool) $repair->pickup_enabled);
+        $this->assertNotNull($repair->return_logistics_locked_at);
+        $this->assertDatabaseCount('finance_invoices', 0);
+    }
+
     public function test_shop_delivery_plan_lock_does_not_block_handoff_after_dispatcher_approval(): void
     {
         [$repair, $customer, $repairer, $shop] = $this->repairFixture('shop_delivery', 'shipped');

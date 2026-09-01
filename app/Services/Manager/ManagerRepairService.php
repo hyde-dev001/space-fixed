@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Manager;
 
+use App\Enums\NotificationType;
 use App\Models\AuditLog;
 use App\Models\RepairRequest;
 use App\Models\ShopOwner;
@@ -188,10 +189,15 @@ final class ManagerRepairService
      * flow, where a walk-in must remain visible even when every repairer is at
      * the configured advisory limit.
      */
-    public function autoAssign(RepairRequest $repair, ?User $actor = null, bool $allowOverLimit = false): RepairRequest
+    public function autoAssign(
+        RepairRequest $repair,
+        ?User $actor = null,
+        bool $allowOverLimit = false,
+        bool $preserveNewRequest = false,
+    ): RepairRequest
     {
         $didAssign = false;
-        $result = DB::transaction(function () use ($repair, $actor, $allowOverLimit, &$didAssign): RepairRequest {
+        $result = DB::transaction(function () use ($repair, $actor, $allowOverLimit, $preserveNewRequest, &$didAssign): RepairRequest {
             $locked = RepairRequest::query()
                 ->whereKey($repair->getKey())
                 ->lockForUpdate()
@@ -239,13 +245,17 @@ final class ManagerRepairService
                 return $locked;
             }
 
+            $newStatus = $preserveNewRequest && $previousStatus === 'new_request'
+                ? 'new_request'
+                : 'assigned_to_repairer';
+
             $locked->forceFill([
                 'assigned_repairer_id' => $candidate->id,
                 'assigned_at' => now(),
                 'assignment_method' => 'auto',
                 'assigned_by' => null,
                 'assignment_notes' => null,
-                'status' => 'assigned_to_repairer',
+                'status' => $newStatus,
             ])->save();
             $didAssign = true;
 
@@ -260,7 +270,7 @@ final class ManagerRepairService
                         'assigned_repairer_id' => null,
                     ],
                     'new_state' => [
-                        'status' => 'assigned_to_repairer',
+                        'status' => $newStatus,
                         'assigned_repairer_id' => (int) $candidate->id,
                     ],
                     'selected_repairer_id' => (int) $candidate->id,
@@ -322,13 +332,17 @@ final class ManagerRepairService
                     $previousStatus = $this->value($locked->status);
 
                     if ($locked->assigned_repairer_id === null) {
+                        $newStatus = $previousStatus === 'new_request'
+                            ? 'new_request'
+                            : 'assigned_to_repairer';
+
                         $locked->forceFill([
                             'assigned_repairer_id' => $actor->id,
                             'assigned_at' => now(),
                             'assignment_method' => 'manual',
                             'assigned_by' => $actor->id,
                             'assignment_notes' => 'Assigned from manual POS checkout by repairer actor',
-                            'status' => 'assigned_to_repairer',
+                            'status' => $newStatus,
                         ])->save();
 
                         $this->audit(
@@ -342,7 +356,7 @@ final class ManagerRepairService
                                     'assigned_repairer_id' => null,
                                 ],
                                 'new_state' => [
-                                    'status' => 'assigned_to_repairer',
+                                    'status' => $newStatus,
                                     'assigned_repairer_id' => (int) $actor->id,
                                 ],
                                 'selected_repairer_id' => (int) $actor->id,
@@ -363,6 +377,7 @@ final class ManagerRepairService
             repair: $repair,
             actor: $actor instanceof User ? $actor : null,
             allowOverLimit: true,
+            preserveNewRequest: true,
         );
     }
 
@@ -401,7 +416,7 @@ final class ManagerRepairService
                 ]);
             }
 
-            if (! in_array($this->value($locked->status), ['assigned_to_repairer', 'repairer_accepted'], true)) {
+            if (! in_array($this->value($locked->status), ['new_request', 'assigned_to_repairer', 'repairer_accepted'], true)) {
                 throw ValidationException::withMessages([
                     'status' => ['Repair request cannot be rejected in its current state.'],
                 ]);
@@ -698,6 +713,35 @@ final class ManagerRepairService
                     'order_number' => (string) $result->request_id,
                     'reason' => $reason,
                 ]);
+            } catch (\Throwable $exception) {
+                report($exception);
+            }
+        }
+
+        if ($this->isManualPosNoAccountRepair($result)) {
+            try {
+                $this->notifications->sendToErpRole(
+                    roleName: 'Cashier',
+                    shopId: $shopOwnerId,
+                    type: NotificationType::REFUND_REQUEST,
+                    title: 'Manual POS Refund Required',
+                    message: sprintf(
+                        'Repair request %s was finally rejected by the Manager. Process the paid refund manually in POS.',
+                        (string) $result->request_id,
+                    ),
+                    data: [
+                        'repair_id' => (int) $result->id,
+                        'request_id' => (string) $result->request_id,
+                        'status' => 'rejected',
+                        'refund_action' => 'manual_pos',
+                        'workflow_source' => 'manager_rejected_no_account_pos',
+                        'amount' => (float) ($result->total_paid_amount ?? 0),
+                    ],
+                    actionUrl: '/erp/cashier/point-of-sale',
+                    priority: 'high',
+                    groupKey: 'repair-manual-refund-' . $result->id,
+                    requiresAction: true,
+                );
             } catch (\Throwable $exception) {
                 report($exception);
             }
@@ -1247,6 +1291,14 @@ final class ManagerRepairService
     private function isTerminalStatus(string $status): bool
     {
         return in_array($status, self::TERMINAL_STATUSES, true);
+    }
+
+    private function isManualPosNoAccountRepair(RepairRequest $repair): bool
+    {
+        return (int) ($repair->user_id ?? 0) <= 0
+            && (bool) ($repair->manual_pos_queue_enabled ?? false)
+            && str_starts_with(strtoupper(trim((string) $repair->request_id)), 'REP-POS-')
+            && (float) ($repair->total_paid_amount ?? 0) > 0;
     }
 
     private function statusLabel(string $status): string

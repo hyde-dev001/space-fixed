@@ -65,6 +65,7 @@ type ReturnHandoff = {
 type RepairOrder = {
   id: string;
   database_id: number;
+  customerId?: number | null;
   customer: string;
   email: string;
   phone: string;
@@ -820,6 +821,7 @@ export default function JobOrdersRepair() {
           return {
           id: repair.request_id || `REP-${repair.id}`,
           database_id: repair.id,
+          customerId: repair.customer_id ?? repair.user_id ?? null,
           customer: repair.customer_name || repair.user?.first_name + ' ' + repair.user?.last_name || 'N/A',
           email: displayEmail,
           phone: repair.phone || 'N/A',
@@ -1969,9 +1971,12 @@ export default function JobOrdersRepair() {
       );
 
       if (response.data.success) {
+        const isAnonymousWalkIn = returnMethod === 'walk_in' && !targetOrder.customerId;
         await Swal.fire({
           title: 'Handover recorded',
-          text: 'The customer can now confirm receipt of the repaired shoes.',
+          text: isAnonymousWalkIn
+            ? 'No-account customer handoff recorded. The repair is now completed.'
+            : 'The customer can now confirm receipt of the repaired shoes.',
           icon: 'success',
           confirmButtonColor: '#2563eb',
         });
@@ -3797,7 +3802,7 @@ export default function JobOrdersRepair() {
               {/* Footer */}
               <div className="bg-gray-50 dark:bg-gray-900/30 px-4 sm:px-6 py-4 border-t border-gray-200 dark:border-gray-700">
                 <div className="mx-auto w-full max-w-6xl flex flex-wrap items-center justify-between gap-3">
-                {viewOrder.status === "assigned_to_repairer" && (
+                {(viewOrder.status === "assigned_to_repairer" || viewOrder.status === "new_request") && (
                   <div className="flex flex-wrap items-center gap-3">
                     <button
                       onClick={() => handleReviewAction("accept")}

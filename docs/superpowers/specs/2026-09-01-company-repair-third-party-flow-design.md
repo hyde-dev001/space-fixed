@@ -44,3 +44,42 @@ Add regression coverage for:
 - guest/walk-in POS repair settlement and account-backed POS repair settlement;
 - unchanged walk-in, shop pickup, shop delivery, and warranty/recovery behavior;
 - customer-facing tracking/payment guidance and the guest POS payload normalization.
+
+## Approved follow-up: manual no-account repair review and release
+
+The manual POS no-account repair remains immediately payable by the Cashier. It
+must not require a Repairer confirmation before payment and must not create a
+fake customer account.
+
+After checkout, the company repair is assigned to a Repairer while remaining in
+`new_request`. This keeps the Repairer's Accept and Reject decisions available
+before the work begins. Accepting follows the existing repair path; rejecting
+records the existing rejection state and reason.
+
+For a fully paid no-account repair whose return method is `walk_in`, the
+Repairer's valid `Release to customer` action records the physical handoff and
+transitions the repair directly to `picked_up`. No customer confirmation is
+required because there is no customer account that can perform that step.
+
+Registered-customer walk-in returns, customer-arranged courier returns, and
+shop-owned delivery returns keep their existing confirmation, tracking, and
+dispatcher/repairer ownership rules. A stale customer-confirmation flag must
+not block the no-account walk-in recovery path.
+
+The change is limited to the manual POS status/assignment path, Repairer
+visibility and decision guards, and the shared method-aware return handoff
+guard. Existing payment, inventory, receipt, and shipment records remain
+unchanged.
+
+## Manual refund after final rejection
+
+If a no-account manual POS repair was paid and the Repairer rejects it, the
+Manager's final rejection does not automatically refund the payment and does
+not create a Finance approval item. The Manager rejection sends a required
+action notification to the shop Cashier.
+
+The Cashier opens POS receipt history and records the manual POS refund after
+verifying the receipt. The cashier-only action creates the succeeded refund
+ledger record, updates the repair and POS payment status, and is idempotent on
+repeat submission. No fake customer account or customer confirmation is
+required.

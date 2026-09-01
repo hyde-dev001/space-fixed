@@ -101,12 +101,6 @@ class RetailPosController extends Controller
             }
         }
 
-        if ((string) ($validated['customer_type'] ?? '') === 'walk_in' && trim((string) ($validated['walk_in_name'] ?? '')) === '') {
-            throw ValidationException::withMessages([
-                'walk_in_name' => ['Walk-in customer name is required.'],
-            ]);
-        }
-
         $shopOwnerId = $this->resolveActorShopOwnerId($this->resolveActor());
         $this->assertRetailOrBoth($shopOwnerId);
 

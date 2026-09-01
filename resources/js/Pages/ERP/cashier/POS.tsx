@@ -6,6 +6,9 @@ import Swal from "sweetalert2";
 import {
 	computeCanPay,
 	getPhoneDisplayForReceipt,
+	isOptionalEmailValid,
+	normalizeCustomerField,
+	normalizeOptionalCustomerEmail,
 	normalizeOptionalCustomerId,
 } from "../../Repairs/posPaymentValidation";
 import { repairPosHistoryApi } from "../../../services/repairPosHistoryApi";
@@ -20,6 +23,9 @@ type RepairOrderOption = {
 	id: string;
 	requestNumber?: string;
 	customer: string;
+	customerName: string;
+	customerPhone: string;
+	customerEmail: string;
 	customerId?: number | null;
 	paymentPolicy?: "deposit_50" | "full_upfront";
 	paymentStatus?: string;
@@ -183,6 +189,12 @@ const hasOpenOrCompletedRefund = (receipt: ReceiptSnapshot): boolean => {
 
 const canExecuteReceiptRefund = (receipt: ReceiptSnapshot): boolean => {
 	return receipt.customerType === "walk_in" && String(receipt.latestRefund?.status || "").toLowerCase() === "approved";
+};
+
+const isManualRejectedNoAccountRepair = (receipt: ReceiptSnapshot): boolean => {
+	return receipt.moduleType !== "retail"
+		&& receipt.customerType === "walk_in"
+		&& String(receipt.repairStatus || "").toLowerCase() === "rejected";
 };
 
 const hasRefundLifecycleRecord = (receipt: ReceiptSnapshot): boolean => {
@@ -623,6 +635,12 @@ const PointOfSalePage = () => {
 								.filter((serviceName: string) => serviceName.length > 0);
 
 							const packageName = String(entry?.pricing_breakdown?.package_name ?? "").trim();
+							const customerName = normalizeCustomerField(entry?.customer_name)
+								|| normalizeCustomerField(entry?.user?.name)
+								|| [entry?.user?.first_name, entry?.user?.last_name].map(normalizeCustomerField).filter(Boolean).join(' ');
+							const customerPhone = normalizeCustomerField(entry?.phone) || normalizeCustomerField(entry?.user?.phone);
+							const customerEmail = normalizeOptionalCustomerEmail(entry?.email)
+								|| normalizeOptionalCustomerEmail(entry?.user?.email);
 							const primaryService = String(
 								entry?.service
 								?? entry?.item
@@ -649,8 +667,11 @@ const PointOfSalePage = () => {
 							return {
 								id: String(entry?.id ?? `R-${index}`),
 								requestNumber: String(entry?.request_id ?? "").trim() || undefined,
-								customer: String(entry?.customer ?? entry?.customer_name ?? "Walk-in Customer"),
+								customer: customerName || "Walk-in Customer",
 								customerId: normalizeOptionalCustomerId(entry?.customer_id ?? entry?.user_id),
+								customerName,
+								customerPhone,
+								customerEmail,
 								paymentPolicy: normalizePaymentPolicy(entry?.payment_policy_snapshot ?? entry?.payment_policy ?? entry?.shop_owner?.repair_payment_policy),
 								paymentStatus: String(entry?.payment_status ?? "pending"),
 								status: String(entry?.status ?? ""),
@@ -677,8 +698,11 @@ const PointOfSalePage = () => {
 							return {
 								id: String(row?.id ?? `MQ-${index}`),
 								requestNumber: requestNo,
-								customer: String(row?.customer_name ?? "Walk-in Customer"),
+								customer: normalizeCustomerField(row?.customer_name) || "Walk-in Customer",
 								customerId: normalizeOptionalCustomerId(row?.customer_id),
+								customerName: normalizeCustomerField(row?.customer_name),
+								customerPhone: normalizeCustomerField(row?.phone),
+								customerEmail: normalizeOptionalCustomerEmail(row?.email),
 								paymentPolicy: normalizePaymentPolicy(row?.payment_policy),
 								paymentStatus: queueDueType === null ? "completed" : "partially_paid",
 								status: String(row?.status ?? ""),
@@ -1011,7 +1035,7 @@ const PointOfSalePage = () => {
 							minute: "2-digit",
 						}),
 						cashierName: String(row?.created_by ?? cashierName),
-						customerName: String(receiptPayload?.customer?.name ?? row?.walk_in_name ?? "Customer"),
+						customerName: String(receiptPayload?.customer?.name ?? row?.walk_in_name ?? (moduleType === 'retail' ? 'Walk-in Customer' : 'Customer')),
 						customerPhone: String(receiptPayload?.customer?.phone ?? row?.walk_in_phone ?? ""),
 						paymentReference: String(row?.payment_lines?.[0]?.provider_reference ?? "") || null,
 						paymentMethod,
@@ -1073,6 +1097,80 @@ const PointOfSalePage = () => {
 		fetchRefundQueue();
 	}, [isRefundQueueOpen]);
 
+	const handleManualRejectedNoAccountRefund = async (receipt: ReceiptSnapshot) => {
+		const transactionId = Number(receipt.transactionId ?? 0);
+		if (transactionId <= 0) {
+			await Swal.fire({
+				icon: "warning",
+				title: "Refund Unavailable",
+				text: "This record has no linked transaction reference.",
+				confirmButtonColor: "#b45309",
+			});
+			return;
+		}
+
+		const requestedAmount = resolveRefundRequestAmount(receipt);
+		const refundConfirmation = await Swal.fire({
+			icon: "warning",
+			title: "Confirm Manual POS Refund",
+			html: `Record a manual refund for <b>${formatPeso(requestedAmount)}</b> after the Manager rejected this repair.`,
+			showCancelButton: true,
+			confirmButtonText: "Yes, Refund",
+			cancelButtonText: "Cancel",
+			confirmButtonColor: "#dc2626",
+		});
+
+		if (!refundConfirmation.isConfirmed) {
+			return;
+		}
+
+		try {
+			const response = await repairPosHistoryApi.manualRefundRejectedNoAccount({
+				source_transaction_id: transactionId,
+				receipt_no: receipt.receiptNo,
+			});
+			const refundId = Number((response.data as any)?.refund_id ?? 0);
+			const approvedAmount = Number(
+				(response.data as any)?.data?.approved_amount ?? requestedAmount,
+			);
+			const nextStatus = String((response.data as any)?.data?.status ?? "succeeded").toLowerCase();
+
+			setReceiptHistory((prev) => prev.map((entry) => (
+				entry.receiptNo === receipt.receiptNo
+					? {
+						...entry,
+						refundEntries: [
+							{
+								status: nextStatus,
+								approvedAmount: nextStatus === "succeeded" ? approvedAmount : 0,
+							},
+							...entry.refundEntries,
+						],
+						latestRefund: {
+							id: refundId > 0 ? refundId : Number(entry.latestRefund?.id ?? 0),
+							status: nextStatus,
+						},
+					}
+					: entry
+			)));
+
+			await Swal.fire({
+				icon: "success",
+				title: "Manual POS Refund Recorded",
+				text: "The refund was recorded successfully. No Finance approval is required.",
+				confirmButtonColor: "#10b981",
+			});
+		} catch (error: any) {
+			const message = error?.response?.data?.message || "Unable to record the manual POS refund.";
+			await Swal.fire({
+				icon: "error",
+				title: "Refund Failed",
+				text: message,
+				confirmButtonColor: "#dc2626",
+			});
+		}
+	};
+
 	const handleRequestRefund = async (receipt: ReceiptSnapshot) => {
 		if (isActiveWarrantyClaimStatus(receipt.latestWarrantyClaimStatus)) {
 			await Swal.fire({
@@ -1091,6 +1189,11 @@ const PointOfSalePage = () => {
 				text: "A refund is already in progress/completed for this receipt or its repair request.",
 				confirmButtonColor: "#2563eb",
 			});
+			return;
+		}
+
+		if (isManualRejectedNoAccountRepair(receipt)) {
+			await handleManualRejectedNoAccountRefund(receipt);
 			return;
 		}
 
@@ -1668,8 +1771,9 @@ const PointOfSalePage = () => {
 		const resolvedDueType = targetOrder.dueTypeToCollect;
 		const dueAmount = targetOrder.collectibleAmount;
 		setSelectedRepairOrder(targetOrder);
-		setCustomerName(targetOrder.customer);
-		setCustomerEmail("");
+		setCustomerName(targetOrder.customerName);
+		setCustomerPhone(targetOrder.customerPhone);
+		setCustomerEmail(targetOrder.customerEmail);
 		setItems([
 			{
 				id: `order-${targetOrder.id}-${resolvedDueType}`,
@@ -1730,6 +1834,7 @@ const PointOfSalePage = () => {
 		itemsCount: items.length,
 		customerName,
 		customerPhone,
+		customerEmail,
 		paymentMethod,
 		cashReceivedInput,
 		hasInsufficientCash,
@@ -1739,13 +1844,15 @@ const PointOfSalePage = () => {
 	const payDisableReason = useMemo(() => {
 		if (isProcessingPayment) return "Processing payment...";
 		if (items.length === 0) return "Add at least one service before checkout.";
-		if (customerName.trim().length === 0) return "Customer name is required.";
-		if (paymentMethod === "cash" && !isCustomerPhoneValid) return "Cash payments require an 11-digit phone number.";
+		if (selectedRepairOrder && (customerName.trim().length === 0 || !isCustomerPhoneValid)) return 'This repair order is missing canonical customer name or phone. Update the repair record before checkout.';
+		if (customerName.trim().length === 0) return 'Customer name is required.';
+		if (!isCustomerPhoneValid) return 'Repair checkout requires an 11-digit phone number.';
+		if (!isOptionalEmailValid(customerEmail)) return 'Enter a valid email address or leave email blank.';
 		if (paymentMethod === "cash" && !hasCashInput) return "Enter cash received for cash payments.";
 		if (paymentMethod !== "cash" && !hasProofReference) return "Enter proof reference for GCash/Card payments.";
 		if (hasInsufficientCash) return `Insufficient cash by ${formatPeso(shortValue)}.`;
 		return "";
-	}, [customerName, hasCashInput, hasInsufficientCash, hasProofReference, isCustomerPhoneValid, isProcessingPayment, items.length, paymentMethod, shortValue]);
+	}, [customerEmail, customerName, hasCashInput, hasInsufficientCash, hasProofReference, isCustomerPhoneValid, isProcessingPayment, items.length, paymentMethod, selectedRepairOrder, shortValue]);
 	const retailSubtotal = useMemo(() => {
 		return retailCart.reduce((sum, item) => sum + (item.qty * item.unitPrice), 0);
 	}, [retailCart]);
@@ -1767,20 +1874,22 @@ const PointOfSalePage = () => {
 		itemsCount: retailCart.length,
 		customerName: retailCustomerName,
 		customerPhone: retailCustomerPhone,
+		customerEmail: retailCustomerEmail,
 		paymentMethod: retailPaymentMethod,
 		cashReceivedInput: retailCashReceivedInput,
 		hasInsufficientCash: retailHasInsufficientCash,
 		proofReference: retailProofReference,
+		requireCustomerInfo: false,
 	});
 	const retailPayDisableReason = useMemo(() => {
 		if (retailProcessingPayment) return "Processing payment...";
 		if (retailCart.length === 0) return "Add at least one product before checkout.";
-		if (retailCustomerName.trim().length === 0) return "Customer name is required.";
+		if (!isOptionalEmailValid(retailCustomerEmail)) return 'Enter a valid email address or leave email blank.';
 		if (retailPaymentMethod === "cash" && retailCashReceivedInput.trim().length === 0) return "Enter cash received for cash payments.";
 		if (retailPaymentMethod !== "cash" && retailProofReference.trim().length === 0) return "Enter proof reference for GCash/Card payments.";
 		if (retailHasInsufficientCash) return `Insufficient cash by ${formatPeso(retailShortValue)}.`;
 		return "";
-	}, [retailCart.length, retailCashReceivedInput, retailCustomerName, retailHasInsufficientCash, retailPaymentMethod, retailProcessingPayment, retailProofReference, retailShortValue]);
+	}, [retailCart.length, retailCashReceivedInput, retailCustomerEmail, retailHasInsufficientCash, retailPaymentMethod, retailProcessingPayment, retailProofReference, retailShortValue]);
 	const effectiveDueType = useMemo(() => {
 		if (selectedRepairOrder) {
 			return selectedRepairOrder.dueTypeToCollect ?? "full";
@@ -1882,8 +1991,9 @@ const PointOfSalePage = () => {
 			},
 		]);
 		setSelectedRepairOrder(order);
-		setCustomerName(order.customer);
-		setCustomerEmail("");
+		setCustomerName(order.customerName);
+		setCustomerPhone(order.customerPhone);
+		setCustomerEmail(order.customerEmail);
 		setOrderSearch("");
 		setIsOrderModalOpen(false);
 	};
@@ -2603,7 +2713,7 @@ const PointOfSalePage = () => {
 				{
 					idempotency_key: idempotencyKey,
 					customer_type: "walk_in",
-					walk_in_name: retailCustomerName.trim(),
+					walk_in_name: retailCustomerName.trim() || null,
 					walk_in_phone: retailCustomerPhone.trim() || null,
 					walk_in_email: retailCustomerEmail.trim() || null,
 					items: retailCart.map((item) => ({
@@ -2647,7 +2757,7 @@ const PointOfSalePage = () => {
 					minute: "2-digit",
 				}),
 				cashierName,
-				customerName: retailCustomerName.trim(),
+				customerName: retailCustomerName.trim() || 'Walk-in Customer',
 				customerPhone: getPhoneDisplayForReceipt(retailPaymentMethod, retailCustomerPhone),
 				paymentReference: retailPaymentMethod === "cash" ? null : retailProofReference.trim(),
 				paymentMethod: retailPaymentMethod,
@@ -2822,7 +2932,7 @@ const PointOfSalePage = () => {
 						<section className="space-y-6 xl:col-span-8 xl:flex xl:h-full xl:flex-col xl:space-y-0 xl:gap-6">
 							<div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
 								<h2 className="mb-2 text-base font-semibold text-slate-900">Customer Information</h2>
-								<p className="mb-3 text-xs text-slate-500">Capture walk-in details before checkout.</p>
+								<p className="mb-3 text-xs text-slate-500">Optional for walk-in purchases. Add details if the customer wants them on the receipt.</p>
 								<div className="grid grid-cols-1 gap-2 md:grid-cols-3">
 									<input
 										title="Retail customer name"
@@ -3322,10 +3432,12 @@ const PointOfSalePage = () => {
 						<div className="grid grid-cols-1 gap-4">
 							<div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
 								<h2 className="mb-2 text-base font-semibold text-slate-900">Customer Information</h2>
-								<p className="mb-3 text-xs text-slate-500">Input customer name. Phone is required for cash and optional for GCash/Card. Email is optional.</p>
+								<p className="mb-3 text-xs text-slate-500">Customer Name * and Phone Number * are required for every repair checkout. Email is optional.</p>
 								<div className="grid grid-cols-1 gap-2 md:grid-cols-3">
 									<input
 										title="Customer name"
+										required
+										aria-required="true"
 										value={customerName}
 										onChange={(event) => setCustomerName(event.target.value)}
 										disabled={!!selectedRepairOrder}
@@ -3334,12 +3446,15 @@ const PointOfSalePage = () => {
 									/>
 									<input
 										title="Customer phone number"
+										required
+										aria-required="true"
 										type="text"
 										inputMode="numeric"
 										pattern="[0-9]*"
 										maxLength={11}
 										value={customerPhone}
 										onChange={(event) => setCustomerPhone(toDigitsOnly(event.target.value).slice(0, 11))}
+										disabled={!!selectedRepairOrder}
 										placeholder="Phone number"
 										className="rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500"
 									/>
@@ -3353,12 +3468,12 @@ const PointOfSalePage = () => {
 										className="rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500 disabled:bg-slate-100"
 									/>
 								</div>
-								{paymentMethod === "cash" && customerPhone.length > 0 && !isCustomerPhoneValid && (
+								{customerPhone.length > 0 && !isCustomerPhoneValid && (
 									<p className="mt-2 text-xs font-semibold text-red-600">Phone number must be exactly 11 digits.</p>
 								)}
 								<p className="mt-2 text-xs text-slate-500">These details will appear on the printed receipt.</p>
 								{selectedRepairOrder && (
-									<p className="mt-1 text-xs font-semibold text-blue-700">Customer name is locked because this order is attached from Job Order Repair.</p>
+									<p className="mt-1 text-xs font-semibold text-blue-700">Customer details are locked because this order is attached from Job Order Repair.</p>
 								)}
 							</div>
 						</div>
@@ -3869,8 +3984,8 @@ const PointOfSalePage = () => {
 															<button
 																type="button"
 																onClick={() => handleRequestRefund(receipt)}
-																title="Request Refund"
-																aria-label="Request Refund"
+																title={isManualRejectedNoAccountRepair(receipt) ? "Manual POS Refund" : "Request Refund"}
+																aria-label={isManualRejectedNoAccountRepair(receipt) ? "Manual POS Refund" : "Request Refund"}
 																className="inline-flex items-center justify-center bg-transparent p-1 text-amber-600 transition-colors hover:text-amber-700"
 															>
 																<svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

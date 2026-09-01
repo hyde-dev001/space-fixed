@@ -242,6 +242,7 @@ Route::middleware(['web', 'auth:user,shop_owner'])->prefix('repair-pos')->group(
     Route::get('/transactions', [\App\Http\Controllers\Api\RepairPosController::class, 'listTransactions']);
     Route::post('/payment-lines/{line}/verify', [\App\Http\Controllers\Api\RepairPosController::class, 'verifyPaymentLine']);
     Route::post('/refunds', [\App\Http\Controllers\Api\RepairPosController::class, 'requestRefund']);
+    Route::post('/refunds/manual-rejected-no-account', [\App\Http\Controllers\Api\RepairPosController::class, 'manualRefundRejectedNoAccount']);
     Route::get('/refunds/mine', [\App\Http\Controllers\Api\RepairPosController::class, 'listMyRefunds']);
     Route::get('/refunds/queue', [\App\Http\Controllers\Api\RepairPosController::class, 'listRefundQueue']);
     Route::post('/refunds/{refund}/approve', [\App\Http\Controllers\Api\RepairPosController::class, 'approveRefund']);

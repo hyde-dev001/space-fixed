@@ -417,7 +417,7 @@ class RepairWorkflowController extends Controller
                 }], 'paid_amount')
                 ->forRepairer($user->id)
                 ->where($jobOrderVisibleRepairs)
-                ->whereIn('status', ['assigned_to_repairer', 'repairer_accepted', 'waiting_customer_confirmation', 'owner_approval_pending', 'owner_approved', 'confirmed', 'pending', 'in_progress', 'awaiting_parts', 'completed', 'ready_for_pickup', 'shipped', 'picked_up', 'repairer_rejected', 'manager_reviewing', 'manager_rejected', 'owner_rejected', 'rejected', 'cancelled', 'received'])
+                ->whereIn('status', ['new_request', 'assigned_to_repairer', 'repairer_accepted', 'waiting_customer_confirmation', 'owner_approval_pending', 'owner_approved', 'confirmed', 'pending', 'in_progress', 'awaiting_parts', 'completed', 'ready_for_pickup', 'shipped', 'picked_up', 'repairer_rejected', 'manager_reviewing', 'manager_rejected', 'owner_rejected', 'rejected', 'cancelled', 'received'])
                 ->orderBy('created_at', 'desc')
                 ->get();
 
@@ -752,7 +752,7 @@ class RepairWorkflowController extends Controller
             }
             
             // Verify status is correct
-            if ($repairRequest->status !== 'assigned_to_repairer') {
+            if (!in_array($repairRequest->status, ['new_request', 'assigned_to_repairer'])) {
                 DB::rollBack();
                 return response()->json([
                     'success' => false,
@@ -2730,14 +2730,18 @@ class RepairWorkflowController extends Controller
             $this->paymentSettlementService,
             $method,
         );
+        $isAnonymousWalkIn = $method === 'walk_in'
+            && (int) ($result['repair']->user_id ?? 0) <= 0;
 
         return response()->json([
             'success' => true,
             'message' => $result['replayed']
                 ? 'Return handover was already recorded.'
-                : ($method === 'walk_in'
-                    ? 'Customer handover recorded. Customer can now confirm receipt.'
-                    : 'Courier handover recorded. Customer can now confirm receipt.'),
+                : ($isAnonymousWalkIn
+                    ? 'No-account customer handoff recorded. Repair is completed.'
+                    : ($method === 'walk_in'
+                        ? 'Customer handover recorded. Customer can now confirm receipt.'
+                        : 'Courier handover recorded. Customer can now confirm receipt.')),
             'repair' => $result['repair'],
         ]);
     }
