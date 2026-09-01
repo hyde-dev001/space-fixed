@@ -412,8 +412,11 @@ describe("MyRepairs return logistics", () => {
     expect(screen.getByRole("checkbox", { name: "Same as intake address" })).toBeChecked();
     expect(screen.getByText("Within coverage")).toBeInTheDocument();
     expect(screen.getByText("Distance: 7.25 km")).toBeInTheDocument();
-    expect(screen.getByText("Accepted return fee: ₱135")).toBeInTheDocument();
-    expect(screen.getByText("Final amount: ₱635")).toBeInTheDocument();
+    const returnPlanSummary = screen.getByRole("group", { name: "Return plan summary" });
+    expect(within(returnPlanSummary).getByText("Accepted return fee")).toBeInTheDocument();
+    expect(within(returnPlanSummary).getByText("₱135")).toBeInTheDocument();
+    expect(within(returnPlanSummary).getByText("Final amount")).toBeInTheDocument();
+    expect(within(returnPlanSummary).getByText("₱635")).toBeInTheDocument();
 
     const intakeTimeline = await screen.findByRole("region", { name: "Intake pickup tracking" });
     const returnTimeline = screen.getByRole("region", { name: "Return delivery tracking" });
@@ -446,8 +449,8 @@ describe("MyRepairs return logistics", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Same as intake address" }));
     fireEvent.click(await screen.findByRole("button", { name: "Use saved return address" }));
     fireEvent.click(screen.getByRole("radio", { name: /Customer-arranged courier/i }));
-    expect(screen.queryByText("Accepted return fee: ₱135")).not.toBeInTheDocument();
-    expect(screen.getByText("Shop rider fee not applicable: ₱0")).toBeInTheDocument();
+    expect(screen.queryByText("Accepted return fee")).not.toBeInTheDocument();
+    expect(screen.getByText("No shop rider fee")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Save & review delivery plan" }));
 
     await waitFor(() => expect(mocks.patch).toHaveBeenCalledWith(
@@ -460,7 +463,7 @@ describe("MyRepairs return logistics", () => {
     ));
     expect(mocks.post).not.toHaveBeenCalled();
     expect(await screen.findByText("Delivery plan updated. Review the new fee, then confirm.")).toBeInTheDocument();
-    expect(screen.getByText("Shop rider fee not applicable: ₱0")).toBeInTheDocument();
+    expect(screen.getByText("No shop rider fee")).toBeInTheDocument();
 
     const confirmButton = screen.getByRole("button", { name: "Confirm address & delivery" });
     expect(confirmButton).toBeEnabled();
@@ -478,7 +481,7 @@ describe("MyRepairs return logistics", () => {
           ok: true,
           json: async () => ({
             available: false,
-            reason: "Outside shop rider coverage.",
+            reason: "outside_coverage",
             distance_km: 20,
             coverage_radius_km: 15,
             fee: 0,
@@ -516,15 +519,26 @@ describe("MyRepairs return logistics", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Use saved return address" }));
 
     expect(await screen.findByText("Within coverage")).toBeInTheDocument();
-    expect(screen.getByText("Estimated return fee: \u20B1111")).toBeInTheDocument();
+    expect(screen.getByText("Estimated return fee")).toBeInTheDocument();
+    expect(screen.getByText("₱111")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Use alternate return address" }));
-    expect(await screen.findByText("Outside shop rider coverage.")).toBeInTheDocument();
-    expect(screen.getByText("Estimated return fee: \u20B10")).toBeInTheDocument();
+    expect(await screen.findByText("Outside coverage")).toBeInTheDocument();
+    expect(screen.queryByText("outside_coverage")).not.toBeInTheDocument();
+    expect(screen.getByText(/shop rider delivery isn't available for this address/i)).toBeInTheDocument();
+    const unavailableSummary = screen.getByRole("group", { name: "Return plan summary" });
+    expect(within(unavailableSummary).getByText("Return fee unavailable")).toBeInTheDocument();
+    expect(within(unavailableSummary).getAllByText("Unavailable")).toHaveLength(2);
+
+    fireEvent.click(screen.getByRole("button", { name: "Save & review delivery plan" }));
+    const coverageAlert = await screen.findByRole("alert");
+    expect(coverageAlert).toHaveTextContent(/shop rider delivery isn't available for this address/i);
+    expect(coverageAlert).not.toHaveTextContent("outside_coverage");
 
     fireEvent.click(screen.getByRole("button", { name: "Use saved return address" }));
     expect(await screen.findByText("Within coverage")).toBeInTheDocument();
-    expect(screen.getByText("Estimated return fee: \u20B1111")).toBeInTheDocument();
+    expect(screen.getByText("Estimated return fee")).toBeInTheDocument();
+    expect(screen.getByText("₱111")).toBeInTheDocument();
   });
 
   it("requires full payment before arranging a third-party return courier", async () => {
