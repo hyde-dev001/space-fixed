@@ -44,10 +44,10 @@ const VirtualShowroomPage: React.FC<Props> = ({ shop, products }) => {
 
       <main className="h-dvh">
         {!isFocusMode && (
-          <div className="fixed left-3 top-3 z-50 sm:left-20 sm:top-4">
+          <div className="fixed left-3 top-3 z-50 max-w-[calc(100vw-8.5rem)] sm:left-20 sm:top-4 sm:max-w-none">
             <Link
               href={backHref}
-              className="inline-flex min-h-11 max-w-[calc(100vw-1.5rem)] items-center rounded-md border border-gray-300 bg-white/95 px-4 py-2 text-center text-sm font-medium leading-tight text-gray-700 hover:bg-white"
+              className="inline-flex min-h-11 max-w-full items-center break-words rounded-md border border-gray-300 bg-white/95 px-4 py-2 text-center text-sm font-medium leading-tight text-gray-700 hover:bg-white"
             >
               {backLabel}
             </Link>
