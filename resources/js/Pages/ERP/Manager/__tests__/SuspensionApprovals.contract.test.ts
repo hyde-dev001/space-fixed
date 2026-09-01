@@ -33,4 +33,16 @@ describe("Manager suspension approvals page contract", () => {
         expect(source).toContain("request.reason");
         expect(source).toContain("request.evidence");
     });
+    it("keeps the summary neutral and removes the redundant latest-request card", () => {
+        const metricCard = source.slice(source.indexOf('const MetricCard'), source.indexOf('const LoadingState'));
+        expect(metricCard).toContain('border-gray-200 bg-white');
+        expect(metricCard).not.toContain('tones');
+        expect(metricCard).not.toContain('tone:');
+        expect(metricCard).not.toContain('border-amber');
+        expect(metricCard).not.toContain('border-blue');
+        expect(metricCard).not.toContain('border-emerald');
+        expect(metricCard).not.toContain('border-red');
+        expect(source).not.toContain('Latest request:');
+        expect(source).not.toContain('{page?.total ?? 0} request(s)');
+    });
 });

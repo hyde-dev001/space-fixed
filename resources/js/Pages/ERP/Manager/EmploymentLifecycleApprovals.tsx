@@ -6,6 +6,28 @@ import { workflowFeedback } from "../../../utils/workflowFeedback";
 
 type RequestType = "termination" | "rehire";
 
+type LifecycleFilterForm = {
+  search: string;
+  status: string;
+};
+
+type LifecycleFilters = LifecycleFilterForm & {
+  page: number;
+};
+
+const initialFilterForm: LifecycleFilterForm = {
+  search: "",
+  status: "pending_manager",
+};
+
+const buildLifecycleQuery = (endpoint: string, filters: LifecycleFilters): string => {
+  const params = new URLSearchParams();
+  if (filters.status) params.set("status", filters.status);
+  if (filters.search.trim()) params.set("search", filters.search.trim());
+  params.set("page", String(filters.page));
+  return `${endpoint}?${params.toString()}`;
+};
+
 interface LifecycleRequest {
   id: number;
   name?: string | null;
@@ -31,6 +53,8 @@ interface ApiResponse {
     current_page: number;
     last_page: number;
     total: number;
+    from?: number | null;
+    to?: number | null;
   };
   metrics: {
     pending: number;
@@ -89,12 +113,14 @@ export default function EmploymentLifecycleApprovals() {
   const [rejecting, setRejecting] = useState<LifecycleRequest | null>(null);
   const [note, setNote] = useState("");
   const [processingId, setProcessingId] = useState<number | null>(null);
+  const [form, setForm] = useState<LifecycleFilterForm>(initialFilterForm);
+  const [filters, setFilters] = useState<LifecycleFilters>({ ...initialFilterForm, page: 1 });
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(endpoint + "?status=pending_manager", { credentials: "include", headers: { Accept: "application/json" } });
+      const response = await fetch(buildLifecycleQuery(endpoint, filters), { credentials: "include", headers: { Accept: "application/json" } });
       if (!response.ok) throw new Error(await readError(response));
       setPayload(await response.json() as ApiResponse);
     } catch (caught) {
@@ -102,9 +128,24 @@ export default function EmploymentLifecycleApprovals() {
     } finally {
       setLoading(false);
     }
-  }, [endpoint]);
+  }, [endpoint, filters]);
 
   useEffect(() => { void load(); }, [load]);
+
+  const applyFilters = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setFilters({ search: form.search.trim(), status: form.status, page: 1 });
+  };
+
+  const clearFilters = () => {
+    setForm(initialFilterForm);
+    setFilters({ ...initialFilterForm, page: 1 });
+  };
+
+  const goToPage = (nextPage: number) => {
+    if (!payload || nextPage < 1 || nextPage > payload.data.last_page || nextPage === payload.data.current_page) return;
+    setFilters((current) => ({ ...current, page: nextPage }));
+  };
 
   const review = async (request: LifecycleRequest, action: "approve" | "reject", reason = "") => {
     setProcessingId(request.id);
@@ -194,10 +235,37 @@ export default function EmploymentLifecycleApprovals() {
           <Metric label="Rejected" value={payload?.metrics.rejected ?? 0} />
         </section>
 
+        <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]" aria-labelledby="lifecycle-filters-title">
+          <div className="mb-4">
+            <h2 id="lifecycle-filters-title" className="text-base font-semibold text-gray-900 dark:text-white">Filter requests</h2>
+            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Search the {label.toLowerCase()} history in your authorized shop.</p>
+          </div>
+          <form onSubmit={applyFilters} className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div className="md:col-span-2">
+              <label htmlFor="lifecycle-search" className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Search</label>
+              <input id="lifecycle-search" type="search" value={form.search} onChange={(event) => setForm((current) => ({ ...current, search: event.target.value }))} placeholder="Employee, email, or reason" className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-white" />
+            </div>
+            <div>
+              <label htmlFor="lifecycle-status" className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Workflow status</label>
+              <select id="lifecycle-status" value={form.status} onChange={(event) => setForm((current) => ({ ...current, status: event.target.value }))} className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-white">
+                <option value="pending_manager">Pending Manager review</option>
+                <option value="pending_owner">Waiting for Shop Owner</option>
+                <option value="approved">Approved</option>
+                <option value="rejected">Rejected</option>
+                <option value="">All statuses</option>
+              </select>
+            </div>
+            <div className="flex items-end gap-2 md:col-span-3">
+              <button type="submit" className="min-h-11 rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-700 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200">Apply filters</button>
+              <button type="button" onClick={clearFilters} className="min-h-11 rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Clear</button>
+            </div>
+          </form>
+        </section>
+
         {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">{error} <button type="button" onClick={() => void load()} className="ml-2 font-semibold underline">Retry</button></div>}
         {actionError && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">{actionError}</div>}
         {loading && <div role="status" className="rounded-xl border border-gray-200 bg-white p-8 text-sm text-gray-500 dark:border-gray-800 dark:bg-white/[0.03]">Loading {label.toLowerCase()} requests...</div>}
-        {!loading && !error && requests.length === 0 && <div className="rounded-2xl border border-dashed border-gray-300 bg-white px-6 py-14 text-center dark:border-gray-700 dark:bg-white/[0.03]"><h2 className="font-semibold text-gray-900 dark:text-white">No {label.toLowerCase()} requests pending</h2><p className="mt-2 text-sm text-gray-500 dark:text-gray-400">Requests in your authorized shop will appear here after HR submits them.</p></div>}
+        {!loading && !error && requests.length === 0 && <div className="rounded-2xl border border-dashed border-gray-300 bg-white px-6 py-14 text-center dark:border-gray-700 dark:bg-white/[0.03]"><h2 className="font-semibold text-gray-900 dark:text-white">No {label.toLowerCase()} requests found</h2><p className="mt-2 text-sm text-gray-500 dark:text-gray-400">There are no requests matching the selected status and search filters in your authorized shop.</p></div>}
 
         {!loading && requests.length > 0 && (
           <section className="space-y-4" aria-label={label + " request queue"}>
@@ -219,7 +287,18 @@ export default function EmploymentLifecycleApprovals() {
                 </div>
               </article>
             ))}
-          </section>
+           </section>
+         )}
+
+        {!loading && !error && payload && requests.length > 0 && payload.data.last_page > 1 && (
+          <nav className="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between dark:border-gray-800 dark:bg-white/[0.03]" aria-label={label + " approval pagination"}>
+            <p className="text-sm text-gray-600 dark:text-gray-400">Showing {payload.data.from ?? 0}-{payload.data.to ?? 0} of {payload.data.total.toLocaleString()}</p>
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={() => goToPage(payload.data.current_page - 1)} disabled={payload.data.current_page <= 1 || loading} className="min-h-11 rounded-lg border border-gray-300 px-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Previous</button>
+              <span className="px-2 text-sm font-medium text-gray-700 dark:text-gray-300" aria-current="page">Page {payload.data.current_page} of {payload.data.last_page}</span>
+              <button type="button" onClick={() => goToPage(payload.data.current_page + 1)} disabled={payload.data.current_page >= payload.data.last_page || loading} className="min-h-11 rounded-lg border border-gray-300 px-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Next</button>
+            </div>
+          </nav>
         )}
       </main>
 
