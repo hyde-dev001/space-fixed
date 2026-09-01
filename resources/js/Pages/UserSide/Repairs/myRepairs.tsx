@@ -306,6 +306,36 @@ const REPAIR_TAB_NOTIFICATION_STORAGE_KEY = 'my_repairs_seen_tab_item_ids_v1';
 
 const formatCurrency = (value?: number | null) => `₱${Number(value || 0).toLocaleString()}`;
 
+const getReturnCoverageReasonLabel = (reason?: string | null): string => {
+  const normalized = String(reason ?? '').trim();
+  const key = normalized.toLowerCase().replace(/[.!?]+$/, '');
+
+  if (key === 'outside_coverage' || key === 'outside shop rider coverage') {
+    return 'Outside coverage';
+  }
+
+  if (key === 'address_needs_pin') {
+    return 'Pin required';
+  }
+
+  if (/^[a-z0-9]+(?:_[a-z0-9]+)+$/.test(key)) {
+    return key
+      .split('_')
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
+  }
+
+  return normalized || 'Shop rider delivery unavailable';
+};
+
+const getReturnCoverageReasonMessage = (reason?: string | null): string => {
+  if (getReturnCoverageReasonLabel(reason) === 'Outside coverage') {
+    return "Shop rider delivery isn't available for this address. Select another return method or choose an address within coverage.";
+  }
+
+  return 'Shop rider delivery is not available for this address.';
+};
+
 const resolveOrderTaxMode = (order: RepairOrder): RepairTaxMode => {
   const value = String(order.tax_mode ?? order.pricing_breakdown?.tax_mode ?? '').toLowerCase();
   if (value === 'vat_inclusive') return 'vat_inclusive';
@@ -1008,6 +1038,9 @@ const ReturnDeliveryPlanCard: React.FC<{
     : dirty
       ? serviceOutstandingBalance + displayedFee
       : serverOutstandingBalance;
+  const shopDeliveryQuoteUnavailable = method === 'shop_delivery'
+    && !coverageLoading
+    && !coverage?.available;
 
   useEffect(() => {
     coverageRequestKeyRef.current = currentCoverageKey;
@@ -1115,7 +1148,7 @@ const ReturnDeliveryPlanCard: React.FC<{
     }
 
     if (method === 'shop_delivery' && !coverage?.available) {
-      setError(coverage?.reason || 'Shop rider delivery is not available for this address.');
+      setError(getReturnCoverageReasonMessage(coverage?.reason));
       return;
     }
 
@@ -1284,14 +1317,23 @@ const ReturnDeliveryPlanCard: React.FC<{
         </div>
       )}
 
-      <div className="mt-5 grid gap-3 rounded-xl border border-gray-200 bg-white p-4 text-sm sm:grid-cols-2">
-        <div>
+      <div
+        role="group"
+        aria-label="Return plan summary"
+        className="mt-5 grid gap-4 rounded-xl border border-gray-200 bg-white p-4 text-sm sm:grid-cols-[minmax(0,1fr)_minmax(15rem,auto)]"
+      >
+        <div role="status" aria-label="Return coverage status">
           {method !== 'shop_delivery' ? (
-            <p className="font-semibold text-gray-600">
-              {method === 'customer_pickup'
-                ? 'Third-party courier selected. Shop rider coverage and fee do not apply.'
-                : 'Customer pickup selected. Shop rider coverage and fee do not apply.'}
-            </p>
+            <>
+              <p className="font-semibold text-gray-800">
+                {method === 'customer_pickup' ? 'Customer-arranged courier selected' : 'Customer pickup selected'}
+              </p>
+              <p className="mt-1 text-sm text-gray-600">
+                {method === 'customer_pickup'
+                  ? 'Arrange and pay for your own third-party courier.'
+                  : 'Collect your repaired shoes directly from the shop.'}
+              </p>
+            </>
           ) : coverageLoading ? (
             <p className="font-semibold text-gray-600">Checking coverage…</p>
           ) : coverage?.available ? (
@@ -1302,22 +1344,45 @@ const ReturnDeliveryPlanCard: React.FC<{
               )}
             </>
           ) : (
-            <p className="font-semibold text-amber-700">
-              {coverage?.reason || 'Shop rider coverage is not available for this address.'}
-            </p>
+            <>
+              <p className="font-semibold text-amber-700">
+                {getReturnCoverageReasonLabel(coverage?.reason)}
+              </p>
+              <p className="mt-1 text-sm text-gray-600">
+                {getReturnCoverageReasonMessage(coverage?.reason)}
+              </p>
+            </>
           )}
           {method === 'shop_delivery' && coverageError && (
             <p className="mt-1 text-sm text-red-700">{coverageError}</p>
           )}
         </div>
-        <div className="sm:text-right">
-          <p className="font-semibold text-gray-800">
-            {method === 'shop_delivery'
-              ? (dirty ? 'Estimated return fee' : 'Accepted return fee')
-              : 'Shop rider fee not applicable'}: {formatCurrency(displayedFee)}
-          </p>
-          <p className="mt-1 font-bold text-black">Final amount: {formatCurrency(finalAmount)}</p>
-        </div>
+        <dl className="space-y-3 sm:min-w-60">
+          <div className="flex items-center justify-between gap-4 border-b border-gray-100 pb-3">
+            <dt className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+              {shopDeliveryQuoteUnavailable
+                ? 'Return fee unavailable'
+                : method === 'shop_delivery'
+                ? (dirty ? 'Estimated return fee' : 'Accepted return fee')
+                : 'Return delivery fee'}
+            </dt>
+            <dd className="text-right font-semibold tabular-nums text-gray-900">
+              {method !== 'shop_delivery'
+                ? 'No shop rider fee'
+                : shopDeliveryQuoteUnavailable
+                  ? 'Unavailable'
+                  : coverageLoading
+                    ? 'Checking…'
+                    : formatCurrency(displayedFee)}
+            </dd>
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <dt className="text-sm font-semibold text-gray-700">Final amount</dt>
+            <dd className="text-right text-lg font-bold tabular-nums text-gray-950">
+              {shopDeliveryQuoteUnavailable ? 'Unavailable' : formatCurrency(finalAmount)}
+            </dd>
+          </div>
+        </dl>
       </div>
 
       {error && (

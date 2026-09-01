@@ -226,6 +226,7 @@ export default function WarrantyQueue() {
   const [queueError, setQueueError] = useState<string | null>(null);
   const [actionClaimId, setActionClaimId] = useState<number | null>(null);
   const [isClaimDetailsOpen, setIsClaimDetailsOpen] = useState(false);
+  const [isRejectionModalOpen, setIsRejectionModalOpen] = useState(false);
   const [selectedClaim, setSelectedClaim] = useState<RepairWarrantyClaimQueueItem | null>(null);
   const [modalRejectionReason, setModalRejectionReason] = useState("");
 
@@ -346,6 +347,7 @@ export default function WarrantyQueue() {
       ]);
 
       setIsClaimDetailsOpen(false);
+      setIsRejectionModalOpen(false);
       setSelectedClaim(null);
       setModalRejectionReason("");
 
@@ -371,6 +373,7 @@ export default function WarrantyQueue() {
 
   const openWarrantyClaimDetails = (claim: RepairWarrantyClaimQueueItem) => {
     setSelectedClaim(claim);
+    setIsRejectionModalOpen(false);
     setModalRejectionReason("");
     setIsClaimDetailsOpen(true);
   };
@@ -381,7 +384,17 @@ export default function WarrantyQueue() {
     }
 
     setIsClaimDetailsOpen(false);
+    setIsRejectionModalOpen(false);
     setSelectedClaim(null);
+    setModalRejectionReason("");
+  };
+
+  const closeRejectionModal = () => {
+    if (selectedClaim && actionClaimId === selectedClaim.id) {
+      return;
+    }
+
+    setIsRejectionModalOpen(false);
     setModalRejectionReason("");
   };
 
@@ -639,12 +652,15 @@ export default function WarrantyQueue() {
             onClick={closeWarrantyClaimDetails}
           >
             <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="warranty-claim-details-title"
               className="w-full max-w-4xl rounded-2xl border border-slate-200 bg-white shadow-2xl"
               onClick={(event) => event.stopPropagation()}
             >
               <div className="flex items-start justify-between border-b border-slate-200 px-5 py-4">
                 <div>
-                  <h3 className="text-lg font-semibold text-slate-900">Warranty Claim {selectedClaim.claim_no}</h3>
+                  <h3 id="warranty-claim-details-title" className="text-lg font-semibold text-slate-900">Warranty Claim {selectedClaim.claim_no}</h3>
                   <p className="mt-1 text-sm text-slate-500">Review warranty submission details and take action.</p>
                 </div>
                 <button
@@ -722,22 +738,6 @@ export default function WarrantyQueue() {
                   )}
                 </div>
 
-                {selectedClaim.status === "pending_repairer" && (
-                  <div className="mt-4">
-                    <label htmlFor="warranty-modal-rejection-reason" className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                      Rejection Reason (required if rejecting)
-                    </label>
-                    <textarea
-                      id="warranty-modal-rejection-reason"
-                      value={modalRejectionReason}
-                      onChange={(event) => setModalRejectionReason(event.target.value)}
-                      rows={3}
-                      maxLength={2000}
-                      placeholder="Explain why this warranty claim should be rejected..."
-                      className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-blue-500"
-                    />
-                  </div>
-                )}
               </div>
 
               <div className="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-4">
@@ -745,7 +745,10 @@ export default function WarrantyQueue() {
                   <>
                     <button
                       type="button"
-                      onClick={() => void handleWarrantyClaimDecision(selectedClaim, "reject")}
+                      onClick={() => {
+                        setModalRejectionReason("");
+                        setIsRejectionModalOpen(true);
+                      }}
                       disabled={actionClaimId === selectedClaim.id}
                       className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
                     >
@@ -761,6 +764,70 @@ export default function WarrantyQueue() {
                     </button>
                   </>
                 )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {isRejectionModalOpen && selectedClaim?.status === "pending_repairer" && (
+          <div
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/60 px-4 py-6"
+            onClick={closeRejectionModal}
+          >
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="warranty-rejection-dialog-title"
+              className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-700">
+                <h3 id="warranty-rejection-dialog-title" className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                  Reject warranty claim
+                </h3>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                  Add a reason before sending this decision to the customer.
+                </p>
+              </div>
+
+              <div className="p-5">
+                <label htmlFor="warranty-rejection-reason" className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                  Rejection reason
+                </label>
+                <textarea
+                  id="warranty-rejection-reason"
+                  value={modalRejectionReason}
+                  onChange={(event) => setModalRejectionReason(event.target.value)}
+                  rows={5}
+                  maxLength={2000}
+                  autoFocus
+                  required
+                  aria-required="true"
+                  placeholder="Explain why this warranty claim should be rejected..."
+                  className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-500"
+                />
+                <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                  This reason will be included in the customer notification.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-4 dark:border-slate-700">
+                <button
+                  type="button"
+                  onClick={closeRejectionModal}
+                  disabled={actionClaimId === selectedClaim.id}
+                  className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleWarrantyClaimDecision(selectedClaim, "reject")}
+                  disabled={actionClaimId === selectedClaim.id}
+                  className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {actionClaimId === selectedClaim.id ? "Rejecting..." : "Confirm rejection"}
+                </button>
               </div>
             </div>
           </div>
