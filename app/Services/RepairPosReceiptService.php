@@ -28,12 +28,13 @@ class RepairPosReceiptService
         }
 
         $registeredName = trim((string) (($registeredCustomer->first_name ?? '') . ' ' . ($registeredCustomer->last_name ?? '')));
+        $walkInName = trim((string) ($transaction->walk_in_name ?? ''));
         $customerName = $registeredName !== ''
             ? $registeredName
-            : (string) ($registeredCustomer?->name ?? $transaction->walk_in_name ?? 'Walk-in Customer');
+            : (string) ($registeredCustomer?->name ?? ($walkInName !== '' ? $walkInName : 'Walk-in Customer'));
 
         $customerEmail = (string) ($registeredCustomer?->email ?? $transaction->walk_in_email ?? '');
-        $customerPhone = (string) ($transaction->walk_in_phone ?? '');
+        $customerPhone = (string) ($registeredCustomer?->phone ?? $transaction->walk_in_phone ?? '');
 
         $payload = [
             'receipt_no' => $receiptNo,

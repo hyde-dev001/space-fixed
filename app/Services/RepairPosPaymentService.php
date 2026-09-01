@@ -171,12 +171,30 @@ class RepairPosPaymentService
 
     private function canonicalizeRepairCustomer(RepairRequest $repair, array $payload): array
     {
+        $repair->loadMissing('user');
         $repairCustomerId = (int) ($repair->user_id ?? 0);
         $requestedCustomerType = (string) ($payload['customer_type'] ?? '');
         $requestedCustomerId = $payload['customer_id'] ?? null;
         $requestedCustomerId = $requestedCustomerId === null || $requestedCustomerId === ''
             ? null
             : (int) $requestedCustomerId;
+        $isMissing = static function ($value): bool {
+            $normalized = strtolower(trim((string) $value));
+
+            return $normalized === '' || $normalized === 'n/a';
+        };
+        $userName = trim((string) ($repair->user?->first_name ?? '') . ' ' . (string) ($repair->user?->last_name ?? ''));
+        if ($userName === '') {
+            $userName = trim((string) ($repair->user?->name ?? ''));
+        }
+        $repairName = trim((string) ($repair->customer_name ?? ''));
+        $repairPhone = trim((string) ($repair->phone ?? ''));
+        $canonicalName = !$isMissing($repairName) ? $repairName : $userName;
+        $canonicalPhone = !$isMissing($repairPhone) ? $repairPhone : trim((string) ($repair->user?->phone ?? ''));
+        $canonicalEmail = trim((string) ($repair->email ?? ''));
+        if (strtolower($canonicalEmail) === 'n/a') {
+            $canonicalEmail = '';
+        }
 
         if ($repairCustomerId > 0) {
             if ($requestedCustomerType !== 'registered') {
@@ -188,6 +206,18 @@ class RepairPosPaymentService
             if ($requestedCustomerId !== $repairCustomerId) {
                 throw ValidationException::withMessages([
                     'customer_id' => ['The selected customer does not own this repair.'],
+                ]);
+            }
+
+            if ($isMissing($canonicalName)) {
+                throw ValidationException::withMessages([
+                    'walk_in_name' => ['This repair order is missing its canonical customer name. Update the repair record before checkout.'],
+                ]);
+            }
+
+            if ($isMissing($canonicalPhone)) {
+                throw ValidationException::withMessages([
+                    'walk_in_phone' => ['This repair order is missing its canonical customer phone. Update the repair record before checkout.'],
                 ]);
             }
 
@@ -212,12 +242,24 @@ class RepairPosPaymentService
             ]);
         }
 
+        if ($isMissing($canonicalName)) {
+            throw ValidationException::withMessages([
+                'walk_in_name' => ['This repair order is missing its canonical customer name. Update the repair record before checkout.'],
+            ]);
+        }
+
+        if ($isMissing($canonicalPhone)) {
+            throw ValidationException::withMessages([
+                'walk_in_phone' => ['This repair order is missing its canonical customer phone. Update the repair record before checkout.'],
+            ]);
+        }
+
         return [
             'customer_type' => 'walk_in',
             'customer_id' => null,
-            'walk_in_name' => $repair->customer_name ?: ($payload['walk_in_name'] ?? null),
-            'walk_in_phone' => $repair->phone ?: ($payload['walk_in_phone'] ?? null),
-            'walk_in_email' => $repair->email ?: ($payload['walk_in_email'] ?? null),
+            'walk_in_name' => $canonicalName,
+            'walk_in_phone' => $canonicalPhone,
+            'walk_in_email' => $canonicalEmail !== '' ? $canonicalEmail : null,
         ];
     }
 

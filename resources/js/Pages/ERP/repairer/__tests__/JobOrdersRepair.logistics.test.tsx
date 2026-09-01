@@ -363,6 +363,61 @@ describe('JobOrdersRepair intake logistics', () => {
     ));
   });
 
+  it('keeps Accept and Reject available for an assigned manual POS New Request', async () => {
+    mocks.repair = {
+      ...repair('walk_in'),
+      request_id: 'REP-POS-20260901-0001',
+      status: 'new_request',
+      intake_handoff: null,
+      return_handoff: null,
+    };
+
+    render(<JobOrdersRepair />);
+    fireEvent.click(await screen.findByRole('button', { name: /^New Request \(1\)$/ }));
+    await screen.findByText('Rina Santos');
+    fireEvent.click(screen.getByTitle('View details'));
+    await screen.findByRole('heading', { name: 'Repair Service Details' });
+
+    const modal = screen.getByRole('heading', { name: 'Repair Service Details' }).closest('div.fixed');
+    expect(modal).not.toBeNull();
+    expect(within(modal as HTMLElement).getByRole('button', { name: 'Accept' })).toBeInTheDocument();
+    expect(within(modal as HTMLElement).getByRole('button', { name: 'Reject' })).toBeInTheDocument();
+  });
+
+  it('explains that a no-account walk-in handoff completes the repair', async () => {
+    mocks.repair = {
+      ...repair('walk_in'),
+      request_id: 'REP-POS-20260901-0002',
+      status: 'ready_for_pickup',
+      intake_handoff: null,
+      return_delivery_method: 'walk_in',
+      return_handoff: {
+        visible: true,
+        method: 'walk_in',
+        can_release: true,
+        can_confirm_receipt: false,
+        action_label: 'Release to customer',
+        blocked_reason: null,
+        external_tracking: null,
+        events: [],
+      },
+    };
+
+    render(<JobOrdersRepair />);
+    fireEvent.click(await screen.findByRole('button', { name: /^Ready for Pickup \(1\)$/ }));
+    await screen.findByText('Rina Santos');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Release to customer' }));
+
+    await waitFor(() => expect(mocks.post).toHaveBeenCalledWith(
+      '/api/repairer/repairs/77/activate-pickup',
+    ));
+    await waitFor(() => expect(mocks.swal).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Handover recorded',
+      text: 'No-account customer handoff recorded. The repair is now completed.',
+    })));
+  });
+
   it('tells staff that the customer owns the return-recovery choice', async () => {
     mocks.repair = {
       ...repair('customer_delivery'),

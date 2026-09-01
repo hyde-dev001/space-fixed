@@ -626,6 +626,37 @@ describe('staff refund visibility', () => {
     expect(screen.queryByText('Partially Refunded')).not.toBeInTheDocument();
   });
 
+  it('keeps refund review actions inside the order details modal', async () => {
+    const order = {
+      ...makeOrder(74),
+      status: 'refund',
+      latest_refund: {
+        id: 74,
+        status: 'pending',
+        shop_owner_status: 'pending',
+        finance_status: 'pending',
+        return_status: 'pending_customer_shipment',
+        flow_type: 'request_approval',
+      },
+    };
+    mockPage.props.initialOrders = [order];
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(jsonResponse(200, [order]))));
+
+    render(React.createElement(JobOrdersPage));
+    fireEvent.click(await screen.findByRole('button', { name: 'Refund (1)' }));
+
+    expect(screen.queryByRole('button', { name: 'Approve refund eligibility' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reject refund eligibility' })).not.toBeInTheDocument();
+
+    fireEvent.click((await screen.findAllByTitle('View order details'))[0]);
+
+    const modalHeading = screen.getByRole('heading', { name: 'Order Details' });
+    const modal = modalHeading.closest('.relative');
+    expect(modal).not.toBeNull();
+    expect(within(modal as HTMLElement).getByRole('button', { name: 'Approve refund eligibility' })).toBeInTheDocument();
+    expect(within(modal as HTMLElement).getByRole('button', { name: 'Reject refund eligibility' })).toBeInTheDocument();
+  });
+
   it('shows customer evidence and return logistics proof in order details', async () => {
     const order = makeRefundOrder();
     mockPage.props.initialOrders = [order];

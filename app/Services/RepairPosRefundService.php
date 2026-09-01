@@ -244,6 +244,123 @@ class RepairPosRefundService
         return $refund;
     }
 
+    public function executeManualRejectedNoAccountRefund(PosTransaction $source, int $actorId): PosRefund
+    {
+        return DB::transaction(function () use ($source, $actorId): PosRefund {
+            $source = PosTransaction::query()
+                ->whereKey($source->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ((string) $source->module_type !== 'repair') {
+                throw ValidationException::withMessages([
+                    'source_transaction_id' => ['Only repair transactions can use this manual refund action.'],
+                ]);
+            }
+
+            $repair = RepairRequest::query()
+                ->whereKey((int) $source->module_reference_id)
+                ->where('shop_owner_id', (int) $source->shop_owner_id)
+                ->lockForUpdate()
+                ->first();
+
+            if (! $repair) {
+                throw ValidationException::withMessages([
+                    'source_transaction_id' => ['Repair request not found for this transaction.'],
+                ]);
+            }
+
+            $isManualNoAccountRepair = (string) $source->customer_type === 'walk_in'
+                && (int) ($source->customer_id ?? 0) <= 0
+                && (int) ($repair->user_id ?? 0) <= 0
+                && (bool) ($repair->manual_pos_queue_enabled ?? false)
+                && str_starts_with(strtoupper(trim((string) $repair->request_id)), 'REP-POS-');
+            $isManagerRejected = strtolower(trim((string) $repair->status)) === 'rejected'
+                && strtolower(trim((string) $repair->manager_decision)) === 'approve_rejection';
+
+            if (! $isManualNoAccountRepair || ! $isManagerRejected) {
+                throw ValidationException::withMessages([
+                    'source_transaction_id' => ['Only a final-rejected no-account manual POS repair can use this action.'],
+                ]);
+            }
+
+            $completedManualRefund = PosRefund::query()
+                ->where('module_type', 'repair')
+                ->where('module_reference_id', $repair->id)
+                ->where('workflow_source', 'manager_rejected_no_account_pos')
+                ->where('status', 'succeeded')
+                ->latest('id')
+                ->first();
+
+            if ($completedManualRefund) {
+                return $completedManualRefund->fresh();
+            }
+
+            $activeRefund = PosRefund::query()
+                ->where('module_type', 'repair')
+                ->where('module_reference_id', $repair->id)
+                ->whereNotIn('status', self::FINAL_STATUSES)
+                ->latest('id')
+                ->lockForUpdate()
+                ->first();
+
+            if ($activeRefund) {
+                throw ValidationException::withMessages([
+                    'source_transaction_id' => ['A refund is already in progress for this repair request.'],
+                ]);
+            }
+
+            $amount = round($this->computeRepairRefundableAmount((int) $repair->id), 2);
+            if ($amount <= 0) {
+                throw ValidationException::withMessages([
+                    'source_transaction_id' => ['No refundable POS payment remains for this repair request.'],
+                ]);
+            }
+
+            $now = now();
+            $refund = PosRefund::create([
+                'refund_no' => 'RFD-' . $now->format('YmdHis') . '-' . str_pad((string) random_int(1, 999), 3, '0', STR_PAD_LEFT),
+                'shop_owner_id' => (int) $source->shop_owner_id,
+                'source_transaction_id' => (int) $source->id,
+                'module_type' => 'repair',
+                'module_reference_id' => (int) $repair->id,
+                'workflow_source' => 'manager_rejected_no_account_pos',
+                'request_type' => 'full',
+                'requested_amount' => $amount,
+                'approved_amount' => $amount,
+                'reason_code' => 'manager_rejected_no_account_repair',
+                'reason_notes' => 'Manager final rejection. Manual refund recorded by Cashier in POS.',
+                'status' => 'approved',
+                'finance_status' => 'approved',
+                'shop_owner_status' => 'skipped',
+                'requires_owner_approval' => false,
+                'repairer_status' => 'approved',
+                'requested_by' => $actorId > 0 ? $actorId : null,
+                'approved_by' => $actorId > 0 ? $actorId : null,
+                'executed_by' => $actorId > 0 ? $actorId : null,
+                'requested_at' => $now,
+                'approved_at' => $now,
+                'executed_at' => $now,
+                'execution_mode' => 'manual',
+                'execution_channel' => 'manual_cash',
+                'execution_reference' => 'CASHIER-MANUAL-POS-REFUND-' . $repair->id,
+                'execution_amount' => $amount,
+                'execution_notes' => 'Manual POS refund recorded after Manager final rejection.',
+            ]);
+
+            return $this->markRefundSucceeded(
+                refund: $refund,
+                source: $source,
+                actorId: $actorId,
+                approvedAmount: $amount,
+                executionMode: 'manual',
+                executionNote: 'Manual POS refund recorded after Manager final rejection.',
+                paymongoPaymentId: null,
+                paymongoRefundId: null,
+            );
+        });
+    }
+
     public function createRefundWithSplitLegs(PosTransaction $source, array $payload, int $actorId): PosRefund
     {
         $refund = $this->requestRefund($source, $payload, $actorId);
@@ -1218,7 +1335,10 @@ class RepairPosRefundService
             ]);
         }
 
-        if ((string) $refund->workflow_source !== 'delivery_reconciliation') {
+        if (! in_array((string) $refund->workflow_source, [
+            'delivery_reconciliation',
+            'manager_rejected_no_account_pos',
+        ], true)) {
             $this->notifyRefundParties(
                 refund: $refund,
                 source: $source,

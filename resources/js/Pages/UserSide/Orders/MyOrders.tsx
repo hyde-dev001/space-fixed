@@ -51,6 +51,18 @@ const isAllowedRefundVideoFile = (file: File): boolean => {
   return REFUND_ALLOWED_VIDEO_EXTENSIONS.includes(extension);
 };
 
+const getSafeExternalTrackingLink = (value: unknown): string | null => {
+  const normalized = String(value ?? '').trim();
+  if (!normalized) return null;
+
+  try {
+    const protocol = new URL(normalized).protocol;
+    return protocol === 'http:' || protocol === 'https:' ? normalized : null;
+  } catch {
+    return null;
+  }
+};
+
 type OrderItem = {
   id: number;
   product_name: string;
@@ -156,6 +168,24 @@ type Order = {
     can_mark_return_shipped?: boolean;
     is_refunded?: boolean;
   } | null;
+};
+
+const parseRefundAmount = (value: unknown): number => {
+  const parsed = Number.parseFloat(String(value ?? 0).replace(/[^0-9.-]/g, ''));
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+export const resolveRefundableOrderTotal = (
+  order: Pick<Order, 'total_amount' | 'shipping_fee' | 'vat_amount' | 'grand_total'>,
+): number => {
+  const shipping = parseRefundAmount(order.shipping_fee);
+  const grandTotal = parseRefundAmount(order.grand_total);
+
+  if (grandTotal > 0) {
+    return Math.max(0, grandTotal - shipping);
+  }
+
+  return Math.max(0, parseRefundAmount(order.total_amount) + parseRefundAmount(order.vat_amount));
 };
 
 interface MyOrdersProps {
@@ -1741,7 +1771,7 @@ const MyOrders: React.FC = () => {
   // Partial refunds are valid when an order has multiple lines (e.g. same product with different color/size)
   // or when a single line contains multiple purchased units.
   const canChooseRefundScope = refundLineCount > 1 || refundTotalUnits > 1;
-  const refundTargetOrderTotal = refundTargetOrder ? resolveOrderGrandTotal(refundTargetOrder) : 0;
+  const refundTargetOrderTotal = refundTargetOrder ? resolveRefundableOrderTotal(refundTargetOrder) : 0;
   const refundSelectedLines = refundTargetOrder
     ? (refundTargetOrder.items || [])
       .map((item) => {
@@ -1947,6 +1977,15 @@ const MyOrders: React.FC = () => {
                     && Boolean(String(order.refund_stage?.rejection_reason || order.refund_status_note || '').trim());
                   const shipmentId = order.logistics_shipment_id;
                   const returnShipmentId = order.refund_stage?.logistics_shipment_id;
+                  const returnDeliveryMethodForAction = String(
+                    order.refund_stage?.return_delivery_method
+                      || (order.refund_stage?.is_shop_owned_return || order.refund_stage?.logistics_shipment_id ? 'shop_owned' : 'third_party'),
+                  ).toLowerCase();
+                  const thirdPartyReturnTrackingLink = returnDeliveryMethodForAction === 'third_party'
+                    ? getSafeExternalTrackingLink(
+                      order.refund_stage?.customer_return_tracking_link || order.refund_stage?.staff_return_tracking_link,
+                    )
+                    : null;
                   const refundButton = (
                     <button
                       type="button"
@@ -2217,7 +2256,8 @@ const MyOrders: React.FC = () => {
                         const returnStatus = String(stage?.return_status || '').toLowerCase();
                         const returnSource = String(stage?.return_source || 'customer').toLowerCase();
                         const returnDeliveryMethod = String(
-                          stage?.return_delivery_method || (stage?.is_shop_owned_return ? 'shop_owned' : 'third_party'),
+                          stage?.return_delivery_method
+                            || (stage?.is_shop_owned_return || stage?.logistics_shipment_id ? 'shop_owned' : 'third_party'),
                         ).toLowerCase();
                         const isShopOwnedReturn = returnDeliveryMethod === 'shop_owned';
                         const isThirdPartyReturn = returnDeliveryMethod === 'third_party';
@@ -2246,7 +2286,9 @@ const MyOrders: React.FC = () => {
                           : (stage?.customer_return_tracking_number || stage?.staff_return_tracking_number || '-');
                         const returnTrackingLink = isShopOwnedReturn
                           ? null
-                          : (stage?.customer_return_tracking_link || stage?.staff_return_tracking_link);
+                          : getSafeExternalTrackingLink(
+                            stage?.customer_return_tracking_link || stage?.staff_return_tracking_link,
+                          );
                         const hasStaffPickup = !isCancelledRefundOrder && (isRefundProcessing || hasStaffPickupDetails || (isRefundedOrder && Boolean(stage)));
                         const hasBothDetailSections = hasShippingInfo && hasStaffPickup;
 
@@ -2385,7 +2427,17 @@ const MyOrders: React.FC = () => {
                             Track Shipment
                           </button>
                         )}
-                        {returnShipmentId != null && (
+                        {thirdPartyReturnTrackingLink && (
+                          <a
+                            href={thirdPartyReturnTrackingLink}
+                             target='_blank'
+                            rel='noreferrer'
+                            className={actionButtonSecondaryClass}
+                          >
+                            Track Return
+                          </a>
+                        )}
+                        {returnShipmentId != null && returnDeliveryMethodForAction === 'shop_owned' && (
                           <button
                             type="button"
                             onClick={(event) => openTrackingModal(returnShipmentId, event.currentTarget)}
@@ -3121,7 +3173,7 @@ const MyOrders: React.FC = () => {
                       <h4 className="text-base font-bold mb-4">Refund Summary</h4>
                       <div className="space-y-3">
                         <div className="flex justify-between items-center">
-                          <span className="text-sm text-gray-700">Order Total:</span>
+                          <span className="text-sm text-gray-700">Refundable Order Total (excl. shipping):</span>
                           <span className="text-sm text-gray-900">{formatPeso(refundTargetOrderTotal)}</span>
                         </div>
                         {canChooseRefundScope && refundRequestType === 'partial' && (

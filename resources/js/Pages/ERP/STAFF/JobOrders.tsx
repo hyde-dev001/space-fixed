@@ -1088,6 +1088,8 @@ export default function JobOrdersPage() {
       if (!response.ok) throw new Error(data?.message || 'Unable to review the refund request.');
 
       await refreshOrders();
+      setIsViewModalOpen(false);
+      setViewOrder(null);
       await Swal.fire(approve ? 'Eligibility approved' : 'Refund rejected', data?.message || 'Refund review saved.', 'success');
     } catch (reviewError) {
       await Swal.fire('Review failed', reviewError instanceof Error ? reviewError.message : 'Unable to review the refund request.', 'error');
@@ -2375,28 +2377,6 @@ export default function JobOrdersPage() {
                               <CheckCircleIcon className="size-5" />
                             </button>
                           )}
-                          {canStaffReviewRefund(order) && (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => handleStaffRefundReview(order, true)}
-                                className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-                                title="Approve refund eligibility (no payout yet)"
-                                aria-label="Approve refund eligibility"
-                              >
-                                <CheckCircleIcon className="size-5" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleStaffRefundReview(order, false)}
-                                className="p-2 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                                title="Reject refund eligibility"
-                                aria-label="Reject refund eligibility"
-                              >
-                                <TrashIcon className="size-5" />
-                              </button>
-                            </>
-                          )}
                           {canArrangeReturnPickup(order) && (
                             <button
                               type="button"
@@ -3051,6 +3031,28 @@ export default function JobOrdersPage() {
                   >
                     {viewOrder.pickup_enabled ? 'Activated' : isActivatingReceive ? 'Activating...' : 'Activate Receive'}
                   </button>
+                )}
+                {canStaffReviewRefund(viewOrder) && (
+                  <>
+                    <button
+                      type='button'
+                      onClick={() => handleStaffRefundReview(viewOrder, true)}
+                      className='px-4 py-2 border border-emerald-600 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium transition-colors'
+                      aria-label='Approve refund eligibility'
+                      title='Approve refund eligibility (no payout yet)'
+                    >
+                      Approve Refund Eligibility
+                    </button>
+                    <button
+                      type='button'
+                      onClick={() => handleStaffRefundReview(viewOrder, false)}
+                      className='px-4 py-2 border border-rose-600 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-medium transition-colors'
+                      aria-label='Reject refund eligibility'
+                      title='Reject refund eligibility'
+                    >
+                      Reject Refund
+                    </button>
+                  </>
                 )}
                 <button
                   onClick={() => {

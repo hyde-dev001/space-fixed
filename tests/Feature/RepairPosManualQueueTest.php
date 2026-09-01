@@ -124,7 +124,10 @@ class RepairPosManualQueueTest extends TestCase
         ]);
         /** @var User $cashier */
         $cashier = User::factory()->create(['shop_owner_id' => $shopOwner->id]);
-        $customer = User::factory()->create();
+        $customer = User::factory()->create([
+            'name' => 'Linked Queue Customer',
+            'phone' => '09171234567',
+        ]);
 
         $repair = $this->createRepairRequest([
             'shop_owner_id' => $shopOwner->id,
@@ -132,13 +135,19 @@ class RepairPosManualQueueTest extends TestCase
             'request_id' => 'REP-POS-20260406-CUSTOMER-ID',
             'manual_pos_queue_enabled' => true,
             'status' => 'pending',
+            'customer_name' => 'N/A',
+            'phone' => '',
+            'email' => 'N/A',
         ]);
 
         $response = $this->actingAs($cashier, 'user')->getJson('/api/repair-pos/manual-queue');
 
         $response->assertOk()
             ->assertJsonPath('data.0.id', (int) $repair->id)
-            ->assertJsonPath('data.0.customer_id', (int) $customer->id);
+            ->assertJsonPath('data.0.customer_id', (int) $customer->id)
+            ->assertJsonPath('data.0.customer_name', 'Linked Queue Customer')
+            ->assertJsonPath('data.0.phone', '09171234567')
+            ->assertJsonPath('data.0.email', $customer->email);
     }
 
     #[Test]
