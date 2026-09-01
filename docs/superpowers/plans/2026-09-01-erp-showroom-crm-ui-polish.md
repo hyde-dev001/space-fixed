@@ -142,3 +142,18 @@
 - Browser smoke test: the local showroom route returned its expected `403`
   premium-subscription guard, so authenticated showroom rendering could not be
   exercised in the seeded local state.
+
+## Follow-up: cross-device showroom controls
+
+- [x] Keep the standalone back link, room indicator, night-mode control, and
+  landscape guidance in separate safe areas on narrow portrait viewports.
+- [x] Detect touch-capable mobile/tablet browsers with touch points, touch
+  events, coarse pointers, mobile/tablet user agents, and the existing narrow
+  viewport fallback.
+- [x] Fullscreen the complete showroom viewport so the overlay joystick remains
+  visible after a mobile fullscreen request; keep its label inside the safe
+  area.
+- [x] Add source contracts for the responsive control positions and resilient
+  touch/viewport behavior.
+- [x] Run the full frontend suite, Laravel Logistics suite, and fresh Vite
+  build; push the feature branch with the generated `public/build`.

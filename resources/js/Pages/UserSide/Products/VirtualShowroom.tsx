@@ -100,6 +100,19 @@ const isLandscapeViewport = () => {
 	return window.innerWidth > window.innerHeight;
 };
 
+const MOBILE_TABLET_USER_AGENT = /Android|iPhone|iPad|iPod|Mobile|Tablet/i;
+
+const isTouchLikeDevice = () => {
+	if (typeof window === 'undefined') return false;
+
+	const hasTouchPoints = typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0;
+	const hasTouchEvent = 'ontouchstart' in window;
+	const coarsePointerMatches = typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
+	const mobileTabletUserAgent = typeof navigator !== 'undefined' && MOBILE_TABLET_USER_AGENT.test(navigator.userAgent);
+
+	return hasTouchPoints || hasTouchEvent || coarsePointerMatches || mobileTabletUserAgent || window.innerWidth <= 1024;
+};
+
 const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 	products,
 	isStandalonePage = false,
@@ -107,6 +120,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 	showroomSlotLimit,
 }) => {
 	const mountRef = useRef<HTMLDivElement | null>(null);
+	const viewportRef = useRef<HTMLDivElement | null>(null);
 	const currentIndexRef = useRef(0);
 	const dragStartXRef = useRef(0);
 	const dragStartYRef = useRef(0);
@@ -158,13 +172,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 	const [focusedFrameSrc, setFocusedFrameSrc] = useState<string | null>(null);
 	const [isFocusedImageVisible, setIsFocusedImageVisible] = useState(false);
 	const [isTouchScreenDevice, setIsTouchScreenDevice] = useState(() => {
-		if (typeof window === 'undefined') {
-			return false;
-		}
-
-		const hasTouchPoints = typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0;
-		const coarsePointerMatches = window.matchMedia('(pointer: coarse)').matches;
-		return hasTouchPoints || coarsePointerMatches || window.innerWidth <= 1024;
+		return isTouchLikeDevice();
 	});
 	const [showLandscapeTip, setShowLandscapeTip] = useState(false);
 	const [joystickUiVector, setJoystickUiVector] = useState({ x: 0, y: 0 });
@@ -245,10 +253,11 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 	useEffect(() => {
 		if (typeof window === 'undefined') return;
 
-		const coarsePointerQuery = window.matchMedia('(pointer: coarse)');
+		const coarsePointerQuery = typeof window.matchMedia === 'function'
+			? window.matchMedia('(pointer: coarse)')
+			: null;
 		const updateTouchDevice = () => {
-			const hasTouchPoints = typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0;
-			setIsTouchScreenDevice(hasTouchPoints || coarsePointerQuery.matches || window.innerWidth <= 1024);
+			setIsTouchScreenDevice(isTouchLikeDevice());
 		};
 
 		const hideLandscapeTipInLandscape = () => {
@@ -263,13 +272,21 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 		window.addEventListener('resize', updateTouchDevice);
 		window.addEventListener('resize', hideLandscapeTipInLandscape);
 		window.addEventListener('orientationchange', hideLandscapeTipInLandscape);
-		coarsePointerQuery.addEventListener('change', updateTouchDevice);
+		if (coarsePointerQuery && typeof coarsePointerQuery.addEventListener === 'function') {
+			coarsePointerQuery.addEventListener('change', updateTouchDevice);
+		} else if (coarsePointerQuery) {
+			coarsePointerQuery.addListener(updateTouchDevice);
+		}
 
 		return () => {
 			window.removeEventListener('resize', updateTouchDevice);
 			window.removeEventListener('resize', hideLandscapeTipInLandscape);
 			window.removeEventListener('orientationchange', hideLandscapeTipInLandscape);
-			coarsePointerQuery.removeEventListener('change', updateTouchDevice);
+			if (coarsePointerQuery && typeof coarsePointerQuery.removeEventListener === 'function') {
+				coarsePointerQuery.removeEventListener('change', updateTouchDevice);
+			} else if (coarsePointerQuery) {
+				coarsePointerQuery.removeListener(updateTouchDevice);
+			}
 		};
 	}, []);
 
@@ -442,7 +459,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 		}
 
 		immersiveModeAttemptedRef.current = true;
-		const container = mountRef.current;
+		const container = viewportRef.current;
 		const canUseFullscreen = typeof document !== 'undefined' && typeof container?.requestFullscreen === 'function';
 
 		if (canUseFullscreen && !document.fullscreenElement) {
@@ -2284,6 +2301,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 			)}
 
 			<div
+				ref={viewportRef}
 				className={`relative ${isStandalonePage ? 'h-dvh min-h-0' : 'h-[calc(100vh-180px)] min-h-170'} w-full touch-none overflow-hidden ${isStandalonePage ? '' : 'border-y border-gray-200'} bg-slate-200 ${isPickupAnimating ? 'cursor-progress' : isDragging ? 'cursor-grabbing' : focusedShoeIndex !== null ? 'cursor-ew-resize' : 'cursor-grab'}`}
 				onPointerDown={(event) => {
 					if (activePointerIdRef.current !== null) return;
@@ -2332,20 +2350,20 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 					</button>
 				)}
 				{rooms.length === 2 && (
-					<div className="pointer-events-none absolute left-1/2 top-3 z-20 -translate-x-1/2 rounded-full bg-black/70 px-4 py-2 text-xs font-semibold text-white">
+					<div className="pointer-events-none absolute left-1/2 top-24 z-20 max-w-[calc(100%-1.5rem)] -translate-x-1/2 rounded-full bg-black/70 px-3 py-1.5 text-center text-[11px] font-semibold leading-4 text-white sm:top-3 sm:max-w-none sm:px-4 sm:py-2 sm:text-xs">
 						Room {activeRoomIndex + 1} of 2 · Slots {activeRoom.start + 1}–{activeRoom.start + activeRoom.count}
 					</div>
 				)}
 
 				{showLandscapeTip && shouldShowMobileJoystick && (
-					<div className="landscape-tip pointer-events-none absolute left-1/2 top-16 z-40 w-[min(92%,420px)] -translate-x-1/2 rounded-xl border border-amber-200 bg-amber-50/95 px-3 py-2 text-center text-xs font-medium text-amber-900 shadow-md">
+					<div className="landscape-tip pointer-events-none absolute left-1/2 top-36 z-40 w-[min(92%,420px)] -translate-x-1/2 rounded-xl border border-amber-200 bg-amber-50/95 px-3 py-2 text-center text-xs font-medium text-amber-900 shadow-md sm:top-16">
 						Rotate your device to landscape for best showroom walking experience.
 					</div>
 				)}
 
 				{shouldShowMobileJoystick && (
 					<div
-						className="pointer-events-auto absolute bottom-4 left-4 z-40 h-32 w-32 select-none touch-none rounded-full border border-white/70 bg-slate-900/30 backdrop-blur-sm"
+						className="showroom-joystick pointer-events-auto absolute bottom-6 left-4 z-40 h-32 w-32 select-none touch-none rounded-full border border-white/70 bg-slate-900/30 backdrop-blur-sm"
 						onPointerDown={(event) => {
 							event.preventDefault();
 							event.stopPropagation();
@@ -2386,7 +2404,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 							ref={joystickThumbRef}
 							className="pointer-events-none absolute left-1/2 top-1/2 h-11 w-11 rounded-full border border-white/80 bg-white/75 shadow"
 						/>
-						<div className="pointer-events-none absolute -bottom-5 left-1/2 -translate-x-1/2 text-[10px] font-semibold uppercase tracking-wider text-white/90">
+						<div className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 text-[10px] font-semibold uppercase tracking-wider text-white/90">
 							Walk
 						</div>
 					</div>
@@ -2527,7 +2545,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 								event.stopPropagation();
 								setIsNightMode((prev) => !prev);
 							}}
-							className="pointer-events-auto absolute left-3 top-16 z-20 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 sm:left-auto sm:right-3 sm:top-3"
+							className="pointer-events-auto absolute right-3 top-3 z-20 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
 						>
 							{isNightMode ? 'Day Mode' : 'Night Mode'}
 						</button>

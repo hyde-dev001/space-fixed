@@ -35,8 +35,18 @@ describe('standalone virtual showroom', () => {
 	});
 
 	it('separates standalone controls on portrait screens', () => {
-		expect(pageSource).toContain('className="fixed left-3 top-3 z-50 sm:left-20 sm:top-4"');
-		expect(showroomSource).toContain('absolute left-3 top-16 z-20');
-		expect(showroomSource).toContain('sm:left-auto sm:right-3 sm:top-3');
+		expect(pageSource).toContain('max-w-[calc(100vw-8.5rem)]');
+		expect(showroomSource).toContain('absolute right-3 top-3');
+		expect(showroomSource).toContain('absolute left-1/2 top-24');
+		expect(showroomSource).toContain('absolute left-1/2 top-36');
+	});
+
+	it('keeps mobile controls available across touch-capable browsers', () => {
+		expect(showroomSource).toContain("const hasTouchEvent = 'ontouchstart' in window;");
+		expect(showroomSource).toContain('MOBILE_TABLET_USER_AGENT');
+		expect(showroomSource).toContain("typeof window.matchMedia === 'function'");
+		expect(showroomSource).toContain('const shouldShowMobileJoystick = isTouchScreenDevice');
+		expect(showroomSource).toContain('ref={viewportRef}');
+		expect(showroomSource).toContain('const container = viewportRef.current;');
 	});
 });
