@@ -33,4 +33,10 @@ describe('standalone virtual showroom', () => {
 		expect(firstRenderLoopInvocation).toBeGreaterThan(-1);
 		expect(movementCleanup).toBeLessThan(firstRenderLoopInvocation);
 	});
+
+	it('separates standalone controls on portrait screens', () => {
+		expect(pageSource).toContain('className="fixed left-3 top-3 z-50 sm:left-20 sm:top-4"');
+		expect(showroomSource).toContain('absolute left-3 top-16 z-20');
+		expect(showroomSource).toContain('sm:left-auto sm:right-3 sm:top-3');
+	});
 });
