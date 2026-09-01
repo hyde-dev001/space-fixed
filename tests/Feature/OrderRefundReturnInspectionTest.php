@@ -6,11 +6,13 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\OrderRefund;
 use App\Models\OrderRefundItem;
+use App\Models\Logistics\Shipment;
 use App\Models\Product;
 use App\Models\ShopOwner;
 use App\Models\User;
 use App\Services\OrderRefundService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 class OrderRefundReturnInspectionTest extends TestCase
@@ -213,6 +215,106 @@ class OrderRefundReturnInspectionTest extends TestCase
         $this->assertDatabaseHas('shipment_legs', [
             'leg_type' => 'return_to_shop',
         ]);
+    }
+
+    public function test_company_staff_third_party_tracking_starts_customer_return_and_allows_physical_receipt_inspection(): void
+    {
+        [$refund, $staff, $line] = $this->fixture();
+        $refund->update([
+            'return_status' => 'pending_customer_shipment',
+            'return_source' => 'customer',
+        ]);
+
+        $result = app(OrderRefundService::class)->arrangeStaffReturnPickup(
+            $refund->fresh(),
+            [
+                'delivery_method' => 'third_party',
+                'carrier_company' => 'J&T Express',
+                'rider_name' => 'Juan Rider',
+                'rider_phone' => '09171234567',
+                'tracking_number' => 'JT-RETURN-001',
+                'tracking_link' => 'https://example.test/returns/JT-RETURN-001',
+            ],
+            $staff->id,
+        );
+
+        $this->assertSame('pickup_arranged', $result['result']);
+        $this->assertDatabaseHas('order_refunds', [
+            'id' => $refund->id,
+            'return_status' => 'in_transit',
+            'return_source' => 'customer',
+            'customer_return_carrier' => 'J&T Express',
+            'customer_return_tracking_number' => 'JT-RETURN-001',
+        ]);
+        $savedRefund = $refund->fresh();
+        $this->assertSame('Juan Rider', $savedRefund->customer_return_rider_name);
+        $this->assertNull($savedRefund->staff_return_carrier);
+        $this->assertDatabaseMissing('shipments', [
+            'source_type' => 'order_refund',
+            'source_id' => $refund->id,
+            'purpose' => 'refund_return',
+        ]);
+
+        $notYetReceived = app(OrderRefundService::class)->confirmReturnReceived(
+            $savedRefund,
+            $staff->id,
+            lineDispositions: [],
+        );
+        $this->assertSame('invalid_state', $notYetReceived['result']);
+        $this->assertSame('in_transit', $refund->fresh()->return_status);
+
+        $received = app(OrderRefundService::class)->confirmReturnReceived(
+            $refund->fresh(),
+            $staff->id,
+            lineDispositions: [$this->disposition($line->order_item_id)],
+        );
+
+        $this->assertSame('received', $received['result']);
+        $this->assertDatabaseHas('order_refunds', [
+            'id' => $refund->id,
+            'return_status' => 'received',
+        ]);
+    }
+
+    public function test_third_party_return_ignores_stale_shop_owned_shipment_in_customer_tracking(): void
+    {
+        [$refund, $staff] = $this->fixture();
+        $refund->update([
+            'return_status' => 'pending_customer_shipment',
+            'return_source' => 'customer',
+        ]);
+
+        app(OrderRefundService::class)->arrangeStaffReturnPickup(
+            $refund->fresh(),
+            [
+                'delivery_method' => 'third_party',
+                'carrier_company' => 'LBC',
+                'rider_name' => 'Maria Rider',
+                'rider_phone' => '09171234568',
+                'tracking_number' => 'LBC-RETURN-001',
+                'tracking_link' => 'https://example.test/returns/LBC-RETURN-001',
+            ],
+            $staff->id,
+        );
+
+        $staleShipment = Shipment::factory()->create([
+            'shop_owner_id' => $refund->shop_owner_id,
+            'source_type' => 'order_refund',
+            'source_id' => $refund->id,
+            'purpose' => 'refund_return',
+            'status' => 'requested',
+        ]);
+
+        $this->actingAs($refund->customer, 'user')
+            ->get('/my-orders')
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('orders.0.refund_stage.return_delivery_method', 'third_party')
+                ->where('orders.0.refund_stage.is_shop_owned_return', false)
+                ->where('orders.0.refund_stage.logistics_shipment_id', null)
+                ->where('orders.0.refund_stage.customer_return_tracking_number', 'LBC-RETURN-001')
+            );
+
+        $this->assertDatabaseHas('shipments', ['id' => $staleShipment->id]);
     }
 
     private function fixture(string $registrationType = 'company'): array

@@ -153,6 +153,60 @@ Do not push when:
 - an unexpected file is deleted;
 - any test or build fails.
 
+### Keep the pre-push workflow fast
+
+The local commit itself should normally finish quickly. If a commit or push takes
+an hour or more, identify whether the time is being spent in tests/builds, Git
+object preparation, or the network instead of repeating the same command.
+
+Use this order so the production bundle is generated only once for the final
+revision:
+
+```powershell
+git fetch origin --prune
+git rebase origin/solespace-b
+
+# Use focused tests while iterating; run the full gate once after the work is final.
+php artisan test tests/Feature/ChangedFeatureTest.php
+pnpm exec vitest run resources/js/ChangedFeature.test.tsx
+# If public/build is required by the deployment, run this only after the rebase.
+pnpm run build
+git add path/to/changed-file public/build
+git diff --cached --check
+git commit -m 'feat: describe-the-change'
+git push --progress -u origin feature/short-task-name
+```
+
+Do not build before rebasing and then build again after rebasing. Do not split the
+source and `public/build` changes into separate commits just to push them; that
+usually adds another round trip without reducing the generated bundle.
+
+The preferred long-term setup is to build `public/build` in CI or on the deployment
+server instead of committing generated assets to every feature branch. The build
+step is:
+
+```powershell
+pnpm install --frozen-lockfile
+pnpm run build
+```
+
+This keeps pull requests small and avoids repeated hashed-asset conflicts. Use
+this only after deployment is configured to publish the generated bundle; until
+then, keep the required fresh `public/build` behavior.
+
+When a push is still slow after removing build/test work from the path, inspect the
+amount of unpushed Git data and the progress output:
+
+```powershell
+git count-objects -vH
+git rev-list --objects --disk-usage origin/solespace-b..HEAD
+git push --progress -u origin feature/short-task-name
+```
+
+If the unpushed data is small but the push remains stalled, investigate the Git
+remote/network or a pre-push hook. Do not use `--no-verify` to bypass the test and
+build safety gate.
+
 ## 6. Push the feature branch
 
 ```powershell

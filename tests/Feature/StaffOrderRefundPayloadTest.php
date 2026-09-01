@@ -149,6 +149,44 @@ class StaffOrderRefundPayloadTest extends TestCase
             ->assertJsonPath('data.0.shippingFee', 108);
     }
 
+    public function test_staff_payload_exposes_active_customer_dispute_details(): void
+    {
+        [$shop, $staff, , $order, $refund] = $this->refundFixture();
+        $reportedAt = now()->subHour()->startOfSecond();
+        DeliveryDispute::create([
+            'shop_owner_id' => $shop->id,
+            'order_id' => $order->id,
+            'order_refund_id' => $refund->id,
+            'customer_id' => $order->customer_id,
+            'status' => 'investigating',
+            'reason' => 'item_not_received',
+            'notes' => 'The customer says the parcel was not handed over.',
+            'reported_at' => $reportedAt,
+        ]);
+
+        foreach ([
+            $this->actingAs($staff, 'user')->getJson('/api/staff/orders')->assertOk()->json('0'),
+            $this->actingAs($staff, 'user')->getJson("/api/staff/orders/{$order->id}")->assertOk()->json(),
+        ] as $payload) {
+            $dispute = $payload['active_delivery_dispute'];
+            $this->assertSame('investigating', $dispute['status']);
+            $this->assertSame('item_not_received', $dispute['reason']);
+            $this->assertSame('The customer says the parcel was not handed over.', $dispute['notes']);
+            $this->assertSame($reportedAt->toISOString(), $dispute['reported_at']);
+        }
+
+        $otherShop = ShopOwner::factory()->approved()->create(['business_type' => 'retail']);
+        $otherStaff = User::factory()->create([
+            'shop_owner_id' => $otherShop->id,
+            'role' => 'STAFF',
+        ]);
+        $otherStaff->givePermissionTo('access-staff-job-orders');
+
+        $this->actingAs($otherStaff, 'user')
+            ->getJson("/api/staff/orders/{$order->id}")
+            ->assertNotFound();
+    }
+
     public function test_staff_list_and_show_include_order_logistics(): void
     {
         [$shop, $staff, , $order] = $this->refundFixture();

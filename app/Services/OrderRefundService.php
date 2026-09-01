@@ -3,8 +3,10 @@
 namespace App\Services;
 
 use App\Models\Logistics\ShipmentLeg;
+use App\Models\Logistics\Shipment;
 use App\Models\Order;
 use App\Models\OrderRefund;
+use App\Models\User;
 use App\Enums\NotificationType;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -833,6 +835,7 @@ class OrderRefundService
 
         if (strtolower(trim((string) ($shipmentData['delivery_method'] ?? ''))) === 'shop_owned') {
             return $this->arrangeStaffReturnPickup($refund, [
+                'delivery_method' => 'shop_owned',
                 'carrier_company' => 'Shop-owned logistics',
                 'note' => $shipmentData['note'] ?? null,
             ]);
@@ -881,8 +884,29 @@ class OrderRefundService
 
     public function arrangeStaffReturnPickup(OrderRefund $refund, array $pickupData, ?int $staffId = null): array
     {
-        $isShopOwnedPickup = strtolower((string) ($pickupData['carrier_company'] ?? $pickupData['carrier'] ?? '')) === 'shop-owned logistics';
-        $arrange = function (OrderRefund $lockedRefund) use ($pickupData, $staffId, $isShopOwnedPickup) {
+        $deliveryMethod = strtolower(trim((string) ($pickupData['delivery_method'] ?? '')));
+        $carrier = strtolower(trim((string) ($pickupData['carrier_company'] ?? $pickupData['carrier'] ?? '')));
+        $isExplicitThirdParty = $deliveryMethod === 'third_party';
+        $isShopOwnedPickup = $deliveryMethod === 'shop_owned'
+            || ($deliveryMethod === '' && $carrier === 'shop-owned logistics');
+
+        if ($deliveryMethod !== '' && !in_array($deliveryMethod, ['shop_owned', 'third_party'], true)) {
+            return [
+                'result' => 'invalid_state',
+                'message' => 'A valid return delivery method is required.',
+                'refund' => $refund,
+            ];
+        }
+
+        if ($isExplicitThirdParty && !$this->hasValidThirdPartyReturnDetails($pickupData)) {
+            return [
+                'result' => 'invalid_state',
+                'message' => 'Valid third-party courier and tracking details are required.',
+                'refund' => $refund,
+            ];
+        }
+
+        $arrange = function (OrderRefund $lockedRefund) use ($pickupData, $staffId, $isShopOwnedPickup, $isExplicitThirdParty) {
             if ((string) ($lockedRefund->shop_owner_status ?? 'pending') !== 'approved'
                 || (string) ($lockedRefund->finance_status ?? 'pending') !== 'approved') {
                 return [
@@ -892,7 +916,11 @@ class OrderRefundService
                 ];
             }
 
-            if ((string) ($lockedRefund->return_status ?? '') !== 'pending_customer_shipment') {
+            $returnStatus = (string) ($lockedRefund->return_status ?? '');
+            $canSwitchUnstartedShopOwnedReturn = $isExplicitThirdParty
+                && $returnStatus === 'pending_staff_pickup'
+                && $lockedRefund->isShopOwnedReturn();
+            if ($returnStatus !== 'pending_customer_shipment' && !$canSwitchUnstartedShopOwnedReturn) {
                 return [
                     'result' => 'invalid_state',
                     'message' => 'Return pickup has already been arranged or cannot be arranged in the current state.',
@@ -900,20 +928,50 @@ class OrderRefundService
                 ];
             }
 
-            $staffShippedAt = $pickupData['shipped_at'] ?? null;
-            $this->updateOrderRefundCompat($lockedRefund, [
-                'return_status' => $staffShippedAt ? 'in_transit' : 'pending_staff_pickup',
-                'staff_return_tracking_number' => $pickupData['tracking_number'] ?? $lockedRefund->staff_return_tracking_number,
-                'staff_return_carrier' => $pickupData['carrier_company'] ?? ($pickupData['carrier'] ?? $lockedRefund->staff_return_carrier),
-                'staff_return_rider_name' => $pickupData['rider_name'] ?? $lockedRefund->staff_return_rider_name,
-                'staff_return_rider_phone' => $pickupData['rider_phone'] ?? $lockedRefund->staff_return_rider_phone,
-                'staff_return_tracking_link' => $pickupData['tracking_link'] ?? $lockedRefund->staff_return_tracking_link,
-                'staff_return_shipped_at' => $staffShippedAt,
-                'return_arranged_by_staff_id' => $staffId,
-                'return_arranged_by_staff_at' => now(),
-                'return_source' => 'staff',
-                'return_notes' => $pickupData['note'] ?? $lockedRefund->return_notes,
-            ]);
+            if ($isExplicitThirdParty && !$this->cancelPendingReturnShipments($lockedRefund, $staffId)) {
+                return [
+                    'result' => 'invalid_state',
+                    'message' => 'The existing Shop-owned return has already started and cannot be changed to a third-party return.',
+                    'refund' => $lockedRefund,
+                ];
+            }
+
+            if ($isExplicitThirdParty) {
+                $this->updateOrderRefundCompat($lockedRefund, [
+                    'return_status' => 'in_transit',
+                    'customer_return_tracking_number' => $pickupData['tracking_number'],
+                    'customer_return_carrier' => $pickupData['carrier_company'] ?? ($pickupData['carrier'] ?? null),
+                    'customer_return_rider_name' => $pickupData['rider_name'],
+                    'customer_return_rider_phone' => $pickupData['rider_phone'],
+                    'customer_return_tracking_link' => $pickupData['tracking_link'],
+                    'customer_return_shipped_at' => $pickupData['shipped_at'] ?? now(),
+                    'staff_return_tracking_number' => null,
+                    'staff_return_carrier' => null,
+                    'staff_return_rider_name' => null,
+                    'staff_return_rider_phone' => null,
+                    'staff_return_tracking_link' => null,
+                    'staff_return_shipped_at' => null,
+                    'return_arranged_by_staff_id' => $staffId,
+                    'return_arranged_by_staff_at' => now(),
+                    'return_source' => 'customer',
+                    'return_notes' => $pickupData['note'] ?? $lockedRefund->return_notes,
+                ]);
+            } else {
+                $staffShippedAt = $pickupData['shipped_at'] ?? null;
+                $this->updateOrderRefundCompat($lockedRefund, [
+                    'return_status' => $staffShippedAt ? 'in_transit' : 'pending_staff_pickup',
+                    'staff_return_tracking_number' => $pickupData['tracking_number'] ?? $lockedRefund->staff_return_tracking_number,
+                    'staff_return_carrier' => $pickupData['carrier_company'] ?? ($pickupData['carrier'] ?? $lockedRefund->staff_return_carrier),
+                    'staff_return_rider_name' => $pickupData['rider_name'] ?? $lockedRefund->staff_return_rider_name,
+                    'staff_return_rider_phone' => $pickupData['rider_phone'] ?? $lockedRefund->staff_return_rider_phone,
+                    'staff_return_tracking_link' => $pickupData['tracking_link'] ?? $lockedRefund->staff_return_tracking_link,
+                    'staff_return_shipped_at' => $staffShippedAt,
+                    'return_arranged_by_staff_id' => $staffId,
+                    'return_arranged_by_staff_at' => now(),
+                    'return_source' => 'staff',
+                    'return_notes' => $pickupData['note'] ?? $lockedRefund->return_notes,
+                ]);
+            }
 
             $resolvedRefund = $lockedRefund->fresh() ?? $lockedRefund;
             if ($lockedRefund->exists && $isShopOwnedPickup) {
@@ -928,9 +986,11 @@ class OrderRefundService
 
             return [
                 'result' => 'pickup_arranged',
-                'message' => $staffShippedAt
-                    ? 'Staff pickup and shipment details saved successfully.'
-                    : 'Staff pickup details saved successfully. Waiting for rider pickup.',
+                'message' => $isExplicitThirdParty
+                    ? 'Third-party return tracking saved. The return is now in transit; staff can confirm receipt after the parcel physically arrives.'
+                    : (($pickupData['shipped_at'] ?? null)
+                        ? 'Staff pickup and shipment details saved successfully.'
+                        : 'Staff pickup details saved successfully. Waiting for rider pickup.'),
                 'refund' => $resolvedRefund,
             ];
         };
@@ -944,6 +1004,83 @@ class OrderRefundService
 
             return $arrange($lockedRefund);
         });
+    }
+
+    private function hasValidThirdPartyReturnDetails(array $pickupData): bool
+    {
+        $required = [
+            $pickupData['tracking_number'] ?? null,
+            $pickupData['carrier_company'] ?? ($pickupData['carrier'] ?? null),
+            $pickupData['rider_name'] ?? null,
+            $pickupData['rider_phone'] ?? null,
+            $pickupData['tracking_link'] ?? null,
+        ];
+
+        return collect($required)->every(fn ($value) => filled($value))
+            && filter_var((string) $required[4], FILTER_VALIDATE_URL) !== false;
+    }
+
+    private function cancelPendingReturnShipments(OrderRefund $refund, ?int $staffId): bool
+    {
+        if (!$refund->exists || !Schema::hasTable('shipments')) {
+            return true;
+        }
+
+        $shipments = Shipment::query()
+            ->where('shop_owner_id', (int) $refund->shop_owner_id)
+            ->where('source_type', 'order_refund')
+            ->where('source_id', (int) $refund->id)
+            ->where('purpose', 'refund_return')
+            ->where('status', '!=', 'cancelled')
+            ->with('legs')
+            ->lockForUpdate()
+            ->get();
+
+        $startedStatuses = [
+            'picked_up',
+            'in_transit',
+            'delivery_attempted',
+            'needs_resolution',
+            'awaiting_proof_approval',
+            'proof_correction_required',
+            'delivered',
+        ];
+        $hasStartedShipment = $shipments->contains(fn (Shipment $shipment) => $shipment->legs->contains(
+            fn ($leg) => in_array(
+                $leg->status instanceof \BackedEnum ? $leg->status->value : (string) $leg->status,
+                $startedStatuses,
+                true,
+            ),
+        ));
+
+        if ($hasStartedShipment) {
+            return false;
+        }
+
+        foreach ($shipments as $shipment) {
+            foreach ($shipment->legs as $leg) {
+                $leg->assignments()
+                    ->whereIn('status', ['assigned', 'accepted'])
+                    ->update(['status' => 'cancelled', 'cancelled_at' => now()]);
+                $leg->update(['status' => 'cancelled']);
+            }
+
+            $shipment->update([
+                'status' => 'cancelled',
+                'completed_at' => null,
+                'cancelled_at' => now(),
+            ]);
+            $shipment->events()->create([
+                'event_type' => 'return_method_changed',
+                'visibility' => 'internal',
+                'message' => 'Shop-owned return shipment superseded after switching to a third-party return.',
+                'metadata' => ['return_method' => 'third_party'],
+                'created_by_type' => $staffId ? User::class : null,
+                'created_by_id' => $staffId,
+            ]);
+        }
+
+        return true;
     }
 
     public function confirmReturnReceived(
@@ -962,8 +1099,7 @@ class OrderRefundService
             return $this->confirmCompanyReturnReceived($refund, $staffId, $notes, $lineDispositions);
         }
 
-        $isShopOwnedPickup = (string) ($refund->return_source ?? '') === 'staff'
-            && strtolower((string) ($refund->staff_return_carrier ?? '')) === 'shop-owned logistics';
+        $isShopOwnedPickup = $refund->isShopOwnedReturn();
 
         if ($isShopOwnedPickup && (string) ($refund->return_status ?? '') === 'pending_staff_pickup') {
             return [
@@ -995,12 +1131,18 @@ class OrderRefundService
         // Keep the legacy in-memory/fallback path usable when the inspection table has
         // not been installed yet. Persisted application returns always use inspection.
         if (! $refund->exists || ! Schema::hasTable('order_refund_items')) {
+            if ($refund->isShopOwnedReturn() && !$this->hasDeliveredShopOwnedReturnShipment($refund)) {
+                return $this->invalidReturnReceipt($refund, 'Wait for the Shop-owned return delivery before confirming receipt.');
+            }
+
             $this->updateOrderRefundCompat($refund, [
                 'return_status' => 'received',
                 'return_confirmed_at' => now(),
                 'return_confirmed_by_staff_id' => $staffId,
                 'return_notes' => $notes ?? $refund->return_notes,
-                'staff_return_shipped_at' => $refund->staff_return_shipped_at ?? now(),
+                'staff_return_shipped_at' => $refund->isShopOwnedReturn() || (string) ($refund->return_source ?? '') === 'staff'
+                    ? ($refund->staff_return_shipped_at ?? now())
+                    : $refund->staff_return_shipped_at,
             ]);
 
             $this->notifyFinancePayoutReady($refund->fresh() ?? $refund);
@@ -1050,7 +1192,14 @@ class OrderRefundService
             $refund = OrderRefund::query()->with('order.items')->lockForUpdate()->findOrFail($refund->id);
             $returnStatus = (string) ($refund->return_status ?? 'awaiting_approval');
             $isStaffPickup = (string) ($refund->return_source ?? '') === 'staff';
+            $returnDeliveryMethod = $refund->returnDeliveryMethod();
             $staffPickupAllowed = $allowPendingStaffPickup && $isStaffPickup && $returnStatus === 'pending_staff_pickup';
+            if ($returnDeliveryMethod === 'shop_owned' && !$this->hasDeliveredShopOwnedReturnShipment($refund)) {
+                return $this->invalidReturnReceipt($refund, 'Wait for the Shop-owned return delivery before completing the Staff inspection.');
+            }
+            if ($returnDeliveryMethod === 'third_party' && $returnStatus !== 'in_transit') {
+                return $this->invalidReturnReceipt($refund, $invalidStateMessage);
+            }
             if ($returnStatus !== 'in_transit' && ! $staffPickupAllowed) {
                 return $this->invalidReturnReceipt($refund, $invalidStateMessage);
             }
@@ -1130,7 +1279,9 @@ class OrderRefundService
                 'return_confirmed_at' => now(),
                 'return_confirmed_by_staff_id' => $staffId,
                 'return_notes' => $notes ?? $refund->return_notes,
-                'staff_return_shipped_at' => $refund->staff_return_shipped_at ?? now(),
+                'staff_return_shipped_at' => $refund->isShopOwnedReturn() || $isStaffPickup
+                    ? ($refund->staff_return_shipped_at ?? now())
+                    : $refund->staff_return_shipped_at,
             ]);
 
             $resolvedRefund = $refund->fresh() ?? $refund;
@@ -1215,6 +1366,29 @@ class OrderRefundService
     private function invalidReturnReceipt(OrderRefund $refund, string $message): array
     {
         return ['result' => 'invalid_state', 'message' => $message, 'refund' => $refund];
+    }
+
+    private function hasDeliveredShopOwnedReturnShipment(OrderRefund $refund): bool
+    {
+        if (!$refund->exists || !Schema::hasTable('shipments')) {
+            return false;
+        }
+
+        $shipment = Shipment::query()
+            ->where('shop_owner_id', (int) $refund->shop_owner_id)
+            ->where('source_type', 'order_refund')
+            ->where('source_id', (int) $refund->id)
+            ->where('purpose', 'refund_return')
+            ->where('status', '!=', 'cancelled')
+            ->latest('id')
+            ->first();
+
+        return $shipment !== null
+            && ShipmentLeg::query()
+                ->where('shipment_id', $shipment->id)
+                ->where('leg_type', 'return_to_shop')
+                ->where('status', 'delivered')
+                ->exists();
     }
 
     public function canExecuteApprovedRefund(OrderRefund $refund): bool
@@ -1720,16 +1894,28 @@ class OrderRefundService
             return;
         }
 
-        $trackingNumber = (string) ($refund->staff_return_tracking_number ?? '-');
-        $carrier = (string) ($refund->staff_return_carrier ?? '-');
-        $riderName = (string) ($refund->staff_return_rider_name ?? '-');
-        $riderPhone = (string) ($refund->staff_return_rider_phone ?? '-');
+        $isCustomerArrangedReturn = $refund->returnDeliveryMethod() === 'third_party'
+            && strtolower((string) ($refund->return_source ?? '')) !== 'staff';
+        $trackingNumber = (string) ($isCustomerArrangedReturn
+            ? ($refund->customer_return_tracking_number ?? '-')
+            : ($refund->staff_return_tracking_number ?? '-'));
+        $carrier = (string) ($isCustomerArrangedReturn
+            ? ($refund->customer_return_carrier ?? '-')
+            : ($refund->staff_return_carrier ?? '-'));
+        $riderName = (string) ($isCustomerArrangedReturn
+            ? ($refund->customer_return_rider_name ?? '-')
+            : ($refund->staff_return_rider_name ?? '-'));
+        $riderPhone = (string) ($isCustomerArrangedReturn
+            ? ($refund->customer_return_rider_phone ?? '-')
+            : ($refund->staff_return_rider_phone ?? '-'));
 
         $this->notificationService->sendToUser(
             userId: $customerId,
             type: NotificationType::ORDER_STATUS_UPDATE,
-            title: 'Refund Return Pickup Arranged',
-            message: 'Staff arranged your return pickup. Please wait for the rider to collect the item.',
+            title: $isCustomerArrangedReturn ? 'Third-Party Return Tracking Recorded' : 'Refund Return Pickup Arranged',
+            message: $isCustomerArrangedReturn
+                ? 'Staff recorded the third-party return tracking. Please wait for the parcel to arrive at the shop.'
+                : 'Staff arranged your return pickup. Please wait for the rider to collect the item.',
             data: [
                 'refund_id' => (int) ($refund->id ?? 0),
                 'order_id' => (int) ($refund->order_id ?? 0),
@@ -1738,7 +1924,9 @@ class OrderRefundService
                 'carrier' => $carrier,
                 'rider_name' => $riderName,
                 'rider_phone' => $riderPhone,
-                'tracking_link' => (string) ($refund->staff_return_tracking_link ?? ''),
+                'tracking_link' => (string) ($isCustomerArrangedReturn
+                    ? ($refund->customer_return_tracking_link ?? '')
+                    : ($refund->staff_return_tracking_link ?? '')),
             ],
             actionUrl: '/my-orders?tab=return_refund',
             shopId: (int) ($refund->shop_owner_id ?? 0),

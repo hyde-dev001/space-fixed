@@ -93,12 +93,24 @@ class SourceShipmentService
 
     public function ensureRefundReturnShipment(OrderRefund $refund): Shipment
     {
-        $existing = $this->findExisting('order_refund', (int) $refund->id, 'refund_return');
+        $refund->loadMissing('order.shopOwner', 'order.address', 'customer');
+        if ($refund->returnDeliveryMethod() === 'third_party') {
+            throw ValidationException::withMessages([
+                'delivery_method' => ['Third-party returns do not create Shop-owned logistics shipments.'],
+            ]);
+        }
+
+        $existing = $this->findExisting(
+            'order_refund',
+            (int) $refund->id,
+            'refund_return',
+            (int) $refund->shop_owner_id,
+            activeOnly: true,
+        );
         if ($existing) {
             return $existing;
         }
 
-        $refund->loadMissing('order.shopOwner', 'order.address', 'customer');
         $order = $refund->order;
         $address = $order?->address;
 
@@ -375,12 +387,21 @@ class SourceShipmentService
         });
     }
 
-    private function findExisting(string $sourceType, int $sourceId, string $purpose): ?Shipment
+    private function findExisting(
+        string $sourceType,
+        int $sourceId,
+        string $purpose,
+        ?int $shopOwnerId = null,
+        bool $activeOnly = false,
+    ): ?Shipment
     {
         return Shipment::query()
             ->where('source_type', $sourceType)
             ->where('source_id', $sourceId)
             ->where('purpose', $purpose)
+            ->when($shopOwnerId !== null && $shopOwnerId > 0, fn ($query) => $query->where('shop_owner_id', $shopOwnerId))
+            ->when($activeOnly, fn ($query) => $query->where('status', '!=', 'cancelled'))
+            ->latest('id')
             ->first();
     }
 

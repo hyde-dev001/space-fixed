@@ -73,6 +73,7 @@ type Order = {
   paymentStatus: string;
   paymentMethod?: string;
   status: OrderStatus;
+  isPosOrder?: boolean;
   customerReceiptStatus?: 'pending' | 'confirmed' | 'disputed' | string;
   customerReceivedAt?: string | null;
   customerReceiptDisputedAt?: string | null;
@@ -136,6 +137,8 @@ type Order = {
     finance_status: string;
     return_status: string;
     return_source?: string;
+    is_shop_owned_return?: boolean;
+    return_delivery_method?: 'shop_owned' | 'third_party' | string | null;
     customer_return_tracking_number?: string | null;
     customer_return_carrier?: string | null;
     customer_return_rider_name?: string | null;
@@ -163,7 +166,7 @@ type Order = {
       original_name?: string | null;
       url: string;
     }>;
-    return_logistics?: LogisticsSummary | null;
+    return_logistics?: Partial<LogisticsSummary> | null;
     items?: Array<{
       order_item_id: number;
       product_name: string;
@@ -447,16 +450,82 @@ const MetricCard: React.FC<MetricCardProps> = ({
   );
 };
 
+type ReturnDeliveryMethod = 'shop_owned' | 'third_party';
+
+const getReturnDeliveryMethod = (refund: Order['latest_refund']): ReturnDeliveryMethod | null => {
+  const explicitMethod = String(refund?.return_delivery_method || '').toLowerCase();
+  if (explicitMethod === 'shop_owned' || explicitMethod === 'third_party') {
+    return explicitMethod;
+  }
+
+  if (refund?.is_shop_owned_return === true) {
+    return 'shop_owned';
+  }
+
+  const source = String(refund?.return_source || '').toLowerCase();
+  const staffCarrier = String(refund?.staff_return_carrier || '').trim().toLowerCase();
+  const returnStatus = String(refund?.return_status || '').toLowerCase();
+  const hasCustomerReturnDetails = Boolean(
+    String(refund?.customer_return_tracking_number || '').trim()
+      || String(refund?.customer_return_carrier || '').trim()
+      || String(refund?.customer_return_tracking_link || '').trim(),
+  );
+  const hasStaffReturnDetails = Boolean(
+    String(refund?.staff_return_tracking_number || '').trim()
+      || String(refund?.staff_return_carrier || '').trim()
+      || String(refund?.staff_return_tracking_link || '').trim(),
+  );
+
+  if (source === 'customer' && hasCustomerReturnDetails) {
+    return 'third_party';
+  }
+  if (source === 'customer' && staffCarrier === SHOP_OWNED_LOGISTICS.toLowerCase()) {
+    return 'shop_owned';
+  }
+  if (source === 'customer' && ['pending_customer_shipment', 'in_transit'].includes(returnStatus)) {
+    return 'third_party';
+  }
+  if (hasCustomerReturnDetails) {
+    return 'third_party';
+  }
+  if (staffCarrier === SHOP_OWNED_LOGISTICS.toLowerCase()) {
+    return 'shop_owned';
+  }
+  if (source === 'staff' && hasStaffReturnDetails) {
+    return 'third_party';
+  }
+  if (hasStaffReturnDetails) {
+    return 'third_party';
+  }
+
+  return null;
+};
+
+export const isPosOrder = (order: Pick<Order, "isPosOrder">) => order.isPosOrder === true;
+
+export const canSelectShopOwnedReturn = (coverage?: Order['shopOwnedCoverage']) => coverage?.available === true;
+
 export const canConfirmReturnReceived = (order: Pick<Order, "latest_refund">) => {
   const latestRefund = order.latest_refund;
   if (!latestRefund || String(latestRefund.reason_code || '').toLowerCase() === 'delivery_attempts_exhausted') return false;
-  const isShopOwnedPickup = String(latestRefund.return_source || '').toLowerCase() === 'staff'
-    && String(latestRefund.staff_return_carrier || '').toLowerCase() === SHOP_OWNED_LOGISTICS.toLowerCase();
+  if (String(latestRefund.flow_type || '').toLowerCase() !== 'request_approval'
+    || ['rejected', 'failed'].includes(String(latestRefund.status || '').toLowerCase())) {
+    return false;
+  }
 
-  return String(latestRefund.flow_type || '').toLowerCase() === 'request_approval'
-    && (String(latestRefund.return_status || '').toLowerCase() === 'in_transit'
-      || (!isShopOwnedPickup && String(latestRefund.return_status || '').toLowerCase() === 'pending_staff_pickup'))
-    && !['rejected', 'failed'].includes(String(latestRefund.status || '').toLowerCase());
+  const returnStatus = String(latestRefund.return_status || '').toLowerCase();
+  const returnMethod = getReturnDeliveryMethod(latestRefund);
+  if (returnMethod === 'shop_owned') {
+    return returnStatus === 'in_transit'
+      && String(latestRefund.return_logistics?.leg_status || '').toLowerCase() === 'delivered';
+  }
+  if (returnMethod === 'third_party') {
+    return returnStatus === 'in_transit';
+  }
+
+  return returnStatus === 'in_transit'
+    || (String(latestRefund.return_source || '').toLowerCase() === 'staff'
+      && returnStatus === 'pending_staff_pickup');
 };
 
 export const canStaffReviewRefund = (order: Pick<Order, "latest_refund">) => {
@@ -471,9 +540,14 @@ export const canArrangeReturnPickup = (order: Pick<Order, "latest_refund">) => {
   const refund = order.latest_refund;
   if (!refund || String(refund.flow_type || '').toLowerCase() !== 'request_approval') return false;
 
+  const returnMethod = getReturnDeliveryMethod(refund);
+  const returnStatus = String(refund.return_status || '').toLowerCase();
+  const canSwitchUnstartedShopOwnedReturn = returnMethod === 'shop_owned'
+    && returnStatus === 'pending_staff_pickup';
+
   return String(refund.shop_owner_status || '').toLowerCase() === 'approved'
     && String(refund.finance_status || '').toLowerCase() === 'approved'
-    && String(refund.return_status || '').toLowerCase() === 'pending_customer_shipment'
+    && (returnStatus === 'pending_customer_shipment' || canSwitchUnstartedShopOwnedReturn)
     && !['rejected', 'failed', 'succeeded'].includes(String(refund.status || '').toLowerCase());
 };
 
@@ -552,6 +626,7 @@ export default function JobOrdersPage() {
       paymentStatus: order.payment_status || 'pending',
       paymentMethod: order.payment_method || '',
       status: order.status as Order['status'],
+      isPosOrder: order.is_pos_order === true,
       customerReceiptStatus: order.customer_receipt_status || 'pending',
       customerReceivedAt: order.customer_received_at || null,
       customerReceiptDisputedAt: order.customer_receipt_disputed_at || null,
@@ -1024,11 +1099,36 @@ export default function JobOrdersPage() {
     const customerName = String(order.customer || 'Customer').trim() || 'Customer';
     const customerPhone = String(order.phone || '').trim() || 'No phone provided';
     const existingPickup = order.latest_refund || null;
-    const defaultCarrier = String(existingPickup?.staff_return_carrier || '').trim();
-    const defaultRiderName = String(existingPickup?.staff_return_rider_name || '').trim();
-    const defaultRiderPhone = String(existingPickup?.staff_return_rider_phone || '').trim();
-    const defaultTrackingNumber = String(existingPickup?.staff_return_tracking_number || '').trim();
-    const defaultTrackingLink = String(existingPickup?.staff_return_tracking_link || '').trim();
+    const shopOwnedEligible = canSelectShopOwnedReturn(order.shopOwnedCoverage);
+    const existingReturnMethod = getReturnDeliveryMethod(existingPickup);
+    const defaultCarrier = String(
+      existingReturnMethod === 'third_party'
+        ? (existingPickup?.customer_return_carrier || existingPickup?.staff_return_carrier || '')
+        : (existingPickup?.staff_return_carrier || ''),
+    ).trim();
+    const defaultRiderName = String(
+      existingReturnMethod === 'third_party'
+        ? (existingPickup?.customer_return_rider_name || existingPickup?.staff_return_rider_name || '')
+        : (existingPickup?.staff_return_rider_name || ''),
+    ).trim();
+    const defaultRiderPhone = String(
+      existingReturnMethod === 'third_party'
+        ? (existingPickup?.customer_return_rider_phone || existingPickup?.staff_return_rider_phone || '')
+        : (existingPickup?.staff_return_rider_phone || ''),
+    ).trim();
+    const defaultTrackingNumber = String(
+      existingReturnMethod === 'third_party'
+        ? (existingPickup?.customer_return_tracking_number || existingPickup?.staff_return_tracking_number || '')
+        : (existingPickup?.staff_return_tracking_number || ''),
+    ).trim();
+    const defaultTrackingLink = String(
+      existingReturnMethod === 'third_party'
+        ? (existingPickup?.customer_return_tracking_link || existingPickup?.staff_return_tracking_link || '')
+        : (existingPickup?.staff_return_tracking_link || ''),
+    ).trim();
+    const shopOwnedOptionLabel = shopOwnedEligible
+      ? 'Shop-owned logistics'
+      : 'Shop-owned logistics — unavailable (' + getShopOwnedCoverageMessage(order.shopOwnedCoverage) + ')';
 
     const shipmentInput = await Swal.fire({
       title: 'Arrange Return Pickup',
@@ -1066,7 +1166,7 @@ export default function JobOrdersPage() {
                <label style="font-size:13px;font-weight:600;color:#334155;">Delivery Method</label>
                <select id="swal-delivery-method" style="border-radius:10px;border:1px solid #d1d5db;padding:10px 12px;">
                  <option value="third_party">Third-party courier</option>
-                 <option value="shop_owned">Shop-owned logistics</option>
+                 <option value="shop_owned" ${shopOwnedEligible ? '' : 'disabled'}>${escapeHtml(shopOwnedOptionLabel)}</option>
                </select>
              </div>
 
@@ -1114,7 +1214,7 @@ export default function JobOrdersPage() {
           const isThirdParty = deliveryMethodInput?.value === 'third_party';
           thirdPartyFields.forEach((field) => { field.style.display = isThirdParty ? 'grid' : 'none'; });
           if (pickupTip) pickupTip.textContent = isThirdParty
-            ? 'Tip: You can save initial rider details now, then update later with final tracking status.'
+            ? 'Valid courier and tracking details will mark the third-party return in transit immediately.'
             : 'Dispatcher assigns a rider from Logistics after you save.';
         };
         deliveryMethodInput?.addEventListener('change', toggleThirdPartyFields);
@@ -1134,7 +1234,14 @@ export default function JobOrdersPage() {
       },
       preConfirm: () => {
         const deliveryMethod = (document.getElementById('swal-delivery-method') as HTMLSelectElement | null)?.value || 'third_party';
-        if (deliveryMethod === 'shop_owned') return { deliveryMethod };
+        if (deliveryMethod === 'shop_owned') {
+          if (!canSelectShopOwnedReturn(order.shopOwnedCoverage)) {
+            Swal.showValidationMessage(getShopOwnedCoverageMessage(order.shopOwnedCoverage));
+            return null;
+          }
+
+          return { deliveryMethod };
+        }
 
         const carrierCompany = (document.getElementById('swal-carrier-company') as HTMLInputElement | null)?.value?.trim() || '';
         const riderName = (document.getElementById('swal-rider-name') as HTMLInputElement | null)?.value?.trim() || '';
@@ -1344,25 +1451,26 @@ export default function JobOrdersPage() {
   const handleConfirmReturnReceived = async (order: Order) => {
     if (isConfirmingReturn) return;
     const latestRefund = order.latest_refund;
-    const isStaffArrangedReturn = String(latestRefund?.return_source || '').toLowerCase() === 'staff'
-      || String(latestRefund?.return_status || '').toLowerCase() === 'pending_staff_pickup';
-
-    const returnCarrier = (isStaffArrangedReturn
+    const returnMethod = getReturnDeliveryMethod(latestRefund);
+    const returnSource = String(latestRefund?.return_source || '').toLowerCase();
+    const useStaffReturnFields = returnMethod === 'shop_owned'
+      || (returnSource === 'staff' && returnMethod !== 'third_party');
+    const returnCarrier = (useStaffReturnFields
       ? latestRefund?.staff_return_carrier
       : latestRefund?.customer_return_carrier) || '-';
-    const returnRiderName = (isStaffArrangedReturn
+    const returnRiderName = (useStaffReturnFields
       ? latestRefund?.staff_return_rider_name
       : latestRefund?.customer_return_rider_name) || '-';
-    const returnRiderPhone = (isStaffArrangedReturn
+    const returnRiderPhone = (useStaffReturnFields
       ? latestRefund?.staff_return_rider_phone
       : latestRefund?.customer_return_rider_phone) || '-';
-    const returnTrackingNumber = (isStaffArrangedReturn
+    const returnTrackingNumber = (useStaffReturnFields
       ? latestRefund?.staff_return_tracking_number
       : latestRefund?.customer_return_tracking_number) || '-';
-    const returnTrackingLink = (isStaffArrangedReturn
+    const returnTrackingLink = (useStaffReturnFields
       ? latestRefund?.staff_return_tracking_link
       : latestRefund?.customer_return_tracking_link) || '-';
-    const shippedAt = isStaffArrangedReturn
+    const shippedAt = useStaffReturnFields
       ? latestRefund?.staff_return_shipped_at
       : latestRefund?.customer_return_shipped_at;
     const returnShippedAt = shippedAt ? new Date(shippedAt).toLocaleString() : '-';
@@ -1407,7 +1515,7 @@ export default function JobOrdersPage() {
           <p><strong>Rider Number:</strong> ${returnRiderPhone}</p>
           <p><strong>Tracking Number:</strong> ${returnTrackingNumber}</p>
           <p><strong>Tracking Link:</strong> ${returnTrackingLink}</p>
-          <p><strong>Customer Marked Shipped At:</strong> ${returnShippedAt}</p>
+          <p><strong>Return Transport Started At:</strong> ${returnShippedAt}</p>
           <p style="margin-top: 0.75rem; color: #6b7280;">Confirm this after staff has physically received and verified the returned defective item.</p>
         </div>
         ${refundLines.length > 0 ? `
@@ -2193,7 +2301,7 @@ export default function JobOrdersPage() {
                             <span className="size-1.5 rounded-full bg-current opacity-70" aria-hidden="true" />
                             {getOrderStatusPresentation(order.status).label}
                           </span>
-                          {order.customerReceiptStatus === 'disputed' ? (
+                          {!isPosOrder(order) && (order.customerReceiptStatus === 'disputed' ? (
                             <span className="inline-flex items-center rounded-full bg-rose-100 px-2.5 py-1 text-xs font-semibold text-rose-700 dark:bg-rose-900/30 dark:text-rose-300">
                               Customer Dispute
                             </span>
@@ -2205,7 +2313,7 @@ export default function JobOrdersPage() {
                             <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
                               Receipt Pending
                             </span>
-                          ) : null}
+                          ) : null)}
                         </div>
                       </td>
                       <td className="box-border px-4 py-4 align-top">
@@ -2639,18 +2747,46 @@ export default function JobOrdersPage() {
                       <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Delivery awareness</p>
                       <p className="mt-1 text-sm font-semibold text-gray-900 dark:text-white">Official status: {formatLogisticsStatus(viewOrder.status)}</p>
                     </div>
-                    {viewOrder.customerReceiptStatus === 'disputed' ? (
+                    {!isPosOrder(viewOrder) && (viewOrder.customerReceiptStatus === 'disputed' ? (
                       <span className="rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-700 dark:bg-rose-900/30 dark:text-rose-300">Customer Dispute</span>
                     ) : viewOrder.customerReceiptStatus === 'confirmed' ? (
                       <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">Receipt Confirmed</span>
                     ) : viewOrder.status === 'delivered' ? (
                       <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">Receipt Pending</span>
-                    ) : null}
+                    ) : null)}
                   </div>
                   {viewOrder.activeDeliveryDispute && (
-                    <p className="mt-2 text-xs text-rose-700 dark:text-rose-300">
-                      Report reason: {viewOrder.activeDeliveryDispute.reason.replace(/_/g, ' ')} ({viewOrder.activeDeliveryDispute.status})
-                    </p>
+                    <section className="mt-4 rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-100" aria-label="Customer Dispute">
+                      <h3 className="font-semibold">Customer Dispute</h3>
+                      <dl className="mt-3 grid gap-2 sm:grid-cols-2">
+                        <div>
+                          <dt className="text-xs font-semibold uppercase tracking-wide text-rose-700 dark:text-rose-300">Reason</dt>
+                          <dd className="mt-1 capitalize">{viewOrder.activeDeliveryDispute.reason.replace(/_/g, ' ')}</dd>
+                        </div>
+                        <div>
+                          <dt className="text-xs font-semibold uppercase tracking-wide text-rose-700 dark:text-rose-300">Status</dt>
+                          <dd className="mt-1 capitalize">{viewOrder.activeDeliveryDispute.status.replace(/_/g, ' ')}</dd>
+                        </div>
+                        {viewOrder.activeDeliveryDispute.reported_at && (
+                          <div>
+                            <dt className="text-xs font-semibold uppercase tracking-wide text-rose-700 dark:text-rose-300">Reported</dt>
+                            <dd className="mt-1">{new Date(viewOrder.activeDeliveryDispute.reported_at).toLocaleString()}</dd>
+                          </div>
+                        )}
+                        {viewOrder.latest_refund && (
+                          <div>
+                            <dt className="text-xs font-semibold uppercase tracking-wide text-rose-700 dark:text-rose-300">Related Refund</dt>
+                            <dd className="mt-1 capitalize">{String(viewOrder.latest_refund.status || '').replace(/_/g, ' ')}</dd>
+                          </div>
+                        )}
+                        {viewOrder.activeDeliveryDispute.notes && (
+                          <div className="sm:col-span-2">
+                            <dt className="text-xs font-semibold uppercase tracking-wide text-rose-700 dark:text-rose-300">Customer Explanation</dt>
+                            <dd className="mt-1 whitespace-pre-wrap">{viewOrder.activeDeliveryDispute.notes}</dd>
+                          </div>
+                        )}
+                      </dl>
+                    </section>
                   )}
                 </div>
 
@@ -2902,7 +3038,7 @@ export default function JobOrdersPage() {
                     Arrange Return Pickup
                   </button>
                 )}
-                {viewOrder.status === "shipped" && viewOrder.carrierCompany !== SHOP_OWNED_LOGISTICS && !canConfirmReturnReceived(viewOrder) && (
+                {viewOrder.status === "shipped" && !isPosOrder(viewOrder) && viewOrder.carrierCompany !== SHOP_OWNED_LOGISTICS && !canConfirmReturnReceived(viewOrder) && (
                   <button
                     onClick={() => handleActivatePickup(viewOrder.id)}
                     disabled={isActivatingReceive || Boolean(viewOrder.pickup_enabled)}

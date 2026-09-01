@@ -7,6 +7,7 @@ use App\Models\DeliveryDispute;
 use App\Models\Logistics\Shipment;
 use App\Models\Order;
 use App\Models\OrderRefund;
+use App\Models\PosTransaction;
 use App\Models\User;
 use App\Services\Logistics\DeliveryScheduleService;
 use App\Services\OrderRefundService;
@@ -87,6 +88,15 @@ class StaffOrderController extends Controller
             (int) $shopOwnerId,
             $orders->pluck('id')->map(fn ($id) => (int) $id)->all(),
         );
+        $posOrderLookup = Schema::hasTable('pos_transactions')
+            ? PosTransaction::query()
+                ->where('shop_owner_id', $shopOwnerId)
+                ->where('module_type', 'retail')
+                ->whereIn('module_reference_id', $orders->pluck('id'))
+                ->pluck('module_reference_id')
+                ->mapWithKeys(fn ($orderId) => [(int) $orderId => true])
+                ->all()
+            : [];
         $orderShipments = $this->latestShipmentLookup(
             (int) $shopOwnerId,
             'order',
@@ -118,7 +128,7 @@ class StaffOrderController extends Controller
             ->groupBy('source_id')
             ->map(fn ($shipments) => $shipments->first());
 
-        $orders = $orders->map(function ($order) use ($retailPosRefundSummaries, $includeRefundItems, $deliveryCancellations, $orderShipments, $refundShipments) {
+        $orders = $orders->map(function ($order) use ($retailPosRefundSummaries, $posOrderLookup, $includeRefundItems, $deliveryCancellations, $orderShipments, $refundShipments) {
             $itemSubtotal = (float) ($order->total_amount ?? 0);
             $shippingFee = (float) ($order->shipping_fee ?? 0);
             $hasStoredVat = $order->vat_amount !== null;
@@ -171,6 +181,7 @@ class StaffOrderController extends Controller
                 'vat_rate' => $vatRate,
                 'grand_total' => $itemSubtotal + $shippingFee + ($vatAmount ?? 0.0),
                 'status' => $order->status,
+                'is_pos_order' => isset($posOrderLookup[(int) $order->id]),
                 'customer_receipt_status' => (string) ($order->customer_receipt_status ?? 'pending'),
                 'customer_received_at' => optional($order->customer_received_at)->toISOString(),
                 'customer_receipt_disputed_at' => optional($order->customer_receipt_disputed_at)->toISOString(),
@@ -326,6 +337,12 @@ class StaffOrderController extends Controller
                 'refund_return',
             )->get($latestRefund->id)
             : null;
+        $isPosOrder = Schema::hasTable('pos_transactions')
+            && PosTransaction::query()
+                ->where('shop_owner_id', $shopOwnerId)
+                ->where('module_type', 'retail')
+                ->where('module_reference_id', $order->id)
+                ->exists();
 
         return response()->json([
             'id' => $order->id,
@@ -346,6 +363,7 @@ class StaffOrderController extends Controller
             'vat_rate' => $vatRate,
             'grand_total' => $itemSubtotal + $shippingFee + ($vatAmount ?? 0.0),
             'status' => $order->status,
+            'is_pos_order' => $isPosOrder,
             'customer_receipt_status' => (string) ($order->customer_receipt_status ?? 'pending'),
             'customer_received_at' => optional($order->customer_received_at)->toISOString(),
             'customer_receipt_disputed_at' => optional($order->customer_receipt_disputed_at)->toISOString(),
@@ -409,6 +427,8 @@ class StaffOrderController extends Controller
         ?DeliveryDispute $dispute = null,
     ): array
     {
+        $returnDeliveryMethod = $refund->returnDeliveryMethod();
+
         return [
             'id' => (int) $refund->id,
             'status' => (string) $refund->status,
@@ -419,6 +439,7 @@ class StaffOrderController extends Controller
             'finance_status' => (string) ($refund->finance_status ?? 'pending'),
             'return_status' => (string) ($refund->return_status ?? 'awaiting_approval'),
             'return_source' => (string) ($refund->return_source ?? 'customer'),
+            'return_delivery_method' => $returnDeliveryMethod,
             'customer_return_tracking_number' => $refund->customer_return_tracking_number,
             'customer_return_carrier' => $refund->customer_return_carrier,
             'customer_return_rider_name' => $refund->customer_return_rider_name,
@@ -442,7 +463,7 @@ class StaffOrderController extends Controller
             'customer_dispute_evidence' => $this->serializeCustomerDisputeEvidence($dispute),
             'items' => $items,
             'return_logistics' => $this->serializeShipmentSummary(
-                $shipment,
+                $returnDeliveryMethod === 'third_party' ? null : $shipment,
                 ['inbound', 'return_to_shop'],
                 $this->refundLogisticsFallback($refund),
             ),
@@ -562,7 +583,17 @@ class StaffOrderController extends Controller
 
     private function refundLogisticsFallback(OrderRefund $refund): array
     {
-        $prefix = (string) ($refund->return_source ?? 'customer') === 'staff' ? 'staff_return_' : 'customer_return_';
+        $returnSource = strtolower((string) ($refund->return_source ?? ''));
+        $staffCarrier = strtolower(trim((string) ($refund->staff_return_carrier ?? '')));
+        $prefix = match ($refund->returnDeliveryMethod()) {
+            'shop_owned' => 'staff_return_',
+            'third_party' => $returnSource === 'staff'
+                ? 'staff_return_'
+                : 'customer_return_',
+            default => $returnSource === 'staff' || $staffCarrier === 'shop-owned logistics'
+                ? 'staff_return_'
+                : 'customer_return_',
+        };
 
         return [
             'carrier' => $refund->{$prefix.'carrier'},
@@ -758,7 +789,7 @@ class StaffOrderController extends Controller
             ->where('order_id', $order->id)
             ->where('shop_owner_id', $shopOwnerId)
             ->where('flow_type', 'request_approval')
-            ->whereIn('status', ['requested', 'pending_approval', 'processing', 'succeeded'])
+            ->whereIn('status', ['requested', 'pending_approval', 'approved', 'processing', 'succeeded'])
             ->latest('id')
             ->first();
 
@@ -794,7 +825,8 @@ class StaffOrderController extends Controller
 
     public function arrangeReturnPickup(Request $request, $id)
     {
-        $isShopOwned = $request->input('delivery_method') === 'shop_owned';
+        $deliveryMethod = strtolower(trim((string) $request->input('delivery_method')));
+        $isShopOwned = $deliveryMethod === 'shop_owned';
         $validated = $request->validate([
             'delivery_method' => 'nullable|in:shop_owned,third_party',
             'tracking_number' => ($isShopOwned ? 'nullable' : 'required').'|string|max:255',
@@ -805,6 +837,7 @@ class StaffOrderController extends Controller
             'note' => 'nullable|string|max:1000',
             'shipped_at' => 'nullable|date',
         ]);
+        $validated['delivery_method'] = $deliveryMethod !== '' ? $deliveryMethod : 'third_party';
 
         if ($isShopOwned) {
             $validated['carrier_company'] = 'Shop-owned logistics';
@@ -831,11 +864,25 @@ class StaffOrderController extends Controller
             return response()->json(['error' => 'Order not found'], 404);
         }
 
+        if ($isShopOwned) {
+            $coverage = $this->shopOwnedCoverage($order);
+            if (! ($coverage['available'] ?? false)) {
+                $message = 'Shop-owned logistics is unavailable for this return address.';
+
+                return response()->json([
+                    'success' => false,
+                    'message' => $message,
+                    'errors' => ['delivery_method' => [$message]],
+                    'shop_owned_coverage' => $coverage,
+                ], 422);
+            }
+        }
+
         $refund = OrderRefund::query()
             ->where('order_id', $order->id)
             ->where('shop_owner_id', $shopOwnerId)
             ->where('flow_type', 'request_approval')
-            ->whereIn('status', ['requested', 'pending_approval', 'processing', 'succeeded'])
+            ->whereIn('status', ['requested', 'pending_approval', 'approved', 'processing', 'succeeded'])
             ->latest('id')
             ->first();
 
@@ -846,11 +893,22 @@ class StaffOrderController extends Controller
             ], 404);
         }
 
-        $result = $this->orderRefundService->arrangeStaffReturnPickup(
-            refund: $refund,
-            pickupData: $validated,
-            staffId: (int) $user->id,
-        );
+        try {
+            $result = $this->orderRefundService->arrangeStaffReturnPickup(
+                refund: $refund,
+                pickupData: $validated,
+                staffId: (int) $user->id,
+            );
+        } catch (ValidationException $exception) {
+            $errors = $exception->errors();
+            $message = collect($errors)->flatten()->first() ?? 'Return pickup cannot be arranged right now.';
+
+            return response()->json([
+                'success' => false,
+                'message' => $message,
+                'errors' => $errors,
+            ], 422);
+        }
 
         if (($result['result'] ?? null) === 'invalid_state') {
             return response()->json([
@@ -1010,6 +1068,18 @@ class StaffOrderController extends Controller
                     'success' => false,
                     'message' => 'This order does not belong to your shop',
                 ], 403);
+            }
+
+            if (Schema::hasTable('pos_transactions')
+                && PosTransaction::query()
+                    ->where('shop_owner_id', $shopOwnerId)
+                    ->where('module_type', 'retail')
+                    ->where('module_reference_id', $order->id)
+                    ->exists()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'POS sales do not require pickup confirmation.',
+                ], 422);
             }
 
             // Check if status is shipped

@@ -6,6 +6,7 @@ use App\Enums\OrderStatus;
 use App\Models\DeliveryDispute;
 use App\Models\Logistics\Shipment;
 use App\Models\Order;
+use App\Models\PosTransaction;
 use Illuminate\Support\Facades\DB;
 
 class OrderReceiptService
@@ -14,6 +15,10 @@ class OrderReceiptService
     {
         return DB::transaction(function () use ($order): array {
             $lockedOrder = Order::query()->lockForUpdate()->findOrFail($order->id);
+
+            if ($this->isPosOrder($lockedOrder)) {
+                return $this->invalid($lockedOrder, 'POS sales do not require customer receipt confirmation.');
+            }
 
             if ($this->hasActiveDispute($lockedOrder)) {
                 return $this->invalid($lockedOrder, 'Receipt confirmation is unavailable while this order is under investigation.');
@@ -61,9 +66,13 @@ class OrderReceiptService
         });
     }
 
-    public function canConfirm(Order $order, ?string $currentLegStatus = null): bool
+    public function canConfirm(Order $order, ?string $currentLegStatus = null, ?bool $isPosOrder = null): bool
     {
         if ((string) ($order->customer_receipt_status ?? 'pending') !== 'pending') {
+            return false;
+        }
+
+        if ($isPosOrder ?? $this->isPosOrder($order)) {
             return false;
         }
 
@@ -82,6 +91,15 @@ class OrderReceiptService
                 ['awaiting_proof_approval', 'proof_correction_required'],
                 true,
             );
+    }
+
+    public function isPosOrder(Order $order): bool
+    {
+        return PosTransaction::query()
+            ->where('shop_owner_id', (int) $order->shop_owner_id)
+            ->where('module_type', 'retail')
+            ->where('module_reference_id', (int) $order->id)
+            ->exists();
     }
 
     public function isShopOwned(Order $order): bool

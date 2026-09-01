@@ -10,6 +10,7 @@ use App\Models\Notification;
 use App\Models\Logistics\Shipment;
 use App\Models\Order;
 use App\Models\OrderRefund;
+use App\Models\PosTransaction;
 use App\Models\ProductReview;
 use App\Models\Product;
 use App\Models\ProductVariant;
@@ -110,9 +111,21 @@ class OrderController extends Controller
             ->orderBy('created_at', 'desc')
             ->get();
 
+        $orderIds = $orderCollection->pluck('id')->all();
+        $shopOwnerIds = $orderCollection->pluck('shop_owner_id')->filter()->unique()->values()->all();
+        $posOrderLookup = ($orderIds !== [] && $shopOwnerIds !== [])
+            ? PosTransaction::query()
+                ->where('module_type', 'retail')
+                ->whereIn('shop_owner_id', $shopOwnerIds)
+                ->whereIn('module_reference_id', $orderIds)
+                ->pluck('module_reference_id')
+                ->mapWithKeys(fn ($orderId) => [(int) $orderId => true])
+                ->all()
+            : [];
+
         $reviewedOrderLookup = ProductReview::query()
             ->where('user_id', $user->id)
-            ->whereIn('order_id', $orderCollection->pluck('id')->all())
+            ->whereIn('order_id', $orderIds)
             ->pluck('order_id')
             ->mapWithKeys(fn ($orderId) => [(int) $orderId => true])
             ->all();
@@ -156,6 +169,7 @@ class OrderController extends Controller
 
         $refundShipmentLookup = Shipment::query()
             ->where('source_type', 'order_refund')
+            ->whereIn('shop_owner_id', $orderCollection->pluck('shop_owner_id')->filter()->all())
             ->whereIn('source_id', $orderCollection->flatMap(fn (Order $order) => $order->refunds->pluck('id'))->all())
             ->orderByDesc('id')
             ->with('legs.assignments.riderProfile')
@@ -175,7 +189,7 @@ class OrderController extends Controller
             ->all();
 
         $orders = $orderCollection
-            ->map(function (Order $order) use ($reviewedOrderLookup, $logisticsShipmentLookup, $refundShipmentLookup) {
+            ->map(function (Order $order) use ($reviewedOrderLookup, $logisticsShipmentLookup, $refundShipmentLookup, $posOrderLookup) {
                 $this->reconcilePendingOrderPaymentWithGateway($order);
                 $order->refresh();
 
@@ -209,8 +223,11 @@ class OrderController extends Controller
                     $latestRefund = $order->refunds->first();
                 }
 
-                $refundShipment = $latestRefund ? ($refundShipmentLookup[(int) $latestRefund->id] ?? null) : null;
-                $isShopOwnedReturn = strtolower((string) ($latestRefund?->staff_return_carrier ?? '')) === 'shop-owned logistics';
+                $returnDeliveryMethod = $latestRefund?->returnDeliveryMethod();
+                $refundShipment = $latestRefund && $returnDeliveryMethod !== 'third_party'
+                    ? ($refundShipmentLookup[(int) $latestRefund->id] ?? null)
+                    : null;
+                $isShopOwnedReturn = $returnDeliveryMethod === 'shop_owned';
 
                 $refundStatus = null;
                 $refundStatusNote = null;
@@ -320,7 +337,11 @@ class OrderController extends Controller
                     'customer_receipt_status' => $receiptStatus,
                     'customer_received_at' => optional($order->customer_received_at)->toISOString(),
                     'customer_receipt_disputed_at' => optional($order->customer_receipt_disputed_at)->toISOString(),
-                    'can_confirm_receipt' => $this->orderReceiptService->canConfirm($order, $shipment['status'] ?? null),
+                    'can_confirm_receipt' => $this->orderReceiptService->canConfirm(
+                        $order,
+                        $shipment['status'] ?? null,
+                        isset($posOrderLookup[(int) $order->id]),
+                    ),
                     'active_delivery_dispute' => $activeDispute ? [
                         'id' => (int) $activeDispute->id,
                         'status' => (string) $activeDispute->status,
@@ -334,8 +355,9 @@ class OrderController extends Controller
                     'refund_status_note' => $refundStatusNote,
                     'refund_stage' => $latestRefund ? [
                         'id' => $latestRefund->id,
-                        'logistics_shipment_id' => $refundShipment['id'] ?? null,
+                        'logistics_shipment_id' => $returnDeliveryMethod === 'third_party' ? null : ($refundShipment['id'] ?? null),
                         'is_shop_owned_return' => $isShopOwnedReturn,
+                        'return_delivery_method' => $returnDeliveryMethod,
                         'delivery_rider_name' => $isShopOwnedReturn ? ($refundShipment['rider_name'] ?? null) : null,
                         'delivery_rider_phone' => $isShopOwnedReturn ? ($refundShipment['rider_phone'] ?? null) : null,
                         'delivery_reference' => $isShopOwnedReturn && $refundShipment ? 'RET-' . $refundShipment['id'] : null,
@@ -702,16 +724,21 @@ class OrderController extends Controller
         }
 
         $updatedRefund = $result['refund'] ?? $refund->fresh();
-        $refundShipment = Shipment::query()
-            ->where('source_type', 'order_refund')
-            ->where('source_id', $updatedRefund->id)
-            ->where('purpose', 'refund_return')
-            ->with([
-                'legs' => fn ($query) => $query->orderBy('sequence')->orderBy('id'),
-                'legs.assignments.riderProfile',
-            ])
-            ->latest('id')
-            ->first();
+        $returnDeliveryMethod = $updatedRefund->returnDeliveryMethod();
+        $refundShipment = $returnDeliveryMethod === 'third_party'
+            ? null
+            : Shipment::query()
+                ->where('shop_owner_id', $updatedRefund->shop_owner_id)
+                ->where('source_type', 'order_refund')
+                ->where('source_id', $updatedRefund->id)
+                ->where('purpose', 'refund_return')
+                ->where('status', '!=', 'cancelled')
+                ->with([
+                    'legs' => fn ($query) => $query->orderBy('sequence')->orderBy('id'),
+                    'legs.assignments.riderProfile',
+                ])
+                ->latest('id')
+                ->first();
         $refundLeg = $refundShipment?->legs->last();
         $activeAssignment = $refundLeg?->assignments->first(
             fn ($assignment) => in_array($assignment->status, ['assigned', 'accepted'], true)
@@ -723,11 +750,14 @@ class OrderController extends Controller
             'refund' => [
                 'id' => $updatedRefund->id,
                 'logistics_shipment_id' => $refundShipment?->id,
-                'is_shop_owned_return' => strtolower((string) ($updatedRefund->staff_return_carrier ?? '')) === 'shop-owned logistics',
+                'is_shop_owned_return' => $returnDeliveryMethod === 'shop_owned',
+                'return_delivery_method' => $returnDeliveryMethod,
                 'return_status' => (string) $updatedRefund->return_status,
                 'return_source' => (string) ($updatedRefund->return_source ?? 'customer'),
                 'customer_return_tracking_number' => $updatedRefund->customer_return_tracking_number,
                 'customer_return_carrier' => $updatedRefund->customer_return_carrier,
+                'customer_return_rider_name' => $updatedRefund->customer_return_rider_name,
+                'customer_return_rider_phone' => $updatedRefund->customer_return_rider_phone,
                 'customer_return_tracking_link' => $updatedRefund->customer_return_tracking_link,
                 'customer_return_shipped_at' => optional($updatedRefund->customer_return_shipped_at)->toDateTimeString(),
                 'staff_return_tracking_number' => $updatedRefund->staff_return_tracking_number,

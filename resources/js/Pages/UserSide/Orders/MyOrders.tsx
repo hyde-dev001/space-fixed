@@ -136,6 +136,7 @@ type Order = {
     finance_status: string;
     return_status: string;
     return_source?: string;
+    return_delivery_method?: 'shop_owned' | 'third_party' | string | null;
     customer_return_tracking_number?: string | null;
     customer_return_carrier?: string | null;
     customer_return_rider_name?: string | null;
@@ -735,8 +736,12 @@ const MyOrders: React.FC = () => {
         ...currentOrder,
         refund_stage: currentOrder.refund_stage ? {
           ...currentOrder.refund_stage,
-          logistics_shipment_id: data.refund?.logistics_shipment_id || currentOrder.refund_stage.logistics_shipment_id,
+          logistics_shipment_id: data.refund?.logistics_shipment_id ?? (isShopOwnedReturn
+            ? currentOrder.refund_stage.logistics_shipment_id
+            : null),
           is_shop_owned_return: data.refund?.is_shop_owned_return ?? currentOrder.refund_stage.is_shop_owned_return,
+          return_delivery_method: data.refund?.return_delivery_method
+            || (isShopOwnedReturn ? 'shop_owned' : 'third_party'),
           delivery_rider_name: data.refund?.delivery_rider_name || null,
           delivery_rider_phone: data.refund?.delivery_rider_phone || null,
           delivery_reference: data.refund?.delivery_reference || null,
@@ -744,6 +749,8 @@ const MyOrders: React.FC = () => {
           return_source: String(data.refund?.return_source || 'customer'),
           customer_return_tracking_number: data.refund?.customer_return_tracking_number || (isShopOwnedReturn ? null : trackingValue),
           customer_return_carrier: data.refund?.customer_return_carrier || (isShopOwnedReturn ? null : carrierValue),
+          customer_return_rider_name: data.refund?.customer_return_rider_name || null,
+          customer_return_rider_phone: data.refund?.customer_return_rider_phone || null,
           customer_return_tracking_link: data.refund?.customer_return_tracking_link || null,
           customer_return_shipped_at: data.refund?.customer_return_shipped_at || (isShopOwnedReturn ? null : new Date().toISOString()),
           staff_return_tracking_number: data.refund?.staff_return_tracking_number || null,
@@ -2209,8 +2216,37 @@ const MyOrders: React.FC = () => {
                         );
                         const returnStatus = String(stage?.return_status || '').toLowerCase();
                         const returnSource = String(stage?.return_source || 'customer').toLowerCase();
-                        const isShopOwnedReturn = Boolean(stage?.is_shop_owned_return);
-                        const hasStaffPickupDetails = returnSource === 'staff' || returnStatus === 'pending_staff_pickup';
+                        const returnDeliveryMethod = String(
+                          stage?.return_delivery_method || (stage?.is_shop_owned_return ? 'shop_owned' : 'third_party'),
+                        ).toLowerCase();
+                        const isShopOwnedReturn = returnDeliveryMethod === 'shop_owned';
+                        const isThirdPartyReturn = returnDeliveryMethod === 'third_party';
+                        const hasThirdPartyTracking = Boolean(
+                          stage?.customer_return_tracking_number
+                            || stage?.customer_return_carrier
+                            || stage?.customer_return_tracking_link
+                            || stage?.staff_return_tracking_number
+                            || stage?.staff_return_carrier
+                            || stage?.staff_return_tracking_link,
+                        );
+                        const hasStaffPickupDetails = returnSource === 'staff'
+                          || returnStatus === 'pending_staff_pickup'
+                          || (isThirdPartyReturn && hasThirdPartyTracking);
+                        const returnCarrier = isShopOwnedReturn
+                          ? stage?.staff_return_carrier
+                          : (stage?.customer_return_carrier || stage?.staff_return_carrier);
+                        const returnRiderName = isShopOwnedReturn
+                          ? (stage?.delivery_rider_name || 'Awaiting rider assignment')
+                          : (stage?.customer_return_rider_name || stage?.staff_return_rider_name || '-');
+                        const returnRiderPhone = isShopOwnedReturn
+                          ? (stage?.delivery_rider_phone || '-')
+                          : (stage?.customer_return_rider_phone || stage?.staff_return_rider_phone || '-');
+                        const returnTrackingNumber = isShopOwnedReturn
+                          ? (stage?.delivery_reference || '-')
+                          : (stage?.customer_return_tracking_number || stage?.staff_return_tracking_number || '-');
+                        const returnTrackingLink = isShopOwnedReturn
+                          ? null
+                          : (stage?.customer_return_tracking_link || stage?.staff_return_tracking_link);
                         const hasStaffPickup = !isCancelledRefundOrder && (isRefundProcessing || hasStaffPickupDetails || (isRefundedOrder && Boolean(stage)));
                         const hasBothDetailSections = hasShippingInfo && hasStaffPickup;
 
@@ -2282,10 +2318,12 @@ const MyOrders: React.FC = () => {
                                 </div>
                               )}
 
-                              {/* Staff-Arranged Return Pickup */}
+                              {/* Return transport */}
                               {hasStaffPickup && (
                                 <div className={hasBothDetailSections ? '' : 'xl:col-span-2'}>
-                                  <p className="text-sm text-gray-500 uppercase tracking-wider mb-3">Staff-Arranged Return Pickup</p>
+                                  <p className="text-sm text-gray-500 uppercase tracking-wider mb-3">
+                                    {isShopOwnedReturn ? 'Shop-Owned Return Pickup' : 'Third-Party Return'}
+                                  </p>
                                   <div className="space-y-3 sm:grid sm:grid-cols-2 sm:gap-y-4 sm:gap-x-10 sm:space-y-0">
                                     <div className="flex items-start justify-between gap-3 sm:block">
                                       <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">Pickup Status</p>
@@ -2293,19 +2331,19 @@ const MyOrders: React.FC = () => {
                                     </div>
                                     <div className="flex items-start justify-between gap-3 sm:block">
                                       <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">Carrier Company</p>
-                                      <p className="text-sm text-black font-medium text-right sm:text-left">{stage?.staff_return_carrier || '-'}</p>
+                                      <p className="text-sm text-black font-medium text-right sm:text-left">{returnCarrier || '-'}</p>
                                     </div>
                                     <div className="flex items-start justify-between gap-3 sm:block">
                                       <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">Rider Name</p>
-                                      <p className="text-sm text-black font-medium text-right sm:text-left">{isShopOwnedReturn ? (stage?.delivery_rider_name || 'Awaiting rider assignment') : (stage?.staff_return_rider_name || '-')}</p>
+                                      <p className="text-sm text-black font-medium text-right sm:text-left">{returnRiderName}</p>
                                     </div>
                                     <div className="flex items-start justify-between gap-3 sm:block">
                                       <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">Rider Phone</p>
-                                      <p className="text-sm text-black font-medium text-right sm:text-left">{isShopOwnedReturn ? (stage?.delivery_rider_phone || '-') : (stage?.staff_return_rider_phone || '-')}</p>
+                                      <p className="text-sm text-black font-medium text-right sm:text-left">{returnRiderPhone}</p>
                                     </div>
                                     <div className="flex items-start justify-between gap-3 sm:block">
                                       <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">{isShopOwnedReturn ? 'Return Reference' : 'Tracking Number'}</p>
-                                      <p className="text-sm text-black font-medium text-right sm:text-left">{isShopOwnedReturn ? (stage?.delivery_reference || '-') : (stage?.staff_return_tracking_number || '-')}</p>
+                                      <p className="text-sm text-black font-medium text-right sm:text-left">{returnTrackingNumber}</p>
                                     </div>
                                     <div className="flex items-start justify-between gap-3 sm:block">
                                       <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">Arranged At</p>
@@ -2314,14 +2352,14 @@ const MyOrders: React.FC = () => {
                                     {!isShopOwnedReturn && <div className="sm:col-span-2">
                                       <div className="flex items-start justify-between gap-3 sm:block">
                                         <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">Tracking Link</p>
-                                        {stage?.staff_return_tracking_link ? (
+                                        {returnTrackingLink ? (
                                           <a
-                                            href={stage.staff_return_tracking_link}
+                                            href={returnTrackingLink}
                                             target="_blank"
                                             rel="noreferrer"
                                             className="max-w-[58%] text-right text-sm text-black underline break-all sm:max-w-none sm:text-left"
                                           >
-                                            {stage.staff_return_tracking_link}
+                                            {returnTrackingLink}
                                           </a>
                                         ) : (
                                           <p className="text-right text-sm text-black font-medium sm:text-left">-</p>
