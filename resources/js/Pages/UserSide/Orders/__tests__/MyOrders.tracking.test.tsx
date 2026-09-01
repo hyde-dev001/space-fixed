@@ -225,6 +225,35 @@ describe('MyOrders delivery tracking', () => {
     ));
   });
 
+  it('renders third-party return tracking without a Shop-owned shipment', () => {
+    order.status = 'delivered';
+    order.refund_stage = {
+      id: 5,
+      logistics_shipment_id: null,
+      is_shop_owned_return: false,
+      return_delivery_method: 'third_party',
+      status: 'processing',
+      shop_owner_status: 'approved',
+      finance_status: 'approved',
+      return_status: 'in_transit',
+      return_source: 'customer',
+      customer_return_tracking_number: 'TRK-THIRD-PARTY-002',
+      customer_return_carrier: 'LBC',
+      customer_return_rider_name: 'Maria Rider',
+      customer_return_rider_phone: '09171234568',
+      customer_return_tracking_link: 'https://example.test/returns/TRK-THIRD-PARTY-002',
+    };
+
+    render(<MyOrders />);
+
+    expect(screen.getByText('Third-Party Return')).toBeInTheDocument();
+    expect(screen.getByText('LBC')).toBeInTheDocument();
+    expect(screen.getByText('TRK-THIRD-PARTY-002')).toBeInTheDocument();
+    expect(screen.getByText('Maria Rider')).toBeInTheDocument();
+    expect(screen.queryByText('Shop-Owned Return Pickup')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Track Return' })).not.toBeInTheDocument();
+  });
+
   it('flags a failed attempt and links to its shipment details', () => {
     order.delivery_has_failed_attempt = true;
     render(<MyOrders />);

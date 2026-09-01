@@ -7,6 +7,7 @@ use App\Models\PosTransaction;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\ShopOwner;
+use App\Services\OrderReceiptService;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\Test;
@@ -74,5 +75,17 @@ class RetailPosPaymentFlowTest extends TestCase
         $this->assertSame('paid', (string) $transaction->status);
         $this->assertSame(9, (int) $product->fresh()->stock_quantity);
         $this->assertSame($variant->id, OrderItem::where('order_id', $transaction->module_reference_id)->value('product_variant_id'));
+
+        $order = $transaction->sourceOrder()->firstOrFail();
+        $receiptService = app(OrderReceiptService::class);
+        $this->assertTrue(
+            $receiptService->isPosOrder($order),
+            'Retail POS orders must be identified from the canonical POS transaction source.',
+        );
+        $this->assertFalse($receiptService->canConfirm($order));
+        $this->assertSame(
+            'invalid_state',
+            $receiptService->confirm($order)['result'],
+        );
     }
 }

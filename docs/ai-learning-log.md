@@ -48,3 +48,8 @@
 
 - Keep payment, delivery-plan locking, external courier tracking, and physical repair handoff as separate gates. Customer-arranged return tracking remains editable after balance payment and becomes immutable only after the employee records the handoff.
 - Derive repair POS customer identity from the locked repair request. Never persist UI sentinel IDs or caller-supplied guest details when the repair already contains the authoritative customer snapshot.
+
+## 2026-09-01 - Retail return method authority
+
+- Persist the selected retail return method as the authority: valid Staff-entered third-party tracking starts `in_transit` in customer return fields without creating a Shop-owned shipment; physical receipt and inspection remain a separate Staff action.
+- For Shop-owned returns, only the tenant-scoped canonical delivered return leg can authorize inspection. Stale Shop-owned shipment records must not override an explicit third-party method, and POS sales do not need customer receipt acknowledgement.

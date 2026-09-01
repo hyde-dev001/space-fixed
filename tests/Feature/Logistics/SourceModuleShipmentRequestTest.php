@@ -202,11 +202,36 @@ class SourceModuleShipmentRequestTest extends TestCase
 
     public function test_staff_can_arrange_a_shop_owned_return_pickup(): void
     {
-        $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
+        $shop = ShopOwner::factory()->create([
+            'registration_type' => 'company',
+            'shop_latitude' => 14.5995,
+            'shop_longitude' => 120.9842,
+        ]);
+        LogisticsSetting::create([
+            'shop_owner_id' => $shop->id,
+            'coverage_radius_km' => 20,
+        ]);
         $staff = User::factory()->create(['shop_owner_id' => $shop->id, 'role' => 'STAFF']);
         Permission::findOrCreate('access-staff-job-orders', 'user');
         $staff->givePermissionTo('access-staff-job-orders');
-        $order = Order::factory()->create(['shop_owner_id' => $shop->id]);
+        $customer = User::factory()->create();
+        $address = UserAddress::create([
+            'user_id' => $customer->id,
+            'name' => 'Customer',
+            'phone' => '09171234567',
+            'region' => 'NCR',
+            'province' => 'Metro Manila',
+            'city' => 'Manila',
+            'barangay' => 'Ermita',
+            'address_line' => '1 Test Street',
+            'latitude' => 14.60,
+            'longitude' => 120.98,
+        ]);
+        $order = Order::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'customer_id' => $customer->id,
+            'address_id' => $address->id,
+        ]);
         $refund = OrderRefund::factory()->create([
             'order_id' => $order->id,
             'shop_owner_id' => $shop->id,

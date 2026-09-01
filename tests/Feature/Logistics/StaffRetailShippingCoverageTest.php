@@ -5,6 +5,7 @@ namespace Tests\Feature\Logistics;
 use App\Models\Logistics\LogisticsSetting;
 use App\Models\Logistics\Shipment;
 use App\Models\Order;
+use App\Models\OrderRefund;
 use App\Models\ShopOwner;
 use App\Models\User;
 use App\Models\UserAddress;
@@ -192,6 +193,54 @@ class StaffRetailShippingCoverageTest extends TestCase
             'source_type' => 'order',
             'source_id' => $this->order->id,
             'purpose' => 'retail_delivery',
+        ]);
+    }
+
+    public function test_outside_coverage_rejects_shop_owned_return_but_allows_third_party_return(): void
+    {
+        $this->moveAddressOutsideCoverage();
+        $refund = OrderRefund::factory()->create([
+            'order_id' => $this->order->id,
+            'customer_id' => $this->order->customer_id,
+            'shop_owner_id' => $this->shop->id,
+            'return_status' => 'pending_customer_shipment',
+            'return_source' => 'customer',
+        ]);
+
+        $this->actingAs($this->staff, 'user')
+            ->postJson("/api/staff/orders/{$this->order->id}/arrange-return-pickup", [
+                'delivery_method' => 'shop_owned',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath('shop_owned_coverage.reason', 'outside_coverage');
+
+        $this->assertDatabaseHas('order_refunds', [
+            'id' => $refund->id,
+            'return_status' => 'pending_customer_shipment',
+        ]);
+        $this->assertDatabaseMissing('shipments', [
+            'source_type' => 'order_refund',
+            'source_id' => $refund->id,
+            'purpose' => 'refund_return',
+        ]);
+
+        $this->actingAs($this->staff, 'user')
+            ->postJson("/api/staff/orders/{$this->order->id}/arrange-return-pickup", [
+                'delivery_method' => 'third_party',
+                'carrier_company' => 'J&T Express',
+                'rider_name' => 'Juan Rider',
+                'rider_phone' => '09171234567',
+                'tracking_number' => 'JT-RETURN-002',
+                'tracking_link' => 'https://example.test/returns/JT-RETURN-002',
+            ])
+            ->assertOk()
+            ->assertJsonPath('refund.return_status', 'in_transit')
+            ->assertJsonPath('refund.return_source', 'customer');
+
+        $this->assertDatabaseMissing('shipments', [
+            'source_type' => 'order_refund',
+            'source_id' => $refund->id,
+            'purpose' => 'refund_return',
         ]);
     }
 

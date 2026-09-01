@@ -76,6 +76,51 @@ afterEach(() => {
 });
 
 describe('staff order shipping coverage integration', () => {
+  it('does not show receipt acknowledgement state for a POS sale', async () => {
+    const posOrder = {
+      ...makeOrder(29),
+      status: 'delivered',
+      is_pos_order: true,
+      customer_receipt_status: 'pending',
+      available_actions: [],
+    };
+    mockPage.props.initialOrders = [posOrder];
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(jsonResponse(200, [posOrder]))));
+
+    render(React.createElement(JobOrdersPage));
+    fireEvent.click(await screen.findByRole('button', { name: 'Delivered (1)' }));
+
+    expect(screen.queryByText('Receipt Pending')).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByTitle('View order details'));
+    expect(screen.queryByText('Receipt Pending')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Activate Receive' })).not.toBeInTheDocument();
+  });
+
+  it('shows customer dispute details in the Staff view modal', async () => {
+    const disputedOrder = {
+      ...makeOrder(30),
+      status: 'delivered',
+      active_delivery_dispute: {
+        id: 17,
+        status: 'investigating',
+        reason: 'item_not_received',
+        notes: 'Customer says the parcel was not handed over.',
+        reported_at: '2026-08-31T10:00:00Z',
+      },
+      available_actions: [],
+    };
+    mockPage.props.initialOrders = [disputedOrder];
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(jsonResponse(200, [disputedOrder]))));
+
+    render(React.createElement(JobOrdersPage));
+    fireEvent.click(await screen.findByRole('button', { name: 'Delivered (1)' }));
+    fireEvent.click(await screen.findByTitle('View order details'));
+
+    expect(await screen.findByText('Customer says the parcel was not handed over.')).toBeInTheDocument();
+    const disputeSection = screen.getByRole('heading', { name: 'Customer Dispute' }).closest('section') as HTMLElement;
+    expect(within(disputeSection).getByText(/2026/)).toBeInTheDocument();
+  });
+
   it('shows order details before processing a pending order', async () => {
     const pendingOrder = { ...makeOrder(1), status: 'pending', available_actions: ['processing'] };
     mockPage.props.initialOrders = [pendingOrder];
@@ -147,6 +192,49 @@ describe('staff order shipping coverage integration', () => {
     expect(source).toContain('<option value="Lalamove">Lalamove</option>');
     expect(source).toContain('<option value="J&T">J&amp;T</option>');
     expect(source).toContain('<option value="Express Padala">Express Padala</option>');
+  });
+
+  it.each([
+    ['covered', {
+      available: true,
+      reason: null,
+      distance_km: 1,
+      coverage_radius_km: 20,
+    }, '<option value="shop_owned" >Shop-owned logistics</option>'],
+    ['outside coverage', {
+      available: false,
+      reason: 'outside_coverage',
+      distance_km: 10,
+      coverage_radius_km: 1,
+    }, '<option value="shop_owned" disabled>Shop-owned logistics — unavailable'],
+  ])('renders Shop-owned return logistics as %s only when eligible', async (_label, coverage, expectedOption) => {
+    const returnOrder = {
+      ...makeOrder(74),
+      status: 'refund',
+      shop_owned_coverage: coverage,
+      latest_refund: {
+        id: 74,
+        status: 'processing',
+        shop_owner_status: 'approved',
+        finance_status: 'approved',
+        return_status: 'pending_customer_shipment',
+        flow_type: 'request_approval',
+      },
+    };
+    mockPage.props.initialOrders = [returnOrder];
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(jsonResponse(200, [returnOrder]))));
+    mockSwalFire.mockResolvedValueOnce({ isConfirmed: false });
+
+    render(React.createElement(JobOrdersPage));
+    fireEvent.click(await screen.findByRole('button', { name: 'Refund (1)' }));
+    fireEvent.click((await screen.findAllByTitle('View order details'))[0]);
+    fireEvent.click(screen.getByRole('button', { name: 'Arrange Return Pickup' }));
+
+    await waitFor(() => expect(mockSwalFire).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Arrange Return Pickup' }),
+    ));
+    const dialogConfig = mockSwalFire.mock.calls[0][0] as { html: string };
+    expect(dialogConfig.html).toContain(expectedOption);
   });
 
   it('announces plain-language coverage states with distance context and an icon', () => {
