@@ -71,6 +71,7 @@ final class EmployeeLifecycleApprovalController extends Controller
             EmployeeLifecycleRequestStatus::PENDING_MANAGER->value,
             EmployeeLifecycleRequestStatus::PENDING_OWNER->value,
             EmployeeLifecycleRequestStatus::APPROVED->value,
+            'rejected',
             EmployeeLifecycleRequestStatus::REJECTED_MANAGER->value,
             EmployeeLifecycleRequestStatus::REJECTED_OWNER->value,
         ];
@@ -85,7 +86,12 @@ final class EmployeeLifecycleApprovalController extends Controller
             ->with(['employee', 'requester', 'manager', 'owner'])
             ->latest('created_at');
 
-        if ($statusFilter !== 'all') {
+        if ($statusFilter === 'rejected') {
+            $query->whereIn('status', [
+                EmployeeLifecycleRequestStatus::REJECTED_MANAGER->value,
+                EmployeeLifecycleRequestStatus::REJECTED_OWNER->value,
+            ]);
+        } elseif ($statusFilter !== 'all') {
             $query->where('status', $statusFilter);
         }
 

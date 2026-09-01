@@ -70,21 +70,12 @@ const formatDateTime = (value: string | null | undefined): string => {
     });
 };
 
-const MetricCard = ({ label, value, tone }: { label: string; value: number; tone: "amber" | "blue" | "green" | "red" }) => {
-    const tones = {
-        amber: "border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/20",
-        blue: "border-blue-200 bg-blue-50 dark:border-blue-900/50 dark:bg-blue-950/20",
-        green: "border-emerald-200 bg-emerald-50 dark:border-emerald-900/50 dark:bg-emerald-950/20",
-        red: "border-red-200 bg-red-50 dark:border-red-900/50 dark:bg-red-950/20",
-    };
-
-    return (
-        <div className={`rounded-2xl border p-4 shadow-sm ${tones[tone]}`}>
-            <p className="text-sm font-medium text-gray-600 dark:text-gray-400">{label}</p>
-            <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{value.toLocaleString()}</p>
-        </div>
-    );
-};
+const MetricCard = ({ label, value }: { label: string; value: number }) => (
+    <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
+        <p className="text-sm font-medium text-gray-600 dark:text-gray-400">{label}</p>
+        <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{value.toLocaleString()}</p>
+    </div>
+);
 
 const LoadingState = () => (
     <div className="space-y-3" aria-label="Loading suspension approvals" aria-busy="true">
@@ -267,17 +258,13 @@ export default function SuspensionApprovals() {
                             Review the Manager stage of the HR -&gt; Manager -&gt; Shop Owner suspension workflow. Approval forwards the request; it does not suspend the employee by itself.
                         </p>
                     </div>
-                    <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
-                        <p className="font-semibold text-gray-900 dark:text-white">{page?.total ?? 0} request(s)</p>
-                        <p className="mt-1 text-gray-500 dark:text-gray-400">Latest request: {formatDateTime(page?.data[0]?.requested_at)}</p>
-                    </div>
                 </header>
 
                 <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label="Suspension approval summary">
-                    <MetricCard label="Pending Manager review" value={metrics.pending} tone="amber" />
-                    <MetricCard label="Waiting for Shop Owner" value={metrics.awaiting_owner} tone="blue" />
-                    <MetricCard label="Approved" value={metrics.approved} tone="green" />
-                    <MetricCard label="Rejected" value={metrics.rejected} tone="red" />
+                    <MetricCard label="Pending Manager review" value={metrics.pending} />
+                    <MetricCard label="Waiting for Shop Owner" value={metrics.awaiting_owner} />
+                    <MetricCard label="Approved" value={metrics.approved} />
+                    <MetricCard label="Rejected" value={metrics.rejected} />
                 </section>
 
                 <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]" aria-labelledby="suspension-filters-title">

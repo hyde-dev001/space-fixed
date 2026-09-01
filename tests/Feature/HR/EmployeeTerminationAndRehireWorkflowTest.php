@@ -313,6 +313,49 @@ final class EmployeeTerminationAndRehireWorkflowTest extends TestCase
     }
 
     #[Test]
+    public function manager_can_filter_termination_and_rehire_history_by_rejected_status(): void
+    {
+        $terminationEmployee = Employee::factory()->for($this->shop)->create([
+            'status' => EmployeeStatus::ACTIVE,
+        ]);
+        $terminationRequest = EmployeeLifecycleRequest::factory()->for($terminationEmployee)->create([
+            'requested_by' => $this->hr->id,
+            'request_type' => 'termination',
+            'status' => 'rejected_manager',
+            'manager_status' => 'rejected',
+            'manager_id' => $this->manager->id,
+        ]);
+
+        $rehireEmployee = Employee::factory()->for($this->shop)->create([
+            'status' => EmployeeStatus::TERMINATED,
+            'terminated_at' => now()->subMonth(),
+        ]);
+        $rehireRequest = EmployeeLifecycleRequest::factory()->for($rehireEmployee)->create([
+            'requested_by' => $this->hr->id,
+            'request_type' => 'rehire',
+            'status' => 'rejected_owner',
+            'manager_status' => 'approved',
+            'owner_status' => 'rejected',
+            'manager_id' => $this->manager->id,
+            'owner_id' => $this->shop->id,
+            'rehire_start_date' => '2027-02-01',
+            'rehire_role' => 'Staff',
+        ]);
+
+        $this->actingAs($this->manager, 'user')
+            ->getJson('/api/manager/termination-requests?status=rejected')
+            ->assertOk()
+            ->assertJsonCount(1, 'data.data')
+            ->assertJsonFragment(['id' => $terminationRequest->id]);
+
+        $this->actingAs($this->manager, 'user')
+            ->getJson('/api/manager/rehire-requests?status=rejected')
+            ->assertOk()
+            ->assertJsonCount(1, 'data.data')
+            ->assertJsonFragment(['id' => $rehireRequest->id]);
+    }
+
+    #[Test]
     public function lifecycle_requests_are_not_available_to_individual_shop_accounts(): void
     {
         $individualShop = ShopOwner::factory()->approved()->create([
