@@ -2733,7 +2733,7 @@ const PointOfSalePage = () => {
 				}
 			`}</style>
 
-			<div className="space-y-6 p-4 md:p-6">
+			<div className="cashier-pos-page space-y-6 p-4 md:p-6">
 				{!isOrderModalOpen && !isRefundQueueOpen && !isReceiptModalOpen && !isHistoryModalOpen && (
 				<div className="flex items-center justify-between">
 					<div>

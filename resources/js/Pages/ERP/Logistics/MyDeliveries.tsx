@@ -982,7 +982,7 @@ function DeliveryActions({
       ? 'dropoff'
       : null;
   const arrival = arrivalPhase ? delivery.arrivals?.[arrivalPhase] : undefined;
-  const arrivalActionLabel = arrivalPhase === 'pickup' ? 'Pick up at shop' : "I've arrived";
+  const arrivalActionLabel = arrivalPhase === 'pickup' ? 'Customer pickup at shop' : "I've arrived";
   const arrivalKey = `arrival:${delivery.id}`;
   const recordArrival = () => {
     if (!canUpdateStatus || !arrivalPhase) return;

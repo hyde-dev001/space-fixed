@@ -1077,8 +1077,8 @@ describe('MyDeliveries rider interactions', () => {
     });
     render(<MyDeliveries />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Pick up at shop' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Pick up at shop' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Customer pickup at shop' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Customer pickup at shop' }));
 
     await waitFor(() => expect(mocks.arrive).toHaveBeenCalledTimes(1));
     expect(mocks.confirm).not.toHaveBeenCalled();
@@ -1105,7 +1105,7 @@ describe('MyDeliveries rider interactions', () => {
     ]);
     const view = render(<MyDeliveries />);
 
-    expect(screen.getByRole('button', { name: 'Pick up at shop' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Customer pickup at shop' })).toBeVisible();
     expect(screen.getByRole('button', { name: "I've arrived" })).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Confirm pickup' })).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Delivery proof')).not.toBeInTheDocument();
@@ -1160,7 +1160,7 @@ describe('MyDeliveries rider interactions', () => {
     });
     render(<MyDeliveries />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Pick up at shop' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Customer pickup at shop' }));
 
     await waitFor(() => expect(screen.getByLabelText('Arrival reason')).toBeVisible());
     expect(mocks.arrive).not.toHaveBeenCalled();
