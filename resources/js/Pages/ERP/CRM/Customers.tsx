@@ -532,10 +532,6 @@ export default function Customers() {
                           {savingEdit ? "Saving…" : "Save Changes"}
                         </button>
                       </>
-                    ) : !ownerMode ? (
-                      <>
-                        <button onClick={startEdit} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">Edit Customer</button>
-                      </>
                     ) : null}
                     <button
                       onClick={() => { setShowDetailsModal(false); setEditing(false); setNoteDraft(""); setActiveTab("personal"); setCustomerDetail(null); }}

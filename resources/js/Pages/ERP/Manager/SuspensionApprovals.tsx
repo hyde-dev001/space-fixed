@@ -382,7 +382,7 @@ export default function SuspensionApprovals() {
             </main>
 
             {selectedRequest && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/50 p-4" role="presentation">
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-gray-950/50 p-4" role="presentation">
                     <div role="dialog" aria-modal="true" aria-labelledby="suspension-details-title" className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl dark:bg-gray-900">
                         <div className="flex items-start justify-between gap-4">
                             <div>
@@ -433,7 +433,7 @@ export default function SuspensionApprovals() {
             )}
 
             {requestToReject && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/50 p-4" role="presentation">
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-gray-950/50 p-4" role="presentation">
                     <div role="dialog" aria-modal="true" aria-labelledby="reject-suspension-title" className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl dark:bg-gray-900">
                         <h2 id="reject-suspension-title" className="text-lg font-semibold text-gray-900 dark:text-white">Reject suspension request</h2>
                         <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">Provide a reason for rejecting {requestToReject.name || "this request"}. The request will close at the Manager stage and the employee access state will be restored.</p>

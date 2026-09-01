@@ -45,4 +45,15 @@ describe("Manager suspension approvals page contract", () => {
         expect(source).not.toContain('Latest request:');
         expect(source).not.toContain('{page?.total ?? 0} request(s)');
     });
+
+    it("keeps approval dialogs above the sticky ERP header", () => {
+        const detailsDialog = source.slice(source.indexOf("{selectedRequest &&"), source.indexOf("{requestToReject &&"));
+        const rejectionDialog = source.slice(source.indexOf("{requestToReject &&"));
+
+        expect(detailsDialog).toContain('fixed inset-0 z-[100]');
+        expect(rejectionDialog).toContain('fixed inset-0 z-[100]');
+        expect(source).toContain('workflowFeedback.confirm');
+        expect(source).not.toContain('window.confirm');
+        expect(source).not.toContain('window.alert');
+    });
 });

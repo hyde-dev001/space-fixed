@@ -2527,7 +2527,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 								event.stopPropagation();
 								setIsNightMode((prev) => !prev);
 							}}
-							className="pointer-events-auto absolute right-3 top-3 z-20 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+							className="pointer-events-auto absolute left-3 top-16 z-20 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 sm:left-auto sm:right-3 sm:top-3"
 						>
 							{isNightMode ? 'Day Mode' : 'Night Mode'}
 						</button>

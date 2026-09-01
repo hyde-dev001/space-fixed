@@ -100,7 +100,8 @@ beforeEach(() => {
 it('hides the center owner identity pill while keeping the account dropdown', () => {
   render(<AppHeaderERP />);
 
-  expect(screen.getByRole('banner')).toHaveClass('xl:border-b');
+  expect(screen.getByRole('banner')).toHaveClass('xl:border-b', 'z-40');
+  expect(screen.getByRole('banner')).not.toHaveClass('z-99999');
   const compactBrand = screen.getByRole('link', { name: 'SoleSpace' });
   expect(compactBrand).toHaveClass('xl:hidden');
   expect(compactBrand).toHaveAttribute('href', '/shop-owner/dashboard');
@@ -183,6 +184,7 @@ it('opens the compact application menu with direct account actions and keeps not
   const compactActions = screen.getByRole('region', { name: 'Application menu' }).querySelector<HTMLElement>('.grid');
   expect(compactActions).not.toBeNull();
   expect(menu).toHaveClass('gap-0', 'xl:gap-4');
+  expect(menu).toHaveClass('z-50');
   expect(compactActions?.parentElement).toHaveClass('gap-0', 'p-0', 'sm:gap-0', 'sm:p-0');
   expect(compactActions).toHaveClass('grid-cols-1', 'gap-0', 'xl:gap-4');
   expect(compactActions).not.toHaveClass('sm:grid-cols-2');

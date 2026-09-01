@@ -115,11 +115,11 @@ const AppHeader_ERP: React.FC = () => {
   }, []);
 
   return (
-    <header className="relative sticky top-0 z-99999 flex w-full bg-white/80 backdrop-blur-md dark:bg-gray-900/80 xl:border-b xl:border-gray-200 xl:dark:border-gray-800">
+    <header className="relative sticky top-0 z-40 flex w-full bg-white/80 backdrop-blur-md dark:bg-gray-900/80 xl:border-b xl:border-gray-200 xl:dark:border-gray-800">
       <div className="flex flex-col items-center justify-between grow xl:flex-row xl:px-6">
         <div className="flex items-center justify-between w-full gap-2 px-3 py-3 border-b border-gray-200 dark:border-gray-800 sm:gap-4 xl:justify-normal xl:border-b-0 xl:px-0 xl:py-4">
           <button
-            className="items-center justify-center w-10 h-10 text-gray-500 border-gray-200 rounded-lg z-99999 dark:border-gray-800 xl:flex dark:text-gray-400 xl:h-11 xl:w-11 xl:border"
+            className="items-center justify-center w-10 h-10 text-gray-500 border-gray-200 rounded-lg dark:border-gray-800 xl:flex dark:text-gray-400 xl:h-11 xl:w-11 xl:border"
             onClick={handleToggle}
             aria-label="Toggle Sidebar"
           >
@@ -235,7 +235,7 @@ const AppHeader_ERP: React.FC = () => {
           aria-labelledby={isApplicationMenuOpen ? "application-menu-title" : undefined}
           aria-describedby={isApplicationMenuOpen ? "application-menu-description" : undefined}
           className={`${isApplicationMenuOpen
-            ? "absolute right-3 top-[calc(100%+0.5rem)] z-[99999] flex max-h-[calc(100dvh-5.5rem)] w-[min(22rem,calc(100vw-1.5rem))] flex-col overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-xl ring-1 ring-black/5 dark:border-gray-700 dark:bg-gray-900 dark:ring-white/10 sm:right-4 sm:w-[min(24rem,calc(100vw-2rem))] sm:max-h-[calc(100dvh-6.5rem)]"
+            ? "absolute right-3 top-[calc(100%+0.5rem)] z-50 flex max-h-[calc(100dvh-5.5rem)] w-[min(22rem,calc(100vw-1.5rem))] flex-col overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-xl ring-1 ring-black/5 dark:border-gray-700 dark:bg-gray-900 dark:ring-white/10 sm:right-4 sm:w-[min(24rem,calc(100vw-2rem))] sm:max-h-[calc(100dvh-6.5rem)]"
             : "hidden"} items-center justify-between gap-0 xl:static xl:flex xl:max-h-none xl:w-auto xl:max-w-none xl:flex-row xl:gap-4 xl:overflow-visible xl:rounded-none xl:border-0 xl:bg-transparent xl:p-0 xl:shadow-none xl:ring-0`}
         >
           {isApplicationMenuOpen && (
