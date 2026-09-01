@@ -11,6 +11,7 @@ import ApprovalDecisionFooter from "./ApprovalDecisionFooter";
 import { isRecord, type ApprovalDetail } from "./approvalDetails";
 import type { OwnerAttentionItem } from "../../types/ownerActionCenter";
 import { Modal } from "../ui/modal";
+import { workflowFeedback } from "../../utils/workflowFeedback";
 
 interface OwnerApprovalDetailPanelProps {
   item: OwnerAttentionItem;
@@ -220,6 +221,14 @@ export default function OwnerApprovalDetailPanel({
       }
 
       setAnnouncement(`${action === "approve" ? "Approval" : "Rejection"} saved.`);
+      await workflowFeedback.success({
+        title: action === "approve" ? "Approval successful" : "Rejection successful",
+        text: action === "approve"
+          ? "The approval was saved successfully."
+          : "The rejection was saved successfully.",
+        timer: 1800,
+        showConfirmButton: false,
+      });
       onDecisionComplete();
     } catch (caught) {
       const status = isRecord(caught) && typeof caught.status === "number" ? caught.status : null;
@@ -231,6 +240,10 @@ export default function OwnerApprovalDetailPanel({
           : mutationMessage(status);
       setError({ status, message });
       setAnnouncement("The decision could not be saved.");
+      await workflowFeedback.error(
+        message,
+        action === "approve" ? "Approval failed" : "Rejection failed",
+      );
     } finally {
       setSubmitting(false);
     }

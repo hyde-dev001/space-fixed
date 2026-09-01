@@ -1,5 +1,12 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+const sweetAlertFire = vi.hoisted(() => vi.fn().mockResolvedValue({ isConfirmed: true }));
+
+vi.mock("sweetalert2", () => ({
+  default: { fire: sweetAlertFire },
+}));
+
 import OwnerApprovalDetailPanel from "../OwnerApprovalDetailPanel";
 import type { ApprovalSelection } from "../approvalSelection";
 import type { OwnerAttentionItem } from "../../../types/ownerActionCenter";

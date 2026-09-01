@@ -70,7 +70,6 @@ type RehireRequestForm = LifecycleRequestForm & {
   rehireStartDate: string;
   rehirePosition: string;
   rehireDepartment: string;
-  rehireFunctionalRole: string;
   rehireSalary: string;
   rehireRole: string;
 };
@@ -142,7 +141,7 @@ const Button: React.FC<{
   className?: string;
   disabled?: boolean;
 }> = ({ children, variant = "primary", onClick, className = "", disabled = false }) => {
-  const baseClasses = "px-4 py-2 rounded-lg transition-colors duration-200 font-medium";
+  const baseClasses = "inline-flex min-h-11 items-center justify-center px-4 py-2 rounded-lg transition-colors duration-200 font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2";
   const variantClasses = {
     primary: "bg-blue-600 text-white hover:bg-blue-700 disabled:bg-blue-400",
     secondary: "bg-gray-600 text-white hover:bg-gray-700 disabled:bg-gray-400",
@@ -690,7 +689,6 @@ export const EmployeeManagement: React.FC<{
     rehireStartDate: "",
     rehirePosition: "",
     rehireDepartment: "",
-    rehireFunctionalRole: "",
     rehireSalary: "",
     rehireRole: "",
   });
@@ -1275,7 +1273,6 @@ export const EmployeeManagement: React.FC<{
       rehireStartDate: '',
       rehirePosition: employee.position || '',
       rehireDepartment: employee.department || '',
-      rehireFunctionalRole: '',
       rehireSalary: '',
       rehireRole: '',
     });
@@ -1308,7 +1305,6 @@ export const EmployeeManagement: React.FC<{
         rehire_start_date: rehireRequestForm.rehireStartDate,
         rehire_position: rehireRequestForm.rehirePosition.trim(),
         rehire_department: rehireRequestForm.rehireDepartment.trim() || null,
-        rehire_functional_role: rehireRequestForm.rehireFunctionalRole.trim() || null,
         rehire_salary: rehireRequestForm.rehireSalary.trim() || null,
         rehire_role: rehireRequestForm.rehireRole.trim(),
       },
@@ -1323,7 +1319,6 @@ export const EmployeeManagement: React.FC<{
           rehireStartDate: '',
           rehirePosition: '',
           rehireDepartment: '',
-          rehireFunctionalRole: '',
           rehireSalary: '',
           rehireRole: '',
         });
@@ -2651,39 +2646,34 @@ export const EmployeeManagement: React.FC<{
                             <InfoIcon className="h-5 w-5" />
                           </button>
                           {['inactive', 'suspended'].includes(employee.status) && (
-                            <button
+                            <Button
+                              variant="success"
                               onClick={() => handleActivate(employee.id, buildName(employee))}
-                              className={`inline-flex items-center justify-center rounded-md px-2 py-1 text-xs font-medium text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300 transition-colors ${isProcessingId === employee.id ? 'opacity-50 cursor-not-allowed' : ''}`}
-                              title="Activate Account"
-                              aria-label={`Activate Account for ${buildName(employee)}`}
+                              className="whitespace-nowrap px-3 py-2 text-xs"
                               disabled={isProcessingId === employee.id}
                             >
-                              Activate Account
-                            </button>
+                              {isProcessingId === employee.id ? 'Processing...' : 'Activate Account'}
+                            </Button>
                           )}
                           {canRequestEmployeeLifecycle && employee.status === 'terminated' && (
-                            <button
+                            <Button
+                              variant="primary"
                               onClick={() => handleRehireClick(employee)}
-                              className="inline-flex items-center justify-center rounded-md px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                              title="Submit Rehire Request"
-                              aria-label={"Submit Rehire Request for " + buildName(employee)}
+                              className="whitespace-nowrap px-3 py-2 text-xs"
                               disabled={isProcessingId === employee.id}
                             >
                               Request Rehire
-                            </button>
+                            </Button>
                           )}
                           {canRequestEmployeeLifecycle && employee.status !== 'terminated' && (
-                            <button
+                            <Button
+                              variant="danger"
                               onClick={() => handleTerminateClick(employee)}
-                              className="inline-flex items-center justify-center rounded-md px-2 py-1 text-xs font-medium text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                              title={isSelfEmployeeAccount(employee)
-                                ? 'You cannot terminate your own account'
-                                : 'Submit Termination Request'}
-                              aria-label={"Submit Termination Request for " + buildName(employee)}
+                              className="whitespace-nowrap px-3 py-2 text-xs"
                               disabled={isProcessingId === employee.id || isSelfEmployeeAccount(employee)}
                             >
                               Request Termination
-                            </button>
+                            </Button>
                           )}
                           {!ownerReadOnly && (
                             <>
@@ -3095,17 +3085,21 @@ export const EmployeeManagement: React.FC<{
 
         {isRehireRequestModalOpen && employeeToRehire && (
           <ModalPortal>
-            <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full max-h-[95vh] overflow-y-auto">
-                <div className="p-6">
-                  <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+            <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+              <div className="bg-white dark:bg-gray-900 rounded-xl shadow-xl max-w-2xl w-full border border-gray-200 dark:border-gray-800 overflow-hidden">
+                <div className="border-b border-gray-200 dark:border-gray-800 px-8 py-6">
+                  <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
                     Request Rehire / Reinstate Employee
-                  </h3>
-                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-5">
-                    This creates a new employment period. Previous permissions are not restored automatically; review the new assignment before submitting.
+                  </h2>
+                  <p className="text-gray-600 dark:text-gray-400 text-sm mt-1">
+                    Fill in the employee details below
                   </p>
+                </div>
 
-                  <div className="mb-5 rounded-lg bg-gray-50 dark:bg-gray-700/50 p-4">
+                <div className="p-8 max-h-[calc(90vh-140px)] overflow-y-auto">
+                  <div className="space-y-6">
+                    <div>
+                      <div className="mb-5 rounded-lg bg-gray-50 dark:bg-gray-800/50 p-4">
                     <p className="text-sm text-gray-700 dark:text-gray-300">
                       <span className="font-medium">Employee:</span> {buildName(employeeToRehire)}
                     </p>
@@ -3114,107 +3108,130 @@ export const EmployeeManagement: React.FC<{
                     </p>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
-                    <div>
-                      <label htmlFor="rehire-start-date" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                        New Start Date <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        id="rehire-start-date"
-                        type="date"
-                        value={rehireRequestForm.rehireStartDate}
-                        onChange={(event) => setRehireRequestForm({ ...rehireRequestForm, rehireStartDate: event.target.value })}
-                        className="w-full px-4 py-2 border-2 border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
-                      />
+                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide mb-4 pb-2 border-b border-gray-200 dark:border-gray-700">
+                        Personal Information
+                      </h3>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="col-span-2">
+                          <label htmlFor="rehire-email" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                            Email <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            id="rehire-email"
+                            type="email"
+                            value={employeeToRehire.email}
+                            readOnly
+                            className="w-full px-3 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-400 focus:border-transparent outline-none transition-all"
+                          />
+                        </div>
+                        <div>
+                          <label htmlFor="rehire-phone" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                            Phone
+                          </label>
+                          <input
+                            id="rehire-phone"
+                            type="tel"
+                            value={employeeToRehire.phone || ""}
+                            readOnly
+                            placeholder="09XXXXXXXXX"
+                            className="w-full px-3 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-400 focus:border-transparent outline-none transition-all"
+                          />
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <label htmlFor="rehire-role" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                        New Account Role <span className="text-red-500">*</span>
-                      </label>
-                      {availableRoles.length > 0 ? (
-                        <select
-                          id="rehire-role"
-                          value={rehireRequestForm.rehireRole}
-                          onChange={(event) => setRehireRequestForm({ ...rehireRequestForm, rehireRole: event.target.value })}
-                          className="w-full px-4 py-2 border-2 border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
-                        >
-                          <option value="">Select a role</option>
-                          {availableRoles
-                            .filter((role) => !['shop owner', 'super admin'].includes(role.name.trim().toLowerCase()))
-                            .map((role) => (
-                              <option key={role.name} value={role.name}>{role.name}</option>
-                            ))}
-                        </select>
-                      ) : (
-                        <input
-                          id="rehire-role"
-                          type="text"
-                          value={rehireRequestForm.rehireRole}
-                          onChange={(event) => setRehireRequestForm({ ...rehireRequestForm, rehireRole: event.target.value })}
-                          placeholder="e.g. Repairer or Staff"
-                          className="w-full px-4 py-2 border-2 border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
-                        />
-                      )}
-                    </div>
-                    <div>
-                      <label htmlFor="rehire-position" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                        New Position <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        id="rehire-position"
-                        type="text"
-                        value={rehireRequestForm.rehirePosition}
-                        onChange={(event) => setRehireRequestForm({ ...rehireRequestForm, rehirePosition: event.target.value })}
-                        maxLength={100}
-                        className="w-full px-4 py-2 border-2 border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
-                      />
-                    </div>
-                    <div>
-                      <label htmlFor="rehire-department" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                        Department
-                      </label>
-                      <input
-                        id="rehire-department"
-                        type="text"
-                        value={rehireRequestForm.rehireDepartment}
-                        onChange={(event) => setRehireRequestForm({ ...rehireRequestForm, rehireDepartment: event.target.value })}
-                        maxLength={100}
-                        className="w-full px-4 py-2 border-2 border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
-                      />
-                    </div>
-                    <div>
-                      <label htmlFor="rehire-functional-role" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                        Functional Role
-                      </label>
-                      <input
-                        id="rehire-functional-role"
-                        type="text"
-                        value={rehireRequestForm.rehireFunctionalRole}
-                        onChange={(event) => setRehireRequestForm({ ...rehireRequestForm, rehireFunctionalRole: event.target.value })}
-                        maxLength={100}
-                        placeholder="Optional responsibility"
-                        className="w-full px-4 py-2 border-2 border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
-                      />
-                    </div>
-                    <div>
-                      <label htmlFor="rehire-salary" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                        Salary
-                      </label>
-                      <input
-                        id="rehire-salary"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={rehireRequestForm.rehireSalary}
-                        onChange={(event) => setRehireRequestForm({ ...rehireRequestForm, rehireSalary: event.target.value })}
-                        placeholder="Review and enter salary"
-                        className="w-full px-4 py-2 border-2 border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
-                      />
-                    </div>
-                  </div>
 
-                  <div className="mb-4">
-                    <label htmlFor="rehire-reason" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide mb-4 pb-2 border-b border-gray-200 dark:border-gray-700">
+                        Job Information
+                      </h3>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label htmlFor="rehire-role" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                            Department / Role <span className="text-red-500">*</span>
+                          </label>
+                          {availableRoles.length > 0 ? (
+                            <select
+                              id="rehire-role"
+                              value={rehireRequestForm.rehireRole}
+                              onChange={(event) => setRehireRequestForm({ ...rehireRequestForm, rehireRole: event.target.value, rehireDepartment: event.target.value })}
+                              className="w-full px-3 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-400 focus:border-transparent outline-none transition-all"
+                            >
+                              <option value="">Select department/role</option>
+                              {availableRoles
+                                .filter((role) => !['shop owner', 'super admin'].includes(role.name.trim().toLowerCase()))
+                                .map((role) => (
+                                  <option key={role.name} value={role.name}>{role.name}</option>
+                                ))}
+                            </select>
+                          ) : (
+                            <input
+                              id="rehire-role"
+                              type="text"
+                              value={rehireRequestForm.rehireRole}
+                              onChange={(event) => setRehireRequestForm({ ...rehireRequestForm, rehireRole: event.target.value, rehireDepartment: event.target.value })}
+                              placeholder="Select department/role"
+                              className="w-full px-3 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-400 focus:border-transparent outline-none transition-all"
+                            />
+                          )}
+                        </div>
+
+                        <div>
+                          <label htmlFor="rehire-position" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                            Position / Job Title <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            id="rehire-position"
+                            type="text"
+                            value={rehireRequestForm.rehirePosition}
+                            onChange={(event) => setRehireRequestForm({ ...rehireRequestForm, rehirePosition: event.target.value })}
+                            maxLength={100}
+                            placeholder="e.g., Sales Associate, Cashier, Stock Clerk"
+                            className="w-full px-3 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-400 focus:border-transparent outline-none transition-all"
+                          />
+                          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                            Required for the new employment period
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4 mt-4">
+                        <div>
+                          <label htmlFor="rehire-start-date" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                            Hired Date <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            id="rehire-start-date"
+                            type="date"
+                            value={rehireRequestForm.rehireStartDate}
+                            onChange={(event) => setRehireRequestForm({ ...rehireRequestForm, rehireStartDate: event.target.value })}
+                            className="w-full px-3 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-400 focus:border-transparent outline-none transition-all"
+                          />
+                        </div>
+
+                        <div>
+                          <label htmlFor="rehire-salary" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                            Daily Rate
+                          </label>
+                          <div className="relative">
+                            <span className="absolute left-3 top-2.5 text-gray-500 dark:text-gray-400">&#8369;</span>
+                            <input
+                              id="rehire-salary"
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={rehireRequestForm.rehireSalary}
+                              onChange={(event) => setRehireRequestForm({ ...rehireRequestForm, rehireSalary: event.target.value })}
+                              placeholder="0.00"
+                              className="w-full pl-8 pr-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-400 focus:border-transparent outline-none transition-all"
+                            />
+                          </div>
+                          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Daily base rate for payroll calculation</p>
+                        </div>
+                      </div>
+                    </div>
+
+                  <div>
+                    <label htmlFor="rehire-reason" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
                       Reason for Rehire <span className="text-red-500">*</span>
                     </label>
                     <textarea
@@ -3224,12 +3241,12 @@ export const EmployeeManagement: React.FC<{
                       rows={3}
                       maxLength={2000}
                       placeholder="Explain the rehire or reinstatement decision..."
-                      className="w-full px-4 py-2 border-2 border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white resize-none"
+                      className="w-full px-3 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-400 focus:border-transparent outline-none transition-all resize-none"
                     />
                   </div>
 
-                  <div className="mb-5">
-                    <label htmlFor="rehire-evidence" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <div>
+                    <label htmlFor="rehire-evidence" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
                       Evidence / Notes (Optional)
                     </label>
                     <textarea
@@ -3239,19 +3256,20 @@ export const EmployeeManagement: React.FC<{
                       rows={3}
                       maxLength={5000}
                       placeholder="Add the approved terms or supporting context..."
-                      className="w-full px-4 py-2 border-2 border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white resize-none"
+                      className="w-full px-3 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-400 focus:border-transparent outline-none transition-all resize-none"
                     />
                   </div>
 
-                  <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-900/60 dark:bg-blue-900/20">
+                  <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-900/60 dark:bg-blue-900/20">
                     <p className="text-sm font-semibold text-blue-900 dark:text-blue-300">Approval Process</p>
                     <p className="text-sm text-blue-800 dark:text-blue-200 mt-1">
                       The Manager reviews this request first. The Company Shop Owner gives final approval, then the account is enabled with only the newly approved role and permissions.
                     </p>
                   </div>
 
-                  <div className="flex justify-end gap-3">
+                  <div className="bg-gray-50 dark:bg-gray-800/50 border-t border-gray-200 dark:border-gray-700 px-8 py-4 flex gap-3 justify-end">
                     <button
+                      type="button"
                       onClick={() => {
                         setIsRehireRequestModalOpen(false);
                         setEmployeeToRehire(null);
@@ -3261,27 +3279,28 @@ export const EmployeeManagement: React.FC<{
                           rehireStartDate: '',
                           rehirePosition: '',
                           rehireDepartment: '',
-                          rehireFunctionalRole: '',
                           rehireSalary: '',
                           rehireRole: '',
                         });
                       }}
-                      className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
+                      className="px-5 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-all duration-200 hover:shadow-sm"
                     >
                       Cancel
                     </button>
                     <button
+                      type="button"
                       onClick={handleRehireRequestSubmit}
                       disabled={isProcessingId === employeeToRehire.id || rehireRequestForm.reason.trim().length < 3 || !rehireRequestForm.rehireStartDate || !rehireRequestForm.rehirePosition.trim() || !rehireRequestForm.rehireRole.trim()}
-                      className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      className={`px-5 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-all duration-200 hover:shadow-md active:shadow-sm ${isProcessingId === employeeToRehire.id ? 'opacity-50 cursor-not-allowed' : ''}`}
                     >
                       {isProcessingId === employeeToRehire.id ? 'Submitting...' : 'Submit Rehire Request'}
                     </button>
                   </div>
-                </div>
-              </div>
+                 </div>
+               </div>
+             </div>
             </div>
-          </ModalPortal>
+           </ModalPortal>
         )}
 
         {/* Add Employee Modal */}
