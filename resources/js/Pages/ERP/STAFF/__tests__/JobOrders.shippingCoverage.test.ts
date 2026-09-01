@@ -76,6 +76,31 @@ afterEach(() => {
 });
 
 describe('staff order shipping coverage integration', () => {
+  it('keeps the finance return status concise and contained in its table cell', async () => {
+    const financeReturnOrder = {
+      ...makeOrder(33),
+      status: 'delivered',
+      latest_refund: {
+        id: 33,
+        status: 'pending_approval',
+        shop_owner_status: 'approved',
+        finance_status: 'pending',
+        return_status: 'awaiting_approval',
+        flow_type: 'request_approval',
+      },
+    };
+    mockPage.props.initialOrders = [financeReturnOrder];
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(jsonResponse(200, [financeReturnOrder]))));
+
+    render(React.createElement(JobOrdersPage));
+    fireEvent.click(await screen.findByRole('button', { name: 'Delivered (1)' }));
+
+    const statusBadge = await screen.findByText('Awaiting Finance', { exact: true });
+    expect(statusBadge).toHaveClass('max-w-full', 'whitespace-normal', 'break-words');
+    expect(statusBadge).not.toHaveClass('whitespace-nowrap');
+    expect(screen.queryByText('Awaiting Finance Authorization', { exact: true })).not.toBeInTheDocument();
+  });
+
   it('does not show receipt acknowledgement state for a POS sale', async () => {
     const posOrder = {
       ...makeOrder(29),

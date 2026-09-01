@@ -288,6 +288,7 @@ const getRefundStatusClass = (status: string): string => {
 };
 
 const SERVICES_PER_PAGE = 6;
+const RETAIL_PRODUCTS_PER_PAGE = 9;
 const VAT_RATE = 12;
 
 const normalizeDueType = (value: string | null): PosDueType => {
@@ -499,6 +500,7 @@ const PointOfSalePage = () => {
 	const [isLoadingData, setIsLoadingData] = useState<boolean>(false);
 	const [retailSearch, setRetailSearch] = useState<string>("");
 	const [retailProducts, setRetailProducts] = useState<RetailCatalogProduct[]>([]);
+	const [retailPage, setRetailPage] = useState<number>(1);
 	const [retailLoading, setRetailLoading] = useState<boolean>(false);
 	const [retailCart, setRetailCart] = useState<RetailCartItem[]>([]);
 	const [retailSelectionByProduct, setRetailSelectionByProduct] = useState<Record<number, { size: string; color: string }>>({});
@@ -2156,6 +2158,15 @@ const PointOfSalePage = () => {
 		return filteredServiceCatalog.slice(start, start + SERVICES_PER_PAGE);
 	}, [filteredServiceCatalog, servicePage]);
 
+	const totalRetailPages = useMemo(() => {
+		return Math.max(1, Math.ceil(retailProducts.length / RETAIL_PRODUCTS_PER_PAGE));
+	}, [retailProducts.length]);
+
+	const paginatedRetailProducts = useMemo(() => {
+		const start = (retailPage - 1) * RETAIL_PRODUCTS_PER_PAGE;
+		return retailProducts.slice(start, start + RETAIL_PRODUCTS_PER_PAGE);
+	}, [retailPage, retailProducts]);
+
 	useEffect(() => {
 		setServicePage(1);
 	}, [serviceSearch]);
@@ -2165,6 +2176,16 @@ const PointOfSalePage = () => {
 			setServicePage(totalServicePages);
 		}
 	}, [servicePage, totalServicePages]);
+
+	useEffect(() => {
+		setRetailPage(1);
+	}, [retailSearch]);
+
+	useEffect(() => {
+		if (retailPage > totalRetailPages) {
+			setRetailPage(totalRetailPages);
+		}
+	}, [retailPage, totalRetailPages]);
 
 	const removeItem = (id: string) => {
 		setItems((prev) => {
@@ -2868,8 +2889,9 @@ const PointOfSalePage = () => {
 								) : retailProducts.length === 0 ? (
 									<div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">No retail products found for this shop.</div>
 								) : (
-									<div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 xl:flex-1 xl:min-h-0 xl:content-start xl:overflow-y-auto xl:pr-1">
-										{retailProducts.map((product) => {
+									<div className="flex min-h-0 flex-col xl:flex-1">
+										<div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 xl:flex-1 xl:min-h-0 xl:content-start xl:overflow-y-auto xl:pr-1">
+										{paginatedRetailProducts.map((product) => {
 											const isSelected = retailCart.some((entry) => entry.productId === product.id);
 											const inCartQty = retailCart
 												.filter((entry) => entry.productId === product.id)
@@ -2985,7 +3007,36 @@ const PointOfSalePage = () => {
 													</div>
 												</div>
 											);
-										})}
+											})}
+										</div>
+										<nav className="mt-4 flex flex-col gap-3 border-t border-slate-200 pt-4 text-sm text-slate-700 sm:flex-row sm:items-center sm:justify-between" aria-label="Retail product pagination">
+										<p>
+											Showing {(retailPage - 1) * RETAIL_PRODUCTS_PER_PAGE + 1} to {Math.min(retailPage * RETAIL_PRODUCTS_PER_PAGE, retailProducts.length)} of {retailProducts.length} products
+										</p>
+										<div className="flex items-center gap-2">
+											<button
+												type="button"
+												aria-label="Previous retail product page"
+												onClick={() => setRetailPage((prev) => Math.max(prev - 1, 1))}
+												disabled={retailPage === 1}
+												className="h-9 w-9 rounded-lg border border-slate-300 text-slate-500 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+											>
+												&#8249;
+											</button>
+											<div aria-current="page" className="h-9 min-w-10 rounded-lg bg-blue-600 px-3 text-center text-sm font-semibold leading-9 text-white">
+												{retailPage}
+											</div>
+											<button
+												type="button"
+												aria-label="Next retail product page"
+												onClick={() => setRetailPage((prev) => Math.min(prev + 1, totalRetailPages))}
+												disabled={retailPage === totalRetailPages}
+												className="h-9 w-9 rounded-lg border border-slate-300 text-slate-500 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+											>
+												&#8250;
+											</button>
+										</div>
+										</nav>
 									</div>
 								)}
 							</div>
