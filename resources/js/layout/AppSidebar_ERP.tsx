@@ -699,6 +699,19 @@ const staffItems: NavItem[] = [
   },
   {
     icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 7h11v10H3z"></path>
+        <path d="M14 10h4l3 3v4h-7z"></path>
+        <circle cx="7" cy="19" r="2"></circle>
+        <circle cx="17" cy="19" r="2"></circle>
+      </svg>
+    ),
+    name: "Logistics Dashboard",
+    route: "erp.logistics.dashboard",
+    moduleKey: "logistics",
+  },
+  {
+    icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M3 7h11v10H3z"></path>
         <path d="M14 10h4l3 3v4h-7z"></path>
@@ -862,6 +875,18 @@ const repairItems: NavItem[] = [
 ];
 
 const cashierItems: NavItem[] = [
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
+        <path d="M4 19V5"></path>
+        <path d="M4 19h16"></path>
+        <path d="m7 15 3-4 3 2 5-6"></path>
+      </svg>
+    ),
+    name: "Dashboard",
+    route: "erp.cashier.dashboard",
+    moduleKey: "retail_operations",
+  },
   {
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
@@ -1069,6 +1094,7 @@ const EmployeeSidebarERP: React.FC = () => {
     "erp.user.repair-reject-approval": "/erp/user/repair-reject-approval",
     "erp.repairer.support": "/erp/staff/repairer-support",
     "erp.cashier.point-of-sale": "/erp/cashier/point-of-sale",
+    "erp.cashier.dashboard": "/erp/cashier/dashboard",
     "erp.repairer.point-of-sale": "/erp/repairer/point-of-sale",
     // Staff section routes
     "erp.staff.dashboard": "/erp/staff/dashboard",
@@ -1758,6 +1784,10 @@ const EmployeeSidebarERP: React.FC = () => {
 
       if (item.route === "erp.logistics.shipments") {
         return permissions.includes('assign-logistics-deliveries');
+      }
+
+      if (item.route === "erp.logistics.dashboard") {
+        return permissions.includes('access-logistics-dashboard');
       }
 
       if (item.route === "erp.logistics.batches") {

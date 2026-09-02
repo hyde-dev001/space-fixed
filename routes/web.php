@@ -2421,7 +2421,7 @@ Route::prefix('erp/procurement')->name('erp.procurement.')->middleware('auth:use
 
 // STAFF routes (both MANAGER and STAFF can access)
 Route::prefix('erp/staff')->name('erp.staff.')->middleware(['auth:user', 'manager.staff:staff'])->group(function () {
-    Route::get('/dashboard', [\App\Http\Controllers\Staff\CustomerController::class, 'index'])
+    Route::get('/dashboard', [\App\Http\Controllers\Staff\StaffDashboardController::class, 'index'])
         ->middleware('permission:access-staff-dashboard')
         ->name('dashboard');
     Route::get('/job-orders', function () {
@@ -2673,6 +2673,11 @@ Route::get('/erp/repairer/pricing-and-services', function () {
 
     return Inertia::render('ERP/repairer/PricingAndServices', compact('initialServices'));
 })->middleware(['auth:user', 'permission:access-pricing-services', 'check.user.business.type:repair,both'])->name('erp.repairer.pricing-services');
+
+// Cashier dashboard - shop-scoped summary for unified POS users
+Route::get('/erp/cashier/dashboard', [\App\Http\Controllers\Erp\CashierDashboardController::class, 'index'])
+    ->middleware(['auth:user', 'permission:access-unified-pos'])
+    ->name('erp.cashier.dashboard');
 
 // Cashier Point of Sale Route - unified POS for cashier users
 Route::get('/erp/cashier/point-of-sale', function () {

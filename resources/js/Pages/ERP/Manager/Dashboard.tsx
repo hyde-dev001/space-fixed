@@ -10,6 +10,7 @@ import {
     type ManagerDashboardTrend,
 } from '../../../hooks/useManagerApi';
 import { getManagerBusinessCapabilities } from '../../../utils/managerBusinessCapabilities';
+import { DashboardMetricCard, DashboardPanel, DashboardShell, DashboardState, DashboardTrendChart } from '../../../components/dashboard';
 
 type Icon = ComponentType<{ className?: string }>;
 
@@ -42,12 +43,6 @@ const BoxIcon = ({ className = '' }: { className?: string }) => (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
         <path d="m12 3 8 4.5v9L12 21l-8-4.5v-9L12 3Z" />
         <path d="m4.3 7.7 7.7 4.4 7.7-4.4M12 12.1V21" />
-    </svg>
-);
-
-const RefreshIcon = ({ className = '' }: { className?: string }) => (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-        <path d="M20 11a8 8 0 0 0-14.7-4L3 9m0 0V4m0 5h5M4 13a8 8 0 0 0 14.7 4L21 15m0 0v5m0-5h-5" />
     </svg>
 );
 
@@ -95,24 +90,15 @@ function MetricCard({ title, value, description, icon: Icon, tone }: {
     icon: Icon;
     tone: 'blue' | 'violet' | 'amber' | 'emerald';
 }) {
-    const tones = {
-        blue: 'bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300',
-        violet: 'bg-violet-50 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300',
-        amber: 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300',
-        emerald: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300',
-    };
-
     return (
-        <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-            <div className="flex items-start justify-between gap-4">
-                <div>
-                    <p className="text-sm font-medium text-gray-500 dark:text-gray-400">{title}</p>
-                    <p className="mt-2 text-3xl font-semibold tracking-tight text-gray-950 dark:text-white">{formatNumber(value)}</p>
-                </div>
-                <div className={`rounded-xl p-3 ${tones[tone]}`}><Icon className="h-6 w-6" /></div>
-            </div>
-            <p className="mt-4 text-xs text-gray-500 dark:text-gray-400">{description}</p>
-        </div>
+        <DashboardMetricCard
+            label={title}
+            value={formatNumber(value)}
+            description={description}
+            context="Current"
+            icon={Icon}
+            tone={tone === 'amber' ? 'warning' : tone === 'emerald' ? 'success' : 'neutral'}
+        />
     );
 }
 
@@ -191,40 +177,42 @@ export default function ManagerDashboard() {
         ? Date.now() - new Date(snapshotAt).getTime() > (typedStats?.freshness?.stale_after_seconds ?? 60) * 1000
         : false;
     const isStaleSnapshot = isStale || staleByAge;
+    const workloadCategories = [
+        ...(canRetail ? ['Open job orders'] : []),
+        ...(canRepair ? ['Active repair jobs'] : []),
+        'Pending approvals',
+    ];
+    const workloadValues = [
+        ...(canRetail ? [typedStats?.current_state.job_orders.open ?? 0] : []),
+        ...(canRepair ? [typedStats?.current_state.repair_jobs.active ?? 0] : []),
+        typedStats?.current_state.approvals.total ?? 0,
+    ];
 
     return (
         <AppLayoutERP>
             <Head title="Manager Dashboard - Solespace ERP" />
-            <div className="space-y-6">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-                    <div>
-                        <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600 dark:text-blue-400">Operations overview</p>
-                        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-gray-950 dark:text-white">Manager Dashboard</h1>
-                        <p className="mt-2 max-w-2xl text-sm text-gray-600 dark:text-gray-400">
-                            Monitor shop workload, approvals, staffing exceptions, and inventory health from one current snapshot.
-                        </p>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-3">
-                        <label className="text-sm font-medium text-gray-600 dark:text-gray-300" htmlFor="dashboard-range">Period</label>
+            <DashboardShell
+                testId="manager-dashboard"
+                title="Manager Dashboard"
+                description="Monitor shop workload, approvals, staffing exceptions, and inventory health from one current snapshot."
+                icon={UsersIcon}
+                refreshedAt={snapshotAt}
+                onRefresh={() => void refetch()}
+                isRefreshing={isFetching}
+                actions={
+                    <label className="flex min-h-11 items-center gap-2 rounded-full border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 dark:border-gray-700 dark:bg-transparent dark:text-gray-200">
+                        <span className="sr-only">Period</span>
                         <select
                             id="dashboard-range"
                             value={range}
                             onChange={(event) => setRange(event.target.value)}
-                            className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                            className="bg-transparent text-sm font-semibold text-gray-800 outline-none dark:text-gray-100"
                         >
                             {rangeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                         </select>
-                        <button
-                            type="button"
-                            onClick={() => void refetch()}
-                            disabled={isFetching}
-                            className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
-                        >
-                            <RefreshIcon className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
-                            Refresh
-                        </button>
-                    </div>
-                </div>
+                    </label>
+                }
+            >
 
                 {isStaleSnapshot && typedStats && (
                     <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-950 dark:bg-amber-950/30 dark:text-amber-200" role="status">
@@ -236,19 +224,9 @@ export default function ManagerDashboard() {
                     </div>
                 )}
 
-                {isLoading && (
-                    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label="Loading dashboard">
-                        {[1, 2, 3, 4].map((item) => <div key={item} className="h-36 animate-pulse rounded-2xl bg-gray-200 dark:bg-gray-800" />)}
-                    </div>
-                )}
+                {isLoading && <DashboardState status="loading" title="Loading manager dashboard" />}
 
-                {isError && (
-                    <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-900 dark:border-rose-950 dark:bg-rose-950/30 dark:text-rose-200" role="alert">
-                        <p className="font-semibold">Dashboard data could not be loaded.</p>
-                        <p className="mt-1">{error?.message || 'Try again or check your Manager dashboard access.'}</p>
-                        <button type="button" onClick={() => void refetch()} className="mt-3 rounded-lg bg-rose-700 px-3 py-2 text-xs font-semibold text-white hover:bg-rose-800">Try again</button>
-                    </div>
-                )}
+                {isError && <DashboardState status="error" title="Manager dashboard unavailable" message={error?.message || 'Try again or check your Manager dashboard access.'} onRetry={() => void refetch()} />}
 
                 {typedStats && !isLoading && !isError && (
                     <>
@@ -260,11 +238,10 @@ export default function ManagerDashboard() {
                         </div>
 
                         <div className="grid gap-6 xl:grid-cols-[1.25fr_0.75fr]">
-                            <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900" aria-labelledby="period-performance-heading">
+                            <DashboardPanel eyebrow="Period performance" title="Period performance" description={`${typedStats.period_metrics.range.label}; comparison uses the preceding period of equal length.`}>
                                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                                     <div>
-                                        <h2 id="period-performance-heading" className="text-lg font-semibold text-gray-950 dark:text-white">Period performance</h2>
-                                        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{typedStats.period_metrics.range.label}; comparison uses the preceding period of equal length.</p>
+                                        <p className="text-xs text-gray-500 dark:text-gray-400">Data range</p>
                                     </div>
                                     <span className="text-xs text-gray-500 dark:text-gray-400">{typedStats.period_metrics.range.timezone}</span>
                                 </div>
@@ -293,13 +270,20 @@ export default function ManagerDashboard() {
                                     {canRepair && <span>Completed repairs: {formatNumber(typedStats.period_metrics.repairs.completed)}</span>}
                                     {canRepair && <span>Rejected repairs: {formatNumber(typedStats.period_metrics.repairs.rejected)}</span>}
                                 </div>
-                            </section>
+                                <DashboardTrendChart
+                                    title="Current workload mix"
+                                    categories={workloadCategories}
+                                    series={[{ name: 'Open items', data: workloadValues }]}
+                                    type="bar"
+                                    height={240}
+                                    summary={`Current workload mix: ${workloadCategories.map((category, index) => `${category} ${workloadValues[index]}`).join(', ')}.`}
+                                />
+                            </DashboardPanel>
 
-                            <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900" aria-labelledby="approval-summary-heading">
+                            <DashboardPanel eyebrow="Approval queue" title="Approval summary" description="Open counts routed to their page-specific queues.">
                                 <div className="flex items-center justify-between gap-3">
                                     <div>
-                                        <h2 id="approval-summary-heading" className="text-lg font-semibold text-gray-950 dark:text-white">Approval summary</h2>
-                                        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Open counts routed to their page-specific queues.</p>
+                                        <p className="text-sm text-gray-500 dark:text-gray-400">Review each queue in its owning workflow.</p>
                                     </div>
                                     <CheckIcon className="h-6 w-6 text-amber-600 dark:text-amber-400" />
                                 </div>
@@ -308,15 +292,14 @@ export default function ManagerDashboard() {
                                     <ApprovalLink label="Suspension approvals" value={typedStats.current_state.approvals.suspension} href="/erp/manager/suspension-approvals" />
                                     {canRepair && <ApprovalLink label="Repair review" value={typedStats.current_state.approvals.repair_review} href="/erp/manager/repair-jobs?review=pending" />}
                                 </div>
-                            </section>
+                            </DashboardPanel>
                         </div>
 
                         <div className="grid gap-6 xl:grid-cols-[1.25fr_0.75fr]">
-                            <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900" aria-labelledby="signals-heading">
+                            <DashboardPanel eyebrow="Exceptions" title="Operational signals" description="Signals include ownership, waiting state, and the next page to open.">
                                 <div className="flex items-start justify-between gap-4">
                                     <div>
-                                        <h2 id="signals-heading" className="text-lg font-semibold text-gray-950 dark:text-white">Operational signals</h2>
-                                        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Signals include who is responsible, what they are waiting on, and the next page to open.</p>
+                                        <p className="text-sm text-gray-500 dark:text-gray-400">{typedStats.signals.length} signal{typedStats.signals.length === 1 ? '' : 's'} currently require attention.</p>
                                     </div>
                                     <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-300">{typedStats.signals.length}</span>
                                 </div>
@@ -325,13 +308,12 @@ export default function ManagerDashboard() {
                                         <div className="rounded-xl border border-dashed border-gray-300 px-4 py-8 text-center text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">No operational signals require attention.</div>
                                     ) : typedStats.signals.map((signal) => <SignalRow key={signal.id} signal={signal} />)}
                                 </div>
-                            </section>
+                            </DashboardPanel>
 
-                            <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900" aria-labelledby="inventory-health-heading">
+                            <DashboardPanel eyebrow="Inventory" title="Inventory health" description="Server-calculated shop-wide stock snapshot.">
                                 <div className="flex items-center justify-between gap-3">
                                     <div>
-                                        <h2 id="inventory-health-heading" className="text-lg font-semibold text-gray-950 dark:text-white">Inventory health</h2>
-                                        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Server-calculated shop-wide stock snapshot.</p>
+                                        <p className="text-sm text-gray-500 dark:text-gray-400">Stock counts available to the manager view.</p>
                                     </div>
                                     <BoxIcon className="h-6 w-6 text-blue-600 dark:text-blue-400" />
                                 </div>
@@ -342,7 +324,7 @@ export default function ManagerDashboard() {
                                     <div className="flex items-center justify-between"><span className="text-rose-700 dark:text-rose-300">Out of stock</span><span className="font-semibold text-rose-700 dark:text-rose-300">{formatNumber(typedStats.current_state.inventory.out_of_stock_count)}</span></div>
                                 </div>
                                 <Link href="/erp/manager/inventory-overview" className="mt-6 inline-flex w-full items-center justify-center rounded-lg bg-gray-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-gray-800 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-200">Open Inventory Overview</Link>
-                            </section>
+                            </DashboardPanel>
                         </div>
 
                         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 pt-4 text-xs text-gray-500 dark:border-gray-800 dark:text-gray-400">
@@ -351,7 +333,7 @@ export default function ManagerDashboard() {
                         </div>
                     </>
                 )}
-            </div>
+            </DashboardShell>
         </AppLayoutERP>
     );
 }

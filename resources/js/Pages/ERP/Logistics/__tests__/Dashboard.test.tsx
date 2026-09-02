@@ -15,6 +15,10 @@ vi.mock('@/layout/AppLayout_ERP', () => ({
   default: ({ children }: React.PropsWithChildren) => <>{children}</>,
 }));
 
+vi.mock('react-apexcharts', () => ({
+  default: () => <div data-testid="logistics-chart" />,
+}));
+
 const defaultStats = {
   requested: 6,
   active: 12,

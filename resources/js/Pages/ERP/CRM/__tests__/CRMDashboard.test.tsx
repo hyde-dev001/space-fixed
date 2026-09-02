@@ -49,9 +49,5 @@ it("shows human-readable interaction timestamps without rendering Invalid Date",
   expect(screen.getByText("2 hours ago")).toBeInTheDocument();
   expect(screen.getByText("Order: ORD-1")).toBeInTheDocument();
   expect(screen.queryByText("Invalid Date")).not.toBeInTheDocument();
-  expect(screen.getAllByText("0%")[0].closest("div.rounded-full")).toHaveClass(
-    "bg-gray-100",
-    "text-gray-900",
-    "dark:bg-green-900/30",
-  );
+  expect(screen.queryByText("0%")).not.toBeInTheDocument();
 });
