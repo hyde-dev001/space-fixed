@@ -589,9 +589,10 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
            .hero-headline-line {
             display: block;
             opacity: 0;
-            transform: translate3d(0, 28px, 0);
-            animation: hero-line-rise 1000ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
-            will-change: transform, opacity;
+            transform: translate3d(0, 36px, 0) scale(1.02);
+            filter: blur(8px);
+            animation: hero-line-rise 1400ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            will-change: transform, opacity, filter;
           }
 
           .hero-line-1 {
@@ -599,53 +600,69 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
           }
 
           .hero-line-2 {
-            animation-delay: 220ms;
+            animation-delay: 300ms;
           }
 
           .hero-line-3 {
-            animation-delay: 440ms;
+            animation-delay: 600ms;
           }
 
           .hero-description {
             opacity: 0;
-            transform: translate3d(0, 20px, 0);
-            animation: hero-copy-fade 900ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
-            animation-delay: 820ms;
-            will-change: transform, opacity;
+            transform: translate3d(0, 24px, 0) scale(0.985);
+            filter: blur(6px);
+            animation: hero-copy-fade 1200ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            animation-delay: 1050ms;
+            will-change: transform, opacity, filter;
           }
 
           .hero-actions {
             opacity: 0;
-            transform: translate3d(0, 20px, 0);
-            animation: hero-copy-fade 900ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
-            animation-delay: 1080ms;
-            will-change: transform, opacity;
+            transform: translate3d(0, 24px, 0) scale(0.985);
+            filter: blur(6px);
+            animation: hero-copy-fade 1200ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            animation-delay: 1450ms;
+            will-change: transform, opacity, filter;
           }
 
           html.solespace-first-load:not(.solespace-app-ready) .landing-hero-motion {
             animation-play-state: paused !important;
           }
 
-          @keyframes hero-line-rise {
-            from {
-              opacity: 0;
-              transform: translate3d(0, 28px, 0);
-            }
-            to {
-              opacity: 1;
-              transform: translate3d(0, 0, 0);
-            }
-          }
+           @keyframes hero-line-rise {
+             0% {
+               opacity: 0;
+               transform: translate3d(0, 36px, 0) scale(1.02);
+               filter: blur(8px);
+             }
+             68% {
+               opacity: 0.92;
+               transform: translate3d(0, -2px, 0) scale(1.005);
+               filter: blur(1px);
+             }
+             100% {
+               opacity: 1;
+               transform: translate3d(0, 0, 0);
+               filter: blur(0);
+             }
+           }
 
-          @keyframes hero-copy-fade {
-            from {
-              opacity: 0;
-              transform: translate3d(0, 20px, 0);
-            }
-            to {
-              opacity: 1;
-              transform: translate3d(0, 0, 0);
-            }
+           @keyframes hero-copy-fade {
+             0% {
+               opacity: 0;
+               transform: translate3d(0, 24px, 0) scale(0.985);
+               filter: blur(6px);
+             }
+             72% {
+               opacity: 0.94;
+               transform: translate3d(0, -1px, 0) scale(1.002);
+               filter: blur(1px);
+             }
+             100% {
+               opacity: 1;
+               transform: translate3d(0, 0, 0);
+               filter: blur(0);
+             }
           }
 
           @media (prefers-reduced-motion: reduce) {
@@ -653,10 +670,11 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
             .landing-hero-motion.hero-headline-line,
             .landing-hero-motion.hero-description,
             .landing-hero-motion.hero-actions {
-              animation: none !important;
-              transform: none !important;
-              opacity: 1 !important;
-            }
+               animation: none !important;
+               transform: none !important;
+               opacity: 1 !important;
+               filter: none !important;
+             }
 
           }
         `}</style>
