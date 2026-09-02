@@ -8,6 +8,7 @@ import Input from '../../../components/form/input/InputField';
 import DropzoneComponent from '../../../components/form/form-elements/DropZone';
 import { MailIcon, LockIcon, UserIcon } from '../../../icons';
 import { parsePhilippineAddress, type RegistrationAddress } from './registrationAddress';
+import { getPasswordRequirementState, isPasswordValid } from './passwordRequirements';
 import { GPS_POSITION_OPTIONS, getCurrentPositionWithTimeout } from '@/utils/geolocation';
 
 type FormErrors = Record<string, string>;
@@ -128,7 +129,7 @@ export default function Register() {
         newErrors.password = 'Please enter a password.';
       } else if (formData.password.length < 8) {
         newErrors.password = 'Password must be at least 8 characters.';
-      } else if (!/[A-Z]/.test(formData.password) || !/[a-z]/.test(formData.password) || !/[0-9]/.test(formData.password)) {
+      } else if (!isPasswordValid(formData.password)) {
         newErrors.password = 'Password must include uppercase, lowercase, and at least one number.';
       }
 
@@ -685,6 +686,8 @@ export default function Register() {
     }
   };
 
+  const passwordRequirementState = getPasswordRequirementState(formData.password);
+
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     // Prevent any accidental form submission via Enter key
@@ -864,7 +867,7 @@ export default function Register() {
                     </div>
                   </div>
 
-                  <div className="relative">
+                  <div className="group relative z-20">
                     <Label htmlFor="password" className="text-[12px] font-medium text-gray-700 mb-1.5">Password</Label>
                     <div className="relative">
                       <LockIcon className="absolute left-3.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -875,8 +878,28 @@ export default function Register() {
                         placeholder="Enter your password"
                         value={formData.password}
                         onChange={handleInputChange}
+                        aria-describedby="password-requirements"
                         className={`pl-10 ${authInputClasses} ${errors.password ? 'border-red-500' : ''}`}
                       />
+                    </div>
+                    <div
+                      id="password-requirements"
+                      role="group"
+                      aria-label="Password requirements"
+                      className="pointer-events-none absolute left-0 right-0 top-full z-30 mt-2 translate-y-1 rounded-2xl border border-gray-200 bg-white p-4 opacity-0 shadow-xl transition duration-200 ease-out group-hover:pointer-events-auto group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:translate-y-0 group-focus-within:opacity-100 dark:border-gray-700 dark:bg-gray-900"
+                    >
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">Password requirements</p>
+                      <ul className="mt-3 space-y-2">
+                        {passwordRequirementState.map(({ key, label, met }) => (
+                          <li key={key} className={`flex items-center gap-2 text-sm ${met ? 'text-emerald-700 dark:text-emerald-300' : 'text-gray-500 dark:text-gray-400'}`}>
+                            <span aria-hidden="true" className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-bold ${met ? 'bg-emerald-100 dark:bg-emerald-900/40' : 'bg-gray-100 dark:bg-gray-800'}`}>
+                              {met ? '✓' : '—'}
+                            </span>
+                            <span>{label}</span>
+                            <span className="sr-only">{met ? 'met' : 'not met'}</span>
+                          </li>
+                        ))}
+                      </ul>
                     </div>
                     {errors.password && <p className="mt-1 text-sm text-red-600">{errors.password}</p>}
                   </div>

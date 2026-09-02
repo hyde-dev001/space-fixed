@@ -329,13 +329,19 @@ export function LeaveRequests() {
         }
 
         // Update local state
+        const approvalDate = new Date().toISOString();
         setLeaveRequestsState((prev) =>
           prev.map((req) =>
             req.id === request.id
-              ? { ...req, status: "approved" as LeaveStatus, approvalDate: new Date().toISOString() }
+              ? { ...req, status: "approved" as LeaveStatus, approvalDate }
               : req
           )
         );
+        setSelectedRequest((current) => (
+          current?.id === request.id
+            ? { ...current, status: "approved" as LeaveStatus, approvalDate }
+            : current
+        ));
         
         Swal.fire({
           icon: "success",
@@ -409,6 +415,11 @@ export function LeaveRequests() {
             : req
         )
       );
+      setSelectedRequest((current) => (
+        current?.id === requestToReject.id
+          ? { ...current, status: "rejected" as LeaveStatus, rejectionReason: finalRejectionReason }
+          : current
+      ));
       
       setIsRejectModalOpen(false);
       setRequestToReject(null);
@@ -649,37 +660,19 @@ export function LeaveRequests() {
                     </div>
                   </td>
                   <td className="px-6 py-4 text-center">
-                    <div className="flex justify-center gap-2">
+                    <div className="flex justify-center">
                       <button
+                        type="button"
                         onClick={() => {
                           setSelectedRequest(request);
                           setIsViewModalOpen(true);
                         }}
-                        className="p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                        aria-label={`View details for ${request.employeeName}`}
+                        className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg p-2 transition-colors hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:hover:bg-blue-900/20 dark:focus:ring-offset-gray-900"
                         title="View Details"
                       >
                         <EyeIcon className="size-5 text-blue-600 dark:text-blue-400" />
                       </button>
-                      {!ownerMode && request.status === "pending" && (
-                        <>
-                          <button
-                            onClick={() => handleApprove(request)}
-                            disabled={isActionProcessing}
-                            className="p-2 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                            title="Approve"
-                          >
-                            <CheckCircleIcon className="size-5 text-green-600 dark:text-green-400" />
-                          </button>
-                          <button
-                            onClick={() => handleReject(request)}
-                            disabled={isActionProcessing}
-                            className="p-2 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                            title="Reject"
-                          >
-                            <AlertIcon className="size-5 text-orange-600 dark:text-orange-400" />
-                          </button>
-                        </>
-                      )}
                     </div>
                   </td>
                 </tr>
@@ -877,11 +870,41 @@ export function LeaveRequests() {
                     </div>
                   )}
 
+                  {/* Decision actions stay inside the details view so the request is reviewed first. */}
+                  {!ownerMode && selectedRequest.status === "pending" && (
+                    <div className="flex flex-col gap-3 border-t border-gray-200 pt-4 dark:border-gray-700 sm:flex-row sm:items-center sm:justify-between">
+                      <p className="text-sm text-gray-600 dark:text-gray-400">Review the request details before choosing an outcome.</p>
+                      <div className="flex flex-col gap-2 sm:flex-row">
+                        <button
+                          type="button"
+                          onClick={() => handleReject(selectedRequest)}
+                          disabled={isActionProcessing}
+                          aria-label="Reject leave request"
+                          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-orange-200 bg-orange-50 px-4 py-2.5 text-sm font-semibold text-orange-700 transition-colors hover:bg-orange-100 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-orange-800 dark:bg-orange-900/20 dark:text-orange-300 dark:hover:bg-orange-900/40 dark:focus:ring-offset-gray-800"
+                        >
+                          <AlertIcon className="size-5" />
+                          Reject leave request
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleApprove(selectedRequest)}
+                          disabled={isActionProcessing}
+                          aria-label="Approve leave request"
+                          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:focus:ring-offset-gray-800"
+                        >
+                          <CheckCircleIcon className="size-5" />
+                          Approve leave request
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Close Button */}
-                  <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+                  <div className="pt-4">
                     <button
+                      type="button"
                       onClick={() => setIsViewModalOpen(false)}
-                      className="w-full px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
+                      className="w-full min-h-11 rounded-lg bg-blue-600 px-4 py-2.5 font-medium text-white transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800"
                     >
                       Close
                     </button>
