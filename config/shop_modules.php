@@ -803,6 +803,7 @@ $routeBuckets = [
         'shop_owner.inventory.overview',
     ],
     'procurement' => [
+        'erp.procurement.dashboard',
         'erp.procurement.purchase-orders',
         'erp.procurement.purchase-request',
         'erp.procurement.suppliers-management',

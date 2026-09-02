@@ -14,22 +14,26 @@ use App\Models\InventoryItem;
 use App\Models\Logistics\DeliveryBatch;
 use App\Models\Logistics\Shipment;
 use App\Models\Order;
-use App\Models\PurchaseOrder;
-use App\Models\PurchaseRequest;
 use App\Models\RepairRequest;
 use App\Models\RepairService;
+use App\Services\ProcurementDashboardService;
 
 final class CanonicalOwnerOverviewService
 {
     public function __construct(
         private readonly InventoryDashboardController $inventoryDashboard,
+        private readonly ProcurementDashboardService $procurementDashboard,
     ) {}
 
     /**
-     * @return array{title: string, description: string, cards: array<int, array{label: string, value: int|float|string, description: string}>}
+     * @return array<string, mixed>
      */
     public function forModule(string $moduleKey, int $shopOwnerId): array
     {
+        if ($moduleKey === 'procurement') {
+            return $this->procurementDashboard->forShopOwner($shopOwnerId);
+        }
+
         return [
             'title' => 'Operational dashboard',
             'description' => 'Key metrics from the existing owner-safe module read models.',
@@ -56,10 +60,6 @@ final class CanonicalOwnerOverviewService
                     $this->card('Customer reviews', CustomerReview::query()->where('shop_owner_id', $shopOwnerId)->count(), 'Reviews for this shop'),
                 ],
                 'inventory' => $this->inventoryCards($shopOwnerId),
-                'procurement' => [
-                    $this->card('Purchase requests', PurchaseRequest::query()->where('shop_owner_id', $shopOwnerId)->count(), 'Requests in the procurement flow'),
-                    $this->card('Purchase orders', PurchaseOrder::query()->where('shop_owner_id', $shopOwnerId)->count(), 'Orders placed for this shop'),
-                ],
                 'logistics' => [
                     $this->card('Shipments', Shipment::query()->where('shop_owner_id', $shopOwnerId)->count(), 'Retail and repair shipments'),
                     $this->card('Batches', DeliveryBatch::query()->where('shop_owner_id', $shopOwnerId)->count(), 'Delivery batches'),
