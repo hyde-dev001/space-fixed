@@ -20,7 +20,6 @@ describe('dashboard primitives', () => {
     render(
       <DashboardShell
         testId="shared-dashboard"
-        eyebrow="ERP module"
         title="Shared dashboard"
         description="A current operational view."
         snapshotDescription="Current shop records"
@@ -33,6 +32,7 @@ describe('dashboard primitives', () => {
 
     expect(screen.getByTestId('shared-dashboard')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Shared dashboard' })).toBeInTheDocument();
+    expect(screen.queryByText('ERP module')).not.toBeInTheDocument();
     expect(screen.getByText('Operational snapshot')).toBeInTheDocument();
     expect(screen.getByText('Dashboard content')).toBeInTheDocument();
 

@@ -93,6 +93,7 @@ it('renders the rich procurement dashboard read model', () => {
   render(<Dashboard />);
 
   expect(screen.getByRole('heading', { name: 'Procurement Dashboard' })).toBeInTheDocument();
+  expect(screen.queryByText('ERP module')).not.toBeInTheDocument();
   expect(screen.getByText('Awaiting review')).toBeInTheDocument();
   expect(screen.getByText('Open order value')).toBeInTheDocument();
   expect(screen.getAllByTestId('procurement-summary-card')).toHaveLength(4);

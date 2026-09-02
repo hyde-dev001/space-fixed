@@ -5,7 +5,6 @@ type DashboardShellProps = {
   children: ReactNode;
   title: string;
   description: string;
-  eyebrow?: string;
   testId?: string;
   headerTestId?: string;
   icon?: ComponentType<{ className?: string }>;
@@ -37,7 +36,6 @@ export default function DashboardShell({
   children,
   title,
   description,
-  eyebrow = 'ERP module',
   testId,
   headerTestId,
   icon: Icon,
@@ -61,8 +59,7 @@ export default function DashboardShell({
               </div>
             )}
             <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-700 dark:text-gray-300">{eyebrow}</p>
-              <h1 className="mt-2 text-3xl font-bold tracking-tight text-gray-950 dark:text-white sm:text-4xl">{title}</h1>
+              <h1 className="text-3xl font-bold tracking-tight text-gray-950 dark:text-white sm:text-4xl">{title}</h1>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-600 dark:text-gray-300">{description}</p>
             </div>
           </div>
