@@ -49,7 +49,7 @@
 - Produces the expected contract for App\Services\ProcurementDashboardService::forShopOwner(int $shopOwnerId): array.
 - Uses PurchaseRequestFactory, PurchaseOrderFactory, ShopOwnerFactory, and SupplierFactory; no production code is changed in the red phase.
 
-- [ ] Step 1: Write the failing service contract test
+- [x] Step 1: Write the failing service contract test
 
 Create a RefreshDatabase test class that freezes time to 2026-09-02 12:00:00 and creates records for two shop owners. Assert that the selected tenant's data produces four summary values, all six calendar buckets, every supported status row, and only the five newest records in recent activity.
 
@@ -113,7 +113,7 @@ $this->assertSame(1, $dashboard['trend']['months'][3]['purchase_requests']);
 $this->assertSame(1, $dashboard['trend']['months'][4]['purchase_orders']);
 $this->assertSame(1, collect($dashboard['request_statuses'])->firstWhere('key', 'pending_finance')['count']);
 $this->assertSame(1, collect($dashboard['order_statuses'])->firstWhere('key', 'in_transit')['count']);
-$this->assertCount(3, $dashboard['recent_activity']);
+$this->assertCount(4, $dashboard['recent_activity']);
 $this->assertTrue(collect($dashboard['recent_activity'])->every(
     static fn (array $record): bool => $record['url'] === null
 ));
@@ -121,7 +121,7 @@ $this->assertTrue(collect($dashboard['recent_activity'])->every(
 
 Add a second test for an empty shop that asserts summary values are zero, trend.months contains six zero-valued entries, and every status count is zero.
 
-- [ ] Step 2: Run the focused test and verify the expected red failure
+- [x] Step 2: Run the focused test and verify the expected red failure
 
 Run:
 
@@ -131,7 +131,7 @@ php artisan test tests/Feature/Procurement/ProcurementDashboardServiceTest.php
 
 Expected result: FAIL because App\Services\ProcurementDashboardService does not exist. If the test errors for a fixture or assertion typo instead, correct the test and rerun until the failure is caused by the missing service.
 
-- [ ] Step 3: Commit the red contract test
+- [x] Step 3: Commit the red contract test
 
 ~~~powershell
 git add tests/Feature/Procurement/ProcurementDashboardServiceTest.php
@@ -150,7 +150,7 @@ git commit -m "test: define procurement dashboard read model"
 - Consumes PurchaseRequest::byShopOwner(), PurchaseOrder::byShopOwner(), PurchaseOrder::active(), and existing status accessors/scopes.
 - Produces forShopOwner(int $shopOwnerId): array with summary, trend, request_statuses, order_statuses, recent_activity, and refreshed_at.
 
-- [ ] Step 1: Implement the smallest service that satisfies the red tests
+- [x] Step 1: Implement the smallest service that satisfies the red tests
 
 Implement ProcurementDashboardService as a final service with these fixed status maps:
 
@@ -184,7 +184,7 @@ Use grouped status queries filtered by shop_owner_id, a separate active-order su
 
 Return url => null for recent rows in this first read model; the page's actor-specific quick links will be supplied by the route renderers, so a row can never point an employee at an owner route or an owner at an employee route.
 
-- [ ] Step 2: Run the service tests and verify green
+- [x] Step 2: Run the service tests and verify green
 
 Run:
 
@@ -194,7 +194,7 @@ php artisan test tests/Feature/Procurement/ProcurementDashboardServiceTest.php
 
 Expected result: all service tests pass. Confirm the foreign shop's 9900 order and foreign pending request do not affect any selected-shop value.
 
-- [ ] Step 3: Commit the shared read model
+- [x] Step 3: Commit the shared read model
 
 ~~~powershell
 git add app/Services/ProcurementDashboardService.php tests/Feature/Procurement/ProcurementDashboardServiceTest.php
@@ -213,7 +213,7 @@ git commit -m "feat: add procurement dashboard read model"
 - Owner route: GET /shop-owner/oversee/procurement, named shop-owner.shell.oversee.procurement.
 - Both render ERP/Procurement/Dashboard and expose the rich dashboard payload.
 
-- [ ] Step 1: Write the failing employee route test
+- [x] Step 1: Write the failing employee route test
 
 Create a RefreshDatabase test that creates a shop owner and user, creates the access-procurement-dashboard permission, grants it to the user, and asserts:
 
@@ -232,7 +232,7 @@ $this->actingAs($user, 'user')
 
 Add a second test that uses a user with no procurement permission and asserts GET /erp/procurement/dashboard returns 403.
 
-- [ ] Step 2: Write the failing canonical owner test
+- [x] Step 2: Write the failing canonical owner test
 
 Create an approved company Shop Owner, enable its procurement ShopOwnerModule, create one purchase request, and assert:
 
@@ -250,7 +250,7 @@ $this->actingAs($owner, 'shop_owner')
     );
 ~~~
 
-- [ ] Step 3: Run the focused route tests and verify the expected red failure
+- [x] Step 3: Run the focused route tests and verify the expected red failure
 
 Run:
 
@@ -260,7 +260,7 @@ php artisan test tests/Feature/Procurement/ProcurementDashboardRouteTest.php
 
 Expected result: FAIL because the employee dashboard route and rich owner payload are not implemented yet.
 
-- [ ] Step 4: Commit the red route contract tests
+- [x] Step 4: Commit the red route contract tests
 
 ~~~powershell
 git add tests/Feature/Procurement/ProcurementDashboardRouteTest.php
@@ -285,7 +285,7 @@ git commit -m "test: define procurement dashboard route contracts"
 - CanonicalOwnerOverviewService::forModule('procurement', $shopOwnerId) returns the service's rich dashboard view model while all other module branches remain unchanged.
 - CanonicalOwnerDashboardService adds owner-only quick links without changing the canonical component or route.
 
-- [ ] Step 1: Add the employee controller method and route
+- [x] Step 1: Add the employee controller method and route
 
 Inject ProcurementDashboardService into ReadPageController alongside the existing inventory read service. Add this method before the existing procurement list methods:
 
@@ -314,7 +314,7 @@ Route::get('/dashboard', [ReadPageController::class, 'procurementDashboard'])
     ->name('dashboard');
 ~~~
 
-- [ ] Step 2: Delegate only the owner procurement overview branch
+- [x] Step 2: Delegate only the owner procurement overview branch
 
 Inject ProcurementDashboardService into CanonicalOwnerOverviewService and replace only the current procurement match arm with:
 
@@ -338,7 +338,7 @@ $response = Inertia::render('ERP/Procurement/Dashboard', compact('dashboard'));
 
 Keep the existing with([...]) owner shell props and canonical route unchanged.
 
-- [ ] Step 3: Register the route in the catalog and regenerate Ziggy
+- [x] Step 3: Register the route in the catalog and regenerate Ziggy
 
 Add erp.procurement.dashboard to the existing config/shop_modules.php procurement route bucket. Do not add an owner page group entry because the canonical owner dashboard is the existing shop-owner.shell.oversee.procurement route and the owner tabs already provide its Dashboard entry.
 
@@ -350,7 +350,7 @@ php artisan ziggy:generate resources/js/ziggy.js
 
 Do not hand-edit the generated one-line route map.
 
-- [ ] Step 4: Run route tests and existing procurement authorization tests
+- [x] Step 4: Run route tests and existing procurement authorization tests
 
 Run:
 
@@ -360,7 +360,7 @@ php artisan test tests/Feature/Procurement/ProcurementDashboardRouteTest.php tes
 
 Expected result: the new route tests and the existing 19 procurement authorization tests pass. Confirm users with only access-procurement-dashboard can open the read-only dashboard but cannot approve purchase requests or stock requests.
 
-- [ ] Step 5: Commit the backend route integration
+- [x] Step 5: Commit the backend route integration
 
 ~~~powershell
 git add app/Http/Controllers/Erp/ReadPageController.php app/Services/OwnerShell/CanonicalOwnerOverviewService.php app/Services/OwnerShell/CanonicalOwnerDashboardService.php routes/web.php config/shop_modules.php resources/js/ziggy.js
@@ -379,7 +379,7 @@ git commit -m "feat: wire procurement dashboard routes"
 - ProcurementDashboard is the TypeScript representation of the backend payload.
 - Dashboard.tsx consumes dashboard?: ProcurementDashboard and treats missing optional arrays as empty arrays.
 
-- [ ] Step 1: Add explicit dashboard types
+- [x] Step 1: Add explicit dashboard types
 
 Add these exported interfaces to resources/js/types/procurement.ts without changing existing procurement record interfaces:
 
@@ -428,7 +428,7 @@ export interface ProcurementDashboard {
 }
 ~~~
 
-- [ ] Step 2: Replace the old two-card test payload with the rich Inertia payload
+- [x] Step 2: Replace the old two-card test payload with the rich Inertia payload
 
 Mock router.reload and react-apexcharts, then supply four summary values, six trend months, status rows, recent activity, and employee links. Add assertions for:
 
@@ -448,7 +448,7 @@ expect(screen.getByRole('link', { name: /view purchase requests/i })).toHaveAttr
 
 Add a test that clicks the Refresh data button and expects router.reload to receive { only: ['dashboard'], preserveScroll: true }. Add an empty payload test asserting the page still renders six zeroed trend points and the empty activity state without throwing.
 
-- [ ] Step 3: Run the focused UI test and verify the expected red failure
+- [x] Step 3: Run the focused UI test and verify the expected red failure
 
 Run:
 
@@ -458,7 +458,7 @@ C:/programmers/xampp/files/htdocs/solespace-master/node_modules/.bin/vitest.cmd 
 
 Expected result: FAIL because the current page does not render the new KPI, chart, status, activity, and refresh elements.
 
-- [ ] Step 4: Commit the red frontend contract test and types
+- [x] Step 4: Commit the red frontend contract test and types
 
 ~~~powershell
 git add resources/js/types/procurement.ts resources/js/Pages/ERP/Procurement/__tests__/Dashboard.test.tsx
@@ -477,7 +477,7 @@ git commit -m "test: define procurement dashboard ui contract"
 - Consumes typed ProcurementDashboard props and Inertia router.
 - Produces the same component for employee and canonical owner routes; links are read from dashboard.links and never reconstructed from a tenant ID.
 
-- [ ] Step 1: Implement safe formatting and chart data helpers
+- [x] Step 1: Implement safe formatting and chart data helpers
 
 Use formatNumber with Intl.NumberFormat, formatMoney with Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }), and default empty arrays. Build chart series from trend.months:
 
@@ -490,7 +490,7 @@ const chartSeries = [
 
 Configure ApexCharts as a responsive area chart with no toolbar/zoom, visible legend, two neutral accent colors, category labels from month labels, count tooltips, and reduced-motion-safe CSS around the chart. Render a visually hidden or screen-reader-only summary containing the six labels and series values.
 
-- [ ] Step 2: Implement the page sections from the approved design
+- [x] Step 2: Implement the page sections from the approved design
 
 Keep the existing AppLayoutERP and page title. Render:
 
@@ -503,7 +503,7 @@ Keep the existing AppLayoutERP and page title. Render:
 
 Use static Tailwind class maps for status bar colors so all classes are discoverable at build time. Use semantic HTML (section, headings, table or list roles), visible focus rings, no emoji, no icon-only unlabelled controls, and dark-mode variants consistent with DESIGN.md. Use motion-reduce utilities for hover/chart wrappers.
 
-- [ ] Step 3: Verify the focused frontend tests pass
+- [x] Step 3: Verify the focused frontend tests pass
 
 Run:
 
@@ -513,7 +513,7 @@ C:/programmers/xampp/files/htdocs/solespace-master/node_modules/.bin/vitest.cmd 
 
 Expected result: all procurement dashboard UI tests pass with no test errors. If an ApexCharts import fails in the test environment, keep the test-only react-apexcharts mock and do not add a runtime dependency.
 
-- [ ] Step 4: Commit the dashboard UI
+- [x] Step 4: Commit the dashboard UI
 
 ~~~powershell
 git add resources/js/Pages/ERP/Procurement/Dashboard.tsx resources/js/Pages/ERP/Procurement/__tests__/Dashboard.test.tsx resources/js/types/procurement.ts
@@ -532,7 +532,7 @@ git commit -m "feat: build procurement dashboard analytics ui"
 - Employee Procurement section receives a first item named Dashboard with route erp.procurement.dashboard and fallback path /erp/procurement/dashboard.
 - Existing owner module filtering, Inventory supplier-order placement, procurement permission gates, and attendance/payslip behavior remain unchanged.
 
-- [ ] Step 1: Add the failing sidebar regression test
+- [x] Step 1: Add the failing sidebar regression test
 
 Set the existing sidebar test state to a PROCUREMENT MANAGER with view-procurement, render AppSidebarERP, and assert:
 
@@ -546,7 +546,7 @@ expect(document.querySelector('a[href="/erp/procurement/purchase-orders"]')).toB
 
 Also assert that the existing Inventory Manager test still does not render Purchase Requests, Purchase Orders, or Suppliers Management.
 
-- [ ] Step 2: Run the focused sidebar tests and verify the expected red failure
+- [x] Step 2: Run the focused sidebar tests and verify the expected red failure
 
 Run:
 
@@ -556,7 +556,7 @@ C:/programmers/xampp/files/htdocs/solespace-master/node_modules/.bin/vitest.cmd 
 
 Expected result: the new dashboard-link assertion fails because the route is not in procurementItems or the fallback path map.
 
-- [ ] Step 3: Add the sidebar item and active-path fallback
+- [x] Step 3: Add the sidebar item and active-path fallback
 
 Add a simple dashboard SVG item before Purchase Requests:
 
@@ -584,11 +584,11 @@ Add the same route to allRoutePaths as:
 
 Keep hasProcurementAccess() unchanged because it already includes access-procurement-dashboard, individual procurement page permissions, view-procurement, and the Procurement Manager role.
 
-- [ ] Step 4: Verify sidebar tests pass
+- [x] Step 4: Verify sidebar tests pass
 
 Run the focused sidebar command again. Expected result: all existing sidebar tests plus the new dashboard test pass.
 
-- [ ] Step 5: Commit the employee navigation change
+- [x] Step 5: Commit the employee navigation change
 
 ~~~powershell
 git add resources/js/layout/AppSidebar_ERP.tsx resources/js/layout/__tests__/AppSidebar_ERP.test.tsx
@@ -605,7 +605,7 @@ git commit -m "feat: add procurement dashboard navigation"
 - Review: tests/Feature/ShopOwner/CanonicalShell/CanonicalOwnerCapabilityParityTest.php
 - Review: all changed files from git diff.
 
-- [ ] Step 1: Run focused backend and frontend suites
+- [x] Step 1: Run focused backend and frontend suites
 
 ~~~powershell
 php artisan test tests/Feature/Procurement/ProcurementDashboardServiceTest.php tests/Feature/Procurement/ProcurementDashboardRouteTest.php tests/Feature/Procurement/ProcurementAuthorizationTest.php tests/Feature/BusinessScaling/OwnerErpPageContractTest.php
@@ -614,7 +614,7 @@ C:/programmers/xampp/files/htdocs/solespace-master/node_modules/.bin/vitest.cmd 
 
 Expected result: all focused backend and frontend tests pass; the existing owner page arrays remain unchanged because the owner dashboard is canonical and not an owner page-group item.
 
-- [ ] Step 2: Run the full frontend suite and production build
+- [x] Step 2: Run the full frontend suite and production build
 
 ~~~powershell
 C:/programmers/xampp/files/htdocs/solespace-master/node_modules/.bin/vitest.cmd run --reporter=dot
@@ -623,7 +623,7 @@ C:/programmers/xampp/files/htdocs/solespace-master/node_modules/.bin/vite.cmd bu
 
 Expected result: the full Vitest suite passes and Vite produces a successful build. pnpm.cmd run test:frontend and pnpm.cmd run build may be retried if the package manager becomes responsive; report the direct-binary commands as the actual evidence when pnpm remains blocked.
 
-- [ ] Step 3: Run Laravel procurement and BusinessScaling suites
+- [x] Step 3: Run Laravel procurement and BusinessScaling suites
 
 ~~~powershell
 php artisan test tests/Feature/Procurement tests/Feature/BusinessScaling
@@ -631,7 +631,7 @@ php artisan test tests/Feature/Procurement tests/Feature/BusinessScaling
 
 Expected result: all relevant Laravel tests pass. Do not run destructive database commands; PHPUnit's in-memory SQLite configuration provides test isolation.
 
-- [ ] Step 4: Perform sequential review gates
+- [x] Step 4: Perform sequential review gates
 
 Review the diff in this order:
 
@@ -641,7 +641,7 @@ Review the diff in this order:
 4. Security/Laravel: confirm all backend aggregation queries are tenant-filtered, the employee route retains auth:user plus permission middleware, and owner data comes from canonical actor context.
 5. Reuse/dead code: confirm existing layout, route helpers, model scopes, chart dependency, and owner shell are reused; remove only orphans created by this change.
 
-- [ ] Step 5: Run final hygiene and inspect generated changes
+- [x] Step 5: Run final hygiene and inspect generated changes
 
 ~~~powershell
 git diff --check
@@ -651,7 +651,7 @@ git diff --stat HEAD~6..HEAD
 
 Inspect resources/js/ziggy.js and any public/build output as generated artifacts. Do not hand-edit generated build files. Confirm the parent checkout's unrelated changes were never included in the feature branch.
 
-- [ ] Step 6: Verify the browser-visible employee and owner flows
+- [x] Step 6: Verify the browser-visible employee and owner flows
 
 With the local Laravel/Vite application running, use Playwright/browser verification to confirm:
 
@@ -663,7 +663,7 @@ With the local Laravel/Vite application running, use Playwright/browser verifica
 - an Inventory Manager still sees Supplier Orders under Inventory and cannot see Procurement pages without procurement access;
 - no horizontal scrolling occurs at 375px, 768px, 1024px, or 1440px widths.
 
-- [ ] Step 7: Commit only after all checks pass
+- [x] Step 7: Commit only after all checks pass
 
 ~~~powershell
 git add app config routes resources/js tests
@@ -671,4 +671,3 @@ git commit -m "feat: add procurement dashboards"
 ~~~
 
 Report exact test counts, build output, browser evidence, unmeasured performance/bundle baseline, and the final feature commit. Do not claim TypeScript lint or type-check success because no repository scripts/configuration currently provide those checks.
-

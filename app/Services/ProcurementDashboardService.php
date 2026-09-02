@@ -41,14 +41,6 @@ final class ProcurementDashboardService
         'pending_finance_final',
     ];
 
-    /** @var list<string> */
-    private const ACTIVE_ORDER_STATUSES = [
-        'sent',
-        'confirmed',
-        'in_transit',
-        'partially_received',
-    ];
-
     /**
      * @return array<string, mixed>
      */
@@ -70,7 +62,7 @@ final class ProcurementDashboardService
             ->sum('count');
         $openOrderValue = PurchaseOrder::query()
             ->byShopOwner($shopOwnerId)
-            ->whereIn('status', self::ACTIVE_ORDER_STATUSES)
+            ->active()
             ->sum('total_cost');
 
         $periodStart = now()->startOfMonth()->subMonths(5);
