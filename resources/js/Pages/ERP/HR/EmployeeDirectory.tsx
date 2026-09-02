@@ -330,6 +330,8 @@ const formatDate = (value?: string) => {
 
 const buildName = (employee: Employee) => `${employee.firstName} ${employee.lastName}`;
 
+const employeeActionButtonClass = "inline-flex size-11 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:focus-visible:ring-offset-gray-800";
+
 const canonicalEmployeeStatus = (value: unknown): EmployeeStatus => {
   switch (String(value ?? '').trim().toLowerCase()) {
     case 'active':
@@ -2525,7 +2527,7 @@ export const EmployeeManagement: React.FC<{
                   <th className="w-[7%] px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Last Active</th>
                   <th className="w-[10%] px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Created By</th>
                   <th className="w-[8%] px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Account</th>
-                  <th className="w-[220px] px-3 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Actions</th>
+                  <th className="w-[340px] px-3 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
               <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
@@ -2611,36 +2613,42 @@ export const EmployeeManagement: React.FC<{
                           <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300">No Link</span>
                         )}
                       </td>
-                      <td className="px-3 py-3 whitespace-nowrap text-right text-sm font-medium">
-                        <div className="flex flex-wrap justify-end gap-2">
+                      <td className="px-3 py-3 align-top text-right text-sm font-medium">
+                        <div className="ml-auto flex max-w-[340px] flex-wrap items-center justify-end gap-2">
                           {!ownerReadOnly && (
                             <>
                           <button
+                            type="button"
                             onClick={() => handleResetEmployeePassword(employee)}
-                            className={`text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 ${(isProcessingId === employee.id || String(employee.email ?? '').trim().toLowerCase() === currentUserEmail) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            className={`${employeeActionButtonClass} text-red-600 hover:border-red-200 hover:bg-red-50 hover:text-red-900 dark:text-red-400 dark:hover:border-red-800 dark:hover:bg-red-900/20 dark:hover:text-red-300`}
                             title={String(employee.email ?? '').trim().toLowerCase() === currentUserEmail ? "You cannot reset your own account password" : "Reset Employee Password"}
+                            aria-label={String(employee.email ?? '').trim().toLowerCase() === currentUserEmail ? "You cannot reset your own account password" : `Reset password for ${buildName(employee)}`}
                             disabled={isProcessingId === employee.id || String(employee.email ?? '').trim().toLowerCase() === currentUserEmail}
                           >
-                            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m6-10h-1V6a5 5 0 00-10 0v1H6a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V9a2 2 0 00-2-2zM9 7V6a3 3 0 016 0v1H9z" />
                             </svg>
                           </button>
                           <button
+                            type="button"
                             onClick={() => viewInvitationLink(employee)}
-                            className={`text-green-600 hover:text-green-900 dark:text-green-400 dark:hover:text-green-300 ${(isProcessingId === employee.id || String(employee.email ?? '').trim().toLowerCase() === currentUserEmail) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            className={`${employeeActionButtonClass} text-green-600 hover:border-green-200 hover:bg-green-50 hover:text-green-900 dark:text-green-400 dark:hover:border-green-800 dark:hover:bg-green-900/20 dark:hover:text-green-300`}
                             title={String(employee.email ?? '').trim().toLowerCase() === currentUserEmail ? "You cannot reset your own account password" : "View/Resend Invitation Link"}
+                            aria-label={String(employee.email ?? '').trim().toLowerCase() === currentUserEmail ? "You cannot reset your own account password" : `View or resend invitation for ${buildName(employee)}`}
                             disabled={isProcessingId === employee.id || String(employee.email ?? '').trim().toLowerCase() === currentUserEmail}
                           >
-                            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                             </svg>
                           </button>
                             </>
                           )}
                           <button
+                            type="button"
                             onClick={() => openViewModal(employee)}
-                            className={`text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 ${isProcessingId === employee.id ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            className={`${employeeActionButtonClass} text-blue-600 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-900 dark:text-blue-400 dark:hover:border-blue-800 dark:hover:bg-blue-900/20 dark:hover:text-blue-300`}
                             title="View Details"
+                            aria-label={`View details for ${buildName(employee)}`}
                             disabled={isProcessingId === employee.id}
                           >
                             <InfoIcon className="h-5 w-5" />
@@ -2666,21 +2674,27 @@ export const EmployeeManagement: React.FC<{
                             </Button>
                           )}
                           {canRequestEmployeeLifecycle && employee.status !== 'terminated' && (
-                            <Button
-                              variant="danger"
+                            <button
+                              type="button"
                               onClick={() => handleTerminateClick(employee)}
-                              className="whitespace-nowrap px-3 py-2 text-xs"
+                              className={`${employeeActionButtonClass} text-red-600 hover:border-red-200 hover:bg-red-50 hover:text-red-900 dark:text-red-400 dark:hover:border-red-800 dark:hover:bg-red-900/20 dark:hover:text-red-300`}
+                              title="Request Termination"
+                              aria-label={`Request termination for ${buildName(employee)}`}
                               disabled={isProcessingId === employee.id || isSelfEmployeeAccount(employee)}
                             >
-                              Request Termination
-                            </Button>
+                              <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19a6 6 0 00-12 0m6-8a4 4 0 100-8 4 4 0 000 8zm5-5h6" />
+                              </svg>
+                            </button>
                           )}
                           {!ownerReadOnly && (
                             <>
                           <button
+                            type="button"
                             onClick={() => openPermissionModal(employee)}
-                            className={`text-purple-600 hover:text-purple-900 dark:text-purple-400 dark:hover:text-purple-300 ${isProcessingId === employee.id ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            className={`${employeeActionButtonClass} text-purple-600 hover:border-purple-200 hover:bg-purple-50 hover:text-purple-900 dark:text-purple-400 dark:hover:border-purple-800 dark:hover:bg-purple-900/20 dark:hover:text-purple-300`}
                             title="Manage Permissions"
+                            aria-label={`Manage permissions for ${buildName(employee)}`}
                             disabled={isProcessingId === employee.id}
                           >
                             <LockIcon className="h-5 w-5" />
@@ -2688,11 +2702,15 @@ export const EmployeeManagement: React.FC<{
                           {!['inactive', 'suspended', 'terminated'].includes(employee.status) && (
                             <>
                               <button
+                                type="button"
                                 onClick={() => handleSuspendClick(employee)}
-                                className={`inline-flex items-center justify-center w-8 h-8 rounded-md text-orange-600 hover:text-orange-800 dark:text-orange-400 dark:hover:text-orange-300 transition-colors ${(isProcessingId === employee.id || isSelfEmployeeAccount(employee)) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                className={`${employeeActionButtonClass} text-orange-600 hover:border-orange-200 hover:bg-orange-50 hover:text-orange-800 dark:text-orange-400 dark:hover:border-orange-800 dark:hover:bg-orange-900/20 dark:hover:text-orange-300`}
                                 title={isSelfEmployeeAccount(employee)
                                   ? 'You cannot suspend your own account'
                                   : ownerMode ? 'Suspend Employee' : 'File Suspension Request'}
+                                aria-label={isSelfEmployeeAccount(employee)
+                                  ? 'You cannot suspend your own account'
+                                  : ownerMode ? `Suspend ${buildName(employee)}` : `File suspension request for ${buildName(employee)}`}
                                 disabled={isProcessingId === employee.id || isSelfEmployeeAccount(employee)}
                               >
                                 <AlertIcon className="h-5 w-5" />

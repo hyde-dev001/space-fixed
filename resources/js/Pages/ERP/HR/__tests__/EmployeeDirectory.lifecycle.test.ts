@@ -46,11 +46,17 @@ describe('employee termination and rehire directory workflow', () => {
       source.indexOf('{!ownerReadOnly && (', source.indexOf("{['inactive', 'suspended'].includes(employee.status) && (")),
     );
 
+    expect(source).toContain('const employeeActionButtonClass =');
+    expect(source).toContain('inline-flex size-11 shrink-0 items-center justify-center');
+    expect(source).toContain('w-[340px]');
+    expect(source).toContain('flex flex-wrap items-center justify-end gap-2');
     expect(actionColumn).toContain('<Button');
     expect(actionColumn).toContain('variant="success"');
     expect(actionColumn).toContain('Activate Account');
     expect(actionColumn).toContain('Request Rehire');
-    expect(actionColumn).toContain('Request Termination');
+    expect(actionColumn).toContain('title="Request Termination"');
+    expect(actionColumn).toContain('aria-label={`Request termination for ${buildName(employee)}`}');
+    expect(actionColumn).not.toContain('>\n                              Request Termination\n');
   });
 
   it('does not offer Activate Account for terminated employee rows', () => {

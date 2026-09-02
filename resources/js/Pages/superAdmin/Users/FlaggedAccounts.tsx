@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Head, router, usePage } from '@inertiajs/react';
+import { Head, Link, router, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import Swal from 'sweetalert2';
 import AppLayout from '../../../layout/AppLayout';
@@ -278,12 +278,22 @@ const FlaggedAccounts: React.FC = () => {
       <Head title="Flagged Accounts" />
       <div className="min-h-screen bg-gray-50 p-6 dark:bg-gray-900">
         <div className="mx-auto max-w-7xl">
-          <div className="mb-8 flex items-center justify-between">
+          <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
+              <Link
+                href="/admin/users"
+                className="mb-4 inline-flex min-h-11 items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800 dark:focus-visible:ring-offset-gray-900"
+                aria-label="Back to User Management"
+              >
+                <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                </svg>
+                <span>Back to User Management</span>
+              </Link>
               <h1 className="mb-2 text-3xl font-bold text-gray-900 dark:text-white">Flagged Accounts</h1>
               <p className="text-gray-600 dark:text-gray-400">Review customer reports using the account state workflow.</p>
             </div>
-            <div className="text-right">
+            <div className="text-left sm:text-right">
               <div className="text-2xl font-bold text-gray-900 dark:text-white">{serverPage?.total ?? filteredAccounts.length}</div>
               <div className="text-sm text-gray-500 dark:text-gray-400">Visible reports</div>
             </div>
