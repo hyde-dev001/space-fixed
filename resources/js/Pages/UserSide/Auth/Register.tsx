@@ -867,41 +867,39 @@ export default function Register() {
                     </div>
                   </div>
 
-                  <div>
+                  <div className="group relative z-20">
                     <Label htmlFor="password" className="text-[12px] font-medium text-gray-700 mb-1.5">Password</Label>
-                    <div className="group relative z-20">
-                      <div className="relative">
-                        <LockIcon className="absolute left-3.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                        <Input
-                          type="password"
-                          id="password"
-                          name="password"
-                          placeholder="Enter your password"
-                          value={formData.password}
-                          onChange={handleInputChange}
-                          aria-describedby="password-requirements"
-                          className={`pl-10 ${authInputClasses} ${errors.password ? 'border-red-500' : ''}`}
-                        />
-                      </div>
-                      <div
-                        id="password-requirements"
-                        role="group"
-                        aria-label="Password requirements"
-                        className="pointer-events-none absolute bottom-full left-0 right-0 z-30 mb-2 translate-y-1 rounded-2xl border border-gray-200 bg-white p-4 opacity-0 shadow-xl transition duration-200 ease-out group-hover:pointer-events-auto group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:translate-y-0 group-focus-within:opacity-100 dark:border-gray-700 dark:bg-gray-900"
-                      >
-                        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">Password requirements</p>
-                        <ul className="mt-3 space-y-2">
-                          {passwordRequirementState.map(({ key, label, met }) => (
-                            <li key={key} className={`flex items-center gap-2 text-sm ${met ? 'text-emerald-700 dark:text-emerald-300' : 'text-gray-500 dark:text-gray-400'}`}>
-                              <span aria-hidden="true" className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-bold ${met ? 'bg-emerald-100 dark:bg-emerald-900/40' : 'bg-gray-100 dark:bg-gray-800'}`}>
-                                {met ? '✓' : '—'}
-                              </span>
-                              <span>{label}</span>
-                              <span className="sr-only">{met ? 'met' : 'not met'}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
+                    <div className="relative">
+                      <LockIcon className="absolute left-3.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <Input
+                        type="password"
+                        id="password"
+                        name="password"
+                        placeholder="Enter your password"
+                        value={formData.password}
+                        onChange={handleInputChange}
+                        aria-describedby="password-requirements"
+                        className={`pl-10 ${authInputClasses} ${errors.password ? 'border-red-500' : ''}`}
+                      />
+                    </div>
+                    <div
+                      id="password-requirements"
+                      role="group"
+                      aria-label="Password requirements"
+                      className="pointer-events-none absolute left-0 right-0 top-full z-30 mt-2 translate-y-1 rounded-2xl border border-gray-200 bg-white p-4 opacity-0 shadow-xl transition duration-200 ease-out group-hover:pointer-events-auto group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:translate-y-0 group-focus-within:opacity-100 dark:border-gray-700 dark:bg-gray-900"
+                    >
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">Password requirements</p>
+                      <ul className="mt-3 space-y-2">
+                        {passwordRequirementState.map(({ key, label, met }) => (
+                          <li key={key} className={`flex items-center gap-2 text-sm ${met ? 'text-emerald-700 dark:text-emerald-300' : 'text-gray-500 dark:text-gray-400'}`}>
+                            <span aria-hidden="true" className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-bold ${met ? 'bg-emerald-100 dark:bg-emerald-900/40' : 'bg-gray-100 dark:bg-gray-800'}`}>
+                              {met ? '✓' : '—'}
+                            </span>
+                            <span>{label}</span>
+                            <span className="sr-only">{met ? 'met' : 'not met'}</span>
+                          </li>
+                        ))}
+                      </ul>
                     </div>
                     {errors.password && <p className="mt-1 text-sm text-red-600">{errors.password}</p>}
                   </div>

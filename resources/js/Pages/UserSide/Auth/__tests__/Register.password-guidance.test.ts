@@ -29,9 +29,6 @@ describe('customer registration password guidance', () => {
     expect(passwordField).toContain('group-hover:opacity-100');
     expect(passwordField).toContain('group-focus-within:opacity-100');
     expect(passwordField).toContain('absolute');
-    expect(passwordField).toContain('bottom-full');
-    expect(passwordField).toContain('mb-2');
-    expect(passwordField).not.toContain('top-full');
     expect(passwordField).toContain('aria-describedby="password-requirements"');
     expect(passwordField).toContain('passwordRequirementState.map');
     expect(passwordField).toContain('<span>{label}</span>');
