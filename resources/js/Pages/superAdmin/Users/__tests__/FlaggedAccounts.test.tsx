@@ -13,6 +13,7 @@ const { postMock, getMock, reloadMock, swalFireMock, usePageMock } = vi.hoisted(
 
 vi.mock('@inertiajs/react', () => ({
   Head: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
+  Link: ({ children, href, ...props }: { children?: React.ReactNode; href?: string }) => <a href={href} {...props}>{children}</a>,
   router: { get: getMock, reload: reloadMock },
   usePage: () => usePageMock(),
 }));
@@ -51,6 +52,13 @@ beforeEach(() => {
 });
 
 describe('Flagged account state UI', () => {
+  it('provides a back link to user management', () => {
+    render(<FlaggedAccounts />);
+
+    expect(screen.getByRole('link', { name: 'Back to User Management' }))
+      .toHaveAttribute('href', '/admin/users');
+  });
+
   it('shows domain status labels and only valid pending controls', () => {
     usePageMock.mockReturnValue({ props: { flaggedAccounts: [account('account_suspended')] } });
     render(<FlaggedAccounts />);
