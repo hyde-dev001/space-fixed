@@ -1,6 +1,6 @@
 import { Head, Link, usePage } from "@inertiajs/react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import axios from "axios";
 import { erpUrl } from "@/utils/erpCapabilities";
 import type { ErpCapabilities } from "@/types/erp";
