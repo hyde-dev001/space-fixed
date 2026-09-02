@@ -96,6 +96,19 @@ describe('SoleSpace landing page redesign', () => {
     expect(landingSource).toContain('lg:min-w-0 lg:aspect-auto lg:min-h-[38rem]');
   });
 
+  it('uses a slower premium timing for the hero copy entrance', () => {
+    [
+      'animation: hero-line-rise 1000ms cubic-bezier(0.22, 1, 0.36, 1) forwards;',
+      'animation-delay: 220ms;',
+      'animation-delay: 440ms;',
+      'animation: hero-copy-fade 900ms cubic-bezier(0.22, 1, 0.36, 1) forwards;',
+      'animation-delay: 820ms;',
+      'animation-delay: 1080ms;',
+      '}, 4500);',
+      '@media (prefers-reduced-motion: reduce)',
+    ].forEach((marker) => expect(landingSource).toContain(marker));
+  });
+
   it('removes the superseded statistics and final CTA copy', () => {
     expect(landingSource).not.toContain('Satisfaction');
     expect(landingSource).not.toContain('READY TO STEP INTO STYLE?');

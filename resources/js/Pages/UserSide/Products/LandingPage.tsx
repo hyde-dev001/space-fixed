@@ -590,7 +590,7 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
             display: block;
             opacity: 0;
             transform: translate3d(0, 28px, 0);
-            animation: hero-line-rise 600ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+            animation: hero-line-rise 1000ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
             will-change: transform, opacity;
           }
 
@@ -599,26 +599,26 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
           }
 
           .hero-line-2 {
-            animation-delay: 160ms;
+            animation-delay: 220ms;
           }
 
           .hero-line-3 {
-            animation-delay: 320ms;
+            animation-delay: 440ms;
           }
 
           .hero-description {
             opacity: 0;
             transform: translate3d(0, 20px, 0);
-            animation: hero-copy-fade 650ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
-            animation-delay: 520ms;
+            animation: hero-copy-fade 900ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+            animation-delay: 820ms;
             will-change: transform, opacity;
           }
 
           .hero-actions {
             opacity: 0;
             transform: translate3d(0, 20px, 0);
-            animation: hero-copy-fade 650ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
-            animation-delay: 700ms;
+            animation: hero-copy-fade 900ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+            animation-delay: 1080ms;
             will-change: transform, opacity;
           }
 
