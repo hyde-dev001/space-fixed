@@ -198,6 +198,55 @@ export interface ProcurementSettings {
     updated_at: string;
 }
 
+export interface ProcurementDashboardSummary {
+    purchase_requests: number;
+    awaiting_review: number;
+    purchase_orders: number;
+    open_order_value: number | string;
+}
+
+export interface ProcurementDashboardMonth {
+    label: string;
+    start: string;
+    end: string;
+    purchase_requests: number;
+    purchase_orders: number;
+}
+
+export interface ProcurementDashboardStatus {
+    key: string;
+    label: string;
+    count: number;
+}
+
+export interface ProcurementDashboardActivity {
+    type: 'Purchase request' | 'Purchase order';
+    reference: string;
+    description: string;
+    status: string;
+    amount: number | string;
+    occurred_at: string;
+    url: string | null;
+}
+
+export interface ProcurementDashboard {
+    title: string;
+    description: string;
+    summary: ProcurementDashboardSummary;
+    trend: {
+        period_label: string;
+        months: ProcurementDashboardMonth[];
+    };
+    request_statuses: ProcurementDashboardStatus[];
+    order_statuses: ProcurementDashboardStatus[];
+    recent_activity: ProcurementDashboardActivity[];
+    refreshed_at: string;
+    links?: {
+        purchase_requests?: string;
+        purchase_orders?: string;
+    };
+}
+
 // Metrics interfaces
 export interface ProcurementMetrics {
     total_purchase_requests: number;
