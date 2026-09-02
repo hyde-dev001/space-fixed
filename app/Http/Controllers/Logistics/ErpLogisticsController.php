@@ -43,12 +43,16 @@ class ErpLogisticsController extends Controller
         private LogisticsActorPolicy $logisticsPolicy,
     ) {}
 
-    public function dashboard(): Response
+    public function dashboard(): Response|RedirectResponse
     {
         $shopOwnerId = $this->authorizedShopOwnerId('access-logistics-dashboard');
         $context = $this->erpContext();
         $ownerMode = $context?->isOwnerMode() === true;
         $user = Auth::guard('user')->user();
+
+        if (! $ownerMode && $this->isLogisticsRider($user)) {
+            return redirect()->route('erp.logistics.deliveries');
+        }
 
         return Inertia::render('ERP/Logistics/Dashboard', [
             'stats' => $this->stats($shopOwnerId),
@@ -61,6 +65,11 @@ class ErpLogisticsController extends Controller
     public function dashboardStats(): JsonResponse
     {
         $shopOwnerId = $this->authorizedShopOwnerId('access-logistics-dashboard');
+        $user = Auth::guard('user')->user();
+
+        if ($this->isLogisticsRider($user)) {
+            abort(403);
+        }
 
         return response()->json([
             'stats' => $this->stats($shopOwnerId),
@@ -1063,6 +1072,17 @@ class ErpLogisticsController extends Controller
         $context = request()->attributes->get('erp.actor_context');
 
         return $context instanceof ErpActorContext ? $context : null;
+    }
+
+    private function isLogisticsRider(?Authenticatable $user): bool
+    {
+        if (! ($user instanceof User)) {
+            return false;
+        }
+
+        return $user->hasRole('Logistics Rider')
+            || ($user->can('operate-logistics-deliveries')
+                && ! $user->can('assign-logistics-deliveries'));
     }
 
     private function trustedRiderProfile(

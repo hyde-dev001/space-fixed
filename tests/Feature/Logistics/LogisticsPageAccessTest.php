@@ -389,7 +389,10 @@ class LogisticsPageAccessTest extends TestCase
         $this->assertTrue($rider->fresh()->can('view-logistics-shipments'));
         $this->assertTrue($rider->fresh()->can('access-logistics-dashboard'));
 
-        $this->actingAs($rider->fresh(), 'user')->get('/erp/logistics')->assertOk();
+        $this->actingAs($rider->fresh(), 'user')->get('/erp/logistics')
+            ->assertRedirect('/erp/logistics/deliveries');
+        $this->actingAs($rider->fresh(), 'user')->getJson('/api/logistics/dashboard-stats')
+            ->assertForbidden();
         $this->actingAs($rider->fresh(), 'user')->get('/erp/logistics/shipments')
             ->assertRedirect('/erp/logistics/deliveries');
         $this->actingAs($rider->fresh(), 'user')->get('/erp/logistics/deliveries')->assertOk();

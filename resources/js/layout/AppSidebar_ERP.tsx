@@ -770,6 +770,8 @@ const staffItems: NavItem[] = [
   },
 ];
 
+const logisticsItems: NavItem[] = staffItems.filter((item) => item.route?.startsWith("erp.logistics."));
+
 const repairItems: NavItem[] = [
   {
     icon: (
@@ -927,9 +929,10 @@ const EmployeeSidebarERP: React.FC = () => {
   const isRepairCapableBusiness = managerBusinessCapabilities.canRepair;
   const isRetailOnlyBusiness = normalizedBusinessType === 'retail';
   const isRepairOnlyBusiness = normalizedBusinessType === 'repair';
-  const normalizedRole = String(role || '').toUpperCase();
+  const normalizeRoleName = (value: unknown) => String(value || '').trim().toUpperCase().replace(/_/g, ' ');
+  const normalizedRole = normalizeRoleName(role);
   const normalizedRoles = Array.isArray(roles)
-    ? roles.map((value: string) => String(value).toUpperCase())
+    ? roles.map((value: string) => normalizeRoleName(value))
     : [];
   const hasRolesArray = normalizedRoles.length > 0;
   const hasCashierRole = normalizedRoles.includes('CASHIER') || (!hasRolesArray && normalizedRole === 'CASHIER');
@@ -940,6 +943,22 @@ const EmployeeSidebarERP: React.FC = () => {
   const hasInventoryManagerRole = normalizedRoles.includes('INVENTORY MANAGER');
   const hasProcurementManagerRole = normalizedRoles.includes('PROCUREMENT MANAGER');
   const hasExplicitStaffRole = normalizedRoles.includes('STAFF') || (!hasRolesArray && normalizedRole === 'STAFF');
+  const hasLogisticsDispatcherRole = normalizedRoles.includes('LOGISTICS DISPATCHER') || normalizedRole === 'LOGISTICS DISPATCHER';
+  const hasLogisticsRiderRole = normalizedRoles.includes('LOGISTICS RIDER') || normalizedRole === 'LOGISTICS RIDER';
+  const isDedicatedLogisticsAccount = hasLogisticsDispatcherRole || hasLogisticsRiderRole;
+  const logisticsPermissions = [
+    'access-logistics-dashboard',
+    'view-logistics-shipments',
+    'assign-logistics-deliveries',
+    'manage-logistics-riders',
+    'update-logistics-status',
+    'record-logistics-proof',
+    'operate-logistics-deliveries',
+    'operate-assigned-batches',
+    'configure-logistics-settings',
+    'manage-logistics-batches',
+    'resolve-logistics-exceptions',
+  ];
 
   const [subMenuHeight, setSubMenuHeight] = useState<Record<string, number>>({});
   const subMenuRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -1240,10 +1259,12 @@ const EmployeeSidebarERP: React.FC = () => {
     [isActive]
   );
 
-  type AttendanceSectionKey = "staff" | "repair" | "cashier" | "manager" | "inventory" | "procurement" | "hr" | "finance" | "crm" | null;
+  type AttendanceSectionKey = "staff" | "logistics" | "repair" | "cashier" | "manager" | "inventory" | "procurement" | "hr" | "finance" | "crm" | null;
 
   const getAttendanceSection = (): AttendanceSectionKey => {
+    if (hasLogisticsAccess() && !hasStaffAccess()) return "logistics";
     if (hasStaffAccess()) return "staff";
+    if (hasLogisticsAccess()) return "logistics";
     if (hasRepairerAccess()) return "repair";
     if (hasCashierAccess()) return "cashier";
     if (hasManagerAccess()) return "manager";
@@ -1268,7 +1289,11 @@ const EmployeeSidebarERP: React.FC = () => {
   };
 
   useEffect(() => {
-    const menuGroups: Array<{ menuType: "attendance" | "staff" | "repair" | "cashier" | "manager" | "hr" | "finance" | "crm" | "main" | "others"; items: NavItem[] }> = [];
+    const menuGroups: Array<{ menuType: "attendance" | "staff" | "logistics" | "repair" | "cashier" | "manager" | "hr" | "finance" | "crm" | "main" | "others"; items: NavItem[] }> = [];
+
+    if (hasLogisticsAccess()) {
+      menuGroups.push({ menuType: "logistics", items: withAttendanceForSection("logistics", [...getFilteredLogisticsItems(), myPayslipsItem]) });
+    }
 
     if (hasStaffAccess()) {
       menuGroups.push({ menuType: "staff", items: withAttendanceForSection("staff", [...getFilteredStaffItems(), myPayslipsItem]) });
@@ -1370,7 +1395,7 @@ const EmployeeSidebarERP: React.FC = () => {
     }
   }, [openSubmenu]);
 
-  const handleSubmenuToggle = (index: number, menuType: "attendance" | "staff" | "repair" | "cashier" | "manager" | "hr" | "finance" | "crm" | "main" | "others") => {
+  const handleSubmenuToggle = (index: number, menuType: "attendance" | "staff" | "logistics" | "repair" | "cashier" | "manager" | "hr" | "finance" | "crm" | "main" | "others") => {
     const key = `${menuType}-${index}`;
     toggleSubmenu(key);
   };
@@ -1519,6 +1544,8 @@ const EmployeeSidebarERP: React.FC = () => {
   const hasStaffAccess = () => {
     if (isCashierOnly) return false;
 
+    if (isDedicatedLogisticsAccount) return false;
+
     if (hasExplicitStaffRole) return true;
 
     const isProcurementOnlyAccount =
@@ -1541,15 +1568,13 @@ const EmployeeSidebarERP: React.FC = () => {
       'access-product-upload-staff',
       'access-shoe-pricing',
       'access-staff-customers',
-      'access-logistics-dashboard',
-      'view-logistics-shipments',
-      'manage-logistics-batches',
-      'operate-logistics-deliveries',
-      'update-logistics-status',
-      'record-logistics-proof',
     ];
 
     return staffPermissions.some((perm) => permissions.includes(perm));
+  };
+
+  const hasLogisticsAccess = () => {
+    return isDedicatedLogisticsAccount || logisticsPermissions.some((perm) => permissions.includes(perm));
   };
 
   // Check if user has Repairer role or repairer-specific permissions
@@ -1757,6 +1782,10 @@ const EmployeeSidebarERP: React.FC = () => {
     if (isCashierOnly) return [];
 
     return staffItems.filter((item) => {
+      if (item.route?.startsWith("erp.logistics.")) {
+        return false;
+      }
+
       // Dashboard - check simplified permission
       if (item.route === "erp.staff.dashboard") {
         return permissions.includes('access-staff-dashboard');
@@ -1811,6 +1840,36 @@ const EmployeeSidebarERP: React.FC = () => {
     });
   };
 
+  const getFilteredLogisticsItems = () => {
+    return logisticsItems.filter((item) => {
+      if (item.route === "erp.logistics.dashboard") {
+        return !hasLogisticsRiderRole && permissions.includes('access-logistics-dashboard');
+      }
+
+      if (item.route === "erp.logistics.shipments") {
+        return permissions.includes('assign-logistics-deliveries');
+      }
+
+      if (item.route === "erp.logistics.batches") {
+        return permissions.includes('manage-logistics-batches');
+      }
+
+      if (item.route === "erp.logistics.deliveries") {
+        return hasLogisticsRiderRole || permissions.includes('operate-logistics-deliveries');
+      }
+
+      if (item.route === "erp.logistics.riders") {
+        return permissions.includes('manage-logistics-riders');
+      }
+
+      if (item.route === "erp.logistics.settings") {
+        return permissions.includes('configure-logistics-settings');
+      }
+
+      return false;
+    });
+  };
+
   // Filter repair items based on user permissions
   const getFilteredRepairItems = () => {
     return repairItems.filter((item) => {
@@ -1858,7 +1917,7 @@ const EmployeeSidebarERP: React.FC = () => {
     });
   }
 
-  const renderMenuItems = (items: NavItem[], menuType: "attendance" | "staff" | "repair" | "cashier" | "manager" | "hr" | "finance" | "crm" | "main" | "others") => {
+  const renderMenuItems = (items: NavItem[], menuType: "attendance" | "staff" | "logistics" | "repair" | "cashier" | "manager" | "hr" | "finance" | "crm" | "main" | "others") => {
     const visibleItems = items
       .map((item) => ({
         ...item,
@@ -2065,6 +2124,29 @@ const EmployeeSidebarERP: React.FC = () => {
         className="flex flex-col overflow-y-auto duration-300 ease-linear no-scrollbar"
       >
         <>
+        {/* LOGISTICS section - Keep dispatcher and rider navigation separate from generic staff */}
+        {hasLogisticsAccess() && (
+          <nav className="mb-6">
+            <div className="flex flex-col gap-4">
+              <div>
+                <h2
+                  className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${
+                    !isExpanded && !isHovered
+                      ? "xl:justify-center"
+                      : "justify-start"
+                  }`}
+                >
+                  {isExpanded || isHovered || isMobileOpen ? (
+                    "LOGISTICS"
+                  ) : (
+                    <HorizontaLDots className="size-6" />
+                  )}
+                </h2>
+                {renderMenuItems(deduplicateItems(withAttendanceForSection("logistics", [...getFilteredLogisticsItems(), myPayslipsItem])), "logistics")}
+              </div>
+            </div>
+          </nav>
+        )}
         {/* STAFF section - Show if user has Staff role or staff permissions */}
         {hasStaffAccess() && (
           <nav className="mb-6">

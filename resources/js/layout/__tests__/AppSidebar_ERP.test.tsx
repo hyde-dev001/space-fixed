@@ -172,9 +172,34 @@ it('shows the logistics dashboard entry for dispatchers with dashboard access', 
 
   render(<AppSidebarERP />);
 
+  expect(screen.getByRole('heading', { name: 'LOGISTICS' })).toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: 'STAFF' })).not.toBeInTheDocument();
   expect(screen.getByRole('link', { name: /^logistics dashboard$/i })).toHaveAttribute(
     'href',
     '/erp/logistics',
+  );
+});
+
+it('keeps logistics riders out of the dashboard while showing My Deliveries', () => {
+  state.url = '/erp/logistics/deliveries';
+  state.role = 'STAFF';
+  state.roles = ['Logistics Rider'];
+  state.permissions = [
+    'access-logistics-dashboard',
+    'view-logistics-shipments',
+    'update-logistics-status',
+    'record-logistics-proof',
+    'operate-logistics-deliveries',
+  ];
+
+  render(<AppSidebarERP />);
+
+  expect(screen.getByRole('heading', { name: 'LOGISTICS' })).toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: 'STAFF' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: /^logistics dashboard$/i })).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: /^my deliveries$/i })).toHaveAttribute(
+    'href',
+    '/erp/logistics/deliveries',
   );
 });
 
