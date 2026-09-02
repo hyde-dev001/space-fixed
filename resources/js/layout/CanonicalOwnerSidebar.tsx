@@ -207,7 +207,7 @@ const CanonicalOwnerSidebar = ({ metadata }: CanonicalOwnerSidebarProps) => {
       <div className={`flex py-8 ${showLabels ? "justify-start" : "justify-center"}`}>
         <Link
           href="/shop-owner/home"
-          className="flex items-center gap-2 rounded-lg text-[#111111] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] dark:text-blue-300 dark:focus-visible:ring-blue-300"
+          className="flex items-center gap-2 rounded-lg text-[#111111] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] dark:text-gray-100 dark:focus-visible:ring-gray-300"
           title={showLabels ? undefined : "SoleSpace"}
         >
           <span className="text-xl font-bold tracking-tight">{showLabels ? "SoleSpace" : "SS"}</span>

@@ -295,14 +295,14 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
             </Link>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="landing-category-carousel flex snap-x snap-mandatory gap-4 overflow-x-auto pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:grid lg:grid-cols-3 lg:gap-7 lg:overflow-visible lg:pb-0">
             {categoryCards.map((card, index) => (
               <Link
                 key={card.title}
                 href={route(card.routeName)}
                 data-scroll-reveal
                 data-scroll-delay={Math.min(index * 100, 200)}
-                className="scroll-reveal group relative min-h-[30rem] overflow-hidden bg-[#e7e7e3] sm:min-h-[38rem]"
+                className="scroll-reveal group relative min-w-[84%] snap-start aspect-[4/3] overflow-hidden bg-[#e7e7e3] sm:min-w-[58%] sm:aspect-[16/10] lg:min-w-0 lg:aspect-auto lg:min-h-[38rem]"
               >
                 <img
                   src={card.image}

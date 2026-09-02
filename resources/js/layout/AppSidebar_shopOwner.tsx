@@ -852,13 +852,13 @@ const AppSidebar_shopOwner: React.FC<AppSidebarShopOwnerProps> = ({ activeModule
         >
           {isExpanded || isHovered || isMobileOpen ? (
             <>
-              <ShootingStarIcon className="w-6 h-6 text-yellow-500 animate-pulse" />
-              <span className="text-xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+              <ShootingStarIcon className="w-6 h-6 text-gray-900 dark:text-gray-100" />
+              <span className="text-xl font-bold tracking-tight text-gray-900 dark:text-gray-100">
                 SoleSpace
               </span>
             </>
           ) : (
-            <span className="text-lg font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+            <span className="text-lg font-bold tracking-tight text-gray-900 dark:text-gray-100">
               SS
             </span>
           )}
