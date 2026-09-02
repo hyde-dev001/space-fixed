@@ -2,19 +2,20 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Slow the landing hero headline, description, and CTA entrance animation while preserving the existing carousel, layout, loader handoff, and reduced-motion behavior.
+**Goal:** Make the landing hero headline, description, and CTA entrance slower, smoother, and subtly surreal while preserving the existing carousel, layout, loader handoff, and reduced-motion behavior.
 
-**Architecture:** Keep the animation CSS colocated with the landing hero in `LandingPage.tsx`. Update only the existing duration and delay declarations, and protect the approved values with a source-level layout contract test.
+**Architecture:** Keep the animation CSS colocated with the landing hero in `LandingPage.tsx`. Update the existing duration/delay declarations and keyframes with a lightweight blur/scale bloom, and protect the approved values with a source-level layout contract test.
 
 **Tech Stack:** React 18, TypeScript/TSX, Inertia, inline CSS keyframes, Vitest, Vite, Laravel Blade asset delivery.
 
 ## Global Constraints
 
 - Use the existing hero animation classes and keyframes; do not add a dependency.
-- Headline timing is `1000ms` with delays `0ms`, `220ms`, and `440ms`.
-- Description timing is `900ms` with an `820ms` delay.
-- CTA timing is `900ms` with a `1080ms` delay.
-- Preserve the `4500ms` hero carousel interval and `prefers-reduced-motion` override.
+- Headline timing is `1400ms` with delays `0ms`, `300ms`, and `600ms`.
+- Description timing is `1200ms` with a `1050ms` delay.
+- CTA timing is `1200ms` with a `1450ms` delay.
+- Use the existing CSS only for the subtle blur/scale bloom and gentle settle.
+- Preserve the `4500ms` hero carousel interval and reset blur/transform/opacity under `prefers-reduced-motion`.
 - Refresh and commit `public/build` after the final source revision.
 
 ---
@@ -28,26 +29,30 @@
 - Consumes: the current `LandingPage.tsx` source string already loaded by the test.
 - Produces: assertions that fail until the approved animation timing is present.
 
-- [ ] **Step 1: Write the failing assertions**
+- [x] **Step 1: Write the failing assertions**
 
-Add a test that requires the approved duration and stagger values while retaining the existing carousel and reduced-motion markers:
+Add a test that requires the approved duration, stagger, and dreamy motion values while retaining the existing carousel and reduced-motion markers:
 
 ```ts
-it('uses a slower premium timing for the hero copy entrance', () => {
+it('uses slower, smoother timing for the hero copy entrance', () => {
   [
-    'animation: hero-line-rise 1000ms cubic-bezier(0.22, 1, 0.36, 1) forwards;',
-    'animation-delay: 220ms;',
-    'animation-delay: 440ms;',
-    'animation: hero-copy-fade 900ms cubic-bezier(0.22, 1, 0.36, 1) forwards;',
-    'animation-delay: 820ms;',
-    'animation-delay: 1080ms;',
+    'animation: hero-line-rise 1400ms cubic-bezier(0.16, 1, 0.3, 1) forwards;',
+    'animation-delay: 300ms;',
+    'animation-delay: 600ms;',
+    'animation: hero-copy-fade 1200ms cubic-bezier(0.16, 1, 0.3, 1) forwards;',
+    'animation-delay: 1050ms;',
+    'animation-delay: 1450ms;',
+    'filter: blur(8px);',
+    'filter: blur(6px);',
+    'will-change: transform, opacity, filter;',
+    'filter: none !important;',
     '}, 4500);',
     '@media (prefers-reduced-motion: reduce)',
   ].forEach((marker) => expect(landingSource).toContain(marker));
 });
 ```
 
-- [ ] **Step 2: Run the focused test and verify RED**
+- [x] **Step 2: Run the focused test and verify RED**
 
 Run:
 
@@ -55,9 +60,9 @@ Run:
 ..\..\node_modules\.bin\vitest.CMD run resources/js/Pages/UserSide/Products/LandingPage.layout.test.ts
 ```
 
-Expected: the new timing test fails because the source still contains the faster `600ms`, `650ms`, `160ms`, `320ms`, `520ms`, and `700ms` values.
+Expected: the new timing test fails because the source still contains the previous `1000ms`, `900ms`, `220ms`, `440ms`, `820ms`, and `1080ms` values without the dreamy blur/scale treatment.
 
-### Task 2: Apply the approved timing
+### Task 2: Apply the approved timing and motion treatment
 
 **Files:**
 - Modify: `resources/js/Pages/UserSide/Products/LandingPage.tsx:593-622`
@@ -66,37 +71,46 @@ Expected: the new timing test fails because the source still contains the faster
 - Consumes: existing `hero-line-rise`, `hero-copy-fade`, `hero-line-*`, `hero-description`, and `hero-actions` classes.
 - Produces: a slower visual entrance with no runtime API changes.
 
-- [ ] **Step 1: Update only the existing declarations**
+- [x] **Step 1: Update only the existing declarations and keyframes**
 
 Use these values in the existing inline style block:
 
 ```css
 .hero-headline-line {
-  animation: hero-line-rise 1000ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  transform: translate3d(0, 36px, 0) scale(1.02);
+  filter: blur(8px);
+  animation: hero-line-rise 1400ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  will-change: transform, opacity, filter;
 }
 
 .hero-line-2 {
-  animation-delay: 220ms;
+  animation-delay: 300ms;
 }
 
 .hero-line-3 {
-  animation-delay: 440ms;
+  animation-delay: 600ms;
 }
 
 .hero-description {
-  animation: hero-copy-fade 900ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
-  animation-delay: 820ms;
+  transform: translate3d(0, 24px, 0) scale(0.985);
+  filter: blur(6px);
+  animation: hero-copy-fade 1200ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation-delay: 1050ms;
+  will-change: transform, opacity, filter;
 }
 
 .hero-actions {
-  animation: hero-copy-fade 900ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
-  animation-delay: 1080ms;
+  transform: translate3d(0, 24px, 0) scale(0.985);
+  filter: blur(6px);
+  animation: hero-copy-fade 1200ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation-delay: 1450ms;
+  will-change: transform, opacity, filter;
 }
 ```
 
-Keep the existing `4500` carousel interval and reduced-motion block unchanged.
+Add the intermediate settle frames to the existing keyframes and keep the `4500` carousel interval. The reduced-motion block must also set `filter: none !important`.
 
-- [ ] **Step 2: Run the focused test and verify GREEN**
+- [x] **Step 2: Run the focused test and verify GREEN**
 
 Run the same Vitest command from Task 1. Expected: all landing layout tests pass.
 
@@ -105,7 +119,7 @@ Run the same Vitest command from Task 1. Expected: all landing layout tests pass
 **Files:**
 - Modify: `public/build/` (generated output only)
 
-- [ ] **Step 1: Run the complete frontend suite**
+- [x] **Step 1: Run the complete frontend suite**
 
 Run:
 
@@ -115,11 +129,11 @@ Run:
 
 Expected: zero failed tests.
 
-- [ ] **Step 2: Rebase before the final build**
+- [x] **Step 2: Rebase before the final build**
 
 Run `git fetch origin --prune` and rebase onto `origin/solespace-b` while preserving only this task's changes.
 
-- [ ] **Step 3: Build once from the final source**
+- [x] **Step 3: Build once from the final source**
 
 Run:
 
@@ -129,6 +143,6 @@ Run:
 
 Expected: Vite exits with code `0` and refreshes `public/build/manifest.json` and its hashed assets.
 
-- [ ] **Step 4: Review, commit, and push**
+- [x] **Step 4: Review, commit, and push**
 
-Run `git diff --check`, stage only the plan/spec/source/test/docs files and `public/build`, commit with `perf: slow landing hero entrance`, and push `feature/account-dashboards`.
+Run `git diff --check`, stage only the plan/spec/source/test/docs files and `public/build`, commit with `perf: refine landing hero entrance`, and push `feature/account-dashboards`.

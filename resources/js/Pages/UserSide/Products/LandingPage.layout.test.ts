@@ -96,14 +96,18 @@ describe('SoleSpace landing page redesign', () => {
     expect(landingSource).toContain('lg:min-w-0 lg:aspect-auto lg:min-h-[38rem]');
   });
 
-  it('uses a slower premium timing for the hero copy entrance', () => {
+  it('uses slower, smoother timing for the hero copy entrance', () => {
     [
-      'animation: hero-line-rise 1000ms cubic-bezier(0.22, 1, 0.36, 1) forwards;',
-      'animation-delay: 220ms;',
-      'animation-delay: 440ms;',
-      'animation: hero-copy-fade 900ms cubic-bezier(0.22, 1, 0.36, 1) forwards;',
-      'animation-delay: 820ms;',
-      'animation-delay: 1080ms;',
+      'animation: hero-line-rise 1400ms cubic-bezier(0.16, 1, 0.3, 1) forwards;',
+      'animation-delay: 300ms;',
+      'animation-delay: 600ms;',
+      'animation: hero-copy-fade 1200ms cubic-bezier(0.16, 1, 0.3, 1) forwards;',
+      'animation-delay: 1050ms;',
+      'animation-delay: 1450ms;',
+      'filter: blur(8px);',
+      'filter: blur(6px);',
+      'will-change: transform, opacity, filter;',
+      'filter: none !important;',
       '}, 4500);',
       '@media (prefers-reduced-motion: reduce)',
     ].forEach((marker) => expect(landingSource).toContain(marker));
