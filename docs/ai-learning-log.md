@@ -53,3 +53,8 @@
 
 - Persist the selected retail return method as the authority: valid Staff-entered third-party tracking starts `in_transit` in customer return fields without creating a Shop-owned shipment; physical receipt and inspection remain a separate Staff action.
 - For Shop-owned returns, only the tenant-scoped canonical delivered return leg can authorize inspection. Stale Shop-owned shipment records must not override an explicit third-party method, and POS sales do not need customer receipt acknowledgement.
+
+## 2026-09-02 - Logistics role navigation
+
+- The legacy employee `role` column may remain `STAFF` for logistics employees; use the Spatie `Logistics Dispatcher` and `Logistics Rider` roles for role-specific navigation and route boundaries.
+- Hiding a restricted dashboard link is not sufficient: direct dashboard and stats requests must enforce the same role boundary server-side and redirect riders to `My Deliveries`.
