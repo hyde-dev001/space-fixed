@@ -11,11 +11,24 @@ describe("app loader", () => {
 		document.documentElement.classList.remove(APP_LOADER_READY_CLASS);
 		document.documentElement.removeAttribute("data-solespace-loader-started-at");
 		document.body.innerHTML = "";
+		vi.unstubAllGlobals();
 		vi.useRealTimers();
 	});
 
-	it("keeps the server-rendered loader visible for three seconds on the first load", () => {
+	it("skips and removes the loader immediately on desktop", () => {
+		vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: true }));
+		document.documentElement.classList.add(APP_LOADER_ENABLED_CLASS);
+		document.body.innerHTML = '<div id="solespace-app-loader"></div>';
+
+		dismissAppLoader();
+
+		expect(document.getElementById("solespace-app-loader")).toBeNull();
+		expect(document.documentElement).toHaveClass(APP_LOADER_READY_CLASS);
+	});
+
+	it("keeps the server-rendered loader visible below the desktop breakpoint", () => {
 		vi.useFakeTimers();
+		vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: false }));
 		document.documentElement.classList.add(APP_LOADER_ENABLED_CLASS);
 		document.documentElement.dataset.solespaceLoaderStartedAt = String(Date.now());
 		document.body.innerHTML = '<div id="solespace-app-loader"></div>';

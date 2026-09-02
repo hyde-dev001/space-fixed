@@ -58,3 +58,7 @@
 
 - The legacy employee `role` column may remain `STAFF` for logistics employees; use the Spatie `Logistics Dispatcher` and `Logistics Rider` roles for role-specific navigation and route boundaries.
 - Hiding a restricted dashboard link is not sufficient: direct dashboard and stats requests must enforce the same role boundary server-side and redirect riders to `My Deliveries`.
+
+## 2026-09-02 - Responsive first-open loader
+
+- For a server-rendered first-open loader, apply the responsive bypass before adding its activation class so desktop can render immediately without an invisible handoff delay; keep a matching CSS guard for late or stale markup.

@@ -67,6 +67,17 @@ class AppShellLoaderTest extends TestCase
         self::assertStringContainsString('color: #667085;', $loaderStyles);
     }
 
+    public function test_loader_is_kept_below_the_desktop_breakpoint_and_hidden_on_desktop(): void
+    {
+        $markup = $this->readProjectFile('resources/views/app.blade.php');
+        $styles = $this->readProjectFile('resources/css/app.css');
+
+        self::assertStringContainsString("window.matchMedia('(min-width: 1280px)')", $markup);
+        self::assertStringContainsString('@media (min-width: 1280px)', $styles);
+        self::assertStringContainsString('.solespace-first-load .solespace-app-loader', $styles);
+        self::assertStringContainsString('display: none !important;', $styles);
+    }
+
     public function test_customer_landing_and_download_surfaces_keep_dark_mode_content_readable(): void
     {
         $styles = $this->readProjectFile('resources/css/app.css');

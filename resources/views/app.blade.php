@@ -15,6 +15,13 @@
     <script>
         (() => {
             const loaderSeenKey = 'solespace-app-loader-seen';
+            const isDesktopViewport = typeof window.matchMedia === 'function'
+                ? window.matchMedia('(min-width: 1280px)').matches
+                : window.innerWidth >= 1280;
+
+            if (isDesktopViewport) {
+                return;
+            }
 
             try {
                 if (!window.sessionStorage.getItem(loaderSeenKey)) {

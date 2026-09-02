@@ -1431,6 +1431,12 @@ html.userside-dark #app .userside-auth-ghost:hover {
   display: grid;
 }
 
+@media (min-width: 1280px) {
+  .solespace-first-load .solespace-app-loader {
+    display: none !important;
+  }
+}
+
 .solespace-app-loader::before {
   position: absolute;
   inset: 0;
