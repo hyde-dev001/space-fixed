@@ -74,7 +74,7 @@ final class ProcurementDashboardServiceTest extends TestCase
         $this->assertSame(1, $dashboard['trend']['months'][4]['purchase_orders']);
         $this->assertSame(1, collect($dashboard['request_statuses'])->firstWhere('key', 'pending_finance')['count']);
         $this->assertSame(1, collect($dashboard['order_statuses'])->firstWhere('key', 'in_transit')['count']);
-        $this->assertCount(3, $dashboard['recent_activity']);
+        $this->assertCount(4, $dashboard['recent_activity']);
         $this->assertTrue(collect($dashboard['recent_activity'])->every(
             static fn (array $record): bool => $record['url'] === null,
         ));
