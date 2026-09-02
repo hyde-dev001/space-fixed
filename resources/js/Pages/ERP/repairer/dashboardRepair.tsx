@@ -2,6 +2,7 @@ import { Head, Link, usePage } from "@inertiajs/react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import { useEffect, useState } from "react";
 import axios from "axios";
+import { CalendarCheck2, CircleDollarSign, Package, Percent, ReceiptText } from "lucide-react";
 import { erpUrl } from "@/utils/erpCapabilities";
 import type { ErpCapabilities } from "@/types/erp";
 import { DashboardMetricCard, DashboardPanel, DashboardShell, DashboardTrendChart } from "@/components/dashboard";
@@ -326,51 +327,62 @@ const DashboardRepair: React.FC = () => {
 						/>
 					</DashboardPanel>
 
-					<div className="rounded-xl border border-gray-200 bg-white">
-						<div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+					<div data-testid="repair-package-analytics" className="rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]">
+						<div className="flex items-center justify-between border-b border-gray-100 px-6 py-4 dark:border-gray-800">
 							<div>
-								<h2 className="text-lg font-semibold text-gray-900">Package Analytics</h2>
-								<p className="text-sm text-gray-500">Bundle adoption, revenue, and add-on usage from package bookings.</p>
+								<h2 className="text-lg font-semibold text-gray-900 dark:text-white">Package Analytics</h2>
+								<p className="text-sm text-gray-500 dark:text-gray-400">Bundle adoption, revenue, and add-on usage from package bookings.</p>
 							</div>
 						</div>
 
 						<div className="p-6 space-y-6">
-							<div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
-								<div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-									<p className="text-xs uppercase tracking-wide text-gray-500">Packages</p>
-									<p className="mt-2 text-2xl font-bold text-gray-900">{analytics.overview.total_packages}</p>
-									<p className="mt-1 text-xs text-gray-500">{analytics.overview.active_packages} active • {analytics.overview.inactive_packages} inactive</p>
-								</div>
-								<div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-									<p className="text-xs uppercase tracking-wide text-gray-500">Bookings</p>
-									<p className="mt-2 text-2xl font-bold text-gray-900">{analytics.overview.total_bookings}</p>
-									<p className="mt-1 text-xs text-gray-500">{analytics.overview.bookings_last_30_days} in the last 30 days</p>
-								</div>
-								<div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-									<p className="text-xs uppercase tracking-wide text-gray-500">Net Revenue (Excl. VAT)</p>
-									<p className="mt-2 text-2xl font-bold text-gray-900">₱{Number(analytics.overview.package_revenue).toFixed(2)}</p>
-									<p className="mt-1 text-xs text-gray-500">Refund-adjusted • ₱{Number(analytics.overview.revenue_last_30_days).toFixed(2)} in the last 30 days</p>
-								</div>
-								<div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-									<p className="text-xs uppercase tracking-wide text-gray-500">Avg Order</p>
-									<p className="mt-2 text-2xl font-bold text-gray-900">₱{Number(analytics.overview.average_order_value).toFixed(2)}</p>
-									<p className="mt-1 text-xs text-gray-500">Add-ons ₱{Number(analytics.overview.add_on_revenue).toFixed(2)}</p>
-								</div>
-								<div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-									<p className="text-xs uppercase tracking-wide text-gray-500">Add-on Attach Rate</p>
-									<p className="mt-2 text-2xl font-bold text-gray-900">{analytics.overview.add_on_attach_rate}%</p>
-									<p className="mt-1 text-xs text-gray-500">Orders with add-ons attached</p>
-								</div>
+							<div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+								<DashboardMetricCard
+									label="Packages"
+									value={analytics.overview.total_packages}
+									description={`${analytics.overview.active_packages} active • ${analytics.overview.inactive_packages} inactive`}
+									context="Catalog"
+									icon={Package}
+								/>
+								<DashboardMetricCard
+									label="Bookings"
+									value={analytics.overview.total_bookings}
+									description={`${analytics.overview.bookings_last_30_days} in the last 30 days`}
+									context="Demand"
+									icon={CalendarCheck2}
+								/>
+								<DashboardMetricCard
+									label="Net Revenue (Excl. VAT)"
+									value={`₱${Number(analytics.overview.package_revenue).toFixed(2)}`}
+									description={`Refund-adjusted • ₱${Number(analytics.overview.revenue_last_30_days).toFixed(2)} in the last 30 days`}
+									context="Revenue"
+									icon={CircleDollarSign}
+									tone="success"
+								/>
+								<DashboardMetricCard
+									label="Avg Order"
+									value={`₱${Number(analytics.overview.average_order_value).toFixed(2)}`}
+									description={`Add-ons ₱${Number(analytics.overview.add_on_revenue).toFixed(2)}`}
+									context="Value"
+									icon={ReceiptText}
+								/>
+								<DashboardMetricCard
+									label="Add-on Attach Rate"
+									value={`${analytics.overview.add_on_attach_rate}%`}
+									description="Orders with add-ons attached"
+									context="Add-ons"
+									icon={Percent}
+								/>
 							</div>
 
 							<div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-								<div className="xl:col-span-2 rounded-xl border border-gray-200 bg-white overflow-hidden">
-									<div className="px-4 py-3 border-b border-gray-100">
-										<h4 className="text-sm font-semibold text-gray-900">Top Package Performance</h4>
+								<div className="xl:col-span-2 overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]">
+									<div className="border-b border-gray-100 px-4 py-3 dark:border-gray-800">
+										<h4 className="text-sm font-semibold text-gray-900 dark:text-white">Top Package Performance</h4>
 									</div>
 									<div className="overflow-x-auto">
-										<table className="min-w-full divide-y divide-gray-100 text-sm">
-											<thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+										<table className="min-w-full divide-y divide-gray-100 text-sm dark:divide-gray-800">
+											<thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500 dark:bg-white/[0.04] dark:text-gray-400">
 												<tr>
 													<th className="px-4 py-3 text-left font-semibold">Package</th>
 													<th className="px-4 py-3 text-left font-semibold">Bookings</th>
@@ -379,20 +391,20 @@ const DashboardRepair: React.FC = () => {
 													<th className="px-4 py-3 text-left font-semibold">Last Booked</th>
 												</tr>
 											</thead>
-											<tbody className="divide-y divide-gray-100">
+											<tbody className="divide-y divide-gray-100 dark:divide-gray-800">
 												{analytics.top_packages.length === 0 ? (
-													<tr><td colSpan={5} className="px-4 py-6 text-center text-gray-500">No package bookings yet.</td></tr>
+													<tr><td colSpan={5} className="px-4 py-6 text-center text-gray-500 dark:text-gray-400">No package bookings yet.</td></tr>
 												) : (
 													analytics.top_packages.slice(0, 5).map((item) => (
-														<tr key={item.id} className="text-gray-700">
+														<tr key={item.id} className="text-gray-700 dark:text-gray-200">
 															<td className="px-4 py-3 align-top">
-																<p className="font-medium text-gray-900">{item.name}</p>
-																<p className="text-xs text-gray-500">Savings ₱{Number(item.savings_amount).toFixed(2)} • Add-ons ₱{Number(item.add_on_revenue).toFixed(2)}</p>
+																<p className="font-medium text-gray-900 dark:text-white">{item.name}</p>
+																<p className="text-xs text-gray-500 dark:text-gray-400">Savings ₱{Number(item.savings_amount).toFixed(2)} • Add-ons ₱{Number(item.add_on_revenue).toFixed(2)}</p>
 															</td>
 															<td className="px-4 py-3">{item.booking_count}</td>
-															<td className="px-4 py-3 font-semibold text-gray-900">₱{Number(item.revenue).toFixed(2)}</td>
+															<td className="px-4 py-3 font-semibold text-gray-900 dark:text-white">₱{Number(item.revenue).toFixed(2)}</td>
 															<td className="px-4 py-3">₱{Number(item.average_order_value).toFixed(2)}</td>
-															<td className="px-4 py-3 text-gray-500">{item.last_booked_at ? new Intl.DateTimeFormat("en-PH", { month: "short", day: "numeric", year: "numeric" }).format(new Date(item.last_booked_at)) : "—"}</td>
+															<td className="px-4 py-3 text-gray-500 dark:text-gray-400">{item.last_booked_at ? new Intl.DateTimeFormat("en-PH", { month: "short", day: "numeric", year: "numeric" }).format(new Date(item.last_booked_at)) : "—"}</td>
 														</tr>
 													))
 												)}
@@ -402,48 +414,48 @@ const DashboardRepair: React.FC = () => {
 								</div>
 
 								<div className="space-y-6">
-									<div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-										<div className="px-4 py-3 border-b border-gray-100">
-											<h4 className="text-sm font-semibold text-gray-900">Monthly Trend</h4>
-											<p className="mt-1 text-xs text-gray-500">Net revenue excludes VAT and deducts refunds.</p>
+									<div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]">
+										<div className="border-b border-gray-100 px-4 py-3 dark:border-gray-800">
+											<h4 className="text-sm font-semibold text-gray-900 dark:text-white">Monthly Trend</h4>
+											<p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Net revenue excludes VAT and deducts refunds.</p>
 										</div>
 										<div className="p-4 space-y-3">
 											{analytics.monthly_trend.length === 0 ? (
-												<p className="text-sm text-gray-500">No trend data yet.</p>
+												<p className="text-sm text-gray-500 dark:text-gray-400">No trend data yet.</p>
 											) : (
 												analytics.monthly_trend.map((item) => (
-													<div key={item.month} className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2">
+													<div key={item.month} className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2 dark:bg-white/[0.04]">
 														<div>
-															<p className="text-sm font-medium text-gray-900">{item.month}</p>
-															<p className="text-xs text-gray-500">{item.bookings} booking{item.bookings !== 1 ? "s" : ""}</p>
+															<p className="text-sm font-medium text-gray-900 dark:text-white">{item.month}</p>
+															<p className="text-xs text-gray-500 dark:text-gray-400">{item.bookings} booking{item.bookings !== 1 ? "s" : ""}</p>
 														</div>
-														<p className="text-sm font-semibold text-gray-900">₱{Number(item.revenue).toFixed(2)}</p>
+														<p className="text-sm font-semibold text-gray-900 dark:text-white">₱{Number(item.revenue).toFixed(2)}</p>
 													</div>
 												))
 											)}
 										</div>
 									</div>
 
-									<div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-										<div className="px-4 py-3 border-b border-gray-100">
-											<h4 className="text-sm font-semibold text-gray-900">Recent Package Bookings</h4>
+									<div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]">
+										<div className="border-b border-gray-100 px-4 py-3 dark:border-gray-800">
+											<h4 className="text-sm font-semibold text-gray-900 dark:text-white">Recent Package Bookings</h4>
 										</div>
 										<div className="p-4 space-y-3">
 											{analytics.recent_bookings.length === 0 ? (
-												<p className="text-sm text-gray-500">No recent package bookings yet.</p>
+												<p className="text-sm text-gray-500 dark:text-gray-400">No recent package bookings yet.</p>
 											) : (
 												analytics.recent_bookings.map((booking) => (
-													<div key={booking.repair_request_id} className="rounded-lg bg-gray-50 px-3 py-3">
+													<div key={booking.repair_request_id} className="rounded-lg bg-gray-50 px-3 py-3 dark:bg-white/[0.04]">
 														<div className="flex items-start justify-between gap-3">
 															<div>
-																<p className="text-sm font-medium text-gray-900">{booking.package_name}</p>
-																<p className="text-xs text-gray-500">{booking.order_number} • {booking.booked_at ? new Intl.DateTimeFormat("en-PH", { month: "short", day: "numeric", year: "numeric" }).format(new Date(booking.booked_at)) : "—"}</p>
+																<p className="text-sm font-medium text-gray-900 dark:text-white">{booking.package_name}</p>
+																<p className="text-xs text-gray-500 dark:text-gray-400">{booking.order_number} • {booking.booked_at ? new Intl.DateTimeFormat("en-PH", { month: "short", day: "numeric", year: "numeric" }).format(new Date(booking.booked_at)) : "—"}</p>
 															</div>
-															<span className="text-xs font-medium uppercase tracking-wide text-gray-500">{booking.status.replace(/_/g, " ")}</span>
+															<span className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{booking.status.replace(/_/g, " ")}</span>
 														</div>
-														<div className="mt-2 flex items-center justify-between text-xs text-gray-600">
+														<div className="mt-2 flex items-center justify-between text-xs text-gray-600 dark:text-gray-400">
 															<span>Add-ons ₱{Number(booking.add_ons_total).toFixed(2)}</span>
-															<span className="font-semibold text-gray-900">₱{Number(booking.final_total).toFixed(2)}</span>
+															<span className="font-semibold text-gray-900 dark:text-white">₱{Number(booking.final_total).toFixed(2)}</span>
 														</div>
 													</div>
 												))

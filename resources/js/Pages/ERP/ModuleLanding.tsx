@@ -37,9 +37,6 @@ const ModuleLanding: React.FC = () => {
         <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-theme-sm dark:border-gray-800 dark:bg-gray-900 sm:p-8">
           <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-2xl space-y-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-700 dark:text-gray-300">
-                ERP module
-              </p>
               <h1 id="erp-module-title" className="text-3xl font-semibold tracking-tight text-gray-900 dark:text-white">
                 {module.label}
               </h1>

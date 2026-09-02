@@ -307,8 +307,7 @@ export default function ProcurementDashboard() {
                 <ShoppingCart className="h-7 w-7" aria-hidden="true" />
               </div>
               <div className="min-w-0">
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#111111] dark:text-gray-300">ERP module</p>
-                <h1 className="mt-2 text-3xl font-bold tracking-tight text-gray-950 dark:text-white sm:text-4xl">
+                <h1 className="text-3xl font-bold tracking-tight text-gray-950 dark:text-white sm:text-4xl">
                   {dashboard?.title ?? 'Procurement Dashboard'}
                 </h1>
                 <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-600 dark:text-gray-300">
