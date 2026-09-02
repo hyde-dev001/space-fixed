@@ -56,8 +56,16 @@ const getSafeExternalTrackingLink = (value: unknown): string | null => {
   if (!normalized) return null;
 
   try {
-    const protocol = new URL(normalized).protocol;
-    return protocol === 'http:' || protocol === 'https:' ? normalized : null;
+    const url = new URL(normalized);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+
+    const pathname = decodeURIComponent(url.pathname).toLowerCase().replace(/\/+$/, '');
+    const internalPrefixes = ['/erp', '/admin', '/shop-owner'];
+    if (internalPrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))) {
+      return null;
+    }
+
+    return normalized;
   } catch {
     return null;
   }
@@ -1976,6 +1984,7 @@ const MyOrders: React.FC = () => {
                     && isShopOwnerRejectedRefund(order)
                     && Boolean(String(order.refund_stage?.rejection_reason || order.refund_status_note || '').trim());
                   const shipmentId = order.logistics_shipment_id;
+                  const externalTrackingLink = getSafeExternalTrackingLink(order.tracking_link);
                   const returnShipmentId = order.refund_stage?.logistics_shipment_id;
                   const returnDeliveryMethodForAction = String(
                     order.refund_stage?.return_delivery_method
@@ -2342,14 +2351,14 @@ const MyOrders: React.FC = () => {
                                         <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">{order.is_shop_owned_delivery ? 'Tracking Reference' : 'Tracking Link'}</p>
                                         {order.is_shop_owned_delivery ? (
                                           <p className="text-right text-sm text-black font-medium sm:text-left">{order.delivery_tracking_number || order.delivery_reference || '-'}</p>
-                                        ) : order.tracking_link ? (
+                                        ) : externalTrackingLink ? (
                                           <a
-                                            href={order.tracking_link}
+                                            href={externalTrackingLink}
                                             target="_blank"
                                             rel="noreferrer"
                                             className="max-w-[58%] text-right text-sm text-black underline break-all sm:max-w-none sm:text-left"
                                           >
-                                            {order.tracking_link}
+                                            {externalTrackingLink}
                                           </a>
                                         ) : (
                                           <p className="text-right text-sm text-black font-medium sm:text-left">-</p>

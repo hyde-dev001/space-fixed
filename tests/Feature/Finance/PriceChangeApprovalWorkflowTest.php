@@ -397,6 +397,48 @@ class PriceChangeApprovalWorkflowTest extends TestCase
         ]);
     }
 
+    public function test_finance_reconciles_a_pending_legacy_price_change_using_the_current_owner_setting(): void
+    {
+        $product = Product::create([
+            'shop_owner_id' => $this->shopOwnerAuth->id,
+            'name' => 'Legacy Price Workflow Product ' . random_int(1000, 9999),
+            'slug' => 'legacy-price-workflow-product-' . uniqid(),
+            'description' => 'Legacy pricing workflow regression product',
+            'price' => 100,
+            'category' => 'shoes',
+            'stock_quantity' => 10,
+            'is_active' => true,
+        ]);
+        $settings = ProcurementSettings::getForShopOwner($this->shopOwnerAuth->id);
+        $settingsJson = $settings->settings_json;
+        $settingsJson['approval_pages']['price_approval']['enabled'] = false;
+        $settings->update(['settings_json' => $settingsJson]);
+        $priceChange = PriceChangeRequest::create([
+            'product_id' => $product->id,
+            'product_name' => $product->name,
+            'current_price' => 100,
+            'proposed_price' => 130,
+            'reason' => 'Recover missing legacy workflow metadata.',
+            'requested_by' => $this->requester->id,
+            'status' => 'pending',
+            'shop_owner_id' => $this->shopOwnerAuth->id,
+            'approval_id' => null,
+            'current_approval_level' => null,
+        ]);
+
+        $this->actingAs($this->financeFirst, 'user')
+            ->postJson("/api/finance/price-changes/{$priceChange->id}/approve", [
+                'notes' => 'Reconciled missing workflow metadata.',
+            ])
+            ->assertOk()
+            ->assertJsonPath('is_final', true);
+
+        $approval = Approval::findOrFail($priceChange->fresh()->approval_id);
+        $this->assertSame(['1' => 'finance'], $approval->approval_roles);
+        $this->assertSame('v4_multi_level', $priceChange->fresh()->approval_workflow_version);
+        $this->assertSame('130.00', (string) $product->fresh()->price);
+    }
+
     private function createWorkflowBoundPriceChange(): PriceChangeRequest
     {
         $product = Product::create([

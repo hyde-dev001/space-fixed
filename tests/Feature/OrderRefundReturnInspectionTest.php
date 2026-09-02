@@ -317,6 +317,23 @@ class OrderRefundReturnInspectionTest extends TestCase
         $this->assertDatabaseHas('shipments', ['id' => $staleShipment->id]);
     }
 
+    public function test_customer_payload_hides_legacy_internal_return_tracking_links(): void
+    {
+        [$refund] = $this->fixture();
+        $refund->update([
+            'return_source' => 'customer',
+            'customer_return_tracking_number' => 'TRK-LEGACY-ERP-001',
+            'customer_return_tracking_link' => 'https://solespace.shop/erp/staff/job-orders',
+        ]);
+
+        $this->actingAs($refund->customer, 'user')
+            ->get('/my-orders')
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('orders.0.refund_stage.customer_return_tracking_number', 'TRK-LEGACY-ERP-001')
+                ->where('orders.0.refund_stage.customer_return_tracking_link', null)
+            );
+    }
+
     private function fixture(string $registrationType = 'company'): array
     {
         $shop = ShopOwner::factory()->create(['registration_type' => $registrationType]);

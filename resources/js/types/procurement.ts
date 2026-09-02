@@ -160,6 +160,9 @@ export interface StockRequestApproval {
     inventory_approved_date?: string;
     inventory_approval_notes?: string;
     notes?: string;
+    inventory_approval_status?: 'not_required' | 'pending' | 'approved' | 'rejected' | string;
+    inventory_approval_status_label?: string;
+    inventory_approver?: User;
     approval_notes?: string;
     rejection_reason?: string;
     days_pending?: number;

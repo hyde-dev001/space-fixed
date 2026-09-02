@@ -158,6 +158,13 @@ class PurchaseRequestController extends Controller
                     'message' => 'Selected stock request is not available for purchase request creation.',
                 ], 422);
             }
+            if ($sourceStockRequest->request_source === 'repair' && !$sourceStockRequest->inventory_approved_date) {
+                DB::rollBack();
+                return response()->json([
+                    'message' => 'Repair material request must be approved by Inventory first before procurement processing.',
+                ], 422);
+            }
+
 
             $data = $this->lockToAcceptedStockRequest($data, $sourceStockRequest);
 
@@ -273,6 +280,13 @@ class PurchaseRequestController extends Controller
                 ->where('status', 'accepted')
                 ->lockForUpdate()
                 ->firstOrFail();
+            if ($sourceStockRequest->request_source === 'repair' && !$sourceStockRequest->inventory_approved_date) {
+                DB::rollBack();
+                return response()->json([
+                    'message' => 'Repair material request must be approved by Inventory first before procurement processing.',
+                ], 422);
+            }
+
             $data = $this->lockToAcceptedStockRequest($data, $sourceStockRequest);
             $data = $this->sanitizePurchaseRequestPayloadForSchema($data);
             $data['total_cost'] = $this->calculatePurchaseRequestTotalCost($data, (int) $purchaseRequest->shop_owner_id);

@@ -160,6 +160,10 @@ class StockRequestApprovalService
             if ($stockRequest->status !== 'accepted') {
                 throw new \Exception('Only accepted stock requests can be converted to purchase requests.');
             }
+            if ($stockRequest->request_source === 'repair' && !$stockRequest->inventory_approved_date) {
+                throw new \Exception('Repair material request must be approved by Inventory first before procurement processing.');
+            }
+
 
             // Create PR data from stock request
             $prData = [

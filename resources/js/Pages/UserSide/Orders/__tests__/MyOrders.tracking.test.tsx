@@ -280,6 +280,27 @@ describe('MyOrders delivery tracking', () => {
     expect(screen.queryByRole('link', { name: 'Track Return' })).not.toBeInTheDocument();
   });
 
+  it('does not render legacy ERP paths as customer return tracking links', () => {
+    order.status = 'delivered';
+    order.refund_stage = {
+      id: 5,
+      logistics_shipment_id: null,
+      return_delivery_method: 'third_party',
+      status: 'processing',
+      shop_owner_status: 'approved',
+      finance_status: 'approved',
+      return_status: 'in_transit',
+      return_source: 'customer',
+      customer_return_tracking_number: 'TRK-LEGACY-ERP-001',
+      customer_return_tracking_link: 'https://solespace.shop/erp/staff/job-orders',
+    };
+
+    render(<MyOrders />);
+
+    expect(screen.getByText('TRK-LEGACY-ERP-001')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Track Return' })).not.toBeInTheDocument();
+  });
+
   it('calculates the refundable order total without original shipping', () => {
     expect(resolveRefundableOrderTotal({
       total_amount: 3481.25,

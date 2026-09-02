@@ -304,7 +304,9 @@ class AttendanceController extends Controller
 
         // Determine status based on check-in time
         $standardTime = $shopOpenTime;
-        $status = $now->gt($standardTime) ? 'late' : 'present';
+        $status = $now->copy()->startOfMinute()->gt($standardTime->copy()->startOfMinute())
+            ? 'late'
+            : 'present';
 
         if ($existingRecord) {
             // Update existing record
@@ -659,7 +661,9 @@ class AttendanceController extends Controller
             ? Carbon::now($shopTimezone)->startOfDay()->setTimeFromTimeString($shopOpenTimeValue)
             : Carbon::parse('08:00:00', $shopTimezone);
         
-        $status = $now->gt($standardTime) ? 'late' : 'present';
+        $status = $now->copy()->startOfMinute()->gt($standardTime->copy()->startOfMinute())
+            ? 'late'
+            : 'present';
 
         if ($existingRecord) {
             // Update existing record

@@ -342,6 +342,49 @@ class PurchaseRequestWorkflowTest extends TestCase
             ->assertUnprocessable();
     }
 
+    public function test_repair_stock_request_requires_inventory_approval_before_procurement_creation(): void
+    {
+        $inventory = InventoryItem::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'category' => 'repair_materials',
+        ]);
+        $stockRequest = StockRequestApproval::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'inventory_item_id' => $inventory->id,
+            'product_name' => $inventory->name,
+            'quantity_needed' => 2,
+            'priority' => 'high',
+            'request_source' => 'repair',
+            'status' => 'accepted',
+        ]);
+        $payload = [
+            'stock_request_id' => $stockRequest->id,
+            'product_name' => $stockRequest->product_name,
+            'supplier_id' => $this->supplier->id,
+            'inventory_item_id' => $inventory->id,
+            'quantity' => 2,
+            'unit_cost' => 75,
+            'priority' => 'high',
+            'justification' => 'Repair material replenishment.',
+        ];
+
+        $this->actingAs($this->requester)
+            ->postJson('/api/erp/procurement/purchase-requests', $payload)
+            ->assertUnprocessable()
+            ->assertJsonPath('message', 'Repair material request must be approved by Inventory first before procurement processing.');
+
+        $this->assertDatabaseMissing('purchase_requests', ['stock_request_id' => $stockRequest->id]);
+
+        $stockRequest->update([
+            'inventory_approved_by' => $this->requester->id,
+            'inventory_approved_date' => now(),
+        ]);
+
+        $this->actingAs($this->requester)
+            ->postJson('/api/erp/procurement/purchase-requests', $payload)
+            ->assertCreated();
+    }
+
     public function test_http_creation_copies_identity_and_total_quantity_from_the_stock_request(): void
     {
         $inventory = InventoryItem::factory()->create([

@@ -131,11 +131,11 @@ class AttendanceRecord extends Model
             return;
         }
 
-        $checkIn = \Carbon\Carbon::parse($this->check_in_time);
-        $expectedCheckIn = \Carbon\Carbon::parse($this->expected_check_in);
+        $checkIn = \Carbon\Carbon::parse($this->check_in_time)->startOfMinute();
+        $expectedCheckIn = \Carbon\Carbon::parse($this->expected_check_in)->startOfMinute();
         
         if ($checkIn->gt($expectedCheckIn)) {
-            $this->minutes_late = $checkIn->diffInMinutes($expectedCheckIn);
+            $this->minutes_late = $expectedCheckIn->diffInMinutes($checkIn);
             $this->is_late = true;
             // Auto-update status to 'late' if more than 15 minutes
             if ($this->minutes_late > 15 && $this->status !== 'absent') {
