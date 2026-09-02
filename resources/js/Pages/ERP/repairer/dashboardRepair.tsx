@@ -1,9 +1,10 @@
 import { Head, Link, usePage } from "@inertiajs/react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
-import { useState, useEffect } from "react";
+import { useEffect } from "react";
 import axios from "axios";
 import { erpUrl } from "@/utils/erpCapabilities";
 import type { ErpCapabilities } from "@/types/erp";
+import { DashboardMetricCard, DashboardPanel, DashboardShell, DashboardTrendChart } from "@/components/dashboard";
 
 type MetricColor = "success" | "error" | "warning" | "info";
 
@@ -54,12 +55,12 @@ type PackageAnalytics = {
 type MetricCardProps = {
 	title: string;
 	value: number | string;
-	change: number;
-	changeType: "increase" | "decrease";
 	icon: React.FC<{ className?: string }>;
 	color: MetricColor;
 	description: string;
 };
+
+type MetricCardPayload = Omit<MetricCardProps, "icon" | "color">;
 
 type RequestedService = {
   service: string;
@@ -81,20 +82,15 @@ type RecentRepair = {
   service: string;
   status: string;
   amount: string;
-  createdAt: string;
+	createdAt: string;
 };
 
-const ArrowUpIcon = ({ className }: { className?: string }) => (
-	<svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-		<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-	</svg>
-);
-
-const ArrowDownIcon = ({ className }: { className?: string }) => (
-	<svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-		<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-	</svg>
-);
+type RepairDashboardData = {
+	metricCards?: MetricCardPayload[];
+	requestedServices?: RequestedService[];
+	revenueRows?: RevenueRow[];
+	recentRepairs?: RecentRepair[];
+};
 
 const WrenchIcon = ({ className }: { className?: string }) => (
 	<svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -123,39 +119,14 @@ const CheckCircleIcon = ({ className }: { className?: string }) => (
 	</svg>
 );
 
-const MetricCard = ({ title, value, change, changeType, icon: Icon, color, description }: MetricCardProps) => {
+const MetricCard = ({ title, value, icon: Icon, color, description }: MetricCardProps) => {
 	const displayValue = typeof value === "number" ? value.toLocaleString() : value;
-
-	return (
-		<div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-			<div className="flex items-start justify-between gap-4">
-				<div>
-					<p className="text-sm font-medium text-gray-500 dark:text-gray-400">{title}</p>
-					<h3 className="mt-2 text-3xl font-semibold tracking-tight text-gray-950 dark:text-white">{displayValue}</h3>
-				</div>
-				<div className={`rounded-xl p-3 ${
-					color === "success" ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300" :
-					color === "warning" ? "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300" :
-					color === "error" ? "bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300" :
-					"bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
-				}`}>
-					<Icon className="size-6" />
-				</div>
-			</div>
-			<div className="mt-4 flex items-center justify-between gap-3">
-				<p className="text-xs text-gray-500 dark:text-gray-400">{description}</p>
-				<span className={`inline-flex items-center gap-1 text-xs font-semibold ${changeType === "increase" ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
-					{changeType === "increase" ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" />}
-					{Math.abs(change)}%
-				</span>
-			</div>
-		</div>
-	);
+	return <DashboardMetricCard label={title} value={displayValue} description={description} context="Current" icon={Icon} tone={color === "success" ? "success" : color === "warning" ? "warning" : color === "error" ? "danger" : "neutral"} />;
 };
 
 const DashboardRepair: React.FC = () => {
 	const { initialDashboard, auth, erpCapabilities } = usePage().props as {
-		initialDashboard?: any;
+		initialDashboard?: RepairDashboardData | null;
 		auth?: { erpActor?: { ownerMode?: boolean } };
 		erpCapabilities?: ErpCapabilities;
 	};
@@ -178,17 +149,19 @@ const DashboardRepair: React.FC = () => {
 		"Completed Today": "success" as MetricColor,
 	};
 
-	const mapCards = (cards: any[]): MetricCardProps[] =>
-		(cards || []).map((card: any) => ({
-			...card,
+	const mapCards = (cards: MetricCardPayload[] = []): MetricCardProps[] =>
+		cards.map((card) => ({
+			title: card.title,
+			value: card.value,
+			description: card.description,
 			icon: iconMap[card.title as keyof typeof iconMap] || WrenchIcon,
 			color: colorMap[card.title as keyof typeof colorMap] || ("info" as MetricColor),
 		}));
 
-	const [metricCards, setMetricCards] = useState<MetricCardProps[]>(() => mapCards(initialDashboard?.metricCards ?? []));
-	const [requestedServices, setRequestedServices] = useState<RequestedService[]>(initialDashboard?.requestedServices ?? []);
-	const [revenueRows, setRevenueRows] = useState<RevenueRow[]>(initialDashboard?.revenueRows ?? []);
-	const [recentRepairs, setRecentRepairs] = useState<RecentRepair[]>(initialDashboard?.recentRepairs ?? []);
+	const metricCards = mapCards(initialDashboard?.metricCards);
+	const requestedServices = initialDashboard?.requestedServices ?? [];
+	const revenueRows = initialDashboard?.revenueRows ?? [];
+	const recentRepairs = initialDashboard?.recentRepairs ?? [];
 	const [analytics, setAnalytics] = useState<PackageAnalytics | null>(null);
 
 	useEffect(() => {
@@ -204,13 +177,13 @@ const DashboardRepair: React.FC = () => {
 	return (
 		<AppLayoutERP>
 			<Head title="Repair Dashboard" />
-			<div className="repair-dashboard space-y-8">
-				<div className="flex flex-wrap items-start justify-between gap-4">
-					<div>
-						<h1 className="mb-2 text-3xl font-bold text-gray-900">Repair Dashboard</h1>
-						<p className="text-gray-600">Overview of repair operations and activity.</p>
-					</div>
-				</div>
+			<DashboardShell
+				testId="repairer-dashboard"
+				title="Repair Dashboard"
+				description="Overview of repair operations, service demand, and package activity."
+				icon={WrenchIcon}
+				actions={jobOrdersUrl && <Link href={jobOrdersUrl} className="inline-flex min-h-11 items-center rounded-full border border-gray-300 px-5 py-2.5 text-sm font-semibold text-gray-800 hover:border-gray-950 dark:border-gray-700 dark:text-gray-100 dark:hover:border-white">Open repair jobs</Link>}
+			>
 
 				<div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
 					{metricCards.map((card) => (
@@ -341,6 +314,18 @@ const DashboardRepair: React.FC = () => {
 				</div>
 
 				{analytics && (
+					<>
+					<DashboardPanel eyebrow="Package performance" title="Package revenue trend" description="Bookings and net revenue from the package analytics endpoint.">
+						<DashboardTrendChart
+							title="Package revenue trend"
+							categories={analytics.monthly_trend.map((item) => item.month)}
+							series={[{ name: "Net revenue", data: analytics.monthly_trend.map((item) => item.revenue) }]}
+							height={280}
+							options={{ yaxis: { labels: { formatter: (value) => `\u20b1${value.toLocaleString()}` } }, tooltip: { y: { formatter: (value) => `\u20b1${value.toLocaleString()}` } } }}
+							summary={`Package revenue trend: ${analytics.monthly_trend.map((item) => `${item.month} \u20b1${Number(item.revenue).toFixed(2)}`).join(", ") || "no package trend data"}.`}
+						/>
+					</DashboardPanel>
+
 					<div className="rounded-xl border border-gray-200 bg-white">
 						<div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
 							<div>
@@ -469,8 +454,9 @@ const DashboardRepair: React.FC = () => {
 							</div>
 						</div>
 					</div>
+					</>
 				)}
-			</div>
+			</DashboardShell>
 		</AppLayoutERP>
 	);
 };

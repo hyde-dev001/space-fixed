@@ -269,6 +269,7 @@ $routeBuckets = [
         'shop_owner.premium.upgrade.preview',
     ],
     'retail_operations' => [
+        'erp.cashier.dashboard',
         'erp.cashier.point-of-sale',
         'erp.manager.products',
         'erp.staff.job-orders',

@@ -167,6 +167,17 @@ it('shows logistics settings only with its permission', () => {
   expect(screen.queryByRole('link', { name: /settings/i })).not.toBeInTheDocument();
 });
 
+it('shows the logistics dashboard entry for dispatchers with dashboard access', () => {
+  state.permissions = ['access-logistics-dashboard'];
+
+  render(<AppSidebarERP />);
+
+  expect(screen.getByRole('link', { name: /^logistics dashboard$/i })).toHaveAttribute(
+    'href',
+    '/erp/logistics',
+  );
+});
+
 it('shows batches only with its permission', () => {
   state.permissions = ['manage-logistics-batches'];
   const { unmount } = render(<AppSidebarERP />);
