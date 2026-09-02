@@ -336,6 +336,172 @@ class ProcurementAuthorizationTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_same_shop_inventory_user_can_approve_a_repair_material_request(): void
+    {
+        [$inventoryUser, $shop] = $this->userForShop();
+        $shop->update(['business_type' => 'both']);
+        $this->give($inventoryUser, 'view-inventory');
+        $requester = User::factory()->for($shop)->create();
+        $inventoryItem = InventoryItem::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'category' => 'repair_materials',
+        ]);
+        $stockRequest = StockRequestApproval::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'inventory_item_id' => $inventoryItem->id,
+            'request_source' => 'repair',
+            'requested_by' => $requester->id,
+            'status' => 'pending',
+        ]);
+
+        $this->actingAs($inventoryUser)
+            ->postJson("/api/erp/inventory/request-material-approvals/{$stockRequest->id}/approve", [
+                'approval_notes' => 'Inventory verified sufficient stock.',
+            ])
+            ->assertOk();
+
+        $this->assertDatabaseHas('stock_request_approvals', [
+            'id' => $stockRequest->id,
+            'status' => 'pending',
+            'inventory_approved_by' => $inventoryUser->id,
+        ]);
+    }
+    public function test_same_shop_inventory_user_can_reject_a_repair_material_request(): void
+    {
+        [$inventoryUser, $shop] = $this->userForShop();
+        $shop->update(['business_type' => 'both']);
+        $this->give($inventoryUser, 'view-inventory');
+        $inventoryItem = InventoryItem::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'category' => 'repair_materials',
+        ]);
+        $stockRequest = StockRequestApproval::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'inventory_item_id' => $inventoryItem->id,
+            'request_source' => 'repair',
+            'status' => 'pending',
+        ]);
+
+        $this->actingAs($inventoryUser)
+            ->postJson("/api/erp/inventory/request-material-approvals/{$stockRequest->id}/reject", [
+                'rejection_reason' => 'Material is not available in stock.',
+            ])
+            ->assertOk();
+
+        $this->assertDatabaseHas('stock_request_approvals', [
+            'id' => $stockRequest->id,
+            'status' => 'rejected',
+            'approved_by' => $inventoryUser->id,
+            'rejection_reason' => 'Material is not available in stock.',
+        ]);
+    }
+
+    public function test_inventory_dashboard_access_does_not_authorize_repair_material_approval(): void
+    {
+        [$inventoryUser, $shop] = $this->userForShop();
+        $shop->update(['business_type' => 'both']);
+        $this->give($inventoryUser, 'access-inventory-dashboard');
+        $inventoryItem = InventoryItem::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'category' => 'repair_materials',
+        ]);
+        $stockRequest = StockRequestApproval::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'inventory_item_id' => $inventoryItem->id,
+            'request_source' => 'repair',
+        ]);
+
+        $this->actingAs($inventoryUser)
+            ->postJson("/api/erp/inventory/request-material-approvals/{$stockRequest->id}/approve", [
+                'approval_notes' => 'Dashboard access is not approval authority.',
+            ])
+            ->assertForbidden();
+    }
+
+    public function test_inventory_cannot_approve_a_repair_material_request_from_another_shop(): void
+    {
+        [$inventoryUser, $shop] = $this->userForShop();
+        [, $otherShop] = $this->userForShop();
+        $shop->update(['business_type' => 'both']);
+        $this->give($inventoryUser, 'view-inventory');
+        $inventoryItem = InventoryItem::factory()->create([
+            'shop_owner_id' => $otherShop->id,
+            'category' => 'repair_materials',
+        ]);
+        $stockRequest = StockRequestApproval::factory()->create([
+            'shop_owner_id' => $otherShop->id,
+            'inventory_item_id' => $inventoryItem->id,
+            'request_source' => 'repair',
+        ]);
+
+        $this->actingAs($inventoryUser)
+            ->postJson("/api/erp/inventory/request-material-approvals/{$stockRequest->id}/approve", [
+                'approval_notes' => 'Foreign shop request.',
+            ])
+            ->assertNotFound();
+    }
+
+    public function test_finalized_repair_material_request_cannot_be_approved_again(): void
+    {
+        [$inventoryUser, $shop] = $this->userForShop();
+        $shop->update(['business_type' => 'both']);
+        $this->give($inventoryUser, 'view-inventory');
+        $inventoryItem = InventoryItem::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'category' => 'repair_materials',
+        ]);
+        $stockRequest = StockRequestApproval::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'inventory_item_id' => $inventoryItem->id,
+            'request_source' => 'repair',
+            'status' => 'rejected',
+        ]);
+
+        $this->actingAs($inventoryUser)
+            ->postJson("/api/erp/inventory/request-material-approvals/{$stockRequest->id}/approve", [
+                'approval_notes' => 'Finalized request must remain closed.',
+            ])
+            ->assertForbidden();
+    }
+
+    public function test_procurement_sees_the_canonical_inventory_stage_for_repair_requests(): void
+    {
+        [$viewer, $shop] = $this->userForShop();
+        $this->give($viewer, 'procurement.review_stock_requests');
+        $requester = User::factory()->for($shop)->create();
+        $inventoryApprover = User::factory()->for($shop)->create();
+
+        $createRequest = function (string $status, ?string $inventoryApprovedDate = null) use ($shop, $requester, $inventoryApprover): StockRequestApproval {
+            $inventoryItem = InventoryItem::factory()->create([
+                'shop_owner_id' => $shop->id,
+                'category' => 'repair_materials',
+            ]);
+
+            return StockRequestApproval::factory()->create([
+                'shop_owner_id' => $shop->id,
+                'inventory_item_id' => $inventoryItem->id,
+                'request_source' => 'repair',
+                'requested_by' => $requester->id,
+                'status' => $status,
+                'inventory_approved_by' => $inventoryApprovedDate ? $inventoryApprover->id : null,
+                'inventory_approved_date' => $inventoryApprovedDate,
+            ]);
+        };
+
+        $pending = $createRequest('pending');
+        $approved = $createRequest('pending', now()->toDateTimeString());
+        $rejected = $createRequest('rejected');
+
+        $response = $this->actingAs($viewer)
+            ->getJson('/api/erp/procurement/stock-requests?request_source=repair&per_page=100')
+            ->assertOk();
+        $requests = collect($response->json('data'))->keyBy('id');
+
+        $this->assertSame('pending', $requests[$pending->id]['inventory_approval_status']);
+        $this->assertSame('approved', $requests[$approved->id]['inventory_approval_status']);
+        $this->assertSame('rejected', $requests[$rejected->id]['inventory_approval_status']);
+    }
+
     public function test_stock_request_rejects_foreign_inventory_id(): void
     {
         [$requester] = $this->userForShop();

@@ -147,6 +147,8 @@ class PriceChangeRequestController extends Controller
                                 $actor,
                                 $requiresOwnerApproval
                             );
+                        } else {
+                            throw new \RuntimeException('Unable to resolve the Shop Owner approval actor.');
                         }
                     } catch (\Exception $e) {
                         \Log::error('Failed to refresh price change approval workflow', [
@@ -154,6 +156,7 @@ class PriceChangeRequestController extends Controller
                             'requires_owner_approval' => $requiresOwnerApproval,
                             'error' => $e->getMessage()
                         ]);
+                        throw $e;
                     }
                 }
 
@@ -234,6 +237,8 @@ class PriceChangeRequestController extends Controller
                         $actor,
                         $requiresOwnerApproval
                     );
+                } else {
+                    throw new \RuntimeException('Unable to resolve the Shop Owner approval actor.');
                 }
             } catch (\Exception $e) {
                 \Log::error('Failed to create price change approval workflow', [
@@ -241,7 +246,7 @@ class PriceChangeRequestController extends Controller
                     'requires_owner_approval' => $requiresOwnerApproval,
                     'error' => $e->getMessage()
                 ]);
-                // Continue despite error - request is still created
+                throw $e;
             }
 
             try {
@@ -428,9 +433,10 @@ class PriceChangeRequestController extends Controller
 
         $priceChangeRequest = PriceChangeRequest::findOrFail($id);
         $actor = Auth::guard('user')->user() ?? Auth::user();
+        $isPending = $priceChangeRequest->status === PriceChangeStatus::PENDING;
         
         // Create approval workflow if missing (for old requests created before the fix)
-        if (!$priceChangeRequest->approval_id) {
+        if (!$priceChangeRequest->approval_id && $isPending) {
             try {
                 $shopOwnerUser = $this->resolveShopOwnerApproverUser((int) $priceChangeRequest->shop_owner_id);
                 if ($shopOwnerUser) {
@@ -438,17 +444,23 @@ class PriceChangeRequestController extends Controller
                         $priceChangeRequest,
                         $shopOwnerUser,
                         $actor,
-                        true
+                        $this->shopOwnerApprovalPolicyService->requiresOwnerApprovalForPriceChange(
+                            (int) $priceChangeRequest->shop_owner_id,
+                            (float) $priceChangeRequest->current_price,
+                            (float) $priceChangeRequest->proposed_price
+                        ),
                     );
                     // Refresh to get the newly created approval
                     $priceChangeRequest->refresh();
+                } else {
+                    throw new \RuntimeException('Unable to resolve the Shop Owner approval actor.');
                 }
             } catch (\Exception $e) {
                 \Log::warning('Failed to create approval workflow for existing request', [
                     'price_change_id' => $priceChangeRequest->id,
                     'error' => $e->getMessage()
                 ]);
-                // Continue - will use legacy path if approval still not created
+                throw $e;
             }
         }
 

@@ -321,7 +321,7 @@ class OrderController extends Controller
                     'tracking_number' => $order->tracking_number,
                     'carrier_company' => $order->carrier_company,
                     'carrier_name' => $order->carrier_name,
-                    'tracking_link' => $order->tracking_link,
+                    'tracking_link' => $this->customerSafeExternalTrackingLink($order->tracking_link),
                     'logistics_shipment_id' => $shipment['id'] ?? null,
                     'is_shop_owned_delivery' => $isShopOwnedDelivery,
                     'delivery_status' => $shipment['status'] ?? null,
@@ -370,13 +370,13 @@ class OrderController extends Controller
                         'customer_return_carrier' => $latestRefund->customer_return_carrier,
                         'customer_return_rider_name' => $latestRefund->customer_return_rider_name,
                         'customer_return_rider_phone' => $latestRefund->customer_return_rider_phone,
-                        'customer_return_tracking_link' => $latestRefund->customer_return_tracking_link,
+                        'customer_return_tracking_link' => $this->customerSafeExternalTrackingLink($latestRefund->customer_return_tracking_link),
                         'customer_return_shipped_at' => optional($latestRefund->customer_return_shipped_at)->toDateTimeString(),
                         'staff_return_tracking_number' => $latestRefund->staff_return_tracking_number,
                         'staff_return_carrier' => $latestRefund->staff_return_carrier,
                         'staff_return_rider_name' => $latestRefund->staff_return_rider_name,
                         'staff_return_rider_phone' => $latestRefund->staff_return_rider_phone,
-                        'staff_return_tracking_link' => $latestRefund->staff_return_tracking_link,
+                        'staff_return_tracking_link' => $this->customerSafeExternalTrackingLink($latestRefund->staff_return_tracking_link),
                         'staff_return_shipped_at' => optional($latestRefund->staff_return_shipped_at)->toDateTimeString(),
                         'return_arranged_by_staff_at' => optional($latestRefund->return_arranged_by_staff_at)->toDateTimeString(),
                         'return_confirmed_at' => optional($latestRefund->return_confirmed_at)->toDateTimeString(),
@@ -394,6 +394,33 @@ class OrderController extends Controller
         return Inertia::render('UserSide/Orders/MyOrders', [
             'orders' => $orders,
         ]);
+    }
+
+    private function customerSafeExternalTrackingLink(?string $value): ?string
+    {
+        $normalized = trim((string) $value);
+        if ($normalized === '' || filter_var($normalized, FILTER_VALIDATE_URL) === false) {
+            return null;
+        }
+
+        $parts = parse_url($normalized);
+        if (!is_array($parts)) {
+            return null;
+        }
+
+        $scheme = strtolower((string) ($parts['scheme'] ?? ''));
+        if (!in_array($scheme, ['http', 'https'], true)) {
+            return null;
+        }
+
+        $path = strtolower('/' . ltrim(rawurldecode((string) ($parts['path'] ?? '')), '/'));
+        foreach (['/erp', '/admin', '/shop-owner'] as $prefix) {
+            if ($path === $prefix || str_starts_with($path, $prefix . '/')) {
+                return null;
+            }
+        }
+
+        return $normalized;
     }
 
     private function reconcileRefundWithGateway(Order $order, ?OrderRefund $latestRefund): void
@@ -758,13 +785,13 @@ class OrderController extends Controller
                 'customer_return_carrier' => $updatedRefund->customer_return_carrier,
                 'customer_return_rider_name' => $updatedRefund->customer_return_rider_name,
                 'customer_return_rider_phone' => $updatedRefund->customer_return_rider_phone,
-                'customer_return_tracking_link' => $updatedRefund->customer_return_tracking_link,
+                'customer_return_tracking_link' => $this->customerSafeExternalTrackingLink($updatedRefund->customer_return_tracking_link),
                 'customer_return_shipped_at' => optional($updatedRefund->customer_return_shipped_at)->toDateTimeString(),
                 'staff_return_tracking_number' => $updatedRefund->staff_return_tracking_number,
                 'staff_return_carrier' => $updatedRefund->staff_return_carrier,
                 'staff_return_rider_name' => $updatedRefund->staff_return_rider_name,
                 'staff_return_rider_phone' => $updatedRefund->staff_return_rider_phone,
-                'staff_return_tracking_link' => $updatedRefund->staff_return_tracking_link,
+                'staff_return_tracking_link' => $this->customerSafeExternalTrackingLink($updatedRefund->staff_return_tracking_link),
                 'staff_return_shipped_at' => optional($updatedRefund->staff_return_shipped_at)->toDateTimeString(),
                 'return_arranged_by_staff_at' => optional($updatedRefund->return_arranged_by_staff_at)->toDateTimeString(),
                 'delivery_rider_name' => $activeAssignment?->riderProfile?->name,
