@@ -85,6 +85,17 @@ describe('SoleSpace landing page redesign', () => {
     expect(landingSource).not.toContain('--footer-reveal-progress');
   });
 
+  it('uses a landscape snap carousel for categories below the desktop breakpoint', () => {
+    expect(landingSource).toContain(
+      'landing-category-carousel flex snap-x snap-mandatory gap-4 overflow-x-auto pb-3',
+    );
+    expect(landingSource).toContain('min-w-[84%] snap-start sm:min-w-[58%]');
+    expect(landingSource).toContain('min-w-[84%] snap-start aspect-[4/3] overflow-hidden');
+    expect(landingSource).toContain('sm:min-w-[58%] sm:aspect-[16/10]');
+    expect(landingSource).toContain('lg:grid lg:grid-cols-3 lg:gap-7 lg:overflow-visible lg:pb-0');
+    expect(landingSource).toContain('lg:min-w-0 lg:aspect-auto lg:min-h-[38rem]');
+  });
+
   it('removes the superseded statistics and final CTA copy', () => {
     expect(landingSource).not.toContain('Satisfaction');
     expect(landingSource).not.toContain('READY TO STEP INTO STYLE?');
