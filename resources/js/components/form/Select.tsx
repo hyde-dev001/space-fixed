@@ -42,8 +42,8 @@ const Select: React.FC<SelectProps> = ({ options, placeholder = "Select an optio
       <span>{selectedOption?.label ?? placeholder}</span><span aria-hidden="true" className={`ml-3 text-gray-500 transition-transform ${isOpen ? "rotate-180" : ""}`}>⌄</span>
     </button>
     {isOpen && <div role="listbox" aria-label={ariaLabel ?? placeholder} className="absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-lg border border-gray-300 bg-white p-1 shadow-lg dark:border-gray-700 dark:bg-gray-900">
-      <button type="button" role="option" aria-selected={selectedValue === ""} onClick={() => choose("")} className={`block w-full rounded-md px-3 py-2 text-left text-sm ${selectedValue === "" ? "bg-gray-900 text-white" : "text-gray-900 hover:bg-gray-100 dark:text-gray-100 dark:hover:bg-gray-800"}`}>{placeholder}</button>
-      {options.map((option) => <button type="button" role="option" aria-selected={selectedValue === option.value} key={option.value} onClick={() => choose(option.value)} className={`block w-full rounded-md px-3 py-2 text-left text-sm ${selectedValue === option.value ? "bg-gray-900 text-white" : "text-gray-900 hover:bg-gray-100 dark:text-gray-100 dark:hover:bg-gray-800"}`}>{option.label}</button>)}
+      <button type="button" role="option" aria-selected={selectedValue === ""} onClick={() => choose("")} className={`block w-full rounded-md px-3 py-2 text-left text-sm ${selectedValue === "" ? "bg-gray-100 text-gray-900 dark:bg-gray-700 dark:text-white" : "text-gray-900 hover:bg-gray-100 dark:text-gray-100 dark:hover:bg-gray-800"}`}>{placeholder}</button>
+      {options.map((option) => <button type="button" role="option" aria-selected={selectedValue === option.value} key={option.value} onClick={() => choose(option.value)} className={`block w-full rounded-md px-3 py-2 text-left text-sm ${selectedValue === option.value ? "bg-gray-100 text-gray-900 dark:bg-gray-700 dark:text-white" : "text-gray-900 hover:bg-gray-100 dark:text-gray-100 dark:hover:bg-gray-800"}`}>{option.label}</button>)}
     </div>}
   </div>;
 };

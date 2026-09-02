@@ -157,3 +157,14 @@
   touch/viewport behavior.
 - [x] Run the full frontend suite, Laravel Logistics suite, and fresh Vite
   build; push the feature branch with the generated `public/build`.
+
+## Follow-up: account dropdown and sidebar theme consistency
+
+- [x] Keep ERP native select popovers theme-aware with explicit light/dark
+  color schemes and neutral gray selected/hover states.
+- [x] Align shared custom select and multi-select options with the sidebar's
+  gray hover language in both themes.
+- [x] Keep ERP, shop-owner, and canonical owner sidebar wordmarks monochrome:
+  black in Light Mode and light gray in Dark Mode.
+- [x] Verify the shared contracts, full frontend suite, and browser CSS smoke
+  fixture before the final rebase/build/push.

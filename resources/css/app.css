@@ -2231,6 +2231,14 @@ html:not(.dark) .erp-theme :is(a, [role='tab']):is(
 /* Keep native select interaction states neutral across browsers. Native
    option popovers remain OS-controlled in some browsers, but these styles
    cover the selected option and field focus where the browser allows it. */
+html:not(.dark) #app .erp-theme select {
+  color-scheme: light;
+}
+
+html.dark #app .erp-theme select {
+  color-scheme: dark;
+}
+
 html:not(.dark) #app .erp-theme select:focus {
   border-color: #111111 !important;
   outline-color: #111111 !important;
@@ -2244,13 +2252,29 @@ html:not(.dark) #app .erp-theme select option {
 
 html:not(.dark) #app .erp-theme select option:checked,
 html:not(.dark) #app .erp-theme select option:checked:hover {
-  background-color: #111111 !important;
-  color: #ffffff !important;
+  background-color: #f3f4f6 !important;
+  color: #111111 !important;
 }
 
 html:not(.dark) #app .erp-theme select option:hover {
-  background-color: #f3f4f6 !important;
+  background-color: #e5e7eb !important;
   color: #111111 !important;
+}
+
+html.dark #app .erp-theme select option {
+  background-color: #111827 !important;
+  color: #f8fafc !important;
+}
+
+html.dark #app .erp-theme select option:checked,
+html.dark #app .erp-theme select option:checked:hover {
+  background-color: #334155 !important;
+  color: #f8fafc !important;
+}
+
+html.dark #app .erp-theme select option:hover {
+  background-color: #475569 !important;
+  color: #ffffff !important;
 }
 
 /* Apply the same selection language to accessible custom dropdowns. */
@@ -2265,14 +2289,30 @@ html:not(.dark) #app .erp-theme [role='option'] {
 }
 
 html:not(.dark) #app .erp-theme [role='option'][aria-selected='true'] {
-  background-color: #111111 !important;
-  color: #ffffff !important;
+  background-color: #f3f4f6 !important;
+  color: #111111 !important;
 }
 
 html:not(.dark) #app .erp-theme [role='option']:not([aria-selected='true']):hover,
 html:not(.dark) #app .erp-theme [role='option'][data-highlighted='true']:not([aria-selected='true']) {
-  background-color: #f3f4f6 !important;
+  background-color: #e5e7eb !important;
   color: #111111 !important;
+}
+
+html.dark #app .erp-theme [role='option'] {
+  background-color: #111827 !important;
+  color: #f8fafc !important;
+}
+
+html.dark #app .erp-theme [role='option'][aria-selected='true'] {
+  background-color: #334155 !important;
+  color: #f8fafc !important;
+}
+
+html.dark #app .erp-theme [role='option']:not([aria-selected='true']):hover,
+html.dark #app .erp-theme [role='option'][data-highlighted='true']:not([aria-selected='true']) {
+  background-color: #475569 !important;
+  color: #ffffff !important;
 }
 
 @utility no-scrollbar {
