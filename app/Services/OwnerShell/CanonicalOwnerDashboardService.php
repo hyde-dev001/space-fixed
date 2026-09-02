@@ -35,9 +35,7 @@ final class CanonicalOwnerDashboardService
             'finance' => $this->readPages->financeDashboard(),
             'hr_employees' => $this->readPages->hrDashboard(),
             'inventory' => $this->readPages->inventoryDashboard(),
-            'procurement' => Inertia::render('ERP/Procurement/Dashboard', [
-                'dashboard' => $this->overview->forModule($moduleKey, $shopOwnerId),
-            ]),
+            'procurement' => $this->procurementDashboard($moduleKey, $shopOwnerId),
             'logistics' => $this->logisticsDashboard->dashboard(),
             default => throw new LogicException("Canonical owner dashboard is missing for {$moduleKey}."),
         };
@@ -55,5 +53,19 @@ final class CanonicalOwnerDashboardService
         }
 
         return $response;
+    }
+
+    /**
+     * @return Response
+     */
+    private function procurementDashboard(string $moduleKey, int $shopOwnerId): Response
+    {
+        $dashboard = $this->overview->forModule($moduleKey, $shopOwnerId);
+        $dashboard['links'] = [
+            'purchase_requests' => route('shop-owner.erp.procurement.purchase-request'),
+            'purchase_orders' => route('shop-owner.erp.procurement.purchase-orders'),
+        ];
+
+        return Inertia::render('ERP/Procurement/Dashboard', compact('dashboard'));
     }
 }

@@ -20,6 +20,7 @@ use App\Models\PurchaseRequest;
 use App\Models\StockMovement;
 use App\Models\StockRequestApproval;
 use App\Models\Supplier;
+use App\Services\ProcurementDashboardService;
 use App\Services\Erp\ShopOwnerInventoryReadService;
 use App\Support\Erp\ErpActorContext;
 use Illuminate\Http\RedirectResponse;
@@ -31,6 +32,7 @@ final class ReadPageController extends Controller
 {
     public function __construct(
         private readonly ShopOwnerInventoryReadService $ownerInventoryRead,
+        private readonly ProcurementDashboardService $procurementDashboard,
     ) {}
 
     public function hrAuditLogs(): Response|RedirectResponse
@@ -499,6 +501,21 @@ final class ReadPageController extends Controller
             ->paginate(100);
 
         return Inertia::render('ERP/Procurement/SuppliersManagement', compact('initialData'));
+    }
+
+    public function procurementDashboard(): Response|RedirectResponse
+    {
+        if ($redirect = $this->employeePasswordRedirect()) {
+            return $redirect;
+        }
+
+        $dashboard = $this->procurementDashboard->forShopOwner($this->shopOwnerId());
+        $dashboard['links'] = [
+            'purchase_requests' => route('erp.procurement.purchase-request'),
+            'purchase_orders' => route('erp.procurement.purchase-orders'),
+        ];
+
+        return Inertia::render('ERP/Procurement/Dashboard', compact('dashboard'));
     }
 
     public function purchaseRequest(): Response|RedirectResponse

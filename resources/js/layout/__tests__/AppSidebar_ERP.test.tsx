@@ -140,6 +140,22 @@ it('keeps supplier orders under Inventory without showing Procurement pages', ()
   expect(screen.queryByRole('link', { name: /suppliers management/i })).not.toBeInTheDocument();
 });
 
+it('shows the procurement dashboard as the first procurement link', () => {
+  state.url = '/erp/procurement/dashboard';
+  state.role = 'Procurement Manager';
+  state.roles = ['Procurement Manager'];
+  state.permissions = ['access-procurement-dashboard'];
+
+  render(<AppSidebarERP />);
+
+  expect(screen.getByRole('link', { name: /^Dashboard$/i })).toHaveAttribute(
+    'href',
+    '/erp/procurement/dashboard',
+  );
+  expect(screen.getByRole('link', { name: /purchase requests/i })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: /purchase orders/i })).toBeInTheDocument();
+});
+
 it('shows logistics settings only with its permission', () => {
   state.permissions = ['access-logistics-dashboard', 'configure-logistics-settings'];
   const { unmount } = render(<AppSidebarERP />);

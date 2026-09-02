@@ -575,6 +575,17 @@ const procurementItems: NavItem[] = [
   {
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M3 3v18h18"></path>
+        <path d="M7 16l3-4 3 2 4-6"></path>
+      </svg>
+    ),
+    name: "Dashboard",
+    route: "erp.procurement.dashboard",
+    moduleKey: "procurement",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
     <path d="M5 4h10l4 4v12H5z"></path>
     <path d="M15 4v4h4"></path>
     <path d="M8 13l5-5 2 2-5 5-3 1z"></path>
@@ -1048,6 +1059,7 @@ const EmployeeSidebarERP: React.FC = () => {
     "erp.inventory.purchase-orders": "/erp/inventory/purchase-orders",
     "erp.inventory.suppliers-management": "/erp/inventory/suppliers-management",
     // Procurement module routes
+    "erp.procurement.dashboard": "/erp/procurement/dashboard",
     "erp.procurement.purchase-request": "/erp/procurement/purchase-request",
     "erp.procurement.purchase-orders": "/erp/procurement/purchase-orders",
     "erp.procurement.stock-request-approval": "/erp/procurement/stock-request-approval",

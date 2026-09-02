@@ -2369,6 +2369,10 @@ Route::prefix('erp/inventory')->name('erp.inventory.')->middleware(['auth:user',
 // PROCUREMENT MODULE routes (accessible by Procurement Manager role or users with explicit permissions)
 Route::prefix('erp/procurement')->name('erp.procurement.')->middleware('auth:user')->group(function () {
 
+    Route::get('/dashboard', [\App\Http\Controllers\Erp\ReadPageController::class, 'procurementDashboard'])
+        ->middleware('permission:view-procurement|access-procurement-dashboard')
+        ->name('dashboard');
+
     Route::get('/purchase-request', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
