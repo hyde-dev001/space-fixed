@@ -78,6 +78,7 @@ const QuantityIcon = ({ type }: { type: 'minus' | 'plus' }) => (
 const ProductQuickView: React.FC<ProductQuickViewProps> = ({ product, detailsHref, triggerRef, onClose }) => {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
+  const [failedImage, setFailedImage] = useState<string | null>(null);
   const [quantity, setQuantity] = useState(1);
 
   const images = useMemo(() => {
@@ -164,11 +165,12 @@ const ProductQuickView: React.FC<ProductQuickViewProps> = ({ product, detailsHre
 
         <section className="bg-slate-100 p-4 sm:p-6" aria-label="Product images">
           <div className="relative aspect-square overflow-hidden bg-slate-200">
-            {selectedImage ? (
+            {selectedImage && selectedImage !== failedImage ? (
               <img
                 src={selectedImage}
                 alt={`${product.name} image ${selectedImageIndex + 1}`}
                 className="h-full w-full object-contain"
+                onError={() => setFailedImage(selectedImage)}
               />
             ) : (
               <div className="flex h-full items-center justify-center px-6 text-center text-sm text-slate-500">
