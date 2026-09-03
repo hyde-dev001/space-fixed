@@ -3,7 +3,13 @@ import { Link, usePage, router } from '@inertiajs/react';
 import Swal from './UserModal';
 import { route } from 'ziggy-js';
 import { useCart } from '../../../contexts/CartContext';
-import { dispatchCartAddedEvent } from '../../../types/cart-events';
+import {
+  addCartAddedListener,
+  dispatchCartAddedEvent,
+  removeCartAddedListener,
+  type CartAddedEvent,
+  type CartAddedItem,
+} from '../../../types/cart-events';
 import NotificationCenter from '../../../components/header/NotificationCenter';
 import NotificationBell from '../../../components/common/NotificationBell';
 import { useBadgeCounts } from '../../../hooks/useBadgeCounts';
@@ -99,6 +105,8 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
   const [cartDrawerOpen, setCartDrawerOpen] = useState(false);
   const [quickCartItems, setQuickCartItems] = useState<QuickCartItem[]>([]);
   const [quickCartLoading, setQuickCartLoading] = useState(false);
+  const [cartRefreshKey, setCartRefreshKey] = useState(0);
+  const [cartAddedItem, setCartAddedItem] = useState<CartAddedItem | null>(null);
   const [accountDrawerOpen, setAccountDrawerOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchProducts, setSearchProducts] = useState<SearchSuggestionProduct[]>([]);
@@ -220,6 +228,26 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
       return next;
     });
   }, [isAuthenticated, orderStatusCount, repairStatusCount]);
+
+  useEffect(() => {
+    const handleCartAdded = (event: CartAddedEvent) => {
+      if (!event.detail?.openDrawer) return;
+
+      setLandingSidebarOpen(false);
+      setAccountDrawerOpen(false);
+      setCartAddedItem(event.detail.item ?? null);
+      setCartDrawerOpen(true);
+      setCartRefreshKey((key) => key + 1);
+    };
+
+    addCartAddedListener(handleCartAdded);
+    return () => removeCartAddedListener(handleCartAdded);
+  }, []);
+
+  useEffect(() => {
+    if (cartDrawerOpen) return;
+    setCartAddedItem(null);
+  }, [cartDrawerOpen]);
 
   // Shoe categories for dropdown
   const shoeCategories = [
@@ -607,7 +635,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
     };
 
     loadQuickCart();
-  }, [cartDrawerOpen, isAuthenticated]);
+  }, [cartDrawerOpen, isAuthenticated, cartRefreshKey]);
 
   const shouldShowSearchDropdown =
     isSearchFocused &&
@@ -1473,6 +1501,17 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                   <button type="button" onClick={() => setCartDrawerOpen(false)} className="inline-flex h-10 w-10 items-center justify-center" aria-label="Close cart"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={1.8} d="M6 6l12 12M18 6L6 18" /></svg></button>
                 </div>
                 <div className="flex-1 overflow-y-auto px-5 py-5 sm:px-7">
+                  {cartAddedItem && (
+                    <div className="mb-5 flex items-start gap-3 border border-emerald-200 bg-emerald-50 px-4 py-3 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-100" role="status" aria-live="polite">
+                      <svg className="mt-0.5 h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold">Added to cart</p>
+                        <p className="mt-1 truncate text-xs">{cartAddedItem.name || 'Product'}{cartAddedItem.quantity ? ` · Qty ${cartAddedItem.quantity}` : ''}</p>
+                      </div>
+                    </div>
+                  )}
                   {quickCartLoading && <p className="text-sm text-[#777777] dark:text-slate-400">Loading your cart...</p>}
                   {!quickCartLoading && quickCartItems.length === 0 && <div className="py-12 text-center"><p className="text-base font-medium dark:text-white">Your cart is empty.</p><Link href={route('products')} onClick={() => setCartDrawerOpen(false)} className="mt-5 inline-flex min-h-11 items-center justify-center bg-[#111111] px-6 text-xs font-semibold uppercase tracking-[0.16em] text-white dark:bg-slate-100 dark:text-slate-950">Shop products</Link></div>}
                   {!quickCartLoading && quickCartItems.length > 0 && <div className="space-y-5">
