@@ -62,3 +62,7 @@
 ## 2026-09-02 - Responsive first-open loader
 
 - For a server-rendered first-open loader, apply the responsive bypass before adding its activation class so desktop can render immediately without an invisible handoff delay; keep a matching CSS guard for late or stale markup.
+
+## 2026-09-03 - Portable LIKE escaping
+
+- Explicit backslash escape clauses in SQL LIKE predicates can parse as an unterminated string in MySQL/MariaDB even when SQLite accepts them; use a portable escape marker and escape the marker, percent signs, and underscores in bound search values.

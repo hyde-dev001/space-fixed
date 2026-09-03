@@ -165,9 +165,9 @@ final class FlaggedAccountsController extends Controller
 
     private function whereContains(Builder $query, string $column, string $value, string $boolean = 'and'): void
     {
-        $escaped = addcslashes($value, "\\%_");
+        $escaped = strtr($value, ['!' => '!!', '%' => '!%', '_' => '!_']);
         $query->whereRaw(
-            "{$column} LIKE ? ESCAPE '\\'",
+            "{$column} LIKE ? ESCAPE '!'",
             ["%{$escaped}%"],
             $boolean,
         );
