@@ -113,6 +113,31 @@ final class PriceApprovalAttentionAdapterTest extends TestCase
         $this->assertNotNull($change);
     }
 
+    public function test_product_price_projection_matches_linked_shop_owner_user_approval(): void
+    {
+        User::factory()->count(2)->create();
+        $owner = ShopOwner::factory()->approved()->create(['registration_type' => 'company']);
+        $shopOwnerUser = User::factory()->create([
+            'shop_owner_id' => $owner->id,
+            'role' => 'Shop Owner',
+        ]);
+        $requester = User::factory()->create(['shop_owner_id' => $owner->id]);
+        $change = $this->createProductChangeWithApproval(
+            $owner,
+            'finance_approved',
+            'shop_owner',
+            ['requested_by' => $requester->id],
+            (int) $shopOwnerUser->id,
+        );
+
+        $this->assertNotSame((int) $owner->id, (int) $shopOwnerUser->id);
+
+        $result = $this->adapter()->read($owner, new OwnerAttentionQuery());
+
+        $this->assertSame(1, $result->qualifyingCount);
+        $this->assertSame('product_price_change:'.$change->id.':price_approval', $result->items[0]->attentionKey);
+    }
+
     private function adapter(): PriceApprovalAttentionAdapter
     {
         return app(PriceApprovalAttentionAdapter::class);
@@ -123,9 +148,10 @@ final class PriceApprovalAttentionAdapterTest extends TestCase
         ShopOwner $owner,
         User $requester,
         string $role,
+        ?int $approvalOwnerId = null,
     ): Approval {
         $approval = Approval::create([
-            'shop_owner_id' => $owner->id,
+            'shop_owner_id' => $approvalOwnerId ?? $owner->id,
             'approvable_type' => $approvable::class,
             'approvable_id' => $approvable->id,
             'reference' => 'AC-'.uniqid(),
@@ -151,6 +177,7 @@ final class PriceApprovalAttentionAdapterTest extends TestCase
         string $status,
         string $role,
         array $overrides = [],
+        ?int $approvalOwnerId = null,
     ): PriceChangeRequest {
         $requester = User::factory()->create(['shop_owner_id' => $owner->id]);
         $product = Product::create([
@@ -173,7 +200,7 @@ final class PriceApprovalAttentionAdapterTest extends TestCase
             'status' => $status,
             'shop_owner_id' => $owner->id,
         ], $overrides));
-        $this->createApproval($change, $owner, $requester, $role);
+        $this->createApproval($change, $owner, $requester, $role, $approvalOwnerId);
 
         return $change->fresh();
     }

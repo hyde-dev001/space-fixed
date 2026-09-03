@@ -9,6 +9,7 @@ use App\Models\PriceChangeRequest;
 use App\Models\RepairPackage;
 use App\Models\RepairService;
 use App\Models\ShopOwner;
+use App\Models\User;
 use App\Support\OwnerActionCenter\OwnerAttentionAdapterResult;
 use App\Support\OwnerActionCenter\OwnerAttentionItem;
 use App\Support\OwnerActionCenter\OwnerAttentionQuery;
@@ -53,7 +54,16 @@ final class PriceApprovalAttentionAdapter implements OwnerAttentionAdapter
             ->whereHas('approval', static function (Builder $approvalQuery) use ($shopOwnerId): void {
                 $approvalQuery
                     ->where('approvals.approvable_type', PriceChangeRequest::class)
-                    ->where('approvals.shop_owner_id', $shopOwnerId)
+                    ->where(function (Builder $approvalOwnerQuery) use ($shopOwnerId): void {
+                        $approvalOwnerQuery
+                            ->where('approvals.shop_owner_id', $shopOwnerId)
+                            ->orWhereIn(
+                                'approvals.shop_owner_id',
+                                User::query()
+                                    ->where('shop_owner_id', $shopOwnerId)
+                                    ->select('id'),
+                            );
+                    })
                     ->where('approvals.status', 'pending')
                     ->where('approvals.current_level', '>', 0)
                     ->where('approvals.current_approver_role', 'shop_owner');
