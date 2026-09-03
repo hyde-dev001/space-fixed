@@ -13,6 +13,7 @@ import {
   normalizeProvinceSelection,
 } from '@/data/philippineLocations';
 import CustomerAddressMapPicker from '@/components/address/CustomerAddressMapPicker';
+import { resolvePolicySectionsForFlow } from '../../../utils/policySectionResolver';
 
 interface CartItem {
   id: string;
@@ -1593,7 +1594,8 @@ const Payment: React.FC = () => {
       setIsLoadingPolicy(true);
 
       try {
-        const activeResponse = await fetch(`/api/policies/shops/${policyShopOwnerId}/active`, {
+        const policyFlow = isRepairPayment ? 'repair' : 'retail';
+        const activeResponse = await fetch(`/api/policies/shops/${policyShopOwnerId}/active?flow=${policyFlow}`, {
           headers: { Accept: 'application/json' },
           credentials: 'include',
         });
@@ -1609,7 +1611,12 @@ const Payment: React.FC = () => {
 
         const activePayload = await activeResponse.json();
         const resolvedVersionId = Number(activePayload?.data?.id || 0);
-        const resolvedSections = (activePayload?.data?.policy_sections_json || {}) as Record<string, string>;
+        const rawSections = (activePayload?.data?.policy_sections_json || {}) as Record<string, string>;
+        const resolvedSections = resolvePolicySectionsForFlow(
+          rawSections,
+          policyFlow,
+          String(activePayload?.data?.business_type_scope || ''),
+        );
 
         if (!cancelled) {
           setActivePolicyVersionId(Number.isFinite(resolvedVersionId) && resolvedVersionId > 0 ? resolvedVersionId : null);

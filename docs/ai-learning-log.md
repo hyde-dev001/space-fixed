@@ -66,3 +66,7 @@
 ## 2026-09-03 - Portable LIKE escaping
 
 - Explicit backslash escape clauses in SQL LIKE predicates can parse as an unterminated string in MySQL/MariaDB even when SQLite accepts them; use a portable escape marker and escape the marker, percent signs, and underscores in bound search values.
+
+## 2026-09-03 - Flow-scoped shop policies
+
+- Keep shared refund/payment terms in the published version, but filter retail and repair sections at the active-policy read boundary; preserve the same version ID and content hash so customer acceptance remains tied to one immutable policy version.

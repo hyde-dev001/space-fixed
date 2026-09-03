@@ -6,6 +6,7 @@ import { buildRepairBreakdown } from '../../../utils/repairPricing';
 import { openTermsPolicyModal } from '../../../utils/termsPolicyModal';
 import { mergeRepairProcessPrefill } from './repairProcessPrefill';
 import CustomerAddressManager, { type CustomerAddress } from '@/components/address/CustomerAddressManager';
+import { resolvePolicySectionsForFlow } from '../../../utils/policySectionResolver';
 
 const REPAIR_VAT_RATE_PERCENT = 12;
 
@@ -307,7 +308,7 @@ const RepairProcess: React.FC = () => {
       setIsLoadingPolicy(true);
 
       try {
-        const activeResponse = await fetch(`/api/policies/shops/${shopId}/active`, {
+        const activeResponse = await fetch(`/api/policies/shops/${shopId}/active?flow=repair`, {
           headers: { Accept: 'application/json' },
         });
 
@@ -322,7 +323,12 @@ const RepairProcess: React.FC = () => {
 
         const activeData = await activeResponse.json();
         const policyVersionId = Number(activeData?.data?.id || 0);
-        const policySections = (activeData?.data?.policy_sections_json || {}) as Record<string, string>;
+        const rawPolicySections = (activeData?.data?.policy_sections_json || {}) as Record<string, string>;
+        const policySections = resolvePolicySectionsForFlow(
+          rawPolicySections,
+          'repair',
+          String(activeData?.data?.business_type_scope || ''),
+        );
 
         if (!cancelled) {
           setActivePolicyVersionId(Number.isFinite(policyVersionId) && policyVersionId > 0 ? policyVersionId : null);
