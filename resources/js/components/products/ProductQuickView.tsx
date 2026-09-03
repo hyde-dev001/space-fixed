@@ -278,10 +278,15 @@ const ProductQuickView: React.FC<ProductQuickViewProps> = ({ product, detailsHre
             )}
 
             <div>
-              <label className="text-xs font-medium uppercase tracking-[0.16em] text-slate-600" htmlFor="quick-view-quantity">
+              <p id="quick-view-quantity-label" className="text-xs font-medium uppercase tracking-[0.16em] text-slate-600">
                 Quantity
-              </label>
-              <div className="mt-3 inline-flex items-center border border-slate-300" id="quick-view-quantity">
+              </p>
+              <div
+                className="mt-3 inline-flex items-center border border-slate-300"
+                id="quick-view-quantity"
+                role="group"
+                aria-labelledby="quick-view-quantity-label"
+              >
                 <button
                   type="button"
                   onClick={() => changeQuantity(-1)}
