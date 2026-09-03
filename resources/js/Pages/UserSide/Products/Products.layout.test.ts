@@ -34,4 +34,13 @@ describe('Products page layout', () => {
     expect(productsSource).toContain('<ProductQuickView');
     expect(productsSource).toContain('className="group flex h-full');
   });
+
+  it('keeps the sort menu above animated catalog cards', () => {
+    expect(productsSource).toContain(
+      'data-scroll-reveal className="scroll-reveal relative z-30 mb-8 w-full md:max-w-none"',
+    );
+    expect(productsSource).toContain(
+      'absolute right-0 left-auto z-40 mt-3 w-[min(92vw,14.5rem)]',
+    );
+  });
 });

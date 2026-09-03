@@ -18,4 +18,13 @@ describe('Repair catalog layout', () => {
     expect(repairSource).toContain('data-scroll-reveal className="scroll-reveal h-full"');
     expect(repairSource).toContain('className="group flex h-full');
   });
+
+  it('keeps the sort menu above animated shop cards', () => {
+    expect(repairSource).toContain(
+      'data-scroll-reveal className="scroll-reveal relative z-30 mb-4 flex flex-wrap items-center justify-between gap-3 sm:mb-5"',
+    );
+    expect(repairSource).toContain(
+      'absolute right-0 z-40 mt-3 w-[min(92vw,14.5rem)]',
+    );
+  });
 });
