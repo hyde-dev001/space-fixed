@@ -1368,7 +1368,12 @@ export default function JobOrdersPage() {
 
       // Update local state
       setOrders((prev) =>
-        prev.map((o) => (o.id === order.id ? { ...o, status: "processing", processedAt: new Date().toLocaleString() } : o))
+        prev.map((o) => (o.id === order.id ? {
+          ...o,
+          status: "processing",
+          availableActions: ['shipped'] as OrderAction[],
+          processedAt: new Date().toLocaleString(),
+        } : o))
       );
       setIsViewModalOpen(false);
       setViewOrder(null);

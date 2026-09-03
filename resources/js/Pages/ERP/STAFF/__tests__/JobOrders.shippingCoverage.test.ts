@@ -525,6 +525,40 @@ describe('staff order state contract', () => {
 
     expect(screen.queryByRole('button', { name: 'Start processing' })).not.toBeInTheDocument();
   });
+
+  it('shows the shipping action immediately after processing a single order', async () => {
+    const pendingOrder = { ...makeOrder(74), status: 'pending', available_actions: ['processing'] };
+    mockPage.props.initialOrders = [pendingOrder];
+    const fetchMock = vi.fn((input: string, init?: RequestInit) => {
+      if (input === '/api/staff/orders') {
+        return Promise.resolve(jsonResponse(200, [pendingOrder]));
+      }
+
+      if (input === '/api/csrf-token') {
+        return Promise.resolve(jsonResponse(200, { csrf_token: 'token' }));
+      }
+
+      if (input === '/api/staff/orders/74/status' && init?.method === 'PATCH') {
+        return Promise.resolve(jsonResponse(200, { status: 'processing' }));
+      }
+
+      throw new Error(`Unexpected fetch: ${input}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(React.createElement(JobOrdersPage));
+    fireEvent.click(await screen.findByTitle('View order details'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Process Order' }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      '/api/staff/orders/74/status',
+      expect.objectContaining({ method: 'PATCH' }),
+    ));
+    fireEvent.click(await screen.findByRole('button', { name: 'Processing (1)' }));
+
+    expect(await screen.findByRole('button', { name: 'Mark as shipped' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Start processing' })).not.toBeInTheDocument();
+  });
 });
 
 describe('staff refund visibility', () => {
