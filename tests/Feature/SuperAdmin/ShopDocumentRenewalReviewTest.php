@@ -54,6 +54,62 @@ final class ShopDocumentRenewalReviewTest extends TestCase
         $this->assertStringNotContainsString('checksum_sha256', $response->getContent());
     }
 
+    public function test_admin_queue_can_filter_renewal_history_by_status_and_search(): void
+    {
+        $admin = SuperAdmin::factory()->admin()->create();
+
+        $pending = $this->pendingRenewal();
+        $pending->shopOwner->update(['business_name' => 'Pending Sole Space']);
+
+        $approved = $this->pendingRenewal();
+        $approved->shopOwner->update(['business_name' => 'Approved Sole Space']);
+        $this->actingAsCompletedPrivileged($admin)
+            ->postJson(route('admin.document-renewals.approve', $approved), $this->approvalPayload($approved))
+            ->assertOk();
+
+        $rejected = $this->pendingRenewal();
+        $rejected->shopOwner->update(['business_name' => 'Rejected Sole Space']);
+        $this->actingAsCompletedPrivileged($admin)
+            ->postJson(route('admin.document-renewals.reject', $rejected), [
+                'rejection_reason' => 'The uploaded permit is unreadable.',
+            ])
+            ->assertOk();
+
+        $this->actingAsCompletedPrivileged($admin)
+            ->getJson(route('admin.document-renewals.index', [
+                'status' => 'approved',
+                'search' => 'Approved Sole Space',
+            ]))
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $approved->id)
+            ->assertJsonPath('data.0.status', 'approved');
+
+        $this->actingAsCompletedPrivileged($admin)
+            ->getJson(route('admin.document-renewals.index', [
+                'status' => 'rejected',
+                'search' => 'Rejected Sole Space',
+            ]))
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $rejected->id)
+            ->assertJsonPath('data.0.status', 'rejected')
+            ->assertJsonPath('data.0.rejection_reason', 'The uploaded permit is unreadable.');
+
+        $all = $this->actingAsCompletedPrivileged($admin)
+            ->getJson(route('admin.document-renewals.index', [
+                'status' => 'all',
+                'per_page' => 10,
+            ]));
+
+        $all->assertOk()
+            ->assertJsonPath('meta.total', 3)
+            ->assertJsonPath('stats.total', 3)
+            ->assertJsonPath('stats.pending', 1)
+            ->assertJsonPath('stats.approved', 1)
+            ->assertJsonPath('stats.rejected', 1);
+    }
+
     public function test_renewal_queue_rejects_malformed_pagination_and_document_filters(): void
     {
         $admin = SuperAdmin::factory()->admin()->create();
@@ -66,6 +122,8 @@ final class ShopDocumentRenewalReviewTest extends TestCase
             ['per_page' => 101],
             ['document_id' => 'abc'],
             ['document_id' => 0],
+            ['status' => 'unknown'],
+            ['search' => str_repeat('x', 101)],
         ] as $query) {
             $this->actingAsCompletedPrivileged($admin)
                 ->getJson(route('admin.document-renewals.index', $query))

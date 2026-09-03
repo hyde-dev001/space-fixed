@@ -96,6 +96,32 @@ class ShopOwnerRegistrationViewController extends Controller
             'rejected' => (clone $baseQuery)->where('status', 'rejected')->count(),
         ];
 
+        $now = now();
+        $currentStart = $now->copy()->subDays(30);
+        $previousStart = $now->copy()->subDays(60);
+        $changeFor = static function (Builder $query) use ($now, $currentStart, $previousStart): int {
+            $current = (clone $query)
+                ->where('created_at', '>=', $currentStart)
+                ->where('created_at', '<', $now)
+                ->count();
+            $previous = (clone $query)
+                ->where('created_at', '>=', $previousStart)
+                ->where('created_at', '<', $currentStart)
+                ->count();
+
+            if ($previous === 0) {
+                return $current > 0 ? 100 : 0;
+            }
+
+            return (int) round((($current - $previous) / $previous) * 100);
+        };
+        $stats['changes'] = [
+            'total' => $changeFor($baseQuery),
+            'pending' => $changeFor((clone $baseQuery)->where('status', 'pending')),
+            'approved' => $changeFor((clone $baseQuery)->where('status', 'approved')),
+            'rejected' => $changeFor((clone $baseQuery)->where('status', 'rejected')),
+        ];
+
         return Inertia::render('superAdmin/Shops/ShopOwnerRegistrationView', [
             'registrations' => $registrations,
             'stats' => $stats,

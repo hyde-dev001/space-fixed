@@ -18,12 +18,14 @@ use App\Services\ShopDocumentLifecycleService;
 use App\Services\ShopDocumentValidityService;
 use App\Services\ShopOwnerDocumentRequirementService;
 use App\Support\PrivilegedFailureResponse;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response as InertiaResponse;
@@ -43,13 +45,28 @@ final class ShopDocumentRenewalController extends Controller
     public function index(Request $request): JsonResponse|InertiaResponse
     {
         $validated = $request->validate([
+            'search' => ['sometimes', 'nullable', 'string', 'max:100'],
+            'status' => ['sometimes', 'nullable', 'string', Rule::in(['all', 'pending', 'approved', 'rejected'])],
             'document_id' => ['sometimes', 'integer', 'min:1'],
             'page' => ['sometimes', 'integer', 'min:1'],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
         ]);
 
         $perPage = (int) ($validated['per_page'] ?? 20);
-        $query = ShopDocument::query()
+        $status = $validated['status'] ?? 'pending';
+        $baseQuery = ShopDocument::query()
+            ->whereIn('status', ['pending', 'approved', 'rejected'])
+            ->whereNotNull('predecessor_document_id')
+            ->whereHas('shopOwner', fn ($ownerQuery) => $ownerQuery->where('status', 'approved'));
+
+        $stats = [
+            'total' => (clone $baseQuery)->count(),
+            'pending' => (clone $baseQuery)->where('status', 'pending')->count(),
+            'approved' => (clone $baseQuery)->where('status', 'approved')->count(),
+            'rejected' => (clone $baseQuery)->where('status', 'rejected')->count(),
+        ];
+
+        $query = (clone $baseQuery)
             ->select([
                 'id',
                 'shop_owner_id',
@@ -62,21 +79,38 @@ final class ShopDocumentRenewalController extends Controller
                 'issued_on',
                 'expiration_mode',
                 'expires_on',
+                'rejection_reason',
                 'reviewed_by_super_admin_id',
                 'reviewed_at',
                 'created_at',
             ])
             ->with([
                 'shopOwner:id,first_name,last_name,email,business_name,status',
-                'predecessor:id,shop_owner_id,document_type,logical_slot,version_number,status,is_current,issued_on,expiration_mode,expires_on,reviewed_by_super_admin_id,reviewed_at',
+                'predecessor:id,shop_owner_id,document_type,logical_slot,version_number,status,is_current,issued_on,expiration_mode,expires_on,rejection_reason,reviewed_by_super_admin_id,reviewed_at',
             ])
-            ->pendingRenewals()
-            ->whereHas('shopOwner', fn ($ownerQuery) => $ownerQuery->where('status', 'approved'))
             ->orderByDesc('created_at')
             ->orderByDesc('id');
 
         if (isset($validated['document_id'])) {
             $query->whereKey((int) $validated['document_id']);
+        }
+
+        if ($status !== 'all') {
+            $query->where('status', $status);
+        }
+
+        if (($validated['search'] ?? null) !== null && $validated['search'] !== '') {
+            $search = (string) $validated['search'];
+            $query->where(function (Builder $searchQuery) use ($search): void {
+                $this->whereContains($searchQuery, 'document_type', $search);
+                $this->whereContains($searchQuery, 'logical_slot', $search, 'or');
+                $searchQuery->orWhereHas('shopOwner', function (Builder $ownerQuery) use ($search): void {
+                    $this->whereContains($ownerQuery, 'business_name', $search);
+                    $this->whereContains($ownerQuery, 'first_name', $search, 'or');
+                    $this->whereContains($ownerQuery, 'last_name', $search, 'or');
+                    $this->whereContains($ownerQuery, 'email', $search, 'or');
+                });
+            });
         }
 
         $paginator = $query->paginate($perPage)->withQueryString();
@@ -95,14 +129,18 @@ final class ShopDocumentRenewalController extends Controller
             return response()->json([
                 'data' => $rows,
                 'meta' => $pagination,
+                'stats' => $stats,
             ]);
         }
 
         return Inertia::render('superAdmin/Shops/DocumentRenewalQueue', [
             'renewals' => $rows,
             'pagination' => $pagination,
+            'stats' => $stats,
             'filters' => [
                 'document_id' => $validated['document_id'] ?? null,
+                'search' => $validated['search'] ?? null,
+                'status' => $status,
             ],
         ]);
     }
@@ -480,12 +518,24 @@ final class ShopDocumentRenewalController extends Controller
             'issued_on' => $document->issued_on?->toDateString(),
             'expiration_mode' => $document->expiration_mode,
             'expires_on' => $document->expires_on?->toDateString(),
+            'reviewed_at' => $document->reviewed_at?->toISOString(),
+            'rejection_reason' => $document->rejection_reason,
             'validity' => $this->validity->classify($document),
             'url' => route('admin.shop-documents.show', [
                 'shopOwner' => $ownerId,
                 'document' => $document->getKey(),
             ]),
         ];
+    }
+
+    private function whereContains(Builder $query, string $column, string $value, string $boolean = 'and'): void
+    {
+        $escaped = strtr($value, ['!' => '!!', '%' => '!%', '_' => '!_']);
+        $query->whereRaw(
+            "{$column} LIKE ? ESCAPE '!'",
+            ["%{$escaped}%"],
+            $boolean,
+        );
     }
 
     private function statusValue(mixed $status): string
