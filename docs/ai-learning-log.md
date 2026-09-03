@@ -70,3 +70,8 @@
 ## 2026-09-03 - Flow-scoped shop policies
 
 - Keep shared refund/payment terms in the published version, but filter retail and repair sections at the active-policy read boundary; preserve the same version ID and content hash so customer acceptance remains tied to one immutable policy version.
+
+## 2026-08-30 - Identity screening rejection order
+
+- Evaluate deterministic novelty/non-document signals and clear selected-type mismatches before low-confidence fallback; otherwise an obvious fake can be routed to manual review.
+- For multi-side identity uploads, replace or reject the paired sides together and enforce required sides at the server boundary so images from different documents cannot be combined.

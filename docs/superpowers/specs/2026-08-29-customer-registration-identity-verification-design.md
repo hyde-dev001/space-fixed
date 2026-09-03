@@ -1,122 +1,92 @@
-# Customer Registration and Identity Verification Design
+# Customer Registration and Identity Screening Design
 
 Date: 2026-08-29
 
 ## Scope
 
-This change fixes customer access before email verification and adds automated screening for registration identity documents. The implementation stays within the existing Laravel, Inertia, React, and private-document patterns. PaddleOCR is a document-screening component only; it is not an authority for government authenticity.
+This change applies to customer registration at `POST /user/register`. Cavite registration is the shop-owner flow; `ShopOwnerAuthController`, `POST /shop-owner/register`, and shop-owner business-document processing remain unchanged.
 
-## 1. Authentication and access boundary
+The change has two independent safeguards:
 
-Customers are identified explicitly as `User` accounts with no `shop_owner_id`. Shop owners and employee accounts are not treated as customers by the verification gate, even when they share the `user` authentication stack or implement `MustVerifyEmail`.
+1. an email-verification access boundary for customer accounts; and
+2. browser-side OCR for preliminary screening of the customer registration ID.
 
-An `EnsureCustomerEmailIsVerified` middleware will run after authentication in the web and API flows. It will:
+OCR is a document-screening aid only. It does not prove that an ID is genuine, authentic, officially verified, or issued by a government agency.
 
-- do nothing for unauthenticated requests, shop owners, and employee accounts;
-- do nothing for customers whose `email_verified_at` is set;
-- allow only verification notice, resend, signed verification handling, and logout for an unverified customer;
-- redirect browser/Inertia requests to the verification notice with a safe message;
-- return a `403` JSON response with a stable verification-required code for API requests.
+## 1. Customer email-verification boundary
 
-Customer page and action routes that are currently public but represent protected workflows will also require the customer guard. This includes dashboard, checkout, payment, orders, delivery/dispute actions, repairs, sensitive profile actions, notifications, tracking, and identity-verification actions. Public catalog and informational pages remain public.
+Customers are identified explicitly by `User::isCustomerAccount()`: no `shop_owner_id` and a blank or `CUSTOMER` legacy role. The centralized gate therefore does not accidentally restrict employees or shop owners that share portions of the user authentication stack.
 
-The existing login behavior may leave an unverified customer authenticated, but every subsequent protected request is gated. Logout remains available.
+`EnsureCustomerEmailIsVerified` runs after authentication on protected customer routes. It leaves unauthenticated requests, employees, shop owners, and verified customers alone. An unverified customer may use only the verification notice, resend, signed verification handling, logout, and other strictly necessary verification routes. Customer dashboard, checkout, orders, payments, repairs, sensitive profile actions, identity actions, and other customer workflows remain unavailable until verification.
 
-## 2. Laravel email verification flow
+Registration creates the customer with `email_verified_at = null`, dispatches Laravel's existing `Registered` event, signs the customer into the user guard, regenerates the session, and redirects to the verification notice. The notice displays the account email, resend feedback/cooldown, logout, and safe next-step messaging.
 
-Registration continues to create a customer with `email_verified_at = null`, dispatch Laravel's `Registered` event, and send the existing verification notification. It then signs the customer into a verification-only session and redirects to the verification notice.
+The verification link remains Laravel's temporary signed route. It requires an authenticated matching customer, validates the email hash against that same account, is throttled, and is idempotent for an already verified account. Expired, invalid, tampered, duplicate, or cross-account links fail safely. Successful verification marks the account verified, regenerates the session, preserves the intended destination where safe, and flashes the existing success notification.
 
-The verification route keeps Laravel's signed-link protection and adds authentication, throttling, and explicit principal matching. The current authenticated user must use the same guard/account type and have the same database ID as the signed URL. The endpoint validates the hash against that account's email, calls `markEmailAsVerified()`, and dispatches `Verified` when appropriate. It never logs a user in from a link and never verifies the account identified by a link when a different account is authenticated.
+## 2. Identity-verification persistence
 
-Successful verification regenerates the session and redirects to the intended customer destination or the normal customer landing route with the existing success flash. Already-verified requests are idempotent and return a success-oriented result without changing account ownership. Invalid, expired, tampered, or duplicate links fail closed and do not modify verification state.
-
-The verification notice and result pages will use the existing Inertia/React notification patterns. The notice will show the email address, resend action and cooldown, logout, and a customer-safe identity-screening status. It will not promise normal platform access until email verification succeeds.
-
-## 3. Identity-verification persistence
-
-A focused `identity_verifications` table and model will be added rather than adding more workflow state to `users`. It will contain:
-
-- `user_id` with cascading deletion;
-- nullable `document_type`;
-- separate `screening_status` and `review_status` fields;
-- private `file_path` and `file_disk` references;
-- nullable OCR and classification confidence values;
-- a safe, non-sensitive `failure_reason` code;
-- nullable `reviewed_by` and `reviewed_at` fields;
-- timestamps and indexes for user/status lookup.
-
-The automated state machine is:
+`identity_verifications` keeps screening and human review separate:
 
 ```text
 screening_status: pending | processing | automated_check_passed | manual_review_required | rejected
 review_status:    not_required | pending | approved | rejected
 ```
 
-An automated pass sets `screening_status=automated_check_passed` and `review_status=not_required`. An uncertain result or temporary OCR failure sets `screening_status=manual_review_required` and `review_status=pending`. An obvious invalid or unsupported document sets `screening_status=rejected` and `review_status=not_required`. Human approval or rejection changes only `review_status`, preserving the automated result. Human review is therefore distinguishable from automated rejection.
+It stores the customer, selected document type, private front/back file references, normalized confidence metadata, safe failure reason, reviewer, review timestamp, and timestamps. It does not store full OCR text. Existing `users.valid_id_path` and `valid_id_disk` remain synchronized for compatibility with the protected privileged viewer.
 
-The existing `users.valid_id_path` and `valid_id_disk` values remain populated for compatibility with the current protected admin document viewer. The identity-verification record is authoritative for the new workflow. Existing documents and legacy records remain readable through the existing authorization path.
+An automated pass sets `screening_status=automated_check_passed` and `review_status=not_required`. An uncertain or incomplete result sets `screening_status=manual_review_required` and `review_status=pending`. Obvious non-document content may be `rejected` with `review_status=not_required`. An authorized reviewer may transition either screened state (`automated_check_passed` or `manual_review_required`) to `review_status=approved` or `review_status=rejected`; the screening result is preserved.
 
-## 4. Upload and screening service
+## 3. Browser OCR and Laravel trust boundary
 
-Laravel validates registration documents before any OCR request. Accepted formats are JPG, JPEG, PNG, and WEBP. Validation checks the request MIME type, trusted extension/MIME mapping, a maximum size of 5 MB, and actual image readability. Original filenames and client-provided paths are never used for storage.
+The registration page uses Tesseract.js in the customer browser:
 
-The document is stored on the existing private local disk under a generated path. The browser receives no public file URL. Document access continues through an authorization-checked controller and existing privileged audit behavior.
+```text
+Customer browser
+  -> Tesseract.js English worker
+  -> OCR text + confidence metadata
+  -> Laravel upload validation and private storage
+  -> Laravel classifier/configuration rules
+  -> automated_check_passed or manual_review_required
+  -> authorized reviewer -> approved or rejected review status
+```
 
-`IdentityVerificationService` owns the screening workflow. It creates the record, stores the private file, calls the internal OCR endpoint, validates the response shape, invokes the centralized Laravel classifier, and persists only the status/metadata required by the workflow. Controllers do not spawn Python processes or contain document keyword rules.
+Tesseract.js runs in the browser after local file type and size checks. The original front `File` and, for physical card IDs, the original back `File` are retained and submitted with the selected `document_type`, OCR text, and OCR confidence. The UI shows reading/checking/ready/failure states, does not display raw OCR or confidence, and allows submission after OCR failure so the case can go to manual review.
 
-The service calls a persistent FastAPI service at `POST /v1/ocr` using multipart form data and an internal application token. It uses bounded connect/read timeouts. Service unavailability, timeouts, malformed responses, and processing exceptions are caught and converted to `manual_review_required` with a safe failure code. They cannot abort registration or corrupt the account transaction.
+Every OCR value received by Laravel is untrusted. Laravel validates the selected type against the supported configuration, bounds the text and confidence, ignores client-supplied statuses, field flags, document-detection flags, and classification confidence, and derives screening evidence itself. Browser data can never set `approved` or `rejected` final review status.
 
-## 5. OCR service and classification
+The classifier uses centralized definitions for `national_id`, `drivers_license`, `passport`, and `umid`. Each definition supplies identifying signals, required signal groups, upload guidance, required fields, safe ID-number patterns, and applicable structures. Server-side checks look for multiple signals, the registered holder name, plausible dates, and document-specific evidence; a single keyword is insufficient.
 
-The new `services/id-ocr` service contains a FastAPI application and dependency definition. PaddleOCR is initialized once when the process starts so requests reuse the loaded model. The endpoint accepts an image, performs image/document analysis, and returns structured internal results such as document detection, candidate type, confidence values, expected-field flags, and temporary OCR text needed only for Laravel classification.
+The document-specific screen is deliberately conservative:
 
-Raw OCR text is not stored, logged, or returned to normal frontend responses. The service is intended for an internal network and rejects requests without the configured token. Request-size and image checks are also applied defensively in the service.
+- `national_id` requires PhilSys/official title evidence, a 16-digit PCN pattern, the registered name, birth date, address text, and a QR code detected by the browser's native barcode capability. The QR value is never retained or treated as an official PhilSys verification; missing or unreadable QR evidence goes to manual review. The underlying PSN is never requested or stored.
+- `drivers_license` requires a driver's-license title, LTO/ Land Transportation Office evidence, Philippine issuer evidence, holder name, birth date, address, license-number pattern, a labelled issue date, and a current expiration date. Electronic-driver-license or screenshot signals always go to manual review. Novelty/sample signals, including the SpongeBob test case, are rejected as unsupported documents.
+- `passport` requires passport and Philippine issuer evidence plus a two-line TD3 MRZ beginning with `P<PHL`. The server checks MRZ structure, ICAO check digits, current expiration, and consistency with any visible passport number and labelled dates in the submitted OCR text. Invalid or incomplete MRZ data goes to manual review.
+- `umid` requires UMID/unified-identification evidence, an SSS or GSIS issuer signal, the registered name, birth date, and a CRN/common-reference-number pattern. Holograms, chips, engravings, signatures, and other visual security features remain reviewer checks.
 
-Supported document definitions are centralized in Laravel configuration or a dedicated classifier definition layer for:
+Photo presence, cropping, visual completeness, layout, holograms, chips, signatures, and genuine government issuance cannot be established safely by Tesseract or the native QR detector. Physical card types require separate front and back uploads, but image quality and visual security checks remain part of the final human review. A passport requires only its biodata page.
 
-- `national_id`;
-- `drivers_license`;
-- `passport`;
-- `umid`.
+Low confidence, missing fields, missing QR/MRZ, weak evidence, and ambiguous type evidence go to manual review. Clear selected-type mismatches and configured novelty/non-document signals are rejected before an account is created.
 
-Each definition contains identifying signals, expected fields, and applicable requirements. The classifier requires multiple corroborating signals and expected fields; a single keyword cannot produce a pass.
+## 4. Upload privacy and authorization
 
-The classifier produces only the workflow outcomes described above. `automated_check_passed` means the image appears consistent with a supported document. It does not mean authentic, officially verified, or genuinely government-issued.
+Laravel checks the actual uploaded MIME type, supported extension mapping, readable image content, and the 5 MB limit before screening. Storage uses the private local disk and generated UUID filenames; original names and client paths are not trusted. No `/storage/...` URL is created for the ID.
 
-## 6. Manual review and administration
+Privileged viewing continues through the authorization-checked sensitive-document controller and audit trail. Customer identity routes are customer-only. OCR text, names, dates of birth, ID numbers, QR contents, and other extracted values are not logged or returned in ordinary frontend/admin list payloads. The reviewer receives safe workflow metadata and uses the existing protected document viewer for the submitted images.
 
-Existing privileged document viewing remains the only way to retrieve the private image. New administrative actions will be scoped to a customer and its identity-verification record, protected by the existing account-intervention capability, and audited.
+## 5. Failure handling and limitations
 
-An authorized reviewer may approve or reject a record after reviewing the document. The action updates `review_status`, reviewer identity, and timestamp; it does not overwrite `screening_status`. The admin UI will display safe status/type metadata and review controls without showing raw OCR output or extracted personal data.
+There is no Python process, FastAPI endpoint, persistent OCR server, OCR URL, OCR token, PHP shell call, or deployment service to configure. A browser worker initialization/processing failure or empty result is represented in the UI and submitted as uncertain metadata for `manual_review_required`. Laravel upload/storage failures still fail safely and do not expose the document.
 
-## 7. Frontend behavior
+`automated_check_passed` means only that the submitted image and untrusted OCR metadata appear consistent with the selected supported document under the configured screening rules. It is not final approval and is not evidence of genuine government issuance. Final approval or rejection remains a human review decision.
 
-The registration form will accept WEBP and describe the upload as automated document screening rather than proof of authenticity. The verification notice will explain that email verification is required before using customer features and will provide resend cooldown and logout controls.
+## 6. Verification and acceptance criteria
 
-Customer-facing identity results will be mapped to simple messages:
+Tests cover:
 
-- submitted or automated check passed: the document was received for review;
-- manual review required: additional review is needed;
-- rejected: upload a clearer image of a supported ID.
+- unverified customer registration, notification, verification-only access, matching signed verification, expiry/invalid/duplicate links, resend throttling, and restored access;
+- private image validation/storage, supported and uncertain browser OCR metadata, missing/tampered payloads, per-ID signal groups, National ID QR handling, Driver's License issuer/eDL handling, Passport MRZ/checksum and field consistency, UMID CRN/issuer handling, type mismatch, novelty/non-document handling, and no raw OCR persistence;
+- no HTTP OCR dependency and no cross-account document access;
+- authorized reviewer approval/rejection from both screened states while preserving `screening_status`;
+- browser OCR progress, failure fallback, original front/back-file submission, and absence of final approval fields.
 
-Internal confidence scores, OCR text, field values, and failure implementation details are not exposed to customers.
-
-## 8. Tests and acceptance criteria
-
-Feature tests will cover registration, notification dispatch, verification-only access, matching signed verification, invalid/expired/duplicate links, resend throttling, and restored access after verification. Identity tests will cover upload validation, private storage, each screening outcome, OCR failure fallback, separated screening/review statuses, document authorization, manual actions, and absence of sensitive OCR values in frontend payloads.
-
-The implementation is accepted when:
-
-1. an unverified customer cannot reach protected customer workflows;
-2. employees and shop owners are unaffected by the customer-only gate;
-3. a valid verification link can verify only its matching authenticated account;
-4. verified customers regain normal access;
-5. uploaded documents remain private and authorized;
-6. OCR is persistent, internal, token-protected, and non-authoritative;
-7. automated screening and human review are independently represented;
-8. temporary OCR failures result in a recoverable state; and
-9. the relevant Laravel/frontend checks pass, subject to available local dependencies.
-
-## Out of scope and limitations
-
-This change does not establish government authenticity, query a government registry, or replace human review. It does not add a new external identity provider. Existing public catalog behavior and unrelated authentication flows remain unchanged.
+The implementation is accepted when customer access remains blocked until email verification, shop-owner/employee flows remain unaffected, ID files remain private, browser OCR remains advisory, and the relevant Laravel/frontend tests and build pass.

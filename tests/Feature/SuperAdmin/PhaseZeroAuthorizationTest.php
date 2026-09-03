@@ -129,6 +129,7 @@ class PhaseZeroAuthorizationTest extends TestCase
             'admin.shops.reactivate' => SuperAdmin::CAP_INTERVENE_ACCOUNTS,
             'admin.users.index' => SuperAdmin::CAP_INTERVENE_ACCOUNTS,
             'admin.users.valid-id.show' => SuperAdmin::CAP_INTERVENE_ACCOUNTS,
+            'admin.users.valid-id-back.show' => SuperAdmin::CAP_INTERVENE_ACCOUNTS,
             'admin.users.suspend' => SuperAdmin::CAP_INTERVENE_ACCOUNTS,
             'admin.users.reactivate' => SuperAdmin::CAP_INTERVENE_ACCOUNTS,
             'admin.plans.store' => SuperAdmin::CAP_MANAGE_PLANS,

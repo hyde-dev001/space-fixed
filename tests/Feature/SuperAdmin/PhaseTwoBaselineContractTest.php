@@ -64,6 +64,7 @@ final class PhaseTwoBaselineContractTest extends TestCase
         foreach ([
             'admin.shop-documents.show' => 'privileged.capability:review_registrations',
             'admin.users.valid-id.show' => 'privileged.capability:intervene_accounts',
+            'admin.users.valid-id-back.show' => 'privileged.capability:intervene_accounts',
         ] as $routeName => $capability) {
             $route = Route::getRoutes()->getByName($routeName);
 

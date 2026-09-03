@@ -2,13 +2,17 @@
 
 namespace App\Providers;
 
+use App\Models\ShopOwner;
+use App\Models\User;
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Auth\Notifications\VerifyEmail;
 use Illuminate\Http\Request;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\URL;
 
 // Inventory Events
 use App\Events\InventoryItemCreated;
@@ -43,6 +47,24 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        VerifyEmail::createUrlUsing(static function (object $notifiable): string {
+            $accountType = match (true) {
+                $notifiable instanceof User => 'user',
+                $notifiable instanceof ShopOwner => 'shop_owner',
+                default => throw new \InvalidArgumentException('Unsupported email verification account.'),
+            };
+
+            return URL::temporarySignedRoute(
+                'verification.verify',
+                now()->addMinutes((int) config('auth.verification.expire', 60)),
+                [
+                    'accountType' => $accountType,
+                    'id' => $notifiable->getKey(),
+                    'hash' => sha1((string) $notifiable->getEmailForVerification()),
+                ],
+            );
+        });
+
         RateLimiter::for('privileged-login', static function (Request $request): Limit {
             $email = Str::lower(trim((string) $request->input('email')));
 

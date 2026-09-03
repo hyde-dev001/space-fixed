@@ -23,6 +23,8 @@ enum NotificationType: string
     case PAYMENT_FAILED = 'payment_failed';
     case MESSAGE_RECEIVED = 'message_received';
     case REVIEW_REQUEST = 'review_request';
+    case IDENTITY_VERIFICATION_APPROVED = 'identity_verification_approved';
+    case IDENTITY_VERIFICATION_REJECTED = 'identity_verification_rejected';
     
     // ==================== SHOP OWNER NOTIFICATIONS ====================
     case NEW_ORDER = 'new_order';
@@ -136,6 +138,8 @@ enum NotificationType: string
             self::PAYMENT_FAILED => 'Payment Failed',
             self::MESSAGE_RECEIVED => 'New Message',
             self::REVIEW_REQUEST => 'Review Request',
+            self::IDENTITY_VERIFICATION_APPROVED => 'Identity Verification Approved',
+            self::IDENTITY_VERIFICATION_REJECTED => 'Identity Verification Needs Resubmission',
             
             // Shop Owner notifications
             self::NEW_ORDER => 'New Order',
@@ -244,6 +248,8 @@ enum NotificationType: string
             self::MESSAGE_RECEIVED, self::CUSTOMER_MESSAGE => 'messages',
             
             self::REVIEW_REQUEST => 'reviews',
+
+            self::IDENTITY_VERIFICATION_APPROVED, self::IDENTITY_VERIFICATION_REJECTED => 'general',
             
             self::EXPENSE_APPROVAL, self::EXPENSE_REQUEST_PENDING,
             self::INVOICE_CREATED, self::INVOICE_CREATED_FINANCE,
@@ -305,6 +311,8 @@ enum NotificationType: string
             self::PAYMENT_FAILED,
             self::MESSAGE_RECEIVED,
             self::REVIEW_REQUEST,
+            self::IDENTITY_VERIFICATION_APPROVED,
+            self::IDENTITY_VERIFICATION_REJECTED,
         ]);
     }
 

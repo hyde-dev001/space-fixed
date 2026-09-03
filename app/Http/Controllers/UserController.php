@@ -3,13 +3,16 @@
 namespace App\Http\Controllers;
 
 use App\Enums\ShopOwnerStatus;
+use App\Exceptions\IdentityDocumentScreeningException;
 use App\Models\Employee;
 use App\Models\ShopOwner;
 use App\Models\User;
 use App\Models\UserAddress;
 use App\Rules\NotDisposableEmail;
+use App\Rules\ValidIdentityDocumentImage;
 use App\Services\Authentication\UnifiedLoginContextResolver;
 use App\Services\HR\EmployeeOperationalPolicy;
+use App\Services\IdentityVerificationService;
 use App\Services\NominatimService;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\Request;
@@ -18,6 +21,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -138,9 +142,6 @@ class UserController extends Controller
 
             return response()->json([
                 'available' => false,
-                'exists_in_employees' => false,
-                'exists_in_users' => false,
-                'exists_in_shop_owners' => false,
                 'message' => $message,
             ], 422);
         }
@@ -155,30 +156,53 @@ class UserController extends Controller
 
         return response()->json([
             'available' => $available,
-            'exists_in_employees' => $existsInEmployees,
-            'exists_in_users' => $existsInUsers,
-            'exists_in_shop_owners' => $existsInShopOwners,
-            'message' => $available ? 'Phone number is available' : 'This phone number is already registered',
+            'message' => $available
+                ? 'Phone number is available'
+                : 'This phone number is already registered. Try another number or sign in instead.',
         ]);
     }
 
     /**
      * Register a new user account
      *
-     * Users are automatically activated upon registration
-     * No admin approval required for user accounts
+     * Customer accounts are created after the document admission screen passes.
+     * Email verification, not administrator approval, gates normal access.
      *
      * @return \Illuminate\Http\JsonResponse|\Illuminate\Http\RedirectResponse
      */
-    public function register(Request $request, NominatimService $nominatim)
+    public function register(
+        Request $request,
+        NominatimService $nominatim,
+        IdentityVerificationService $identityVerification,
+    )
     {
         try {
+            $documentDefinitions = (array) config('identity_verification.documents', []);
+            $documentTypeInput = $request->input('document_type');
+            $selectedDocumentDefinition = is_string($documentTypeInput)
+                ? ($documentDefinitions[$documentTypeInput] ?? null)
+                : null;
+            $requestedNationalIdFormat = is_string($request->input('national_id_format'))
+                ? $request->input('national_id_format')
+                : 'physical_card';
+            $requiredDocumentSlots = $this->requiredIdentityDocumentSlots(
+                $selectedDocumentDefinition,
+                $documentTypeInput === 'national_id' ? $requestedNationalIdFormat : 'physical_card',
+            );
+            $requiresBackImage = in_array('back', $requiredDocumentSlots, true);
+
             // Validate registration data
             $validated = $request->validate([
                 'first_name' => 'required|string|max:255|min:2',
                 'last_name' => 'required|string|max:255|min:2',
                 'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email', new NotDisposableEmail],
-                'phone' => ['required', 'regex:/^\d{11}$/'],
+                'phone' => [
+                    'required',
+                    'regex:/^\d{11}$/',
+                    Rule::unique('users', 'phone'),
+                    Rule::unique('employees', 'phone'),
+                    Rule::unique('shop_owners', 'phone'),
+                ],
                 'age' => 'required|integer|min:18|max:120',
                 'password' => [
                     'required',
@@ -197,7 +221,33 @@ class UserController extends Controller
                 'address_postal_code' => 'nullable|string|max:10',
                 'address_latitude' => 'required|numeric|between:4.5,21.5',
                 'address_longitude' => 'required|numeric|between:116,127',
-                'valid_id' => 'required|file|mimes:jpg,jpeg,png|max:5120', // 5MB max
+                'valid_id' => [
+                    'required',
+                    'file',
+                    'mimes:jpg,jpeg,png,webp',
+                    'mimetypes:image/jpeg,image/png,image/webp',
+                    'max:5120',
+                    new ValidIdentityDocumentImage,
+                ],
+                'valid_id_back' => [
+                    $requiresBackImage ? 'required' : 'prohibited',
+                    'file',
+                    'mimes:jpg,jpeg,png,webp',
+                    'mimetypes:image/jpeg,image/png,image/webp',
+                    'max:5120',
+                    new ValidIdentityDocumentImage,
+                ],
+                'document_type' => [
+                    'required',
+                    'string',
+                    Rule::in(array_keys((array) config('identity_verification.documents', []))),
+                ],
+                'national_id_format' => [
+                    'nullable',
+                    'string',
+                    Rule::in(['physical_card', 'digital_image']),
+                ],
+                'screening_metadata' => ['required', 'string', 'json', 'max:20000'],
             ], [
                 'first_name.required' => 'Please enter your first name.',
                 'first_name.min' => 'First name must be at least 2 characters.',
@@ -208,6 +258,7 @@ class UserController extends Controller
                 'email.unique' => 'This email is already registered. Try another email or sign in instead.',
                 'phone.required' => 'Please enter your phone number.',
                 'phone.regex' => 'Phone number must be exactly 11 digits (example: 09171234567).',
+                'phone.unique' => 'This phone number is already registered. Try another number or sign in instead.',
                 'age.required' => 'Please enter your age.',
                 'age.integer' => 'Age must be a whole number.',
                 'age.min' => 'You must be at least 18 years old to register.',
@@ -228,9 +279,58 @@ class UserController extends Controller
                 'address_longitude.between' => 'Please select a location within the Philippines.',
                 'valid_id.required' => 'Please upload a valid government-issued ID.',
                 'valid_id.file' => 'Valid ID must be an uploaded file.',
-                'valid_id.mimes' => 'Valid ID must be JPG, JPEG, or PNG only.',
+                'valid_id.mimes' => 'Valid ID must be JPG, JPEG, PNG, or WEBP only.',
+                'valid_id.mimetypes' => 'Valid ID must be a JPG, PNG, or WEBP image.',
                 'valid_id.max' => 'Valid ID file size must not exceed 5MB.',
+                'valid_id_back.required' => 'Please upload a clear back image of the selected ID.',
+                'valid_id_back.file' => 'The ID back image must be an uploaded file.',
+                'valid_id_back.mimes' => 'The ID back image must be JPG, JPEG, PNG, or WEBP only.',
+                'valid_id_back.mimetypes' => 'The ID back image must be a JPG, PNG, or WEBP image.',
+                'valid_id_back.max' => 'The ID back image file size must not exceed 5MB.',
+                'valid_id_back.prohibited' => 'A back image is not used for the selected ID type.',
+                'document_type.required' => 'Please select the type of ID you are uploading.',
+                'document_type.in' => 'Please select a supported ID type.',
+                'national_id_format.in' => 'Please select a supported National ID format.',
+                'screening_metadata.required' => 'Please complete the ID image check before creating your account.',
+                'screening_metadata.string' => 'The ID image check result is invalid. Please try again.',
+                'screening_metadata.json' => 'The ID image check result is invalid. Please try again.',
+                'screening_metadata.max' => 'The ID image check result is too large. Please try again.',
             ]);
+
+            $nationalIdFormat = $validated['national_id_format'] ?? 'physical_card';
+            if ($validated['document_type'] !== 'national_id' && $nationalIdFormat !== 'physical_card') {
+                throw ValidationException::withMessages([
+                    'national_id_format' => 'A digital National ID format is only available for National ID submissions.',
+                ]);
+            }
+            $validated['national_id_format'] = $nationalIdFormat;
+
+            $screeningMetadata = $identityVerification->decodeScreeningMetadata($validated['screening_metadata']);
+            if (($screeningMetadata['document_type'] ?? null) !== $validated['document_type']) {
+                throw ValidationException::withMessages([
+                    'screening_metadata' => 'The ID image check does not match the selected document type. Please try again.',
+                ]);
+            }
+
+            $metadataNationalIdFormat = $screeningMetadata['national_id_format'] ?? 'physical_card';
+            if ($metadataNationalIdFormat !== $nationalIdFormat) {
+                throw ValidationException::withMessages([
+                    'screening_metadata' => 'The ID image check does not match the selected National ID format. Please try again.',
+                ]);
+            }
+            $screeningMetadata['national_id_format'] = $nationalIdFormat;
+
+            $screeningDecision = $identityVerification->evaluate(
+                $screeningMetadata,
+                trim($validated['first_name'].' '.$validated['last_name']),
+            );
+
+            $screeningMetadata = $identityVerification->reconcileScreeningOutcome(
+                $screeningMetadata,
+                $screeningDecision,
+            );
+
+            $this->throwForScreeningFailure($screeningDecision);
 
             try {
                 $resolvedAddress = $nominatim->reverse(
@@ -261,29 +361,19 @@ class UserController extends Controller
             $validated['address_barangay'] = $resolvedBarangay;
             $validated['address_postal_code'] = $resolvedAddress['postcode'] ?? $validated['address_postal_code'] ?? null;
 
-            // Handle valid ID upload
-            $validIdPath = null;
-            if ($request->hasFile('valid_id')) {
-                $file = $request->file('valid_id');
-                $fileName = time().'_'.uniqid().'.'.$file->getClientOriginalExtension();
-                $validIdPath = $file->storeAs('valid_ids', $fileName, 'local');
-            }
-
-            $user = DB::transaction(function () use ($validated, $validIdPath) {
+            $user = DB::transaction(function () use ($validated, $request, $identityVerification, $screeningMetadata) {
                 $user = User::create([
                     'first_name' => $validated['first_name'],
                     'last_name' => $validated['last_name'],
                     'name' => $validated['first_name'].' '.$validated['last_name'],
                     'email' => $validated['email'],
+                    'email_verified_at' => null,
                     'phone' => $validated['phone'],
                     'age' => $validated['age'],
                     'password' => Hash::make($validated['password']),
                     'address' => $validated['address'],
                     'status' => 'active',
-                    'valid_id_path' => $validIdPath,
                 ]);
-                $user->valid_id_disk = 'local';
-                $user->save();
 
                 UserAddress::create([
                     'user_id' => $user->id,
@@ -300,31 +390,69 @@ class UserController extends Controller
                     'is_default' => true,
                 ]);
 
+                try {
+                    $identityVerification->screen(
+                        $user,
+                        $request->file('valid_id'),
+                        $screeningMetadata,
+                        $request->file('valid_id_back'),
+                    );
+                } catch (IdentityDocumentScreeningException $exception) {
+                    throw ValidationException::withMessages(
+                        $this->screeningFailureErrors($exception->decision),
+                    );
+                }
+
                 return $user;
             });
 
-            Log::info('User registered successfully', ['user_id' => $user->id, 'email' => $user->email]);
+            Log::info('User registered successfully', ['user_id' => $user->id]);
 
             // Send email verification notification
-            event(new Registered($user));
+            $verificationEmailFailed = false;
+            try {
+                event(new Registered($user));
+            } catch (\Throwable $exception) {
+                // The account and verification record already exist. Keep the
+                // customer in the verification-only state so they can retry.
+                $verificationEmailFailed = true;
+                Log::warning('Registration verification email delivery failed', [
+                    'user_id' => $user->id,
+                    'exception' => $exception::class,
+                ]);
+            }
 
-            // Auto-login the user so they can access the verification page
-            Auth::guard('user')->login($user);
+            $registrationMessage = $verificationEmailFailed
+                ? 'Your account was created, but we could not send the verification email. Use the resend button on the next page.'
+                : 'Registration successful! Please check your email to verify your account.';
+            $registrationFlash = $verificationEmailFailed
+                ? [
+                    'warning' => $registrationMessage,
+                    'registration_email_failed' => true,
+                ]
+                : [
+                    'success' => $registrationMessage,
+                    'registration_email_failed' => false,
+                ];
+
+            // Registration never establishes normal customer authentication.
+            Auth::guard('user')->logout();
             $request->session()->regenerate();
+            $request->session()->put('pending_customer_verification_user_id', $user->getKey());
 
             // Check if it's an Inertia request
             if ($request->header('X-Inertia')) {
-                return redirect()->route('verification.notice')->with([
-                    'success' => 'Registration successful! Please check your email to verify your account.',
+                return redirect()->route('verification.notice')->with(array_merge($registrationFlash, [
                     'email' => $user->email,
-                ]);
+                ]));
             }
 
             // Return success response for API calls
             if ($request->expectsJson()) {
                 return response()->json([
                     'success' => true,
-                    'message' => 'Registration successful! Please check your email to verify your account.',
+                    'message' => $registrationMessage,
+                    'email_delivery_status' => $verificationEmailFailed ? 'failed' : 'sent',
                     'redirect' => route('verification.notice'),
                     'user' => [
                         'id' => $user->id,
@@ -335,14 +463,12 @@ class UserController extends Controller
                 ], 201);
             }
 
-            return redirect()->route('verification.notice')->with([
-                'success' => 'Registration successful! Please check your email to verify your account.',
+            return redirect()->route('verification.notice')->with(array_merge($registrationFlash, [
                 'email' => $user->email,
-            ]);
+            ]));
         } catch (ValidationException $e) {
             Log::warning('User registration validation failed', [
-                'errors' => $e->errors(),
-                'input' => $request->except(['password', 'password_confirmation', 'valid_id']),
+                'error_fields' => array_keys($e->errors()),
             ]);
 
             // For Inertia requests, let Laravel handle validation normally
@@ -361,9 +487,7 @@ class UserController extends Controller
             throw $e;
         } catch (\Exception $e) {
             Log::error('Error registering user', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-                'input' => $request->except(['password', 'password_confirmation', 'valid_id']),
+                'route' => (string) $request->route()?->getName(),
             ]);
 
             // For Inertia requests
@@ -375,12 +499,100 @@ class UserController extends Controller
                 return response()->json([
                     'success' => false,
                     'message' => 'Registration failed. Please try again.',
-                    'error' => $e->getMessage(),
                 ], 500);
             }
 
             return back()->withErrors(['message' => 'Registration failed. Please try again.'])->withInput();
         }
+    }
+
+    /**
+     * @param mixed $definition
+     * @return array<int, string>
+     */
+    private function requiredIdentityDocumentSlots(mixed $definition, string $nationalIdFormat = 'physical_card'): array
+    {
+        if (! is_array($definition)) {
+            return [];
+        }
+
+        if (is_array($definition['formats'] ?? null)) {
+            $formatDefinition = $definition['formats'][$nationalIdFormat] ?? null;
+            $formatSlots = is_array($formatDefinition) ? $formatDefinition['required_slots'] ?? [] : [];
+            $formatSlots = array_values(array_filter(
+                is_array($formatSlots) ? $formatSlots : [],
+                static fn (mixed $slot): bool => is_string($slot)
+                    && in_array($slot, ['front', 'back', 'biodata'], true),
+            ));
+
+            if ($formatSlots !== []) {
+                return $formatSlots;
+            }
+        }
+
+        $slots = array_values(array_filter(
+            (array) ($definition['required_slots'] ?? []),
+            static fn (mixed $slot): bool => is_string($slot)
+                && in_array($slot, ['front', 'back', 'biodata'], true),
+        ));
+
+        if ($slots !== []) {
+            return $slots;
+        }
+
+        return ($definition['requires_back'] ?? false) === true
+            ? ['front', 'back']
+            : ['biodata'];
+    }
+
+    /**
+     * Stop registration before geocoding/account creation for non-pass outcomes.
+     *
+     * @param array<string, mixed> $decision
+     */
+    private function throwForScreeningFailure(array $decision): void
+    {
+        if (in_array(($decision['outcome'] ?? null), ['screening_passed', 'manual_review_required'], true)) {
+            return;
+        }
+
+        throw ValidationException::withMessages($this->screeningFailureErrors($decision));
+    }
+
+    /**
+     * @param array<string, mixed> $decision
+     * @return array<string, string>
+     */
+    private function screeningFailureErrors(array $decision): array
+    {
+        $outcome = $decision['outcome'] ?? null;
+
+        if ($outcome === 'screening_error') {
+            return [
+                'screening_metadata' => 'We couldn\'t check this image right now. Please try again or select another image.',
+            ];
+        }
+
+        if ($outcome !== 'reject_upload') {
+            return [
+                'screening_metadata' => 'The ID image check result is invalid. Please try again.',
+            ];
+        }
+
+        if (($decision['failure_reason'] ?? null) === 'name_mismatch') {
+            return [
+                'screening_metadata' => 'The name on the uploaded ID does not match the registration name.',
+            ];
+        }
+
+        $failureSide = ($decision['failure_side'] ?? null) === 'back' ? 'valid_id_back' : 'valid_id';
+        $message = ($decision['failure_reason'] ?? null) === 'duplicate_sides'
+            ? 'The front and back images appear to be the same. Please upload the back side of your ID.'
+            : ($failureSide === 'valid_id_back'
+                ? 'The back image does not appear to match the selected ID. Please upload the back side of your valid ID.'
+                : 'This image does not appear to match the selected ID type. Please upload a clear image of your valid Philippine ID.');
+
+        return [$failureSide => $message];
     }
 
     /**
@@ -420,10 +632,10 @@ class UserController extends Controller
             }
 
             // Check if email is verified (only for non-employee users)
-            if (! $user->shop_owner_id && ! $user->hasVerifiedEmail()) {
-                // Auto-login user so they can access verification page
-                Auth::guard('user')->login($user);
+            if ($user->isCustomerAccount() && ! $user->hasVerifiedEmail()) {
+                Auth::guard('user')->logout();
                 $request->session()->regenerate();
+                $request->session()->put('pending_customer_verification_user_id', $user->getKey());
 
                 throw ValidationException::withMessages([
                     'email' => ['Please verify your email address before logging in. Check your inbox for the verification link.'],
@@ -486,14 +698,11 @@ class UserController extends Controller
 
             Log::info('User logged in successfully', ['user_id' => $user->id, 'user_role' => $user->role, 'shop_owner_id' => $user->shop_owner_id]);
 
-            // Determine redirect URL based ONLY on shop_owner_id
-            // - If user has shop_owner_id -> they are an employee/staff member -> redirect to erp/time-in
-            // - Otherwise -> they are a regular customer -> redirect to landing
-            // We use shop_owner_id as the source of truth because role column is unreliable (contaminated by migrations)
+            // Use the shared account classifier so employees are not treated as customers.
 
-            $isEmployee = ! is_null($user->shop_owner_id);
+            $isEmployee = ! $user->isCustomerAccount();
 
-            // Default redirect for customers (no shop_owner_id)
+            // Default redirect for customer accounts.
             $redirectUrl = route('landing');
 
             // If user is an employee, redirect to time-in
