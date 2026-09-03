@@ -2303,6 +2303,8 @@ class NotificationService
             'payment_failed' => 'browser_payment_updates',
             'message_received' => 'browser_alerts',
             'review_request' => 'browser_alerts',
+            'identity_verification_approved' => 'browser_alerts',
+            'identity_verification_rejected' => 'browser_alerts',
             // Shop Owner notifications
             'new_order' => 'browser_new_orders',
             'new_repair_request' => 'browser_new_orders',
@@ -2370,6 +2372,8 @@ class NotificationService
             'payment_failed' => 'email_payment_updates',
             'message_received' => 'email_alerts',
             'review_request' => 'email_alerts',
+            'identity_verification_approved' => 'email_alerts',
+            'identity_verification_rejected' => 'email_alerts',
             // Shop Owner notifications
             'new_order' => 'email_new_orders',
             'new_repair_request' => 'email_new_orders',

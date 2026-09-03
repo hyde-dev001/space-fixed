@@ -143,10 +143,12 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->web(append: [
             \App\Http\Middleware\HandleInertiaRequests::class,
             \App\Http\Middleware\CheckEmployeeSuspension::class,
+            \App\Http\Middleware\EnsureCustomerEmailIsVerified::class,
         ]);
         $middleware->api([
             \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
             \App\Http\Middleware\CheckEmployeeSuspension::class,
+            \App\Http\Middleware\EnsureCustomerEmailIsVerified::class,
             'throttle:60,1',
             \Illuminate\Routing\Middleware\SubstituteBindings::class,
             \Illuminate\Http\Middleware\HandleCors::class
@@ -166,6 +168,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'privileged.capability' => \App\Http\Middleware\EnsurePrivilegedCapability::class,
             'shop.isolation' => \App\Http\Middleware\ShopIsolationMiddleware::class,
             'customer.account' => \App\Http\Middleware\EnsureCustomerAccount::class,
+            'customer.identity.approved' => \App\Http\Middleware\EnsureCustomerIdentityIsApproved::class,
             'role' => \Spatie\Permission\Middleware\RoleMiddleware::class,
             'permission' => \Spatie\Permission\Middleware\PermissionMiddleware::class,
             'role_or_permission' => \Spatie\Permission\Middleware\RoleOrPermissionMiddleware::class,

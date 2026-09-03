@@ -9,7 +9,18 @@ import DropzoneComponent from '../../../components/form/form-elements/DropZone';
 import { MailIcon, LockIcon, UserIcon } from '../../../icons';
 import { parsePhilippineAddress, type RegistrationAddress } from './registrationAddress';
 import { getPasswordRequirementState, isPasswordValid } from './passwordRequirements';
-import { GPS_POSITION_OPTIONS, getCurrentPositionWithTimeout } from '@/utils/geolocation';
+import { compareRegistrationImageFingerprints, type RegistrationDocumentSide, type RegistrationDuplicateKind } from './registrationOcr';
+import {
+  screenRegistrationDocumentSideFromFile,
+  screenRegistrationSubmission,
+  type RegistrationDocumentSideResult,
+  type RegistrationNameMatchOutcome,
+  type RegistrationNationalIdFormat,
+  type RegistrationSubmissionResult,
+} from './registrationDocumentScreening';
+import { GPS_POSITION_OPTIONS, getCurrentPositionWithFallback } from '@/utils/geolocation';
+import { getFreshCsrfToken } from '@/utils/csrf';
+import { matchRegistrationName } from './registrationNameMatch';
 
 type FormErrors = Record<string, string>;
 
@@ -19,10 +30,132 @@ const MAX_VALID_ID_SIZE_BYTES = 5 * 1024 * 1024;
 const CUSTOMER_VALID_ID_ACCEPT = {
   'image/jpeg': ['.jpg', '.jpeg'],
   'image/png': ['.png'],
+  'image/webp': ['.webp'],
 };
-const CUSTOMER_VALID_ID_ALLOWED_EXTENSIONS = new Set(['jpg', 'jpeg', 'png']);
-const CUSTOMER_VALID_ID_ALLOWED_MIME_TYPES = new Set(['image/jpeg', 'image/png']);
+const CUSTOMER_VALID_ID_ALLOWED_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'webp']);
+const CUSTOMER_VALID_ID_ALLOWED_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const NATIONAL_ID_UPLOAD_GUIDANCE = 'Upload clear front and back images of your physical National ID or the official Digital National ID screens. Landscape orientation is required; rotate portrait screenshots before uploading.';
 const PHILIPPINES_CENTER: [number, number] = [12.8797, 121.774];
+const DOCUMENT_TYPE_OPTIONS = [
+  {
+    value: 'national_id',
+    label: 'National ID',
+    guidance: NATIONAL_ID_UPLOAD_GUIDANCE,
+    slots: ['front', 'back'] as RegistrationDocumentSide[],
+  },
+  {
+    value: 'drivers_license',
+    label: "Driver's License",
+    guidance: "Physical LTO driver's license: upload a clear front and back image. Replace screenshots or unclear images with a readable photo of the ID.",
+    slots: ['front', 'back'] as RegistrationDocumentSide[],
+  },
+  {
+    value: 'passport',
+    label: 'Passport',
+    guidance: 'Upload the passport biodata page only, including the complete machine-readable zone (MRZ).',
+    slots: ['biodata'] as RegistrationDocumentSide[],
+  },
+  {
+    value: 'umid',
+    label: 'UMID',
+    guidance: 'Upload one clear landscape image of the complete UMID front. The back is not required. Automated screening checks document plausibility; it does not verify chips, holograms, or other authenticity features.',
+    slots: ['front'] as RegistrationDocumentSide[],
+  },
+] as const;
+
+const ADDRESS_LOOKUP_TIMEOUT_MS = 15_000;
+
+class AddressLookupError extends Error {
+  constructor(
+    message: string,
+    public readonly status?: number,
+    public readonly retryAfterSeconds?: number,
+  ) {
+    super(message);
+    this.name = 'AddressLookupError';
+  }
+}
+
+const fetchAddressJson = async (url: string): Promise<unknown> => {
+  let attempt = 0;
+
+  while (true) {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), ADDRESS_LOOKUP_TIMEOUT_MS);
+
+    try {
+      const response = await fetch(url, {
+        headers: { Accept: 'application/json' },
+        signal: controller.signal,
+      });
+
+      if (response.ok) return response.json();
+
+      const payload = await response.json().catch(() => null) as { message?: unknown } | null;
+      const retryAfterHeader = response.headers.get('Retry-After');
+      const retryAfterSeconds = retryAfterHeader && /^\d+$/.test(retryAfterHeader)
+        ? Number(retryAfterHeader)
+        : undefined;
+      const message = typeof payload?.message === 'string'
+        ? payload.message
+        : 'Address lookup failed.';
+      const error = new AddressLookupError(message, response.status, retryAfterSeconds);
+
+      if (response.status === 429 && attempt === 0 && retryAfterSeconds !== undefined && retryAfterSeconds <= 2) {
+        attempt += 1;
+        await new Promise(resolve => window.setTimeout(resolve, Math.max(1, retryAfterSeconds) * 1000));
+        continue;
+      }
+
+      throw error;
+    } catch (error) {
+      if (error instanceof AddressLookupError) throw error;
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        throw new AddressLookupError('Address lookup timed out.');
+      }
+
+      throw error;
+    } finally {
+      window.clearTimeout(timeoutId);
+    }
+  }
+};
+
+const addressLookupErrorMessage = (error: unknown, fallback: string): string => {
+  if (error instanceof AddressLookupError && error.status === 429) {
+    if (error.retryAfterSeconds && error.retryAfterSeconds > 0) {
+      return `Address lookup is temporarily limited. Please wait ${error.retryAfterSeconds} seconds or use address search.`;
+    }
+
+    return 'Address lookup is temporarily busy. Please try again or use address search.';
+  }
+
+  if (error instanceof AddressLookupError && error.message === 'Address lookup timed out.') {
+    return 'Address lookup took too long. Please try again or use address search.';
+  }
+
+  return fallback;
+};
+
+const geolocationErrorMessage = (error: unknown): string => {
+  if (error && typeof error === 'object') {
+    const code = (error as { code?: unknown }).code;
+
+    if (code === 1) return 'Location access was denied. Allow location access in your browser settings, then try again.';
+    if (code === 2) return 'Your browser could not determine your location. Turn on device location or use address search.';
+    if (code === 3) return 'Location detection timed out. Please try again or use address search.';
+  }
+
+  if (error instanceof Error && /timed out/i.test(error.message)) {
+    return 'Location detection timed out. Please try again or use address search.';
+  }
+
+  return 'Could not get your location. Please allow location access or use address search.';
+};
+
+type RegistrationOcrStatus = 'idle' | 'loading' | 'recognizing' | 'ready' | 'rejected' | 'error';
+type RegistrationSideStatus = RegistrationOcrStatus;
+type RegistrationSideMap<T> = Partial<Record<RegistrationDocumentSide, T>>;
 
 const escapeHtml = (value: string) => (
   value
@@ -33,9 +166,31 @@ const escapeHtml = (value: string) => (
     .replaceAll("'", '&#039;')
 );
 
+const showDocumentScreeningModal = (
+  slot: RegistrationDocumentSide,
+  outcome: RegistrationDocumentSideResult['outcome'],
+  duplicate = false,
+): void => {
+  const text = duplicate
+    ? 'The front and back images appear to be the same. Please upload the back side of your ID.'
+    : outcome === 'screening_error'
+      ? 'We couldn\'t check this image right now. Please try again or select another image.'
+      : slot === 'back'
+        ? 'The back image does not appear to match the selected ID. Please upload the back side of your valid ID.'
+        : 'This image does not appear to match the selected ID type. Please upload a clear image of your valid Philippine ID.';
+
+  void Swal.fire({
+    icon: 'error',
+    title: duplicate ? 'Duplicate ID images' : outcome === 'screening_error' ? 'Unable to check ID' : 'Invalid ID image',
+    text,
+    confirmButtonColor: '#000000',
+  });
+};
+
 export default function Register() {
   const [currentStep, setCurrentStep] = useState(1);
   const [validIdPreview, setValidIdPreview] = useState('');
+  const [validIdBackPreview, setValidIdBackPreview] = useState('');
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -45,7 +200,9 @@ export default function Register() {
     address: '',
     password: '',
     confirmPassword: '',
+    documentType: '',
     validId: null as File | null,
+    validIdBack: null as File | null,
     termsAccepted: false,
   });
 
@@ -56,11 +213,72 @@ export default function Register() {
   const [geoError, setGeoError] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [gettingGPS, setGettingGPS] = useState(false);
+  const [sideStatuses, setSideStatuses] = useState<RegistrationSideMap<RegistrationSideStatus>>({});
+  const [sideResults, setSideResults] = useState<RegistrationSideMap<RegistrationDocumentSideResult>>({});
+  const [duplicateKind, setDuplicateKind] = useState<RegistrationDuplicateKind>('none');
   const mapRef = useRef<HTMLDivElement>(null);
   const leafletMapRef = useRef<any>(null);
   const markerRef = useRef<any>(null);
   const locationRequestRef = useRef(0);
+  const screeningRequestRef = useRef<RegistrationSideMap<number>>({});
+  const screeningGenerationRef = useRef(0);
+  const duplicateAlertRef = useRef<RegistrationDuplicateKind>('none');
   const authInputClasses = 'userside-auth-input h-12 rounded-xl !border-gray-200 !bg-[#f8fafc] !text-[13px] !text-gray-800 placeholder:!text-gray-400 shadow-none focus:!border-gray-300 focus:!ring-gray-200/70';
+  const selectedDocumentOption = DOCUMENT_TYPE_OPTIONS.find(option => option.value === formData.documentType);
+  const requiredSlots: RegistrationDocumentSide[] = selectedDocumentOption?.slots ?? [];
+  const requiresBack = requiredSlots.includes('back');
+  const isPassport = selectedDocumentOption?.value === 'passport';
+  const nationalIdFormat: RegistrationNationalIdFormat = formData.documentType === 'national_id'
+    ? 'digital_image'
+    : 'physical_card';
+  const nameEvidenceSlot: RegistrationDocumentSide = isPassport ? 'biodata' : 'front';
+  const nameEvidenceSide = sideResults[nameEvidenceSlot];
+  const nameMatchResult = nameEvidenceSide?.outcome === 'plausible'
+    ? matchRegistrationName(formData.firstName, formData.lastName, nameEvidenceSide.ocrText)
+    : null;
+
+  const screeningDecision = (): RegistrationSubmissionResult => screenRegistrationSubmission(
+    formData.documentType,
+    sideResults,
+    duplicateKind,
+    nationalIdFormat,
+    nameMatchResult as RegistrationNameMatchOutcome,
+  );
+
+  const documentScreeningMessage = (() => {
+    const decision = screeningDecision();
+    const checkingSlot = requiredSlots.find(slot => {
+      const status = sideStatuses[slot];
+      return status === 'loading' || status === 'recognizing';
+    });
+
+    if (checkingSlot) {
+      return `Checking ${checkingSlot === 'biodata' ? 'passport biodata' : `${checkingSlot} image`}...`;
+    }
+
+    if (duplicateKind !== 'none') return '';
+    if (decision.outcome === 'screening_error') return '';
+
+    const rejectedSlot = requiredSlots.find(slot => sideStatuses[slot] === 'rejected');
+    if (rejectedSlot) return '';
+
+    const readySlots = requiredSlots.filter(slot => sideStatuses[slot] === 'ready');
+    if (readySlots.length === requiredSlots.length && requiredSlots.length > 0) {
+      if (decision.outcome === 'manual_review_required') {
+        return 'ID images received. We\'ll review your identity before transaction access is enabled.';
+      }
+
+      return isPassport
+        ? 'Passport biodata page ready. We\'ll check it before submission.'
+        : 'Front and back images ready. We\'ll check your ID before submission.';
+    }
+
+    if (readySlots.includes('front') && requiresBack && !readySlots.includes('back')) {
+      return 'Front image ready. Upload the back image to continue.';
+    }
+
+    return 'We\'ll check your ID image before submission to make sure it matches the selected document type.';
+  })();
 
   useEffect(() => {
     return () => {
@@ -69,6 +287,44 @@ export default function Register() {
       }
     };
   }, [validIdPreview]);
+
+  useEffect(() => {
+    return () => {
+      if (validIdBackPreview) {
+        URL.revokeObjectURL(validIdBackPreview);
+      }
+    };
+  }, [validIdBackPreview]);
+
+  useEffect(() => {
+    if (!requiresBack) {
+      setDuplicateKind('none');
+      duplicateAlertRef.current = 'none';
+      return;
+    }
+
+    const frontFingerprint = sideResults.front?.imageFingerprint;
+    const backFingerprint = sideResults.back?.imageFingerprint;
+    const nextDuplicateKind = frontFingerprint && backFingerprint
+      ? compareRegistrationImageFingerprints(frontFingerprint, backFingerprint)
+      : 'none';
+
+    if (nextDuplicateKind !== 'none' && duplicateAlertRef.current === 'none') {
+      showDocumentScreeningModal('back', 'reject_upload', true);
+    }
+    duplicateAlertRef.current = nextDuplicateKind;
+    setDuplicateKind(nextDuplicateKind);
+    setErrors(previous => {
+      const duplicateMessage = 'The front and back images appear to be the same. Please upload the back side of your ID.';
+      if (nextDuplicateKind !== 'none' && previous.validIdBack !== duplicateMessage) {
+        return { ...previous, validIdBack: duplicateMessage };
+      }
+      if (nextDuplicateKind === 'none' && previous.validIdBack === duplicateMessage) {
+        return { ...previous, validIdBack: undefined };
+      }
+      return previous;
+    });
+  }, [requiresBack, sideResults]);
 
   const getStepValidationErrors = (step: number): FormErrors => {
     const newErrors: FormErrors = {};
@@ -141,8 +397,28 @@ export default function Register() {
     }
 
     if (step === 3) {
-      if (!formData.validId) {
-        newErrors.validId = 'Please upload a valid government-issued ID (JPG, JPEG, or PNG up to 5MB).';
+      if (!formData.documentType) {
+        newErrors.documentType = 'Please select the type of ID you are uploading.';
+      }
+
+      if (requiredSlots.includes('front') && !formData.validId) {
+        newErrors.validId = errors.validId || 'Please upload a supported government-issued ID (JPG, JPEG, PNG, or WEBP up to 5MB).';
+      }
+
+      if (requiredSlots.includes('biodata') && !formData.validId) {
+        newErrors.validId = errors.validId || 'Please upload the passport biodata page (JPG, JPEG, PNG, or WEBP up to 5MB).';
+      }
+
+      if (requiredSlots.includes('back') && !formData.validIdBack) {
+        newErrors.validIdBack = errors.validIdBack || 'Please upload a clear back image of the selected ID.';
+      }
+
+      const decision = screeningDecision();
+      if (decision.outcome === 'screening_error') {
+        newErrors.ocr = decision.message || 'We couldn\'t check this image right now. Please try again or select another image.';
+      } else if (decision.outcome === 'reject_upload' && requiredSlots.every(slot => sideResults[slot])) {
+        const errorKey = decision.failureSide === 'back' ? 'validIdBack' : 'validId';
+        newErrors[errorKey] = decision.message || 'This image does not appear to match the selected ID type. Please upload a clear image of your valid Philippine ID.';
       }
 
       if (!formData.termsAccepted) {
@@ -162,7 +438,7 @@ export default function Register() {
       return 2;
     }
 
-    if (validationErrors.validId || validationErrors.termsAccepted) {
+    if (validationErrors.documentType || validationErrors.validId || validationErrors.validIdBack || validationErrors.ocr || validationErrors.termsAccepted) {
       return 3;
     }
 
@@ -219,6 +495,28 @@ export default function Register() {
     }
   };
 
+  const checkPhoneAvailability = async (phone: string): Promise<{ available: boolean; message?: string }> => {
+    try {
+      const response = await fetch(`/auth/check-phone-availability?phone=${encodeURIComponent(phone)}`, {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json',
+        },
+      });
+
+      const data = await response.json().catch(() => ({}));
+      return {
+        available: Boolean(data?.available),
+        message: typeof data?.message === 'string' ? data.message : undefined,
+      };
+    } catch {
+      return {
+        available: false,
+        message: 'Unable to verify this phone number right now. Please try again.',
+      };
+    }
+  };
+
   const applyLocationResult = (result: any) => {
     const location = parsePhilippineAddress(result);
     if (!location) {
@@ -238,11 +536,9 @@ export default function Register() {
   };
 
   const reverseGeocode = async (latitude: number, longitude: number, requestId: number) => {
-    const response = await fetch(
+    const result = await fetchAddressJson(
       `/api/address/geocode?latitude=${latitude}&longitude=${longitude}`,
     );
-    if (!response.ok) throw new Error('Address lookup failed');
-    const result = await response.json();
     return requestId === locationRequestRef.current && applyLocationResult(result);
   };
 
@@ -314,17 +610,16 @@ export default function Register() {
     setAddressLocation(null);
     setGeoError('');
     try {
-      const response = await fetch(
+      const response = await fetchAddressJson(
         `/api/address/geocode?q=${encodeURIComponent(query)}`,
       );
-      if (!response.ok) throw new Error('Address search failed');
-      const [result] = await response.json();
+      const [result] = Array.isArray(response) ? response : [];
       if (requestId !== locationRequestRef.current) return;
       if (!result) setGeoError('No Philippine address found. Try a more specific search.');
       else applyLocationResult(result);
-    } catch {
+    } catch (error) {
       if (requestId === locationRequestRef.current) {
-        setGeoError('Address search is unavailable. Please try again.');
+        setGeoError(addressLookupErrorMessage(error, 'Address search is unavailable. Please try again.'));
       }
     } finally {
       setIsSearching(false);
@@ -332,6 +627,12 @@ export default function Register() {
   };
 
   const handleUseMyGPS = async () => {
+    const localHosts = new Set(['localhost', '127.0.0.1', '::1']);
+    if (typeof window !== 'undefined' && !window.isSecureContext && !localHosts.has(window.location.hostname)) {
+      setGeoError('GPS requires a secure HTTPS connection. Please use address search instead.');
+      return;
+    }
+
     if (!navigator.geolocation) {
       setGeoError('Geolocation is not supported by your browser.');
       return;
@@ -342,20 +643,19 @@ export default function Register() {
     setAddressLocation(null);
     setGeoError('');
     try {
-      const { coords } = await getCurrentPositionWithTimeout(GPS_POSITION_OPTIONS);
+      const { coords } = await getCurrentPositionWithFallback(GPS_POSITION_OPTIONS);
       if (requestId !== locationRequestRef.current) return;
-      setGettingGPS(false);
 
       try {
         await reverseGeocode(coords.latitude, coords.longitude, requestId);
-      } catch {
+      } catch (error) {
         if (requestId === locationRequestRef.current) {
-          setGeoError('Could not identify your GPS address. Please try searching instead.');
+          setGeoError(addressLookupErrorMessage(error, 'Could not identify your GPS address. Please try searching instead.'));
         }
       }
-    } catch {
+    } catch (error) {
       if (requestId === locationRequestRef.current) {
-        setGeoError('Could not get your location. Please allow location access.');
+        setGeoError(geolocationErrorMessage(error));
       }
     } finally {
       if (requestId === locationRequestRef.current) {
@@ -374,13 +674,23 @@ export default function Register() {
 
     if (currentStep === 1) {
       const trimmedEmail = formData.email.trim();
-      const result = await checkEmailAvailability(trimmedEmail);
+      const normalizedPhone = formData.phone.trim();
+      const [emailResult, phoneResult] = await Promise.all([
+        checkEmailAvailability(trimmedEmail),
+        checkPhoneAvailability(normalizedPhone),
+      ]);
+      const availabilityErrors: FormErrors = {};
 
-      if (!result.available) {
-        const message = result.message || 'This email is already registered';
-        const emailError: FormErrors = { email: message };
-        setErrors(prev => ({ ...prev, ...emailError }));
-        showValidationModal('Email not available', emailError);
+      if (!emailResult.available) {
+        availabilityErrors.email = emailResult.message || 'This email is already registered';
+      }
+      if (!phoneResult.available) {
+        availabilityErrors.phone = phoneResult.message || 'This phone number is already registered. Try another number or sign in instead.';
+      }
+
+      if (Object.keys(availabilityErrors).length > 0) {
+        setErrors(prev => ({ ...prev, ...availabilityErrors }));
+        showValidationModal('Registration details not available', availabilityErrors);
         return;
       }
     }
@@ -418,65 +728,158 @@ export default function Register() {
     }
   };
 
-  const handleFileDrop = (acceptedFiles: File[]) => {
-    if (acceptedFiles.length > 0) {
-      const file = acceptedFiles[0];
+  const resetDocumentUploads = (updates: Partial<Pick<typeof formData, 'documentType'>> = {}) => {
+    screeningGenerationRef.current += 1;
+    screeningRequestRef.current = {};
+    setFormData(prev => ({
+      ...prev,
+      ...updates,
+      validId: null,
+      validIdBack: null,
+    }));
+    setSideStatuses({});
+    setSideResults({});
+    setDuplicateKind('none');
+    duplicateAlertRef.current = 'none';
+    setErrors(prev => ({
+      ...prev,
+      documentType: undefined,
+      validId: undefined,
+      validIdBack: undefined,
+      ocr: undefined,
+    }));
+    setValidIdPreview((prevPreview) => {
+      if (prevPreview) URL.revokeObjectURL(prevPreview);
+      return '';
+    });
+    setValidIdBackPreview((prevPreview) => {
+      if (prevPreview) URL.revokeObjectURL(prevPreview);
+      return '';
+    });
+  };
 
-      const extension = file.name.split('.').pop()?.toLowerCase() ?? '';
-      const hasAllowedExtension = CUSTOMER_VALID_ID_ALLOWED_EXTENSIONS.has(extension);
-      const mimeType = String(file.type || '').toLowerCase();
-      const hasAllowedMimeType = mimeType === '' || CUSTOMER_VALID_ID_ALLOWED_MIME_TYPES.has(mimeType);
+  const handleDocumentTypeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    resetDocumentUploads({
+      documentType: e.target.value,
+    });
+  };
 
-      if (!hasAllowedExtension || !hasAllowedMimeType) {
-        const typeError = 'Valid ID must be JPG, JPEG, or PNG only.';
-        setErrors(prev => ({ ...prev, validId: typeError }));
-        Swal.fire({
-          icon: 'error',
-          title: 'Invalid file type',
-          html: `<p><strong>${escapeHtml(file.name)}</strong> is not allowed.</p><p class="text-sm text-gray-600">Only JPG, JPEG, and PNG image files are accepted for Valid ID.</p>`,
-          confirmButtonColor: '#000000',
-        });
-        return;
-      }
+  const fileValidationError = (file: File): string | null => {
+    const extension = file.name.split('.').pop()?.toLowerCase() ?? '';
+    const hasAllowedExtension = CUSTOMER_VALID_ID_ALLOWED_EXTENSIONS.has(extension);
+    const mimeType = String(file.type || '').toLowerCase();
+    const hasAllowedMimeType = mimeType === '' || CUSTOMER_VALID_ID_ALLOWED_MIME_TYPES.has(mimeType);
 
-      if (file.size > MAX_VALID_ID_SIZE_BYTES) {
-        const sizeError = 'Valid ID must be 5MB or smaller (JPG, JPEG, or PNG).';
-        setErrors(prev => ({ ...prev, validId: sizeError }));
-        Swal.fire({
-          icon: 'error',
-          title: 'File too large',
-          text: sizeError,
-          confirmButtonColor: '#000000',
-        });
-        return;
-      }
+    if (!hasAllowedExtension || !hasAllowedMimeType) {
+      return 'Valid ID must be JPG, JPEG, PNG, or WEBP only.';
+    }
 
-      setFormData(prev => ({
+    if (file.size > MAX_VALID_ID_SIZE_BYTES) {
+      return 'Valid ID must be 5MB or smaller (JPG, JPEG, PNG, or WEBP).';
+    }
+
+    return null;
+  };
+
+  const showInvalidFileModal = (file: File, message: string): void => {
+    const isTooLarge = file.size > MAX_VALID_ID_SIZE_BYTES;
+
+    void Swal.fire({
+      icon: 'error',
+      title: isTooLarge ? 'File too large' : 'Invalid file type',
+      ...(isTooLarge
+        ? { text: message }
+        : { html: `<p><strong>${escapeHtml(file.name)}</strong> is not allowed.</p><p class="text-sm text-gray-600">Only JPG, JPEG, PNG, and WEBP image files are accepted for Valid ID.</p>` }),
+      confirmButtonColor: '#000000',
+    });
+  };
+
+  const handleDocumentSideDrop = (slot: RegistrationDocumentSide, acceptedFiles: File[]): void => {
+    const file = acceptedFiles[0];
+    if (!file) return;
+
+    const validationError = fileValidationError(file);
+    if (validationError) {
+      setErrors(prev => ({
         ...prev,
-        validId: file
+        [slot === 'back' ? 'validIdBack' : 'validId']: validationError,
       }));
-      setValidIdPreview((prevPreview) => {
-        if (prevPreview) {
-          URL.revokeObjectURL(prevPreview);
-        }
+      showInvalidFileModal(file, validationError);
+      return;
+    }
+
+    const requestId = (screeningRequestRef.current[slot] ?? 0) + 1;
+    const generation = screeningGenerationRef.current;
+    screeningRequestRef.current[slot] = requestId;
+    const errorKey = slot === 'back' ? 'validIdBack' : 'validId';
+
+    setFormData(prev => ({
+      ...prev,
+      ...(slot === 'back' ? { validIdBack: file } : { validId: file }),
+    }));
+    setSideStatuses(prev => ({ ...prev, [slot]: 'loading' }));
+    setSideResults(prev => {
+      const next = { ...prev };
+      delete next[slot];
+      return next;
+    });
+    setDuplicateKind('none');
+    duplicateAlertRef.current = 'none';
+    setErrors(prev => ({ ...prev, [errorKey]: undefined, ocr: undefined }));
+
+    if (slot === 'back') {
+      setValidIdBackPreview((prevPreview) => {
+        if (prevPreview) URL.revokeObjectURL(prevPreview);
         return URL.createObjectURL(file);
       });
-      
-      // Show success notification
-      Swal.fire({
-        icon: 'info',
-        title: 'File Attached',
-        html: '<p><strong>' + file.name + '</strong> was added to <strong>Valid ID</strong>.</p><p class="text-sm text-gray-600">Please ensure the correct document is uploaded.</p>',
-        confirmButtonText: 'OK',
-      }).then(() => {
+    } else {
+      setValidIdPreview((prevPreview) => {
+        if (prevPreview) URL.revokeObjectURL(prevPreview);
+        return URL.createObjectURL(file);
       });
-      
-      // Clear error when file is uploaded
-      if (errors.validId) {
-        setErrors(prev => ({ ...prev, validId: undefined }));
-      }
     }
+
+    void screenRegistrationDocumentSideFromFile(
+      formData.documentType,
+      slot,
+      file,
+      stage => {
+        if (generation === screeningGenerationRef.current && requestId === screeningRequestRef.current[slot]) {
+          setSideStatuses(prev => ({ ...prev, [slot]: stage }));
+        }
+      },
+      nationalIdFormat,
+    ).then((result) => {
+      if (generation !== screeningGenerationRef.current || requestId !== screeningRequestRef.current[slot]) return;
+
+      setSideResults(prev => ({ ...prev, [slot]: result }));
+      setSideStatuses(prev => ({
+        ...prev,
+        [slot]: result.outcome === 'plausible'
+          ? 'ready'
+          : result.outcome === 'screening_error' ? 'error' : 'rejected',
+      }));
+      setErrors(prev => ({
+        ...prev,
+        [errorKey]: result.outcome === 'plausible' ? undefined : result.outcome === 'screening_error'
+          ? 'We couldn\'t check this image right now. Please try again or select another image.'
+          : slot === 'back'
+            ? 'The back image does not appear to match the selected ID. Please upload the back side of your valid ID.'
+            : 'This image does not appear to match the selected ID type. Please upload a clear image of your valid Philippine ID.',
+        ocr: result.outcome === 'screening_error'
+          ? 'We couldn\'t check this image right now. Please try again or select another image.'
+          : undefined,
+      }));
+
+      if (result.outcome !== 'plausible') {
+        showDocumentScreeningModal(slot, result.outcome);
+      }
+    });
   };
+
+  const handleFileDrop = (acceptedFiles: File[]): void => handleDocumentSideDrop(isPassport ? 'biodata' : 'front', acceptedFiles);
+
+  const handleBackFileDrop = (acceptedFiles: File[]): void => handleDocumentSideDrop('back', acceptedFiles);
 
   const handleCheckboxChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, checked } = e.target;
@@ -505,12 +908,12 @@ export default function Register() {
 
               <h3>2. Information We Request</h3>
               <p>
-                We ask for your basic personal details and a valid government-issued ID to verify identity, protect legitimate users, and maintain a secure marketplace.
+                We ask for your basic personal details and a supported government-issued ID for document screening, account security, and marketplace protection.
               </p>
 
               <h3>3. Security and Anti-Fraud Policy</h3>
               <p>
-                Verification helps us detect and prevent scam accounts, impersonation, and unauthorized activity. Accounts with suspicious or false documents may be restricted or removed.
+                Screening helps us detect and prevent scam accounts, impersonation, and unauthorized activity. Uploads that do not plausibly match the selected ID type must be replaced before registration.
               </p>
 
               <h3>4. Accuracy of Information</h3>
@@ -530,7 +933,7 @@ export default function Register() {
 
               <h3>7. Agreement</h3>
               <p>
-                Choosing <strong>Accept</strong> means you agree to these terms and consent to identity verification as part of account security.
+                Choosing <strong>Accept</strong> means you agree to these terms and consent to document screening as part of account security.
               </p>
             </div>
             <p class="terms-modal__hint">Scroll to the bottom to enable the Accept button.</p>
@@ -596,6 +999,12 @@ export default function Register() {
       last_name: 'lastName',
       password_confirmation: 'confirmPassword',
       valid_id: 'validId',
+      valid_id_back: 'validIdBack',
+      document_type: 'documentType',
+      national_id_format: 'ocr',
+      screening_metadata: 'ocr',
+      ocr_text: 'ocr',
+      ocr_confidence: 'ocr',
       address_region: 'addressLocation',
       address_province: 'addressLocation',
       address_city: 'addressLocation',
@@ -618,7 +1027,7 @@ export default function Register() {
     if (currentStep !== 3) {
       return;
     }
-    
+
     const validation = validateForm();
     if (!validation.isValid) {
       setErrors(validation.errors);
@@ -645,26 +1054,50 @@ export default function Register() {
       payload.append('address_longitude', String(addressLocation!.longitude));
       payload.append('password', formData.password);
       payload.append('password_confirmation', formData.confirmPassword);
+      payload.append('document_type', formData.documentType);
+      payload.append('national_id_format', nationalIdFormat);
+      const screeningMetadata = {
+        document_type: formData.documentType,
+        national_id_format: nationalIdFormat,
+        outcome: screeningDecision().outcome,
+        duplicate_kind: duplicateKind,
+        name_match: nameMatchResult === 'matched',
+        sides: Object.fromEntries(
+          requiredSlots
+            .map(slot => [slot, sideResults[slot]])
+            .filter((entry): entry is [string, RegistrationDocumentSideResult] => entry[1] !== undefined)
+            .map(([slot, result]) => [slot, {
+              side: result.side,
+              outcome: result.outcome,
+              detected_document_family: result.detectedDocumentFamily,
+              detected_anchor_keys: result.detectedAnchorKeys,
+              confidence_band: result.confidenceBand,
+              qr_detected: result.qrDetected,
+              fingerprint: result.fingerprint,
+            }]),
+        ),
+      };
+      payload.append('screening_metadata', JSON.stringify(screeningMetadata));
       if (formData.validId) payload.append('valid_id', formData.validId);
+      if (formData.validIdBack) payload.append('valid_id_back', formData.validIdBack);
+
+      let csrfToken = document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content?.trim() ?? '';
+
+      // The form can stay open while the session cookie changes or expires.
+      // Refresh the token immediately before this state-changing request so
+      // the token and the session cookie always come from the same session.
+      try {
+        csrfToken = await getFreshCsrfToken();
+      } catch {
+        // Keep the page token as a fallback. Laravel still validates it server-side.
+      }
+
+      if (csrfToken) payload.append('_token', csrfToken);
 
       await router.post('/user/register', payload, {
         forceFormData: true,
         preserveScroll: false,
-        onSuccess: () => {
-          Swal.fire({
-            icon: 'success',
-            title: 'Registration successful',
-            html: `
-              <p>Thank you for registering!</p>
-              <p class="mt-3">We've sent a verification email to:</p>
-              <p class="font-semibold text-blue-600 mt-2">${formData.email}</p>
-              <p class="text-sm text-gray-600 mt-3">Check your inbox and click the verification link to finish setup.</p>
-            `,
-            confirmButtonText: 'OK',
-            confirmButtonColor: '#000000',
-          });
-          // Router will automatically handle redirect to verification.notice
-        },
+        headers: csrfToken ? { 'X-CSRF-TOKEN': csrfToken } : {},
         onError: (backendErrors) => {
           const mapped = mapBackendErrorsToFrontend(backendErrors as Record<string, unknown>);
           setErrors(mapped);
@@ -694,6 +1127,25 @@ export default function Register() {
     return false;
   };
 
+  const isCheckingDocument = requiredSlots.some(slot => (
+    sideStatuses[slot] === 'loading' || sideStatuses[slot] === 'recognizing'
+  ));
+  const screeningOutcome = screeningDecision().outcome;
+  const isDocumentScreeningBlocked = requiredSlots.length === 0
+    || !['screening_passed', 'manual_review_required'].includes(screeningOutcome)
+    || requiredSlots.some(slot => {
+      const file = slot === 'back' ? formData.validIdBack : formData.validId;
+      const status = sideStatuses[slot];
+
+      return !file
+        || !sideResults[slot]
+        || status === 'loading'
+        || status === 'recognizing'
+        || status === 'error'
+        || status === 'rejected';
+    })
+    || duplicateKind !== 'none';
+
   return (
     <>
       <Head title="Register" />
@@ -710,7 +1162,7 @@ export default function Register() {
           </p>
         </div>
 
-        <div className="max-w-92.5 sm:max-w-lg mx-auto">
+        <div className={`max-w-92.5 mx-auto ${currentStep === 3 ? 'sm:max-w-2xl' : 'sm:max-w-lg'}`}>
           <div className="userside-auth-card bg-white rounded-[20px] sm:rounded-2xl border border-gray-100 shadow-[0_14px_32px_-20px_rgba(15,23,42,0.35)] p-5 sm:p-8">
             <div className="mb-4 text-center">
               <p className="text-[11px] uppercase tracking-[0.18em] text-gray-500">Step {currentStep} of 3</p>
@@ -926,42 +1378,143 @@ export default function Register() {
               {currentStep === 3 && (
                 <>
                   <div>
-                    <Label htmlFor="validId">Valid ID {formData.validId && <span className="text-green-600 font-bold ml-2">✓ Uploaded</span>}</Label>
-                    <DropzoneComponent
-                      onDrop={handleFileDrop}
-                      accept={CUSTOMER_VALID_ID_ACCEPT}
-                      onInvalidFiles={(invalidFiles) => {
-                        if (invalidFiles.length > 0) {
-                          const typeError = 'Valid ID must be JPG, JPEG, or PNG only.';
-                          setErrors(prev => ({ ...prev, validId: typeError }));
-                          Swal.fire({
-                            icon: 'error',
-                            title: 'Invalid file type',
-                            html: `<p><strong>${escapeHtml(invalidFiles[0].name)}</strong> is not allowed.</p><p class="text-sm text-gray-600">Only JPG, JPEG, and PNG image files are accepted for Valid ID.</p>`,
-                            confirmButtonColor: '#000000',
-                          });
-                        }
-                      }}
-                      isUploaded={!!formData.validId}
-                      fileName={formData.validId?.name}
-                      previewUrl={validIdPreview || undefined}
-                      previewAlt="Valid ID preview"
-                    />
+                    <Label htmlFor="documentType" className="text-[12px] font-medium text-gray-700 mb-1.5">ID Type</Label>
+                    <select
+                      id="documentType"
+                      name="documentType"
+                      value={formData.documentType}
+                      onChange={handleDocumentTypeChange}
+                      aria-invalid={!!errors.documentType}
+                      className={`w-full ${authInputClasses} ${errors.documentType ? 'border-red-500' : ''}`}
+                    >
+                      <option value="">Select the type of ID</option>
+                      {DOCUMENT_TYPE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                    {errors.documentType && <p className="mt-1 text-sm text-red-600">{errors.documentType}</p>}
+                    {selectedDocumentOption && (
+                      <p className="mt-2 text-[12px] leading-5 text-gray-600">
+                        {selectedDocumentOption.guidance}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="rounded-2xl border border-gray-200 bg-white p-4 sm:p-5" data-testid="registration-id-upload-section">
+                    <div className="flex flex-col gap-1">
+                      <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-gray-800">Upload valid ID</p>
+                      <p className="text-[12px] leading-5 text-gray-600">
+                        {requiresBack
+                          ? formData.documentType === 'national_id'
+                            ? NATIONAL_ID_UPLOAD_GUIDANCE
+                            : 'Upload a clear front and back image of the same ID.'
+                          : isPassport
+                            ? 'Upload the passport biodata page, including the complete machine-readable zone.'
+                            : 'Select an ID type, then upload the required image.'}
+                      </p>
+                    </div>
+
+                    <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-500">Valid ID photos</p>
+                    <div
+                      className={requiresBack ? 'mt-2 grid gap-3 md:grid-cols-2' : 'mt-2 grid gap-3 md:grid-cols-1'}
+                      data-testid="registration-id-photo-grid"
+                    >
+                      <div className="min-w-0 [&>label]:sr-only">
+                        <div className="mb-2 flex min-h-6 items-center justify-between gap-2">
+                          <p className="text-[12px] font-semibold uppercase tracking-[0.06em] text-gray-700">
+                            {isPassport ? 'Passport biodata page' : 'Front of ID'}
+                          </p>
+                          {sideStatuses[isPassport ? 'biodata' : 'front'] === 'ready' && (
+                            <span className="shrink-0 text-[11px] font-semibold text-green-700" aria-label={`${isPassport ? 'Passport biodata page' : 'Front image'} ready`}>&#10003; Ready</span>
+                          )}
+                        </div>
+                        <Label htmlFor="validId">
+                          {isPassport ? 'Passport Biodata Page' : 'Front of Valid ID'}
+                          {formData.validId && <span className="text-green-600 font-bold ml-2">&#10003; Uploaded</span>}
+                        </Label>
+                        <DropzoneComponent
+                          key={formData.validId ? 'uploaded' : 'empty'}
+                          inputId="validId"
+                          inputAriaLabel="ID file"
+                          onDrop={handleFileDrop}
+                          accept={CUSTOMER_VALID_ID_ACCEPT}
+                          compact
+                          uploadLabel={isPassport ? 'Upload biodata page' : 'Upload front'}
+                          onInvalidFiles={(invalidFiles) => {
+                            if (invalidFiles.length > 0) {
+                              const typeError = 'Valid ID must be JPG, JPEG, PNG, or WEBP only.';
+                              setErrors(prev => ({ ...prev, validId: typeError }));
+                              showInvalidFileModal(invalidFiles[0], typeError);
+                            }
+                          }}
+                          isUploaded={!!formData.validId}
+                          fileName={formData.validId?.name}
+                          previewUrl={validIdPreview || undefined}
+                          previewAlt="Valid ID preview"
+                        />
+                        {(sideStatuses[isPassport ? 'biodata' : 'front'] === 'loading'
+                          || sideStatuses[isPassport ? 'biodata' : 'front'] === 'recognizing') && (
+                            <p className="mt-2 text-xs text-blue-700" aria-live="polite">Checking image...</p>
+                          )}
+                      </div>
+
+                      {requiresBack && (
+                        <div className="min-w-0 [&>label]:sr-only">
+                          <div className="mb-2 flex min-h-6 items-center justify-between gap-2">
+                            <p className="text-[12px] font-semibold uppercase tracking-[0.06em] text-gray-700">Back of ID</p>
+                            {sideStatuses.back === 'ready' && (
+                              <span className="shrink-0 text-[11px] font-semibold text-green-700" aria-label="Back image ready">&#10003; Ready</span>
+                            )}
+                          </div>
+                          <Label htmlFor="validIdBack">
+                            Back of Valid ID
+                            {formData.validIdBack && <span className="text-green-600 font-bold ml-2">&#10003; Uploaded</span>}
+                          </Label>
+                          <DropzoneComponent
+                            key={formData.validIdBack ? 'uploaded' : 'empty'}
+                            inputId="validIdBack"
+                            inputAriaLabel="ID back file"
+                            onDrop={handleBackFileDrop}
+                            accept={CUSTOMER_VALID_ID_ACCEPT}
+                            compact
+                            uploadLabel="Upload back"
+                            onInvalidFiles={(invalidFiles) => {
+                              if (invalidFiles.length > 0) {
+                                const typeError = 'The ID back image must be JPG, JPEG, PNG, or WEBP only.';
+                                setErrors(prev => ({ ...prev, validIdBack: typeError }));
+                                showInvalidFileModal(invalidFiles[0], typeError);
+                              }
+                            }}
+                            isUploaded={!!formData.validIdBack}
+                            fileName={formData.validIdBack?.name}
+                            previewUrl={validIdBackPreview || undefined}
+                            previewAlt="Back of valid ID preview"
+                          />
+                          {(sideStatuses.back === 'loading' || sideStatuses.back === 'recognizing') && (
+                            <p className="mt-2 text-xs text-blue-700" aria-live="polite">Checking image...</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    {documentScreeningMessage && (
+                      <div className="mt-3 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2.5 text-[12px] text-blue-900" role="status" aria-live="polite">
+                        {documentScreeningMessage}
+                      </div>
+                    )}
+
+
                     <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5">
                       <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-gray-700">Why we ask for a valid ID</p>
                       <p className="mt-1 text-[12px] leading-5 text-gray-600">
-                        We use one government-issued ID to confirm that each account belongs to a real person and to help prevent scam or fake accounts.
+                        We require a government-issued ID to help prevent fake accounts, fraud, and abuse. Your ID is stored privately, and access by authorized personnel is audited.
+                      </p>
+                      <p className="mt-1 text-[12px] leading-5 text-gray-600">
+                        Automated screening checks whether the document matches the selected ID type but does not prove authenticity.
+                      </p>
+                      <p className="mt-1 text-[12px] leading-5 text-gray-600">
+                        Supported formats: JPG, JPEG, PNG, and WEBP. Maximum size: 5MB.
                       </p>
                     </div>
-                    {formData.validId && (
-                      <p className="mt-2 text-sm text-green-600 font-semibold flex items-center">
-                        <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                        </svg>
-                        File uploaded: {formData.validId.name}
-                      </p>
-                    )}
-                    {errors.validId && <p className="mt-1 text-sm text-red-600">{errors.validId}</p>}
                   </div>
 
                   <div className="flex items-center">
@@ -1003,10 +1556,10 @@ export default function Register() {
                   <button
                     type="button"
                     onClick={handleRegisterClick}
-                    disabled={isLoading}
+                    disabled={isLoading || isDocumentScreeningBlocked}
                     className="userside-auth-primary w-full sm:w-auto rounded-xl px-6 py-3 bg-black text-white font-semibold uppercase tracking-[0.16em] text-xs sm:text-sm hover:bg-black/85 transition-colors disabled:opacity-50 disabled:cursor-not-allowed sm:ml-auto"
                   >
-                    {isLoading ? 'Creating account...' : 'Create account'}
+                    {isLoading ? 'Creating account...' : isCheckingDocument ? 'Checking document...' : 'Create account'}
                   </button>
                 )}
               </div>

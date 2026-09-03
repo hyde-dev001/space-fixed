@@ -62,7 +62,7 @@ class HandleInertiaRequests extends Middleware
         $erpContext = $erpContext instanceof ErpActorContext ? $erpContext : null;
         $user = Auth::guard('user')->user();
         $superAdmin = Auth::guard('super_admin')->user();
-        $isCustomer = $user && empty($user->shop_owner_id);
+        $isCustomer = $user instanceof User && $user->isCustomerAccount();
         $internalShopOwner = $erpContext?->tenantOwner();
 
         if ($internalShopOwner === null && ! $superAdmin) {
@@ -187,6 +187,7 @@ class HandleInertiaRequests extends Middleware
 
             // Share session flash data
             'success' => fn() => $request->session()->get('success'),
+            'warning' => fn() => $request->session()->get('warning'),
             'error' => fn() => $request->session()->get('error'),
             'employee' => fn() => $request->session()->get('employee'),
             'user_id' => fn() => $request->session()->get('user_id'),

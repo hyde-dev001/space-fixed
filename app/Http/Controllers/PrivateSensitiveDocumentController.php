@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\IdentityVerification;
 use App\Models\ShopDocument;
 use App\Models\ShopOwner;
 use App\Models\SuperAdmin;
@@ -67,7 +68,7 @@ final class PrivateSensitiveDocumentController extends Controller
             abort(401);
         }
 
-        if ($user->shop_owner_id !== null) {
+        if (! $user->isCustomerAccount()) {
             abort(404);
         }
 
@@ -86,6 +87,156 @@ final class PrivateSensitiveDocumentController extends Controller
                 );
             },
         );
+    }
+
+    public function showCustomerValidIdBack(Request $request, User $user): Response
+    {
+        $actor = Auth::guard('super_admin')->user();
+        if (! $actor instanceof SuperAdmin) {
+            abort(401);
+        }
+
+        if (! $user->isCustomerAccount()) {
+            abort(404);
+        }
+
+        $verification = $user->latestIdentityVerification;
+        if (! $verification instanceof IdentityVerification || ! $verification->back_file_path) {
+            abort(404);
+        }
+
+        return $this->serve(
+            path: (string) $verification->back_file_path,
+            disk: (string) $verification->back_file_disk,
+            documentType: 'valid_id_back',
+            recordId: (int) $user->id,
+            audit: function (string $mime, string $disposition) use ($request, $actor, $user): void {
+                $this->privilegedAudit->customerValidIdAccessInitiated(
+                    $request,
+                    $actor,
+                    $user,
+                    $mime,
+                    $disposition,
+                    'valid_id_back',
+                );
+            },
+        );
+    }
+
+    public function showCustomerIdentityVerification(
+        Request $request,
+        IdentityVerification $verification,
+        string $side,
+    ): Response {
+        $user = Auth::guard('user')->user();
+        if (
+            ! $user instanceof User
+            || ! $user->isCustomerAccount()
+            || ! in_array($side, ['front', 'back'], true)
+            || (int) $verification->user_id !== (int) $user->getKey()
+        ) {
+            abort(404);
+        }
+
+        $isBack = $side === 'back';
+        $path = $isBack ? $verification->back_file_path : $verification->file_path;
+        $disk = $isBack ? $verification->back_file_disk : $verification->file_disk;
+        if (! $path) {
+            abort(404);
+        }
+
+        return $this->serve(
+            path: (string) $path,
+            disk: (string) $disk,
+            documentType: 'identity_'.$side,
+            recordId: (int) $verification->getKey(),
+            audit: function (string $mime, string $disposition) use ($request, $user, $verification, $side): void {
+                activity('sensitive_documents')
+                    ->causedBy($user)
+                    ->performedOn($verification)
+                    ->setEvent('customer_identity_document_access_initiated')
+                    ->withProperties([
+                        'customer_user_id' => (int) $user->getKey(),
+                        'verification_id' => (int) $verification->getKey(),
+                        'side' => $side,
+                        'mime' => $mime,
+                        'disposition' => $disposition,
+                        'correlation_id' => (string) Str::uuid(),
+                        'ip_address' => $request->ip(),
+                    ])
+                    ->log('customer_identity_document_access_initiated');
+            },
+        );
+    }
+
+    public function showCustomerIdentityVerificationFront(Request $request, IdentityVerification $verification): Response
+    {
+        return $this->showCustomerIdentityVerification($request, $verification, 'front');
+    }
+
+    public function showCustomerIdentityVerificationBack(Request $request, IdentityVerification $verification): Response
+    {
+        return $this->showCustomerIdentityVerification($request, $verification, 'back');
+    }
+
+    public function showPrivilegedIdentityVerification(
+        Request $request,
+        User $user,
+        IdentityVerification $verification,
+        string $side,
+    ): Response {
+        $actor = Auth::guard('super_admin')->user();
+        if (! $actor instanceof SuperAdmin) {
+            abort(401);
+        }
+
+        if (
+            ! $user->isCustomerAccount()
+            || ! in_array($side, ['front', 'back'], true)
+            || (int) $verification->user_id !== (int) $user->getKey()
+        ) {
+            abort(404);
+        }
+
+        $isBack = $side === 'back';
+        $path = $isBack ? $verification->back_file_path : $verification->file_path;
+        $disk = $isBack ? $verification->back_file_disk : $verification->file_disk;
+        if (! $path) {
+            abort(404);
+        }
+
+        return $this->serve(
+            path: (string) $path,
+            disk: (string) $disk,
+            documentType: 'identity_'.$side,
+            recordId: (int) $verification->getKey(),
+            audit: function (string $mime, string $disposition) use ($request, $actor, $user, $verification, $side): void {
+                $this->privilegedAudit->customerValidIdAccessInitiated(
+                    $request,
+                    $actor,
+                    $user,
+                    $mime,
+                    $disposition,
+                    'identity_'.$side,
+                );
+            },
+        );
+    }
+
+    public function showPrivilegedIdentityVerificationFront(
+        Request $request,
+        User $user,
+        IdentityVerification $verification,
+    ): Response {
+        return $this->showPrivilegedIdentityVerification($request, $user, $verification, 'front');
+    }
+
+    public function showPrivilegedIdentityVerificationBack(
+        Request $request,
+        User $user,
+        IdentityVerification $verification,
+    ): Response {
+        return $this->showPrivilegedIdentityVerification($request, $user, $verification, 'back');
     }
 
     public function showForShopOwner(ShopOwner $shopOwner, ShopDocument $document): Response
@@ -181,6 +332,7 @@ final class PrivateSensitiveDocumentController extends Controller
             'jpg' => 'image/jpeg',
             'jpeg' => 'image/jpeg',
             'png' => 'image/png',
+            'webp' => 'image/webp',
             'pdf' => 'application/pdf',
         ][$extension] ?? null;
 

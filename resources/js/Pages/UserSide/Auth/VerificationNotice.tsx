@@ -7,9 +7,24 @@ import Navigation from '../Shared/Navigation';
 interface Props {
   status?: string;
   email?: string;
+  success?: string;
+  warning?: string;
+  registrationEmailFailed?: boolean;
+  identityVerification?: {
+    documentType?: string | null;
+    screeningStatus: 'pending' | 'processing' | 'screening_passed' | 'screening_error' | 'automated_check_passed' | 'manual_review_required' | 'rejected';
+    reviewStatus: 'not_required' | 'pending' | 'approved' | 'rejected';
+  } | null;
 }
 
-export default function VerificationNotice({ status, email }: Props) {
+export default function VerificationNotice({
+  status,
+  email,
+  success,
+  warning,
+  registrationEmailFailed = false,
+  identityVerification,
+}: Props) {
   const [isResending, setIsResending] = useState(false);
   const [countdown, setCountdown] = useState(0);
 
@@ -38,12 +53,15 @@ export default function VerificationNotice({ status, email }: Props) {
           timer: 3000,
         });
       },
-      onError: () => {
+      onError: (errors) => {
         setIsResending(false);
+        const verificationError = errors?.verification;
         Swal.fire({
           icon: 'error',
           title: 'Failed to Send',
-          text: 'Unable to send verification email. Please try again later.',
+          text: typeof verificationError === 'string'
+            ? verificationError
+            : 'Unable to send verification email. Please try again later.',
           confirmButtonColor: '#000000',
         });
       },
@@ -51,8 +69,19 @@ export default function VerificationNotice({ status, email }: Props) {
   };
 
   const handleGoToLogin = () => {
-    router.visit(route('login'));
+    router.post(route('user.logout'));
   };
+
+  const screeningMessage = identityVerification?.screeningStatus === 'automated_check_passed'
+    || identityVerification?.screeningStatus === 'screening_passed'
+    ? 'Your uploaded document was accepted for registration.'
+    : identityVerification?.screeningStatus === 'manual_review_required'
+      ? 'Your uploaded document is retained for possible authorized investigation; it is not a routine registration approval step.'
+      : identityVerification?.screeningStatus === 'rejected'
+        ? 'We could not recognize the uploaded document as a supported ID.'
+        : identityVerification?.screeningStatus === 'screening_error'
+          ? 'We could not complete the document check. Please retry the upload if needed.'
+          : 'Your uploaded document is being prepared.';
 
   return (
     <>
@@ -79,7 +108,7 @@ export default function VerificationNotice({ status, email }: Props) {
                   Verify Your Email Address
                 </h1>
                 <p className="text-lg text-gray-600 leading-relaxed">
-                  Thanks for signing up! Before getting started, please verify your email address.
+                  Your account has been created. Please verify your email address before signing in.
                 </p>
               </div>
 
@@ -92,10 +121,29 @@ export default function VerificationNotice({ status, email }: Props) {
                       <path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z" />
                     </svg>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm text-gray-600">Verification email sent to:</p>
+                      <p className="text-sm text-gray-600">
+                        {registrationEmailFailed ? 'Account created for:' : 'Verification email sent to:'}
+                      </p>
                       <p className="text-base font-semibold text-blue-700 truncate">{email}</p>
                     </div>
                   </div>
+                </div>
+              )}
+
+              {success && !registrationEmailFailed && (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6" role="status">
+                  <p className="text-sm text-green-800 font-medium">{success}</p>
+                </div>
+              )}
+
+              {registrationEmailFailed && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6" role="alert">
+                  <p className="text-sm text-amber-900 font-medium">
+                    {warning || 'Your account was created, but the verification email could not be sent.'}
+                  </p>
+                  <p className="text-sm text-amber-800 mt-2">
+                    Click the resend button after confirming the email settings are available.
+                  </p>
                 </div>
               )}
 
@@ -113,13 +161,29 @@ export default function VerificationNotice({ status, email }: Props) {
                 </div>
               )}
 
+              {identityVerification && (
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-6">
+                  <p className="text-sm font-semibold text-gray-900">ID document screening</p>
+                  <p className="text-sm text-gray-700 mt-1">
+                    {screeningMessage}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-2">
+                    This is a document plausibility check to help prevent fake accounts and abuse. It does not prove government authenticity.
+                  </p>
+                </div>
+              )}
+
               {/* Instructions */}
               <div className="bg-gray-50 border border-gray-200 rounded-lg p-6 mb-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-3">What to do next:</h3>
                 <ol className="space-y-3 text-sm text-gray-700">
                   <li className="flex items-start space-x-3">
                     <span className="flex-shrink-0 w-6 h-6 bg-black text-white rounded-full flex items-center justify-center text-xs font-bold">1</span>
-                    <span className="flex-1 pt-0.5">Check your email inbox (and spam folder, just in case)</span>
+                    <span className="flex-1 pt-0.5">
+                      {registrationEmailFailed
+                        ? 'Use the resend button below to request a verification email'
+                        : 'Check your email inbox (and spam folder, just in case)'}
+                    </span>
                   </li>
                   <li className="flex items-start space-x-3">
                     <span className="flex-shrink-0 w-6 h-6 bg-black text-white rounded-full flex items-center justify-center text-xs font-bold">2</span>
@@ -127,7 +191,7 @@ export default function VerificationNotice({ status, email }: Props) {
                   </li>
                   <li className="flex items-start space-x-3">
                     <span className="flex-shrink-0 w-6 h-6 bg-black text-white rounded-full flex items-center justify-center text-xs font-bold">3</span>
-                    <span className="flex-1 pt-0.5">You'll be redirected to login and start shopping!</span>
+                    <span className="flex-1 pt-0.5">After verification, return to login and sign in normally.</span>
                   </li>
                 </ol>
               </div>
@@ -156,13 +220,13 @@ export default function VerificationNotice({ status, email }: Props) {
                   )}
                 </button>
 
-                {/* Back to Login */}
+                {/* Return to login */}
                 <button
                   type="button"
                   onClick={handleGoToLogin}
                   className="userside-auth-secondary w-full px-6 py-3 bg-gray-100 text-gray-700 font-semibold uppercase tracking-wider text-sm hover:bg-gray-200 transition-colors"
                 >
-                  Back to Login
+                  Return to Login
                 </button>
               </div>
 

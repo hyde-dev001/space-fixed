@@ -5,11 +5,13 @@ namespace Tests\Feature\SuperAdmin;
 use App\Models\ShopDocument;
 use App\Models\ShopOwner;
 use App\Models\SuperAdmin;
+use App\Models\IdentityVerification;
 use App\Models\User;
 use App\Services\PrivilegedAudit;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
@@ -179,7 +181,35 @@ class PrivateSensitiveDocumentAccessTest extends TestCase
             'address_latitude' => 14.5832,
             'address_longitude' => 120.9822,
             'valid_id_disk' => 'public',
-            'valid_id' => $this->uploadedPng('customer-id.png'),
+            'document_type' => 'national_id',
+            'screening_metadata' => json_encode([
+                'document_type' => 'national_id',
+                'outcome' => 'screening_passed',
+                'duplicate_kind' => 'none',
+                'name_match' => true,
+                'sides' => [
+                    'front' => [
+                        'side' => 'front',
+                        'outcome' => 'plausible',
+                        'detected_document_family' => 'national_id',
+                        'detected_anchor_keys' => ['philsys_document', 'philippine_issuer', 'identity_fields'],
+                        'confidence_band' => 'high',
+                        'qr_detected' => false,
+                        'fingerprint' => 'customer-front',
+                    ],
+                    'back' => [
+                        'side' => 'back',
+                        'outcome' => 'plausible',
+                        'detected_document_family' => 'national_id',
+                        'detected_anchor_keys' => ['philsys_back_structure'],
+                        'confidence_band' => 'low',
+                        'qr_detected' => true,
+                        'fingerprint' => 'customer-back',
+                    ],
+                ],
+            ], JSON_THROW_ON_ERROR),
+            'valid_id' => $this->uploadedPng('customer-id.png', 'front'),
+            'valid_id_back' => $this->uploadedPng('customer-id-back.png', 'back'),
         ]);
 
         $response->assertRedirect(route('verification.notice'));
@@ -347,6 +377,61 @@ class PrivateSensitiveDocumentAccessTest extends TestCase
         $this->actingAsCompletedPrivileged($superAdmin)
             ->get(route('admin.users.valid-id.show', $customer))
             ->assertOk();
+    }
+
+    public function test_customers_and_shop_owners_cannot_view_customer_private_ids(): void
+    {
+        $customer = User::factory()->create([
+            'valid_id_path' => 'valid_ids/customer.png',
+            'valid_id_disk' => 'local',
+        ]);
+        Storage::disk('local')->put($customer->valid_id_path, $this->pngBytes());
+        $shopOwner = ShopOwner::factory()->approved()->create();
+
+        $this->actingAs($customer, 'user')
+            ->get(route('admin.users.valid-id.show', $customer))
+            ->assertRedirect(route('admin.login'));
+
+        $this->actingAs($shopOwner, 'shop_owner')
+            ->get(route('admin.users.valid-id.show', $customer))
+            ->assertRedirect(route('admin.login'));
+    }
+
+    public function test_privileged_back_id_access_is_scoped_audited_and_private(): void
+    {
+        $customer = User::factory()->create();
+        $verification = IdentityVerification::create([
+            'user_id' => $customer->id,
+            'document_type' => 'national_id',
+            'screening_status' => IdentityVerification::SCREENING_MANUAL_REVIEW_REQUIRED,
+            'review_status' => IdentityVerification::REVIEW_PENDING,
+            'file_path' => 'valid_ids/front.png',
+            'file_disk' => 'local',
+            'back_file_path' => 'valid_ids/back.png',
+            'back_file_disk' => 'local',
+        ]);
+        Storage::disk('local')->put($verification->back_file_path, $this->pngBytes());
+        $admin = SuperAdmin::factory()->admin()->create();
+
+        $response = $this->actingAsCompletedPrivileged($admin)
+            ->get(route('admin.users.valid-id-back.show', $customer));
+
+        $response->assertOk()
+            ->assertHeader('Content-Type', 'image/png')
+            ->assertHeader('Cache-Control', 'no-store, private')
+            ->assertHeader('X-Content-Type-Options', 'nosniff');
+        $this->assertStringContainsString('valid_id_back-'.$customer->id.'.png', (string) $response->headers->get('Content-Disposition'));
+
+        $activity = ActivityModel::query()
+            ->where('event', 'customer_valid_id_access_initiated')
+            ->latest('id')
+            ->firstOrFail();
+        $this->assertSame('valid_id_back', $activity->properties->get('document_type'));
+
+        Auth::guard('super_admin')->logout();
+        $this->actingAs($customer, 'user')
+            ->get(route('admin.users.valid-id-back.show', $customer))
+            ->assertRedirect(route('admin.login'));
     }
 
     public function test_suspended_privileged_actor_cannot_reach_private_documents_or_create_access_audit(): void
@@ -589,9 +674,9 @@ class PrivateSensitiveDocumentAccessTest extends TestCase
         $this->assertStringNotContainsString($document->file_path, $response->getContent());
     }
 
-    private function uploadedPng(string $name): UploadedFile
+    private function uploadedPng(string $name, string $marker = ''): UploadedFile
     {
-        return UploadedFile::fake()->createWithContent($name, $this->pngBytes());
+        return UploadedFile::fake()->createWithContent($name, $this->pngBytes().$marker);
     }
 
     private function pngBytes(): string

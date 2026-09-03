@@ -88,6 +88,19 @@ interface User {
   createdAt: string;
   lastLogin?: string;
   validIdUrl?: string;
+  validIdBackUrl?: string;
+  identityVerification?: IdentityVerification | null;
+}
+
+interface IdentityVerification {
+  id: number;
+  documentType: string | null;
+  screeningStatus: 'pending' | 'processing' | 'automated_check_passed' | 'manual_review_required' | 'rejected';
+  reviewStatus: 'not_required' | 'pending' | 'approved' | 'rejected';
+  failureReason?: string | null;
+  rejectionReason?: string | null;
+  rejectionNotes?: string | null;
+  reviewedAt?: string | null;
 }
 
 interface MetricData {
@@ -559,6 +572,128 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
     );
   };
 
+  const performIdentityReview = async (
+    user: User,
+    decision: 'approve' | 'reject',
+    reviewData: Record<string, string> = {},
+  ) => {
+    const verification = user.identityVerification;
+    if (!verification) return;
+
+    try {
+      setIsProcessingId(user.id);
+      setApiError(null);
+      const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+      const response = await fetch(
+        `/admin/users/${user.id}/identity-verifications/${verification.id}/${decision}`,
+        {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            Accept: 'application/json',
+            'X-CSRF-TOKEN': csrf,
+            'X-Requested-With': 'XMLHttpRequest',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(reviewData),
+        },
+      );
+      const payload = await readLifecycleResponse(response);
+
+      if (!response.ok) {
+        throw new Error(payload?.message || 'The identity verification review could not be completed.');
+      }
+
+      const reviewed = payload?.identity_verification;
+      const update = reviewed ? {
+        identityVerification: {
+          ...verification,
+          documentType: reviewed.document_type,
+          screeningStatus: reviewed.screening_status,
+          reviewStatus: reviewed.review_status,
+          failureReason: reviewed.failure_reason,
+          rejectionReason: reviewed.rejection_reason,
+          rejectionNotes: reviewed.rejection_notes,
+          reviewedAt: reviewed.reviewed_at,
+        },
+      } : {};
+
+      setUsers((currentUsers) => currentUsers.map((currentUser) =>
+        currentUser.id === user.id ? { ...currentUser, ...update } : currentUser,
+      ));
+      setSelectedUser((currentUser) => currentUser?.id === user.id
+        ? { ...currentUser, ...update }
+        : currentUser);
+
+      Swal.fire({
+        icon: 'success',
+        title: decision === 'approve' ? 'Review Approved' : 'Review Rejected',
+        text: payload?.message || 'Identity verification review recorded.',
+        timer: 2000,
+        showConfirmButton: false,
+      });
+    } catch (error) {
+      const message = error instanceof Error
+        ? error.message
+        : 'The identity verification review could not be completed.';
+      setApiError(message);
+      Swal.fire({ icon: 'error', title: 'Error', text: message });
+    } finally {
+      setIsProcessingId(null);
+    }
+  };
+
+  const confirmIdentityReview = async (user: User, decision: 'approve' | 'reject') => {
+    const result = decision === 'reject'
+      ? await Swal.fire({
+          title: 'Reject identity verification',
+          html: [
+            '<label for="user-identity-rejection-reason" style="display:block;text-align:left;margin-bottom:6px;font-weight:600">Reason</label>',
+            '<select id="user-identity-rejection-reason" class="swal2-select" style="width:100%;margin:0 0 14px">',
+            '<option value="">Select a reason</option>',
+            '<option value="id_unreadable">ID is unreadable</option>',
+            '<option value="wrong_document">Wrong document submitted</option>',
+            '<option value="incomplete_details">ID details are incomplete</option>',
+            '<option value="suspected_altered">Suspected altered/fake document</option>',
+            '<option value="front_back_mismatch">Front/back do not match</option>',
+            '<option value="other">Other</option>',
+            '</select>',
+            '<label for="user-identity-rejection-notes" style="display:block;text-align:left;margin-bottom:6px;font-weight:600">Notes</label>',
+            '<textarea id="user-identity-rejection-notes" class="swal2-textarea" style="width:100%;margin:0" rows="3" placeholder="Add helpful detail for the customer"></textarea>',
+          ].join(''),
+          showCancelButton: true,
+          confirmButtonText: 'Reject verification',
+          confirmButtonColor: '#dc2626',
+          cancelButtonText: 'Cancel',
+          preConfirm: () => {
+            const reason = (document.getElementById('user-identity-rejection-reason') as HTMLSelectElement | null)?.value || '';
+            const notes = (document.getElementById('user-identity-rejection-notes') as HTMLTextAreaElement | null)?.value.trim() || '';
+            if (!reason) {
+              Swal.showValidationMessage('Select a rejection reason.');
+              return null;
+            }
+            if (reason === 'other' && !notes) {
+              Swal.showValidationMessage('Add a note when selecting Other.');
+              return null;
+            }
+            return { rejection_reason: reason, rejection_notes: notes };
+          },
+        })
+      : await Swal.fire({
+          title: 'Approve identity review?',
+          text: 'This records a human review decision. It does not establish government authenticity.',
+          icon: 'question',
+          showCancelButton: true,
+          confirmButtonText: 'Approve',
+          confirmButtonColor: '#10b981',
+          cancelButtonText: 'Cancel',
+        });
+
+    if (result.isConfirmed) {
+      await performIdentityReview(user, decision, decision === 'reject' ? result.value : {});
+    }
+  };
+
   return (
     <AppLayout>
       <Head title="User Registration Management" />
@@ -574,12 +709,20 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
               Manage user registrations, approvals, and account controls
             </p>
           </div>
-          <Link
-            href="/admin/flagged-accounts"
-            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200"
-          >
-            View Flagged Accounts
-          </Link>
+          <div className="flex flex-wrap gap-3">
+            <Link
+              href="/admin/identity-verification-reviews"
+              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-emerald-600 hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 transition-colors duration-200"
+            >
+              Identity Review Queue
+            </Link>
+            <Link
+              href="/admin/flagged-accounts"
+              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200"
+            >
+              View Flagged Accounts
+            </Link>
+          </div>
         </div>
 
         {/* Stats Cards */}
@@ -1163,14 +1306,84 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
                       </div>
                     </div>
 
+                    {/* Identity Screening */}
+                    {selectedUser.identityVerification && (
+                      <div>
+                        <h4 className="text-xl font-bold text-gray-900 dark:text-white mb-4 pb-3 border-b-2 border-gray-200 dark:border-gray-700">
+                          Identity Screening
+                        </h4>
+                        <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700 p-4 space-y-3">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+                                Document Type
+                              </label>
+                              <p className="text-sm text-gray-900 dark:text-white">
+                                {selectedUser.identityVerification.documentType || 'Not classified'}
+                              </p>
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+                                Automated Screening
+                              </label>
+                              <p className="text-sm text-gray-900 dark:text-white">
+                                {selectedUser.identityVerification.screeningStatus.replaceAll('_', ' ')}
+                              </p>
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+                                Human Review
+                              </label>
+                              <p className="text-sm text-gray-900 dark:text-white">
+                                {selectedUser.identityVerification.reviewStatus.replaceAll('_', ' ')}
+                              </p>
+                            </div>
+                            {selectedUser.identityVerification.failureReason && (
+                              <div>
+                                <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+                                  Screening Note
+                                </label>
+                                <p className="text-sm text-gray-900 dark:text-white">
+                                  {selectedUser.identityVerification.failureReason.replaceAll('_', ' ')}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                          {['automated_check_passed', 'manual_review_required'].includes(selectedUser.identityVerification.screeningStatus)
+                            && ['not_required', 'pending'].includes(selectedUser.identityVerification.reviewStatus) && (
+                              <div className="flex flex-wrap gap-3 pt-3 border-t border-gray-200 dark:border-gray-600">
+                                <Button
+                                  onClick={() => confirmIdentityReview(selectedUser, 'approve')}
+                                  disabled={isProcessingId === selectedUser.id}
+                                  className="bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50"
+                                >
+                                  Approve Review
+                                </Button>
+                                <Button
+                                  onClick={() => confirmIdentityReview(selectedUser, 'reject')}
+                                  disabled={isProcessingId === selectedUser.id}
+                                  className="bg-red-600 hover:bg-red-700 text-white disabled:opacity-50"
+                                >
+                                  Reject Review
+                                </Button>
+                              </div>
+                            )}
+                          <p className="text-xs text-gray-600 dark:text-gray-300">
+                            Automated screening indicates document consistency only. Human review decisions do not by themselves establish government authenticity.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Document Information */}
-                    {selectedUser.validIdUrl && (
+                    {(selectedUser.validIdUrl || selectedUser.validIdBackUrl) && (
                       <div>
                         <h4 className="text-xl font-bold text-gray-900 dark:text-white mb-4 pb-3 border-b-2 border-gray-200 dark:border-gray-700">
                           Submitted Documents
                         </h4>
                         <div className="space-y-3 bg-gray-50 dark:bg-gray-700 p-4 rounded-lg max-h-96 overflow-y-auto">
-                          <div className="border border-gray-200 dark:border-gray-600 rounded-lg p-3 bg-white dark:bg-gray-800">
+                          {selectedUser.validIdUrl && (
+                            <div className="border border-gray-200 dark:border-gray-600 rounded-lg p-3 bg-white dark:bg-gray-800">
                             <div className="flex items-center justify-between mb-2">
                               <div className="flex items-center space-x-2">
                                 <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900 rounded flex items-center justify-center">
@@ -1222,7 +1435,63 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
                                 </div>
                               </div>
                             )}
-                          </div>
+                            </div>
+                          )}
+                          {selectedUser.validIdBackUrl && (
+                            <div className="border border-gray-200 dark:border-gray-600 rounded-lg p-3 bg-white dark:bg-gray-800">
+                              <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center space-x-2">
+                                  <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900 rounded flex items-center justify-center">
+                                    <span className="text-blue-600 dark:text-blue-400 text-sm">📄</span>
+                                  </div>
+                                  <div>
+                                    <p className="text-xs font-semibold text-gray-900 dark:text-white">
+                                      Valid Identification — Back
+                                    </p>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                                      Government-issued ID
+                                    </p>
+                                  </div>
+                                </div>
+                                <button
+                                  onClick={() => {
+                                    const newExpanded = new Set(expandedDocuments);
+                                    if (newExpanded.has(1)) {
+                                      newExpanded.delete(1);
+                                    } else {
+                                      newExpanded.add(1);
+                                    }
+                                    setExpandedDocuments(newExpanded);
+                                  }}
+                                  className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 text-xs font-medium px-2 py-1 rounded transition-colors"
+                                >
+                                  {expandedDocuments.has(1) ? 'Hide' : 'View'}
+                                </button>
+                              </div>
+                              {expandedDocuments.has(1) && (
+                                <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-600">
+                                  <div className="bg-gray-100 dark:bg-gray-900 rounded border border-gray-300 dark:border-gray-600 flex items-center justify-center" style={{ minHeight: '200px' }}>
+                                    {!imageLoadErrors.has(1) ? (
+                                      <img
+                                        src={selectedUser.validIdBackUrl}
+                                        alt="Back of valid ID document"
+                                        className="max-w-full max-h-96 rounded object-contain"
+                                        onError={(e) => {
+                                          setImageLoadErrors(prev => new Set(prev).add(1));
+                                          e.currentTarget.style.display = 'none';
+                                        }}
+                                      />
+                                    ) : null}
+                                    {imageLoadErrors.has(1) && (
+                                      <p className="text-sm text-gray-500 dark:text-gray-400 text-center p-6">
+                                        Unable to load image
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
                     )}

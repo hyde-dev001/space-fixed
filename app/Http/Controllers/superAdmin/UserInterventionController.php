@@ -56,6 +56,21 @@ final class UserInterventionController extends Controller
 
         $baseQuery = User::withTrashed()->whereNull('shop_owner_id');
         $query = (clone $baseQuery)
+            ->with(['latestIdentityVerification' => static function ($identityQuery): void {
+                $identityQuery->select([
+                    'identity_verifications.id',
+                    'identity_verifications.user_id',
+                    'identity_verifications.document_type',
+                    'identity_verifications.screening_status',
+                    'identity_verifications.review_status',
+                    'identity_verifications.failure_reason',
+                    'identity_verifications.rejection_reason',
+                    'identity_verifications.rejection_notes',
+                    'identity_verifications.inspected_at',
+                    'identity_verifications.reviewed_at',
+                    'identity_verifications.back_file_path',
+                ]);
+            }])
             ->select([
                 'id',
                 'first_name',
@@ -118,6 +133,22 @@ final class UserInterventionController extends Controller
                 'archived' => $archived,
                 'validIdUrl' => $user->valid_id_path
                     ? route('admin.users.valid-id.show', ['user' => $user->id])
+                    : null,
+                'validIdBackUrl' => $user->latestIdentityVerification?->back_file_path
+                    ? route('admin.users.valid-id-back.show', ['user' => $user->id])
+                    : null,
+                'identityVerification' => $user->latestIdentityVerification
+                    ? [
+                        'id' => (int) $user->latestIdentityVerification->getKey(),
+                        'documentType' => $user->latestIdentityVerification->document_type,
+                        'screeningStatus' => $user->latestIdentityVerification->screening_status,
+                        'reviewStatus' => $user->latestIdentityVerification->review_status,
+                        'failureReason' => $user->latestIdentityVerification->failure_reason,
+                        'rejectionReason' => $user->latestIdentityVerification->rejection_reason,
+                        'rejectionNotes' => $user->latestIdentityVerification->rejection_notes,
+                        'inspectedAt' => $user->latestIdentityVerification->inspected_at?->toIso8601String(),
+                        'reviewedAt' => $user->latestIdentityVerification->reviewed_at?->toIso8601String(),
+                    ]
                     : null,
                 'createdAt' => $user->created_at
                     ? Carbon::parse($user->created_at)->format('Y-m-d H:i:s')

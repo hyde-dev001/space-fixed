@@ -24,6 +24,7 @@ use App\Http\Controllers\ShopOwnerAuthController;
 use App\Http\Controllers\ShopOwnerPasswordSetupController;
 use App\Http\Controllers\superAdmin\AdministratorManagementController;
 use App\Http\Controllers\superAdmin\FlaggedAccountsController;
+use App\Http\Controllers\superAdmin\IdentityVerificationReviewController;
 use App\Http\Controllers\superAdmin\PremiumPlanController;
 use App\Http\Controllers\superAdmin\PrivilegedAuditController;
 use App\Http\Controllers\superAdmin\RegisteredShopController;
@@ -43,6 +44,7 @@ use App\Http\Controllers\UserSide\CustomerProfileController;
 use App\Http\Controllers\UserSide\LandingPageController;
 use App\Http\Controllers\UserSide\OrderController;
 use App\Http\Middleware\AttachPrivilegedCorrelationId;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
@@ -64,26 +66,72 @@ use Inertia\Inertia;
 Route::get('/email/verify', function (Request $request) {
     $user = Auth::guard('user')->user() ?? Auth::guard('shop_owner')->user();
 
+    if (! $user) {
+        $pendingUserId = $request->session()->get('pending_customer_verification_user_id');
+        $pendingUser = is_numeric($pendingUserId)
+            ? User::query()->find((int) $pendingUserId)
+            : null;
+
+        if ($pendingUser?->isCustomerAccount() && ! $pendingUser->hasVerifiedEmail()) {
+            $user = $pendingUser;
+        }
+    }
+
+    $identityVerification = $user instanceof \App\Models\User && $user->isCustomerAccount()
+        ? $user->latestIdentityVerification
+        : null;
+
     return Inertia::render('UserSide/Auth/VerificationNotice', [
         'status' => session('status'),
         'email' => $user ? $user->email : null,
+        'registrationEmailFailed' => (bool) session('registration_email_failed', false),
+        'identityVerification' => $identityVerification ? [
+            'documentType' => $identityVerification->document_type,
+            'screeningStatus' => $identityVerification->screening_status,
+            'reviewStatus' => $identityVerification->review_status,
+        ] : null,
     ]);
-})->middleware('auth:user,shop_owner')->name('verification.notice');
+})->name('verification.notice');
 
-Route::get('/email/verify/{id}/{hash}', [EmailVerificationController::class, 'verify'])
-    ->middleware(['signed'])
+Route::get('/email/verify/{accountType}/{id}/{hash}', [EmailVerificationController::class, 'verify'])
+    ->whereIn('accountType', ['user', 'shop_owner'])
+    ->whereNumber('id')
+    ->middleware(['signed', 'throttle:6,1'])
     ->name('verification.verify');
 
 Route::post('/email/verification-notification', function (Request $request) {
     // Support both regular user and shop owner guards.
     $user = Auth::guard('user')->user() ?? Auth::guard('shop_owner')->user();
 
+    if (! $user) {
+        $pendingUserId = $request->session()->get('pending_customer_verification_user_id');
+        $pendingUser = is_numeric($pendingUserId)
+            ? User::query()->find((int) $pendingUserId)
+            : null;
+
+        if ($pendingUser?->isCustomerAccount() && ! $pendingUser->hasVerifiedEmail()) {
+            $user = $pendingUser;
+        }
+    }
+
     if ($user && ! $user->hasVerifiedEmail()) {
-        $user->sendEmailVerificationNotification();
+        try {
+            $user->sendEmailVerificationNotification();
+        } catch (\Throwable $exception) {
+            Log::warning('Verification email delivery failed', [
+                'principal_type' => $user::class,
+                'principal_id' => $user->getKey(),
+                'exception' => $exception::class,
+            ]);
+
+            return back()->withErrors([
+                'verification' => 'We could not send the verification email. Please check the email settings and try again later.',
+            ]);
+        }
     }
 
     return back()->with('status', 'verification-link-sent');
-})->middleware(['auth:user,shop_owner', 'throttle:6,1'])->name('verification.send');
+})->middleware(['throttle:6,1'])->name('verification.send');
 
 // Public Routes (User Side)
 Route::get('/', [LandingPageController::class, 'index'])->name('landing');
@@ -92,13 +140,13 @@ Route::get('/products/{slug}', [LandingPageController::class, 'productShow'])->n
 Route::get('/api/search/suggestions', [LandingPageController::class, 'searchSuggestions'])->name('search.suggestions');
 Route::get('/checkout', function () {
     return Inertia::render('UserSide/Orders/Checkout');
-})->name('checkout');
+})->middleware('auth:user')->name('checkout');
 Route::get('/payment', function () {
     return Inertia::render('UserSide/Orders/payment');
-})->name('payment');
+})->middleware('auth:user')->name('payment');
 Route::get('/order-success', function () {
     return Inertia::render('UserSide/Orders/OrderSuccess');
-})->name('order-success');
+})->middleware('auth:user')->name('order-success');
 Route::get('/payment-return/order', function (Request $request) {
     $query = array_filter([
         'paymongo_success' => $request->query('paymongo_success'),
@@ -114,7 +162,7 @@ Route::get('/payment-return/order', function (Request $request) {
     }
 
     return redirect($target);
-})->name('payment-return.order');
+})->middleware('auth:user')->name('payment-return.order');
 Route::get('/payment-return/repair', function (Request $request) {
     $query = array_filter([
         'paymongo_success' => $request->query('paymongo_success'),
@@ -130,12 +178,12 @@ Route::get('/payment-return/repair', function (Request $request) {
     }
 
     return redirect($target);
-})->name('payment-return.repair');
+})->middleware('auth:user')->name('payment-return.repair');
 Route::get('/payment-failed', function () {
     return Inertia::render('UserSide/Orders/PaymentFailed');
-})->name('payment-failed');
-Route::get('/my-orders', [OrderController::class, 'index'])->name('my-orders');
-Route::post('/orders/confirm-delivery', [OrderController::class, 'confirmDelivery'])->name('orders.confirm-delivery');
+})->middleware('auth:user')->name('payment-failed');
+Route::get('/my-orders', [OrderController::class, 'index'])->middleware('auth:user')->name('my-orders');
+Route::post('/orders/confirm-delivery', [OrderController::class, 'confirmDelivery'])->middleware('auth:user')->name('orders.confirm-delivery');
 Route::post('/orders/{order}/delivery-disputes', [OrderController::class, 'reportDeliveryIssue'])
     ->middleware('auth:user')
     ->name('orders.delivery-disputes.store');
@@ -145,6 +193,17 @@ Route::post('/orders/refunds/{id}/mark-shipped-return', [OrderController::class,
 Route::get('/customer-profile', [CustomerProfileController::class, 'show'])->middleware('auth:user')->name('customer-profile');
 Route::post('/customer-profile', [CustomerProfileController::class, 'update'])->middleware('auth:user')->name('customer-profile.update');
 Route::post('/customer-profile/password', [CustomerProfileController::class, 'updatePassword'])->middleware(['auth:user', 'throttle:5,1'])->name('customer-profile.password');
+Route::post('/customer-profile/identity-verifications/resubmit', [CustomerProfileController::class, 'resubmitIdentity'])
+    ->middleware('auth:user')
+    ->name('customer.identity-verifications.resubmit');
+Route::get('/customer-profile/identity-verifications/{verification}/front', [PrivateSensitiveDocumentController::class, 'showCustomerIdentityVerificationFront'])
+    ->whereNumber('verification')
+    ->middleware('auth:user')
+    ->name('customer.identity-verifications.front');
+Route::get('/customer-profile/identity-verifications/{verification}/back', [PrivateSensitiveDocumentController::class, 'showCustomerIdentityVerificationBack'])
+    ->whereNumber('verification')
+    ->middleware('auth:user')
+    ->name('customer.identity-verifications.back');
 Route::get('/my-repairs', function () {
     $user = Auth::guard('user')->user();
     if ($user) {
@@ -159,10 +218,10 @@ Route::get('/my-repairs', function () {
     }
 
     return Inertia::render('UserSide/Repairs/myRepairs');
-})->name('my-repairs');
+})->middleware('auth:user')->name('my-repairs');
 Route::get('/repair-process', function () {
     return Inertia::render('UserSide/Repairs/RepairProcess');
-})->name('repair-process');
+})->middleware('auth:user')->name('repair-process');
 Route::get('/api/policies/shops/{shopOwnerId}/active', [\App\Http\Controllers\Api\ShopPolicyController::class, 'active']);
 Route::middleware('auth:user')->get('/api/policies/shops/{shopOwnerId}/prefill', [\App\Http\Controllers\Api\ShopPolicyController::class, 'prefill']);
 Route::middleware('auth:user')->post('/api/policies/checkout/context', [\App\Http\Controllers\Api\ShopPolicyController::class, 'checkoutContext']);
@@ -448,11 +507,11 @@ Route::post('/accept-invitation/{token}', [InvitationController::class, 'accept'
 
 // Cart Routes
 Route::get('/api/cart', [CartController::class, 'index'])->name('cart.index');
-Route::post('/api/cart/add', [CartController::class, 'add'])->middleware('auth:user')->name('cart.add');
+Route::post('/api/cart/add', [CartController::class, 'add'])->middleware(['auth:user', 'customer.identity.approved'])->name('cart.add');
 Route::post('/api/cart/remove', [CartController::class, 'remove'])->middleware('auth:user')->name('cart.remove');
 Route::post('/api/cart/update', [CartController::class, 'update'])->middleware('auth:user')->name('cart.update');
 Route::post('/api/cart/clear', [CartController::class, 'clear'])->middleware('auth:user')->name('cart.clear');
-Route::post('/api/cart/sync', [CartController::class, 'sync'])->middleware('auth:user')->name('cart.sync');
+Route::post('/api/cart/sync', [CartController::class, 'sync'])->middleware(['auth:user', 'customer.identity.approved'])->name('cart.sync');
 
 Route::prefix('api/logistics')->middleware(['auth:user,shop_owner'])->group(function () {
     Route::get('/batches', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'index']);
@@ -598,7 +657,7 @@ Route::middleware('auth:user')->prefix('api/user/addresses')->group(function () 
 });
 
 // Checkout & Order Routes
-Route::post('/api/checkout/create-order', [CheckoutController::class, 'createOrder'])->middleware('auth:user')->name('checkout.create-order');
+Route::post('/api/checkout/create-order', [CheckoutController::class, 'createOrder'])->middleware(['auth:user', 'customer.identity.approved'])->name('checkout.create-order');
 Route::post('/api/checkout/promo-preview', [CheckoutController::class, 'previewPromoPricing'])->middleware('auth:user')->name('checkout.promo-preview');
 Route::get('/api/my-orders', [CheckoutController::class, 'myOrders'])->middleware('auth:user')->name('api.my-orders');
 
@@ -613,9 +672,15 @@ Route::get('/shop-owner/login', function () {
 })->name('shop-owner.login.form');
 
 // User Authentication Routes
-Route::get('/auth/check-email-availability', [UserController::class, 'checkEmailAvailability'])->name('auth.check-email-availability');
-Route::get('/auth/check-phone-availability', [UserController::class, 'checkPhoneAvailability'])->name('auth.check-phone-availability');
-Route::post('/user/register', [UserController::class, 'register'])->name('user.register');
+Route::get('/auth/check-email-availability', [UserController::class, 'checkEmailAvailability'])
+    ->middleware('throttle:10,1')
+    ->name('auth.check-email-availability');
+Route::get('/auth/check-phone-availability', [UserController::class, 'checkPhoneAvailability'])
+    ->middleware('throttle:10,1')
+    ->name('auth.check-phone-availability');
+Route::post('/user/register', [UserController::class, 'register'])
+    ->middleware('throttle:10,1')
+    ->name('user.register');
 Route::post('/user/login', [UserController::class, 'login'])
     ->middleware('throttle:10,1')
     ->name('user.login');
@@ -1348,7 +1413,7 @@ Route::prefix('api/repair-packages')->group(function () {
 Route::prefix('api/repair-requests')->group(function () {
     // Submit repair request - Protected (customers must be logged in)
     Route::post('/', [\App\Http\Controllers\Api\RepairRequestController::class, 'store'])
-        ->middleware('auth:user');
+        ->middleware(['auth:user', 'customer.identity.approved']);
 
     // Get all repair requests - Protected (Staff/Manager only)
     Route::middleware('auth:user')->group(function () {
@@ -1891,6 +1956,17 @@ Route::middleware([
     Route::get('/users/{user}/valid-id', [PrivateSensitiveDocumentController::class, 'showCustomerValidId'])
         ->middleware('privileged.capability:intervene_accounts')
         ->name('users.valid-id.show');
+    Route::get('/users/{user}/valid-id-back', [PrivateSensitiveDocumentController::class, 'showCustomerValidIdBack'])
+        ->middleware('privileged.capability:intervene_accounts')
+        ->name('users.valid-id-back.show');
+    Route::get('/users/{user}/identity-verifications/{verification}/front', [PrivateSensitiveDocumentController::class, 'showPrivilegedIdentityVerificationFront'])
+        ->whereNumber(['user', 'verification'])
+        ->middleware('privileged.capability:intervene_accounts')
+        ->name('users.identity-verifications.front');
+    Route::get('/users/{user}/identity-verifications/{verification}/back', [PrivateSensitiveDocumentController::class, 'showPrivilegedIdentityVerificationBack'])
+        ->whereNumber(['user', 'verification'])
+        ->middleware('privileged.capability:intervene_accounts')
+        ->name('users.identity-verifications.back');
     Route::post('/registrations/{shopOwner}/approve', [ShopOwnerRegistrationViewController::class, 'approve'])
         ->whereNumber('shopOwner')
         ->middleware('privileged.capability:review_registrations')
@@ -2010,6 +2086,9 @@ Route::middleware([
     Route::get('/users', [UserInterventionController::class, 'index'])
         ->middleware('privileged.capability:intervene_accounts')
         ->name('users.index');
+    Route::get('/identity-verification-reviews', [IdentityVerificationReviewController::class, 'index'])
+        ->middleware('privileged.capability:intervene_accounts')
+        ->name('identity-verification-reviews.index');
     Route::get('/user-management', fn () => redirect()->route('admin.users.index', request()->query()))
         ->middleware('privileged.capability:intervene_accounts')
         ->name('user-management');
@@ -2029,6 +2108,21 @@ Route::middleware([
         ->whereNumber('user')
         ->middleware(['privileged.capability:intervene_accounts', 'privileged.recent'])
         ->name('users.restore');
+    Route::post('/users/{user}/identity-verifications/{verification}/approve', [IdentityVerificationReviewController::class, 'approve'])
+        ->whereNumber(['user', 'verification'])
+        ->middleware('privileged.capability:intervene_accounts')
+        ->name('users.identity-verifications.approve');
+    Route::post('/users/{user}/identity-verifications/{verification}/inspect', [IdentityVerificationReviewController::class, 'inspect'])
+        ->whereNumber(['user', 'verification'])
+        ->middleware('privileged.capability:intervene_accounts')
+        ->name('users.identity-verifications.inspect');
+    Route::post('/users/{user}/identity-verifications/{verification}/reject', [IdentityVerificationReviewController::class, 'reject'])
+        ->whereNumber(['user', 'verification'])
+        ->middleware('privileged.capability:intervene_accounts')
+        ->name('users.identity-verifications.reject');
+    Route::post('/identity-verification-reviews/bulk-approve', [IdentityVerificationReviewController::class, 'bulkApprove'])
+        ->middleware('privileged.capability:intervene_accounts')
+        ->name('identity-verification-reviews.bulk-approve');
     // Shop Reports routes
     Route::get('/shop-reports', [\App\Http\Controllers\superAdmin\ShopReportsController::class, 'index'])
         ->middleware('privileged.capability:moderate_reports')

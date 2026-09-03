@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\ShopDocument;
 use App\Models\AccountSuspension;
+use App\Models\IdentityVerification;
 use App\Models\ReviewReport;
 use App\Models\PremiumPlan;
 use App\Models\ShopOwner;
@@ -430,6 +431,7 @@ class PrivilegedAudit
         User $user,
         string $mime,
         string $disposition,
+        string $documentType = 'valid_id',
     ): void {
         $this->write(
             event: 'customer_valid_id_access_initiated',
@@ -440,8 +442,64 @@ class PrivilegedAudit
             ipAddress: $request->ip(),
             properties: [
                 'customer_user_id' => (int) $user->getKey(),
+                'document_type' => $documentType,
                 'mime' => $mime,
                 'disposition' => $disposition,
+            ],
+        );
+    }
+
+    public function identityVerificationReviewed(
+        Request $request,
+        SuperAdmin $actor,
+        IdentityVerification $verification,
+        User $user,
+        string $decision,
+        ?string $rejectionReason = null,
+    ): void {
+        if (! in_array($decision, ['approved', 'rejected'], true)) {
+            throw new InvalidArgumentException('The identity verification decision is not supported.');
+        }
+
+        if ($decision === 'rejected'
+            && ! in_array($rejectionReason, IdentityVerification::REJECTION_REASONS, true)) {
+            throw new InvalidArgumentException('The identity verification rejection reason is not supported.');
+        }
+
+        $this->write(
+            event: 'identity_verification_'.$decision,
+            actor: $actor,
+            subject: $verification,
+            source: 'http',
+            correlationId: $this->correlationId($request),
+            ipAddress: $request->ip(),
+            properties: [
+                'customer_user_id' => (int) $user->getKey(),
+                'screening_status' => (string) $verification->screening_status,
+                'review_status' => (string) $verification->review_status,
+                'decision' => $decision,
+                'rejection_reason' => $rejectionReason,
+            ],
+        );
+    }
+
+    public function identityVerificationInspected(
+        Request $request,
+        SuperAdmin $actor,
+        IdentityVerification $verification,
+        User $user,
+    ): void {
+        $this->write(
+            event: 'identity_verification_inspected',
+            actor: $actor,
+            subject: $verification,
+            source: 'http',
+            correlationId: $this->correlationId($request),
+            ipAddress: $request->ip(),
+            properties: [
+                'customer_user_id' => (int) $user->getKey(),
+                'screening_status' => (string) $verification->screening_status,
+                'review_status' => (string) $verification->review_status,
             ],
         );
     }

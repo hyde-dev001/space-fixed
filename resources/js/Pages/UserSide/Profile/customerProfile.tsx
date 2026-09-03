@@ -4,6 +4,7 @@ import Navigation from '../Shared/Navigation';
 import Swal from '../Shared/UserModal';
 import { useBadgeCounts } from '../../../hooks/useBadgeCounts';
 import { CustomerFooterReveal } from '../../../components/common/CustomerFooter';
+import IdentityVerificationPanel, { type CustomerIdentityVerification } from './IdentityVerificationPanel';
 
 type ProfileData = {
 	firstName: string;
@@ -31,6 +32,7 @@ type PageProps = {
 	errors?: Record<string, string>;
 	orderStatusCount?: number;
 	repairStatusCount?: number;
+	identity_verification: CustomerIdentityVerification | null;
 };
 
 const CustomerProfile: React.FC = () => {
@@ -41,6 +43,7 @@ const CustomerProfile: React.FC = () => {
 		errors,
 		orderStatusCount = 0,
 		repairStatusCount = 0,
+		identity_verification,
 	} = page.props;
 	const [profileData, setProfileData] = useState<ProfileData>({
 		firstName: user.first_name || '',
@@ -503,6 +506,12 @@ const CustomerProfile: React.FC = () => {
 						)}
 					</div>
 
+					<IdentityVerificationPanel
+						identityVerification={identity_verification}
+						firstName={profileData.firstName}
+						lastName={profileData.lastName}
+					/>
+
 					<div className="rounded-[28px] border border-gray-200 bg-white px-4 py-4 shadow-sm">
 					<h2 className="mb-4 text-[1.02rem] font-semibold text-gray-900">Change Password</h2>
 					<form onSubmit={handlePasswordSubmit} className="space-y-3">
@@ -593,6 +602,14 @@ const CustomerProfile: React.FC = () => {
 								)}
 							</div>
 						</div>
+					</div>
+
+					<div className="mt-8">
+						<IdentityVerificationPanel
+							identityVerification={identity_verification}
+							firstName={profileData.firstName}
+							lastName={profileData.lastName}
+						/>
 					</div>
 
 					<div className="mt-8 rounded-2xl border border-gray-200 bg-white px-6 py-6 lg:px-8">
