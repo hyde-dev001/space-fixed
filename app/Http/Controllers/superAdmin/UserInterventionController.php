@@ -167,6 +167,32 @@ final class UserInterventionController extends Controller
             'archived' => (clone $baseQuery)->whereNotNull('deleted_at')->count(),
         ];
 
+        $now = Carbon::now();
+        $currentStart = $now->copy()->subDays(30);
+        $previousStart = $now->copy()->subDays(60);
+        $changeFor = static function (Builder $query, string $dateColumn) use ($now, $currentStart, $previousStart): int {
+            $current = (clone $query)
+                ->where($dateColumn, '>=', $currentStart)
+                ->where($dateColumn, '<', $now)
+                ->count();
+            $previous = (clone $query)
+                ->where($dateColumn, '>=', $previousStart)
+                ->where($dateColumn, '<', $currentStart)
+                ->count();
+
+            if ($previous === 0) {
+                return $current > 0 ? 100 : 0;
+            }
+
+            return (int) round((($current - $previous) / $previous) * 100);
+        };
+        $stats['changes'] = [
+            'total' => $changeFor($baseQuery, 'created_at'),
+            'pending' => $changeFor((clone $baseQuery)->where('status', 'pending')->whereNull('deleted_at'), 'created_at'),
+            'active' => $changeFor((clone $baseQuery)->whereIn('status', ['active', 'approved'])->whereNull('deleted_at'), 'created_at'),
+            'archived' => $changeFor((clone $baseQuery)->whereNotNull('deleted_at'), 'deleted_at'),
+        ];
+
         return Inertia::render('superAdmin/Users/SuperAdminUserManagement', [
             'users' => $users,
             'stats' => $stats,

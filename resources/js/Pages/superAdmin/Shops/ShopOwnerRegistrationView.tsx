@@ -168,11 +168,14 @@ interface RegistrationPage {
   to: number | null;
 }
 
+type RegistrationMetricKey = 'total' | 'pending' | 'approved' | 'rejected';
+
 interface RegistrationStats {
   total: number;
   pending: number;
   approved: number;
   rejected: number;
+  changes?: Partial<Record<RegistrationMetricKey, number>>;
 }
 
 interface RegistrationPageProps {
@@ -213,7 +216,7 @@ interface MetricData {
   title: string;
   value: number;
   change: number;
-  changeType: 'increase' | 'decrease';
+  changeType: 'increase' | 'decrease' | 'neutral';
   icon: React.ComponentType<{ className?: string }>;
   color: 'success' | 'error' | 'warning' | 'info';
   description: string;
@@ -253,9 +256,15 @@ const MetricCard: React.FC<MetricData> = ({
           <div className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${
             changeType === 'increase'
               ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-              : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-          }`}>
-            {changeType === 'increase' ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" />}
+              : changeType === 'decrease'
+                ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+          }`} title="Compared with previous 30 days">
+            {changeType === 'increase'
+              ? <ArrowUpIcon className="size-3" />
+              : changeType === 'decrease'
+                ? <ArrowDownIcon className="size-3" />
+                : <span aria-hidden="true">-</span>}
             {Math.abs(change)}%
           </div>
         </div>
@@ -275,6 +284,10 @@ const MetricCard: React.FC<MetricData> = ({
     </div>
   );
 };
+
+const registrationMetricChangeType = (change: number): MetricData['changeType'] => (
+  change > 0 ? 'increase' : change < 0 ? 'decrease' : 'neutral'
+);
 
 export default function ShopOwnerRegistrationView({
   registrations = [],
@@ -615,8 +628,8 @@ export default function ShopOwnerRegistrationView({
             <MetricCard
               title="Total Applications"
               value={stats?.total ?? registrationsState.length}
-              change={12}
-              changeType="increase"
+              change={stats?.changes?.total ?? 0}
+              changeType={registrationMetricChangeType(stats?.changes?.total ?? 0)}
               icon={UserIcon}
               color="info"
               description="Total shop owner applications"
@@ -624,8 +637,8 @@ export default function ShopOwnerRegistrationView({
             <MetricCard
               title="Pending Reviews"
               value={stats?.pending ?? registrationsState.filter(r => r.status === 'pending').length}
-              change={5}
-              changeType="decrease"
+              change={stats?.changes?.pending ?? 0}
+              changeType={registrationMetricChangeType(stats?.changes?.pending ?? 0)}
               icon={TimeIcon}
               color="warning"
               description="Awaiting approval"
@@ -633,8 +646,8 @@ export default function ShopOwnerRegistrationView({
             <MetricCard
               title="Approved"
               value={stats?.approved ?? registrationsState.filter(r => r.status === 'approved').length}
-              change={8}
-              changeType="increase"
+              change={stats?.changes?.approved ?? 0}
+              changeType={registrationMetricChangeType(stats?.changes?.approved ?? 0)}
               icon={CheckCircleIcon}
               color="success"
               description="Successfully approved"
@@ -642,8 +655,8 @@ export default function ShopOwnerRegistrationView({
             <MetricCard
               title="Rejected"
               value={stats?.rejected ?? registrationsState.filter(r => r.status === 'rejected').length}
-              change={2}
-              changeType="increase"
+              change={stats?.changes?.rejected ?? 0}
+              changeType={registrationMetricChangeType(stats?.changes?.rejected ?? 0)}
               icon={AlertIcon}
               color="error"
               description="Application rejected"

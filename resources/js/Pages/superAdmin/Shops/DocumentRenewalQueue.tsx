@@ -18,6 +18,8 @@ export type DocumentSummary = {
   issued_on: string | null;
   expiration_mode: string | null;
   expires_on: string | null;
+  reviewed_at?: string | null;
+  rejection_reason?: string | null;
   validity: ComplianceValidity;
   url: string;
 };
@@ -34,6 +36,21 @@ export type DocumentRenewal = DocumentSummary & {
   predecessor: DocumentSummary | null;
 };
 
+type RenewalStatus = 'all' | 'pending' | 'approved' | 'rejected';
+
+type RenewalStats = {
+  total: number;
+  pending: number;
+  approved: number;
+  rejected: number;
+};
+
+type RenewalFilters = {
+  document_id?: number | null;
+  search?: string | null;
+  status?: RenewalStatus | null;
+};
+
 type QueuePagination = {
   current_page: number;
   per_page: number;
@@ -44,6 +61,8 @@ type QueuePagination = {
 type DocumentRenewalQueueProps = {
   renewals: DocumentRenewal[];
   pagination: QueuePagination;
+  stats?: RenewalStats;
+  filters?: RenewalFilters;
 };
 
 export const canReviewRenewal = (renewal: DocumentRenewal): boolean => (
@@ -78,14 +97,58 @@ const errorMessage = (errors: Record<string, string | string[]>): string => {
   return first ?? 'The server did not apply the review. Please try again.';
 };
 
-const DocumentRenewalQueue: React.FC<DocumentRenewalQueueProps> = ({ renewals, pagination }) => {
+const DocumentRenewalQueue: React.FC<DocumentRenewalQueueProps> = ({
+  renewals,
+  pagination,
+  stats = { total: 0, pending: 0, approved: 0, rejected: 0 },
+  filters = {},
+}) => {
+  const [searchTerm, setSearchTerm] = useState(filters.search ?? '');
+  const [filterStatus, setFilterStatus] = useState<RenewalStatus>(filters.status ?? 'pending');
   const [processingId, setProcessingId] = useState<number | null>(null);
   const [rejectingId, setRejectingId] = useState<number | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
   const [error, setError] = useState<string | null>(null);
 
+  const queueParams = (page: number): Record<string, string | number> => {
+    const params: Record<string, string | number> = {
+      page,
+      per_page: pagination.per_page,
+      status: filterStatus,
+    };
+    const search = searchTerm.trim();
+
+    if (search) params.search = search;
+    if (filters.document_id) params.document_id = filters.document_id;
+
+    return params;
+  };
+
+  const applyFilters = () => {
+    router.get('/admin/document-renewals', queueParams(1), {
+      preserveState: true,
+      preserveScroll: true,
+      replace: true,
+    });
+  };
+
+  const resetFilters = () => {
+    setSearchTerm('');
+    setFilterStatus('pending');
+    router.get('/admin/document-renewals', {
+      page: 1,
+      per_page: pagination.per_page,
+      status: 'pending',
+      ...(filters.document_id ? { document_id: filters.document_id } : {}),
+    }, {
+      preserveState: true,
+      preserveScroll: true,
+      replace: true,
+    });
+  };
+
   const reloadQueue = () => {
-    router.reload({ only: ['renewals', 'pagination'], preserveScroll: true });
+    router.reload({ only: ['renewals', 'pagination', 'stats', 'filters'], preserveScroll: true });
   };
 
   const approve = (renewal: DocumentRenewal) => {
@@ -132,12 +195,26 @@ const DocumentRenewalQueue: React.FC<DocumentRenewalQueueProps> = ({ renewals, p
   };
 
   const goToPage = (page: number) => {
-    router.get('/admin/document-renewals', { page, per_page: pagination.per_page }, {
+    router.get('/admin/document-renewals', queueParams(page), {
       preserveState: true,
       preserveScroll: true,
       replace: true,
     });
   };
+
+  const statusHeading: Record<RenewalStatus, string> = {
+    all: 'All renewal submissions',
+    pending: 'Pending renewals',
+    approved: 'Approved renewals',
+    rejected: 'Rejected renewals',
+  };
+  const statusBadge: Record<string, string> = {
+    pending: 'bg-amber-100 text-amber-800',
+    approved: 'bg-emerald-100 text-emerald-800',
+    rejected: 'bg-red-100 text-red-800',
+  };
+  const start = pagination.total === 0 ? 0 : (pagination.current_page - 1) * pagination.per_page + 1;
+  const end = Math.min(pagination.current_page * pagination.per_page, pagination.total);
 
   return (
     <AppLayout>
@@ -145,13 +222,72 @@ const DocumentRenewalQueue: React.FC<DocumentRenewalQueueProps> = ({ renewals, p
       <div className="space-y-6">
         <div>
           <p className="text-sm font-medium text-slate-500">Account Management</p>
-          <h1 className="mt-1 text-2xl font-semibold text-slate-900 dark:text-white">Document renewals</h1>
+          <h1 className="mt-1 text-3xl font-semibold text-slate-950 dark:text-white">Document renewals</h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-300">
-            Review pending business-document versions while keeping the current approved evidence unchanged until a decision is committed.
+            Review business-document renewals without changing the current approved evidence until a decision is committed.
           </p>
         </div>
 
         {error ? <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-800" role="alert">{error}</p> : null}
+
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {[
+            ['Total renewals', stats.total, 'All submitted renewals'],
+            ['Pending reviews', stats.pending, 'Awaiting admin decision'],
+            ['Approved', stats.approved, 'Successfully approved'],
+            ['Rejected renewals', stats.rejected, 'Available for correction'],
+          ].map(([label, value, description]) => (
+            <div key={label} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
+              <p className="mt-3 text-3xl font-semibold text-slate-950 dark:text-white">{value}</p>
+              <p className="mt-2 text-sm text-slate-500">{description}</p>
+            </div>
+          ))}
+        </div>
+
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            applyFilters();
+          }}
+          className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+        >
+          <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px_auto_auto] md:items-end">
+            <div>
+              <label htmlFor="renewal-search" className="text-xs font-semibold uppercase tracking-wide text-slate-500">Search renewals</label>
+              <input
+                id="renewal-search"
+                aria-label="Search renewals"
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+                placeholder="Business name, owner, email, or document"
+                className="mt-2 w-full rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+              />
+            </div>
+            <div>
+              <label htmlFor="renewal-status" className="text-xs font-semibold uppercase tracking-wide text-slate-500">Filter by Status</label>
+              <select
+                id="renewal-status"
+                aria-label="Filter by Status"
+                value={filterStatus}
+                onChange={(event) => setFilterStatus(event.target.value as RenewalStatus)}
+                className="mt-2 w-full rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+              >
+                <option value="all">All statuses</option>
+                <option value="pending">Pending</option>
+                <option value="approved">Approved</option>
+                <option value="rejected">Rejected</option>
+              </select>
+            </div>
+            <button type="submit" className="rounded-xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800">Apply filters</button>
+            <button type="button" onClick={resetFilters} className="rounded-xl border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Reset filters</button>
+          </div>
+        </form>
+
+        <div>
+          <h2 className="text-xl font-semibold text-slate-950 dark:text-white">{statusHeading[filterStatus]}</h2>
+          <p className="mt-1 text-sm text-slate-500">Showing {start}-{end} of {pagination.total} renewal submissions</p>
+        </div>
 
         <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <div className="overflow-x-auto">
@@ -160,13 +296,14 @@ const DocumentRenewalQueue: React.FC<DocumentRenewalQueueProps> = ({ renewals, p
                 <tr>
                   <th className="px-4 py-3">Shop owner</th>
                   <th className="px-4 py-3">Renewal</th>
-                  <th className="px-4 py-3">Current evidence</th>
+                  <th className="px-4 py-3">Previous evidence</th>
+                  <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
                 {renewals.length === 0 ? (
-                  <tr><td colSpan={4} className="px-4 py-10 text-center text-slate-500">No pending document renewals.</td></tr>
+                  <tr><td colSpan={5} className="px-4 py-12 text-center text-slate-500">No {filterStatus === 'all' ? '' : filterStatus} renewals found.</td></tr>
                 ) : renewals.map((renewal) => (
                   <tr key={renewal.id} className="align-top">
                     <td className="px-4 py-4">
@@ -177,41 +314,41 @@ const DocumentRenewalQueue: React.FC<DocumentRenewalQueueProps> = ({ renewals, p
                     </td>
                     <td className="px-4 py-4">
                       <a href={renewal.url} className="font-semibold text-slate-900 underline underline-offset-2 dark:text-white">
-                        {formatType(renewal.logical_slot)} v{renewal.version_number ?? '—'}
+                        {formatType(renewal.logical_slot)} v{renewal.version_number ?? '-'}
                       </a>
                       <p className="mt-2 text-xs text-slate-500">Type: {formatType(renewal.document_type)}</p>
-                      <p className="mt-1 text-xs text-slate-500">Issued: {formatDate(renewal.issued_on)} · Expires: {formatDate(renewal.expires_on)}</p>
+                      <p className="mt-1 text-xs text-slate-500">Issued: {formatDate(renewal.issued_on)} - Expires: {formatDate(renewal.expires_on)}</p>
                     </td>
                     <td className="px-4 py-4">
                       {renewal.predecessor ? (
                         <a href={renewal.predecessor.url} className="font-medium text-slate-700 underline underline-offset-2 dark:text-slate-200">
-                          {formatType(renewal.predecessor.document_type)} v{renewal.predecessor.version_number ?? '—'}
+                          {formatType(renewal.predecessor.document_type)} v{renewal.predecessor.version_number ?? '-'}
                         </a>
                       ) : <span className="text-slate-500">Unavailable</span>}
                       <p className="mt-1 text-xs text-slate-500">Status: {formatType(renewal.predecessor?.status ?? 'unavailable')}</p>
                     </td>
                     <td className="px-4 py-4">
+                      <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${statusBadge[renewal.status] ?? 'bg-slate-100 text-slate-700'}`}>{renewal.status}</span>
+                      {renewal.status === 'approved' ? <p className="mt-2 text-xs text-emerald-700">Reviewed {formatDate(renewal.reviewed_at ?? null)}</p> : null}
+                      {renewal.status === 'rejected' ? <p className="mt-2 max-w-xs text-xs text-red-700">Reason: {renewal.rejection_reason || 'No reason supplied.'}</p> : null}
+                    </td>
+                    <td className="px-4 py-4">
                       {rejectingId === renewal.id ? (
                         <div className="space-y-2">
                           <label className="sr-only" htmlFor={`rejection-reason-${renewal.id}`}>Rejection reason</label>
-                          <textarea
-                            id={`rejection-reason-${renewal.id}`}
-                            value={rejectionReason}
-                            onChange={(event) => setRejectionReason(event.target.value)}
-                            maxLength={500}
-                            placeholder="Explain what must be corrected"
-                            className="min-h-20 w-56 rounded-lg border border-slate-300 p-2 text-xs dark:border-slate-700 dark:bg-slate-800"
-                          />
+                          <textarea id={`rejection-reason-${renewal.id}`} value={rejectionReason} onChange={(event) => setRejectionReason(event.target.value)} maxLength={500} placeholder="Explain what must be corrected" className="min-h-20 w-56 rounded-lg border border-slate-300 p-2 text-xs dark:border-slate-700 dark:bg-slate-800" />
                           <div className="flex justify-end gap-2">
                             <button type="button" onClick={() => setRejectingId(null)} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold dark:border-slate-700">Cancel</button>
                             <button type="button" onClick={() => reject(renewal)} disabled={processingId !== null} className="rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">Reject</button>
                           </div>
                         </div>
-                      ) : (
+                      ) : canReviewRenewal(renewal) ? (
                         <div className="flex justify-end gap-2">
-                          <button type="button" onClick={() => approve(renewal)} disabled={!canReviewRenewal(renewal) || processingId !== null} className="rounded-lg bg-green-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">Approve</button>
-                          <button type="button" onClick={() => openReject(renewal)} disabled={!canReviewRenewal(renewal) || processingId !== null} className="rounded-lg border border-red-300 px-3 py-2 text-xs font-semibold text-red-700 disabled:opacity-50">Reject</button>
+                          <button type="button" onClick={() => approve(renewal)} disabled={processingId !== null} className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">Approve</button>
+                          <button type="button" onClick={() => openReject(renewal)} disabled={processingId !== null} className="rounded-lg border border-red-300 px-3 py-2 text-xs font-semibold text-red-700 disabled:opacity-50">Reject</button>
                         </div>
+                      ) : (
+                        <a href={renewal.url} className="inline-flex rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:text-slate-200">View record</a>
                       )}
                     </td>
                   </tr>
