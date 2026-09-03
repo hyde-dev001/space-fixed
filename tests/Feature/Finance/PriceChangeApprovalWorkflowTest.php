@@ -250,6 +250,7 @@ class PriceChangeApprovalWorkflowTest extends TestCase
             ->first();
 
         $this->assertNotNull($ownerProxy);
+        $this->assertSame('STAFF', $ownerProxy->role);
         $this->assertDatabaseHas('approvals', [
             'id' => $priceChange->approval_id,
             'shop_owner_id' => $ownerProxy->id,
