@@ -276,6 +276,9 @@ class CheckoutPromoPricingTest extends TestCase
         $shopOwner = $this->createRetailShopOwner();
         /** @var User $customer */
         $customer = User::factory()->createOne();
+        $customer->forceFill([
+            'identity_verification_status' => User::IDENTITY_APPROVED,
+        ])->save();
 
         $product = Product::create([
             'shop_owner_id' => $shopOwner->id,
@@ -435,6 +438,9 @@ class CheckoutPromoPricingTest extends TestCase
         $shopOwner = $this->createLogisticsShopOwner();
         /** @var User $customer */
         $customer = User::factory()->createOne();
+        $customer->forceFill([
+            'identity_verification_status' => User::IDENTITY_APPROVED,
+        ])->save();
         $address = $this->createCustomerAddress($customer);
 
         $product = Product::create([
