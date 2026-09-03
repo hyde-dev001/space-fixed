@@ -23,6 +23,15 @@ describe('Products page layout', () => {
     expect(productsSource).toContain('ref={revealRootRef}');
     expect(productsSource.match(/data-scroll-reveal/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
     expect(productsSource).toContain('data-scroll-reveal className="scroll-reveal h-full"');
-    expect(productsSource).toContain('className="group block h-full');
+    expect(productsSource).toContain('className="group flex h-full');
+  });
+
+  it('adds a sibling Quick View trigger and keeps the existing catalog link path', () => {
+    expect(productsSource).toContain("import ProductQuickView from '../../../components/products/ProductQuickView';");
+    expect(productsSource).toContain('const [quickViewProduct, setQuickViewProduct] = useState<Product | null>(null);');
+    expect(productsSource).toContain('quickViewTriggerRef.current = event.currentTarget;');
+    expect(productsSource).toContain('aria-label={`Quick view ${p.name}`}');
+    expect(productsSource).toContain('<ProductQuickView');
+    expect(productsSource).toContain('className="group flex h-full');
   });
 });
