@@ -27,21 +27,21 @@
 
 ### Task 1: Add the regression contract
 
-- [ ] Extend both existing layout tests with assertions for the sort-header `relative z-30` wrapper and dropdown `z-40` panel.
-- [ ] Run the focused tests and confirm the new assertions fail before the production change.
+- [x] Extend both existing layout tests with assertions for the sort-header `relative z-30` wrapper and dropdown `z-40` panel.
+- [x] Run the focused tests and confirm the new assertions fail before the production change.
 
 ### Task 2: Apply the minimal UI fix
 
-- [ ] Add `relative z-30` to the existing scroll-reveal sort-header wrapper in Products and Repair Services.
-- [ ] Change only the dropdown panel z-index from `z-20` to `z-40` in both pages.
-- [ ] Re-run the focused tests and confirm they pass.
+- [x] Add `relative z-30` to the existing scroll-reveal sort-header wrapper in Products and Repair Services.
+- [x] Change only the dropdown panel z-index from `z-20` to `z-40` in both pages.
+- [x] Re-run the focused tests and confirm they pass.
 
 ### Task 3: Verify and review
 
-- [ ] Run the full Vitest suite.
-- [ ] Run a Vite production build into a temporary output directory and remove only that generated directory afterward.
-- [ ] Run `git diff --check` and inspect the final diff for scope, reuse, dead code, and unchanged sort behavior.
-- [ ] If local data is available, verify both dropdowns in the browser; otherwise record that limitation.
+- [x] Run the full Vitest suite.
+- [x] Run a Vite production build into a temporary output directory and remove only that generated directory afterward.
+- [x] Run `git diff --check` and inspect the final diff for scope, reuse, dead code, and unchanged sort behavior.
+- [x] Attempt browser verification; local routes returned a blank Laravel shell, so rendered dropdown verification was unavailable.
 
 ## Acceptance Criteria
 
@@ -49,3 +49,11 @@
 - Opening `Sort by:` on `/repair-services` keeps the menu visually above the shop cards.
 - Existing sorting options and interaction behavior remain unchanged.
 - Focused tests, full tests, build, and diff hygiene provide fresh verification evidence.
+
+## Verification Record
+
+- Focused layout tests: 2 files, 6 tests passed.
+- Full Vitest suite: 173 files, 951 tests passed.
+- Vite production build: 3735 modules transformed; passed.
+- Diff hygiene: `git diff --check HEAD~2..HEAD` passed.
+- Browser probe: both routes returned HTTP 200 without page/console/request errors, but rendered an empty local Laravel shell and exposed no sort button.
