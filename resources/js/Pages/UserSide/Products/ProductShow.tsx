@@ -7,6 +7,8 @@ import AddToCartButton from '../../../components/CartActions';
 import Virtual3DShowroom from '../../../components/Virtual3DShowroom';
 import { CartGuestAddAttemptEvent, addCartGuestAddAttemptListener, removeCartGuestAddAttemptListener } from '../../../types/cart-events';
 import { useCart } from '../../../contexts/CartContext';
+import ProductRail from './ProductRail';
+import { registerRecentlyViewed, type ProductRailItem } from './productHistory';
 
 type ColorVariantImage = {
   id: number;
@@ -41,8 +43,11 @@ type ProductVoucherCampaign = {
   schedule: string;
 };
 
+type DesktopDisclosureId = 'details' | 'returns' | 'shipping';
+
 const ProductShow: React.FC = () => {
-  const { product, auth, cartIconCount: cartCountProp } = usePage().props as any;
+  const { product, auth, cartIconCount: cartCountProp, relatedProducts: relatedProductProps } = usePage().props as any;
+  const relatedProducts: ProductRailItem[] = Array.isArray(relatedProductProps) ? relatedProductProps : [];
   const { cartCount, isLoading: cartLoading } = useCart();
   const cartBadgeCount = Number(cartCountProp ?? (cartLoading ? 0 : cartCount) ?? 0);
   const [mobileSearchQuery, setMobileSearchQuery] = useState('');
@@ -405,6 +410,56 @@ const ProductShow: React.FC = () => {
   });
 
   const [show3DShowroom, setShow3DShowroom] = useState(false);
+  const [recentlyViewed, setRecentlyViewed] = useState<ProductRailItem[]>([]);
+  const [openDesktopDisclosure, setOpenDesktopDisclosure] = useState<DesktopDisclosureId | null>('details');
+
+  const desktopDisclosures: Array<{
+    id: DesktopDisclosureId;
+    label: string;
+    content: React.ReactNode;
+  }> = [
+    {
+      id: 'details',
+      label: 'Product Details',
+      content: (
+        <div className="space-y-3">
+          <p>{product.description || 'Product information is provided by the seller.'}</p>
+          {product.category && <p>Category: {formatCategoryText(product.category)}</p>}
+        </div>
+      ),
+    },
+    {
+      id: 'returns',
+      label: 'Returns Policy',
+      content: (
+        <p>Return eligibility depends on the order status and the seller's return terms. Review your order details before requesting a return.</p>
+      ),
+    },
+    {
+      id: 'shipping',
+      label: 'Shipping',
+      content: <p>Available delivery options, timing, and shipping costs are confirmed during checkout.</p>,
+    },
+  ];
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const currentProduct: ProductRailItem = {
+      id: Number(product.id),
+      name: String(product.name || 'Product'),
+      url: window.location.pathname,
+      image: typeof product.primary === 'string' ? product.primary : null,
+      price: String(product.price || ''),
+      compare_at_price: typeof product.compare_at_price === 'string' ? product.compare_at_price : null,
+      brand: typeof product.brand === 'string' ? product.brand : null,
+      category: typeof product.category === 'string' ? product.category : null,
+    };
+
+    setRecentlyViewed(registerRecentlyViewed(window.localStorage, currentProduct));
+  }, [product.id]);
 
   useEffect(() => {
     const claimed = Array.isArray(product?.promo_context?.claimed_campaign_ids)
@@ -1263,8 +1318,11 @@ const ProductShow: React.FC = () => {
           </div>
         </div>
 
-        <div className="max-w-[1280px] mx-auto px-0 xl:px-12 pt-14 xl:pt-24 pb-28 xl:pb-20">
-          <div className="flex flex-col xl:grid xl:grid-cols-[minmax(0,1fr)_420px] gap-0 xl:gap-10">
+        <div className="max-w-[1280px] mx-auto px-0 xl:max-w-[1440px] xl:px-10 pt-14 xl:pt-16 pb-28 xl:pb-24">
+          <div
+            data-testid="desktop-product-hero"
+            className="flex flex-col xl:grid xl:grid-cols-[minmax(0,1.55fr)_minmax(390px,0.85fr)] gap-0 xl:gap-16"
+          >
             <div className="flex-1">
               <div className="bg-white">
                 <div
@@ -1294,7 +1352,7 @@ const ProductShow: React.FC = () => {
                   )}
 
                   <div
-                    className={`relative bg-gray-100 aspect-square flex items-center justify-center group overflow-hidden xl:rounded-md ${
+                    className={`relative bg-gray-100 aspect-square flex items-center justify-center group overflow-hidden xl:min-h-[720px] xl:aspect-auto xl:rounded-none xl:bg-[#f5f5f5] ${
                       images.length === 1 ? 'xl:max-w-[720px] xl:mx-auto w-full' : ''
                     }`}
                   >
@@ -1416,8 +1474,8 @@ const ProductShow: React.FC = () => {
               </div>
             </div>
 
-            <div className="w-full xl:w-[420px] px-4 sm:px-6 xl:px-0 pt-4 xl:pt-0">
-              <h1 className="mt-0 mb-1 text-[1.85rem] font-medium leading-[1.15] text-black sm:text-[2rem] xl:text-[2.1rem]">{product.name}</h1>
+            <div className="w-full xl:w-full px-4 sm:px-6 xl:px-0 pt-4 xl:pt-0 xl:sticky xl:top-28 xl:self-start">
+              <h1 className="mt-0 mb-1 text-[1.85rem] font-medium leading-[1.15] text-black sm:text-[2rem] xl:text-xl xl:font-semibold xl:leading-tight">{product.name}</h1>
               
               {product.brand && product.brand.trim().toLowerCase() !== product.name.trim().toLowerCase() && (
                 <div className="mb-3 text-[1.05rem] text-gray-600">{product.brand}</div>
@@ -1426,10 +1484,11 @@ const ProductShow: React.FC = () => {
               <div className="mb-4">
                 <div className="flex items-center gap-2">
                   {product.compare_at_price && (
-                    <div className="text-base text-gray-400 line-through">{product.compare_at_price}</div>
+                    <div className="text-base text-gray-400 line-through xl:order-2">{product.compare_at_price}</div>
                   )}
-                  <div className="text-[2rem] font-medium leading-none text-black xl:text-[2.15rem]">{product.price}</div>
+                  <div className="text-[2rem] font-medium leading-none text-black xl:order-1 xl:text-2xl">{product.price}</div>
                 </div>
+                <p className="mt-1 hidden text-xs text-gray-500 xl:block">Taxes included. Shipping calculated at checkout.</p>
                 <div className="mt-1.5 text-sm text-gray-500">
                   {product.views_count || 0} views · {product.sales_count || 0} sold
                 </div>
@@ -1438,6 +1497,7 @@ const ProductShow: React.FC = () => {
               {/* Color Selection - Adidas Style */}
               {hasColorVariants ? (
                 <div className="mb-6">
+                  <div className="mb-3 hidden text-[15px] font-medium text-black xl:block">Color</div>
                   <div className="flex flex-wrap gap-2.5">
                     {product.colorVariants.map((colorVariant: ColorVariant) => {
                       const thumbnail = colorVariant.images.find(img => img.is_thumbnail) || colorVariant.images[0];
@@ -1482,6 +1542,7 @@ const ProductShow: React.FC = () => {
                 /* Legacy Color Selection */
                 ((product.colors_available && Array.isArray(product.colors_available) && product.colors_available.length > 0) || (product.colors && Array.isArray(product.colors) && product.colors.length > 0)) && (
                   <div className="mb-6">
+                    <div className="mb-3 hidden text-[15px] font-medium text-black xl:block">Color</div>
                     <div className="flex flex-wrap gap-2.5">
                       {(product.colors_available || product.colors).map((color: string) => {
                         const colorVariants = product.variants?.filter((v: any) => 
@@ -1726,7 +1787,7 @@ const ProductShow: React.FC = () => {
                     qty: qty,
                     selectedImage: selectedImage
                   }}
-                  className={`${buttonBaseClass} ${buttonDarkClass}`}
+                  className={`${buttonBaseClass} ${buttonDarkClass} xl:rounded-none xl:shadow-none`}
                   label="Add to Cart"
                   stockQuantity={mainPageVariantQuantity}
                   disabled={!selectedSize || !selectedColor}
@@ -1740,7 +1801,7 @@ const ProductShow: React.FC = () => {
                     qty: qty,
                     selectedImage: selectedImage
                   }}
-                  className={`${buttonBaseClass} ${buttonLightClass}`}
+                  className={`${buttonBaseClass} ${buttonLightClass} xl:rounded-none xl:shadow-none`}
                   label="Buy Now"
                   buyNow={true}
                   stockQuantity={mainPageVariantQuantity}
@@ -1751,6 +1812,55 @@ const ProductShow: React.FC = () => {
               <p className="mt-5 hidden text-center text-sm leading-relaxed text-gray-500 xl:block">
                 This product is excluded from site promotions and discounts.
               </p>
+
+              <div data-testid="desktop-product-disclosures" className="hidden xl:block">
+                {product.shop?.id && product.shop?.name && (
+                  <div className="mt-10 border-t border-black/15 py-7">
+                    <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-black/50">Sold by</div>
+                    <Link
+                      href={`/shop-profile/${product.shop.id}`}
+                      className="text-sm font-medium text-black underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2"
+                    >
+                      {product.shop.name}
+                    </Link>
+                  </div>
+                )}
+
+                <div className={product.shop?.id ? '' : 'mt-10'}>
+                  {desktopDisclosures.map((disclosure) => (
+                    <div key={disclosure.id} className="border-t border-black/15 last:border-b">
+                      <button
+                        type="button"
+                        onClick={() => setOpenDesktopDisclosure((current) => current === disclosure.id ? null : disclosure.id)}
+                        className="flex w-full items-center justify-between py-4 text-left text-[15px] font-semibold text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black"
+                        aria-expanded={openDesktopDisclosure === disclosure.id}
+                        aria-controls={`desktop-disclosure-${disclosure.id}`}
+                      >
+                        <span>{disclosure.label}</span>
+                        <svg
+                          className={`h-4 w-4 transition-transform motion-reduce:transition-none ${
+                            openDesktopDisclosure === disclosure.id ? 'rotate-180' : ''
+                          }`}
+                          viewBox="0 0 20 20"
+                          fill="none"
+                          stroke="currentColor"
+                          aria-hidden="true"
+                        >
+                          <path d="m5 7.5 5 5 5-5" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </button>
+                      {openDesktopDisclosure === disclosure.id && (
+                        <div
+                          id={`desktop-disclosure-${disclosure.id}`}
+                          className="pb-5 pr-8 text-sm leading-6 text-black/65"
+                        >
+                          {disclosure.content}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
 
               {/* Mobile/Tablet sticky bottom CTA bar - Shopee style */}
               <div className="fixed bottom-0 left-0 right-0 z-40 flex items-stretch border-t border-gray-200 bg-white shadow-[0_-4px_20px_-4px_rgba(0,0,0,0.12)] xl:hidden">
@@ -2089,7 +2199,7 @@ const ProductShow: React.FC = () => {
                 </div>
               )}
 
-              <div className="mt-10 border-t border-gray-200 pt-7">
+              <div className="mt-10 border-t border-gray-200 pt-7 xl:hidden">
                 {product.shop?.id && product.shop?.name && (
                   <div className="mb-6">
                     <div className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Sold by</div>
@@ -2511,6 +2621,14 @@ const ProductShow: React.FC = () => {
               </div>
 
             </div>
+          </div>
+
+          <div
+            data-testid="desktop-product-rails"
+            className="mt-20 hidden space-y-20 px-4 sm:px-6 xl:block xl:px-0"
+          >
+            <ProductRail title="You May Also Like" items={relatedProducts} />
+            <ProductRail title="Recently Viewed Items" items={recentlyViewed} />
           </div>
         </div>
       </div>

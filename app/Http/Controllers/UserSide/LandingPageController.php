@@ -383,7 +383,12 @@ class LandingPageController extends Controller
             ->first();
 
         // Get all product images with full URLs using accessor
-        $images = $product->image_urls;
+        $images = collect($product->image_urls)
+            ->map(fn ($image) => is_array($image) ? ($image['url'] ?? null) : $image)
+            ->filter(fn ($image) => is_string($image) && $image !== '')
+            ->unique()
+            ->values()
+            ->all();
 
         $showroom360Frames = collect($product->colorVariants ?? [])
             ->flatMap(function ($variant) {
@@ -460,6 +465,47 @@ class LandingPageController extends Controller
             ->sum('quantity');
 
         $displaySalesCount = max((int) $product->sales_count, $computedSalesCount);
+
+        $relatedProducts = Product::query()
+            ->select([
+                'id',
+                'name',
+                'slug',
+                'price',
+                'compare_at_price',
+                'brand',
+                'category',
+                'main_image',
+                'created_at',
+            ])
+            ->with('media')
+            ->where('is_active', true)
+            ->whereKeyNot($product->getKey())
+            ->whereIn('shop_owner_id', ShopOwner::query()
+                ->where('status', 'approved')
+                ->select('id'))
+            ->when($product->category, fn ($query, $category) => $query
+                ->orderByRaw('CASE WHEN category = ? THEN 0 ELSE 1 END', [$category]))
+            ->when($product->brand, fn ($query, $brand) => $query
+                ->orderByRaw('CASE WHEN brand = ? THEN 0 ELSE 1 END', [$brand]))
+            ->latest()
+            ->latest('id')
+            ->limit(8)
+            ->get()
+            ->map(fn (Product $relatedProduct) => [
+                'id' => $relatedProduct->id,
+                'name' => $relatedProduct->name,
+                'url' => route('products.show', ['slug' => $relatedProduct->slug]),
+                'image' => $relatedProduct->main_image_url,
+                'price' => '₱' . number_format($relatedProduct->price, 0),
+                'compare_at_price' => $relatedProduct->compare_at_price
+                    ? '₱' . number_format($relatedProduct->compare_at_price, 0)
+                    : null,
+                'brand' => $relatedProduct->brand,
+                'category' => $relatedProduct->category,
+            ])
+            ->values()
+            ->all();
 
         $promoTablesReady = Schema::hasTable('promo_campaigns')
             && Schema::hasTable('promo_campaign_products')
@@ -646,6 +692,7 @@ class LandingPageController extends Controller
                     'claimed_campaign_ids' => $claimedCampaignIds,
                 ],
             ],
+            'relatedProducts' => $relatedProducts,
         ]);
     }
 
