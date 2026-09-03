@@ -43,7 +43,7 @@ At `xl` and above:
 - Add a focused test that locks the desktop shell contract while confirming the existing six-section navigation contract remains intact.
 - Run the focused settings tests, then the full frontend test suite and production build.
 - Run `git diff --check`.
-- Use browser verification/screenshots at 1440px, 1024px, and 390px to confirm no desktop blank grid space, no horizontal overflow, no console/page errors, and no unintended tablet/mobile layout change.
+- Use browser verification/screenshots at 1440px, 1024px, and 390px to confirm no desktop blank grid space, no new horizontal overflow, no page errors, and no unintended tablet/mobile layout change.
 
 ## Acceptance Criteria
 

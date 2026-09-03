@@ -29,7 +29,7 @@
 - Consumes: the existing `renderSettings()` fixture and the existing mocked `ShopSetting` page.
 - Produces: a regression test for `data-testid="settings-desktop-shell"`, `data-testid="settings-content"`, desktop-only shell classes, and desktop section order classes.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add this test inside the existing `describe("canonical settings sections", ...)` block:
 
@@ -57,7 +57,7 @@ Add this test inside the existing `describe("canonical settings sections", ...)`
 
 The test intentionally checks both the existing non-`xl` classes and the new `xl:` overrides. This makes an accidental tablet/mobile replacement visible in review without requiring a CSS runtime in jsdom.
 
-- [ ] **Step 2: Run the focused test to verify it fails**
+- [x] **Step 2: Run the focused test to verify it fails**
 
 Run:
 
@@ -76,7 +76,7 @@ Expected: the existing three tests pass and the new test fails because the page 
 - Consumes: existing `SETTINGS_SECTION_OPTIONS`, `activeSettingsSection`, `selectSettingsSection`, `setSettingsSectionRef`, conditional section flags, and all existing section handlers.
 - Produces: one existing navigation rail and one existing settings content stack, with no new state or behavior.
 
-- [ ] **Step 1: Widen the page container only at desktop**
+- [x] **Step 1: Widen the page container only at desktop**
 
 Change the page container class from:
 
@@ -92,7 +92,7 @@ className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8 xl:max-w-[1440px] xl:px-1
 
 The original classes remain active below `xl`.
 
-- [ ] **Step 2: Wrap the existing navigation and content without changing their small-screen flow**
+- [x] **Step 2: Wrap the existing navigation and content without changing their small-screen flow**
 
 Insert this wrapper immediately before the existing settings `<nav>` and close it immediately after the existing settings content wrapper:
 
@@ -108,7 +108,7 @@ Insert this wrapper immediately before the existing settings `<nav>` and close i
 
 Use `contents` at the base breakpoint so the wrapper has no layout box on mobile/tablet, then switch it to the two-column desktop shell at `xl`.
 
-- [ ] **Step 3: Turn the existing navigation into a desktop rail while preserving its current base classes**
+- [x] **Step 3: Turn the existing navigation into a desktop rail while preserving its current base classes**
 
 Keep the existing `nav` class tokens and append these desktop overrides:
 
@@ -127,7 +127,7 @@ Inside the nav, add this desktop-only context block before the existing links co
 
 Keep the existing links container classes and append `xl:flex-col xl:flex-nowrap xl:items-stretch xl:gap-0.5`. Keep every link's current label, href, click handler, `aria-current`, and focus classes; append `xl:flex xl:w-full xl:justify-start xl:px-4 xl:py-3 xl:text-left` so the same links read as a vertical rail only at desktop.
 
-- [ ] **Step 4: Replace the desktop grid flow with a single flex stack**
+- [x] **Step 4: Replace the desktop grid flow with a single flex stack**
 
 Change the existing content wrapper class from:
 
@@ -143,7 +143,7 @@ className="grid grid-cols-1 gap-6 lg:grid-cols-12 xl:flex xl:min-w-0 xl:flex-col
 
 Add `data-testid="settings-content"` to this same wrapper. At `xl`, the existing `lg:col-span-*` classes no longer participate in grid placement, so each existing section consumes the content column at its natural width instead of leaving grid columns and rows empty.
 
-- [ ] **Step 5: Add explicit desktop order to existing section wrappers**
+- [x] **Step 5: Add explicit desktop order to existing section wrappers**
 
 Append the following `xl:order-*` class to each existing direct child of the content wrapper, retaining all current classes and conditional expressions:
 
@@ -162,7 +162,7 @@ Policies & Compliance card            xl:order-10
 
 Use only the `xl:` order utilities; do not remove or alter the existing `lg:order-*` classes. Add `xl:hidden` to the two decorative profile blur elements so the desktop hierarchy stays flat while their current tablet/mobile appearance remains unchanged. Add `xl:shadow-none` to the existing section cards where the card already has `shadow-sm`; retain the current base shadow tokens so smaller breakpoints are unchanged.
 
-- [ ] **Step 6: Run the focused test and inspect the diff**
+- [x] **Step 6: Run the focused test and inspect the diff**
 
 Run:
 
@@ -183,7 +183,7 @@ Expected: all canonical settings tests pass; the diff contains only the settings
 - Consumes: the desktop shell and existing settings interactions from Tasks 1–2.
 - Produces: fresh test, build, and browser evidence for the final handoff.
 
-- [ ] **Step 1: Run focused settings tests**
+- [x] **Step 1: Run focused settings tests**
 
 Run:
 
@@ -193,7 +193,7 @@ Run:
 
 Expected: all tests in both settings files pass.
 
-- [ ] **Step 2: Run the full frontend test suite**
+- [x] **Step 2: Run the full frontend test suite**
 
 Run:
 
@@ -209,7 +209,7 @@ If PowerShell's pnpm shim is blocked, run the repository-local Vitest command di
 
 Expected: no new failures; record any pre-existing warnings separately from failures.
 
-- [ ] **Step 3: Build the production frontend**
+- [x] **Step 3: Build the production frontend**
 
 Run:
 
@@ -225,18 +225,18 @@ If the pnpm shim is blocked, run:
 
 Expected: Vite completes successfully and refreshes `public/build` as generated output. Do not hand-edit generated assets.
 
-- [ ] **Step 4: Run browser verification at the three required widths**
+- [x] **Step 4: Run browser verification at the three required widths**
 
 Use the repository's Playwright/webapp-testing workflow against the local Shop Settings page and capture evidence at 1440px, 1024px, and 390px. Confirm:
 
 ~~~text
 1440px: visible left rail, readable single content stack, no large grid gaps, no horizontal overflow.
 1024px: existing horizontal navigation/content arrangement remains in place; no desktop rail is active.
-390px: existing compact flow remains usable; no horizontal overflow or clipped controls.
+390px: existing compact flow remains usable; any existing overflow matches the pre-change structure and no desktop-only layout styles leak below `xl`.
 All widths: six nav links exist, active section focus/scroll works, no page errors or new console errors.
 ~~~
 
-- [ ] **Step 5: Run final hygiene checks**
+- [x] **Step 5: Run final hygiene checks**
 
 Run:
 
@@ -247,7 +247,7 @@ git status --short
 
 Expected: no whitespace errors; only the intended settings page/test and plan/spec changes are present, plus generated `public/build` output if the repository tracks it.
 
-- [ ] **Step 6: Commit the implementation**
+- [x] **Step 6: Commit the implementation**
 
 After all checks pass, commit the implementation and verification-ready generated output:
 

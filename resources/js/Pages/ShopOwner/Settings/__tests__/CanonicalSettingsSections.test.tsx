@@ -195,4 +195,24 @@ describe("canonical settings sections", () => {
     expect(screen.queryByRole("link", { name: /not-a-section/i })).not.toBeInTheDocument();
     expect(document.getElementById("settings-section-not-a-section")).toBeNull();
   });
+
+  it("exposes a desktop settings shell without replacing the base/tablet layout contract", () => {
+    renderSettings("profile");
+
+    const shell = screen.getByTestId("settings-desktop-shell");
+    const navigation = screen.getByRole("navigation", { name: "Settings sections" });
+    const content = screen.getByTestId("settings-content");
+
+    expect(shell).toHaveClass("contents", "xl:grid", "xl:grid-cols-[220px_minmax(0,1fr)]", "xl:gap-10");
+    expect(navigation).toHaveClass("mb-6", "rounded-2xl", "border", "bg-white", "p-2", "shadow-sm");
+    expect(navigation).toHaveClass("xl:sticky", "xl:top-6", "xl:mb-0", "xl:shadow-none");
+    expect(content).toHaveClass("grid", "grid-cols-1", "gap-6", "lg:grid-cols-12");
+    expect(content).toHaveClass("xl:flex", "xl:min-w-0", "xl:flex-col", "xl:gap-6");
+
+    expect(document.getElementById("settings-section-profile")).toHaveClass("xl:order-1");
+    expect(document.getElementById("settings-section-modules-team")).toHaveClass("xl:order-2");
+    expect(document.getElementById("settings-section-policies-compliance")).toHaveClass("xl:order-10");
+    expect(document.getElementById("settings-section-operations")).toHaveClass("xl:order-8");
+    expect(document.getElementById("settings-section-payments-approvals")).toHaveClass("xl:order-4");
+  });
 });
