@@ -19,14 +19,9 @@ class DatabaseSeeder extends Seeder
 
         $this->call([
             ShopOwnerSeeder::class,
-            Test2ProductSeeder::class,
             RolesAndPermissionsSeeder::class,
-            RepairMaterialSeeder::class,
-            RepairServiceSeeder::class,
-            RepairPackageSeeder::class,
             EmployeeSeeder::class,
             PayrollMasterDataSeeder::class,
-            CustomerSeeder::class,
             PremiumPlanSeeder::class,
             TaxRateSeeder::class,
             PayrollStatutoryTaxRateSeeder::class,
