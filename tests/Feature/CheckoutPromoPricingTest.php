@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Models\UserAddress;
 use App\Models\VoucherClaim;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -625,5 +626,41 @@ class CheckoutPromoPricingTest extends TestCase
                     && (int) ($lineItem['amount'] ?? 0) > 0,
             );
         });
+    }
+
+    #[Test]
+    public function customer_login_keeps_session_for_retry_payment(): void
+    {
+        Http::fake([
+            'https://api.paymongo.com/v1/checkout_sessions' => Http::response([
+                'data' => [
+                    'id' => 'cs_legacy_login_retry',
+                    'attributes' => ['checkout_url' => 'https://paymongo.test/legacy-login'],
+                ],
+            ], 200),
+        ]);
+
+        $shopOwner = $this->createRetailShopOwner();
+        $customer = User::factory()->create([
+            'email' => 'legacy-checkout@example.test',
+            'password' => Hash::make('password'),
+            'status' => 'active',
+        ]);
+        $order = Order::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'customer_id' => $customer->id,
+            'payment_status' => 'pending',
+            'status' => 'pending',
+            'payment_method' => 'paymongo',
+        ]);
+
+        $loginResponse = $this->postJson('/user/login', [
+            'email' => $customer->email,
+            'password' => 'password',
+        ])->assertOk();
+
+        $this->postJson('/api/orders/'.$order->id.'/retry-payment-session')
+            ->assertOk()
+            ->assertJsonPath('success', true);
     }
 }
