@@ -12,8 +12,9 @@ use App\Models\ShopReport;
 use App\Models\SuperAdmin;
 use App\Models\SuspensionAppeal;
 use App\Models\User;
-use Illuminate\Support\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Testing\TestResponse;
 use Tests\Concerns\AuthenticatesPrivilegedUsers;
@@ -379,6 +380,9 @@ final class PhaseEightScaleBoundaryTest extends TestCase
         $this->activePhaseTwoUser(['name' => 'Plain Customer']);
         $this->actingAsCompletedPrivileged($viewer);
 
+        DB::connection()->flushQueryLog();
+        DB::connection()->enableQueryLog();
+
         $adminProps = $this->inertiaProps($this->get(route('admin.administrators.index', [
             'search' => '%',
             'per_page' => 100,
@@ -395,6 +399,15 @@ final class PhaseEightScaleBoundaryTest extends TestCase
         self::assertSame(0, $adminProps['admins']['total']);
         self::assertSame(0, $shopProps['shops']['total']);
         self::assertSame(0, $userProps['users']['total']);
+        $searchQueries = array_values(array_filter(
+            DB::connection()->getQueryLog(),
+            static fn (array $query): bool => str_contains($query['query'], ' ESCAPE '),
+        ));
+        DB::connection()->disableQueryLog();
+        self::assertNotEmpty($searchQueries);
+        foreach ($searchQueries as $query) {
+            self::assertStringContainsString("ESCAPE '!'", $query['query']);
+        }
     }
 
     public function test_review_queues_use_capped_server_filters_global_stats_and_detail_boundaries(): void
