@@ -7,6 +7,7 @@ use App\Models\PolicyAcceptance;
 use App\Models\Product;
 use App\Models\ShopOwner;
 use App\Models\ShopPolicyVersion;
+use App\Services\ShopPolicySectionResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -83,7 +84,7 @@ class ShopPolicyController extends Controller
         ]);
     }
 
-    public function active(int $shopOwnerId): JsonResponse
+    public function active(Request $request, int $shopOwnerId, ShopPolicySectionResolver $sectionResolver): JsonResponse
     {
         $version = $this->resolveActiveVersion($shopOwnerId);
 
@@ -92,6 +93,18 @@ class ShopPolicyController extends Controller
                 'success' => true,
                 'data' => null,
             ]);
+        }
+
+        $validated = $request->validate([
+            'flow' => ['nullable', 'string', 'in:retail,repair'],
+        ]);
+
+        if (! empty($validated['flow'])) {
+            $version->setAttribute('policy_sections_json', $sectionResolver->forFlow(
+                (array) ($version->policy_sections_json ?? []),
+                (string) $validated['flow'],
+                (string) ($version->business_type_scope ?? '')
+            ));
         }
 
         return response()->json([

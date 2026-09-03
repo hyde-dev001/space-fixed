@@ -2,12 +2,12 @@
 import { Head, router, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import 'leaflet/dist/leaflet.css';
-import { AlertTriangle, Building2, CalendarDays, Check, CheckCircle2, ChevronDown, Eye, EyeOff, MapPin, Pencil, Settings, Store, Trash2, User, Wrench } from 'lucide-react';
+import { AlertTriangle, Building2, CalendarDays, Check, CheckCircle2, ChevronDown, Eye, EyeOff, MapPin, Settings, Store, Trash2, User, Wrench } from 'lucide-react';
 																																								import UserSwal from '../../UserSide/Shared/UserModal';
 import BusinessScalingSettings, { type BusinessScalingPayload } from './components/BusinessScalingSettings';
 import BusinessDocumentCompliance, { type ComplianceSlot } from './components/BusinessDocumentCompliance';
 import { requiredPolicySectionKeys } from '../../../utils/policySectionResolver';
-import type { PolicySectionKey, ShopPolicyEditorStateResponse, ShopPolicySections } from '../../../types/shopPolicy';
+import type { ShopPolicyEditorStateResponse, ShopPolicySections } from '../../../types/shopPolicy';
 import { GPS_POSITION_OPTIONS, getCurrentPositionWithTimeout } from '../../../utils/geolocation';
 
 const GEOLOCATION_LOOKUP_TIMEOUT_MS = 10_000;
@@ -115,8 +115,8 @@ const ToggleSwitch: React.FC<{
 			disabled={disabled}
 			aria-label={ariaLabel}
 			title={ariaLabel}
-			className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-				enabled ? 'bg-blue-600' : 'bg-gray-300'
+			className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-2 ${
+				enabled ? 'bg-gray-900' : 'bg-gray-300'
 			} ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
 		>
 			<span
@@ -244,30 +244,10 @@ const getCustomPolicySectionDisplayNumber = (sectionKey: string): string => {
 	return '?';
 };
 
-type PolicyClauseTemplate = {
-	id: string;
-	title: string;
-	body: string;
-};
-
 type PolicyCustomClause = {
 	id: string;
 	title: string;
 	body: string;
-};
-
-type PolicySectionComposerState = {
-	templates: Array<PolicyClauseTemplate & { checked: boolean }>;
-	customClauses: PolicyCustomClause[];
-	showOtherInput: boolean;
-	otherTitle: string;
-	otherBody: string;
-};
-
-const POLICY_SECTION_TEMPLATE_LIBRARY: Record<PolicySectionKey, PolicyClauseTemplate[]> = {
-	refund_payment_terms: [],
-	repair_service_terms: [],
-	retail_terms: [],
 };
 
 const composePolicySectionText = (clauses: PolicyCustomClause[]): string => {
@@ -301,70 +281,6 @@ const deriveCustomClauseTitleFromBody = (body: string, index: number): string =>
 
 	if (!firstLine) return `Custom Clause ${index + 1}`;
 	return firstLine.slice(0, 60);
-};
-
-const createPolicySectionComposerState = (sectionKey: string): PolicySectionComposerState => {
-	const templates = (POLICY_SECTION_TEMPLATE_LIBRARY[sectionKey as PolicySectionKey] ?? []).map((template) => ({
-		...template,
-		checked: false,
-	}));
-
-	return {
-		templates,
-		customClauses: [],
-		showOtherInput: false,
-		otherTitle: '',
-		otherBody: '',
-	};
-};
-
-const normalizePolicyTextForMatch = (value: string): string => (
-	String(value || '')
-		.toLowerCase()
-		.replace(/\s+/g, ' ')
-		.replace(/[^a-z0-9\s]/g, '')
-		.trim()
-);
-
-const createPolicySectionComposerStateFromSavedText = (
-	sectionKey: string,
-	sectionText: string,
-): PolicySectionComposerState => {
-	const normalizedSectionText = normalizePolicyTextForMatch(sectionText);
-
-	const templates = (POLICY_SECTION_TEMPLATE_LIBRARY[sectionKey as PolicySectionKey] ?? []).map((template) => {
-		const normalizedTitle = normalizePolicyTextForMatch(template.title);
-		const normalizedBody = normalizePolicyTextForMatch(template.body);
-		const isChecked = normalizedSectionText.length > 0
-			&& ((normalizedBody.length > 0 && normalizedSectionText.includes(normalizedBody))
-				|| (normalizedTitle.length > 0 && normalizedSectionText.includes(normalizedTitle)));
-
-		return {
-			...template,
-			checked: isChecked,
-		};
-	});
-
-	return {
-		templates,
-		customClauses: [],
-		showOtherInput: false,
-		otherTitle: '',
-		otherBody: '',
-	};
-};
-
-const createPolicyComposerRecord = (
-	keys: string[],
-	sourceSections?: ShopPolicySections,
-): Record<string, PolicySectionComposerState> => {
-	return keys.reduce<Record<string, PolicySectionComposerState>>((acc, key) => {
-		const sectionText = String(sourceSections?.[key] ?? '');
-		acc[key] = sectionText.trim().length > 0
-			? createPolicySectionComposerStateFromSavedText(key, sectionText)
-			: createPolicySectionComposerState(key);
-		return acc;
-	}, {});
 };
 
 const readRepairRequestLimit = (): number => {
@@ -430,7 +346,6 @@ const ShopSetting: React.FC = () => {
 	const [twoFactorError, setTwoFactorError] = useState<string | null>(null);
 	const [twoFactorSuccess, setTwoFactorSuccess] = useState(false);
 	const [policySections, setPolicySections] = useState<ShopPolicySections>({});
-	const [activePublishedPolicySections, setActivePublishedPolicySections] = useState<ShopPolicySections>({});
 	const [defaultPolicySections, setDefaultPolicySections] = useState<ShopPolicySections>({});
 	const [policyVersionNumber, setPolicyVersionNumber] = useState<number | null>(null);
 	const [loadingPolicyState, setLoadingPolicyState] = useState(false);
@@ -445,27 +360,17 @@ const ShopSetting: React.FC = () => {
 	const activeRequiredSectionKeys = requiredSectionKeys.filter((key) => !deletedBasePolicySectionKeys.includes(key));
 	const [retailCustomPolicySectionKeys, setRetailCustomPolicySectionKeys] = useState<string[]>([]);
 	const [repairCustomPolicySectionKeys, setRepairCustomPolicySectionKeys] = useState<string[]>([]);
-	const [policyComposerState, setPolicyComposerState] = useState<Record<string, PolicySectionComposerState>>(
-		() => createPolicyComposerRecord(requiredSectionKeys),
-	);
 	const [policySectionTitleOverrides, setPolicySectionTitleOverrides] = useState<Record<string, string>>({});
-	const [policyBusinessView, setPolicyBusinessView] = useState<'retail' | 'repair'>(hasRetailSignal ? 'retail' : 'repair');
-	const [activePolicySectionKey, setActivePolicySectionKey] = useState<string | null>(requiredSectionKeys[0] ?? null);
 	const commonPolicySectionKeys = activeRequiredSectionKeys.filter((key) => key !== 'repair_service_terms' && key !== 'retail_terms');
 	const retailPolicySectionKeys = activeRequiredSectionKeys.filter((key) => key === 'retail_terms');
 	const repairPolicySectionKeys = activeRequiredSectionKeys.filter((key) => key === 'repair_service_terms');
-	const scopedPolicySectionKeys = isBothSignal
-		? (policyBusinessView === 'retail' ? retailPolicySectionKeys : repairPolicySectionKeys)
-		: activeRequiredSectionKeys.filter((key) => key === 'retail_terms' || key === 'repair_service_terms');
-	const activeCustomPolicySectionKeys = isBothSignal
-		? (policyBusinessView === 'retail' ? retailCustomPolicySectionKeys : repairCustomPolicySectionKeys)
-		: hasRetailSignal
-			? retailCustomPolicySectionKeys
-			: repairCustomPolicySectionKeys;
-	const baseVisiblePolicySectionKeys = isBothSignal
-		? [...commonPolicySectionKeys, ...scopedPolicySectionKeys]
-		: activeRequiredSectionKeys;
-	const visiblePolicySectionKeys = [...baseVisiblePolicySectionKeys, ...activeCustomPolicySectionKeys];
+	const retailVisiblePolicySectionKeys = [...retailPolicySectionKeys, ...retailCustomPolicySectionKeys];
+	const repairVisiblePolicySectionKeys = [...repairPolicySectionKeys, ...repairCustomPolicySectionKeys];
+	const visiblePolicySectionKeys = [
+		...commonPolicySectionKeys,
+		...retailVisiblePolicySectionKeys,
+		...repairVisiblePolicySectionKeys,
+	];
 
 	// Repair workload limit state — server prop is source of truth, localStorage is a cache
 	const serverLimit = shop_settings.repair_workload_limit ?? 20;
@@ -634,7 +539,6 @@ const ShopSetting: React.FC = () => {
 	};
 
 	const accountLabel = isIndividual ? 'Individual Account' : 'Business Account';
-	const isRepairOnlyShop = hasRepairSignal && !hasRetailSignal;
 	const businessTypeLabel = hasRetailSignal && hasRepairSignal
 		? 'Retail & Repair'
 		: hasRepairSignal
@@ -712,9 +616,9 @@ const ShopSetting: React.FC = () => {
 		const normalized: ShopPolicySections = {};
 
 		Object.entries(source ?? {}).forEach(([key, value]) => {
-			if (isCustomPolicySectionKey(key)) {
-				normalized[key] = String(value ?? '');
-			}
+			if (key.startsWith('__')) return;
+
+			normalized[key] = String(value ?? '');
 		});
 
 		return normalized;
@@ -827,70 +731,8 @@ const ShopSetting: React.FC = () => {
 			delete payload[getPolicySectionCustomClausesMetaKey(sectionKey)];
 		});
 
-		const allComposerSectionKeys = Array.from(new Set([
-			...requiredSectionKeys,
-			...retailCustomPolicySectionKeys,
-			...repairCustomPolicySectionKeys,
-		]));
-
-		allComposerSectionKeys.forEach((sectionKey) => {
-			const normalizedCustomClauses = (policyComposerState[sectionKey]?.customClauses ?? [])
-				.map((clause, index) => {
-					const body = String(clause.body ?? '').trim();
-					if (!body) return null;
-
-					const rawTitle = String(clause.title ?? '').trim();
-					const title = !rawTitle || isGenericCustomClauseTitle(rawTitle)
-						? deriveCustomClauseTitleFromBody(body, index)
-						: rawTitle;
-
-					const clauseId = String(clause.id ?? '').trim() || `custom-${sectionKey}-${index + 1}`;
-					return {
-						id: clauseId,
-						title,
-						body,
-					};
-				})
-				.filter((clause): clause is PolicyCustomClause => clause !== null);
-
-			if (normalizedCustomClauses.length === 0) return;
-			payload[getPolicySectionCustomClausesMetaKey(sectionKey)] = JSON.stringify(normalizedCustomClauses);
-		});
-
 		return payload;
 	};
-
-	useEffect(() => {
-		const composerSectionKeys = [...activeRequiredSectionKeys, ...retailCustomPolicySectionKeys, ...repairCustomPolicySectionKeys];
-
-		setPolicyComposerState((prev) => {
-			const next = { ...prev };
-			composerSectionKeys.forEach((key) => {
-				if (!next[key]) {
-					next[key] = createPolicySectionComposerState(key);
-				}
-			});
-
-			Object.keys(next).forEach((key) => {
-				if (!composerSectionKeys.includes(key)) {
-					delete next[key];
-				}
-			});
-
-			return next;
-		});
-	}, [activeRequiredSectionKeys.join('|'), retailCustomPolicySectionKeys.join('|'), repairCustomPolicySectionKeys.join('|')]);
-
-	useEffect(() => {
-		if (visiblePolicySectionKeys.length === 0) {
-			setActivePolicySectionKey(null);
-			return;
-		}
-
-		if (activePolicySectionKey !== null && !visiblePolicySectionKeys.includes(activePolicySectionKey)) {
-			setActivePolicySectionKey(visiblePolicySectionKeys[0]);
-		}
-	}, [visiblePolicySectionKeys.join('|'), activePolicySectionKey]);
 
 	const loadPolicyEditorState = async () => {
 		setLoadingPolicyState(true);
@@ -899,16 +741,25 @@ const ShopSetting: React.FC = () => {
 		try {
 			const response = await axios.get<ShopPolicyEditorStateResponse>('/shop-owner/settings/policies');
 			const payload = response.data?.data;
-			const normalizedActiveSections = normalizePolicySections(payload?.active?.policy_sections_json ?? payload?.default_sections ?? {});
 			const normalizedDefaultSections = normalizePolicySections(payload?.default_sections ?? {});
-			const selectedSections = payload?.draft?.policy_sections_json
-				?? payload?.active?.policy_sections_json
-				?? {};
+			const selectedSections = {
+				...(payload?.active?.policy_sections_json ?? payload?.default_sections ?? {}),
+				...(payload?.draft?.policy_sections_json ?? {}),
+			};
 			const normalizedDeletedBaseSectionKeys = extractDeletedBasePolicySectionKeys(selectedSections);
 			const normalizedSections = normalizePolicySections(selectedSections);
 			const normalizedTitleOverrides = extractPolicySectionTitleOverrides(selectedSections);
 			const normalizedCustomClausesBySection = extractPolicySectionCustomClauses(selectedSections);
-			const customSectionKeysFromSections = Object.keys(normalizedSections)
+			const normalizedSectionsWithClauseFallback: ShopPolicySections = { ...normalizedSections };
+			Object.entries(normalizedCustomClausesBySection).forEach(([sectionKey, customClauses]) => {
+				if (String(normalizedSectionsWithClauseFallback[sectionKey] ?? '').trim()) return;
+
+				const composedText = composePolicySectionText(customClauses);
+				if (composedText.trim()) {
+					normalizedSectionsWithClauseFallback[sectionKey] = composedText;
+				}
+			});
+			const customSectionKeysFromSections = Object.keys(normalizedSectionsWithClauseFallback)
 				.filter((key) => !requiredSectionKeys.includes(key) && isCustomPolicySectionKey(key));
 			const customSectionKeysFromTitleMeta = Object.keys(normalizedTitleOverrides)
 				.filter((key) => !requiredSectionKeys.includes(key) && isCustomPolicySectionKey(key));
@@ -938,7 +789,7 @@ const ShopSetting: React.FC = () => {
 					...loadedRetailCustomSectionKeys.filter((key) => isLegacyCustomPolicySectionKey(key)),
 				]))
 				: loadedRepairCustomSectionKeys;
-			const sectionsWithDetectedCustomKeys: ShopPolicySections = { ...normalizedSections };
+			const sectionsWithDetectedCustomKeys: ShopPolicySections = { ...normalizedSectionsWithClauseFallback };
 			[...normalizedRetailCustomSectionKeys, ...normalizedRepairCustomSectionKeys].forEach((sectionKey) => {
 				if (!Object.prototype.hasOwnProperty.call(sectionsWithDetectedCustomKeys, sectionKey)) {
 					sectionsWithDetectedCustomKeys[sectionKey] = '';
@@ -955,27 +806,11 @@ const ShopSetting: React.FC = () => {
 			}, {});
 
 			setPolicySections(sectionsWithDetectedCustomKeys);
-			setActivePublishedPolicySections(normalizedActiveSections);
 			setDefaultPolicySections(normalizedDefaultSections);
 			setDeletedBasePolicySectionKeys(normalizedDeletedBaseSectionKeys);
 			setRetailCustomPolicySectionKeys(normalizedRetailCustomSectionKeys);
 			setRepairCustomPolicySectionKeys(normalizedRepairCustomSectionKeys);
 			setPolicySectionTitleOverrides(filteredTitleOverrides);
-			const nextComposerState = createPolicyComposerRecord([
-				...requiredSectionKeys.filter((key) => !normalizedDeletedBaseSectionKeys.includes(key)),
-				...normalizedRetailCustomSectionKeys,
-				...normalizedRepairCustomSectionKeys,
-			], sectionsWithDetectedCustomKeys);
-
-			Object.entries(normalizedCustomClausesBySection).forEach(([sectionKey, customClauses]) => {
-				const existingState = nextComposerState[sectionKey] ?? createPolicySectionComposerState(sectionKey);
-				nextComposerState[sectionKey] = {
-					...existingState,
-					customClauses,
-				};
-			});
-
-			setPolicyComposerState(nextComposerState);
 			setPolicyVersionNumber(payload?.draft?.version_number ?? payload?.active?.version_number ?? null);
 		} catch (err: any) {
 			setPolicyError(err?.response?.data?.message || 'Failed to load policy editor state.');
@@ -995,149 +830,6 @@ const ShopSetting: React.FC = () => {
 		}));
 		if (policyError) setPolicyError(null);
 		if (policySuccess) setPolicySuccess(null);
-	};
-
-	const updateComposerSection = (
-		sectionKey: string,
-		updater: (state: PolicySectionComposerState) => PolicySectionComposerState,
-	) => {
-		setPolicyComposerState((prev) => {
-			const current = prev[sectionKey] ?? createPolicySectionComposerState(sectionKey);
-			return {
-				...prev,
-				[sectionKey]: updater(current),
-			};
-		});
-
-		if (policyError) setPolicyError(null);
-		if (policySuccess) setPolicySuccess(null);
-	};
-
-	const toggleComposerTemplate = (sectionKey: string, templateId: string, checked: boolean) => {
-		updateComposerSection(sectionKey, (state) => ({
-			...state,
-			templates: state.templates.map((template) => (
-				template.id === templateId ? { ...template, checked } : template
-			)),
-		}));
-	};
-
-	const updateComposerTemplateField = (sectionKey: string, templateId: string, field: 'title' | 'body', value: string) => {
-		updateComposerSection(sectionKey, (state) => ({
-			...state,
-			templates: state.templates.map((template) => (
-				template.id === templateId ? { ...template, [field]: value } : template
-			)),
-		}));
-	};
-
-	const toggleOthersInput = (sectionKey: string, checked: boolean) => {
-		updateComposerSection(sectionKey, (state) => ({
-			...state,
-			showOtherInput: checked,
-			otherTitle: checked ? state.otherTitle : '',
-			otherBody: checked ? state.otherBody : '',
-		}));
-	};
-
-	const updateOtherDraftField = (sectionKey: string, field: 'otherTitle' | 'otherBody', value: string) => {
-		updateComposerSection(sectionKey, (state) => ({
-			...state,
-			[field]: value,
-		}));
-	};
-
-	const addOtherClause = (sectionKey: string) => {
-		const sectionComposer = policyComposerState[sectionKey] ?? createPolicySectionComposerState(sectionKey);
-		const title = sectionComposer.otherTitle.trim();
-		const body = sectionComposer.otherBody.trim();
-
-		if (!title || !body) {
-			setPolicyError('Please complete both title and details for the custom clause.');
-			void UserSwal.fire({
-				icon: 'warning',
-				title: 'Missing Section Input',
-				text: 'Please complete both clause title and details before adding a custom clause.',
-				confirmButtonText: 'OK',
-			});
-			return;
-		}
-
-		if (isGenericCustomClauseTitle(title)) {
-			setPolicyError('Please enter a specific clause title.');
-			void UserSwal.fire({
-				icon: 'warning',
-				title: 'Clause Title Required',
-				text: 'Use a specific clause title. Generic titles like "Others" are not allowed.',
-				confirmButtonText: 'OK',
-			});
-			return;
-		}
-
-		updateComposerSection(sectionKey, (state) => ({
-			...state,
-			customClauses: [
-				...state.customClauses,
-				{
-					id: `custom-${Date.now()}`,
-					title,
-					body,
-				},
-			],
-			showOtherInput: false,
-			otherTitle: '',
-			otherBody: '',
-		}));
-
-		setPolicyError(null);
-		setPolicySuccess('Custom clause saved.');
-		void UserSwal.fire({
-			icon: 'success',
-			title: 'Custom Clause Saved',
-			text: 'Your custom clause has been added to this section.',
-			confirmButtonText: 'OK',
-		});
-	};
-
-	const updateCustomClauseField = (sectionKey: string, clauseId: string, field: 'title' | 'body', value: string) => {
-		updateComposerSection(sectionKey, (state) => ({
-			...state,
-			customClauses: state.customClauses.map((clause) => (
-				clause.id === clauseId ? { ...clause, [field]: value } : clause
-			)),
-		}));
-	};
-
-	const removeCustomClause = async (sectionKey: string, clauseId: string) => {
-		const result = await UserSwal.fire({
-			icon: 'warning',
-			title: 'Remove Custom Clause?',
-			text: 'This clause will be removed from your builder list.',
-			showCancelButton: true,
-			confirmButtonText: 'Remove',
-			cancelButtonText: 'Cancel',
-		});
-
-		if (!result.isConfirmed) return;
-
-		updateComposerSection(sectionKey, (state) => ({
-			...state,
-			customClauses: state.customClauses.filter((clause) => clause.id !== clauseId),
-		}));
-
-		setPolicySuccess('Custom clause removed.');
-		setPolicyError(null);
-	};
-
-	const setAllTemplateSelection = (sectionKey: string, checked: boolean) => {
-		updateComposerSection(sectionKey, (state) => ({
-			...state,
-			templates: state.templates.map((template) => ({ ...template, checked })),
-		}));
-	};
-
-	const resetComposerBuilder = (sectionKey: string) => {
-		updateComposerSection(sectionKey, () => createPolicySectionComposerState(sectionKey));
 	};
 
 	const clearPolicySectionEditor = (sectionKey: string) => {
@@ -1182,53 +874,9 @@ const ShopSetting: React.FC = () => {
 		};
 	};
 
-	const editPolicySectionName = async (sectionKey: string) => {
-		const currentTitle = getPolicySectionMeta(sectionKey).title;
-		const defaultTitle = getDefaultPolicySectionMeta(sectionKey).title;
-
-		const result = await UserSwal.fire({
-			title: 'Edit Section Name',
-			input: 'text',
-			inputLabel: 'Section name',
-			inputValue: currentTitle,
-			showCancelButton: true,
-			confirmButtonText: 'Save',
-			cancelButtonText: 'Cancel',
-			inputValidator: (value) => {
-				if (!String(value ?? '').trim()) {
-					return 'Section name is required.';
-				}
-
-				return undefined;
-			},
-		});
-
-		if (!result.isConfirmed) return;
-
-		const nextTitle = String(result.value ?? '').trim();
-
-		setPolicySectionTitleOverrides((prev) => {
-			const next = { ...prev };
-
-			if (!nextTitle || nextTitle === defaultTitle) {
-				delete next[sectionKey];
-			} else {
-				next[sectionKey] = nextTitle;
-			}
-
-			return next;
-		});
-
-		setPolicyError(null);
-		setPolicySuccess('Section name updated.');
-	};
-
-	const addCustomPolicySection = () => {
-		const targetScope: 'retail' | 'repair' = isBothSignal
-			? policyBusinessView
-			: hasRetailSignal
-				? 'retail'
-				: 'repair';
+	const addCustomPolicySection = (requestedScope?: 'retail' | 'repair') => {
+		const targetScope: 'retail' | 'repair' = requestedScope
+			?? (hasRetailSignal ? 'retail' : 'repair');
 
 		const targetPrefix = targetScope === 'retail'
 			? CUSTOM_POLICY_SECTION_PREFIX_RETAIL
@@ -1252,17 +900,15 @@ const ShopSetting: React.FC = () => {
 		}
 
 		setPolicySections((prev) => ({ ...prev, [nextKey]: '' }));
-		setPolicyComposerState((prev) => ({ ...prev, [nextKey]: createPolicySectionComposerState(nextKey) }));
-		setActivePolicySectionKey(nextKey);
 		setPolicyError(null);
-		setPolicySuccess(`${targetScope === 'retail' ? 'Retail' : 'Repair'} additional terms dropdown added.`);
+		setPolicySuccess(`${targetScope === 'retail' ? 'Retail' : 'Repair'} additional terms section added.`);
 	};
 
 	const removeCustomPolicySection = async (sectionKey: string) => {
 		const result = await UserSwal.fire({
 			icon: 'warning',
 			title: 'Remove Additional Section?',
-			text: 'This extra dropdown section and its text will be removed.',
+		text: 'This additional section and its text will be removed.',
 			showCancelButton: true,
 			confirmButtonText: 'Remove',
 			cancelButtonText: 'Cancel',
@@ -1277,188 +923,26 @@ const ShopSetting: React.FC = () => {
 			delete next[sectionKey];
 			return next;
 		});
-		setPolicyComposerState((prev) => {
-			const next = { ...prev };
-			delete next[sectionKey];
-			return next;
-		});
 		setPolicySectionTitleOverrides((prev) => {
 			const next = { ...prev };
 			delete next[sectionKey];
 			return next;
 		});
 
-		if (activePolicySectionKey === sectionKey) {
-			setActivePolicySectionKey(null);
-		}
-
 		setPolicyError(null);
-		setPolicySuccess(`${isRetailScopedCustomSectionKey(sectionKey) ? 'Retail' : 'Repair'} additional terms dropdown removed.`);
-	};
-
-	const removeBasePolicySection = async (sectionKey: string) => {
-		const result = await UserSwal.fire({
-			icon: 'warning',
-			title: 'Remove Section?',
-			text: 'This will remove the entire section from this policy version.',
-			showCancelButton: true,
-			confirmButtonText: 'Remove',
-			cancelButtonText: 'Cancel',
-		});
-
-		if (!result.isConfirmed) return;
-
-		setDeletedBasePolicySectionKeys((prev) => (prev.includes(sectionKey) ? prev : [...prev, sectionKey]));
-		setPolicySections((prev) => {
-			const next = { ...prev };
-			delete next[sectionKey];
-			return next;
-		});
-
-		setPolicyComposerState((prev) => {
-			const next = { ...prev };
-			delete next[sectionKey];
-			return next;
-		});
-
-		setPolicySectionTitleOverrides((prev) => {
-			const next = { ...prev };
-			delete next[sectionKey];
-			return next;
-		});
-
-		if (activePolicySectionKey === sectionKey) {
-			setActivePolicySectionKey(null);
-		}
-
-		setPolicyError(null);
-		setPolicySuccess('Section removed.');
-	};
-
-	const deletePolicySection = async (sectionKey: string) => {
-		if (isCustomPolicySectionKey(sectionKey)) {
-			await removeCustomPolicySection(sectionKey);
-			return;
-		}
-
-		await removeBasePolicySection(sectionKey);
-	};
-
-
-	const buildSectionTextFromComposerSelection = (sectionKey: string): string => {
-		const sectionComposer = policyComposerState[sectionKey] ?? createPolicySectionComposerState(sectionKey);
-		const selectedTemplateClauses: PolicyCustomClause[] = sectionComposer.templates
-			.filter((template) => template.checked)
-			.map((template) => ({
-				id: template.id,
-				title: template.title,
-				body: template.body,
-			}));
-
-		const selectedClauses = [...selectedTemplateClauses, ...sectionComposer.customClauses];
-		return composePolicySectionText(selectedClauses);
-	};
-
-	const applyComposerSelectionsToEmptySections = (baseSections: ShopPolicySections): { sections: ShopPolicySections; usedComposerAutofill: boolean } => {
-		const nextSections: ShopPolicySections = { ...baseSections };
-		let usedComposerAutofill = false;
-
-		const sectionKeys = Array.from(new Set([
-			...requiredSectionKeys,
-			...retailCustomPolicySectionKeys,
-			...repairCustomPolicySectionKeys,
-		]));
-
-		sectionKeys.forEach((sectionKey) => {
-			const currentValue = String(nextSections[sectionKey] ?? '').trim();
-			if (currentValue.length > 0) return;
-
-			const composedText = buildSectionTextFromComposerSelection(sectionKey).trim();
-			if (!composedText) return;
-
-			nextSections[sectionKey] = composedText;
-			usedComposerAutofill = true;
-		});
-
-		return {
-			sections: nextSections,
-			usedComposerAutofill,
-		};
-	};
-
-	const applyComposerSelectionToEditor = (sectionKey: string, mode: 'replace' | 'append') => {
-		const sectionComposer = policyComposerState[sectionKey] ?? createPolicySectionComposerState(sectionKey);
-		const selectedTemplateClauses: PolicyCustomClause[] = sectionComposer.templates
-			.filter((template) => template.checked)
-			.map((template) => ({
-				id: template.id,
-				title: template.title,
-				body: template.body,
-			}));
-		const selectedClauses = [...selectedTemplateClauses, ...sectionComposer.customClauses];
-		const composedText = composePolicySectionText(selectedClauses);
-
-		if (!composedText.trim()) {
-			setPolicyError('Select at least one predefined clause or add an Others clause before applying.');
-			void UserSwal.fire({
-				icon: 'warning',
-				title: 'Missing Section Input',
-				text: 'Select at least one clause or add an Others clause before applying to the editor.',
-				confirmButtonText: 'OK',
-			});
-			return;
-		}
-
-		setPolicySections((prev) => {
-			const currentValue = String(prev[sectionKey] ?? '').trim();
-			const nextValue = mode === 'append' && currentValue
-				? `${currentValue}\n\n${composedText}`
-				: composedText;
-
-			return {
-				...prev,
-				[sectionKey]: nextValue,
-			};
-		});
-
-		setPolicySuccess(mode === 'append'
-			? 'Selected clauses appended to the section editor.'
-			: 'Selected clauses applied to the section editor.');
-		setPolicyError(null);
+		setPolicySuccess(`${isRetailScopedCustomSectionKey(sectionKey) ? 'Retail' : 'Repair'} additional terms section removed.`);
 	};
 
 	const validateSectionInputsBeforeSave = async (): Promise<boolean> => {
-		const sectionWithPendingOthers = visiblePolicySectionKeys.find((sectionKey) => {
-			const sectionComposer = policyComposerState[sectionKey] ?? createPolicySectionComposerState(sectionKey);
-			if (!sectionComposer.showOtherInput) return false;
+		const emptySectionKey = visiblePolicySectionKeys.find((sectionKey) => !String(policySections[sectionKey] ?? '').trim());
 
-			return !sectionComposer.otherTitle.trim() || !sectionComposer.otherBody.trim();
-		});
-
-		if (sectionWithPendingOthers) {
-			setActivePolicySectionKey(sectionWithPendingOthers);
-			setPolicyError('Please complete the Others clause fields in the active section before saving.');
+		if (emptySectionKey) {
+			const sectionTitle = getPolicySectionMeta(emptySectionKey).title;
+			setPolicyError(`Add policy text for ${sectionTitle} before saving.`);
 			await UserSwal.fire({
 				icon: 'warning',
-				title: 'Missing Section Input',
-				text: 'Please complete the Others clause title and details in the section before saving.',
-				confirmButtonText: 'OK',
-			});
-			return false;
-		}
-
-		const sectionWithIncompleteCustomClause = visiblePolicySectionKeys.find((sectionKey) => {
-			const sectionComposer = policyComposerState[sectionKey] ?? createPolicySectionComposerState(sectionKey);
-			return sectionComposer.customClauses.some((clause) => !String(clause.title ?? '').trim() || !String(clause.body ?? '').trim());
-		});
-
-		if (sectionWithIncompleteCustomClause) {
-			setActivePolicySectionKey(sectionWithIncompleteCustomClause);
-			setPolicyError('Please complete all custom clause fields in the active section before saving.');
-			await UserSwal.fire({
-				icon: 'warning',
-				title: 'Missing Section Input',
-				text: 'Please complete all custom clause title and details fields before saving.',
+				title: 'Policy Text Required',
+				text: `Add policy text for ${sectionTitle} before saving.`,
 				confirmButtonText: 'OK',
 			});
 			return false;
@@ -1983,8 +1467,109 @@ const ShopSetting: React.FC = () => {
 		router.get('/shop-owner/dashboard');
 	};
 
-	const togglePolicySectionExpansion = (sectionKey: string) => {
-		setActivePolicySectionKey((prev) => (prev === sectionKey ? null : sectionKey));
+	const updatePolicySectionTitle = (sectionKey: string, value: string) => {
+		const defaultTitle = getDefaultPolicySectionMeta(sectionKey).title;
+		const nextTitle = value.trim();
+
+		setPolicySectionTitleOverrides((prev) => {
+			const next = { ...prev };
+
+			if (!nextTitle || nextTitle === defaultTitle) {
+				delete next[sectionKey];
+			} else {
+				next[sectionKey] = value;
+			}
+
+			return next;
+		});
+	};
+
+	const renderPolicySectionEditor = (sectionKey: string, sectionNumber: number) => {
+		const sectionMeta = getPolicySectionMeta(sectionKey);
+		const isCustomSection = isCustomPolicySectionKey(sectionKey);
+		const editorValue = String(policySections[sectionKey] ?? '');
+		const hasEditorText = editorValue.trim().length > 0;
+		const editorWordCount = hasEditorText ? editorValue.trim().split(/\s+/).length : 0;
+
+		return (
+			<article key={sectionKey} className="rounded-xl border border-gray-200 bg-white p-4 sm:p-5">
+				<div className="flex flex-wrap items-start justify-between gap-3">
+					<div className="flex min-w-0 items-start gap-3">
+						<span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-900 text-xs font-bold text-white">
+							{sectionNumber}
+						</span>
+						<div className="min-w-0">
+							{isCustomSection ? (
+								<label className="block">
+									<span className="sr-only">Section name</span>
+									<input
+										type="text"
+										value={sectionMeta.title}
+										onChange={(event) => updatePolicySectionTitle(sectionKey, event.target.value)}
+										className="w-full border-0 border-b border-transparent bg-transparent p-0 text-sm font-semibold text-gray-900 outline-none transition focus:border-gray-900 focus:ring-0"
+										aria-label="Section name"
+									/>
+								</label>
+							) : (
+								<h3 className="text-sm font-semibold text-gray-900">{sectionMeta.title}</h3>
+							)}
+							<p className="mt-1 text-xs leading-5 text-gray-600">{sectionMeta.helper}</p>
+						</div>
+					</div>
+					<div className="flex items-center gap-2">
+						<span className={`rounded-full border px-2 py-1 text-[11px] font-semibold ${hasEditorText ? 'border-gray-300 bg-gray-100 text-gray-900' : 'border-gray-200 bg-white text-gray-500'}`}>
+							{hasEditorText ? 'Ready' : 'Needs text'}
+						</span>
+						{isCustomSection && (
+							<button
+								type="button"
+								onClick={() => {
+									void removeCustomPolicySection(sectionKey);
+								}}
+								className="rounded-md border border-gray-200 p-1.5 text-gray-500 transition hover:border-gray-900 hover:text-gray-900"
+								aria-label="Remove additional section"
+								title="Remove additional section"
+							>
+								<Trash2 size={14} />
+							</button>
+						)}
+					</div>
+				</div>
+
+				<label htmlFor={`policy-section-${sectionKey}`} className="mt-4 block text-xs font-semibold uppercase tracking-wide text-gray-600">
+					Policy text
+				</label>
+				<textarea
+					id={`policy-section-${sectionKey}`}
+					value={editorValue}
+					onChange={(event) => updatePolicySection(sectionKey, event.target.value)}
+					rows={8}
+					placeholder="Write the terms customers should read before accepting this flow."
+					className="mt-2 w-full resize-y rounded-lg border border-gray-300 bg-white px-3 py-3 text-sm leading-6 text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10"
+				/>
+				<div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500">
+					<span>{editorWordCount} words</span>
+					<div className="flex flex-wrap items-center gap-3">
+						{!isCustomSection && String(defaultPolicySections[sectionKey] ?? '').trim() && (
+							<button
+								type="button"
+								onClick={() => updatePolicySection(sectionKey, String(defaultPolicySections[sectionKey] ?? ''))}
+								className="font-semibold text-gray-700 underline underline-offset-2 transition hover:text-black"
+							>
+								Use default text
+							</button>
+						)}
+						<button
+							type="button"
+							onClick={() => clearPolicySectionEditor(sectionKey)}
+							className="font-semibold text-gray-700 underline underline-offset-2 transition hover:text-black"
+						>
+							Clear text
+						</button>
+					</div>
+				</div>
+			</article>
+		);
 	};
 
 	return (
@@ -2033,7 +1618,7 @@ const ShopSetting: React.FC = () => {
 									href={`#settings-section-${section.key}`}
 									onClick={(event) => selectSettingsSection(section.key, event)}
 									aria-current={activeSettingsSection === section.key ? 'page' : undefined}
-									className={`rounded-lg px-3 py-2 text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 xl:flex xl:w-full xl:justify-start xl:px-4 xl:py-3 xl:text-left ${
+						className={`rounded-lg px-3 py-2 text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-2 xl:flex xl:w-full xl:justify-start xl:px-4 xl:py-3 xl:text-left ${
 										activeSettingsSection === section.key
 											? 'bg-slate-900 text-white'
 											: 'text-slate-700 hover:bg-slate-100'
@@ -2054,7 +1639,7 @@ const ShopSetting: React.FC = () => {
 						id="settings-section-profile"
 						ref={setSettingsSectionRef('profile')}
 						tabIndex={-1}
-						className="relative scroll-mt-6 overflow-hidden rounded-2xl border border-gray-300 bg-white p-5 shadow-sm outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-4 lg:col-span-12 lg:order-1 xl:order-1 xl:shadow-none"
+						className="relative scroll-mt-6 overflow-hidden rounded-2xl border border-gray-300 bg-white p-5 shadow-sm outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-4 lg:col-span-12 lg:order-1 xl:order-1 xl:shadow-none"
 					>
 						<div className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full bg-black/5 blur-3xl xl:hidden" />
 						<div className="pointer-events-none absolute -bottom-20 -left-16 h-56 w-56 rounded-full bg-gray-300/30 blur-3xl xl:hidden" />
@@ -2096,7 +1681,7 @@ const ShopSetting: React.FC = () => {
 									ref={setSettingsSectionRef('subscription')}
 									tabIndex={-1}
 									aria-label="Subscription settings"
-									className="scroll-mt-6 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-4"
+						className="scroll-mt-6 rounded-xl outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-4"
 								>
 									{premiumIsEligible && (
 										<div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-3 text-sm text-gray-700">
@@ -2187,7 +1772,7 @@ const ShopSetting: React.FC = () => {
 						id="settings-section-modules-team"
 						ref={setSettingsSectionRef('modules-team')}
 						tabIndex={-1}
-						className="scroll-mt-6 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-4 lg:col-span-12 lg:order-3 xl:order-2"
+						className="scroll-mt-6 rounded-2xl outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-4 lg:col-span-12 lg:order-3 xl:order-2"
 					>
 						<BusinessScalingSettings businessScaling={shop_settings.business_scaling} />
 					</div>
@@ -2200,340 +1785,98 @@ const ShopSetting: React.FC = () => {
 						id="settings-section-policies-compliance"
 						ref={setSettingsSectionRef('policies-compliance')}
 						tabIndex={-1}
-						className="scroll-mt-6 rounded-2xl border border-gray-200 bg-white shadow-sm outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-4 lg:col-span-12 lg:order-2 xl:order-10 xl:shadow-none"
+						className="scroll-mt-6 rounded-2xl border border-gray-200 bg-white shadow-sm outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-4 lg:col-span-12 lg:order-2 xl:order-10 xl:shadow-none"
 					>
 						<div className="border-b border-gray-200 p-6">
 							<div className="flex flex-wrap items-start justify-between gap-3">
 								<div>
 									<h2 className="text-xl font-semibold text-gray-900">Terms and Conditions Policy</h2>
 									<p className="mt-1 text-sm text-gray-600">
-										Create a versioned terms policy used during repair and payment acceptance for your shop.
+										Write each policy once and publish the version used by customer checkout and repair acceptance.
 									</p>
 								</div>
-
-								{isBothSignal && (
-									<div className="inline-flex rounded-lg border border-slate-300 bg-white p-1">
-										<button
-											type="button"
-											onClick={() => {
-												setPolicyBusinessView('retail');
-												setActivePolicySectionKey((previous) => {
-													const nextVisibleKeys = [
-														...commonPolicySectionKeys,
-														...retailPolicySectionKeys,
-														...retailCustomPolicySectionKeys,
-													];
-
-													if (previous && nextVisibleKeys.includes(previous)) {
-														return previous;
-													}
-
-													return nextVisibleKeys[0] ?? null;
-												});
-											}}
-											className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${policyBusinessView === 'retail' ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'}`}
-										>
-											Retail Terms
-										</button>
-										<button
-											type="button"
-											onClick={() => {
-												setPolicyBusinessView('repair');
-												setActivePolicySectionKey((previous) => {
-													const nextVisibleKeys = [
-														...commonPolicySectionKeys,
-														...repairPolicySectionKeys,
-														...repairCustomPolicySectionKeys,
-													];
-
-													if (previous && nextVisibleKeys.includes(previous)) {
-														return previous;
-													}
-
-													return nextVisibleKeys[0] ?? null;
-												});
-											}}
-											className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${policyBusinessView === 'repair' ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'}`}
-										>
-											Repair Terms
-										</button>
-									</div>
-								)}
+							</div>
+							<div className="mt-4 flex flex-wrap items-center gap-2 text-xs font-medium text-gray-600">
+								<span className="rounded-full border border-gray-300 bg-gray-100 px-2.5 py-1 text-gray-900">Version {policyVersionNumber ?? 'new'}</span>
+								<span className="rounded-full border border-gray-200 bg-white px-2.5 py-1">Shared terms included in every flow</span>
+								{hasRetailSignal && <span className="rounded-full border border-gray-200 bg-white px-2.5 py-1">Retail checkout</span>}
+								{hasRepairSignal && <span className="rounded-full border border-gray-200 bg-white px-2.5 py-1">Repair requests</span>}
 							</div>
 						</div>
-						<div className="space-y-4 p-6">
+						<div className="space-y-6 p-6">
 							{loadingPolicyState ? (
-								<p className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-800">Loading policy sections...</p>
+								<p className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">Loading policy sections...</p>
 							) : (
-								<div className="space-y-4">
-									{visiblePolicySectionKeys.map((key, index) => {
-										const sectionMeta = getPolicySectionMeta(key);
-										const isCustomSection = isCustomPolicySectionKey(key);
-										const sectionComposer = policyComposerState[key] ?? createPolicySectionComposerState(key);
-										const selectedTemplateCount = sectionComposer.templates.filter((template) => template.checked).length;
-										const customClauseCount = sectionComposer.customClauses.length;
-										const selectedClauseCount = selectedTemplateCount + customClauseCount;
-										const editorValue = String(policySections[key] ?? '');
-										const hasEditorText = editorValue.trim().length > 0;
-										const previewText = hasEditorText
-											? `${editorValue.replace(/\s+/g, ' ').trim().slice(0, 140)}${editorValue.replace(/\s+/g, ' ').trim().length > 140 ? '...' : ''}`
-											: 'No final text yet. Choose clauses and apply to editor.';
-										const editorWordCount = editorValue.trim().length === 0 ? 0 : editorValue.trim().split(/\s+/).length;
-										const isExpanded = activePolicySectionKey === key;
-
-										return (
-											<div key={key} className={`overflow-hidden rounded-xl border bg-white ${isExpanded ? 'border-blue-300 shadow-sm' : 'border-slate-200'}`}>
-												<div className="w-full px-4 py-3 text-left">
-													<div className="flex flex-wrap items-center justify-between gap-2">
-														<button
-															type="button"
-															onClick={() => togglePolicySectionExpansion(key)}
-															className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-0.5 py-0.5 text-left transition hover:bg-slate-50"
-														>
-															<span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-900 text-[11px] font-bold text-white">{index + 1}</span>
-															<div className="min-w-0">
-																<p className="truncate text-sm font-semibold text-slate-900">{sectionMeta.title}</p>
-																<p className="mt-0.5 text-xs text-slate-600">{sectionMeta.helper}</p>
-															</div>
-														</button>
-														<div className="flex items-center gap-1.5">
-															<span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700">{selectedClauseCount} selected</span>
-															<span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${hasEditorText ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-50 text-slate-600'}`}>
-																{hasEditorText ? 'Ready' : 'Needs text'}
-															</span>
-															<button
-																type="button"
-																onClick={() => {
-																	void editPolicySectionName(key);
-																}}
-																className="inline-flex h-6 w-6 items-center justify-center rounded-md text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
-																aria-label="Edit section name"
-																title="Edit section name"
-															>
-																<Pencil size={14} />
-															</button>
-															<button
-																type="button"
-																onClick={() => {
-																	void deletePolicySection(key);
-																}}
-																className="inline-flex h-6 w-6 items-center justify-center rounded-md text-red-600 transition hover:bg-red-50 hover:text-red-700"
-																aria-label={isCustomSection ? 'Remove additional section' : 'Delete section content'}
-																title={isCustomSection ? 'Remove additional section' : 'Delete section content'}
-															>
-																<Trash2 size={14} />
-															</button>
-															<button
-																type="button"
-																onClick={() => {
-																	togglePolicySectionExpansion(key);
-																}}
-																className="inline-flex h-6 w-6 items-center justify-center rounded-md text-slate-500 transition hover:bg-slate-100"
-																aria-label={isExpanded ? 'Collapse section' : 'Expand section'}
-																title={isExpanded ? 'Collapse section' : 'Expand section'}
-															>
-																<ChevronDown size={16} className={`transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
-															</button>
-														</div>
-													</div>
-													{!isExpanded && (
-														<button
-															type="button"
-															onClick={() => togglePolicySectionExpansion(key)}
-															className="mt-2 w-full rounded-md px-0.5 py-0.5 text-left text-xs text-slate-600 transition hover:bg-slate-50"
-														>
-															{previewText}
-														</button>
-													)}
-												</div>
-
-												{isExpanded && (
-													<div id={`policy-section-body-${key}`} className="border-t border-slate-200 px-4 pb-4 pt-3">
-
-												{sectionComposer.templates.length > 0 && (
-													<div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-														<div className="flex flex-wrap items-center justify-between gap-2">
-															<p className="text-xs font-semibold uppercase tracking-wide text-slate-700">Predefined Clauses</p>
-															<div className="flex flex-wrap items-center gap-1.5">
-																<button
-																	type="button"
-																	onClick={() => setAllTemplateSelection(key, true)}
-																	className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100"
-																>
-																	Select All
-																</button>
-																<button
-																	type="button"
-																	onClick={() => setAllTemplateSelection(key, false)}
-																	className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100"
-																>
-																	Clear
-																</button>
-															</div>
-														</div>
-														<div className="mt-2 space-y-2">
-															{sectionComposer.templates.map((template) => (
-																<div key={`${key}-${template.id}`} className="rounded-md border border-slate-200 bg-white p-3">
-																	<label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-800">
-																		<input
-																			type="checkbox"
-																			checked={template.checked}
-																			onChange={(event) => toggleComposerTemplate(key, template.id, event.target.checked)}
-																			className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-																		/>
-																		{template.title}
-																	</label>
-
-																	{template.checked && (
-																		<div className="mt-2 space-y-2">
-																			<input
-																				type="text"
-																				value={template.title}
-																				onChange={(event) => updateComposerTemplateField(key, template.id, 'title', event.target.value)}
-																				placeholder="Clause title"
-																				className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-																			/>
-																			<textarea
-																				value={template.body}
-																				onChange={(event) => updateComposerTemplateField(key, template.id, 'body', event.target.value)}
-																				rows={3}
-																				title="Clause details"
-																				placeholder="Edit predefined clause details"
-																				className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-																			/>
-																		</div>
-																	)}
-																</div>
-															))}
-														</div>
-													</div>
-												)}
-
-												{sectionComposer.customClauses.length > 0 && (
-													<div className="mt-3 space-y-2">
-															<p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Custom Clauses ({sectionComposer.customClauses.length})</p>
-															{sectionComposer.customClauses.map((clause, clauseIndex) => (
-															<div key={clause.id} className="rounded-md border border-slate-200 bg-slate-50 p-3">
-																	<div className="mb-2 flex items-center justify-between">
-																		<p className="text-xs font-semibold text-slate-600">Custom #{clauseIndex + 1}</p>
-																	<button
-																		type="button"
-																		onClick={() => {
-																			void removeCustomClause(key, clause.id);
-																		}}
-																		className="inline-flex h-7 w-7 items-center justify-center rounded-md text-red-600 transition hover:bg-red-50 hover:text-red-700"
-																		aria-label="Remove custom clause"
-																		title="Remove custom clause"
-																	>
-																		<Trash2 size={14} />
-																	</button>
-																</div>
-																<input
-																	type="text"
-																	value={clause.title}
-																	onChange={(event) => updateCustomClauseField(key, clause.id, 'title', event.target.value)}
-																	placeholder="Custom clause title"
-																	className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-																/>
-																<textarea
-																	value={clause.body}
-																	onChange={(event) => updateCustomClauseField(key, clause.id, 'body', event.target.value)}
-																	rows={3}
-																	title="Custom clause details"
-																	placeholder="Describe your custom clause"
-																	className="mt-2 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-																/>
-															</div>
-														))}
-													</div>
-												)}
-
-												<div className="mt-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3">
-													<label className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-slate-800">
-														<input
-															type="checkbox"
-															checked={sectionComposer.showOtherInput}
-															onChange={(event) => toggleOthersInput(key, event.target.checked)}
-															className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-														/>
-															Add Custom Clause
-													</label>
-
-													{sectionComposer.showOtherInput && (
-														<div className="mt-2 space-y-2">
-															<input
-																type="text"
-																value={sectionComposer.otherTitle}
-																onChange={(event) => updateOtherDraftField(key, 'otherTitle', event.target.value)}
-																placeholder="Clause title (ex. Delivery Exceptions)"
-																className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-															/>
-															<textarea
-																value={sectionComposer.otherBody}
-																onChange={(event) => updateOtherDraftField(key, 'otherBody', event.target.value)}
-																rows={3}
-																placeholder="Write your custom clause details here."
-																className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-															/>
-															<button
-																type="button"
-																onClick={() => addOtherClause(key)}
-																className="w-fit rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-black"
-															>
-																Save
-															</button>
-														</div>
-													)}
-												</div>
-
-												<div className="mt-3 flex flex-wrap items-center gap-2">
-													<button
-														type="button"
-														onClick={() => applyComposerSelectionToEditor(key, 'replace')}
-														disabled={selectedClauseCount === 0}
-														className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-													>
-														Use Selected Clauses
-													</button>
-													<button
-														type="button"
-														onClick={() => resetComposerBuilder(key)}
-														className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
-													>
-														Reset Builder
-													</button>
-												</div>
-
-												<div className="mt-3">
-													<div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
-														<label htmlFor={`policy-section-${key}`} className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
-															Final Section Text (Editable)
-														</label>
-														<div className="flex flex-wrap items-center gap-2">
-															<span className="text-[11px] font-medium text-slate-500">{editorWordCount} words</span>
-															<button
-																type="button"
-																onClick={() => clearPolicySectionEditor(key)}
-																className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100"
-															>
-																Clear Text
-															</button>
-														</div>
-													</div>
-													<textarea
-														id={`policy-section-${key}`}
-														value={String(policySections[key] ?? '')}
-														onChange={(event) => updatePolicySection(key, event.target.value)}
-														rows={6}
-														className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-													/>
-												</div>
-												</div>
-											)}
+								<>
+									<div className="rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">
+										<p className="font-semibold text-gray-900">How these terms are used</p>
+										<p className="mt-1 leading-6">
+											The shared section appears in both flows. Retail and repair sections are sent only to their matching checkout or request screen.
+										</p>
+									</div>
+									{commonPolicySectionKeys.length > 0 && (
+										<section aria-labelledby="shared-policy-heading" className="space-y-3">
+											<div>
+												<p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">Shared by every customer flow</p>
+												<h3 id="shared-policy-heading" className="mt-1 text-lg font-semibold text-gray-900">Shared terms</h3>
 											</div>
-										);
-									})}
-								</div>
+											<div className="space-y-3">
+												{commonPolicySectionKeys.map((key, index) => renderPolicySectionEditor(key, index + 1))}
+											</div>
+										</section>
+									)}
+
+									<div className={`grid gap-4 ${isBothSignal ? 'lg:grid-cols-2' : 'grid-cols-1'}`}>
+										{hasRetailSignal && (
+											<section aria-labelledby="retail-policy-heading" className="rounded-xl border border-gray-200 bg-gray-50/70 p-4 sm:p-5">
+												<div className="flex flex-wrap items-start justify-between gap-3 border-b border-gray-200 pb-4">
+													<div>
+														<p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">Retail only</p>
+														<h3 id="retail-policy-heading" className="mt-1 text-lg font-semibold text-gray-900">Retail terms</h3>
+														<p className="mt-1 text-sm leading-5 text-gray-600">Shown during product checkout and payment.</p>
+													</div>
+													<span className="rounded-full border border-gray-300 bg-white px-2.5 py-1 text-xs font-semibold text-gray-700">{retailVisiblePolicySectionKeys.length} section{retailVisiblePolicySectionKeys.length === 1 ? '' : 's'}</span>
+												</div>
+												<div className="mt-4 space-y-3">
+													{retailVisiblePolicySectionKeys.map((key, index) => renderPolicySectionEditor(key, index + 1))}
+												</div>
+												<button
+													type="button"
+													onClick={() => addCustomPolicySection('retail')}
+													disabled={savingPolicyDraft || publishingPolicy}
+													className="mt-4 w-full rounded-lg border border-dashed border-gray-300 bg-white px-3 py-2.5 text-sm font-semibold text-gray-700 transition hover:border-gray-900 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-60"
+												>
+													+ Add retail section
+												</button>
+											</section>
+										)}
+
+										{hasRepairSignal && (
+											<section aria-labelledby="repair-policy-heading" className="rounded-xl border border-gray-200 bg-gray-50/70 p-4 sm:p-5">
+												<div className="flex flex-wrap items-start justify-between gap-3 border-b border-gray-200 pb-4">
+													<div>
+														<p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">Repair only</p>
+														<h3 id="repair-policy-heading" className="mt-1 text-lg font-semibold text-gray-900">Repair terms</h3>
+														<p className="mt-1 text-sm leading-5 text-gray-600">Shown during repair requests and repair payments.</p>
+													</div>
+													<span className="rounded-full border border-gray-300 bg-white px-2.5 py-1 text-xs font-semibold text-gray-700">{repairVisiblePolicySectionKeys.length} section{repairVisiblePolicySectionKeys.length === 1 ? '' : 's'}</span>
+												</div>
+												<div className="mt-4 space-y-3">
+													{repairVisiblePolicySectionKeys.map((key, index) => renderPolicySectionEditor(key, index + 1))}
+												</div>
+														<button
+															type="button"
+															onClick={() => addCustomPolicySection('repair')}
+															disabled={savingPolicyDraft || publishingPolicy}
+															className="mt-4 w-full rounded-lg border border-dashed border-gray-300 bg-white px-3 py-2.5 text-sm font-semibold text-gray-700 transition hover:border-gray-900 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-60"
+												>
+													+ Add repair section
+												</button>
+											</section>
+										)}
+									</div>
+
+												</>
 							)}
 
 							{policyError ? <p className="text-sm text-red-600">{policyError}</p> : null}
@@ -2552,21 +1895,13 @@ const ShopSetting: React.FC = () => {
 								</button>
 								<button
 									type="button"
-									onClick={addCustomPolicySection}
-									disabled={savingPolicyDraft || publishingPolicy}
-									className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-800 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60"
-								>
-									Add Section
-								</button>
-								<button
-									type="button"
 									onClick={() => {
 										void publishPolicyVersion();
 									}}
 									disabled={publishingPolicy || savingPolicyDraft}
-									className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-800 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60"
+									className="rounded-lg border border-gray-900 bg-gray-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-60"
 								>
-									{publishingPolicy ? 'Saving...' : 'Save'}
+									{publishingPolicy ? 'Publishing...' : 'Publish Policy'}
 								</button>
 							</div>
 						</div>
@@ -2628,7 +1963,7 @@ const ShopSetting: React.FC = () => {
 									<p className="mt-1 text-sm text-gray-600">
 										Set the maximum number of active repair job orders that can be handled at one time.
 									</p>
-									<div className="mt-4 rounded-lg border border-blue-100 bg-blue-50/40 p-4">
+									<div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-4">
 										<p className="mb-3 text-sm text-gray-700">
 											When the active repair count reaches this limit, new requests will be flagged. Enter a value between 1 and 500.
 										</p>
@@ -2644,12 +1979,12 @@ const ShopSetting: React.FC = () => {
 													if (limitInputError) setLimitInputError(null);
 												}}
 												placeholder="20"
-												className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:max-w-xs"
+													className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900 sm:max-w-xs"
 											/>
 											<button
 												type="button"
 												onClick={handleSaveRepairRequestLimit}
-												className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700"
+													className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-black"
 											>
 												Save Limit
 											</button>
@@ -2679,7 +2014,7 @@ const ShopSetting: React.FC = () => {
 								</p>
 							</div>
 							<div className="p-6">
-								<div className="rounded-lg border border-blue-100 bg-blue-50/40 p-4">
+								<div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
 									<p className="mb-3 text-sm text-gray-700">
 										Allowed range is 1 to 30 days. This applies to new refund requests for your shop.
 									</p>
@@ -2706,7 +2041,7 @@ const ShopSetting: React.FC = () => {
 										<button
 											type="button"
 											onClick={handleSaveOrderRefundDeadlineDays}
-											className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700"
+											className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-black"
 										>
 											Save Refund Deadline
 										</button>
@@ -2746,7 +2081,7 @@ const ShopSetting: React.FC = () => {
 											if (payrollCutoffError) setPayrollCutoffError(null);
 										}}
 										title="Payroll pay cycle"
-										className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+										className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900"
 									>
 										<option value="monthly">Monthly</option>
 										<option value="semi_monthly">Semi-monthly</option>
@@ -2759,7 +2094,7 @@ const ShopSetting: React.FC = () => {
 											<button
 												type="button"
 												onClick={() => openPayoutDayPicker('first')}
-												className="flex w-full items-center justify-between rounded-lg border border-gray-300 bg-white px-3 py-2 text-left text-sm text-gray-900 transition hover:border-blue-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+														className="flex w-full items-center justify-between rounded-lg border border-gray-300 bg-white px-3 py-2 text-left text-sm text-gray-900 transition hover:border-gray-500 focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900"
 												title="Open first payroll payout day picker"
 											>
 												<span className="inline-flex items-center gap-2">
@@ -2775,7 +2110,7 @@ const ShopSetting: React.FC = () => {
 											<button
 												type="button"
 												onClick={() => openPayoutDayPicker('second')}
-												className="flex w-full items-center justify-between rounded-lg border border-gray-300 bg-white px-3 py-2 text-left text-sm text-gray-900 transition hover:border-blue-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+														className="flex w-full items-center justify-between rounded-lg border border-gray-300 bg-white px-3 py-2 text-left text-sm text-gray-900 transition hover:border-gray-500 focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900"
 												title="Open second payroll payout day picker"
 											>
 												<span className="inline-flex items-center gap-2">
@@ -2840,7 +2175,7 @@ const ShopSetting: React.FC = () => {
 									href="https://www.paymongo.com/"
 									target="_blank"
 									rel="noopener noreferrer"
-									className="mt-3 inline-flex text-sm font-semibold text-blue-600 underline underline-offset-2 hover:text-blue-800"
+								className="mt-3 inline-flex text-sm font-semibold text-gray-900 underline underline-offset-2 hover:text-black"
 								>
 									Visit PayMongo
 								</a>
@@ -2954,13 +2289,13 @@ const ShopSetting: React.FC = () => {
 						id="settings-section-operations"
 						ref={setSettingsSectionRef('operations')}
 						tabIndex={-1}
-						className="scroll-mt-6 rounded-2xl border border-gray-200 bg-white shadow-sm outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-4 lg:col-span-12 lg:order-6 xl:order-8 xl:shadow-none"
+						className="scroll-mt-6 rounded-2xl border border-gray-200 bg-white shadow-sm outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-4 lg:col-span-12 lg:order-6 xl:order-8 xl:shadow-none"
 					>
 						<div className="border-b border-gray-200 p-6">
 							<div className="flex items-start justify-between gap-4">
 								<div>
 									<div className="flex items-center gap-2 mb-1">
-										<MapPin size={18} className="text-blue-600" />
+										<MapPin size={18} className="text-gray-900" />
 										<h2 className="text-xl font-semibold text-gray-900">
 											{isIndividual ? 'Shop Location' : 'Attendance Geofence'}
 										</h2>
@@ -2992,13 +2327,13 @@ const ShopSetting: React.FC = () => {
 										onChange={(e) => setAddressSearch(e.target.value)}
 										onKeyDown={(e) => e.key === 'Enter' && handleAddressSearch()}
 										placeholder="e.g. 123 Rizal St, Makati"
-										className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+										className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900"
 									/>
 									<button
 										type="button"
 										onClick={handleAddressSearch}
 										disabled={searchingAddress}
-										className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+									className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-black disabled:opacity-50"
 									>
 										{searchingAddress ? 'Searching…' : 'Search'}
 									</button>
@@ -3006,7 +2341,7 @@ const ShopSetting: React.FC = () => {
 										type="button"
 										onClick={handleUseMyGPS}
 										disabled={gettingGPS}
-										className="flex items-center gap-1.5 rounded-lg border border-blue-600 px-3 py-2 text-sm font-semibold text-blue-600 hover:bg-blue-50 disabled:opacity-50"
+									className="flex items-center gap-1.5 rounded-lg border border-gray-900 px-3 py-2 text-sm font-semibold text-gray-900 hover:bg-gray-100 disabled:opacity-50"
 										title="Set coordinates from your current GPS location"
 									>
 										<MapPin size={14} />
@@ -3028,7 +2363,7 @@ const ShopSetting: React.FC = () => {
 												key={i}
 												type="button"
 												onClick={() => handleSelectAddress(r)}
-												className="w-full px-4 py-2.5 text-left text-sm text-gray-800 hover:bg-blue-50 border-b border-gray-100 last:border-b-0"
+													className="w-full px-4 py-2.5 text-left text-sm text-gray-800 hover:bg-gray-100 border-b border-gray-100 last:border-b-0"
 											>
 												{r.display_name}
 											</button>
@@ -3048,7 +2383,7 @@ const ShopSetting: React.FC = () => {
 							<div>
 								<div className="flex items-center justify-between mb-2">
 									<label className="text-sm font-medium text-gray-700">Allowed Radius</label>
-									<span className="text-sm font-semibold text-blue-600">{geoRadius} m</span>
+									<span className="text-sm font-semibold text-gray-900">{geoRadius} m</span>
 								</div>
 								<input
 									type="range"
@@ -3059,7 +2394,7 @@ const ShopSetting: React.FC = () => {
 									onChange={(e) => setGeoRadius(Number(e.target.value))}
 									aria-label="Allowed geofence radius in meters"
 									title="Allowed geofence radius in meters"
-									className="w-full accent-blue-600"
+									className="w-full accent-gray-900"
 								/>
 								<div className="flex justify-between text-xs text-gray-400 mt-1">
 									<span>10 m</span><span>50 m</span><span>100 m</span><span>200 m</span><span>500 m</span>
@@ -3098,7 +2433,7 @@ const ShopSetting: React.FC = () => {
 						id="settings-section-payments-approvals"
 						ref={setSettingsSectionRef('payments-approvals')}
 						tabIndex={-1}
-						className={`scroll-mt-6 rounded-2xl border border-gray-200 bg-white shadow-sm outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-4 lg:order-2 xl:order-4 xl:shadow-none ${showWideApprovalWorkflow ? 'lg:col-span-12' : 'lg:col-span-7'}`}
+						className={`scroll-mt-6 rounded-2xl border border-gray-200 bg-white shadow-sm outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-4 lg:order-2 xl:order-4 xl:shadow-none ${showWideApprovalWorkflow ? 'lg:col-span-12' : 'lg:col-span-7'}`}
 					>
 						<div className="border-b border-gray-200 p-6">
 							<h2 className="text-xl font-semibold text-gray-900">Approval Workflow</h2>
@@ -3106,7 +2441,7 @@ const ShopSetting: React.FC = () => {
 						</div>
 
 						<div className="divide-y divide-gray-100 p-6">
-							<p className="mb-3 rounded-lg border border-blue-100 bg-blue-50/50 px-4 py-3 text-sm text-blue-900">
+							<p className="mb-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
 								Changes apply to newly submitted requests. In-progress approvals keep their current workflow.
 							</p>
 							{APPROVAL_ITEMS.map((item) => {
@@ -3175,8 +2510,8 @@ const ShopSetting: React.FC = () => {
 											onClick={() => handleSelectPayoutDay(day)}
 											className={`rounded-xl border px-3 py-2 text-left text-sm transition ${
 												isActive
-													? 'border-blue-600 bg-blue-50 text-blue-700'
-													: 'border-gray-200 bg-white text-gray-700 hover:border-blue-300 hover:bg-blue-50/40'
+														? 'border-gray-900 bg-gray-100 text-gray-900'
+														: 'border-gray-200 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50'
 											}`}
 										>
 											<div className="flex items-center justify-between gap-2">

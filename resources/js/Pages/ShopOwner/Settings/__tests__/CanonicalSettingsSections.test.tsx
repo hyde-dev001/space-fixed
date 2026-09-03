@@ -141,9 +141,9 @@ const baseShopSettings = {
   },
 };
 
-function renderSettings(initialSection: unknown = "profile") {
+function renderSettings(initialSection: unknown = "profile", shopSettings = baseShopSettings) {
   mocks.props = {
-    shop_settings: baseShopSettings,
+    shop_settings: shopSettings,
     initialSection,
   };
 
@@ -214,5 +214,53 @@ describe("canonical settings sections", () => {
     expect(document.getElementById("settings-section-policies-compliance")).toHaveClass("xl:order-10");
     expect(document.getElementById("settings-section-operations")).toHaveClass("xl:order-8");
     expect(document.getElementById("settings-section-payments-approvals")).toHaveClass("xl:order-4");
+  });
+
+  it("renders shared, retail, and repair policy editors as separate direct sections", async () => {
+    mocks.axiosGet.mockResolvedValueOnce({
+      data: {
+        data: {
+          default_sections: {
+            refund_payment_terms: "Shared terms",
+            retail_terms: "Retail terms",
+            repair_service_terms: "Repair terms",
+          },
+          active: null,
+          draft: null,
+        },
+      },
+    });
+
+    renderSettings("policies-compliance");
+
+    await waitFor(() => expect(screen.getAllByLabelText("Policy text")).toHaveLength(3));
+
+    expect(screen.getByRole("heading", { name: "Shared terms", exact: true })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Retail terms", exact: true })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Repair terms", exact: true })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /add retail section/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /add repair section/i })).toBeInTheDocument();
+  });
+
+  it("does not expose retail policy fields to a repair-only shop", async () => {
+    mocks.axiosGet.mockResolvedValueOnce({
+      data: {
+        data: {
+          default_sections: {
+            refund_payment_terms: "Shared terms",
+            retail_terms: "Retail terms",
+            repair_service_terms: "Repair terms",
+          },
+          active: null,
+          draft: null,
+        },
+      },
+    });
+
+    renderSettings("policies-compliance", { ...baseShopSettings, business_type: "repair" });
+
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Repair terms", exact: true })).toBeInTheDocument());
+    expect(screen.queryByRole("heading", { name: "Retail terms", exact: true })).not.toBeInTheDocument();
+    expect(screen.getAllByLabelText("Policy text")).toHaveLength(2);
   });
 });
