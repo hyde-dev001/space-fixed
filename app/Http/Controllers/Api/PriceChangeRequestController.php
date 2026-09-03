@@ -1113,7 +1113,7 @@ class PriceChangeRequestController extends Controller
         if ($existingProxy) {
             $existingProxy->forceFill([
                 'shop_owner_id' => $shopOwnerId,
-                'role' => $existingProxy->role ?: 'Shop Owner',
+                'role' => 'STAFF',
                 'email_verified_at' => $existingProxy->email_verified_at ?: now(),
             ])->save();
 
@@ -1139,7 +1139,7 @@ class PriceChangeRequestController extends Controller
                 'email' => $fallbackEmail,
                 'password' => Hash::make(Str::random(40)),
                 'shop_owner_id' => $shopOwnerId,
-                'role' => 'Shop Owner',
+                'role' => 'STAFF',
                 'email_verified_at' => now(),
             ]);
 
