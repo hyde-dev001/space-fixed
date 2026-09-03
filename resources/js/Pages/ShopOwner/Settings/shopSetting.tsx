@@ -1992,7 +1992,7 @@ const ShopSetting: React.FC = () => {
 			<Head title="Shop Settings" />
 
 			<div className="min-h-screen bg-slate-50">
-				<div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
+				<div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8 xl:max-w-[1440px] xl:px-10 2xl:px-16">
 					<div className="mb-6 flex items-center justify-between gap-3">
 						<button
 							type="button"
@@ -2017,15 +2017,23 @@ const ShopSetting: React.FC = () => {
 						<p className="text-sm text-gray-600">Manage payments, approvals, attendance geofence, compliance documents, and repair workflows from one place.</p>
 					</div>
 
-					<nav aria-label="Settings sections" className="mb-6 rounded-2xl border border-gray-200 bg-white p-2 shadow-sm">
-						<div className="flex flex-wrap gap-1">
+					<div
+						data-testid="settings-desktop-shell"
+						className="contents xl:grid xl:grid-cols-[220px_minmax(0,1fr)] xl:items-start xl:gap-10"
+					>
+					<nav aria-label="Settings sections" className="mb-6 rounded-2xl border border-gray-200 bg-white p-2 shadow-sm xl:sticky xl:top-6 xl:mb-0 xl:max-h-[calc(100vh-3rem)] xl:overflow-y-auto xl:rounded-xl xl:p-3 xl:shadow-none">
+						<div className="mb-3 hidden xl:block">
+							<p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">Settings</p>
+							<p className="mt-1 text-sm font-medium text-gray-900">Manage your shop workspace</p>
+						</div>
+						<div className="flex flex-wrap gap-1 xl:flex-col xl:flex-nowrap xl:items-stretch xl:gap-0.5">
 							{SETTINGS_SECTION_OPTIONS.map((section) => (
 								<a
 									key={section.key}
 									href={`#settings-section-${section.key}`}
 									onClick={(event) => selectSettingsSection(section.key, event)}
 									aria-current={activeSettingsSection === section.key ? 'page' : undefined}
-									className={`rounded-lg px-3 py-2 text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+									className={`rounded-lg px-3 py-2 text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 xl:flex xl:w-full xl:justify-start xl:px-4 xl:py-3 xl:text-left ${
 										activeSettingsSection === section.key
 											? 'bg-slate-900 text-white'
 											: 'text-slate-700 hover:bg-slate-100'
@@ -2037,16 +2045,19 @@ const ShopSetting: React.FC = () => {
 						</div>
 					</nav>
 
-					<div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+					<div
+						data-testid="settings-content"
+						className="grid grid-cols-1 gap-6 lg:grid-cols-12 xl:flex xl:min-w-0 xl:flex-col xl:gap-6"
+					>
 
 					<div
 						id="settings-section-profile"
 						ref={setSettingsSectionRef('profile')}
 						tabIndex={-1}
-						className="relative scroll-mt-6 overflow-hidden rounded-2xl border border-gray-300 bg-white p-5 shadow-sm outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-4 lg:col-span-12 lg:order-1"
+						className="relative scroll-mt-6 overflow-hidden rounded-2xl border border-gray-300 bg-white p-5 shadow-sm outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-4 lg:col-span-12 lg:order-1 xl:order-1 xl:shadow-none"
 					>
-						<div className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full bg-black/5 blur-3xl" />
-						<div className="pointer-events-none absolute -bottom-20 -left-16 h-56 w-56 rounded-full bg-gray-300/30 blur-3xl" />
+						<div className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full bg-black/5 blur-3xl xl:hidden" />
+						<div className="pointer-events-none absolute -bottom-20 -left-16 h-56 w-56 rounded-full bg-gray-300/30 blur-3xl xl:hidden" />
 
 						<div className="relative flex items-start gap-3">
 							<div className="rounded-xl border border-gray-300 bg-gray-100 p-2.5">
@@ -2176,12 +2187,12 @@ const ShopSetting: React.FC = () => {
 						id="settings-section-modules-team"
 						ref={setSettingsSectionRef('modules-team')}
 						tabIndex={-1}
-						className="scroll-mt-6 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-4 lg:col-span-12 lg:order-3"
+						className="scroll-mt-6 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-4 lg:col-span-12 lg:order-3 xl:order-2"
 					>
 						<BusinessScalingSettings businessScaling={shop_settings.business_scaling} />
 					</div>
 
-					<div className="lg:col-span-12 lg:order-7">
+					<div className="lg:col-span-12 lg:order-7 xl:order-3">
 						<BusinessDocumentCompliance documents={shop_settings.document_compliance} />
 					</div>
 
@@ -2189,7 +2200,7 @@ const ShopSetting: React.FC = () => {
 						id="settings-section-policies-compliance"
 						ref={setSettingsSectionRef('policies-compliance')}
 						tabIndex={-1}
-						className="scroll-mt-6 rounded-2xl border border-gray-200 bg-white shadow-sm outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-4 lg:col-span-12 lg:order-2"
+						className="scroll-mt-6 rounded-2xl border border-gray-200 bg-white shadow-sm outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-4 lg:col-span-12 lg:order-2 xl:order-10 xl:shadow-none"
 					>
 						<div className="border-b border-gray-200 p-6">
 							<div className="flex flex-wrap items-start justify-between gap-3">
@@ -2563,7 +2574,7 @@ const ShopSetting: React.FC = () => {
 
 					{/* Repair Payment Policy */}
 					{hasRepairSignal && (
-						<div className={`rounded-2xl border border-gray-200 bg-white shadow-sm lg:order-3 ${showWideRepairPaymentPolicy ? 'lg:col-span-12' : 'lg:col-span-5'}`}>
+						<div className={`rounded-2xl border border-gray-200 bg-white shadow-sm lg:order-3 xl:order-9 xl:shadow-none ${showWideRepairPaymentPolicy ? 'lg:col-span-12' : 'lg:col-span-5'}`}>
 							<div className="border-b border-gray-200 p-6">
 								<h2 className="text-xl font-semibold text-gray-900">Repair Payment Policy</h2>
 								<p className="mt-1 text-sm text-gray-600">
@@ -2660,7 +2671,7 @@ const ShopSetting: React.FC = () => {
 					)}
 
 					{(hasRetailSignal || hasRepairSignal) && (
-						<div className="rounded-2xl border border-gray-200 bg-white shadow-sm lg:col-span-12 lg:order-3">
+						<div className="rounded-2xl border border-gray-200 bg-white shadow-sm lg:col-span-12 lg:order-3 xl:order-7 xl:shadow-none">
 							<div className="border-b border-gray-200 p-6">
 								<h2 className="text-xl font-semibold text-gray-900">Refund Deadline</h2>
 								<p className="mt-1 text-sm text-gray-600">
@@ -2716,7 +2727,7 @@ const ShopSetting: React.FC = () => {
 
 					{/* PayMongo Payment Gateway Key */}
 					{!isIndividual && (
-						<div className="rounded-2xl border border-gray-200 bg-white shadow-sm lg:col-span-12 lg:order-4">
+						<div className="rounded-2xl border border-gray-200 bg-white shadow-sm lg:col-span-12 lg:order-4 xl:order-5 xl:shadow-none">
 							<div className="border-b border-gray-200 p-6">
 								<h2 className="text-xl font-semibold text-gray-900">
 									{payCycle === 'monthly' ? 'Payroll Cycle' : 'Payroll Cutoff'}
@@ -2805,7 +2816,7 @@ const ShopSetting: React.FC = () => {
 					)}
 
 					{/* PayMongo Payment Gateway Key */}
-					<div className="rounded-2xl border border-gray-200 bg-white shadow-sm lg:col-span-12 lg:order-5">
+					<div className="rounded-2xl border border-gray-200 bg-white shadow-sm lg:col-span-12 lg:order-5 xl:order-6 xl:shadow-none">
 						<div className="border-b border-gray-200 p-6">
 							<h2 className="text-xl font-semibold text-gray-900">Payment Gateway (PayMongo)</h2>
 							<p className="mt-1 text-sm text-gray-600">
@@ -2943,7 +2954,7 @@ const ShopSetting: React.FC = () => {
 						id="settings-section-operations"
 						ref={setSettingsSectionRef('operations')}
 						tabIndex={-1}
-						className="scroll-mt-6 rounded-2xl border border-gray-200 bg-white shadow-sm outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-4 lg:col-span-12 lg:order-6"
+						className="scroll-mt-6 rounded-2xl border border-gray-200 bg-white shadow-sm outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-4 lg:col-span-12 lg:order-6 xl:order-8 xl:shadow-none"
 					>
 						<div className="border-b border-gray-200 p-6">
 							<div className="flex items-start justify-between gap-4">
@@ -3087,7 +3098,7 @@ const ShopSetting: React.FC = () => {
 						id="settings-section-payments-approvals"
 						ref={setSettingsSectionRef('payments-approvals')}
 						tabIndex={-1}
-						className={`scroll-mt-6 rounded-2xl border border-gray-200 bg-white shadow-sm outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-4 lg:order-2 ${showWideApprovalWorkflow ? 'lg:col-span-12' : 'lg:col-span-7'}`}
+						className={`scroll-mt-6 rounded-2xl border border-gray-200 bg-white shadow-sm outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-4 lg:order-2 xl:order-4 xl:shadow-none ${showWideApprovalWorkflow ? 'lg:col-span-12' : 'lg:col-span-7'}`}
 					>
 						<div className="border-b border-gray-200 p-6">
 							<h2 className="text-xl font-semibold text-gray-900">Approval Workflow</h2>
@@ -3121,6 +3132,7 @@ const ShopSetting: React.FC = () => {
 						</div>
 					</div>
 					)}
+				</div>
 				</div>
 				</div>
 
