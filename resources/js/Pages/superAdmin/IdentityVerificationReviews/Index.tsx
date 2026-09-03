@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Head, Link, router } from '@inertiajs/react';
+import { AlertTriangle, CheckCircle2, Clock3, Files, ScanSearch, XCircle } from 'lucide-react';
 import Swal from 'sweetalert2';
 import AppLayout from '../../../layout/AppLayout';
 
@@ -49,6 +50,11 @@ type Props = {
 	};
 };
 
+type ImagePreview = {
+	url: string;
+	alt: string;
+};
+
 const REJECTION_REASONS: Array<[string, string]> = [
 	['id_unreadable', 'ID is unreadable'],
 	['wrong_document', 'Wrong document submitted'],
@@ -73,6 +79,45 @@ const statusClass = (status: string): string => {
 	if (status === 'rejected') return 'bg-red-100 text-red-700';
 	if (status === 'manual_review_required') return 'bg-orange-100 text-orange-700';
 	return 'bg-amber-100 text-amber-700';
+};
+
+type MetricTone = 'info' | 'warning' | 'success' | 'danger';
+
+type ReviewMetric = {
+	title: string;
+	value: number;
+	description: string;
+	icon: React.ComponentType<{ className?: string }>;
+	tone: MetricTone;
+};
+
+const metricToneClasses: Record<MetricTone, { gradient: string; badge: string }> = {
+	info: { gradient: 'from-blue-500 to-indigo-600', badge: 'bg-blue-100 text-blue-700' },
+	warning: { gradient: 'from-yellow-500 to-orange-600', badge: 'bg-yellow-100 text-yellow-700' },
+	success: { gradient: 'from-green-500 to-emerald-600', badge: 'bg-green-100 text-green-700' },
+	danger: { gradient: 'from-red-500 to-rose-600', badge: 'bg-red-100 text-red-700' },
+};
+
+const ReviewMetricCard: React.FC<ReviewMetric> = ({ title, value, description, icon: Icon, tone }) => {
+	const colors = metricToneClasses[tone];
+	return (
+		<div className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-md dark:border-gray-800 dark:bg-gray-800">
+			<div className={'absolute inset-0 bg-gradient-to-br ' + colors.gradient + ' opacity-0 transition-opacity duration-300 group-hover:opacity-5'} />
+			<div className="relative">
+				<div className="flex items-center justify-between gap-3">
+					<div className={'flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br ' + colors.gradient + ' shadow-lg'}>
+						<Icon className="h-6 w-6 text-white" />
+					</div>
+					<span className={'rounded-full px-3 py-1 text-xs font-semibold ' + colors.badge}>Queue</span>
+				</div>
+				<div className="mt-5 space-y-1">
+					<p className="text-sm font-medium text-gray-600 dark:text-gray-400">{title}</p>
+					<p className="text-3xl font-bold text-gray-900 dark:text-white">{value.toLocaleString()}</p>
+					<p className="text-xs text-gray-500 dark:text-gray-400">{description}</p>
+				</div>
+			</div>
+		</div>
+	);
 };
 
 const readJson = async (response: Response): Promise<Record<string, any>> => {
@@ -111,6 +156,20 @@ const IdentityReviewQueue: React.FC<Props> = ({ reviews, stats, filters }) => {
 	const [selectedIds, setSelectedIds] = useState<number[]>([]);
 	const [busyId, setBusyId] = useState<number | null>(null);
 	const [isBulkBusy, setIsBulkBusy] = useState(false);
+	const [imagePreview, setImagePreview] = useState<ImagePreview | null>(null);
+	const eligibleIds = reviews.data
+		.filter(review => review.review_status === 'pending' && Boolean(review.inspected_at))
+		.map(review => review.id);
+	const allEligibleSelected = eligibleIds.length > 0 && eligibleIds.every(id => selectedIds.includes(id));
+
+	const metricCards: ReviewMetric[] = [
+		{ title: 'Pending', value: stats.pending, description: 'Awaiting human review', icon: Clock3, tone: 'warning' },
+		{ title: 'Screening passed', value: stats.screening_passed, description: 'Plausibility signal', icon: ScanSearch, tone: 'info' },
+		{ title: 'Needs review', value: stats.needs_review, description: 'Requires reviewer attention', icon: AlertTriangle, tone: 'warning' },
+		{ title: 'Approved', value: stats.approved, description: 'Full customer access', icon: CheckCircle2, tone: 'success' },
+		{ title: 'Rejected', value: stats.rejected, description: 'Available for resubmission', icon: XCircle, tone: 'danger' },
+		{ title: 'All submissions', value: stats.total, description: 'All submitted IDs', icon: Files, tone: 'info' },
+	];
 
 	const applyFilters = (event?: React.FormEvent) => {
 		event?.preventDefault();
@@ -147,6 +206,7 @@ const IdentityReviewQueue: React.FC<Props> = ({ reviews, stats, filters }) => {
 			const payload = await postJson('/admin/users/' + review.user_id + '/identity-verifications/' + review.id + '/inspect');
 			const inspectedAt = payload.identity_verification?.inspected_at || new Date().toISOString();
 			setSelected(previous => previous?.id === review.id ? { ...previous, inspected_at: inspectedAt } : previous);
+			router.reload({ only: ['reviews'], preserveState: true, preserveScroll: true });
 		} catch (error) {
 			const message = error instanceof Error ? error.message : 'The review could not be opened.';
 			void Swal.fire({ icon: 'error', title: 'Unable to open review', text: message, confirmButtonColor: '#16233b' });
@@ -163,7 +223,7 @@ const IdentityReviewQueue: React.FC<Props> = ({ reviews, stats, filters }) => {
 			showCancelButton: true,
 			confirmButtonText: 'Approve',
 			cancelButtonText: 'Cancel',
-			confirmButtonColor: '#059669',
+			confirmButtonColor: '#111827',
 		});
 		if (!confirmation.isConfirmed) return;
 
@@ -171,6 +231,7 @@ const IdentityReviewQueue: React.FC<Props> = ({ reviews, stats, filters }) => {
 			setBusyId(review.id);
 			await postJson('/admin/users/' + review.user_id + '/identity-verifications/' + review.id + '/approve');
 			setSelected(null);
+			setImagePreview(null);
 			await Swal.fire({ icon: 'success', title: 'Review approved', text: 'The customer now has transaction access.', timer: 1800, showConfirmButton: false });
 			reloadQueue();
 		} catch (error) {
@@ -218,6 +279,7 @@ const IdentityReviewQueue: React.FC<Props> = ({ reviews, stats, filters }) => {
 			setBusyId(review.id);
 			await postJson('/admin/users/' + review.user_id + '/identity-verifications/' + review.id + '/reject', result.value);
 			setSelected(null);
+			setImagePreview(null);
 			await Swal.fire({ icon: 'success', title: 'Review rejected', text: 'The customer can see the reason and resubmit a new ID.', timer: 1800, showConfirmButton: false });
 			reloadQueue();
 		} catch (error) {
@@ -234,6 +296,12 @@ const IdentityReviewQueue: React.FC<Props> = ({ reviews, stats, filters }) => {
 			: [...previous, review.id]);
 	};
 
+	const toggleAllEligible = () => {
+		setSelectedIds(previous => allEligibleSelected
+			? previous.filter(id => !eligibleIds.includes(id))
+			: Array.from(new Set([...previous, ...eligibleIds])));
+	};
+
 	const confirmBulkApprove = async () => {
 		if (selectedIds.length === 0) return;
 		const confirmation = await Swal.fire({
@@ -243,7 +311,7 @@ const IdentityReviewQueue: React.FC<Props> = ({ reviews, stats, filters }) => {
 			showCancelButton: true,
 			confirmButtonText: 'Approve reviewed records',
 			cancelButtonText: 'Cancel',
-			confirmButtonColor: '#059669',
+			confirmButtonColor: '#111827',
 		});
 		if (!confirmation.isConfirmed) return;
 
@@ -275,20 +343,8 @@ const IdentityReviewQueue: React.FC<Props> = ({ reviews, stats, filters }) => {
 						<Link href="/admin/users" className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">User Management</Link>
 					</div>
 
-					<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
-						{[
-							['Pending', stats.pending],
-							['Screening passed', stats.screening_passed],
-							['Needs review', stats.needs_review],
-							['Approved', stats.approved],
-							['Rejected', stats.rejected],
-							['All submissions', stats.total],
-						].map(([title, value]) => (
-							<div key={String(title)} className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-								<p className="text-xs font-semibold uppercase tracking-wide text-gray-500">{title}</p>
-								<p className="mt-2 text-2xl font-bold text-gray-900">{value}</p>
-							</div>
-						))}
+					<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+						{metricCards.map(metric => <ReviewMetricCard key={metric.title} {...metric} />)}
 					</div>
 
 					<form onSubmit={applyFilters} className="flex flex-wrap items-end gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
@@ -313,12 +369,12 @@ const IdentityReviewQueue: React.FC<Props> = ({ reviews, stats, filters }) => {
 								<option value="all">All statuses</option>
 							</select>
 						</label>
-						<button type="submit" className="rounded-lg bg-[#16233b] px-4 py-2 text-sm font-semibold text-white hover:bg-[#243858]">Apply filters</button>
+						<button type="submit" className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-500">Apply filters</button>
 					</form>
 
 					<div className="flex flex-wrap items-center justify-between gap-3">
 						<p className="text-sm text-gray-600">Showing {reviews.from || 0} - {reviews.to || 0} of {reviews.total} submissions</p>
-						<button type="button" onClick={confirmBulkApprove} disabled={isBulkBusy || selectedIds.length === 0} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">
+						<button type="button" onClick={confirmBulkApprove} disabled={isBulkBusy || selectedIds.length === 0} className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-500 disabled:cursor-not-allowed disabled:opacity-50">
 							{isBulkBusy ? 'Approving...' : 'Approve ' + selectedIds.length + ' reviewed'}
 						</button>
 					</div>
@@ -328,7 +384,9 @@ const IdentityReviewQueue: React.FC<Props> = ({ reviews, stats, filters }) => {
 							<table className="min-w-full divide-y divide-gray-200">
 								<thead className="bg-gray-50">
 									<tr>
-										<th className="w-12 px-4 py-3" />
+										<th className="w-12 px-4 py-3">
+											<input type="checkbox" aria-label="Select all reviewed submissions" checked={allEligibleSelected} onChange={toggleAllEligible} disabled={eligibleIds.length === 0 || isBulkBusy} className="h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-gray-500 disabled:cursor-not-allowed" />
+										</th>
 										{['Customer', 'Automated screening', 'Submitted', 'Human review', 'Action'].map(title => <th key={title} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">{title}</th>)}
 									</tr>
 								</thead>
@@ -341,7 +399,7 @@ const IdentityReviewQueue: React.FC<Props> = ({ reviews, stats, filters }) => {
 										return (
 											<tr key={review.id} className="align-top hover:bg-gray-50">
 												<td className="px-4 py-4">
-													<input type="checkbox" aria-label={'Select ' + review.customer.name} checked={selectedIds.includes(review.id)} onChange={() => toggleSelected(review)} disabled={!eligible || isBulkBusy} className="h-4 w-4 rounded border-gray-300 text-[#16233b]" />
+													<input type="checkbox" aria-label={'Select ' + review.customer.name} checked={selectedIds.includes(review.id)} onChange={() => toggleSelected(review)} disabled={!eligible || isBulkBusy} className="h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-gray-500 disabled:cursor-not-allowed" />
 												</td>
 												<td className="px-4 py-4">
 													<p className="font-semibold text-gray-900">{review.customer.name}</p>
@@ -357,7 +415,7 @@ const IdentityReviewQueue: React.FC<Props> = ({ reviews, stats, filters }) => {
 													{review.inspected_at && <p className="mt-1 text-xs text-emerald-600">Inspected {dateLabel(review.inspected_at)}</p>}
 												</td>
 												<td className="px-4 py-4">
-													<button type="button" onClick={() => openReview(review)} disabled={busyId === review.id} className="rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+													<button type="button" onClick={() => openReview(review)} disabled={busyId === review.id} className="rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-900 transition-colors hover:border-gray-900 hover:bg-gray-900 hover:text-white focus:outline-none focus:ring-2 focus:ring-gray-500 disabled:opacity-50">
 														{busyId === review.id ? 'Opening...' : 'Open review'}
 													</button>
 												</td>
@@ -382,7 +440,7 @@ const IdentityReviewQueue: React.FC<Props> = ({ reviews, stats, filters }) => {
 			</div>
 
 			{selected && (
-				<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-label="Identity review">
+				<div className="fixed inset-0 z-[100000] flex items-center justify-center bg-black/60 p-4 pointer-events-auto" role="dialog" aria-modal="true" aria-label="Identity review">
 					<div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl">
 						<div className="flex items-start justify-between gap-4">
 							<div>
@@ -390,7 +448,7 @@ const IdentityReviewQueue: React.FC<Props> = ({ reviews, stats, filters }) => {
 								<h2 className="mt-1 text-2xl font-bold text-gray-900">{selected.customer.name}</h2>
 								<p className="mt-1 text-sm text-gray-500">{selected.customer.email}</p>
 							</div>
-							<button type="button" onClick={() => setSelected(null)} className="rounded-full px-3 py-1 text-2xl leading-none text-gray-500 hover:bg-gray-100" aria-label="Close review">Close</button>
+							<button type="button" onClick={() => { setSelected(null); setImagePreview(null); }} className="rounded-full px-3 py-1 text-2xl leading-none text-gray-500 hover:bg-gray-100" aria-label="Close review">Close</button>
 						</div>
 
 						<div className="mt-6 grid gap-4 lg:grid-cols-[1fr_2fr]">
@@ -415,17 +473,33 @@ const IdentityReviewQueue: React.FC<Props> = ({ reviews, stats, filters }) => {
 								)}
 							</div>
 							<div className="grid gap-4 sm:grid-cols-2">
-								{selected.front_url && <img src={selected.front_url} alt="Submitted ID front" className="max-h-[26rem] w-full rounded-xl border border-gray-200 bg-gray-50 object-contain p-2" />}
-								{selected.back_url && <img src={selected.back_url} alt="Submitted ID back" className="max-h-[26rem] w-full rounded-xl border border-gray-200 bg-gray-50 object-contain p-2" />}
+								{selected.front_url && (
+									<button type="button" aria-label="View submitted ID front" title="View full image" onClick={() => setImagePreview({ url: selected.front_url || '', alt: 'Submitted ID front' })} className="group block w-full cursor-zoom-in rounded-xl border border-gray-200 bg-gray-50 p-2 text-left transition-colors hover:border-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900">
+										<img src={selected.front_url} alt="Submitted ID front" className="max-h-[26rem] w-full rounded-xl object-contain transition-transform duration-200 group-hover:scale-[1.02]" />
+									</button>
+								)}
+								{selected.back_url && (
+									<button type="button" aria-label="View submitted ID back" title="View full image" onClick={() => setImagePreview({ url: selected.back_url || '', alt: 'Submitted ID back' })} className="group block w-full cursor-zoom-in rounded-xl border border-gray-200 bg-gray-50 p-2 text-left transition-colors hover:border-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900">
+										<img src={selected.back_url} alt="Submitted ID back" className="max-h-[26rem] w-full rounded-xl object-contain transition-transform duration-200 group-hover:scale-[1.02]" />
+									</button>
+								)}
 							</div>
 						</div>
 
 						{selected.review_status === 'pending' && (
 							<div className="mt-6 flex flex-wrap justify-end gap-3 border-t border-gray-200 pt-4">
 								<button type="button" onClick={() => confirmReject(selected)} disabled={busyId === selected.id} className="rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50">Reject</button>
-								<button type="button" onClick={() => confirmApprove(selected)} disabled={busyId === selected.id} className="rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">Approve</button>
+								<button type="button" onClick={() => confirmApprove(selected)} disabled={busyId === selected.id} className="rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-500 disabled:opacity-50">Approve</button>
 							</div>
 						)}
+					</div>
+				</div>
+			)}
+			{imagePreview && (
+				<div className="fixed inset-0 z-[100001] flex items-center justify-center bg-black/80 p-4" role="dialog" aria-modal="true" aria-label={imagePreview.alt + ' preview'} onClick={() => setImagePreview(null)}>
+					<div className="relative flex max-h-[95vh] max-w-[95vw] items-center justify-center rounded-2xl bg-white p-3 shadow-2xl" onClick={event => event.stopPropagation()}>
+						<img src={imagePreview.url} alt={imagePreview.alt + ' preview'} className="max-h-[88vh] max-w-[90vw] rounded-xl object-contain" />
+						<button type="button" onClick={() => setImagePreview(null)} className="absolute right-5 top-5 rounded-lg bg-gray-900 px-3 py-2 text-sm font-semibold text-white hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-500" aria-label="Close image preview">Close</button>
 					</div>
 				</div>
 			)}
