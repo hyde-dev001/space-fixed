@@ -1,0 +1,346 @@
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from '@inertiajs/react';
+import AddToCartButton from '../CartActions';
+
+export type ProductQuickViewProduct = {
+  id: number;
+  name: string;
+  slug: string;
+  price: number;
+  compare_at_price?: number | null;
+  main_image: string | null;
+  gallery_images?: string[];
+  brand?: string | null;
+  stock_quantity: number;
+  sizes_available?: unknown[] | null;
+  colors_available?: unknown[] | null;
+  shop_owner?: {
+    id: number;
+    name?: string;
+    business_name?: string;
+  };
+};
+
+type ProductQuickViewProps = {
+  product: ProductQuickViewProduct;
+  detailsHref: string;
+  triggerRef?: React.RefObject<HTMLButtonElement | null>;
+  onClose: () => void;
+};
+
+const normalizeOptions = (value: unknown): string[] => {
+  if (!Array.isArray(value)) return [];
+
+  return Array.from(
+    new Set(
+      value
+        .filter((option) => option !== null && option !== undefined)
+        .map((option) => String(option).trim())
+        .filter(Boolean),
+    ),
+  );
+};
+
+const formatPrice = (value: number): string => {
+  const numericValue = Number(value);
+  return `₱${(Number.isFinite(numericValue) ? numericValue : 0).toLocaleString('en-PH', {
+    maximumFractionDigits: 2,
+  })}`;
+};
+
+const ChevronIcon = ({ direction }: { direction: 'left' | 'right' }) => (
+  <svg
+    className="h-5 w-5"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.75"
+    aria-hidden="true"
+  >
+    <path d={direction === 'left' ? 'm14.5 5-7 7 7 7' : 'm9.5 5 7 7-7 7'} strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+const QuantityIcon = ({ type }: { type: 'minus' | 'plus' }) => (
+  <svg
+    className="h-4 w-4"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.75"
+    aria-hidden="true"
+  >
+    <path d="M5 12h14" strokeLinecap="round" />
+    {type === 'plus' && <path d="M12 5v14" strokeLinecap="round" />}
+  </svg>
+);
+
+const ProductQuickView: React.FC<ProductQuickViewProps> = ({ product, detailsHref, triggerRef, onClose }) => {
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const [selectedImageIndex, setSelectedImageIndex] = useState(0);
+  const [quantity, setQuantity] = useState(1);
+
+  const images = useMemo(() => {
+    const candidates = [product.main_image, ...(product.gallery_images ?? [])];
+
+    return Array.from(
+      new Set(
+        candidates.filter(
+          (image): image is string => typeof image === 'string' && image.trim().length > 0,
+        ),
+      ),
+    );
+  }, [product.gallery_images, product.main_image]);
+  const sizes = useMemo(() => normalizeOptions(product.sizes_available), [product.sizes_available]);
+  const colors = useMemo(() => normalizeOptions(product.colors_available), [product.colors_available]);
+  const [selectedSize, setSelectedSize] = useState<string | null>(sizes[0] ?? null);
+  const [selectedColor, setSelectedColor] = useState<string | null>(colors[0] ?? null);
+
+  const stockQuantity = Number.isFinite(Number(product.stock_quantity))
+    ? Math.max(0, Math.floor(Number(product.stock_quantity)))
+    : 0;
+  const quantityLimit = Math.max(1, stockQuantity);
+  const selectedImage = images[selectedImageIndex] ?? null;
+  const hasRequiredSelections =
+    (sizes.length === 0 || selectedSize !== null) &&
+    (colors.length === 0 || selectedColor !== null);
+  const isAddToCartDisabled = stockQuantity <= 0 || !hasRequiredSelections;
+  const compareAtPrice = Number(product.compare_at_price);
+  const hasCompareAtPrice = Number.isFinite(compareAtPrice) && compareAtPrice > Number(product.price);
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+
+    document.body.style.overflow = 'hidden';
+    document.addEventListener('keydown', closeOnEscape);
+    closeButtonRef.current?.focus();
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', closeOnEscape);
+      triggerRef?.current?.focus();
+    };
+  }, [onClose, triggerRef]);
+
+  const changeQuantity = (delta: number) => {
+    setQuantity((currentQuantity) =>
+      Math.min(quantityLimit, Math.max(1, currentQuantity + delta)),
+    );
+  };
+
+  const moveImage = (direction: number) => {
+    setSelectedImageIndex((currentIndex) =>
+      Math.min(Math.max(0, currentIndex + direction), Math.max(0, images.length - 1)),
+    );
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-slate-950/60 p-3 transition-opacity duration-200 motion-reduce:transition-none sm:p-6"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="quick-view-title"
+        className="relative my-0 grid max-h-[calc(100vh-1.5rem)] w-full max-w-5xl overflow-y-auto bg-white shadow-2xl transition-transform duration-200 motion-reduce:transition-none sm:my-4 sm:max-h-[calc(100vh-3rem)] lg:grid-cols-2"
+      >
+        <button
+          ref={closeButtonRef}
+          type="button"
+          onClick={onClose}
+          aria-label="Close quick view"
+          className="absolute right-2 top-2 z-10 inline-flex h-11 w-11 items-center justify-center text-slate-700 transition-colors hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 motion-reduce:transition-none sm:right-3 sm:top-3"
+        >
+          <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+            <path d="m6 6 12 12M18 6 6 18" strokeLinecap="round" />
+          </svg>
+        </button>
+
+        <section className="bg-slate-100 p-4 sm:p-6" aria-label="Product images">
+          <div className="relative aspect-square overflow-hidden bg-slate-200">
+            {selectedImage ? (
+              <img
+                src={selectedImage}
+                alt={`${product.name} image ${selectedImageIndex + 1}`}
+                className="h-full w-full object-contain"
+              />
+            ) : (
+              <div className="flex h-full items-center justify-center px-6 text-center text-sm text-slate-500">
+                No image available
+              </div>
+            )}
+
+            {images.length > 1 && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => moveImage(-1)}
+                  disabled={selectedImageIndex === 0}
+                  aria-label="Previous product image"
+                  className="absolute left-3 top-1/2 inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center bg-white/90 text-slate-900 shadow-sm transition-colors hover:bg-white focus:outline-none focus:ring-2 focus:ring-slate-950 disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transition-none"
+                >
+                  <ChevronIcon direction="left" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => moveImage(1)}
+                  disabled={selectedImageIndex === images.length - 1}
+                  aria-label="Next product image"
+                  className="absolute right-3 top-1/2 inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center bg-white/90 text-slate-900 shadow-sm transition-colors hover:bg-white focus:outline-none focus:ring-2 focus:ring-slate-950 disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transition-none"
+                >
+                  <ChevronIcon direction="right" />
+                </button>
+              </>
+            )}
+          </div>
+
+          {images.length > 1 && (
+            <div className="mt-3 flex gap-2 overflow-x-auto pb-1" aria-label="Product image thumbnails">
+              {images.map((image, index) => (
+                <button
+                  key={image}
+                  type="button"
+                  onClick={() => setSelectedImageIndex(index)}
+                  aria-label={`View product image ${index + 1}`}
+                  aria-pressed={selectedImageIndex === index}
+                  className="h-16 w-16 shrink-0 overflow-hidden border border-transparent bg-white focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-1 aria-[pressed=true]:border-slate-950"
+                >
+                  <img src={image} alt="" className="h-full w-full object-contain" loading="lazy" />
+                </button>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section className="flex min-w-0 flex-col p-5 sm:p-8">
+          <div className="border-b border-slate-200 pb-5 pr-10">
+            <p className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">
+              {product.brand || 'SoleSpace'}
+            </p>
+            <h2 id="quick-view-title" className="mt-2 font-serif text-2xl leading-tight text-slate-950 sm:text-3xl">
+              {product.name}
+            </h2>
+            <div className="mt-4 flex flex-wrap items-baseline gap-3">
+              <p className="text-lg font-semibold text-slate-950">{formatPrice(product.price)}</p>
+              {hasCompareAtPrice && (
+                <p className="text-sm text-slate-500 line-through">{formatPrice(compareAtPrice)}</p>
+              )}
+            </div>
+          </div>
+
+          <div className="flex flex-1 flex-col gap-6 py-6">
+            {colors.length > 0 && (
+              <fieldset>
+                <legend className="text-xs font-medium uppercase tracking-[0.16em] text-slate-600">Color</legend>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {colors.map((color) => (
+                    <button
+                      key={color}
+                      type="button"
+                      onClick={() => setSelectedColor(color)}
+                      aria-label={`Color ${color}`}
+                      aria-pressed={selectedColor === color}
+                      className="min-h-11 border border-slate-300 px-4 text-sm text-slate-800 transition-colors hover:border-slate-950 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-1 aria-[pressed=true]:border-slate-950 aria-[pressed=true]:bg-slate-950 aria-[pressed=true]:text-white motion-reduce:transition-none"
+                    >
+                      {color}
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
+            )}
+
+            {sizes.length > 0 && (
+              <fieldset>
+                <legend className="text-xs font-medium uppercase tracking-[0.16em] text-slate-600">Size</legend>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {sizes.map((size) => (
+                    <button
+                      key={size}
+                      type="button"
+                      onClick={() => setSelectedSize(size)}
+                      aria-label={`Size ${size}`}
+                      aria-pressed={selectedSize === size}
+                      className="min-h-11 min-w-16 border border-slate-300 px-4 text-sm text-slate-800 transition-colors hover:border-slate-950 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-1 aria-[pressed=true]:border-slate-950 aria-[pressed=true]:bg-slate-950 aria-[pressed=true]:text-white motion-reduce:transition-none"
+                    >
+                      {size}
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
+            )}
+
+            <div>
+              <label className="text-xs font-medium uppercase tracking-[0.16em] text-slate-600" htmlFor="quick-view-quantity">
+                Quantity
+              </label>
+              <div className="mt-3 inline-flex items-center border border-slate-300" id="quick-view-quantity">
+                <button
+                  type="button"
+                  onClick={() => changeQuantity(-1)}
+                  disabled={quantity <= 1}
+                  aria-label="Decrease quantity"
+                  className="inline-flex h-11 w-11 items-center justify-center text-slate-800 transition-colors hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-slate-950 disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transition-none"
+                >
+                  <QuantityIcon type="minus" />
+                </button>
+                <output className="min-w-10 text-center text-sm font-medium text-slate-950" aria-live="polite">
+                  {quantity}
+                </output>
+                <button
+                  type="button"
+                  onClick={() => changeQuantity(1)}
+                  disabled={quantity >= quantityLimit}
+                  aria-label="Increase quantity"
+                  className="inline-flex h-11 w-11 items-center justify-center text-slate-800 transition-colors hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-slate-950 disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transition-none"
+                >
+                  <QuantityIcon type="plus" />
+                </button>
+              </div>
+              <p className="mt-3 text-sm text-slate-500" role="status">
+                {stockQuantity > 0 ? `${stockQuantity} available` : 'Out of stock'}
+              </p>
+            </div>
+
+            <AddToCartButton
+              productId={product.id}
+              product={{
+                ...product,
+                size: selectedSize ?? undefined,
+                color: selectedColor ?? undefined,
+                qty: quantity,
+                selectedImage,
+              }}
+              label="Add to Cart"
+              stockQuantity={stockQuantity}
+              disabled={isAddToCartDisabled}
+              onAdded={onClose}
+              className="min-h-11 w-full bg-slate-950 px-5 text-sm font-medium uppercase tracking-[0.12em] text-white transition-colors hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-400 motion-reduce:transition-none"
+            />
+          </div>
+
+          {product.shop_owner && (
+            <p className="border-t border-slate-200 pt-4 text-sm text-slate-500">
+              Sold by {product.shop_owner.business_name || product.shop_owner.name || 'SoleSpace seller'}
+            </p>
+          )}
+
+          <Link
+            href={detailsHref}
+            onClick={onClose}
+            className="mt-6 inline-flex min-h-11 items-center justify-center text-center text-xs font-medium uppercase tracking-[0.14em] text-slate-700 underline decoration-slate-300 underline-offset-4 transition-colors hover:text-slate-950 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 motion-reduce:transition-none"
+          >
+            View product details
+          </Link>
+        </section>
+      </div>
+    </div>
+  );
+};
+
+export default ProductQuickView;
