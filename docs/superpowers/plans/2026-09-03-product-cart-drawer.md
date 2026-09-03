@@ -30,11 +30,11 @@
 - Produces `CartAddedItem` and optional `openDrawer`/`item` fields on `CartAddedEventDetail`.
 - `AddToCartButton` dispatches `{ added, total, openDrawer: true, item }` only after `response.ok && data.success`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Render `AddToCartButton` with an authenticated user, stub a successful `/api/cart/add` response, listen for `cart:added`, click the button, and assert the event includes `openDrawer: true` plus the product name, price, selected image, size, color, and quantity.
 
-- [ ] **Step 2: Run the focused test to verify it fails**
+- [x] **Step 2: Run the focused test to verify it fails**
 
 Run:
 
@@ -44,15 +44,15 @@ Run:
 
 Expected: FAIL because the current event detail contains only `added` and `total`.
 
-- [ ] **Step 3: Implement the minimal event contract and dispatch payload**
+- [x] **Step 3: Implement the minimal event contract and dispatch payload**
 
 Add the typed optional metadata to `cart-events.ts`. In the existing success branch of `CartActions.tsx`, dispatch the product data from the already-resolved `product`, `selectedImage`, `size`, `color`, and `addQty`; remove only the blocking success SweetAlert so the side drawer can be the confirmation surface. Leave the request, failure branch, and other SweetAlerts intact.
 
-- [ ] **Step 4: Run the focused test to verify it passes**
+- [x] **Step 4: Run the focused test to verify it passes**
 
 Run the same Vitest command. Expected: PASS, with no changes to existing event producers.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add resources/js/types/cart-events.ts resources/js/components/CartActions.tsx resources/js/components/__tests__/CartActions.test.tsx
@@ -70,11 +70,11 @@ git commit -m "feat: include added item in cart event"
 - Uses a numeric `cartRefreshKey` to retrigger the existing cart loader without duplicating its fetch logic.
 - Renders a `role="status"` message from the optional event item.
 
-- [ ] **Step 1: Write the failing Navigation contract assertions**
+- [x] **Step 1: Write the failing Navigation contract assertions**
 
 Add assertions requiring the shared Navigation source to import the typed cart-added listener, guard on `event.detail.openDrawer`, close competing drawers, set `cartDrawerOpen`, refresh via a key, clear the status when closed, and render `Added to cart`.
 
-- [ ] **Step 2: Run the focused Navigation test to verify it fails**
+- [x] **Step 2: Run the focused Navigation test to verify it fails**
 
 Run:
 
@@ -84,11 +84,11 @@ Run:
 
 Expected: FAIL because Navigation currently has no cart-added listener or confirmation status.
 
-- [ ] **Step 3: Implement the shared listener and confirmation**
+- [x] **Step 3: Implement the shared listener and confirmation**
 
 Subscribe once in `Navigation`. For flagged events, close the landing/account drawers, open the cart drawer, store the added item, and increment `cartRefreshKey`. Add the key to the existing drawer-loading effect dependencies. Render a compact live status above the existing cart contents and clear it when the drawer closes. Keep all existing manual cart-open handlers and drawer markup behavior.
 
-- [ ] **Step 4: Run the focused tests to verify they pass**
+- [x] **Step 4: Run the focused tests to verify they pass**
 
 Run:
 
@@ -98,7 +98,7 @@ Run:
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add resources/js/Pages/UserSide/Shared/Navigation.tsx resources/js/Pages/UserSide/Shared/__tests__/Navigation.contract.test.ts
@@ -110,7 +110,7 @@ git commit -m "feat: open cart drawer after product add"
 **Files:**
 - Test: existing frontend test suite
 
-- [ ] **Step 1: Run the full frontend tests**
+- [x] **Step 1: Run the full frontend tests**
 
 ```powershell
 .\node_modules\.bin\vitest.cmd run
@@ -118,7 +118,7 @@ git commit -m "feat: open cart drawer after product add"
 
 Expected: all existing and new tests pass.
 
-- [ ] **Step 2: Build with the local Vite binary**
+- [x] **Step 2: Build with the local Vite binary**
 
 ```powershell
 .\node_modules\.bin\vite.cmd build --outDir .tmp-vite-build
@@ -126,7 +126,7 @@ Expected: all existing and new tests pass.
 
 Expected: Vite completes successfully; remove only the verified temporary output afterward.
 
-- [ ] **Step 3: Check diff hygiene and changed scope**
+- [x] **Step 3: Check diff hygiene and changed scope**
 
 ```powershell
 git diff --check HEAD~2..HEAD
