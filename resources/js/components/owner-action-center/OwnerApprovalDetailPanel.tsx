@@ -319,7 +319,6 @@ export default function OwnerApprovalDetailPanel({
             {canDecide ? (
               <ApprovalDecisionFooter
                 definition={definition}
-                item={item}
                 recordLabel={approvalRecordLabel(item)}
                 submitting={submitting}
                 onSubmit={submitDecision}

@@ -1,5 +1,0 @@
-<<<<<<<< HEAD:public/build/assets/supplierApi-_Y4jQk_W.js
-import{b as t}from"./app-DNMvgNAJ.js";const a="/api/erp/procurement/suppliers",r=e=>e.data??e,p={async getAll(e,s=a){return(await t.get(s,{params:e})).data},async getById(e){const s=await t.get(`${a}/${e}`);return r(s.data)},async create(e){const s=await t.post(a,e);return r(s.data)},async update(e,s){const n=await t.put(`${a}/${e}`,s);return r(n.data)},async delete(e){return(await t.delete(`${a}/${e}`)).data},async restore(e){return(await t.post(`${a}/${e}/restore`)).data}};export{p as s};
-========
-import{b as t}from"./app-CiUKW7yn.js";const a="/api/erp/procurement/suppliers",r=e=>e.data??e,p={async getAll(e,s=a){return(await t.get(s,{params:e})).data},async getById(e){const s=await t.get(`${a}/${e}`);return r(s.data)},async create(e){const s=await t.post(a,e);return r(s.data)},async update(e,s){const n=await t.put(`${a}/${e}`,s);return r(n.data)},async delete(e){return(await t.delete(`${a}/${e}`)).data},async restore(e){return(await t.post(`${a}/${e}/restore`)).data}};export{p as s};
->>>>>>>> e93a0d511 (fix: center product quick view modal):public/build/assets/supplierApi-9GOLqMNT.js

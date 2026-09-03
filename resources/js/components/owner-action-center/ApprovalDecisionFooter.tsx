@@ -1,52 +1,102 @@
-import { useEffect, useState } from "react";
-import type { OwnerAttentionItem } from "../../types/ownerActionCenter";
+import { workflowFeedback } from "../../utils/workflowFeedback";
 import type { ApprovalAction, ApprovalPanelDefinition } from "./approvalPanelRegistry";
 
 interface ApprovalDecisionFooterProps {
   definition: ApprovalPanelDefinition;
-  item: OwnerAttentionItem;
   recordLabel: string;
   submitting: boolean;
   onSubmit: (action: ApprovalAction, reason?: string) => void;
 }
 
+const OTHER_REJECTION_REASON = "Other";
+
+const rejectionReasonOptions = {
+  "Insufficient evidence": "Insufficient evidence",
+  "Incorrect or incomplete information": "Incorrect or incomplete information",
+  "Does not meet approval requirements": "Does not meet approval requirements",
+  "Duplicate request": "Duplicate request",
+  [OTHER_REJECTION_REASON]: OTHER_REJECTION_REASON,
+};
+
+const rejectionReasonError = (reason: string, minimumLength: number, maximumLength: number): string | undefined => {
+  if (!reason) return "Enter a rejection reason before submitting.";
+  if (reason.length < minimumLength) return `Enter at least ${minimumLength} characters explaining the rejection.`;
+  if (reason.length > maximumLength) return `Keep the rejection reason to ${maximumLength} characters or fewer.`;
+  return undefined;
+};
+
 export default function ApprovalDecisionFooter({
   definition,
-  item,
   recordLabel,
   submitting,
   onSubmit,
 }: ApprovalDecisionFooterProps) {
-  const [pendingAction, setPendingAction] = useState<ApprovalAction | null>(null);
-  const [reason, setReason] = useState("");
-  const [reasonError, setReasonError] = useState<string | null>(null);
   const rejectMaxLength = definition.reject?.maxLength ?? 1000;
+  const rejectMinLength = definition.reject?.minLength ?? 0;
 
-  useEffect(() => {
-    setPendingAction(null);
-    setReason("");
-    setReasonError(null);
-  }, [item.attention_key, definition.sourceType]);
+  const handleApprove = async () => {
+    if (submitting || !definition.approve) return;
 
-  const submit = () => {
-    if (submitting || pendingAction === null) return;
+    const confirmation = await workflowFeedback.confirm({
+      title: `Approve ${recordLabel}?`,
+      text: `This will ${definition.consequence}. Confirm only after checking the summary and evidence above.`,
+      confirmButtonText: "Approve",
+      confirmButtonColor: "#059669",
+    });
 
-    if (pendingAction === "reject") {
-      const trimmedReason = reason.trim();
-      if (trimmedReason === "") {
-        setReasonError("Enter a rejection reason before confirming.");
-        return;
-      }
-      const minimumLength = definition.reject?.minLength ?? 0;
-      if (trimmedReason.length < minimumLength) {
-        setReasonError(`Enter at least ${minimumLength} characters explaining the rejection.`);
-        return;
-      }
-      onSubmit("reject", trimmedReason);
+    if (confirmation.isConfirmed) onSubmit("approve");
+  };
+
+  const handleReject = async () => {
+    if (submitting || !definition.reject) return;
+
+    const selection = await workflowFeedback.alert({
+      title: `Reject ${recordLabel}?`,
+      text: "Choose a reason for rejecting this request.",
+      icon: "warning",
+      input: "select",
+      inputOptions: rejectionReasonOptions,
+      inputPlaceholder: "Select a rejection reason",
+      inputValidator: (value) => value ? undefined : "Choose a rejection reason.",
+      showCancelButton: true,
+      confirmButtonText: "Continue",
+      cancelButtonText: "Cancel",
+      confirmButtonColor: "#dc2626",
+      cancelButtonColor: "#6b7280",
+    });
+
+    if (!selection.isConfirmed) return;
+
+    let reason = String(selection.value ?? "").trim();
+
+    if (reason === OTHER_REJECTION_REASON) {
+      const customReason = await workflowFeedback.alert({
+        title: `Reject ${recordLabel}?`,
+        text: "Add the specific reason for rejecting this request.",
+        icon: "warning",
+        input: "textarea",
+        inputLabel: "Rejection reason",
+        inputPlaceholder: "Explain what needs to be corrected or clarified...",
+        inputAttributes: { maxlength: String(rejectMaxLength) },
+        inputValidator: (value) => rejectionReasonError(value.trim(), rejectMinLength, rejectMaxLength),
+        showCancelButton: true,
+        confirmButtonText: "Reject",
+        cancelButtonText: "Cancel",
+        confirmButtonColor: "#dc2626",
+        cancelButtonColor: "#6b7280",
+      });
+
+      if (!customReason.isConfirmed) return;
+      reason = String(customReason.value ?? "").trim();
+    }
+
+    const validationError = rejectionReasonError(reason, rejectMinLength, rejectMaxLength);
+    if (validationError) {
+      await workflowFeedback.warning("Invalid rejection reason", validationError);
       return;
     }
 
-    onSubmit("approve");
+    onSubmit("reject", reason);
   };
 
   if (!definition.approve && !definition.reject) {
@@ -54,105 +104,26 @@ export default function ApprovalDecisionFooter({
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap gap-3">
-        {definition.approve && (
-          <button
-            type="button"
-            disabled={submitting}
-            onClick={() => {
-              setPendingAction("approve");
-              setReasonError(null);
-            }}
-            className="inline-flex min-h-11 items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:focus-visible:ring-offset-gray-900"
-          >
-            Approve
-          </button>
-        )}
-        {definition.reject && (
-          <button
-            type="button"
-            disabled={submitting}
-            onClick={() => {
-              setPendingAction("reject");
-              setReasonError(null);
-            }}
-            className="inline-flex min-h-11 items-center justify-center rounded-lg border border-red-300 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950/30 dark:focus-visible:ring-offset-gray-900"
-          >
-            Reject
-          </button>
-        )}
-      </div>
-
-      {pendingAction === "approve" && (
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-900/60 dark:bg-emerald-950/20" aria-live="polite">
-          <h4 className="text-sm font-semibold text-emerald-900 dark:text-emerald-100">Approve {recordLabel}?</h4>
-          <p className="mt-1 text-sm text-emerald-800 dark:text-emerald-200">
-            This will {definition.consequence}. Confirm only after checking the summary and evidence above.
-          </p>
-          <div className="mt-3 flex flex-wrap gap-3">
-            <button
-              type="button"
-              disabled={submitting}
-              onClick={submit}
-              className="inline-flex min-h-11 items-center justify-center rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:focus-visible:ring-offset-gray-900"
-            >
-              {submitting ? "Approving…" : "Confirm approval"}
-            </button>
-            <button
-              type="button"
-              disabled={submitting}
-              onClick={() => setPendingAction(null)}
-              className="inline-flex min-h-11 items-center justify-center rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:focus-visible:ring-offset-gray-900"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
+    <div className="flex flex-wrap gap-3">
+      {definition.approve && (
+        <button
+          type="button"
+          disabled={submitting}
+          onClick={handleApprove}
+          className="inline-flex min-h-11 items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:focus-visible:ring-offset-gray-900"
+        >
+          Approve
+        </button>
       )}
-
-      {pendingAction === "reject" && definition.reject && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-900/60 dark:bg-red-950/20">
-          <h4 className="text-sm font-semibold text-red-900 dark:text-red-100">Reject {recordLabel}?</h4>
-          <p className="mt-1 text-sm text-red-800 dark:text-red-200">A rejection sends this record back to its authoritative workflow owner.</p>
-          <div className="mt-3">
-            <label htmlFor="approval-rejection-reason" className="text-sm font-semibold text-gray-800 dark:text-gray-200">
-              Rejection reason <span className="font-normal">(required)</span>
-            </label>
-            <textarea
-              id="approval-rejection-reason"
-              value={reason}
-              required
-              maxLength={rejectMaxLength}
-              onChange={(event) => {
-                setReason(event.target.value);
-                if (event.target.value.trim() !== "") setReasonError(null);
-              }}
-              className="mt-1 block min-h-24 w-full rounded-lg border border-gray-300 bg-white p-3 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900 dark:text-white"
-              aria-describedby={reasonError ? "approval-rejection-reason-error" : undefined}
-            />
-            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Maximum {rejectMaxLength} characters.</p>
-            {reasonError && <p id="approval-rejection-reason-error" role="alert" className="mt-1 text-sm font-medium text-red-700 dark:text-red-300">{reasonError}</p>}
-          </div>
-          <div className="mt-3 flex flex-wrap gap-3">
-            <button
-              type="button"
-              disabled={submitting}
-              onClick={submit}
-              className="inline-flex min-h-11 items-center justify-center rounded-lg bg-red-700 px-4 py-2 text-sm font-semibold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:focus-visible:ring-offset-gray-900"
-            >
-              {submitting ? "Rejecting…" : "Confirm rejection"}
-            </button>
-            <button
-              type="button"
-              disabled={submitting}
-              onClick={() => setPendingAction(null)}
-              className="inline-flex min-h-11 items-center justify-center rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:focus-visible:ring-offset-gray-900"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
+      {definition.reject && (
+        <button
+          type="button"
+          disabled={submitting}
+          onClick={handleReject}
+          className="inline-flex min-h-11 items-center justify-center rounded-lg border border-red-300 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950/30 dark:focus-visible:ring-offset-gray-900"
+        >
+          Reject
+        </button>
       )}
     </div>
   );

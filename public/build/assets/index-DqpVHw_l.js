@@ -1,0 +1,9 @@
+<<<<<<< HEAD:public/build/assets/index-Dsvi2g7N.js
+<<<<<<<< HEAD:public/build/assets/index-CshTrueC.js
+import{j as e}from"./app-DNMvgNAJ.js";const n=({children:s,className:a})=>e.jsx("table",{className:`min-w-full  ${a}`,children:s}),o=({children:s,className:a})=>e.jsx("thead",{className:a,children:s}),c=({children:s,className:a})=>e.jsx("tbody",{className:a,children:s}),b=({children:s,className:a})=>e.jsx("tr",{className:a,children:s}),x=({children:s,isHeader:a=!1,className:t})=>{const r=a?"th":"td";return e.jsx(r,{className:` ${t}`,children:s})};export{n as T,o as a,b,x as c,c as d};
+========
+import{j as e}from"./app-CiUKW7yn.js";const n=({children:s,className:a})=>e.jsx("table",{className:`min-w-full  ${a}`,children:s}),o=({children:s,className:a})=>e.jsx("thead",{className:a,children:s}),c=({children:s,className:a})=>e.jsx("tbody",{className:a,children:s}),b=({children:s,className:a})=>e.jsx("tr",{className:a,children:s}),x=({children:s,isHeader:a=!1,className:t})=>{const r=a?"th":"td";return e.jsx(r,{className:` ${t}`,children:s})};export{n as T,o as a,b,x as c,c as d};
+>>>>>>>> e93a0d511 (fix: center product quick view modal):public/build/assets/index-Dsvi2g7N.js
+=======
+import{j as e}from"./app-BcQ0ChYy.js";const n=({children:s,className:a})=>e.jsx("table",{className:`min-w-full  ${a}`,children:s}),o=({children:s,className:a})=>e.jsx("thead",{className:a,children:s}),c=({children:s,className:a})=>e.jsx("tbody",{className:a,children:s}),b=({children:s,className:a})=>e.jsx("tr",{className:a,children:s}),x=({children:s,isHeader:a=!1,className:t})=>{const r=a?"th":"td";return e.jsx(r,{className:` ${t}`,children:s})};export{n as T,o as a,b,x as c,c as d};
+>>>>>>> f93956e50 (fix: use swal for owner approval decisions):public/build/assets/index-DqpVHw_l.js
