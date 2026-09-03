@@ -409,7 +409,7 @@ const Repair: React.FC<Props> = ({ shops }) => {
 
         <div className="mx-auto w-full max-w-107.5 px-4 pb-24 pt-16 sm:max-w-170 md:max-w-225 lg:max-w-5xl xl:max-w-480 xl:px-6 xl:pt-32 xl:pb-20 2xl:px-12">
           {/* Header row */}
-          <div data-scroll-reveal className="scroll-reveal mb-4 flex flex-wrap items-center justify-between gap-3 sm:mb-5">
+          <div data-scroll-reveal className="scroll-reveal relative z-30 mb-4 flex flex-wrap items-center justify-between gap-3 sm:mb-5">
             <div className="text-[11px] sm:text-xs text-black/55 tracking-[0.18em] uppercase">Home / All Repair</div>
             <div className="flex items-center gap-3 sm:gap-4">
               {isAuthenticated && (
@@ -442,7 +442,7 @@ const Repair: React.FC<Props> = ({ shops }) => {
                 </button>
 
                 {isSortOpen && (
-                  <div className="absolute right-0 z-20 mt-3 w-[min(92vw,14.5rem)] rounded-2xl border border-gray-300 bg-white py-3 shadow-[0_20px_40px_-24px_rgba(15,23,42,0.55)] xl:w-56" role="menu">
+                  <div className="absolute right-0 z-40 mt-3 w-[min(92vw,14.5rem)] rounded-2xl border border-gray-300 bg-white py-3 shadow-[0_20px_40px_-24px_rgba(15,23,42,0.55)] xl:w-56" role="menu">
                     {sortOptions.map((option) => {
                       const isActive = sortBy === option.value;
                       return (

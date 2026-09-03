@@ -41,3 +41,20 @@ export const getCurrentPositionWithTimeout = (
     );
   }
 });
+
+export const getCurrentPositionWithFallback = async (
+  options: PositionOptions = GPS_POSITION_OPTIONS,
+): Promise<GeolocationPosition> => {
+  try {
+    return await getCurrentPositionWithTimeout(options);
+  } catch (error) {
+    if (options.enableHighAccuracy === false) {
+      throw error;
+    }
+
+    return getCurrentPositionWithTimeout({
+      ...options,
+      enableHighAccuracy: false,
+    });
+  }
+};

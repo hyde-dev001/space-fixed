@@ -161,6 +161,18 @@ describe('user-side navigation shell', () => {
     expect(cartSource).not.toContain('>Bag<');
   });
 
+  it('opens and refreshes the cart drawer after a successful product add', () => {
+    expect(navigationSource).toContain('addCartAddedListener');
+    expect(navigationSource).toContain('removeCartAddedListener');
+    expect(navigationSource).toContain('const [cartRefreshKey, setCartRefreshKey] = useState(0);');
+    expect(navigationSource).toContain('if (!event.detail?.openDrawer) return;');
+    expect(navigationSource).toContain('setCartDrawerOpen(true);');
+    expect(navigationSource).toContain('setCartRefreshKey((key) => key + 1);');
+    expect(navigationSource).toContain('Added to cart');
+    expect(navigationSource).toContain('role="status"');
+    expect(navigationSource).toContain('}, [cartDrawerOpen, isAuthenticated, cartRefreshKey]);');
+  });
+
   it('keeps customer drawers readable in dark mode', () => {
     const cartStart = navigationSource.indexOf('aria-label="Shopping cart"');
     const cartEnd = navigationSource.indexOf('aria-label="Site menu"', cartStart);
