@@ -164,7 +164,10 @@ class EmployeeSeeder extends Seeder
             ];
         }
 
-        foreach ($commonEmployees as &$employeeData) {
+        foreach ($commonEmployees as $index => &$employeeData) {
+            $seedPhoneSuffix = str_pad((string) (($shopOwner->id * 100) + $index + 1), 4, '0', STR_PAD_LEFT);
+            $employeeData['phone'] = substr($employeeData['phone'], 0, -4) . $seedPhoneSuffix;
+
             $position = $employeeData['position'] ?? '';
             if ($position !== '' && array_key_exists($position, $basePayTable)) {
                 $employeeData['salary'] = round((float) $basePayTable[$position], 2);

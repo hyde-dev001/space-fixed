@@ -147,6 +147,22 @@ class LogisticsEmployeeRoleAccessTest extends TestCase
         $this->assertTrue(User::where('email', $secondRiderEmail)->firstOrFail()->hasRole('Logistics Rider'));
     }
 
+    public function test_employee_seeder_assigns_unique_user_phone_numbers_across_shops(): void
+    {
+        $this->seed(RolesAndPermissionsSeeder::class);
+
+        ShopOwner::factory()->count(2)->create([
+            'registration_type' => 'company',
+            'business_type' => 'both',
+        ]);
+
+        $this->seed(EmployeeSeeder::class);
+
+        $phones = User::query()->whereNotNull('phone')->pluck('phone');
+
+        $this->assertSame($phones->count(), $phones->unique()->count());
+    }
+
     public function test_dispatcher_riders_page_backfills_existing_logistics_rider_profiles(): void
     {
         $this->seed(RolesAndPermissionsSeeder::class);
