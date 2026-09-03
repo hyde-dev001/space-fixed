@@ -6,6 +6,10 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
+    private const UPGRADE_REQUEST_FOREIGN_KEY = 'sourd_request_fk';
+
+    private const SOURCE_DOCUMENT_FOREIGN_KEY = 'sourd_source_document_fk';
+
     public function up(): void
     {
         $tableName = 'shop_owner_upgrade_request_documents';
@@ -39,17 +43,22 @@ return new class extends Migration
                 ));
             }
 
+            $this->addMissingForeignKeys($tableName);
+
             return;
         }
 
         Schema::create($tableName, function (Blueprint $table): void {
             $table->id();
-            $table->foreignId('shop_owner_upgrade_request_id')
-                ->constrained('shop_owner_upgrade_requests')
+            $table->foreignId('shop_owner_upgrade_request_id');
+            $table->foreign('shop_owner_upgrade_request_id', self::UPGRADE_REQUEST_FOREIGN_KEY)
+                ->references('id')
+                ->on('shop_owner_upgrade_requests')
                 ->cascadeOnDelete();
-            $table->foreignId('source_shop_document_id')
-                ->nullable()
-                ->constrained('shop_documents')
+            $table->foreignId('source_shop_document_id')->nullable();
+            $table->foreign('source_shop_document_id', self::SOURCE_DOCUMENT_FOREIGN_KEY)
+                ->references('id')
+                ->on('shop_documents')
                 ->nullOnDelete();
             $table->string('document_type', 100);
             $table->string('disk', 50);
@@ -61,6 +70,39 @@ return new class extends Migration
             $table->timestamps();
 
             $table->index(['shop_owner_upgrade_request_id', 'document_type']);
+        });
+    }
+
+    private function addMissingForeignKeys(string $tableName): void
+    {
+        $foreignKeys = Schema::getForeignKeys($tableName);
+        $hasForeignKey = static function (string $column, string $foreignTable) use ($foreignKeys): bool {
+            foreach ($foreignKeys as $foreignKey) {
+                if (
+                    ($foreignKey['columns'] ?? []) === [$column]
+                    && ($foreignKey['foreign_table'] ?? null) === $foreignTable
+                ) {
+                    return true;
+                }
+            }
+
+            return false;
+        };
+
+        Schema::table($tableName, function (Blueprint $table) use ($hasForeignKey): void {
+            if (! $hasForeignKey('shop_owner_upgrade_request_id', 'shop_owner_upgrade_requests')) {
+                $table->foreign('shop_owner_upgrade_request_id', self::UPGRADE_REQUEST_FOREIGN_KEY)
+                    ->references('id')
+                    ->on('shop_owner_upgrade_requests')
+                    ->cascadeOnDelete();
+            }
+
+            if (! $hasForeignKey('source_shop_document_id', 'shop_documents')) {
+                $table->foreign('source_shop_document_id', self::SOURCE_DOCUMENT_FOREIGN_KEY)
+                    ->references('id')
+                    ->on('shop_documents')
+                    ->nullOnDelete();
+            }
         });
     }
 
