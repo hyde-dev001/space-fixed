@@ -2,6 +2,20 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from '@inertiajs/react';
 import AddToCartButton from '../CartActions';
 
+export type ProductQuickViewColorVariantImage = {
+  id?: number;
+  image_path?: string | null;
+  image_url?: string | null;
+  is_thumbnail?: boolean;
+  sort_order?: number | null;
+};
+
+export type ProductQuickViewColorVariant = {
+  id: number;
+  color_name: string;
+  images?: ProductQuickViewColorVariantImage[] | null;
+};
+
 export type ProductQuickViewProduct = {
   id: number;
   name: string;
@@ -14,6 +28,7 @@ export type ProductQuickViewProduct = {
   stock_quantity: number;
   sizes_available?: unknown[] | null;
   colors_available?: unknown[] | null;
+  color_variants?: ProductQuickViewColorVariant[] | null;
   shop_owner?: {
     id: number;
     name?: string;
@@ -37,6 +52,33 @@ const normalizeOptions = (value: unknown): string[] => {
         .filter((option) => option !== null && option !== undefined)
         .map((option) => String(option).trim())
         .filter(Boolean),
+    ),
+  );
+};
+
+const normalizeImageUrl = (value: unknown): string | null => {
+  if (typeof value !== 'string') return null;
+
+  const imageUrl = value.trim();
+  return imageUrl.length > 0 ? imageUrl : null;
+};
+
+const getColorVariantImages = (variant: ProductQuickViewColorVariant): string[] => {
+  if (!Array.isArray(variant.images)) return [];
+
+  const sortedImages = [...variant.images].sort((left, right) => {
+    if (Boolean(left.is_thumbnail) !== Boolean(right.is_thumbnail)) {
+      return left.is_thumbnail ? -1 : 1;
+    }
+
+    return Number(left.sort_order ?? 0) - Number(right.sort_order ?? 0);
+  });
+
+  return Array.from(
+    new Set(
+      sortedImages
+        .map((image) => normalizeImageUrl(image.image_url) ?? normalizeImageUrl(image.image_path))
+        .filter((image): image is string => image !== null),
     ),
   );
 };
@@ -81,7 +123,7 @@ const ProductQuickView: React.FC<ProductQuickViewProps> = ({ product, detailsHre
   const [failedImage, setFailedImage] = useState<string | null>(null);
   const [quantity, setQuantity] = useState(1);
 
-  const images = useMemo(() => {
+  const legacyImages = useMemo(() => {
     const candidates = [product.main_image, ...(product.gallery_images ?? [])];
 
     return Array.from(
@@ -92,10 +134,56 @@ const ProductQuickView: React.FC<ProductQuickViewProps> = ({ product, detailsHre
       ),
     );
   }, [product.gallery_images, product.main_image]);
+
+  const colorVariants = useMemo(
+    () =>
+      (product.color_variants ?? []).filter(
+        (variant) => typeof variant?.color_name === 'string' && variant.color_name.trim().length > 0,
+      ),
+    [product.color_variants],
+  );
+
   const sizes = useMemo(() => normalizeOptions(product.sizes_available), [product.sizes_available]);
-  const colors = useMemo(() => normalizeOptions(product.colors_available), [product.colors_available]);
+  const colors = useMemo(() => {
+    if (colorVariants.length > 0) {
+      return colorVariants.map((variant) => ({
+        id: String(variant.id),
+        name: variant.color_name.trim(),
+        image: getColorVariantImages(variant)[0] ?? null,
+      }));
+    }
+
+    return normalizeOptions(product.colors_available).map((color) => ({
+      id: color,
+      name: color,
+      image: null,
+    }));
+  }, [colorVariants, product.colors_available]);
   const [selectedSize, setSelectedSize] = useState<string | null>(sizes[0] ?? null);
-  const [selectedColor, setSelectedColor] = useState<string | null>(colors[0] ?? null);
+  const [selectedColor, setSelectedColor] = useState<string | null>(colors[0]?.name ?? null);
+
+  const selectedColorVariant = useMemo(
+    () =>
+      colorVariants.find(
+        (variant) => variant.color_name.trim().toLowerCase() === selectedColor?.trim().toLowerCase(),
+      ) ?? null,
+    [colorVariants, selectedColor],
+  );
+  const selectedColorImages = useMemo(
+    () => (selectedColorVariant ? getColorVariantImages(selectedColorVariant) : []),
+    [selectedColorVariant],
+  );
+  const hasColorVariantImages = useMemo(
+    () => colorVariants.some((variant) => getColorVariantImages(variant).length > 0),
+    [colorVariants],
+  );
+  const images = useMemo(
+    () =>
+      selectedColorVariant && hasColorVariantImages
+        ? selectedColorImages
+        : legacyImages,
+    [hasColorVariantImages, legacyImages, selectedColorImages, selectedColorVariant],
+  );
 
   const stockQuantity = Number.isFinite(Number(product.stock_quantity))
     ? Math.max(0, Math.floor(Number(product.stock_quantity)))
@@ -136,6 +224,12 @@ const ProductQuickView: React.FC<ProductQuickViewProps> = ({ product, detailsHre
     setSelectedImageIndex((currentIndex) =>
       Math.min(Math.max(0, currentIndex + direction), Math.max(0, images.length - 1)),
     );
+  };
+
+  const selectColor = (color: string) => {
+    setSelectedColor(color);
+    setSelectedImageIndex(0);
+    setFailedImage(null);
   };
 
   return (
@@ -243,14 +337,26 @@ const ProductQuickView: React.FC<ProductQuickViewProps> = ({ product, detailsHre
                 <div className="mt-3 flex flex-wrap gap-2">
                   {colors.map((color) => (
                     <button
-                      key={color}
+                      key={color.id}
                       type="button"
-                      onClick={() => setSelectedColor(color)}
-                      aria-label={`Color ${color}`}
-                      aria-pressed={selectedColor === color}
-                      className="min-h-11 border border-slate-300 px-4 text-sm text-slate-800 transition-colors hover:border-slate-950 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-1 aria-[pressed=true]:border-slate-950 aria-[pressed=true]:bg-slate-950 aria-[pressed=true]:text-white motion-reduce:transition-none"
+                      onClick={() => selectColor(color.name)}
+                      aria-label={`Color ${color.name}`}
+                      aria-pressed={selectedColor === color.name}
+                      title={color.name}
+                      className="relative h-16 w-16 overflow-hidden rounded-md border border-slate-300 bg-white p-1 text-sm text-slate-800 transition-colors hover:border-slate-950 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-1 aria-[pressed=true]:border-slate-950 aria-[pressed=true]:ring-1 aria-[pressed=true]:ring-slate-950 motion-reduce:transition-none"
                     >
-                      {color}
+                      {color.image ? (
+                        <img src={color.image} alt={color.name} className="h-full w-full object-contain" loading="lazy" />
+                      ) : (
+                        <span className="block px-1 text-xs leading-tight">{color.name}</span>
+                      )}
+                      {selectedColor === color.name && (
+                        <span className="absolute right-1 top-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-slate-950 text-white" aria-hidden="true">
+                          <svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293z" clipRule="evenodd" />
+                          </svg>
+                        </span>
+                      )}
                     </button>
                   ))}
                 </div>
