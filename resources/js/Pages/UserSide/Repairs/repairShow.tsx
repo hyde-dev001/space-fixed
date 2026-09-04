@@ -589,19 +589,21 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
           )}
 
           {/* Info Grid */}
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 xl:gap-6 mb-8 xl:mb-10">
-            {/* Shop Information */}
-            <div className="bg-linear-to-br from-gray-50 to-white rounded-3xl p-4 sm:p-5 xl:p-8 border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5 xl:mb-6">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 xl:w-12 xl:h-12 bg-black rounded-xl flex items-center justify-center shadow-md">
+          <section
+            className="mb-8 overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm xl:mb-10"
+            aria-labelledby="repair-shop-information-heading"
+            data-testid="repair-shop-info-rating"
+          >
+            <div className="flex flex-col gap-3 border-b border-gray-200 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5 xl:p-8">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-black shadow-md xl:h-12 xl:w-12">
                     <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 xl:w-6 xl:h-6 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" />
                     </svg>
-                  </div>
-                  <h3 className="text-xl xl:text-2xl font-bold text-black">Shop Information</h3>
                 </div>
-                <div className="flex items-center gap-2 w-full sm:w-auto">
+                <h2 id="repair-shop-information-heading" className="text-xl font-bold text-black xl:text-2xl">Shop Information</h2>
+              </div>
+              <div className="flex w-full items-center gap-2 sm:w-auto">
                   <Link
                     href={`/message/${shop.id}`}
                     className="px-4 xl:px-6 py-2.5 border border-gray-300 rounded-lg text-sm font-semibold text-black hover:bg-black hover:text-white hover:border-black transition-all flex-1 sm:flex-none text-center"
@@ -640,9 +642,12 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                       )}
                     </div>
                   )}
-                </div>
               </div>
-              <div className="space-y-3 xl:space-y-4 text-sm text-gray-700">
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.35fr)_minmax(18rem,0.85fr)]">
+              <div className="p-4 sm:p-5 xl:p-8">
+                <div className="space-y-3 text-sm text-gray-700 xl:space-y-4">
                 <div className="flex items-start gap-3 rounded-2xl border border-gray-100 bg-white/80 p-3.5 xl:p-4">
                   <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-black mt-0.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" />
@@ -654,15 +659,15 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                     </div>
                   </div>
                 </div>
-                <div className="flex items-start gap-3 rounded-2xl border border-blue-100 bg-blue-50/70 p-3.5 xl:p-4">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-blue-700 mt-0.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <div className="flex items-start gap-3 rounded-2xl border border-gray-100 bg-gray-50 p-3.5 xl:p-4">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-black mt-0.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M12 1v22" />
                     <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7H14a3.5 3.5 0 0 1 0 7H6" />
                   </svg>
                   <div className="min-w-0">
-                    <div className="font-bold text-blue-900 mb-1">Repair Payment Policy</div>
-                    <div className="text-blue-900 font-semibold leading-6">{paymentPolicyLabel}</div>
-                    <p className="text-blue-800/90 text-xs sm:text-sm mt-1 leading-5">{paymentPolicyHint}</p>
+                    <div className="font-bold text-black mb-1">Repair Payment Policy</div>
+                    <div className="text-black font-semibold leading-6">{paymentPolicyLabel}</div>
+                    <p className="text-gray-600 text-xs sm:text-sm mt-1 leading-5">{paymentPolicyHint}</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-3 rounded-2xl border border-gray-100 bg-white/80 p-3.5 xl:p-4">
@@ -735,12 +740,12 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                   </div>
                 </div>
               </div>
-            </div>
+              </div>
 
-            {/* Shop Rating */}
-            <div className="bg-linear-to-br from-yellow-50 to-white rounded-2xl p-5 xl:p-8 border border-yellow-100 shadow-sm hover:shadow-md transition-shadow">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-10 h-10 xl:w-12 xl:h-12 bg-yellow-400 rounded-xl flex items-center justify-center shadow-md">
+              {/* Shop Rating */}
+              <div className="border-t border-gray-200 lg:border-l lg:border-t-0 bg-gray-50/60 p-4 sm:p-5 shadow-sm xl:p-8">
+                <div className="flex items-center gap-3 mb-6">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-black shadow-md xl:h-12 xl:w-12">
                   <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 xl:w-6 xl:h-6 text-white fill-white" viewBox="0 0 24 24">
                     <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
                   </svg>
@@ -771,8 +776,9 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                   <p className="text-sm text-gray-500">Be the first to review this shop!</p>
                 </div>
               )}
+              </div>
             </div>
-          </div>
+          </section>
 
           {/* Repair Services Section */}
           <div className="mb-10 xl:mb-12">
