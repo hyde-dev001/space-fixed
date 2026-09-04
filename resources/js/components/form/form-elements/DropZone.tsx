@@ -51,7 +51,7 @@ const DropzoneComponent: React.FC<DropzoneProps> = ({
   });
 
   return (
-    <div className={`${compact ? '' : 'h-full'} transition border border-dashed cursor-pointer rounded-xl ${
+    <div className={`transition border border-dashed cursor-pointer rounded-xl ${
       compact
         ? "border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900"
         : isUploaded
@@ -67,7 +67,7 @@ const DropzoneComponent: React.FC<DropzoneProps> = ({
                   ? "border-brand-500 bg-blue-50 dark:bg-gray-800"
                   : "border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900"
               }`
-            : `h-full p-7 lg:p-10 ${
+            : `p-7 lg:p-10 ${
                 isUploaded
                   ? "border-green-500 bg-green-50 dark:bg-green-900/20"
                   : isDragActive

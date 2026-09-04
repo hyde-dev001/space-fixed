@@ -61,6 +61,16 @@ describe('ProductQuickView', () => {
     expect(screen.getByRole('button', { name: 'Next product image' })).toBeInTheDocument();
   });
 
+  it('centers the quick view modal in the viewport', () => {
+    render(<ProductQuickView product={product} detailsHref="/products/solespace-runner" onClose={vi.fn()} />);
+
+    const dialog = screen.getByRole('dialog', { name: 'SoleSpace Runner' });
+    const overlay = dialog.parentElement;
+
+    expect(overlay).toHaveClass('items-center');
+    expect(overlay).not.toHaveClass('items-start');
+  });
+
   it('passes selected color, size, image, and quantity to the existing cart action', () => {
     render(<ProductQuickView product={product} detailsHref="/products/solespace-runner" onClose={vi.fn()} />);
 

@@ -11,7 +11,7 @@ vi.mock('react-dropzone', () => ({
 
 import DropzoneComponent from '../DropZone';
 
-describe('DropzoneComponent compact layout', () => {
+describe('DropzoneComponent layout', () => {
   it('keeps compact card height natural so following status content cannot overlap it', () => {
     render(
       <DropzoneComponent
@@ -21,6 +21,15 @@ describe('DropzoneComponent compact layout', () => {
         previewUrl="blob:front-id"
       />,
     );
+
+    const dropzoneRoot = screen.getByTestId('dropzone-root');
+
+    expect(dropzoneRoot).not.toHaveClass('h-full');
+    expect(dropzoneRoot.parentElement).not.toHaveClass('h-full');
+  });
+
+  it('keeps the standard card height natural for following metadata fields', () => {
+    render(<DropzoneComponent isUploaded fileName="permit.jpg" />);
 
     const dropzoneRoot = screen.getByTestId('dropzone-root');
 

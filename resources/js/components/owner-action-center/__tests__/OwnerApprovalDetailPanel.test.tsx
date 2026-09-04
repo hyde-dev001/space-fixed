@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const sweetAlertFire = vi.hoisted(() => vi.fn().mockResolvedValue({ isConfirmed: true }));
 
@@ -50,7 +50,13 @@ const suspensionItem = (overrides: Partial<OwnerAttentionItem> = {}): OwnerAtten
 });
 
 describe("OwnerApprovalDetailPanel", () => {
+  beforeEach(() => {
+    sweetAlertFire.mockReset();
+    sweetAlertFire.mockResolvedValue({ isConfirmed: true });
+  });
+
   afterEach(() => {
+    sweetAlertFire.mockReset();
     vi.unstubAllGlobals();
   });
 
@@ -141,7 +147,6 @@ describe("OwnerApprovalDetailPanel", () => {
 
     await screen.findByRole("heading", { name: "Decision summary" });
     fireEvent.click(screen.getByRole("button", { name: /^Approve$/i }));
-    fireEvent.click(screen.getByRole("button", { name: /Confirm approval/i }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     expect(fetchMock.mock.calls[1][0]).toBe("/api/shop-owner/expenses/12/approve");
@@ -171,7 +176,6 @@ describe("OwnerApprovalDetailPanel", () => {
 
     await screen.findByRole("heading", { name: "Decision summary" });
     fireEvent.click(screen.getByRole("button", { name: /^Approve$/i }));
-    fireEvent.click(screen.getByRole("button", { name: /Confirm approval/i }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     expect(fetchMock.mock.calls[1][0]).toBe("/api/shop-owner/suspension-requests/3/review");
@@ -197,9 +201,8 @@ describe("OwnerApprovalDetailPanel", () => {
     );
 
     await screen.findByRole("heading", { name: "Decision summary" });
+    sweetAlertFire.mockResolvedValueOnce({ isConfirmed: true, value: "Insufficient evidence" });
     fireEvent.click(screen.getByRole("button", { name: /^Reject$/i }));
-    fireEvent.change(screen.getByRole("textbox", { name: /Rejection reason/i }), { target: { value: "Insufficient evidence" } });
-    fireEvent.click(screen.getByRole("button", { name: /Confirm rejection/i }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     expect(fetchMock.mock.calls[1][0]).toBe("/api/shop-owner/suspension-requests/3/review");
@@ -259,7 +262,6 @@ describe("OwnerApprovalDetailPanel", () => {
 
     await screen.findByRole("heading", { name: "Decision summary" });
     fireEvent.click(screen.getByRole("button", { name: /^Approve$/i }));
-    fireEvent.click(screen.getByRole("button", { name: /Confirm approval/i }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("The action field is required.");
     expect(screen.getByRole("alert")).not.toHaveTextContent(/changed before the decision was saved/i);
