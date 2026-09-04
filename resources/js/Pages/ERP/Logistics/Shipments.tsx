@@ -5,6 +5,7 @@ import { CalendarDays, ExternalLink, MapPin, Search, UserRound, X } from 'lucide
 import Swal from 'sweetalert2';
 import AppLayoutERP from '@/layout/AppLayout_ERP';
 import { Modal } from '@/components/ui/modal';
+import DispatcherLiveTracking from '@/components/logistics/DispatcherLiveTracking';
 import ArrivalSummary from './components/ArrivalSummary';
 import RetailOrderSummary from './components/RetailOrderSummary';
 import DeliveryDatePicker from './components/DeliveryDatePicker';
@@ -118,7 +119,7 @@ const toast = (icon: 'success' | 'error' | 'warning', title: string) => Swal.fir
 });
 
 export default function Shipments({ children }: React.PropsWithChildren) {
-  const { shipments, filters, assignableRiders, canAssign: serverCanAssign, canUpdateStatus: serverCanUpdateStatus, canRecordProof: serverCanRecordProof, canApproveProof: serverCanApproveProof, canResolveDisputes: serverCanResolveDisputes = false, canReportIssue: serverCanReportIssue = false, canViewShipments = false, riderMode, maxDeliveryAttempts = 2, availableModules = [], showModuleFilter = false, today, logisticsSchedule, auth, erpCapabilities } = usePage<{
+  const { shipments, filters, assignableRiders, canAssign: serverCanAssign, canUpdateStatus: serverCanUpdateStatus, canRecordProof: serverCanRecordProof, canApproveProof: serverCanApproveProof, canResolveDisputes: serverCanResolveDisputes = false, canReportIssue: serverCanReportIssue = false, canViewShipments = false, liveTrackingEnabled = false, liveTrackingIntervalSeconds = 5, riderMode, maxDeliveryAttempts = 2, availableModules = [], showModuleFilter = false, today, logisticsSchedule, auth, erpCapabilities } = usePage<{
     shipments: PaginatedResponse<LogisticsShipment>;
     filters: ShipmentFilters;
     assignableRiders: Array<{ id: number; name: string; phone?: string | null }>;
@@ -129,6 +130,8 @@ export default function Shipments({ children }: React.PropsWithChildren) {
     canResolveDisputes?: boolean;
     canReportIssue?: boolean;
     canViewShipments?: boolean;
+    liveTrackingEnabled?: boolean;
+    liveTrackingIntervalSeconds?: number;
     riderMode: boolean;
     maxDeliveryAttempts?: number;
     availableModules?: LogisticsModule[];
@@ -526,6 +529,10 @@ export default function Shipments({ children }: React.PropsWithChildren) {
           <p className="mt-1 max-w-2xl text-sm leading-6 text-gray-500 dark:text-gray-400 xl:mt-0">{riderMode ? 'Process your assigned deliveries.' : ownerMode ? 'Monitor shipment status, delivery proof, and history.' : 'Assign riders and approve delivery proof.'}</p>
         </div>
         {children}
+
+        {!riderMode && canViewShipments && liveTrackingEnabled && (
+          <DispatcherLiveTracking enabled pollIntervalSeconds={liveTrackingIntervalSeconds} />
+        )}
 
         <div className="flex min-w-0 flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <form role="search" onSubmit={(event) => {

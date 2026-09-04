@@ -586,7 +586,7 @@ describe('MyDeliveries rider interactions', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Confirm pickup' })).toBeEnabled());
   });
 
-  it('shows Failed pickup only after arrival for a repair pickup', () => {
+  it('shows repair pickup actions without an arrival gate', () => {
     const repairPickup = {
       ...leg(20, null, 'assigned'),
       shipment: {
@@ -597,10 +597,9 @@ describe('MyDeliveries rider interactions', () => {
       },
       assignments: [{ id: 220, status: 'accepted' }],
     };
-    mocks.props.deliveryData.up_next = workItem('single', 'assigned', [{
-      ...repairPickup,
-      arrivals: arrived('pickup'),
-    }], { group: 'upcoming', business_types: ['repair'], business_label: 'Repair pickup' });
+    mocks.props.deliveryData.up_next = workItem('single', 'assigned', [repairPickup], {
+      group: 'upcoming', business_types: ['repair'], business_label: 'Repair pickup',
+    });
     const view = render(<MyDeliveries />);
 
     expect(screen.getByRole('button', { name: 'Confirm pickup' })).toBeEnabled();
@@ -612,7 +611,7 @@ describe('MyDeliveries rider interactions', () => {
       business_label: 'Repair pickup',
     });
     view.rerender(<MyDeliveries />);
-    expect(screen.queryByRole('button', { name: 'Failed pickup' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Failed pickup' })).toBeVisible();
 
     mocks.props.deliveryData.up_next = workItem('single', 'assigned', [{
       ...leg(21, null, 'assigned'),
@@ -1087,32 +1086,20 @@ describe('MyDeliveries rider interactions', () => {
     expect(screen.getByRole('button', { name: 'Start delivery' })).toBeDisabled();
   });
 
-  it("records a fresh high-accuracy pickup arrival without confirmation", async () => {
+  it("confirms pickup without requesting rider location", async () => {
     mocks.props.deliveryData.up_next = workItem('single', 'assigned', [leg(9, null)], {
       group: 'upcoming',
     });
     render(<MyDeliveries />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Pick up at shop' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Pick up at shop' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm pickup' }));
 
-    await waitFor(() => expect(mocks.arrive).toHaveBeenCalledTimes(1));
-    expect(mocks.confirm).not.toHaveBeenCalled();
-    expect(mocks.getCurrentPosition).toHaveBeenCalledWith(
-      expect.any(Function),
-      expect.any(Function),
-      { enableHighAccuracy: true, timeout: 10_000, maximumAge: 0 },
-    );
-    expect(mocks.arrive).toHaveBeenCalledWith(9, {
-      arrival_type: 'pickup',
-      latitude: 14.3,
-      longitude: 120.95,
-      accuracy_m: 15,
-      captured_at: '2026-07-29T02:30:00.000Z',
-    });
+    await waitFor(() => expect(mocks.markPickedUp).toHaveBeenCalledWith(9));
+    expect(mocks.getCurrentPosition).not.toHaveBeenCalled();
+    expect(mocks.arrive).not.toHaveBeenCalled();
   });
 
-  it('gates pickup confirmation and delivery proof behind the matching arrival', () => {
+  it('keeps pickup confirmation independent from customer arrival', () => {
     mocks.props.deliveryData.up_next = workItem('single', 'assigned', [leg(9, null)], {
       group: 'upcoming',
     });
@@ -1121,9 +1108,9 @@ describe('MyDeliveries rider interactions', () => {
     ]);
     const view = render(<MyDeliveries />);
 
-    expect(screen.getByRole('button', { name: 'Pick up at shop' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Confirm pickup' })).toBeVisible();
     expect(screen.getByRole('button', { name: "I've arrived" })).toBeVisible();
-    expect(screen.queryByRole('button', { name: 'Confirm pickup' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Customer pickup at shop' })).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Delivery proof')).not.toBeInTheDocument();
 
     mocks.props.deliveryData.current = workItem('single', 'in_transit', [{
@@ -1167,45 +1154,14 @@ describe('MyDeliveries rider interactions', () => {
     expect(mocks.reload).toHaveBeenLastCalledWith(expect.objectContaining({ only: ['deliveryData'] }));
   });
 
-  it('uses neutral pickup-arrival styling and gray dropdown hover states', async () => {
-    mocks.arrive.mockRejectedValueOnce({
-      response: {
-        status: 422,
-        data: { errors: { exception_reason: ['Reason required.'] } },
-      },
-    });
-    mocks.props.deliveryData.up_next = workItem('single', 'assigned', [leg(9, null)], {
-      group: 'upcoming',
-    });
-    render(<MyDeliveries />);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Pick up at shop' }));
-    await waitFor(() => expect(screen.getByLabelText('Arrival reason')).toBeVisible());
-
-    const arrivalMessage = screen.getByText('Location could not be verified. Choose a reason to continue.');
-    const arrivalPanel = arrivalMessage.parentElement;
-    expect(arrivalPanel).toHaveClass('border-slate-200', 'bg-white');
-    expect(arrivalPanel?.querySelector('[class*="amber"], [class*="yellow"]')).toBeNull();
-
-    const arrivalPicker = screen.getByLabelText('Arrival reason');
-    expect(arrivalPicker).toHaveClass('hover:bg-gray-100');
-    fireEvent.click(arrivalPicker);
-
-    const picker = screen.getByRole('dialog', { name: 'Arrival reason' });
-    expect(within(picker).getByRole('option', { name: 'GPS location is inaccurate' }))
-      .toHaveClass('hover:bg-gray-100');
-  });
-
   it('allows a reason after browser location fails without claiming arrival was saved', async () => {
     mocks.getCurrentPosition.mockImplementationOnce((_success, error: PositionErrorCallback) => {
       error({ code: 1, message: 'Permission denied' } as GeolocationPositionError);
     });
-    mocks.props.deliveryData.up_next = workItem('single', 'assigned', [leg(12, null)], {
-      group: 'upcoming',
-    });
+    mocks.props.deliveryData.current = workItem('single', 'in_transit', [leg(12, null, 'in_transit')]);
     render(<MyDeliveries />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Pick up at shop' }));
+    fireEvent.click(screen.getByRole('button', { name: "I've arrived" }));
 
     await waitFor(() => expect(screen.getByLabelText('Arrival reason')).toBeVisible());
     expect(mocks.arrive).not.toHaveBeenCalled();

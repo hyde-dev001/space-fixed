@@ -64,7 +64,6 @@ class ShipmentLegService
         private OrderRefundService $refunds,
         private RepairPosRefundService $repairRefunds,
         private RiderActiveWorkGuard $activeWork,
-        private ArrivalService $arrivals,
         private NotificationService $notifications,
         private RepairDeliveryService $repairDelivery,
     ) {}
@@ -121,11 +120,6 @@ class ShipmentLegService
                 if (! $assignment) {
                     throw ValidationException::withMessages([
                         'rider' => 'This delivery is no longer assigned to this rider.',
-                    ]);
-                }
-                if (! $this->arrivals->eventForAssignment($leg, 'pickup_arrived', $assignment)) {
-                    throw ValidationException::withMessages([
-                        'arrival' => 'Record your pickup arrival before confirming pickup.',
                     ]);
                 }
             }
@@ -843,11 +837,6 @@ class ShipmentLegService
                 $this->assertTransitionAllowed($leg, ['assigned', 'pickup_scheduled'], 'reported as a failed pickup');
                 if ($leg->picked_up_at) {
                     throw ValidationException::withMessages(['status' => 'This pickup was already confirmed.']);
-                }
-                if (! $this->arrivals->eventForAssignment($leg, 'pickup_arrived', $assignment)) {
-                    throw ValidationException::withMessages([
-                        'arrival' => 'Record your pickup arrival before reporting a failed pickup.',
-                    ]);
                 }
             } else {
                 $this->assertTransitionAllowed(

@@ -2,6 +2,7 @@ import axios from 'axios';
 
 export const logisticsApi = {
   shipments: () => axios.get('/api/logistics/shipments'),
+  liveLocations: () => axios.get('/api/logistics/live-locations'),
   riders: () => axios.get('/api/logistics/riders'),
   assignLeg: (legId: number, riderProfileId: number) =>
     axios.post(`/api/logistics/legs/${legId}/assign`, {
@@ -27,6 +28,8 @@ export const logisticsApi = {
   rejectPickup: (legId: number, proofId: number, reason: string) => axios.post(`/api/logistics/legs/${legId}/pickup-proofs/${proofId}/reject`, { reason }),
   outForDelivery: (legId: number) => axios.post(`/api/logistics/legs/${legId}/out-for-delivery`),
   markInTransit: (legId: number) => axios.post(`/api/logistics/legs/${legId}/in-transit`),
+  recordLocation: (legId: number, payload: Record<string, unknown>) =>
+    axios.post(`/api/logistics/legs/${legId}/location`, payload),
   retryDelivery: (legId: number, reason: string) =>
     axios.post(`/api/logistics/legs/${legId}/resolve/retry`, { reason }),
   returnDelivery: (legId: number, reason: string) =>

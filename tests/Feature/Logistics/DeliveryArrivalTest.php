@@ -35,7 +35,7 @@ class DeliveryArrivalTest extends TestCase
         });
     }
 
-    public function test_assigned_rider_records_verified_pickup_without_changing_leg_status(): void
+    public function test_assigned_rider_records_pickup_without_capturing_location_or_changing_leg_status(): void
     {
         [$leg, $rider] = $this->fixture('assigned');
         $payload = $this->arrivalPayload();
@@ -44,9 +44,9 @@ class DeliveryArrivalTest extends TestCase
             ->postJson("/api/logistics/legs/{$leg->id}/arrivals", $payload)
             ->assertCreated()
             ->assertJsonPath('arrival.arrival_type', 'pickup')
-            ->assertJsonPath('arrival.result', 'verified')
+            ->assertJsonPath('arrival.result', 'recorded')
             ->assertJsonPath('arrival.radius_m', 100)
-            ->assertJsonPath('arrival.accuracy_m', 15)
+            ->assertJsonPath('arrival.accuracy_m', null)
             ->assertJsonMissingPath('arrival.latitude')
             ->assertJsonMissingPath('arrival.longitude')
             ->assertJsonMissingPath('arrival.metadata');
@@ -55,13 +55,13 @@ class DeliveryArrivalTest extends TestCase
         $this->assertSame($response->json('arrival.id'), $event->id);
         $this->assertSame('pickup_arrived', $event->event_type);
         $this->assertSame('internal', $event->visibility);
-        $this->assertSame('verified', $event->metadata['result']);
-        $this->assertSame(0, $event->metadata['distance_m']);
+        $this->assertSame('recorded', $event->metadata['result']);
+        $this->assertNull($event->metadata['distance_m']);
         $this->assertSame(100, $event->metadata['radius_m']);
-        $this->assertSame(15, $event->metadata['accuracy_m']);
-        $this->assertSame($payload['captured_at'], $event->metadata['captured_at']);
-        $this->assertSame(14.3, $event->metadata['latitude']);
-        $this->assertSame(120.95, $event->metadata['longitude']);
+        $this->assertArrayNotHasKey('accuracy_m', $event->metadata);
+        $this->assertArrayNotHasKey('captured_at', $event->metadata);
+        $this->assertArrayNotHasKey('latitude', $event->metadata);
+        $this->assertArrayNotHasKey('longitude', $event->metadata);
         $this->assertSame(User::class, $event->created_by_type);
         $this->assertSame($rider->id, $event->created_by_id);
         $this->assertSame('assigned', $leg->fresh()->status->value);
@@ -166,11 +166,9 @@ class DeliveryArrivalTest extends TestCase
         ];
 
         foreach ($cases as $name => $changes) {
-            [$leg, $rider] = $this->fixture('assigned');
-            if ($name === 'missing_target') {
-                $leg->update(['origin_snapshot' => ['type' => 'shop']]);
-            }
-            $payload = [...$this->arrivalPayload(), ...$changes];
+            [$leg, $rider] = $this->fixture('in_transit');
+            $leg->update($name === 'missing_target' ? ['destination_snapshot' => ['type' => 'customer']] : []);
+            $payload = [...$this->arrivalPayload('dropoff'), ...$changes];
 
             $expectedResult = match ($name) {
                 'outside_geofence' => 'outside_geofence',
@@ -204,11 +202,11 @@ class DeliveryArrivalTest extends TestCase
 
     public function test_other_exception_reason_requires_notes(): void
     {
-        [$leg, $rider] = $this->fixture('assigned');
+        [$leg, $rider] = $this->fixture('in_transit');
 
         $this->actingAs($rider, 'user')
             ->postJson("/api/logistics/legs/{$leg->id}/arrivals", [
-                ...$this->arrivalPayload(),
+                ...$this->arrivalPayload('dropoff'),
                 'accuracy_m' => 150,
                 'exception_reason' => 'other',
             ])

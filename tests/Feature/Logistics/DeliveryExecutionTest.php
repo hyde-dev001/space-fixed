@@ -22,37 +22,23 @@ class DeliveryExecutionTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_rider_confirms_pickup_then_starts_only_one_stop(): void
+    public function test_rider_confirms_pickup_without_shop_arrival_or_location_logging(): void
     {
-        [$leg, $rider, , $assignment] = $this->fixture();
+        [$leg, $rider] = $this->fixture();
         $proof = HandoffProof::factory()->create(['shipment_leg_id' => $leg->id, 'handoff_type' => 'pickup', 'proof_type' => 'photo']);
         $service = app(ShipmentLegService::class);
 
-        try {
-            $service->confirmPickup($leg, $proof, $rider);
-            $this->fail('Pickup was confirmed before the rider recorded arrival.');
-        } catch (ValidationException $exception) {
-            $this->assertArrayHasKey('arrival', $exception->errors());
-        }
+        $pickedUp = $service->confirmPickup($leg, $proof, $rider);
 
-        $leg->events()->create([
-            'shipment_id' => $leg->shipment_id,
-            'event_type' => 'pickup_arrived',
-            'visibility' => 'internal',
-            'message' => 'Rider continued with a location exception.',
-            'metadata' => [
-                'delivery_assignment_id' => $assignment->id,
-                'result' => 'outside_geofence',
-                'exception_reason' => 'pin_incorrect',
-            ],
-        ]);
-        $this->assertSame('picked_up', $service->confirmPickup($leg, $proof, $rider)->status->value);
-        $started = $service->markOutForDelivery($leg->fresh(), $rider);
+        $this->assertSame('picked_up', $pickedUp->status->value);
+        $this->assertSame(0, $leg->events()->where('event_type', 'pickup_arrived')->count());
+        $this->assertSame('approved', $proof->fresh()->review_status);
+        $started = $service->markOutForDelivery($pickedUp->fresh(), $rider);
         $this->assertSame('in_transit', $started->status->value);
         $this->assertNotNull($started->out_for_delivery_at);
     }
 
-    public function test_previous_assignment_arrival_does_not_unlock_reassigned_pickup(): void
+    public function test_previous_assignment_arrival_does_not_block_direct_pickup_confirmation(): void
     {
         [$leg, $rider, , $assignment] = $this->fixture();
         $proof = HandoffProof::factory()->create([
@@ -75,16 +61,11 @@ class DeliveryExecutionTest extends TestCase
             'metadata' => ['delivery_assignment_id' => $previous->id],
         ]);
 
-        try {
-            app(ShipmentLegService::class)->confirmPickup($leg, $proof, $rider);
-            $this->fail('A previous assignment arrival unlocked the current pickup.');
-        } catch (ValidationException $exception) {
-            $this->assertArrayHasKey('arrival', $exception->errors());
-        }
+        $confirmed = app(ShipmentLegService::class)->confirmPickup($leg, $proof, $rider);
 
+        $this->assertSame('picked_up', $confirmed->status->value);
         $this->assertSame('accepted', $assignment->fresh()->status);
-        $this->assertSame('assigned', $leg->fresh()->status->value);
-        $this->assertSame('pending', $proof->fresh()->review_status);
+        $this->assertSame('approved', $proof->fresh()->review_status);
     }
 
     public function test_proof_free_batched_pickup_requires_an_in_progress_batch(): void

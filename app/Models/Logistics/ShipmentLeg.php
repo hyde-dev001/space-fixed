@@ -62,6 +62,16 @@ class ShipmentLeg extends Model
         'rider_progress_state' => RiderProgressState::ACTIVE->value,
     ];
 
+    protected static function booted(): void
+    {
+        static::updated(function (ShipmentLeg $leg): void {
+            if ($leg->status?->value !== ShipmentLegStatus::IN_TRANSIT->value) {
+                // Tracking is delivery-scoped; pickup, proof review, failures, retries, and terminal states hide the last point.
+                $leg->currentLocation()->delete();
+            }
+        });
+    }
+
     public function shipment(): BelongsTo
     {
         return $this->belongsTo(Shipment::class);
@@ -75,6 +85,11 @@ class ShipmentLeg extends Model
     public function assignments(): HasMany
     {
         return $this->hasMany(DeliveryAssignment::class);
+    }
+
+    public function currentLocation(): HasOne
+    {
+        return $this->hasOne(RiderCurrentLocation::class);
     }
 
     public function latestAssignment(): HasOne

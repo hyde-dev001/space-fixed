@@ -124,7 +124,7 @@ export default function LogisticsSettings() {
           : <a className="inline-flex min-h-11 items-center font-medium text-blue-700 underline" href="/shop-owner/settings">Set the shop location in Shop Settings</a>}
         <div>
           <label>Arrival check radius (metres)<input aria-describedby="arrival-radius-help" className="mt-1 block min-h-11 w-full rounded border p-2" type="number" min="50" max="500" step="1" value={form.arrival_radius_m} onChange={(e) => set('arrival_radius_m', Number(e.target.value))} /></label>
-          <p id="arrival-radius-help" className="text-sm text-gray-500">Used when riders tap I've arrived at pickup or customer locations.</p>
+          <p id="arrival-radius-help" className="text-sm text-gray-500">Used when riders tap I've arrived at customer locations.</p>
         </div>
       </section>
       <fieldset className="space-y-3 rounded-2xl border border-gray-200 p-4 dark:border-gray-700">
