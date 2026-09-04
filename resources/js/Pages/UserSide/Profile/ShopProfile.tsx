@@ -79,6 +79,142 @@ interface Props {
   repairPackages?: RepairPackage[];
 }
 
+type ShopProfileProductCardProps = {
+  product: Product;
+  getProductImages: (product: Product) => string[];
+  activeImageIndex: number;
+  onMouseEnter: () => void;
+  onMouseLeave: () => void;
+};
+
+const ShopProfileProductCard = ({
+  product,
+  getProductImages,
+  activeImageIndex,
+  onMouseEnter,
+  onMouseLeave,
+}: ShopProfileProductCardProps) => {
+  const productImages = getProductImages(product);
+  const safeActiveImageIndex = activeImageIndex < productImages.length ? activeImageIndex : 0;
+
+  return (
+    <Link
+      href={'/products/' + product.slug}
+      data-testid="shop-profile-product-card"
+      className="group flex h-full w-[min(86vw,28rem)] shrink-0 snap-start flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[0_12px_28px_-24px_rgba(15,23,42,0.45)] transition-all duration-300 hover:-translate-y-1 hover:border-gray-300 hover:shadow-[0_24px_40px_-24px_rgba(15,23,42,0.55)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#16233b] xl:w-[calc((100%_-_2rem)/3)] xl:rounded-3xl xl:border-gray-300 xl:shadow-[0_16px_35px_-24px_rgba(15,23,42,0.45)] 2xl:w-[calc((100%_-_3rem)/4)]"
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+    >
+      <div className="relative aspect-3/4 overflow-hidden bg-gray-50 xl:aspect-square">
+        {product.compare_at_price && product.compare_at_price > product.price && (
+          <div className="absolute left-4 top-4 z-10 rounded-full bg-red-600 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-white shadow-sm">
+            SALE
+          </div>
+        )}
+        {product.stock_quantity === 0 && (
+          <div className="absolute left-4 top-4 z-10 rounded-full bg-black px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-white shadow-sm">
+            SOLD OUT
+          </div>
+        )}
+        {productImages.length > 0 ? (
+          productImages.map((image, imageIndex) => (
+            <img
+              key={product.id + '-' + imageIndex}
+              src={image}
+              alt={product.name}
+              className={'absolute inset-0 h-full w-full object-cover transition-all duration-700 ease-in-out motion-reduce:transition-none ' + (
+                imageIndex === safeActiveImageIndex
+                  ? 'scale-100 opacity-100 group-hover:scale-110'
+                  : 'pointer-events-none scale-100 opacity-0'
+              )}
+              loading="lazy"
+              onError={(event) => {
+                if (product.main_image) {
+                  event.currentTarget.src = product.main_image;
+                }
+              }}
+            />
+          ))
+        ) : (
+          <div className="flex h-full items-center justify-center text-sm text-gray-400">No Image</div>
+        )}
+      </div>
+      <div className="flex min-h-36 flex-1 flex-col border-t border-gray-200 p-2.5 xl:min-h-48.5 xl:p-3.5">
+        <h3 className="mb-1 min-h-8 line-clamp-2 text-xs font-bold uppercase tracking-[0.06em] text-black xl:mb-1.5 xl:min-h-10 xl:text-sm">{product.name}</h3>
+        <div className="mb-1 min-h-4 xl:mb-1.5 xl:min-h-[1.1rem]">
+          {product.brand && <p className="text-[10px] uppercase tracking-[0.12em] text-black/55 xl:text-xs">{product.brand}</p>}
+        </div>
+        <div className="mb-1 min-h-[1.1rem]">
+          <span className={'text-xs font-medium ' + (product.stock_quantity > 0 ? 'text-green-600' : 'text-red-600')}>
+            {product.stock_quantity > 0 ? product.stock_quantity + ' in stock' : 'Out of stock'}
+          </span>
+        </div>
+        <div className="mt-auto flex items-baseline justify-between border-t border-gray-200 pt-2 xl:pt-3">
+          <div className="flex flex-col gap-0.5">
+            <div className="text-base font-bold text-black xl:text-lg">₱{product.price.toLocaleString()}</div>
+            {product.compare_at_price && product.compare_at_price > product.price && (
+              <div className="text-xs text-black/40 line-through">₱{product.compare_at_price.toLocaleString()}</div>
+            )}
+          </div>
+        </div>
+      </div>
+    </Link>
+  );
+};
+
+type ShopProfileProductRailProps = {
+  title: string;
+  items: Product[];
+  onSeeMore: () => void;
+  getProductImages: (product: Product) => string[];
+  activeImageIndexes: Record<number, number>;
+  onProductMouseEnter: (product: Product) => void;
+  onProductMouseLeave: (productId: number) => void;
+};
+
+const ShopProfileProductRail = ({
+  title,
+  items,
+  onSeeMore,
+  getProductImages,
+  activeImageIndexes,
+  onProductMouseEnter,
+  onProductMouseLeave,
+}: ShopProfileProductRailProps) => {
+  if (items.length === 0) {
+    return null;
+  }
+
+  const headingId = 'shop-profile-rail-' + title.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+
+  return (
+    <section aria-labelledby={headingId}>
+      <div className="mb-5 flex items-end justify-between border-b border-black/15 pb-3">
+        <h3 id={headingId} className="text-2xl font-bold text-black">{title}</h3>
+        <button
+          type="button"
+          onClick={onSeeMore}
+          className="min-h-11 shrink-0 rounded-lg px-3 text-sm font-medium text-black transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16233b]"
+        >
+          See More
+        </button>
+      </div>
+      <div className="flex snap-x snap-mandatory gap-4 overflow-x-auto overscroll-x-contain pb-4">
+        {items.map((product) => (
+          <ShopProfileProductCard
+            key={product.id}
+            product={product}
+            getProductImages={getProductImages}
+            activeImageIndex={activeImageIndexes[product.id] ?? 0}
+            onMouseEnter={() => onProductMouseEnter(product)}
+            onMouseLeave={() => onProductMouseLeave(product.id)}
+          />
+        ))}
+      </div>
+    </section>
+  );
+};
+
 const ShopProfile: React.FC<Props> = ({ shop, products, repairServices = [], repairPackages = [] }) => {
   const { auth } = usePage().props as any;
   const isAuthenticated = !!auth?.user;
@@ -1007,7 +1143,7 @@ const ShopProfile: React.FC<Props> = ({ shop, products, repairServices = [], rep
         </div>
 
         {/* Products Section */}
-        <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
+        <div className="mx-auto w-full max-w-[1920px] px-4 py-12 sm:px-6 sm:py-16 xl:px-6 2xl:px-12">
           <div className="mb-12">
             <h2 className="text-3xl font-bold text-black mb-8">{isServicesTab ? 'Services' : 'Featured Shoes'}</h2>
 
@@ -1099,88 +1235,28 @@ const ShopProfile: React.FC<Props> = ({ shop, products, repairServices = [], rep
                 )}
               </div>
             ) : filteredProducts.length > 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                {filteredProducts.map((product) => {
-                  const productImages = getProductImages(product);
-                  const activeImageIndex = activeImageIndexes[product.id] ?? 0;
-
-                  return (
-                  <Link
-                    key={product.id}
-                    href={`/products/${product.slug}`}
-                    className="group block h-full rounded-2xl border border-gray-200 bg-white shadow-[0_12px_28px_-24px_rgba(15,23,42,0.45)] transition-all duration-300 hover:-translate-y-1 hover:border-gray-300 hover:shadow-[0_24px_40px_-24px_rgba(15,23,42,0.55)] xl:rounded-3xl xl:border-gray-300 xl:shadow-[0_16px_35px_-24px_rgba(15,23,42,0.45)]"
-                    onMouseEnter={() => startImageCycle(product)}
-                    onMouseLeave={() => stopImageCycle(product.id)}
-                  >
-                    <div className="relative flex h-full flex-col overflow-hidden rounded-2xl bg-white xl:rounded-3xl">
-                      {product.compare_at_price && product.compare_at_price > product.price && (
-                        <div className="absolute left-4 top-4 z-10 rounded-full bg-red-600 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-white shadow-sm">
-                          SALE
-                        </div>
-                      )}
-                      {product.stock_quantity === 0 && (
-                        <div className="absolute left-4 top-4 z-10 rounded-full bg-black px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-white shadow-sm">
-                          SOLD OUT
-                        </div>
-                      )}
-
-                      <div className="relative aspect-3/4 overflow-hidden bg-gray-50 xl:aspect-square">
-                        {productImages.length > 0 ? (
-                          productImages.map((image, imageIndex) => {
-                            const isActiveImage = imageIndex === activeImageIndex;
-
-                            return (
-                              <img
-                                key={`${product.id}-${imageIndex}`}
-                                src={image}
-                                alt={product.name}
-                                className={`absolute inset-0 h-full w-full object-cover transition-all duration-700 ease-in-out ${
-                                  isActiveImage
-                                    ? 'opacity-100 scale-100 group-hover:scale-110'
-                                    : 'opacity-0 scale-100 pointer-events-none'
-                                }`}
-                                loading="lazy"
-                                onError={(e) => {
-                                  if (product.main_image) {
-                                    e.currentTarget.src = product.main_image;
-                                  }
-                                }}
-                              />
-                            );
-                          })
-                        ) : (
-                          <div className="flex h-full w-full items-center justify-center text-sm text-gray-400">No Image</div>
-                        )}
-                      </div>
-
-                      <div className="flex min-h-36 flex-col border-t border-gray-200 p-2.5 xl:min-h-48.5 xl:p-3.5">
-                        <h3 className="mb-1 min-h-8 line-clamp-2 text-xs font-bold uppercase tracking-[0.06em] text-black xl:mb-1.5 xl:min-h-10 xl:text-sm">{product.name}</h3>
-
-                        <div className="mb-1 min-h-4 xl:mb-1.5 xl:min-h-[1.1rem]">
-                          {product.brand && (
-                            <p className="text-[10px] uppercase tracking-[0.12em] text-black/55 xl:text-xs">{product.brand}</p>
-                          )}
-                        </div>
-
-                        <div className="mb-1 min-h-[1.1rem]">
-                          <span className={`text-xs font-medium ${product.stock_quantity > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                            {product.stock_quantity > 0 ? `${product.stock_quantity} in stock` : 'Out of stock'}
-                          </span>
-                        </div>
-
-                        <div className="mt-auto flex items-baseline justify-between border-t border-gray-200 pt-2 xl:pt-3">
-                          <div className="flex flex-col gap-0.5">
-                            <div className="text-base font-bold text-black xl:text-lg">₱{product.price.toLocaleString()}</div>
-                            {product.compare_at_price && product.compare_at_price > product.price && (
-                              <div className="text-xs text-black/40 line-through">₱{product.compare_at_price.toLocaleString()}</div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </Link>
-                );
-                })}
+              <div data-testid="shop-profile-desktop-product-rails" className="space-y-12">
+                <ShopProfileProductRail
+                  title="Recommended For You"
+                  items={filteredProducts.slice(0, 6)}
+                  onSeeMore={() => setSelectedCategory('Shoes')}
+                  getProductImages={getProductImages}
+                  activeImageIndexes={activeImageIndexes}
+                  onProductMouseEnter={startImageCycle}
+                  onProductMouseLeave={stopImageCycle}
+                />
+                {retailCategoriesForSections.map((category) => (
+                  <ShopProfileProductRail
+                    key={category}
+                    title={category}
+                    items={getProductsByCategory(category).slice(0, 10)}
+                    onSeeMore={() => setSelectedCategory(category)}
+                    getProductImages={getProductImages}
+                    activeImageIndexes={activeImageIndexes}
+                    onProductMouseEnter={startImageCycle}
+                    onProductMouseLeave={stopImageCycle}
+                  />
+                ))}
               </div>
             ) : (
               <div className="text-center py-16">
