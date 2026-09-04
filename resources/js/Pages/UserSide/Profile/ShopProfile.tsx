@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Head, Link, usePage } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 import ReportShopModal from '../../../components/ReportShopModal';
+import { CustomerFooterReveal } from '../../../components/common/CustomerFooter';
 import { navigateBackOr } from '../Shared/backNavigation';
 
 interface Product {
@@ -417,9 +418,10 @@ const ShopProfile: React.FC<Props> = ({ shop, products, repairServices = [], rep
 
   return (
     <>
-    <div className="min-h-dvh flex flex-col bg-white">
-      <Head title={shop.name} />
-      <Navigation />
+      <CustomerFooterReveal>
+        <div className="min-h-dvh flex flex-col bg-white">
+          <Head title={shop.name} />
+          <Navigation />
 
       <main className="xl:hidden flex-1 pt-16 bg-gray-50">
         <section className={`relative h-56 overflow-hidden ${hasValidCoverImage ? 'bg-gray-300' : defaultCoverColorClassName}`}>
@@ -1189,39 +1191,8 @@ const ShopProfile: React.FC<Props> = ({ shop, products, repairServices = [], rep
         </div>
       </main>
 
-      {/* Footer */}
-      <footer className="hidden xl:block mt-16 bg-white border-t border-gray-100">
-        <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
-          <div className="grid grid-cols-1 gap-10 md:grid-cols-3 md:gap-12">
-            <div>
-              <div className="text-2xl font-bold mb-6 text-black">SoleSpace</div>
-              <p className="text-sm text-gray-500 leading-relaxed max-w-sm">
-                Your premier destination for premium footwear and expert repair services.
-              </p>
-            </div>
-            <div className="flex flex-col">
-              <h3 className="text-xs uppercase text-gray-400 font-semibold tracking-wider mb-6">Quick Links</h3>
-              <nav className="flex flex-col gap-4 text-sm text-gray-700">
-                <Link href="/products" className="hover:text-black transition-colors">Shoes</Link>
-                <Link href="/repair-services" className="hover:text-black transition-colors">Repair Services</Link>
-                <Link href="/my-orders" className="hover:text-black transition-colors">Orders</Link>
-              </nav>
-            </div>
-            <div className="flex flex-col">
-              <h3 className="text-xs uppercase text-gray-400 font-semibold tracking-wider mb-6">Services</h3>
-              <nav className="flex flex-col gap-4 text-sm text-gray-700">
-                <a href="#" className="hover:text-black transition-colors">Shoe Repair</a>
-                <a href="#" className="hover:text-black transition-colors">Custom Fitting</a>
-                <a href="#" className="hover:text-black transition-colors">Maintenance</a>
-              </nav>
-            </div>
-          </div>
-          <div className="mt-12 flex flex-col gap-3 border-t border-gray-100 pt-8 text-xs text-gray-400 sm:flex-row sm:items-center sm:justify-between">
-            <div>© 2026 SoleSpace. All rights reserved.</div>
-          </div>
         </div>
-      </footer>
-    </div>
+      </CustomerFooterReveal>
       <ReportShopModal
         shopId={shop.id}
         shopName={shop.name}

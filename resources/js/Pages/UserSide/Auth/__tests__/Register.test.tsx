@@ -266,7 +266,7 @@ describe('customer registration document screening UI', () => {
     expect(screen.getByRole('button', { name: 'Create account' })).toBeDisabled();
   });
 
-  it('shows stage-aware loading feedback while an ID side is being screened', async () => {
+  it('shows a full-screen stage-aware loading experience while an ID side is being screened', async () => {
     let releaseFingerprint: ((value: { exact: string; perceptual: null }) => void) | undefined;
     let releaseOcr: ((value: typeof driverFrontOcr) => void) | undefined;
 
@@ -285,17 +285,23 @@ describe('customer registration document screening UI', () => {
     fireEvent.change(screen.getByLabelText('ID Type'), { target: { value: 'drivers_license' } });
     await selectFile('ID file', 'national-front.png');
 
-    expect(screen.getByTestId('front-screening-loader')).toHaveTextContent(/Preparing image/i);
+    const screeningOverlay = screen.getByTestId('registration-screening-overlay');
+    expect(screeningOverlay).toHaveAttribute('role', 'dialog');
+    expect(screeningOverlay).toHaveAttribute('aria-modal', 'true');
+    expect(screeningOverlay).toHaveTextContent(/Preparing image/i);
+    expect(screeningOverlay).toHaveTextContent(/Image uploaded/i);
+    expect(screeningOverlay).toHaveTextContent(/Secure validation/i);
+    expect(screen.queryByTestId('front-screening-loader')).not.toBeInTheDocument();
     expect(screen.queryByText('Checking image...', { exact: true })).not.toBeInTheDocument();
     expect(screen.queryByText(/Checking .*image\.\.\./i)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Validating ID...' })).toBeDisabled();
 
     releaseFingerprint?.({ exact: 'national-front.png', perceptual: null });
-    await waitFor(() => expect(screen.getByTestId('front-screening-loader')).toHaveTextContent(/Validating ID/i));
+    await waitFor(() => expect(screen.getByTestId('registration-screening-overlay')).toHaveTextContent(/Validating ID/i));
 
     releaseOcr?.(driverFrontOcr);
     await waitFor(() => expect(screen.getByLabelText('Front image ready')).toBeInTheDocument());
-    expect(screen.queryByTestId('front-screening-loader')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('registration-screening-overlay')).not.toBeInTheDocument();
   });
 
   it('uses one biodata-page card for passports instead of front and back cards', async () => {
