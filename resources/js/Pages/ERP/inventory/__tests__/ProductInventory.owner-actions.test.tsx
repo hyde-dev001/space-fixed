@@ -1,6 +1,8 @@
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import ProductInventory from '../ProductInventory';
 import UploadInventory from '../UploadInventory';
 
@@ -14,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   },
   getProducts: vi.fn(),
   getItems: vi.fn(),
+  swalFire: vi.fn(),
 }));
 
 vi.mock('@inertiajs/react', () => ({
@@ -45,14 +48,33 @@ vi.mock('@/services/inventoryAPI', () => ({
 }));
 
 vi.mock('@/components/variants/ColorVariantManager', () => ({
-  ColorVariantManager: () => null,
+  ColorVariantManager: ({ onColorVariantsChange }: { onColorVariantsChange?: (variants: unknown[]) => void }) => (
+    <button
+      type="button"
+      data-testid="set-invalid-size"
+      onClick={() => onColorVariantsChange?.([{
+        id: 'color-1',
+        color_name: 'Black',
+        color_code: '#000000',
+        isExpanded: false,
+        images: [],
+        sizes: [{ id: 'size-1', size: '7', size_system: 'US', quantity: 0 }],
+      }])}
+    >
+      Set invalid size
+    </button>
+  ),
 }));
 
 vi.mock('@/components/variants/ColorVariantImageUploader', () => ({
   ColorVariantImageUploader: () => null,
 }));
 
-vi.mock('sweetalert2', () => ({ default: { fire: vi.fn() } }));
+vi.mock('sweetalert2', () => ({ default: { fire: mocks.swalFire } }));
+
+const uploadInventorySource = readFileSync(resolve('resources/js/Pages/ERP/inventory/UploadInventory.tsx'), 'utf8');
+const colorVariantManagerSource = readFileSync(resolve('resources/js/components/variants/ColorVariantManager.tsx'), 'utf8');
+const colorVariantImageUploaderSource = readFileSync(resolve('resources/js/components/variants/ColorVariantImageUploader.tsx'), 'utf8');
 
 const product = {
   id: 21,
@@ -85,6 +107,8 @@ beforeEach(() => {
   mocks.getProducts.mockResolvedValue({ data: [product] });
   mocks.getItems.mockReset();
   mocks.getItems.mockResolvedValue({ data: [] });
+  mocks.swalFire.mockReset();
+  mocks.swalFire.mockResolvedValue({ isConfirmed: false });
 });
 
 afterEach(() => {
@@ -118,5 +142,46 @@ describe('owner upload inventory action boundary', () => {
     expect(screen.queryByRole('button', { name: 'Save Quantity' })).not.toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: /image/i })).not.toBeInTheDocument();
     expect(screen.queryByDisplayValue('')).not.toBeInTheDocument();
+  });
+});
+
+describe('upload inventory monochrome feedback', () => {
+  it('keeps upload controls neutral instead of using blue UI accents', () => {
+    for (const source of [uploadInventorySource, colorVariantManagerSource, colorVariantImageUploaderSource]) {
+      expect(source).not.toMatch(/(?:bg|text|border|ring|from|to|hover:bg|hover:text|hover:border)-blue-/);
+      expect(source).not.toContain('alert(');
+    }
+
+    expect(uploadInventorySource).toContain('bg-black text-white rounded-lg hover:bg-gray-800');
+    expect(colorVariantManagerSource).toContain('bg-black hover:bg-gray-800 text-white');
+    expect(colorVariantImageUploaderSource).toContain('bg-black hover:bg-gray-800 text-white');
+  });
+
+  it('shows the zero-size validation through SweetAlert2', async () => {
+    mocks.page.props = {
+      auth: {
+        erpActor: { ownerMode: false, type: 'shop_owner' },
+        shop_owner: { business_type: 'both' },
+      },
+      initialData: { data: [] },
+      erpCapabilities: {},
+    };
+    const browserAlert = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
+
+    render(<UploadInventory />);
+
+    fireEvent.click(screen.getByRole('button', { name: '+ Add Stock Entry' }));
+    fireEvent.click(screen.getByTestId('set-invalid-size'));
+    fireEvent.submit(screen.getByRole('button', { name: 'Save Stock' }).closest('form') as HTMLFormElement);
+
+    await waitFor(() => expect(mocks.swalFire).toHaveBeenCalledWith(expect.objectContaining({
+      icon: 'warning',
+      title: 'Invalid stock quantity',
+      text: 'Each size must have stock greater than 0.',
+      confirmButtonColor: '#000000',
+    })));
+    expect(browserAlert).not.toHaveBeenCalled();
+
+    browserAlert.mockRestore();
   });
 });
