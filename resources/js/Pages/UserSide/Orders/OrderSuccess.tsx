@@ -2,14 +2,9 @@
 import { Head, router } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 
-type VerifiedOrder = {
-  order_number?: string | number | null;
-};
-
 type VerifyPaymentResponse = {
   success?: boolean;
   payment_verified?: boolean;
-  order?: VerifiedOrder | null;
 };
 
 export default function OrderSuccess() {
@@ -119,12 +114,8 @@ export default function OrderSuccess() {
         }
 
         if (data?.success && data?.payment_verified) {
-          const orderNumber = data?.order?.order_number;
-
           try {
-            sessionStorage.setItem('paymongoPaymentSuccess', JSON.stringify({
-              order_number: orderNumber ?? pendingOrderIdRaw,
-            }));
+            sessionStorage.setItem('paymongoPaymentSuccess', '1');
           } catch (error) {
             console.warn('Failed to prepare PayMongo success notification:', error);
           }

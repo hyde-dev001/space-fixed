@@ -11,8 +11,8 @@ const source = readFileSync(
 describe('OrderSuccess PayMongo confirmation', () => {
   it('queues a one-time success notification for My Orders', () => {
     expect(source).toContain("data?.success && data?.payment_verified");
-    expect(source).toContain("sessionStorage.setItem('paymongoPaymentSuccess'");
-    expect(source).toContain('data?.order?.order_number');
+    expect(source).toContain("sessionStorage.setItem('paymongoPaymentSuccess', '1')");
+    expect(source).not.toContain('data?.order?.order_number');
     expect(source).not.toContain('Payment Successful!');
     expect(source).not.toContain('setStatus');
   });

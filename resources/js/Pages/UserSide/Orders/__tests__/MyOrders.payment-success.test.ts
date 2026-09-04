@@ -14,6 +14,7 @@ describe('MyOrders PayMongo success notification', () => {
     expect(source).toContain("sessionStorage.removeItem('paymongoPaymentSuccess')");
     expect(source).toContain("icon: 'success'");
     expect(source).toContain("title: 'Payment Successful!'");
-    expect(source).toContain('order_number');
+    expect(source).toContain('Payment confirmed. We’ll update your order once it moves to the next step.');
+    expect(source).not.toContain('orderNumber');
   });
 });

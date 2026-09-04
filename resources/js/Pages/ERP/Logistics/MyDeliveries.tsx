@@ -120,7 +120,7 @@ function CompactModalPicker({
           aria-controls={modalIsOpen ? dialogId : undefined}
           aria-expanded={modalIsOpen}
           onClick={() => setIsOpen(true)}
-          className={`flex min-h-12 w-full items-center justify-between rounded-2xl border border-slate-300 bg-white px-4 text-left text-base text-slate-950 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-slate-700 dark:bg-slate-950 dark:text-white ${className}`}
+          className={`flex min-h-12 w-full items-center justify-between rounded-2xl border border-slate-300 bg-white px-4 text-left text-base text-slate-950 transition-colors hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:hover:bg-gray-800 ${className}`}
         >
           <span>{selectedLabel}</span>
           <svg aria-hidden="true" className="h-4 w-4 shrink-0" viewBox="0 0 20 20" fill="none">
@@ -133,7 +133,7 @@ function CompactModalPicker({
           aria-label={label}
           value={value}
           onChange={(event) => choose(event.target.value)}
-          className={`min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-950 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-slate-700 dark:bg-slate-950 dark:text-white ${className}`}
+          className={`min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-950 transition-colors hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:hover:bg-gray-800 ${className}`}
         >
           {pickerOptions.map(([option, optionLabel]) => (
             <option key={option || 'empty'} value={option}>{optionLabel}</option>
@@ -192,7 +192,7 @@ function CompactModalPicker({
                     className={`min-h-12 w-full touch-manipulation rounded-2xl border px-4 text-left text-sm font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-inset dark:focus:ring-white ${
                       value === option
                         ? 'border-slate-950 bg-slate-950 text-white dark:border-white dark:bg-white dark:text-slate-950'
-                        : 'border-slate-200 bg-white text-slate-950 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:hover:bg-slate-900'
+                        : 'border-slate-200 bg-white text-slate-950 hover:bg-gray-100 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:hover:bg-gray-800'
                     }`}
                   >
                     <span className="flex items-center justify-between gap-3">
@@ -561,7 +561,7 @@ function ResolutionNotice({ delivery }: { delivery: TrackingShipmentLeg }) {
   return (
     <p
       role="status"
-      className="mt-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm font-semibold text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100"
+      className="mt-2 rounded-xl border border-slate-200 bg-white p-3 text-sm font-semibold text-slate-950 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
     >
       <span aria-hidden="true">!</span> {instruction}
     </p>
@@ -581,7 +581,7 @@ function DeliveryContact({ delivery }: { delivery: TrackingShipmentLeg }) {
           {contact.address || 'Address not provided'}
         </p>
         {contact.instructions && (
-          <p className="mt-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950/40 dark:text-amber-100">
+          <p className="mt-2 rounded-lg bg-slate-50 p-3 text-sm text-slate-800 dark:bg-slate-800 dark:text-slate-100">
             <strong>Instruction:</strong> {contact.instructions}
           </p>
         )}
@@ -766,8 +766,8 @@ function DeliveryActions({
     const key = `delivery-retry:${delivery.id}`;
 
     return (
-      <div className="space-y-3 rounded-xl border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/30">
-        <p className="text-sm font-semibold text-amber-950 dark:text-amber-100">
+      <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-950">
+        <p className="text-sm font-semibold text-slate-950 dark:text-white">
           Retry scheduled for {retryDateText(scheduledDate)}
         </p>
         <button
@@ -783,7 +783,7 @@ function DeliveryActions({
           Start retry
         </button>
         {!retryDue && (
-          <p role="status" className="text-center text-xs font-semibold text-amber-800 dark:text-amber-200">
+          <p role="status" className="text-center text-xs font-semibold text-slate-700 dark:text-slate-300">
             Retry is unavailable until the scheduled date.
           </p>
         )}
@@ -793,11 +793,11 @@ function DeliveryActions({
   const isCustodyHold = delivery.status === 'needs_resolution' && delivery.resolution_type === null;
   if (isCustodyHold) {
     return (
-      <div className="space-y-2 rounded-xl border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/30">
-        <p className="text-sm font-semibold text-amber-950 dark:text-amber-100">
+      <div className="space-y-2 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-950">
+        <p className="text-sm font-semibold text-slate-950 dark:text-white">
           Delivery attempt limit reached
         </p>
-        <p className="text-sm text-amber-900 dark:text-amber-200">
+        <p className="text-sm text-slate-700 dark:text-slate-300">
           Keep the parcel secured. A dispatcher must choose the next resolution before you can start other work.
         </p>
       </div>
@@ -982,7 +982,7 @@ function DeliveryActions({
       ? 'dropoff'
       : null;
   const arrival = arrivalPhase ? delivery.arrivals?.[arrivalPhase] : undefined;
-  const arrivalActionLabel = arrivalPhase === 'pickup' ? 'Customer pickup at shop' : "I've arrived";
+  const arrivalActionLabel = arrivalPhase === 'pickup' ? 'Pick up at shop' : "I've arrived";
   const arrivalKey = `arrival:${delivery.id}`;
   const recordArrival = () => {
     if (!canUpdateStatus || !arrivalPhase) return;
@@ -1041,13 +1041,13 @@ function DeliveryActions({
         {arrivalActionLabel}
       </button>
       {!online && (
-        <p role="status" className="text-center text-sm font-semibold text-amber-700 dark:text-amber-300">
+        <p role="status" className="text-center text-sm font-semibold text-slate-700 dark:text-slate-300">
           Retry after reconnect
         </p>
       )}
       {showArrivalReason && (
-        <div className="space-y-3 rounded-xl border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/30">
-          <p className="text-sm text-amber-950 dark:text-amber-100">
+        <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-950">
+          <p className="text-sm text-slate-700 dark:text-slate-300">
             {arrivalResult
               ? `${arrivalResult}. Choose a reason to continue.`
               : 'Location could not be verified. Choose a reason to continue.'}
@@ -1063,7 +1063,7 @@ function DeliveryActions({
               onChange={setArrivalReason}
               options={arrivalReasons}
               placeholder="Choose a reason"
-              className="xl:border-amber-300 xl:focus:ring-amber-500 xl:dark:border-amber-800 xl:dark:bg-slate-900"
+              className="xl:border-slate-300 xl:focus:ring-slate-950 xl:dark:border-slate-700 xl:dark:bg-slate-950"
             />
           </div>
           <label className="block text-sm font-semibold">
@@ -1072,7 +1072,7 @@ function DeliveryActions({
               aria-label="Arrival notes"
               value={arrivalNotes}
               onChange={(event) => setArrivalNotes(event.target.value)}
-              className="mt-1 min-h-20 w-full rounded-xl border border-amber-300 bg-white p-3 dark:bg-slate-900"
+              className="mt-1 min-h-20 w-full rounded-xl border border-slate-300 bg-white p-3 dark:border-slate-700 dark:bg-slate-900"
             />
           </label>
           <button
@@ -1192,7 +1192,7 @@ function DeliveryActions({
       .at(-1);
     if (returnProof?.review_status === 'rider_confirmed') {
       return (
-        <p role="status" className="rounded-xl bg-amber-50 p-3 text-sm font-semibold text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+        <p role="status" className="rounded-xl bg-slate-50 p-3 text-sm font-semibold text-slate-800 dark:bg-slate-800 dark:text-slate-100">
           Return handed to shop · waiting for dispatcher confirmation
         </p>
       );
@@ -1387,10 +1387,10 @@ function ProofCorrectionAction({
   };
 
   return (
-    <div className="mt-4 space-y-3 rounded-xl border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/30">
-      <p className="text-sm font-bold text-amber-950 dark:text-amber-100">Replace delivery proof</p>
+    <div className="mt-4 space-y-3 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-950">
+      <p className="text-sm font-bold text-slate-950 dark:text-white">Replace delivery proof</p>
       {issue.reason && (
-        <p className="text-sm text-amber-900 dark:text-amber-200">
+        <p className="text-sm text-slate-700 dark:text-slate-300">
           Dispatcher note: {issue.reason}
         </p>
       )}
@@ -1415,13 +1415,13 @@ function ProofCorrectionAction({
             Submit replacement proof
           </button>
           {!online && (
-            <p role="status" className="text-center text-xs font-semibold text-amber-800 dark:text-amber-200">
+            <p role="status" className="text-center text-xs font-semibold text-slate-700 dark:text-slate-300">
               Retry after reconnect
             </p>
           )}
         </>
       ) : (
-        <p role="status" className="text-sm text-amber-900 dark:text-amber-200">
+        <p role="status" className="text-sm text-slate-700 dark:text-slate-300">
           {issue.replacement_allowed === false
             ? 'This delivery is no longer assigned for correction. Contact dispatch.'
             : 'This proof is awaiting dispatcher review.'}
@@ -1836,7 +1836,7 @@ function CompactListItem({
     const correction = item.issue_type === 'proof_correction';
 
     return (
-      <article className="rounded-xl border border-amber-300 bg-white p-5 dark:border-amber-800 dark:bg-slate-900 xl:p-4">
+      <article className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-900 xl:p-4">
         <div className="flex flex-col items-start gap-3 xl:flex-row xl:justify-between">
           <div>
             <p className="font-bold text-slate-950 dark:text-white">
@@ -2160,7 +2160,7 @@ export default function MyDeliveries() {
               role="status"
               aria-live="polite"
               className={`text-xs font-semibold ${
-                online ? 'text-emerald-700 dark:text-emerald-300' : 'text-amber-700 dark:text-amber-300'
+                online ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-700 dark:text-slate-300'
               }`}
             >
               <span aria-hidden="true">{online ? '●' : '!'}</span>{' '}

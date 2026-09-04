@@ -1077,8 +1077,8 @@ describe('MyDeliveries rider interactions', () => {
     });
     render(<MyDeliveries />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Customer pickup at shop' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Customer pickup at shop' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Pick up at shop' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Pick up at shop' }));
 
     await waitFor(() => expect(mocks.arrive).toHaveBeenCalledTimes(1));
     expect(mocks.confirm).not.toHaveBeenCalled();
@@ -1105,7 +1105,7 @@ describe('MyDeliveries rider interactions', () => {
     ]);
     const view = render(<MyDeliveries />);
 
-    expect(screen.getByRole('button', { name: 'Customer pickup at shop' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Pick up at shop' })).toBeVisible();
     expect(screen.getByRole('button', { name: "I've arrived" })).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Confirm pickup' })).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Delivery proof')).not.toBeInTheDocument();
@@ -1151,6 +1151,35 @@ describe('MyDeliveries rider interactions', () => {
     expect(mocks.reload).toHaveBeenLastCalledWith(expect.objectContaining({ only: ['deliveryData'] }));
   });
 
+  it('uses neutral pickup-arrival styling and gray dropdown hover states', async () => {
+    mocks.arrive.mockRejectedValueOnce({
+      response: {
+        status: 422,
+        data: { errors: { exception_reason: ['Reason required.'] } },
+      },
+    });
+    mocks.props.deliveryData.up_next = workItem('single', 'assigned', [leg(9, null)], {
+      group: 'upcoming',
+    });
+    render(<MyDeliveries />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pick up at shop' }));
+    await waitFor(() => expect(screen.getByLabelText('Arrival reason')).toBeVisible());
+
+    const arrivalMessage = screen.getByText('Location could not be verified. Choose a reason to continue.');
+    const arrivalPanel = arrivalMessage.parentElement;
+    expect(arrivalPanel).toHaveClass('border-slate-200', 'bg-white');
+    expect(arrivalPanel?.querySelector('[class*="amber"], [class*="yellow"]')).toBeNull();
+
+    const arrivalPicker = screen.getByLabelText('Arrival reason');
+    expect(arrivalPicker).toHaveClass('hover:bg-gray-100');
+    fireEvent.click(arrivalPicker);
+
+    const picker = screen.getByRole('dialog', { name: 'Arrival reason' });
+    expect(within(picker).getByRole('option', { name: 'GPS location is inaccurate' }))
+      .toHaveClass('hover:bg-gray-100');
+  });
+
   it('allows a reason after browser location fails without claiming arrival was saved', async () => {
     mocks.getCurrentPosition.mockImplementationOnce((_success, error: PositionErrorCallback) => {
       error({ code: 1, message: 'Permission denied' } as GeolocationPositionError);
@@ -1160,7 +1189,7 @@ describe('MyDeliveries rider interactions', () => {
     });
     render(<MyDeliveries />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Customer pickup at shop' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Pick up at shop' }));
 
     await waitFor(() => expect(screen.getByLabelText('Arrival reason')).toBeVisible());
     expect(mocks.arrive).not.toHaveBeenCalled();
