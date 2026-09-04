@@ -9,21 +9,22 @@ const source = readFileSync(
 );
 
 describe('OrderSuccess PayMongo confirmation', () => {
-  it('renders a verified confirmation with explicit navigation actions', () => {
+  it('queues a one-time success notification for My Orders', () => {
     expect(source).toContain("data?.success && data?.payment_verified");
-    expect(source).toContain('Payment Successful!');
-    expect(source).toContain('View My Orders');
-    expect(source).toContain('Continue Shopping');
+    expect(source).toContain("sessionStorage.setItem('paymongoPaymentSuccess'");
     expect(source).toContain('data?.order?.order_number');
+    expect(source).not.toContain('Payment Successful!');
+    expect(source).not.toContain('setStatus');
   });
 
-  it('does not auto-redirect after verified payment', () => {
+  it('redirects verified payment to My Orders', () => {
     const verifiedBranchStart = source.indexOf(
       'if (data?.success && data?.payment_verified)',
     );
     const verifiedBranchEnd = source.indexOf('} else {', verifiedBranchStart);
     const verifiedBranch = source.slice(verifiedBranchStart, verifiedBranchEnd);
 
-    expect(verifiedBranch).not.toContain('router.visit(postReturnDestination');
+    expect(verifiedBranch).toContain("router.visit('/my-orders', { replace: true })");
+    expect(verifiedBranch).not.toContain("setStatus('success')");
   });
 });

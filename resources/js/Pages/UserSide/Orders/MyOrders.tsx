@@ -362,6 +362,47 @@ const MyOrders: React.FC = () => {
       return;
     }
 
+    let raw: string | null = null;
+
+    try {
+      raw = sessionStorage.getItem('paymongoPaymentSuccess');
+      if (raw) {
+        sessionStorage.removeItem('paymongoPaymentSuccess');
+      }
+    } catch (error) {
+      console.warn('Failed to read PayMongo success notification:', error);
+      return;
+    }
+
+    if (!raw) {
+      return;
+    }
+
+    let orderNumber: string | null = null;
+
+    try {
+      const parsed = JSON.parse(raw) as { order_number?: string | number | null };
+      orderNumber = parsed.order_number == null ? null : String(parsed.order_number);
+    } catch (error) {
+      console.warn('Failed to parse PayMongo success notification:', error);
+    }
+
+    void Swal.fire({
+      icon: 'success',
+      title: 'Payment Successful!',
+      text: orderNumber
+        ? `Order ${orderNumber} has been paid and is being processed.`
+        : 'Your payment has been verified and your order is being processed.',
+      confirmButtonText: 'OK',
+      confirmButtonColor: '#000000',
+    });
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
     try {
       const raw = localStorage.getItem(ORDER_TAB_NOTIFICATION_STORAGE_KEY);
       if (!raw) {
