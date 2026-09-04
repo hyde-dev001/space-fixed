@@ -10,6 +10,7 @@ const customerPageSources = [
   'Pages/UserSide/Orders/MyOrders.tsx',
   'Pages/UserSide/Repairs/myRepairs.tsx',
   'Pages/UserSide/Profile/customerProfile.tsx',
+  'Pages/UserSide/Profile/ShopProfile.tsx',
   'Pages/UserSide/Auth/ShopOwnerRegistration.tsx',
   'Pages/UserSide/app/apk.tsx',
 ].map((relativePath) => ({

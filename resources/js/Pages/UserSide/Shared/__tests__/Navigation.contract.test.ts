@@ -196,8 +196,9 @@ describe('user-side navigation shell', () => {
     }
   });
 
-  it('uses the shorter Cart and Orders labels and keeps the Repairs page title', () => {
-    expect(supportingLabelSources.shopProfile).toContain('>Orders</Link>');
+  it('uses the shared customer footer and keeps the Repairs page title', () => {
+    expect(supportingLabelSources.shopProfile).toContain('CustomerFooterReveal');
+    expect(supportingLabelSources.shopProfile).not.toContain('<footer');
     expect(supportingLabelSources.customerProfile).toContain('>Repairs</h2>');
     expect(supportingLabelSources.repairs).toContain('<Head title="Repairs" />');
     expect(supportingLabelSources.paymentSuccess).toContain('View Orders');
