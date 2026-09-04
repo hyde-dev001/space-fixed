@@ -177,6 +177,16 @@ describe("canonical settings sections", () => {
     expect(document.activeElement).toBe(document.getElementById("settings-section-operations"));
   });
 
+  it("uses red warning styling when PayMongo is not configured", () => {
+    renderSettings("profile", { ...baseShopSettings, has_paymongo_key: false });
+
+    const warning = screen.getByText("Payment not configured").closest("div.flex");
+
+    expect(warning).toHaveClass("border-red-200", "bg-red-50");
+    expect(screen.getByText("Payment not configured")).toHaveClass("text-red-800");
+    expect(screen.getByText(/You haven't added your PayMongo secret key yet/)).toHaveClass("text-red-700");
+  });
+
   it("moves focus and active state when a user selects another section", async () => {
     renderSettings("profile");
 
