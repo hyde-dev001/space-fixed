@@ -34,4 +34,3 @@ Verify that:
 2. Existing shop information and rating states remain present.
 3. The blue payment-policy and yellow rating block backgrounds are absent from this section.
 4. The focused repair shop layout test passes, the full frontend test suite passes, and the production Vite build succeeds.
-
