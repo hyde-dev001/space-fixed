@@ -1298,7 +1298,7 @@ export default function Register() {
                           type="button"
                           onClick={() => void handleAddressSearch()}
                           disabled={isSearching}
-                          className="h-10 rounded-xl bg-blue-600 px-4 text-[12px] font-semibold text-white transition hover:bg-blue-700 disabled:opacity-60"
+                          className="userside-auth-primary h-10 rounded-xl bg-black px-4 text-[12px] font-semibold text-white transition hover:bg-black/85 disabled:opacity-60"
                         >
                           {isSearching ? 'Searching...' : 'Search'}
                         </button>
@@ -1306,7 +1306,7 @@ export default function Register() {
                           type="button"
                           onClick={handleUseMyGPS}
                           disabled={gettingGPS}
-                          className="userside-auth-ghost h-10 rounded-xl border border-blue-600 px-3 text-[12px] font-semibold text-blue-600 transition hover:bg-blue-50 disabled:opacity-60"
+                          className="userside-auth-primary h-10 rounded-xl bg-black px-3 text-[12px] font-semibold text-white transition hover:bg-black/85 disabled:opacity-60"
                         >
                           {gettingGPS ? 'Locating...' : 'Use My GPS'}
                         </button>
@@ -1338,7 +1338,7 @@ export default function Register() {
                       id="password-requirements"
                       role="group"
                       aria-label="Password requirements"
-                      className="pointer-events-none absolute left-0 right-0 top-full z-30 mt-2 translate-y-1 rounded-2xl border border-gray-200 bg-white p-4 opacity-0 shadow-xl transition duration-200 ease-out group-hover:pointer-events-auto group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:translate-y-0 group-focus-within:opacity-100 dark:border-gray-700 dark:bg-gray-900"
+                      className="pointer-events-none absolute left-0 right-0 top-full z-30 mt-2 translate-y-1 rounded-2xl border border-gray-200 bg-white p-4 opacity-0 shadow-xl transition duration-200 ease-out group-hover:pointer-events-auto group-hover:translate-y-0 group-hover:opacity-100 dark:border-gray-700 dark:bg-gray-900"
                     >
                       <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">Password requirements</p>
                       <ul className="mt-3 space-y-2">
