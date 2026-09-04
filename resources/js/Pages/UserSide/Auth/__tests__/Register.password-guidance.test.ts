@@ -27,10 +27,23 @@ describe('customer registration password guidance', () => {
 
     expect(passwordField).toContain('password-requirements');
     expect(passwordField).toContain('group-hover:opacity-100');
-    expect(passwordField).toContain('group-focus-within:opacity-100');
+    expect(passwordField).not.toContain('group-focus-within');
     expect(passwordField).toContain('absolute');
     expect(passwordField).toContain('aria-describedby="password-requirements"');
     expect(passwordField).toContain('passwordRequirementState.map');
     expect(passwordField).toContain('<span>{label}</span>');
+  });
+
+  it('uses the Next button color for address actions', () => {
+    const addressActions = source.slice(
+      source.indexOf('id="addressSearch"'),
+      source.indexOf('id="password"'),
+    );
+
+    expect(addressActions).toContain('bg-black');
+    expect(addressActions).toContain('text-white');
+    expect(addressActions).toContain('hover:bg-black/85');
+    expect(addressActions).not.toContain('bg-blue-600');
+    expect(addressActions).not.toContain('border-blue-600');
   });
 });
