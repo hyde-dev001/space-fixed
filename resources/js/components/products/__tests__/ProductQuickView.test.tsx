@@ -71,6 +71,22 @@ describe('ProductQuickView', () => {
     expect(overlay).not.toHaveClass('items-start');
   });
 
+  it('uses a flexible white gallery without horizontal thumbnail scrolling', () => {
+    render(<ProductQuickView product={product} detailsHref="/products/solespace-runner" onClose={vi.fn()} />);
+
+    const dialog = screen.getByRole('dialog', { name: 'SoleSpace Runner' });
+    const gallery = screen.getByRole('region', { name: 'Product images' });
+    const imageFrame = screen.getByAltText('SoleSpace Runner image 1').parentElement;
+    const thumbnails = screen.getByLabelText('Product image thumbnails');
+
+    expect(dialog).toHaveClass('overflow-x-hidden');
+    expect(gallery).toHaveClass('h-fit', 'self-start', 'bg-white');
+    expect(imageFrame).toHaveClass('bg-white');
+    expect(imageFrame).not.toHaveClass('aspect-square');
+    expect(thumbnails).toHaveClass('flex-wrap');
+    expect(thumbnails).not.toHaveClass('overflow-x-auto');
+  });
+
   it('passes selected color, size, image, and quantity to the existing cart action', () => {
     render(<ProductQuickView product={product} detailsHref="/products/solespace-runner" onClose={vi.fn()} />);
 
