@@ -91,11 +91,11 @@ type ReviewMetric = {
 	tone: MetricTone;
 };
 
-const metricToneClasses: Record<MetricTone, { gradient: string; badge: string }> = {
-	info: { gradient: 'from-blue-500 to-indigo-600', badge: 'bg-blue-100 text-blue-700' },
-	warning: { gradient: 'from-yellow-500 to-orange-600', badge: 'bg-yellow-100 text-yellow-700' },
-	success: { gradient: 'from-green-500 to-emerald-600', badge: 'bg-green-100 text-green-700' },
-	danger: { gradient: 'from-red-500 to-rose-600', badge: 'bg-red-100 text-red-700' },
+const metricToneClasses: Record<MetricTone, { gradient: string }> = {
+	info: { gradient: 'from-blue-500 to-indigo-600' },
+	warning: { gradient: 'from-yellow-500 to-orange-600' },
+	success: { gradient: 'from-green-500 to-emerald-600' },
+	danger: { gradient: 'from-red-500 to-rose-600' },
 };
 
 const ReviewMetricCard: React.FC<ReviewMetric> = ({ title, value, description, icon: Icon, tone }) => {
@@ -108,7 +108,6 @@ const ReviewMetricCard: React.FC<ReviewMetric> = ({ title, value, description, i
 					<div className={'flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br ' + colors.gradient + ' shadow-lg'}>
 						<Icon className="h-6 w-6 text-white" />
 					</div>
-					<span className={'rounded-full px-3 py-1 text-xs font-semibold ' + colors.badge}>Queue</span>
 				</div>
 				<div className="mt-5 space-y-1">
 					<p className="text-sm font-medium text-gray-600 dark:text-gray-400">{title}</p>

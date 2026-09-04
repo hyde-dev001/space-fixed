@@ -76,6 +76,13 @@ beforeEach(() => {
 });
 
 describe('identity review queue controls', () => {
+	it('renders metric cards without decorative queue badges', () => {
+		render(<IdentityReviewQueue {...props()} />);
+
+		expect(screen.queryAllByText('Queue')).toHaveLength(0);
+		expect(screen.getByText('Awaiting human review')).toBeInTheDocument();
+	});
+
 	it('uses the Super Admin primary styling and selects every reviewed row on the page', () => {
 		render(<IdentityReviewQueue {...props()} />);
 
