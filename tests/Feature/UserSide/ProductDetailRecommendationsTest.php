@@ -115,6 +115,37 @@ class ProductDetailRecommendationsTest extends TestCase
             );
     }
 
+    #[Test]
+    public function it_exposes_active_product_slugs_for_recent_history_validation(): void
+    {
+        $approvedShop = ShopOwner::factory()->approved()->create();
+        $current = $this->createProduct($approvedShop, [
+            'slug' => 'history-current-product',
+        ]);
+        $activeProduct = $this->createProduct($approvedShop, [
+            'slug' => 'history-active-product',
+        ]);
+        $inactiveProduct = $this->createProduct($approvedShop, [
+            'slug' => 'history-inactive-product',
+            'is_active' => false,
+        ]);
+
+        $response = $this->get(route('products.show', ['slug' => $current->slug]));
+
+        $response->assertOk();
+
+        $availableSlugs = collect($response->viewData('page')['props']['availableProductSlugs'])
+            ->sort()
+            ->values()
+            ->all();
+
+        $this->assertSame(
+            [$activeProduct->slug, $current->slug],
+            $availableSlugs,
+        );
+        $this->assertNotContains($inactiveProduct->slug, $availableSlugs);
+    }
+
     private function createProduct(ShopOwner $shopOwner, array $overrides = []): Product
     {
         static $sequence = 0;
