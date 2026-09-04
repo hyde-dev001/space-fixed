@@ -6,6 +6,7 @@ const footerSource = readFileSync(resolve(process.cwd(), 'resources/js/component
 const customerPageSources = [
   'Pages/UserSide/Orders/Checkout.tsx',
   'Pages/UserSide/Products/Products.tsx',
+  'Pages/UserSide/Products/ProductShow.tsx',
   'Pages/UserSide/Repairs/Repair.tsx',
   'Pages/UserSide/Orders/MyOrders.tsx',
   'Pages/UserSide/Repairs/myRepairs.tsx',

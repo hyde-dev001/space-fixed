@@ -161,15 +161,16 @@ describe('user-side navigation shell', () => {
     expect(cartSource).not.toContain('>Bag<');
   });
 
-  it('opens and refreshes the cart drawer after a successful product add', () => {
+  it('opens and refreshes the cart drawer after a successful product add without inline confirmation', () => {
     expect(navigationSource).toContain('addCartAddedListener');
     expect(navigationSource).toContain('removeCartAddedListener');
     expect(navigationSource).toContain('const [cartRefreshKey, setCartRefreshKey] = useState(0);');
     expect(navigationSource).toContain('if (!event.detail?.openDrawer) return;');
     expect(navigationSource).toContain('setCartDrawerOpen(true);');
     expect(navigationSource).toContain('setCartRefreshKey((key) => key + 1);');
-    expect(navigationSource).toContain('Added to cart');
-    expect(navigationSource).toContain('role="status"');
+    expect(navigationSource).not.toContain('cartAddedItem');
+    expect(navigationSource).not.toContain('Added to cart');
+    expect(navigationSource).not.toContain('bg-emerald-50');
     expect(navigationSource).toContain('}, [cartDrawerOpen, isAuthenticated, cartRefreshKey]);');
   });
 
