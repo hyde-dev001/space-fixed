@@ -653,7 +653,7 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
                         checked={isSelected}
                         disabled={isExisting}
                         onChange={() => toggleSizeSelection(size)}
-                        className="h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-gray-900"
+                        className="h-4 w-4 rounded border-gray-300 accent-black text-gray-900 focus:ring-gray-900"
                         title={`Select ${getSizeLabel(size)}`}
                       />
                       <span>{getSizeLabel(size)}</span>

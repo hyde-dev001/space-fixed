@@ -155,6 +155,7 @@ describe('upload inventory monochrome feedback', () => {
     expect(uploadInventorySource).toContain('bg-black text-white rounded-lg hover:bg-gray-800');
     expect(colorVariantManagerSource).toContain('bg-black hover:bg-gray-800 text-white');
     expect(colorVariantImageUploaderSource).toContain('bg-black hover:bg-gray-800 text-white');
+    expect(colorVariantManagerSource).toContain('accent-black');
   });
 
   it('shows the zero-size validation through SweetAlert2', async () => {
