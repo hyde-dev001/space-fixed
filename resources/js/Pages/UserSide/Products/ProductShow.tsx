@@ -46,8 +46,21 @@ type ProductVoucherCampaign = {
 type DesktopDisclosureId = 'details' | 'returns' | 'shipping';
 
 const ProductShow: React.FC = () => {
-  const { product, auth, cartIconCount: cartCountProp, relatedProducts: relatedProductProps } = usePage().props as any;
+  const {
+    product,
+    auth,
+    cartIconCount: cartCountProp,
+    relatedProducts: relatedProductProps,
+    availableProductSlugs: availableProductSlugProps,
+  } = usePage().props as any;
   const relatedProducts: ProductRailItem[] = Array.isArray(relatedProductProps) ? relatedProductProps : [];
+  const availableProductSlugs: string[] | undefined = React.useMemo(() => {
+    if (!Array.isArray(availableProductSlugProps)) {
+      return undefined;
+    }
+
+    return availableProductSlugProps.filter((slug: unknown): slug is string => typeof slug === 'string');
+  }, [availableProductSlugProps]);
   const { cartCount, isLoading: cartLoading } = useCart();
   const cartBadgeCount = Number(cartCountProp ?? (cartLoading ? 0 : cartCount) ?? 0);
   const [mobileSearchQuery, setMobileSearchQuery] = useState('');
@@ -458,8 +471,8 @@ const ProductShow: React.FC = () => {
       category: typeof product.category === 'string' ? product.category : null,
     };
 
-    setRecentlyViewed(registerRecentlyViewed(window.localStorage, currentProduct));
-  }, [product.id]);
+    setRecentlyViewed(registerRecentlyViewed(window.localStorage, currentProduct, availableProductSlugs));
+  }, [product.id, availableProductSlugs]);
 
   useEffect(() => {
     const claimed = Array.isArray(product?.promo_context?.claimed_campaign_ids)

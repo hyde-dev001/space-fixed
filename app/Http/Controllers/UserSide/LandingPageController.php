@@ -507,6 +507,13 @@ class LandingPageController extends Controller
             ->values()
             ->all();
 
+        $availableProductSlugs = Product::query()
+            ->where('is_active', true)
+            ->pluck('slug')
+            ->filter(fn ($slug) => is_string($slug) && trim($slug) !== '')
+            ->values()
+            ->all();
+
         $promoTablesReady = Schema::hasTable('promo_campaigns')
             && Schema::hasTable('promo_campaign_products')
             && Schema::hasTable('voucher_claims');
@@ -693,6 +700,7 @@ class LandingPageController extends Controller
                 ],
             ],
             'relatedProducts' => $relatedProducts,
+            'availableProductSlugs' => $availableProductSlugs,
         ]);
     }
 

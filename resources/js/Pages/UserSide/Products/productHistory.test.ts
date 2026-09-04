@@ -67,6 +67,15 @@ describe('registerRecentlyViewed', () => {
     expect(registerRecentlyViewed(storage, product(2))).toEqual([]);
   });
 
+  it('removes history entries whose product slug is no longer in the active catalog', () => {
+    const storage = memoryStorage([product(2), product(1)]);
+
+    const visibleItems = registerRecentlyViewed(storage, product(3), ['product-1', 'product-3']);
+
+    expect(visibleItems.map(({ id }) => id)).toEqual([1]);
+    expect(storage.read().map(({ id }) => id)).toEqual([3, 1]);
+  });
+
   it('handles blocked reads and writes without breaking the page', () => {
     const blockedRead = {
       getItem: () => {

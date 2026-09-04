@@ -48,15 +48,35 @@ const readHistory = (storage: ProductHistoryStorage): ProductRailItem[] => {
   }
 };
 
+const getProductSlug = (url: string): string | null => {
+  const path = url.split(/[?#]/, 1)[0].replace(/\/+$/, '');
+  const prefix = '/products/';
+
+  if (!path.startsWith(prefix)) {
+    return null;
+  }
+
+  const slug = path.slice(prefix.length);
+  return slug && !slug.includes('/') ? slug : null;
+};
+
 export const registerRecentlyViewed = (
   storage: ProductHistoryStorage,
   currentProduct: ProductRailItem,
+  activeProductSlugs?: readonly string[],
 ): ProductRailItem[] => {
   const seenProductIds = new Set([currentProduct.id]);
   const previousProducts: ProductRailItem[] = [];
+  const activeSlugs = activeProductSlugs
+    ? new Set(activeProductSlugs.map((slug) => slug.trim().toLowerCase()).filter(Boolean))
+    : null;
 
   for (const product of readHistory(storage)) {
     if (seenProductIds.has(product.id)) {
+      continue;
+    }
+
+    if (activeSlugs && !activeSlugs.has(getProductSlug(product.url)?.toLowerCase() ?? '')) {
       continue;
     }
 
