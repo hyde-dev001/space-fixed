@@ -259,7 +259,7 @@ Route::get('/notifications/settings', function () {
     return Inertia::render('Notifications/CustomerPreferences');
 })->middleware('auth:user')->name('notifications.settings');
 Route::get('/tracking/shipments/{shipment}', [\App\Http\Controllers\Logistics\CustomerTrackingController::class, 'show'])
-    ->middleware('auth:user')
+    ->middleware(['auth:user', 'throttle:logistics-viewer'])
     ->name('tracking.shipments.show');
 Route::get('/tracking/shipments/{shipment}/proofs/{proof}', [\App\Http\Controllers\Logistics\CustomerTrackingController::class, 'deliveryProof'])
     ->middleware('auth:user')
@@ -531,6 +531,8 @@ Route::prefix('api/logistics')->middleware(['auth:user,shop_owner'])->group(func
     Route::put('/settings', [\App\Http\Controllers\Api\Logistics\LogisticsSettingController::class, 'update']);
     Route::get('/shipments', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'index'])
         ->name('logistics.api.shipments.index');
+    Route::get('/live-locations', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'liveLocations'])
+        ->name('logistics.api.live-locations')->middleware('throttle:logistics-viewer');
     Route::get('/shipments/{shipment}', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'show'])
         ->name('logistics.api.shipments.show');
     Route::post('/delivery-disputes/{dispute}/investigate', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'investigateDispute']);
@@ -545,6 +547,8 @@ Route::prefix('api/logistics')->middleware(['auth:user,shop_owner'])->group(func
     Route::post('/legs/{leg}/in-transit', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'inTransit']);
     Route::post('/legs/{leg}/pickup-proofs/{proof}/confirm', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'confirmPickup']);
     Route::post('/legs/{leg}/pickup-proofs/{proof}/reject', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'rejectPickup']);
+    Route::post('/legs/{leg}/location', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'location'])
+        ->name('logistics.api.legs.location')->middleware('throttle:logistics-location');
     Route::post('/legs/{leg}/out-for-delivery', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'outForDelivery']);
     Route::post('/legs/{leg}/delivered', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'delivered']);
     Route::get('/proofs/{proof}/file', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'proofFile']);

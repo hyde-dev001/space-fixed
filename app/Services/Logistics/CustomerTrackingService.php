@@ -6,10 +6,14 @@ use App\Models\Logistics\Shipment;
 use App\Models\Order;
 use App\Models\OrderRefund;
 use App\Models\RepairRequest;
+use App\Services\Logistics\RiderLocationService;
 use Illuminate\Support\Facades\Storage;
 
 class CustomerTrackingService
 {
+    public function __construct(
+        private RiderLocationService $locations,
+    ) {}
     private const ATTEMPT_REASON_LABELS = [
         'recipient_unavailable' => 'Recipient unavailable',
         'wrong_or_incomplete_address' => 'Wrong or incomplete address',
@@ -65,6 +69,10 @@ class CustomerTrackingService
             'events' => fn ($query) => $query->where('visibility', 'customer')->latest(),
         ]);
 
+        $liveTracking = (bool) config('logistics_tracking.enabled')
+            ? $this->locations->customerLiveLocationForShipment($shipment)
+            : null;
+
         return [
             'id' => $shipment->id,
             'purpose' => $shipment->purpose,
@@ -72,7 +80,8 @@ class CustomerTrackingService
             'source_type' => $shipment->source_type,
             'source_summary' => $this->repairSourceSummary($shipment),
             'created_at' => optional($shipment->created_at)->toISOString(),
-            'legs' => $shipment->legs->map(function ($leg) use ($shipment) {
+            'live_tracking_enabled' => (bool) config('logistics_tracking.enabled'),
+            'legs' => $shipment->legs->map(function ($leg) use ($shipment, $liveTracking) {
                 $attempt = $leg->attempts->first();
                 $proof = $leg->status->value === 'delivered'
                     ? $leg->proofs->first()
@@ -111,6 +120,11 @@ class CustomerTrackingService
                             : null,
                     ] : null,
                 ];
+
+                $payload['live_tracking'] = $liveTracking
+                    && (int) $liveTracking['leg_id'] === (int) $leg->id
+                    ? $liveTracking
+                    : null;
 
                 if ($proof) {
                     $payload['delivery_proof'] = [

@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link } from '@inertiajs/react';
+import axios from 'axios';
+import LiveTrackingMap, { type LiveRiderLocation } from './LiveTrackingMap';
 import type { CustomerDeliveryProof, TrackingShipment } from '@/types/logistics';
 
 const titleCase = (value: string) =>
@@ -23,6 +25,12 @@ const snapshotText = (snapshot?: Record<string, unknown> | null) => {
   if (!snapshot) return '-';
   return [snapshot.name, snapshot.address].filter(Boolean).join(' - ') || '-';
 };
+
+const customerTrackingPollMs = 5000;
+const trackableStatuses = ['in_transit'];
+const formatDistance = (meters: number) => meters >= 1000
+  ? `${(meters / 1000).toFixed(1)} km`
+  : `${Math.round(meters)} m`;
 
 function DeliveryProofDialog({
   proof,
@@ -59,7 +67,7 @@ function DeliveryProofDialog({
           type="button"
           aria-label="Close proof viewer"
           onClick={onClose}
-          className="m-3 inline-flex min-h-11 min-w-11 items-center justify-center self-end rounded-lg border border-gray-300 px-3 text-xl font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16233b]"
+          className="m-3 inline-flex min-h-11 min-w-11 items-center justify-center self-end rounded-lg border border-gray-300 px-3 text-xl font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 dark:focus-visible:ring-white"
         >
           <span aria-hidden="true">{'\u00D7'}</span>
         </button>
@@ -76,7 +84,7 @@ function DeliveryProofDialog({
                   aria-pressed={zoom === level}
                   disabled={failed}
                   onClick={() => setZoom(level)}
-                  className="min-h-11 rounded-lg border border-gray-300 px-4 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16233b] disabled:opacity-50"
+                  className="min-h-11 rounded-lg border border-gray-300 px-4 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 dark:focus-visible:ring-white disabled:opacity-50"
                 >
                   {level * 100}%
                 </button>
@@ -106,7 +114,7 @@ function DeliveryProofDialog({
           </section>
 
           <aside className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-            <p className="inline-flex rounded-full border border-green-300 bg-green-50 px-3 py-1 text-sm font-bold text-green-900">
+            <p className="inline-flex rounded-full border border-slate-300 bg-slate-100 px-3 py-1 text-sm font-bold text-slate-950">
               {'\u2713'} {proof.status}
             </p>
             <dl className="mt-4 space-y-4">
@@ -127,7 +135,7 @@ function DeliveryProofDialog({
               <a
                 href={`${proof.url}?download=1`}
                 download
-                className="mt-5 inline-flex min-h-11 w-full items-center justify-center rounded-lg bg-gray-950 px-4 text-sm font-bold text-white transition-colors hover:bg-[#16233b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16233b]"
+                className="mt-5 inline-flex min-h-11 w-full items-center justify-center rounded-lg bg-gray-950 px-4 text-sm font-bold text-white transition-colors hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 dark:focus-visible:ring-white"
                 aria-label="Download proof of delivery"
               >
                 Download proof
@@ -151,14 +159,63 @@ export default function ShipmentTrackingPanel({
 }: ShipmentTrackingPanelProps) {
   const [failedProofIds, setFailedProofIds] = useState<number[]>([]);
   const [selectedProof, setSelectedProof] = useState<CustomerDeliveryProof | null>(null);
+  const [currentShipment, setCurrentShipment] = useState(shipment);
+  const [pollError, setPollError] = useState(false);
   const proofOpener = useRef<HTMLButtonElement | null>(null);
-  const currentLeg = shipment.legs[shipment.legs.length - 1];
-  const isReturn = shipment.purpose === 'refund_return';
-  const isRepair = shipment.source_type === 'repair_request';
+
+  useEffect(() => setCurrentShipment(shipment), [shipment]);
+
+  const currentLeg = currentShipment.legs[currentShipment.legs.length - 1];
+  const liveTracking = currentLeg?.live_tracking ?? null;
+  const shouldPoll = currentShipment.live_tracking_enabled === true
+    && currentShipment.status === 'active'
+    && trackableStatuses.includes(currentLeg?.status ?? '')
+    && currentLeg?.destination_snapshot?.type === 'customer';
+
+  useEffect(() => {
+    if (!shouldPoll) {
+      setPollError(false);
+      return;
+    }
+
+    let disposed = false;
+    const poll = async () => {
+      try {
+        const response = await axios.get<{ shipment?: typeof shipment }>(`/tracking/shipments/${shipment.id}`);
+        if (disposed || !response.data.shipment) return;
+        setCurrentShipment(response.data.shipment);
+        setPollError(false);
+      } catch {
+        if (!disposed) setPollError(true);
+      }
+    };
+
+    void poll();
+    const timer = window.setInterval(poll, customerTrackingPollMs);
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+    };
+  }, [shipment.id, shouldPoll]);
+
+  const isReturn = currentShipment.purpose === 'refund_return';
+  const isRepair = currentShipment.source_type === 'repair_request';
   const itemLabel = isReturn ? 'Return' : isRepair ? 'Repair Delivery' : 'Shipment';
-  const trackingNumber = isReturn ? `RET-${shipment.id}` : (currentLeg?.tracking_number || `SHP-${shipment.id}`);
-  const trackingUrl = isReturn ? `/tracking/shipments/${shipment.id}` : currentLeg?.tracking_url;
+  const trackingNumber = isReturn ? `RET-${currentShipment.id}` : (currentLeg?.tracking_number || `SHP-${currentShipment.id}`);
+  const trackingUrl = isReturn ? `/tracking/shipments/${currentShipment.id}` : currentLeg?.tracking_url;
   const awaitingConfirmation = ['awaiting_proof_approval', 'proof_correction_required'].includes(currentLeg?.status ?? '');
+  const roadRoute = liveTracking?.route?.source === 'direct' ? null : liveTracking?.route ?? null;
+  const customerMapLocations: LiveRiderLocation[] = liveTracking ? [{
+    leg_id: liveTracking.leg_id,
+    shipment_id: currentShipment.id,
+    shipment_reference: `Shipment #${currentShipment.id}`,
+    rider: { id: null, name: 'Delivery' },
+    status: liveTracking.status,
+    destination: liveTracking.destination ?? {},
+    location: liveTracking.location,
+    stale: liveTracking.stale,
+    route: roadRoute,
+  }] : [];
   const closeProof = () => {
     setSelectedProof(null);
     queueMicrotask(() => proofOpener.current?.focus());
@@ -169,17 +226,17 @@ export default function ShipmentTrackingPanel({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-sm font-medium text-gray-500">{itemLabel} #{shipment.id}</p>
-          <h1 className="text-2xl font-bold tracking-tight text-[#16233b]">{titleCase(shipment.purpose)}</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-950">{titleCase(currentShipment.purpose)}</h1>
         </div>
         <span className="w-fit rounded-full border border-gray-300 bg-white px-3 py-1 text-sm font-semibold text-gray-800">
-          {awaitingConfirmation ? customerStatus(currentLeg?.status ?? '') : titleCase(shipment.status)}
+          {awaitingConfirmation ? customerStatus(currentLeg?.status ?? '') : titleCase(currentShipment.status)}
         </span>
       </div>
 
       {awaitingConfirmation && (
-        <section className="rounded-2xl border border-blue-200 bg-blue-50 p-5">
-          <p className="font-semibold text-blue-900">{awaitingConfirmationLabel}</p>
-          <p className="mt-1 text-sm leading-6 text-blue-800">Your item was handed over and the delivery proof is being verified.</p>
+        <section className="rounded-2xl border border-slate-300 bg-slate-100 p-5">
+          <p className="font-semibold text-slate-950">{awaitingConfirmationLabel}</p>
+          <p className="mt-1 text-sm leading-6 text-slate-700">Your item was handed over and the delivery proof is being verified.</p>
         </section>
       )}
 
@@ -196,7 +253,7 @@ export default function ShipmentTrackingPanel({
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">{trackingUrl ? 'Tracking Link' : 'Delivery Method'}</p>
             {trackingUrl ? (
-              <a className="mt-1 inline-flex min-h-11 items-center text-sm font-semibold text-[#16233b] underline decoration-gray-300 underline-offset-4 hover:decoration-current focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16233b]" href={trackingUrl}>
+              <a className="mt-1 inline-flex min-h-11 items-center text-sm font-semibold text-slate-950 underline decoration-gray-300 underline-offset-4 hover:decoration-current focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 dark:focus-visible:ring-white" href={trackingUrl}>
                 {isReturn ? 'Open return tracking' : 'Open courier page'}
               </a>
             ) : (
@@ -206,22 +263,75 @@ export default function ShipmentTrackingPanel({
         </div>
       </section>
 
-      {shipment.source_summary && (
+      {currentShipment.source_summary && (
         <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-[0_18px_50px_-35px_rgba(15,23,42,0.25)] sm:p-6">
           <div className="grid gap-5 md:grid-cols-3">
             <div>
               <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Repair Request</p>
-              <p className="mt-1 text-sm font-semibold text-gray-900">{shipment.source_summary.request_number}</p>
+              <p className="mt-1 text-sm font-semibold text-gray-900">{currentShipment.source_summary.request_number}</p>
             </div>
             <div>
               <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Customer</p>
-              <p className="mt-1 text-sm font-semibold text-gray-900">{shipment.source_summary.customer_name}</p>
+              <p className="mt-1 text-sm font-semibold text-gray-900">{currentShipment.source_summary.customer_name}</p>
             </div>
             <div>
               <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Shoe</p>
-              <p className="mt-1 text-sm font-semibold text-gray-900">{shipment.source_summary.shoe_summary}</p>
+              <p className="mt-1 text-sm font-semibold text-gray-900">{currentShipment.source_summary.shoe_summary}</p>
             </div>
           </div>
+        </section>
+      )}
+
+      {(liveTracking || shouldPoll) && (
+        <section className="rounded-2xl border border-slate-300 bg-white p-5 shadow-[0_18px_50px_-35px_rgba(15,23,42,0.25)] sm:p-6" aria-live="polite">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h2 className="text-base font-bold tracking-tight text-slate-950">Live delivery location</h2>
+              <p className="mt-1 text-sm text-gray-600">The map shows the latest available delivery position.</p>
+            </div>
+            {liveTracking?.stale && (
+              <span className="w-fit rounded-full border border-slate-300 bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-950">
+                Location may be out of date
+              </span>
+            )}
+          </div>
+
+          {liveTracking ? (
+            <>
+              <div className="mt-4 grid gap-4 sm:grid-cols-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Last update</p>
+                  <p className="mt-1 text-sm font-semibold text-gray-900">{formatDate(liveTracking.location.recorded_at)}</p>
+                </div>
+                {roadRoute && (
+                  <>
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">ETA</p>
+                      <p className="mt-1 text-sm font-semibold text-gray-900">ETA {Math.max(1, Math.ceil(liveTracking.route.duration_s / 60))} min</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Remaining distance</p>
+                      <p className="mt-1 text-sm font-semibold text-gray-900">{formatDistance(liveTracking.route.distance_m)} remaining</p>
+                    </div>
+                  </>
+                )}
+              </div>
+              <div className="mt-4 overflow-hidden rounded-xl border border-gray-200">
+                <LiveTrackingMap locations={customerMapLocations} label="Customer delivery map" followLocation viewer="customer" />
+              {!roadRoute && (
+                <p role="status" className="mt-3 text-sm font-semibold text-gray-700">
+                  Road route is temporarily unavailable. The rider location will continue updating.
+                </p>
+              )}
+              </div>
+            </>
+          ) : (
+            <p role="status" className="mt-4 text-sm font-semibold text-gray-700">
+              Waiting for the rider's first GPS update.
+            </p>
+          )}
+
+          {pollError && <p role="alert" className="mt-3 text-sm font-semibold text-slate-700">Live location is temporarily unavailable. Retrying...</p>}
         </section>
       )}
 
@@ -245,9 +355,9 @@ export default function ShipmentTrackingPanel({
           return (
             <section
               key={`failed-attempt-${attempt.id}`}
-              className={`rounded-2xl border p-5 ${isActiveFailure ? 'border-amber-300 bg-amber-50' : 'border-gray-200 bg-white'}`}
+              className={`rounded-2xl border p-5 ${isActiveFailure ? 'border-slate-400 bg-slate-100' : 'border-gray-200 bg-white'}`}
             >
-              <p className={`font-semibold ${isActiveFailure ? 'text-amber-900' : 'text-gray-900'}`}>
+              <p className={`font-semibold ${isActiveFailure ? 'text-slate-950' : 'text-gray-900'}`}>
                 {isActiveFailure
                   ? (isPickupFailure ? 'Pickup attempt unsuccessful' : 'Delivery Attempt Failed')
                   : (isPickupFailure ? 'Previous pickup attempt' : 'Previous delivery attempt')}
@@ -257,7 +367,7 @@ export default function ShipmentTrackingPanel({
               {proofUnavailable ? (
                 <p className="mt-3 text-sm text-gray-500">Attempt photo unavailable</p>
               ) : (
-                <a href={attempt.proof_url!} target="_blank" rel="noreferrer" className="mt-3 inline-block rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16233b]">
+                <a href={attempt.proof_url!} target="_blank" rel="noreferrer" className="mt-3 inline-block rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 dark:focus-visible:ring-white">
                   <img
                     src={attempt.proof_url!}
                     alt={isPickupFailure ? 'Failed pickup proof' : 'Failed delivery attempt proof'}
@@ -272,10 +382,10 @@ export default function ShipmentTrackingPanel({
 
         <section className="userside-tracking-section rounded-2xl border border-gray-200 bg-white shadow-[0_18px_50px_-35px_rgba(15,23,42,0.25)]">
           <div className="border-b border-gray-200 px-5 py-4 sm:px-6">
-            <h2 className="text-base font-bold tracking-tight text-[#16233b]">{itemLabel} Movement</h2>
+            <h2 className="text-base font-bold tracking-tight text-slate-950">{itemLabel} Movement</h2>
           </div>
           <div className="divide-y divide-gray-100">
-            {shipment.legs.map((leg) => (
+            {currentShipment.legs.map((leg) => (
               <div key={leg.id} className="grid gap-4 px-5 py-5 md:grid-cols-[120px_1fr_1fr_160px]">
                 <div className="text-sm font-semibold text-gray-900">{titleCase(leg.leg_type)}</div>
                 <div>
@@ -295,7 +405,7 @@ export default function ShipmentTrackingPanel({
                         proofOpener.current = event.currentTarget;
                         setSelectedProof(leg.delivery_proof!);
                       }}
-                      className="mt-2 inline-flex min-h-11 items-center justify-center rounded-lg border border-gray-900 px-3 text-sm font-bold text-gray-950 transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16233b]"
+                      className="mt-2 inline-flex min-h-11 items-center justify-center rounded-lg border border-gray-900 px-3 text-sm font-bold text-gray-950 transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 dark:focus-visible:ring-white"
                     >
                       View proof of delivery
                     </button>
@@ -312,13 +422,13 @@ export default function ShipmentTrackingPanel({
 
         <section className="userside-tracking-section rounded-2xl border border-gray-200 bg-white shadow-[0_18px_50px_-35px_rgba(15,23,42,0.25)]">
           <div className="border-b border-gray-200 px-5 py-4 sm:px-6">
-            <h2 className="text-base font-bold tracking-tight text-[#16233b]">Updates</h2>
+            <h2 className="text-base font-bold tracking-tight text-slate-950">Updates</h2>
           </div>
           <div className="divide-y divide-gray-100">
-            {shipment.events.length === 0 ? (
+            {currentShipment.events.length === 0 ? (
               <p className="px-5 py-6 text-sm text-gray-500">No customer-visible updates yet.</p>
             ) : (
-              shipment.events.map((event) => (
+              currentShipment.events.map((event) => (
                 <div key={event.id} className="px-5 py-5">
                   <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                     <p className="text-sm font-semibold text-gray-900">{titleCase(event.event_type)}</p>
@@ -334,7 +444,7 @@ export default function ShipmentTrackingPanel({
 
       {!compact && (
         <div className="pt-1">
-          <Link href={isRepair ? '/my-repairs' : '/my-orders'} className="inline-flex min-h-11 items-center text-sm font-semibold text-black underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16233b]">
+          <Link href={isRepair ? '/my-repairs' : '/my-orders'} className="inline-flex min-h-11 items-center text-sm font-semibold text-black underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 dark:focus-visible:ring-white">
             {isRepair ? 'Back to repairs' : 'Back to orders'}
           </Link>
         </div>

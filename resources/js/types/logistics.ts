@@ -70,7 +70,7 @@ export type DeliveryContactSnapshot = {
 export type DeliveryArrival = {
   id: number;
   arrival_type: 'pickup' | 'dropoff';
-  result: 'verified' | 'outside_geofence' | 'low_accuracy' | 'location_unavailable';
+  result: 'verified' | 'recorded' | 'outside_geofence' | 'low_accuracy' | 'location_unavailable';
   distance_m?: number | null;
   radius_m: number;
   accuracy_m?: number | null;
@@ -180,6 +180,22 @@ export type TrackingShipmentLeg = {
     attempted_at?: string | null;
   }>;
   incidents?: LogisticsIncident[];
+  live_tracking?: {
+    leg_id: number;
+    status: string | null;
+    destination: Partial<DeliveryContactSnapshot> & Record<string, unknown>;
+    location: {
+      latitude: number;
+      longitude: number;
+      accuracy_m: number | null;
+      speed_mps: number | null;
+      heading_deg: number | null;
+      recorded_at: string | null;
+      received_at: string | null;
+    };
+    stale: boolean;
+    route?: LiveTrackingRoute | null;
+  } | null;
 };
 
 export type LogisticsIncident = {
@@ -211,6 +227,7 @@ export type TrackingShipment = {
   created_at?: string | null;
   legs: TrackingShipmentLeg[];
   events: TrackingShipmentEvent[];
+  live_tracking_enabled?: boolean;
 };
 
 export type LogisticsStats = {
@@ -369,4 +386,11 @@ export type RiderDeliveryPageData = {
     window: 'all' | 'today' | 'week';
     search: string;
   };
+};
+
+export type LiveTrackingRoute = {
+  distance_m: number;
+  duration_s: number;
+  geometry: Array<[number, number]>;
+  source?: 'road' | 'direct';
 };

@@ -103,6 +103,22 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute(5)->by('privileged-subscription-refund|'.$adminId.'|'.$request->ip());
         });
 
+        RateLimiter::for('logistics-location', static function (Request $request): Limit {
+            $riderId = (string) ($request->user('user')?->getAuthIdentifier() ?? 'guest');
+
+            return Limit::perMinute((int) config('logistics_tracking.rate_limits.location_updates_per_minute', 20))
+                ->by('logistics-location|'.$riderId.'|'.$request->ip());
+        });
+
+        RateLimiter::for('logistics-viewer', static function (Request $request): Limit {
+            $viewerId = (string) ($request->user('user')?->getAuthIdentifier()
+                ?? $request->user('shop_owner')?->getAuthIdentifier()
+                ?? 'guest');
+
+            return Limit::perMinute((int) config('logistics_tracking.rate_limits.viewer_requests_per_minute', 20))
+                ->by('logistics-viewer|'.$viewerId.'|'.$request->ip());
+        });
+
         // In local/debug mode, exclude our development-only finance public endpoints
         // from CSRF verification so the front-end can POST without a session token.
         if (app()->environment('local') || config('app.debug')) {

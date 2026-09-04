@@ -7,6 +7,7 @@ const resultDetails = {
   outside_geofence: { label: 'Outside geofence', Icon: MapPinOff, className: 'text-amber-700 dark:text-amber-300' },
   low_accuracy: { label: 'Low GPS accuracy', Icon: Satellite, className: 'text-amber-700 dark:text-amber-300' },
   location_unavailable: { label: 'Location unavailable', Icon: WifiOff, className: 'text-red-700 dark:text-red-300' },
+  recorded: { label: 'Pickup recorded', Icon: CheckCircle2, className: 'text-gray-700 dark:text-gray-300' },
 };
 
 const label = (value?: string | null) => {

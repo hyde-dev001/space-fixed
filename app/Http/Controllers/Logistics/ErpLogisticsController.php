@@ -218,6 +218,8 @@ class ErpLogisticsController extends Controller
             'canResolveDisputes' => ! $ownerMode && $user && $user->can('resolve-logistics-exceptions'),
             'canReportIssue' => $canReportIssue,
             'canViewShipments' => $isDispatcher || $riderMode,
+            'liveTrackingEnabled' => (bool) config('logistics_tracking.enabled'),
+            'liveTrackingIntervalSeconds' => (int) config('logistics_tracking.viewer_interval_seconds', 5),
             'riderMode' => $riderMode,
             'maxDeliveryAttempts' => $maxDeliveryAttempts,
             'assignableRiders' => $canAssign
@@ -410,6 +412,10 @@ class ErpLogisticsController extends Controller
             'canRecordProof' => $hasActiveAssignment && $user->can('record-logistics-proof'),
             'canUpdateStatus' => $hasActiveAssignment,
             'canReportIssue' => $hasActiveAssignment,
+            'liveTrackingEnabled' => (bool) config('logistics_tracking.enabled'),
+            'liveTrackingMovingIntervalSeconds' => (int) config('logistics_tracking.rider.moving_interval_seconds', 10),
+            'liveTrackingStationaryIntervalSeconds' => (int) config('logistics_tracking.rider.stationary_interval_seconds', 30),
+            'liveTrackingHiddenIntervalSeconds' => (int) config('logistics_tracking.rider.hidden_interval_seconds', 60),
             'maxDeliveryAttempts' => (int) LogisticsSetting::firstOrCreate([
                 'shop_owner_id' => $shopOwnerId,
             ])->max_delivery_attempts,

@@ -208,7 +208,7 @@ it('shows the saved service area and arrival check radius', () => {
   render(<LogisticsSettings />);
 
   expect(screen.getByLabelText('Arrival check radius (metres)')).toHaveValue(100);
-  expect(screen.getByText("Used when riders tap I've arrived at pickup or customer locations.")).toBeInTheDocument();
+  expect(screen.getByText("Used when riders tap I've arrived at customer locations.")).toBeInTheDocument();
 
   const map = screen.getByTestId('delivery-coverage-map');
   expect(map).toHaveAttribute('data-latitude', '14.599512');

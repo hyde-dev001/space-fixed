@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Logistics;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Logistics\AssignShipmentLegRequest;
 use App\Http\Requests\Logistics\RecordHandoffProofRequest;
+use App\Http\Requests\Logistics\RecordRiderLocationRequest;
 use App\Enums\Logistics\LogisticsAction;
 use App\Models\Logistics\DeliveryAttempt;
 use App\Models\Logistics\HandoffProof;
@@ -16,6 +17,7 @@ use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use App\Models\User;
 use App\Services\Logistics\ArrivalService;
+use App\Services\Logistics\RiderLocationService;
 use App\Services\Logistics\AssignmentService;
 use App\Services\Logistics\ProofService;
 use App\Services\Logistics\ProofReviewService;
@@ -49,6 +51,20 @@ class ShipmentController extends Controller
             ->paginate(20);
 
         return response()->json($shipments);
+    }
+
+    public function liveLocations(RiderLocationService $locations): JsonResponse
+    {
+        $shop = $this->authorizedShop('view-logistics-shipments');
+        abort_unless((bool) config('logistics_tracking.enabled'), 404);
+
+        return response()->json([
+            'enabled' => true,
+            'server_time' => now()->toISOString(),
+            'poll_after_seconds' => (int) config('logistics_tracking.viewer_interval_seconds', 5),
+            'stale_after_seconds' => (int) config('logistics_tracking.stale_after_seconds', 90),
+            'locations' => $locations->liveLocationsForShop($shop->id),
+        ])->header('Cache-Control', 'no-store, private');
     }
 
     public function show(Shipment $shipment): JsonResponse
@@ -330,6 +346,38 @@ class ShipmentController extends Controller
                 'recorded_at' => $event->created_at?->toISOString(),
             ],
         ], $event->wasRecentlyCreated ? 201 : 200);
+    }
+
+    public function location(
+        RecordRiderLocationRequest $request,
+        ShipmentLeg $leg,
+        RiderLocationService $locations,
+    ): JsonResponse {
+        abort_unless((bool) config('logistics_tracking.enabled'), 404);
+        $actor = $this->authorizeAttemptActor($leg);
+        abort_unless($actor instanceof User, 403);
+
+        $assignment = $locations->activeAssignmentFor($leg, $actor);
+        abort_unless($assignment, 403);
+
+        $location = $locations->record($leg, $assignment, $request->validated());
+
+        return response()->json([
+            'accepted' => true,
+            'location' => [
+                'id' => $location->id,
+                'shipment_leg_id' => $location->shipment_leg_id,
+                'latitude' => (float) $location->latitude,
+                'longitude' => (float) $location->longitude,
+                'accuracy_m' => $location->accuracy_m,
+                'speed_mps' => $location->speed_mps,
+                'heading_deg' => $location->heading_deg,
+                'recorded_at' => $location->recorded_at?->toISOString(),
+                'received_at' => $location->received_at?->toISOString(),
+            ],
+            'route' => $locations->routeFor($leg, $location),
+            'next_poll_after_seconds' => (int) config('logistics_tracking.rider.moving_interval_seconds', 5),
+        ]);
     }
 
     public function reportIssue(Request $request, ShipmentLeg $leg, ShipmentLegService $legs): JsonResponse

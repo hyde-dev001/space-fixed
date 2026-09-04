@@ -22,6 +22,7 @@ export const arrivalStatusText = (arrival: DeliveryArrival) => {
     outside_geofence: 'Outside service point · rider reason recorded',
     low_accuracy: 'Low GPS accuracy · rider reason recorded',
     location_unavailable: 'Location unavailable · rider reason recorded',
+    recorded: 'Pickup recorded (no location captured)',
   }[arrival.result];
 };
 

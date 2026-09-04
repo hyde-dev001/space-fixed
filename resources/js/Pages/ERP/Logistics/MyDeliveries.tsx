@@ -1,5 +1,6 @@
 import AppLayoutERP from '@/layout/AppLayout_ERP';
 import { logisticsApi } from '@/services/logisticsApi';
+import RiderGpsTracker from '@/components/logistics/RiderGpsTracker';
 import type {
   RiderDeliveryIssue,
   RiderDeliveryPageData,
@@ -982,17 +983,16 @@ function DeliveryActions({
       ? 'dropoff'
       : null;
   const arrival = arrivalPhase ? delivery.arrivals?.[arrivalPhase] : undefined;
-  const arrivalActionLabel = arrivalPhase === 'pickup' ? 'Pick up at shop' : "I've arrived";
   const arrivalKey = `arrival:${delivery.id}`;
   const recordArrival = () => {
-    if (!canUpdateStatus || !arrivalPhase) return;
+    if (!canUpdateStatus || arrivalPhase !== 'dropoff') return;
     setArrivalResult(null);
     runAction(
       arrivalKey,
       async () => {
         const position = await currentPosition();
         const payload = {
-          arrival_type: arrivalPhase,
+          arrival_type: 'dropoff',
           latitude: position.coords.latitude,
           longitude: position.coords.longitude,
           accuracy_m: position.coords.accuracy,
@@ -1015,12 +1015,12 @@ function DeliveryActions({
     );
   };
   const submitArrivalReason = () => {
-    if (!canUpdateStatus || !arrivalPhase || !arrivalReason || (arrivalReason === 'other' && !arrivalNotes.trim())) {
+    if (!canUpdateStatus || arrivalPhase !== 'dropoff' || !arrivalReason || (arrivalReason === 'other' && !arrivalNotes.trim())) {
       return;
     }
     runAction(arrivalKey, () => logisticsApi.arrive(delivery.id, {
       ...(arrivalEvidence.current ?? {
-        arrival_type: arrivalPhase,
+        arrival_type: 'dropoff',
         latitude: null,
         longitude: null,
         accuracy_m: null,
@@ -1030,7 +1030,7 @@ function DeliveryActions({
       exception_notes: arrivalNotes.trim() || null,
     }));
   };
-  const arrivalControl = canUpdateStatus && arrivalPhase && !arrival ? (
+  const arrivalControl = canUpdateStatus && arrivalPhase === 'dropoff' && !arrival ? (
     <div className="space-y-3">
       <button
         type="button"
@@ -1038,7 +1038,7 @@ function DeliveryActions({
         onClick={recordArrival}
         className={buttonClass}
       >
-        {arrivalActionLabel}
+        I've arrived
       </button>
       {!online && (
         <p role="status" className="text-center text-sm font-semibold text-slate-700 dark:text-slate-300">
@@ -1103,7 +1103,6 @@ function DeliveryActions({
   ) : null;
 
   if (['assigned', 'pickup_scheduled'].includes(delivery.status)) {
-    if (!arrival) return arrivalControl;
     if (!canUpdateStatus && !(canReportIssue && isRepairPickup)) return null;
     const key = `pickup:${delivery.id}`;
     const pickupProof = delivery.proofs
@@ -1112,7 +1111,6 @@ function DeliveryActions({
 
     return (
       <div className="space-y-3">
-        {arrivalSummary}
         {canUpdateStatus && (
           <button
             type="button"
@@ -1441,6 +1439,10 @@ function CurrentDeliveryCard({
   canRecordProof,
   canUpdateStatus,
   canReportIssue,
+  liveTrackingEnabled,
+  liveTrackingMovingIntervalSeconds,
+  liveTrackingStationaryIntervalSeconds,
+  liveTrackingHiddenIntervalSeconds,
   today,
   runAction,
 }: {
@@ -1453,6 +1455,10 @@ function CurrentDeliveryCard({
   canRecordProof: boolean;
   canUpdateStatus: boolean;
   canReportIssue: boolean;
+  liveTrackingEnabled: boolean;
+  liveTrackingMovingIntervalSeconds: number;
+  liveTrackingStationaryIntervalSeconds: number;
+  liveTrackingHiddenIntervalSeconds: number;
   today: string;
   runAction: ActionRunner;
 }) {
@@ -1521,6 +1527,23 @@ function CurrentDeliveryCard({
               </p>
               <ResolutionNotice delivery={actionable} />
               <DeliveryContact delivery={actionable} />
+              {liveTrackingEnabled
+                && canUpdateStatus
+                && actionable.status === 'in_transit'
+                && actionable.destination_snapshot?.type === 'customer'
+                && (
+                  <div className="mt-4">
+                    <RiderGpsTracker
+                      legId={actionable.id}
+                      destination={actionable.destination_snapshot}
+                      enabled
+                      online={online}
+                      movingIntervalSeconds={liveTrackingMovingIntervalSeconds}
+                      stationaryIntervalSeconds={liveTrackingStationaryIntervalSeconds}
+                      hiddenIntervalSeconds={liveTrackingHiddenIntervalSeconds}
+                    />
+                  </div>
+                )}
               <div className="mt-4">
                 <DeliveryActions
                   key={actionable.id}
@@ -2046,12 +2069,20 @@ export default function MyDeliveries() {
     canRecordProof,
     canUpdateStatus = false,
     canReportIssue = false,
+    liveTrackingEnabled = false,
+    liveTrackingMovingIntervalSeconds = 5,
+    liveTrackingStationaryIntervalSeconds = 30,
+    liveTrackingHiddenIntervalSeconds = 60,
     today = new Date().toISOString().slice(0, 10),
   } = usePage<{
     deliveryData: RiderDeliveryPageData;
     canRecordProof: boolean;
     canUpdateStatus?: boolean;
     canReportIssue?: boolean;
+    liveTrackingEnabled?: boolean;
+    liveTrackingMovingIntervalSeconds?: number;
+    liveTrackingStationaryIntervalSeconds?: number;
+    liveTrackingHiddenIntervalSeconds?: number;
     maxDeliveryAttempts: number;
     today?: string;
   }>().props;
@@ -2194,6 +2225,10 @@ export default function MyDeliveries() {
           canRecordProof={canRecordProof}
           canUpdateStatus={canUpdateStatus}
           canReportIssue={canReportIssue}
+          liveTrackingEnabled={liveTrackingEnabled}
+          liveTrackingMovingIntervalSeconds={liveTrackingMovingIntervalSeconds}
+          liveTrackingStationaryIntervalSeconds={liveTrackingStationaryIntervalSeconds}
+          liveTrackingHiddenIntervalSeconds={liveTrackingHiddenIntervalSeconds}
           today={today}
           runAction={runAction}
         />

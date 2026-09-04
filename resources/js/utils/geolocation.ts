@@ -4,6 +4,7 @@ export const GPS_POSITION_OPTIONS: PositionOptions = {
   maximumAge: 0,
 };
 
+
 export const getCurrentPositionWithTimeout = (
   options: PositionOptions = GPS_POSITION_OPTIONS,
 ): Promise<GeolocationPosition> => new Promise((resolve, reject) => {

@@ -27,7 +27,8 @@ class CustomerTrackingController extends Controller
 
         $payload = $tracking->payload($shipment);
         if (request()->expectsJson()) {
-            return response()->json(['shipment' => $payload]);
+            return response()->json(['shipment' => $payload])
+                ->header('Cache-Control', 'no-store, private');
         }
 
         return Inertia::render('UserSide/Tracking/ShipmentTracking', [

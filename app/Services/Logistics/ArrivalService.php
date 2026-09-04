@@ -80,8 +80,18 @@ class ArrivalService
             $target = $payload['arrival_type'] === 'pickup'
                 ? $leg->origin_snapshot
                 : $leg->destination_snapshot;
-            $check = $this->classify($target, $payload, $radius);
+            $check = $payload['arrival_type'] === 'pickup'
+                ? $this->check('recorded', null, $radius)
+                : $this->classify($target, $payload, $radius);
             $this->requireExceptionReason($check, $payload);
+            $locationMetadata = $payload['arrival_type'] === 'dropoff'
+                ? [
+                    'accuracy_m' => $payload['accuracy_m'] ?? null,
+                    'captured_at' => $payload['captured_at'] ?? null,
+                    'latitude' => $payload['latitude'] ?? null,
+                    'longitude' => $payload['longitude'] ?? null,
+                ]
+                : [];
 
             return $this->events->record($leg->shipment, $leg, [
                 'event_type' => $eventType,
@@ -89,10 +99,7 @@ class ArrivalService
                 'message' => $this->message($payload['arrival_type'], $check['result']),
                 'metadata' => [
                     ...$check,
-                    'accuracy_m' => $payload['accuracy_m'] ?? null,
-                    'captured_at' => $payload['captured_at'] ?? null,
-                    'latitude' => $payload['latitude'] ?? null,
-                    'longitude' => $payload['longitude'] ?? null,
+                    ...$locationMetadata,
                     'exception_reason' => $payload['exception_reason'] ?? null,
                     'exception_notes' => $payload['exception_notes'] ?? null,
                     'delivery_assignment_id' => $assignment->id,
@@ -177,7 +184,7 @@ class ArrivalService
 
     private function requireExceptionReason(array $check, array $payload): void
     {
-        if ($check['result'] === 'verified') {
+        if (in_array($check['result'], ['verified', 'recorded'], true)) {
             return;
         }
 
@@ -203,6 +210,10 @@ class ArrivalService
     private function message(string $type, string $result): string
     {
         $place = $type === 'pickup' ? 'pickup' : 'customer location';
+
+        if ($result === 'recorded') {
+            return 'Rider confirmed pickup at the shop.';
+        }
 
         return $result === 'verified'
             ? "Rider arrived at the {$place}."
