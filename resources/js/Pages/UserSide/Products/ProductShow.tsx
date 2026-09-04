@@ -7,6 +7,7 @@ import AddToCartButton from '../../../components/CartActions';
 import Virtual3DShowroom from '../../../components/Virtual3DShowroom';
 import { CartGuestAddAttemptEvent, addCartGuestAddAttemptListener, removeCartGuestAddAttemptListener } from '../../../types/cart-events';
 import { useCart } from '../../../contexts/CartContext';
+import { CustomerFooterReveal } from '../../../components/common/CustomerFooter';
 import ProductRail from './ProductRail';
 import { registerRecentlyViewed, type ProductRailItem } from './productHistory';
 
@@ -1097,6 +1098,7 @@ const ProductShow: React.FC = () => {
   return (
     <>
       <Head title={product.name} />
+      <CustomerFooterReveal>
       <div className="userside-product-show-page min-h-screen bg-white font-outfit antialiased">
         {/* Desktop Navigation */}
         <div className="hidden xl:block">
@@ -2645,6 +2647,7 @@ const ProductShow: React.FC = () => {
           </div>
         </div>
       </div>
+      </CustomerFooterReveal>
 
 
 
