@@ -313,9 +313,7 @@ const ShopSetting: React.FC = () => {
 	const [processing, setProcessing] = useState(false);
 	const [errors, setErrors] = useState<Record<string, string>>({});
 	const [approvalPages, setApprovalPages] = useState<ApprovalPages>(shop_settings.approval_pages);
-	const [repairPaymentPolicy, setRepairPaymentPolicy] = useState<'deposit_50' | 'full_upfront'>(
-		shop_settings.repair_payment_policy ?? 'deposit_50',
-	);
+	const repairPaymentPolicy: 'full_upfront' = 'full_upfront';
 	const [payCycle, setPayCycle] = useState<'monthly' | 'semi_monthly'>(shop_settings.pay_cycle ?? 'monthly');
 	const initialPayDayFirst = Math.min(Math.max(shop_settings.pay_day_first ?? 15, 1), 30);
 	const initialPayDaySecond = Math.min(Math.max(shop_settings.pay_day_second ?? 30, initialPayDayFirst + 1), 31);
@@ -1372,13 +1370,13 @@ const ShopSetting: React.FC = () => {
 	};
 	// ── End Geofence helpers ───────────────────────────────────────────────
 
-	const saveSettings = (nextApprovalPages: ApprovalPages, nextPolicy?: 'deposit_50' | 'full_upfront') => {
+	const saveSettings = (nextApprovalPages: ApprovalPages) => {
 		setProcessing(true);
 		setErrors({});
 
 		router.put(
 			'/shop-owner/settings',
-			{ approval_pages: nextApprovalPages, repair_payment_policy: nextPolicy ?? repairPaymentPolicy },
+			{ approval_pages: nextApprovalPages, repair_payment_policy: repairPaymentPolicy },
 			{
 				preserveScroll: true,
 				onSuccess: () => {
@@ -1913,49 +1911,17 @@ const ShopSetting: React.FC = () => {
 							<div className="border-b border-gray-200 p-6">
 								<h2 className="text-xl font-semibold text-gray-900">Repair Payment Policy</h2>
 								<p className="mt-1 text-sm text-gray-600">
-									Choose how customers pay for repair services. Applies to all new repair requests.
+									All new repair requests require full payment before the service starts.
 								</p>
 							</div>
 							<div className="space-y-6 p-6">
 								<div className="space-y-3">
-								{([
-									{
-										value: 'deposit_50' as const,
-										label: '50% Deposit + 50% at Pickup',
-										description: 'Customer pays half upfront to confirm the job, then the remaining half when collecting their shoes.',
-									},
-									{
-										value: 'full_upfront' as const,
-										label: 'Full Payment Upfront',
-										description: 'Customer pays the full amount before the shoes are dropped off or collected.',
-									},
-								] as const).map((option) => (
-									<label
-										key={option.value}
-										className={`flex cursor-pointer items-start gap-3 rounded-lg border-2 p-4 transition-colors ${
-											repairPaymentPolicy === option.value
-												? 'border-gray-900 bg-gray-50'
-												: 'border-gray-200 hover:border-gray-400'
-										}`}
-									>
-										<input
-											type="radio"
-											name="repair_payment_policy"
-											value={option.value}
-											checked={repairPaymentPolicy === option.value}
-											disabled={processing}
-											onChange={() => {
-												setRepairPaymentPolicy(option.value);
-												saveSettings(approvalPages, option.value);
-											}}
-											className="mt-0.5 accent-gray-900"
-										/>
-										<div>
-											<p className="text-sm font-semibold text-gray-900">{option.label}</p>
-											<p className="mt-0.5 text-xs text-gray-500">{option.description}</p>
-										</div>
-									</label>
-								))}
+									<div className="rounded-lg border-2 border-gray-900 bg-gray-50 p-4">
+										<p className="text-sm font-semibold text-gray-900">Full Payment Upfront</p>
+										<p className="mt-0.5 text-xs text-gray-500">
+											Customers pay the full repair amount before the service starts.
+										</p>
+									</div>
 								</div>
 
 								<div className="border-t border-gray-200 pt-6">

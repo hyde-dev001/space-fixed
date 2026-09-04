@@ -219,9 +219,7 @@ class HandleInertiaRequests extends Middleware
                     'email' => Auth::guard('shop_owner')->user()->email,
                     'business_type' => Auth::guard('shop_owner')->user()->business_type,
                     'registration_type' => Auth::guard('shop_owner')->user()->registration_type,
-                    'repair_payment_policy' => Auth::guard('shop_owner')->user()->repair_payment_policy === 'full_upfront'
-                        ? 'full_upfront'
-                        : 'deposit_50',
+                    'repair_payment_policy' => 'full_upfront',
                     'status' => Auth::guard('shop_owner')->user()->status,
                     'is_individual' => Auth::guard('shop_owner')->user()->isIndividual(),
                     'is_company' => Auth::guard('shop_owner')->user()->isCompany(),
@@ -249,9 +247,7 @@ class HandleInertiaRequests extends Middleware
                         'business_type' => Auth::guard('user')->user()->shopOwner->business_type,
                         'registration_type' => Auth::guard('user')->user()->shopOwner->registration_type,
                         'business_name' => Auth::guard('user')->user()->shopOwner->business_name,
-                        'repair_payment_policy' => Auth::guard('user')->user()->shopOwner->repair_payment_policy === 'full_upfront'
-                            ? 'full_upfront'
-                            : 'deposit_50',
+                        'repair_payment_policy' => 'full_upfront',
                     ] : null,
                 ] : null,
 

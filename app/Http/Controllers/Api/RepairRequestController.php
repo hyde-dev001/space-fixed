@@ -510,9 +510,7 @@ class RepairRequestController extends Controller
                     'is_high_value' => $isHighValue,
                     'requires_owner_approval' => $requiresOwnerApproval,
                     'scheduled_dropoff_date' => $request->preferred_date ? \Carbon\Carbon::parse($request->preferred_date)->startOfDay() : null,
-                    'payment_policy' => $shopOwner
-                        ? $this->normalizeRepairPaymentPolicy($shopOwner->repair_payment_policy ?? 'deposit_50')
-                        : 'deposit_50',
+                    'payment_policy' => 'full_upfront',
                     'payment_enabled' => $autoEnableOnlinePayment,
                     'payment_enabled_at' => $autoEnableOnlinePayment ? now() : null,
                 ]);

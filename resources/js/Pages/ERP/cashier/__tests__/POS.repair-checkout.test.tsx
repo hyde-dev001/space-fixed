@@ -94,7 +94,7 @@ describe("Cashier POS repair checkout", () => {
     fireEvent.click(await screen.findByRole("button", { name: /sole reglue/i }));
 
     fireEvent.change(screen.getByTitle(/cash received/i), {
-      target: { value: "500" },
+      target: { value: "1000" },
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Pay" }));
@@ -109,8 +109,35 @@ describe("Cashier POS repair checkout", () => {
     expect(payload.customer_type).toBe("walk_in");
     expect(payload.walk_in_name).toBe("Walk In Customer");
     expect(payload.manual_repair_subtotal).toBe(1000);
-    expect(payload.manual_payment_policy).toBe("deposit_50");
-    expect(payload.due_type).toBe("deposit");
+    expect(payload.manual_payment_policy).toBe("full_upfront");
+    expect(payload.due_type).toBe("full");
     expect(Array.isArray(payload.payment_lines)).toBe(true);
+  });
+  it('defaults standalone repair checkout to full payment', async () => {
+    render(<CashierPOS />);
+
+    fireEvent.change(screen.getByTitle(/customer name/i), {
+      target: { value: 'Walk In Customer' },
+    });
+    fireEvent.change(screen.getByTitle(/customer phone number/i), {
+      target: { value: '09171234567' },
+    });
+    fireEvent.click(await screen.findByRole('button', { name: /sole reglue/i }));
+    fireEvent.change(screen.getByTitle(/cash received/i), {
+      target: { value: '1000' },
+    });
+
+    expect(screen.queryByText(/50\/50 deposit/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/full payment upfront/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /^pay$/i }));
+
+    await waitFor(() => {
+      expect(axiosPostMock).toHaveBeenCalledTimes(1);
+    });
+
+    const [, payload] = axiosPostMock.mock.calls[0] as [string, Record<string, unknown>];
+    expect(payload.manual_payment_policy).toBe('full_upfront');
+    expect(payload.due_type).toBe('full');
   });
 });

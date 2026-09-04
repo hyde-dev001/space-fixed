@@ -141,8 +141,7 @@ class RepairPosController extends Controller
         $walkInEmail = trim((string) ($payload['walk_in_email'] ?? ''));
 
         $snapshotServiceName = $summary !== '' ? $summary : 'Walk-in POS Service';
-        $shopPolicy = (string) (ShopOwner::query()->whereKey($shopOwnerId)->value('repair_payment_policy') ?? 'deposit_50');
-        $manualPolicy = (string) ($payload['manual_payment_policy'] ?? $shopPolicy);
+        $manualPolicy = (string) ($payload['manual_payment_policy'] ?? 'full_upfront');
         $resolvedPolicy = $manualPolicy === 'deposit_50' ? 'deposit_50' : 'full_upfront';
         $isIndividualShop = $this->isIndividualShopOwner($shopOwnerId);
 

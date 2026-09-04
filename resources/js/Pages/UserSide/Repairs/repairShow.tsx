@@ -333,13 +333,8 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
   };
 
   const shopStatus = checkIfOpen();
-  const normalizedRepairPaymentPolicy = shop.repair_payment_policy === 'full_upfront' ? 'full_upfront' : 'deposit_50';
-  const paymentPolicyLabel = normalizedRepairPaymentPolicy === 'full_upfront'
-    ? 'Full Payment Upfront'
-    : '50% Deposit + 50% on Pickup';
-  const paymentPolicyHint = normalizedRepairPaymentPolicy === 'full_upfront'
-    ? 'Customer pays full amount before service starts.'
-    : 'Customer pays half upfront and half when claiming repaired shoes.';
+  const paymentPolicyLabel = 'Full Payment Upfront';
+  const paymentPolicyHint = 'Customer pays full amount before service starts.';
   const requestRepairHref = `/repair-process?shop=${shop.id}${selectedPackageId ? `&package=${selectedPackageId}` : ''}${selectedServices.length > 0 ? `&services=${selectedServices.join(',')}` : ''}${selectedAddress ? `&address_id=${selectedAddress.id}` : ''}`;
   const selectionSummary = selectedPackageId
     ? '(1 package selected)'

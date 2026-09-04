@@ -1291,7 +1291,7 @@ class LandingPageController extends Controller
      */
     private function normalizeRepairPaymentPolicy(?string $value): string
     {
-        return (string) $value === 'full_upfront' ? 'full_upfront' : 'deposit_50';
+        return 'full_upfront';
     }
 
     private function resolveEffectivePackagePrice(RepairPackage $package): float
