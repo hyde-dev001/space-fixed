@@ -140,7 +140,7 @@ const ProductQuickView: React.FC<ProductQuickViewProps> = ({ product, detailsHre
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-slate-950/60 p-3 transition-opacity duration-200 motion-reduce:transition-none sm:p-6"
+      className="fixed inset-0 z-[60] flex items-center justify-center overflow-x-hidden overflow-y-auto bg-slate-950/60 p-3 transition-opacity duration-200 motion-reduce:transition-none sm:p-6"
       onClick={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
@@ -149,7 +149,7 @@ const ProductQuickView: React.FC<ProductQuickViewProps> = ({ product, detailsHre
         role="dialog"
         aria-modal="true"
         aria-labelledby="quick-view-title"
-        className="relative my-0 grid max-h-[calc(100vh-1.5rem)] w-full max-w-5xl overflow-y-auto bg-white shadow-2xl transition-transform duration-200 motion-reduce:transition-none sm:my-4 sm:max-h-[calc(100vh-3rem)] lg:grid-cols-2"
+        className="relative my-0 grid max-h-[calc(100vh-1.5rem)] w-full max-w-5xl overflow-x-hidden overflow-y-auto bg-white shadow-2xl transition-transform duration-200 motion-reduce:transition-none sm:my-4 sm:max-h-[calc(100vh-3rem)] lg:grid-cols-2"
       >
         <button
           ref={closeButtonRef}
@@ -163,13 +163,13 @@ const ProductQuickView: React.FC<ProductQuickViewProps> = ({ product, detailsHre
           </svg>
         </button>
 
-        <section className="bg-slate-100 p-4 sm:p-6" aria-label="Product images">
-          <div className="relative aspect-square overflow-hidden bg-slate-200">
+        <section className="h-fit self-start bg-white p-4 sm:p-6" aria-label="Product images">
+          <div className="relative flex min-h-64 items-center justify-center overflow-hidden bg-white">
             {selectedImage && selectedImage !== failedImage ? (
               <img
                 src={selectedImage}
                 alt={`${product.name} image ${selectedImageIndex + 1}`}
-                className="h-full w-full object-contain"
+                className="block h-auto w-auto max-h-[min(70vh,40rem)] max-w-full object-contain"
                 onError={() => setFailedImage(selectedImage)}
               />
             ) : (
@@ -203,7 +203,7 @@ const ProductQuickView: React.FC<ProductQuickViewProps> = ({ product, detailsHre
           </div>
 
           {images.length > 1 && (
-            <div className="mt-3 flex gap-2 overflow-x-auto pb-1" aria-label="Product image thumbnails">
+            <div className="mt-3 flex flex-wrap justify-center gap-2" aria-label="Product image thumbnails">
               {images.map((image, index) => (
                 <button
                   key={image}
