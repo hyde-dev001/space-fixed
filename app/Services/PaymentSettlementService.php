@@ -146,7 +146,12 @@ class PaymentSettlementService
         ];
     }
 
-    public function settleRepairPhasePaid(RepairRequest $repair, array $breakdown, ?string $paymentReference = null): RepairRequest
+    public function settleRepairPhasePaid(
+        RepairRequest $repair,
+        array $breakdown,
+        ?string $paymentReference = null,
+        bool $posWalkInNeedsRepairerReview = false,
+    ): RepairRequest
     {
         $phase = (string) $breakdown['phase'];
         $policy = (string) $breakdown['policy'];
@@ -243,7 +248,13 @@ class PaymentSettlementService
             ? round((float) $breakdown['service_total'] - round((float) $breakdown['service_total'] * 0.5, 2) + (float) $repair->return_delivery_fee, 2)
             : round((float) $repair->return_delivery_fee, 2);
         $completed = $phase === 'final' || ($phase === 'initial' && $finalDue <= 0);
-        $advanceAcceptedRepair = $phase === 'initial' && (string) $repair->status === 'repairer_accepted';
+        $reopenRepairerReview = $posWalkInNeedsRepairerReview
+            && $phase === 'initial'
+            && (int) ($repair->assigned_repairer_id ?? 0) > 0
+            && in_array((string) $repair->status, ['pending', 'repairer_accepted'], true);
+        $advanceAcceptedRepair = $phase === 'initial'
+            && (string) $repair->status === 'repairer_accepted'
+            && ! $reopenRepairerReview;
         $paymentReferences = $this->appendRepairPaymentReference(
             is_array($repair->paymongo_payment_ids) ? $repair->paymongo_payment_ids : null,
             $paymentReference,
@@ -270,7 +281,9 @@ class PaymentSettlementService
 
         if ($phase === 'initial') {
             $this->repairDeliveryService->tryCreateIntakeShipment($settledRepair);
-            if ($advanceAcceptedRepair) {
+            if ($reopenRepairerReview) {
+                $settledRepair->update(['status' => 'assigned_to_repairer']);
+            } elseif ($advanceAcceptedRepair) {
                 $settledRepair->update(['status' => 'pending']);
             }
         } else {

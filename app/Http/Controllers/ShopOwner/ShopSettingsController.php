@@ -60,10 +60,7 @@ class ShopSettingsController extends Controller
     public function index(Request $request): Response
     {
         $shopOwner = Auth::guard('shop_owner')->user();
-        $rawRepairPaymentPolicy = (string) ($shopOwner->repair_payment_policy ?? 'deposit_50');
-        $normalizedRepairPaymentPolicy = $rawRepairPaymentPolicy === 'deposit_50'
-            ? 'deposit_50'
-            : 'full_upfront';
+        $normalizedRepairPaymentPolicy = 'full_upfront';
         $shopOwner->load('documents');
         $entitledPremiumSubscription = ShopOwnerSubscription::with('premiumPlan')
             ->where('shop_owner_id', $shopOwner->id)
@@ -533,7 +530,7 @@ class ShopSettingsController extends Controller
             'approval_pages.expense_approval.enabled' => ['required_with:approval_pages', 'boolean'],
             'approval_pages.repair_reject_approval.enabled' => ['required_with:approval_pages', 'boolean'],
             'approval_pages.repair_reject_approval.limit' => ['nullable', 'numeric', 'min:0', 'max:9999999.99'],
-            'repair_payment_policy' => ['sometimes', 'string', 'in:deposit_50,full_upfront'],
+            'repair_payment_policy' => ['sometimes', 'string', 'in:full_upfront'],
             'repair_workload_limit' => ['sometimes', 'integer', 'min:1', 'max:500'],
             'order_refund_deadline_days' => ['sometimes', 'integer', 'min:1', 'max:30'],
             'two_factor_email_enabled' => ['sometimes', 'boolean'],
@@ -555,10 +552,7 @@ class ShopSettingsController extends Controller
         }
 
         // Save payment policy and workload limit directly on the shop owner record
-        $shopOwnerUpdates = [];
-        if (isset($validated['repair_payment_policy'])) {
-            $shopOwnerUpdates['repair_payment_policy'] = $validated['repair_payment_policy'];
-        }
+        $shopOwnerUpdates = ['repair_payment_policy' => 'full_upfront'];
         if (isset($validated['repair_workload_limit'])) {
             $shopOwnerUpdates['repair_workload_limit'] = $validated['repair_workload_limit'];
         }

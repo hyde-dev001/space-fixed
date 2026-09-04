@@ -500,14 +500,7 @@ const PointOfSalePage = () => {
 	const erpMode = (props as any)?.erpMode === true;
 	const Layout = erpMode ? AppLayoutERP : AppLayoutShopOwner;
 	const cashierName = String((props as any)?.auth?.shop_owner?.name || (props as any)?.auth?.user?.name || "Shop Owner Cashier");
-	const shopRepairPaymentPolicy: ManualPaymentPolicy =
-		String(
-			(props as any)?.auth?.shop_owner?.repair_payment_policy
-			?? (props as any)?.auth?.user?.shop_owner?.repair_payment_policy
-			?? (props as any)?.shop_settings?.repair_payment_policy
-		) === "full_upfront"
-			? "full_upfront"
-			: "deposit_50";
+	const shopRepairPaymentPolicy: ManualPaymentPolicy = "full_upfront";
 	const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
 	const requestedRepairRequestId = String(urlParams.get("repair_request_id") || "");
 	const requestedDueType = normalizeDueType(urlParams.get("due_type"));
@@ -1110,7 +1103,7 @@ useEffect(() => {
 		return !selectedRepairOrder && !requestedRepairRequestId;
 	}, [requestedRepairRequestId, selectedRepairOrder]);
 
-	const dueTypeForManualCheckout: PosDueType = shopRepairPaymentPolicy === "deposit_50" ? "deposit" : "full";
+	const dueTypeForManualCheckout: PosDueType = "full";
 
 	const chargeableSubtotal = useMemo(() => {
 		if (!isManualStandaloneCheckout) {

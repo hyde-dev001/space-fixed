@@ -66,7 +66,7 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
         'registration_type',    // Individual or company registration
         'high_value_threshold', // Approval threshold for high value repairs
         'require_two_way_approval', // Require owner approval on high value repairs
-        'repair_payment_policy', // deposit_50 | full_upfront
+        'repair_payment_policy', // full_upfront; deposit_50 is legacy-only
         'repair_workload_limit', // Max concurrent active repairs (default 20)
         'repair_warranty_days', // Warranty period in days for repair claims
         'warranty_enabled', // Toggle warranty claim filing for this shop

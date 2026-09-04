@@ -112,7 +112,7 @@ class RepairPosPaymentFlowTest extends TestCase
 
         $response = $this->actingAs($shopOwner, 'shop_owner')->postJson('/api/repair-pos/checkout', [
             'repair_request_id' => null,
-            'due_type' => 'deposit',
+            'due_type' => 'full',
             'customer_type' => 'walk_in',
             'walk_in_name' => 'Walk-in From Shop Owner Guard',
             'walk_in_phone' => '09179990000',
@@ -120,7 +120,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'manual_repair_subtotal' => 800,
             'manual_service_summary' => 'Walk-in guard regression coverage',
             'payment_lines' => [
-                ['tender_type' => 'cash', 'amount' => 400],
+                ['tender_type' => 'cash', 'amount' => 800],
             ],
         ]);
 
@@ -132,7 +132,7 @@ class RepairPosPaymentFlowTest extends TestCase
         $transaction = \App\Models\PosTransaction::query()->findOrFail($transactionId);
         $this->assertSame((int) $shopOwner->id, (int) $transaction->shop_owner_id);
         $this->assertSame('walk_in', (string) $transaction->customer_type);
-        $this->assertSame('deposit', (string) $transaction->due_type);
+        $this->assertSame('full', (string) $transaction->due_type);
     }
 
     #[Test]
@@ -188,7 +188,7 @@ class RepairPosPaymentFlowTest extends TestCase
 
         $checkoutResponse = $this->actingAs($shopOwner, 'shop_owner')->postJson('/api/repair-pos/checkout', [
             'repair_request_id' => null,
-            'due_type' => 'deposit',
+            'due_type' => 'full',
             'customer_type' => 'walk_in',
             'walk_in_name' => 'Walk-in Activation Guard',
             'walk_in_phone' => '09179991111',
@@ -196,7 +196,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'manual_repair_subtotal' => 900,
             'manual_service_summary' => 'Walk-in activation guard regression',
             'payment_lines' => [
-                ['tender_type' => 'cash', 'amount' => 450],
+                ['tender_type' => 'cash', 'amount' => 900],
             ],
         ]);
 
@@ -263,15 +263,15 @@ class RepairPosPaymentFlowTest extends TestCase
 
         $response = $this->actingAs($actor, 'user')->postJson('/api/repair-pos/checkout', [
             'repair_request_id' => null,
-            'due_type' => 'deposit',
+            'due_type' => 'full',
             'customer_type' => 'walk_in',
             'walk_in_name' => 'Manual Walk-in Customer',
             'walk_in_phone' => '09171234567',
-            'idempotency_key' => 'manual-walkin-deposit-001',
+            'idempotency_key' => 'manual-walkin-full-001',
             'manual_repair_subtotal' => 599,
             'manual_service_summary' => 'Starter Clean Package (2 services)',
             'payment_lines' => [
-                ['tender_type' => 'cash', 'amount' => 299.50],
+                ['tender_type' => 'cash', 'amount' => 599],
             ],
         ]);
 
@@ -283,15 +283,15 @@ class RepairPosPaymentFlowTest extends TestCase
         $transaction = \App\Models\PosTransaction::query()->findOrFail($transactionId);
         $this->assertSame('repair', (string) $transaction->module_type);
         $this->assertSame('walk_in', (string) $transaction->customer_type);
-        $this->assertSame('deposit', (string) $transaction->due_type);
-        $this->assertSame('299.50', number_format((float) $transaction->total_amount, 2, '.', ''));
+        $this->assertSame('full', (string) $transaction->due_type);
+        $this->assertSame('599.00', number_format((float) $transaction->total_amount, 2, '.', ''));
 
         $repair = \App\Models\RepairRequest::query()->findOrFail((int) $transaction->module_reference_id);
         $this->assertSame((int) $shopOwner->id, (int) $repair->shop_owner_id);
         $this->assertSame('Manual Walk-in Customer', (string) $repair->customer_name);
         $this->assertSame('N/A', (string) $repair->email);
-        $this->assertSame('deposit_50', (string) $repair->payment_policy_snapshot);
-        $this->assertSame('paid', (string) $repair->payment_status_derived);
+        $this->assertSame('full_upfront', (string) $repair->payment_policy_snapshot);
+        $this->assertSame('completed', (string) $repair->payment_status_derived);
 
         $receipt = \App\Models\PosReceipt::query()->where('pos_transaction_id', $transaction->id)->first();
         $this->assertNotNull($receipt);
@@ -684,6 +684,121 @@ class RepairPosPaymentFlowTest extends TestCase
         $rejectResponse->assertOk()
             ->assertJsonPath('success', true)
             ->assertJsonPath('repair.status', 'repairer_rejected');
+    }
+
+    #[Test]
+    public function registered_walk_in_pos_payment_keeps_repairer_decision_open(): void
+    {
+        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create([
+            'business_type' => 'both',
+            'registration_type' => 'company',
+        ]);
+
+        $cashierRole = \Spatie\Permission\Models\Role::firstOrCreate([
+            'name' => 'Cashier',
+            'guard_name' => 'user',
+        ]);
+        $repairerRole = \Spatie\Permission\Models\Role::firstOrCreate([
+            'name' => 'Repairer',
+            'guard_name' => 'user',
+        ]);
+
+        $cashier = \App\Models\User::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'status' => 'active',
+        ]);
+        $cashier->assignRole($cashierRole);
+
+        $repairer = \App\Models\User::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'status' => 'active',
+        ]);
+        $repairer->assignRole($repairerRole);
+
+        $customer = \App\Models\User::factory()->create([
+            'phone' => '09174447777',
+        ]);
+
+        $repair = \App\Models\RepairRequest::factory()->create([
+            'request_id' => 'REP-REGISTERED-WALKIN-POS-001',
+            'customer_name' => $customer->name,
+            'email' => $customer->email,
+            'phone' => $customer->phone,
+            'shop_owner_id' => $shopOwner->id,
+            'user_id' => $customer->id,
+            'assigned_repairer_id' => $repairer->id,
+            'intake_delivery_method' => 'walk_in',
+            'delivery_method' => 'walk_in',
+            'total' => 1000,
+            'final_total' => 1000,
+            'status' => 'pending',
+            'payment_status' => 'pending',
+            'payment_status_derived' => 'unpaid',
+            'total_paid_amount' => 0,
+        ]);
+
+        $checkout = $this->actingAs($cashier, 'user')->postJson('/api/repair-pos/checkout', [
+            'repair_request_id' => $repair->id,
+            'due_type' => 'deposit',
+            'customer_type' => 'registered',
+            'customer_id' => $customer->id,
+            'idempotency_key' => 'registered-walkin-pos-review-001',
+            'payment_lines' => [
+                ['tender_type' => 'cash', 'amount' => 500],
+            ],
+        ]);
+
+        $checkout->assertOk()->assertJsonPath('success', true);
+
+        $repair->refresh();
+        $this->assertSame('assigned_to_repairer', (string) $repair->status);
+        $this->assertSame('paid', (string) $repair->payment_status_derived);
+
+        $reject = $this->actingAs($repairer, 'user')
+            ->postJson('/api/repairer/repairs/' . $repair->id . '/reject', [
+                'reason_category' => 'skills_gap',
+                'reason_text' => 'This repair needs skills that are not available today.',
+            ]);
+
+        $reject->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('repair.status', 'repairer_rejected');
+    }
+
+    #[Test]
+    public function new_manual_pos_repairs_default_to_full_upfront(): void
+    {
+        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create([
+            'business_type' => 'both',
+            'registration_type' => 'company',
+        ]);
+        $actor = \App\Models\User::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'status' => 'active',
+        ]);
+
+        $response = $this->actingAs($actor, 'user')->postJson('/api/repair-pos/checkout', [
+            'repair_request_id' => null,
+            'due_type' => 'full',
+            'customer_type' => 'walk_in',
+            'walk_in_name' => 'Full Payment Walk-in',
+            'walk_in_phone' => '09174448888',
+            'idempotency_key' => 'manual-pos-full-default-001',
+            'manual_repair_subtotal' => 1000,
+            'manual_service_summary' => 'Full payment default test',
+            'payment_lines' => [
+                ['tender_type' => 'cash', 'amount' => 1000],
+            ],
+        ]);
+
+        $response->assertOk()->assertJsonPath('success', true);
+
+        $transaction = \App\Models\PosTransaction::query()->findOrFail((int) $response->json('transaction_id'));
+        $repair = \App\Models\RepairRequest::query()->findOrFail((int) $transaction->module_reference_id);
+
+        $this->assertSame('full_upfront', (string) $repair->payment_policy);
+        $this->assertSame('full_upfront', (string) $repair->payment_policy_snapshot);
+        $this->assertSame('full', (string) $transaction->due_type);
     }
 
     #[Test]
