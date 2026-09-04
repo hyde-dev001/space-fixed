@@ -27,7 +27,7 @@
 - Consumes: the current source of `resources/js/Pages/UserSide/Orders/OrderSuccess.tsx`.
 - Produces: an executable contract requiring a verified success state and no success-path auto-redirect.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { readFileSync } from 'node:fs';
@@ -61,7 +61,7 @@ describe('OrderSuccess PayMongo confirmation', () => {
 });
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run:
 
@@ -81,19 +81,19 @@ Expected: FAIL because the current success branch redirects to `/my-orders` and 
 - Consumes: `data.order.order_number` from the existing successful verification response.
 - Produces: a stable `/order-success` view with loading, success, and existing non-success flow behavior.
 
-- [ ] **Step 1: Add a typed local success state and page metadata**
+- [x] **Step 1: Add a typed local success state and page metadata**
 
 Add `Head` and `Link` to the existing Inertia import, define a small verified-order type containing `order_number`, and track `verifiedOrderNumber` plus a `status` state initialized to `loading`.
 
-- [ ] **Step 2: Change only the verified branch**
+- [x] **Step 2: Change only the verified branch**
 
 In the existing `data?.success && data?.payment_verified` branch, remove the automatic `router.visit(postReturnDestination, { replace: true })`, store `data?.order?.order_number` with a pending-order fallback, set the status to `success`, and return. Keep session cleanup and all non-success cancellation/return paths intact.
 
-- [ ] **Step 3: Replace the spinner-only return with explicit states**
+- [x] **Step 3: Replace the spinner-only return with explicit states**
 
 Keep the existing spinner/message while `status === 'loading'`. When `status === 'success'`, render a confirmation card with `Payment Successful!`, the verified order number, a `View My Orders` link to `/my-orders`, and a `Continue Shopping` link to `/`. Include `Head title="Payment Successful"` and preserve `Navigation`.
 
-- [ ] **Step 4: Run the focused regression test**
+- [x] **Step 4: Run the focused regression test**
 
 Run:
 
@@ -109,7 +109,7 @@ Expected: PASS with 2 tests.
 - Verify: `resources/js/Pages/UserSide/Orders/OrderSuccess.tsx`
 - Verify: `resources/js/Pages/UserSide/Orders/__tests__/OrderSuccess.contract.test.ts`
 
-- [ ] **Step 1: Run the full frontend suite**
+- [x] **Step 1: Run the full frontend suite**
 
 Run:
 
@@ -119,7 +119,7 @@ Run:
 
 Expected: exit code 0 with all frontend tests passing.
 
-- [ ] **Step 2: Build the frontend bundle**
+- [x] **Step 2: Build the frontend bundle**
 
 Run:
 
@@ -129,7 +129,7 @@ Run:
 
 Expected: exit code 0 and a fresh `public/build` output.
 
-- [ ] **Step 3: Check diff hygiene**
+- [x] **Step 3: Check diff hygiene**
 
 Run:
 
@@ -139,7 +139,7 @@ git diff --check
 
 Expected: no output and exit code 0.
 
-- [ ] **Step 4: Review the scoped diff**
+- [x] **Step 4: Review the scoped diff**
 
 Run:
 
