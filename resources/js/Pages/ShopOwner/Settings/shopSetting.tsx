@@ -2149,11 +2149,11 @@ const ShopSetting: React.FC = () => {
 
 							{/* Warning banner if no key configured */}
 							{!hasPaymongoKey && (
-								<div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4">
-									<AlertTriangle size={18} className="mt-0.5 shrink-0 text-amber-600" />
+								<div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4">
+									<AlertTriangle size={18} className="mt-0.5 shrink-0 text-red-600" />
 									<div>
-										<p className="text-sm font-semibold text-amber-800">Payment not configured</p>
-										<p className="mt-0.5 text-sm text-amber-700">
+										<p className="text-sm font-semibold text-red-800">Payment not configured</p>
+										<p className="mt-0.5 text-sm text-red-700">
 											You haven&apos;t added your PayMongo secret key yet. Customers will not be able to pay online
 											until you set this up. Add your key below to start accepting payments directly into your account.
 										</p>
