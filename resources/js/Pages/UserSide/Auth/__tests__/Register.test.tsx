@@ -259,8 +259,43 @@ describe('customer registration document screening UI', () => {
     expect(screen.getByTestId('registration-id-photo-grid')).toHaveClass('md:grid-cols-2');
     expect(screen.getByText('Front of ID')).toBeInTheDocument();
     expect(screen.getByText('Back of ID')).toBeInTheDocument();
-    expect(screen.getByText(/We'll check your ID image before submission/i)).toBeInTheDocument();
+    const screeningNote = screen.getByTestId('registration-id-note');
+    expect(screen.getByText('Why we ask for a valid ID').parentElement).toContainElement(screeningNote);
+    expect(screeningNote).toHaveTextContent(/We'll check your ID image before submission/i);
+    expect(screeningNote).not.toHaveClass('bg-blue-50');
     expect(screen.getByRole('button', { name: 'Create account' })).toBeDisabled();
+  });
+
+  it('shows stage-aware loading feedback while an ID side is being screened', async () => {
+    let releaseFingerprint: ((value: { exact: string; perceptual: null }) => void) | undefined;
+    let releaseOcr: ((value: typeof driverFrontOcr) => void) | undefined;
+
+    mocks.fingerprintRegistrationImage.mockImplementationOnce(() => new Promise<{ exact: string; perceptual: null }>(resolve => {
+      releaseFingerprint = resolve;
+    }));
+    mocks.readRegistrationId.mockImplementationOnce(async (_file: File, onStage?: (stage: string) => void) => {
+      onStage?.('recognizing');
+      return new Promise<typeof driverFrontOcr>(resolve => {
+        releaseOcr = resolve;
+      });
+    });
+
+    render(<Register />);
+    await goToIdStep();
+    fireEvent.change(screen.getByLabelText('ID Type'), { target: { value: 'drivers_license' } });
+    await selectFile('ID file', 'national-front.png');
+
+    expect(screen.getByTestId('front-screening-loader')).toHaveTextContent(/Preparing image/i);
+    expect(screen.queryByText('Checking image...', { exact: true })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Checking .*image\.\.\./i)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Validating ID...' })).toBeDisabled();
+
+    releaseFingerprint?.({ exact: 'national-front.png', perceptual: null });
+    await waitFor(() => expect(screen.getByTestId('front-screening-loader')).toHaveTextContent(/Validating ID/i));
+
+    releaseOcr?.(driverFrontOcr);
+    await waitFor(() => expect(screen.getByLabelText('Front image ready')).toBeInTheDocument());
+    expect(screen.queryByTestId('front-screening-loader')).not.toBeInTheDocument();
   });
 
   it('uses one biodata-page card for passports instead of front and back cards', async () => {

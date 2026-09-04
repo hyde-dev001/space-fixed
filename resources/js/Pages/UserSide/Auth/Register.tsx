@@ -187,6 +187,41 @@ const showDocumentScreeningModal = (
   });
 };
 
+const DocumentScreeningLoader = ({
+  side,
+  status,
+}: {
+  side: RegistrationDocumentSide;
+  status?: RegistrationOcrStatus;
+}) => {
+  if (status !== 'loading' && status !== 'recognizing') return null;
+
+  const sideLabel = side === 'biodata' ? 'passport biodata page' : side + ' image';
+  const isRecognizing = status === 'recognizing';
+  const title = isRecognizing ? 'Validating ID' : 'Preparing image';
+  const description = isRecognizing
+    ? 'Securely comparing the ' + sideLabel + ' with your selected ID type.'
+    : 'Preparing the ' + sideLabel + ' for secure validation.';
+
+  return (
+    <div
+      className="mt-3 flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-3 py-3 shadow-sm dark:border-gray-700 dark:bg-gray-900"
+      role="status"
+      aria-live="polite"
+      aria-label={title + '. ' + description}
+      data-testid={side + '-screening-loader'}
+    >
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800" aria-hidden="true">
+        <span className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-gray-900 motion-reduce:animate-none dark:border-gray-600 dark:border-t-white" />
+      </span>
+      <span className="min-w-0">
+        <span className="block text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-800 dark:text-gray-100">{title}</span>
+        <span className="mt-0.5 block text-[11px] leading-4 text-gray-500 dark:text-gray-400">{description}</span>
+      </span>
+    </div>
+  );
+};
+
 export default function Register() {
   const [currentStep, setCurrentStep] = useState(1);
   const [validIdPreview, setValidIdPreview] = useState('');
@@ -252,9 +287,7 @@ export default function Register() {
       return status === 'loading' || status === 'recognizing';
     });
 
-    if (checkingSlot) {
-      return `Checking ${checkingSlot === 'biodata' ? 'passport biodata' : `${checkingSlot} image`}...`;
-    }
+    if (checkingSlot) return '';
 
     if (duplicateKind !== 'none') return '';
     if (decision.outcome === 'screening_error') return '';
@@ -1452,10 +1485,10 @@ export default function Register() {
                           previewUrl={validIdPreview || undefined}
                           previewAlt="Valid ID preview"
                         />
-                        {(sideStatuses[isPassport ? 'biodata' : 'front'] === 'loading'
-                          || sideStatuses[isPassport ? 'biodata' : 'front'] === 'recognizing') && (
-                            <p className="mt-2 text-xs text-blue-700" aria-live="polite">Checking image...</p>
-                          )}
+                        <DocumentScreeningLoader
+                          side={isPassport ? 'biodata' : 'front'}
+                          status={sideStatuses[isPassport ? 'biodata' : 'front']}
+                        />
                       </div>
 
                       {requiresBack && (
@@ -1490,19 +1523,10 @@ export default function Register() {
                             previewUrl={validIdBackPreview || undefined}
                             previewAlt="Back of valid ID preview"
                           />
-                          {(sideStatuses.back === 'loading' || sideStatuses.back === 'recognizing') && (
-                            <p className="mt-2 text-xs text-blue-700" aria-live="polite">Checking image...</p>
-                          )}
+                          <DocumentScreeningLoader side="back" status={sideStatuses.back} />
                         </div>
                       )}
                     </div>
-                    {documentScreeningMessage && (
-                      <div className="mt-3 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2.5 text-[12px] text-blue-900" role="status" aria-live="polite">
-                        {documentScreeningMessage}
-                      </div>
-                    )}
-
-
                     <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5">
                       <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-gray-700">Why we ask for a valid ID</p>
                       <p className="mt-1 text-[12px] leading-5 text-gray-600">
@@ -1514,6 +1538,17 @@ export default function Register() {
                       <p className="mt-1 text-[12px] leading-5 text-gray-600">
                         Supported formats: JPG, JPEG, PNG, and WEBP. Maximum size: 5MB.
                       </p>
+                      {documentScreeningMessage && (
+                        <p
+                          className="mt-3 border-l-2 border-gray-300 pl-3 text-[12px] leading-5 text-gray-700"
+                          role="status"
+                          aria-live="polite"
+                          data-testid="registration-id-note"
+                        >
+                          <span className="font-semibold uppercase tracking-[0.08em]">Note: </span>
+                          {documentScreeningMessage}
+                        </p>
+                      )}
                     </div>
                   </div>
 
@@ -1559,7 +1594,7 @@ export default function Register() {
                     disabled={isLoading || isDocumentScreeningBlocked}
                     className="userside-auth-primary w-full sm:w-auto rounded-xl px-6 py-3 bg-black text-white font-semibold uppercase tracking-[0.16em] text-xs sm:text-sm hover:bg-black/85 transition-colors disabled:opacity-50 disabled:cursor-not-allowed sm:ml-auto"
                   >
-                    {isLoading ? 'Creating account...' : isCheckingDocument ? 'Checking document...' : 'Create account'}
+                    {isLoading ? 'Creating account...' : isCheckingDocument ? 'Validating ID...' : 'Create account'}
                   </button>
                 )}
               </div>
