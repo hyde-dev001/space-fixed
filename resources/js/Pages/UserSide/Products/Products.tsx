@@ -9,6 +9,7 @@ import { GPS_POSITION_OPTIONS, getCurrentPositionWithTimeout } from '@/utils/geo
 import { CustomerFooterReveal } from '../../../components/common/CustomerFooter';
 import { useScrollReveal } from '../Shared/useScrollReveal';
 import ProductQuickView from '../../../components/products/ProductQuickView';
+import type { ProductQuickViewColorVariant } from '../../../components/products/ProductQuickView';
 
 type Product = {
   id: number;
@@ -24,6 +25,7 @@ type Product = {
   stock_quantity: number;
   sizes_available?: unknown[] | null;
   colors_available?: unknown[] | null;
+  color_variants?: ProductQuickViewColorVariant[] | null;
   description?: string | null;
   average_rating?: number;
   shop_owner?: {

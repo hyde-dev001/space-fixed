@@ -37,6 +37,44 @@ const product: ProductQuickViewProduct = {
   colors_available: ['Black', 'White'],
 };
 
+const productWithColorVariants: ProductQuickViewProduct = {
+  ...product,
+  main_image: '/storage/products/legacy-main.jpg',
+  gallery_images: ['/storage/products/unrelated-purple.jpg'],
+  color_variants: [
+    {
+      id: 1,
+      color_name: 'Black',
+      images: [
+        {
+          id: 11,
+          image_path: '/storage/products/black-front.jpg',
+          is_thumbnail: true,
+          sort_order: 0,
+        },
+        {
+          id: 12,
+          image_path: '/storage/products/black-side.jpg',
+          is_thumbnail: false,
+          sort_order: 1,
+        },
+      ],
+    },
+    {
+      id: 2,
+      color_name: 'White',
+      images: [
+        {
+          id: 21,
+          image_path: '/storage/products/white-front.jpg',
+          is_thumbnail: true,
+          sort_order: 0,
+        },
+      ],
+    },
+  ],
+};
+
 describe('ProductQuickView', () => {
   beforeEach(() => {
     addToCartProps.mockClear();
@@ -85,6 +123,54 @@ describe('ProductQuickView', () => {
     expect(imageFrame).not.toHaveClass('aspect-square');
     expect(thumbnails).toHaveClass('flex-wrap');
     expect(thumbnails).not.toHaveClass('overflow-x-auto');
+  });
+
+  it('shows only the selected color images and uses their shoe thumbnails as color selectors', () => {
+    render(
+      <ProductQuickView
+        product={productWithColorVariants}
+        detailsHref="/products/solespace-runner"
+        onClose={vi.fn()}
+      />,
+    );
+
+    const gallery = screen.getByRole('region', { name: 'Product images' });
+    const galleryImageSources = () =>
+      Array.from(gallery.querySelectorAll('img'))
+        .map((image) => image.getAttribute('src'));
+
+    expect(galleryImageSources()).toEqual([
+      '/storage/products/black-front.jpg',
+      '/storage/products/black-front.jpg',
+      '/storage/products/black-side.jpg',
+    ]);
+    expect(galleryImageSources()).not.toContain('/storage/products/unrelated-purple.jpg');
+    expect(galleryImageSources()).not.toContain('/storage/products/white-front.jpg');
+
+    expect(screen.getByRole('button', { name: 'Color Black' }).querySelector('img')).toHaveAttribute(
+      'src',
+      '/storage/products/black-front.jpg',
+    );
+    expect(screen.getByRole('button', { name: 'Color White' }).querySelector('img')).toHaveAttribute(
+      'src',
+      '/storage/products/white-front.jpg',
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next product image' }));
+    expect(screen.getByAltText('SoleSpace Runner image 2')).toHaveAttribute(
+      'src',
+      '/storage/products/black-side.jpg',
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Color White' }));
+
+    expect(screen.getByAltText('SoleSpace Runner image 1')).toHaveAttribute(
+      'src',
+      '/storage/products/white-front.jpg',
+    );
+    expect(galleryImageSources()).toEqual([
+      '/storage/products/white-front.jpg',
+    ]);
   });
 
   it('passes selected color, size, image, and quantity to the existing cart action', () => {
