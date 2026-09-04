@@ -251,6 +251,22 @@ describe('MyDeliveries task-first hierarchy', () => {
     expect(within(region).getByRole('button', { name: 'View details' })).toBeVisible();
   });
 
+  it('uses black button outlines and removes blue outline focus styles', () => {
+    mocks.props.deliveryData.up_next = workItem('single', 'assigned', [leg(9, null, 'assigned')], {
+      group: 'upcoming',
+    });
+
+    render(<MyDeliveries />);
+
+    const viewDetails = screen.getByRole('button', { name: 'View details' });
+    expect(viewDetails).toHaveClass('border-slate-950', 'text-slate-950', 'focus:ring-slate-950');
+    expect(viewDetails).not.toHaveClass('border-blue-300', 'text-blue-700', 'focus:ring-blue-500');
+    expect(screen.getByRole('button', { name: 'Refresh deliveries' })).toHaveClass('focus:ring-slate-950');
+    expect(screen.getByRole('button', { name: 'Clear filters' })).toHaveClass('focus:ring-slate-950');
+    expect(screen.getByLabelText('Business type')).toHaveClass('focus:ring-slate-950');
+    expect(document.querySelectorAll('[class*="border-blue-"], [class*="ring-blue-"]')).toHaveLength(0);
+  });
+
   it('shows and submits the return-to-shop handoff after the final failed attempt', async () => {
     const returnLeg = {
       ...leg(4, null, 'in_transit', 'SoleSpace shop'),

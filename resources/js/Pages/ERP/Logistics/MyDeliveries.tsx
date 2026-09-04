@@ -591,7 +591,7 @@ function DeliveryContact({ delivery }: { delivery: TrackingShipmentLeg }) {
         {contact.phone ? (
           <a
             href={`tel:${contact.phone}`}
-            className="inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-800 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:border-slate-600 dark:text-slate-100 xl:min-h-11"
+            className="inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-800 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-slate-600 dark:text-slate-100 xl:min-h-11"
           >
             Call
           </a>
@@ -704,7 +704,7 @@ function DeliveryActions({
   const proofKeys = useRef<Record<string, string>>({});
   const mutationDisabled = locked || !online || pendingAction !== null;
   const buttonClass =
-    'min-h-12 w-full touch-manipulation rounded-xl bg-blue-600 px-4 text-sm font-bold text-white transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 xl:min-h-11';
+    'min-h-12 w-full touch-manipulation rounded-xl bg-blue-600 px-4 text-sm font-bold text-white transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 xl:min-h-11';
   const compactPrimaryButtonClass =
     'min-h-12 w-full touch-manipulation rounded-2xl bg-slate-950 px-4 text-sm font-bold text-white transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-slate-950 xl:min-h-11 xl:rounded-xl';
   const compactSecondaryButtonClass =
@@ -1410,7 +1410,7 @@ function ProofCorrectionAction({
             type="button"
             disabled={!online || !proofFile || pendingAction !== null}
             onClick={submitReplacement}
-            className="min-h-12 w-full touch-manipulation rounded-xl bg-blue-600 px-4 text-sm font-bold text-white transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 xl:min-h-11"
+            className="min-h-12 w-full touch-manipulation rounded-xl bg-blue-600 px-4 text-sm font-bold text-white transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 xl:min-h-11"
           >
             Submit replacement proof
           </button>
@@ -1565,7 +1565,7 @@ function CurrentDeliveryCard({
               <button
                 type="button"
                 onClick={onToggleSequence}
-                className="mt-5 min-h-12 w-full touch-manipulation rounded-xl border border-slate-300 px-4 text-sm font-bold text-slate-800 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:border-slate-600 dark:text-slate-100 xl:mt-4 xl:min-h-11"
+                className="mt-5 min-h-12 w-full touch-manipulation rounded-xl border border-slate-300 px-4 text-sm font-bold text-slate-800 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-slate-600 dark:text-slate-100 xl:mt-4 xl:min-h-11"
               >
                 {showSequence ? 'Hide delivery sequence' : `View all ${item.deliveries.length} deliveries`}
               </button>
@@ -1635,7 +1635,7 @@ function UpNextCard({
         <button
           type="button"
           onClick={() => setShowDetails((current) => !current)}
-          className="mt-5 min-h-12 w-full touch-manipulation rounded-xl border border-blue-300 px-4 text-sm font-bold text-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:border-blue-700 dark:text-blue-300 xl:mt-4 xl:min-h-11"
+          className="mt-5 min-h-12 w-full touch-manipulation rounded-xl border border-slate-950 px-4 text-sm font-bold text-slate-950 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-white dark:text-white xl:mt-4 xl:min-h-11"
         >
           {showDetails ? 'Hide details' : 'View details'}
         </button>
@@ -1702,7 +1702,7 @@ function OfferCard({
               confirmButtonText: `Accept ${offerLabel}`,
             })
           }
-          className="min-h-12 touch-manipulation rounded-xl bg-blue-600 px-4 text-sm font-bold text-white transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 xl:min-h-11"
+          className="min-h-12 touch-manipulation rounded-xl bg-blue-600 px-4 text-sm font-bold text-white transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 disabled:opacity-50 xl:min-h-11"
         >
           Accept {offerLabel}
         </button>
@@ -1938,7 +1938,7 @@ function DeliveryLists({
                 business: event.target.value as RiderDeliveryPageData['filters']['business'],
               })
             }
-            className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-base transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:border-slate-700 dark:bg-slate-900 xl:mt-1 xl:min-h-11 xl:px-3 xl:text-sm"
+            className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-base transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-slate-700 dark:bg-slate-900 xl:mt-1 xl:min-h-11 xl:px-3 xl:text-sm"
           >
             <option value="all">All businesses</option>
             <option value="retail">Retail</option>
@@ -1955,7 +1955,7 @@ function DeliveryLists({
                 window: event.target.value as RiderDeliveryPageData['filters']['window'],
               })
             }
-            className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-base transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:border-slate-700 dark:bg-slate-900 xl:mt-1 xl:min-h-11 xl:px-3 xl:text-sm"
+            className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-base transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-slate-700 dark:bg-slate-900 xl:mt-1 xl:min-h-11 xl:px-3 xl:text-sm"
           >
             <option value="all">All time</option>
             <option value="today">Today</option>
@@ -1978,7 +1978,7 @@ function DeliveryLists({
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Delivery, customer, address"
-              className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-base transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:border-slate-700 dark:bg-slate-900 xl:mt-1 xl:min-h-11 xl:px-3 xl:text-sm"
+              className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-base transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-slate-700 dark:bg-slate-900 xl:mt-1 xl:min-h-11 xl:px-3 xl:text-sm"
             />
           </label>
           <button type="submit" className="sr-only">Search deliveries</button>
@@ -1990,7 +1990,7 @@ function DeliveryLists({
         onClick={() =>
           navigate({ tab: 'upcoming', business: 'all', window: 'all', search: '' })
         }
-        className="min-h-12 w-full touch-manipulation rounded-xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:border-slate-700 dark:text-slate-200 xl:min-h-11 xl:w-auto"
+        className="min-h-12 w-full touch-manipulation rounded-xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-slate-700 dark:text-slate-200 xl:min-h-11 xl:w-auto"
       >
         Clear filters
       </button>
@@ -2028,7 +2028,7 @@ function DeliveryLists({
                 aria-label={`Page ${label}`}
                 aria-current={link.active ? 'page' : undefined}
                 onClick={() => navigate({}, page)}
-                className="min-h-12 min-w-12 touch-manipulation rounded-full border border-slate-300 px-3 text-sm font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:border-slate-700 xl:min-h-11 xl:min-w-11 xl:rounded-xl"
+                className="min-h-12 min-w-12 touch-manipulation rounded-full border border-slate-300 px-3 text-sm font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-slate-700 xl:min-h-11 xl:min-w-11 xl:rounded-xl"
               >
                 {label}
               </button>
@@ -2170,7 +2170,7 @@ export default function MyDeliveries() {
               type="button"
               disabled={!online || pendingAction !== null}
               onClick={refreshDeliveries}
-              className="min-h-12 w-full touch-manipulation rounded-xl border border-slate-300 px-3 text-xs font-bold text-slate-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 xl:min-h-11 xl:w-auto"
+              className="min-h-12 w-full touch-manipulation rounded-xl border border-slate-300 px-3 text-xs font-bold text-slate-700 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 xl:min-h-11 xl:w-auto"
             >
               Refresh deliveries
             </button>
