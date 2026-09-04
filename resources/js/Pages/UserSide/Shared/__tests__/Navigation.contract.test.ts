@@ -39,6 +39,14 @@ describe('user-side navigation shell', () => {
     expect(navigationSource).toContain('product.price');
   });
 
+  it('renders shop profiles and showroom actions in the landing search dialog', () => {
+    expect(navigationSource).toContain('aria-label="Search products and shops"');
+    expect(navigationSource).toContain('data-testid="landing-search-shops"');
+    expect(navigationSource).toContain('data-testid="landing-search-shop-card"');
+    expect(navigationSource).toContain('shopSuggestionLabel');
+    expect(navigationSource).toContain('shop.virtual_showroom_url');
+  });
+
   it('does not keep the Home or bottom Search links in the drawer', () => {
     const sidebarStart = navigationSource.indexOf('aria-label="Site menu"');
     const sidebarEnd = navigationSource.indexOf('</aside>', sidebarStart);

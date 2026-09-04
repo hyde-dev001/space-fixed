@@ -180,6 +180,16 @@ it('shows the logistics dashboard entry for dispatchers with dashboard access', 
   );
 });
 
+it('marks only the current logistics page active on the shipments route', () => {
+  state.url = '/erp/logistics/shipments';
+  state.permissions = ['access-logistics-dashboard', 'assign-logistics-deliveries'];
+
+  render(<AppSidebarERP />);
+
+  expect(screen.getByRole('link', { name: /^logistics dashboard$/i })).toHaveClass('menu-item-inactive');
+  expect(screen.getByRole('link', { name: /^logistics$/i })).toHaveClass('menu-item-active');
+});
+
 it('keeps logistics riders out of the dashboard while showing My Deliveries', () => {
   state.url = '/erp/logistics/deliveries';
   state.role = 'STAFF';

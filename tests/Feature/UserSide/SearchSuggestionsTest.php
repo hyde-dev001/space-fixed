@@ -4,6 +4,7 @@ namespace Tests\Feature\UserSide;
 
 use App\Models\Product;
 use App\Models\ShopOwner;
+use App\Models\ShopOwnerSubscription;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -74,5 +75,65 @@ class SearchSuggestionsTest extends TestCase
 
         $this->assertSame(2400.0, (float) $response->json('products.0.price'));
         $this->assertSame(2800.0, (float) $response->json('products.0.compare_at_price'));
+    }
+
+    public function test_shop_query_returns_all_approved_business_types_and_excludes_pending_shops(): void
+    {
+        foreach (['retail', 'repair', 'both'] as $businessType) {
+            ShopOwner::factory()->approved()->create([
+                'business_type' => $businessType,
+                'business_name' => ucfirst($businessType) . ' Shop',
+            ]);
+        }
+
+        ShopOwner::factory()->pending()->create([
+            'business_type' => 'retail',
+            'business_name' => 'Pending Shop',
+        ]);
+
+        $response = $this->getJson('/api/search/suggestions?query=shop');
+
+        $response->assertOk()->assertJsonCount(3, 'shops');
+
+        $shopNames = collect($response->json('shops'))->pluck('name')->all();
+
+        $this->assertSame([
+            'Both Shop',
+            'Repair Shop',
+            'Retail Shop',
+        ], $shopNames);
+        $this->assertNotContains('Pending Shop', $shopNames);
+    }
+
+    public function test_showroom_query_returns_approved_shops_with_active_showroom_entitlement(): void
+    {
+        $showroomShop = ShopOwner::factory()->approved()->create([
+            'business_type' => 'both',
+            'business_name' => 'Showroom Shop',
+        ]);
+        ShopOwner::factory()->approved()->create([
+            'business_type' => 'retail',
+            'business_name' => 'Standard Shop',
+        ]);
+
+        ShopOwnerSubscription::create([
+            'shop_owner_id' => $showroomShop->id,
+            'premium_plan_id' => null,
+            'plan_code' => 'test-showroom',
+            'showroom_slot_limit' => 12,
+            'status' => 'active',
+            'starts_at' => now()->subHour(),
+            'ends_at' => now()->addDay(),
+        ]);
+
+        $response = $this->getJson('/api/search/suggestions?query=showroom');
+
+        $response->assertOk()
+            ->assertJsonCount(1, 'shops')
+            ->assertJsonPath('shops.0.name', 'Showroom Shop')
+            ->assertJsonPath(
+                'shops.0.virtual_showroom_url',
+                route('shop-profile.virtual-showroom', ['id' => $showroomShop->id]),
+            );
     }
 }

@@ -1163,6 +1163,10 @@ const EmployeeSidebarERP: React.FC = () => {
           }
         }
 
+        if (routeName === "erp.logistics.dashboard") {
+          return baseUrl === "/erp/logistics";
+        }
+
         if (allRoutePaths[routeName]) {
           const mappedPath = allRoutePaths[routeName];
 
