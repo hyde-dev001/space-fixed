@@ -645,7 +645,7 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
               </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.35fr)_minmax(18rem,0.85fr)]">
+            <div className="flex flex-col">
               <div className="p-4 sm:p-5 xl:p-8">
                 <div className="space-y-3 text-sm text-gray-700 xl:space-y-4">
                 <div className="flex items-start gap-3 rounded-2xl border border-gray-100 bg-white/80 p-3.5 xl:p-4">
@@ -743,39 +743,44 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
               </div>
 
               {/* Shop Rating */}
-              <div className="border-t border-gray-200 lg:border-l lg:border-t-0 bg-gray-50/60 p-4 sm:p-5 shadow-sm xl:p-8">
-                <div className="flex items-center gap-3 mb-6">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-black shadow-md xl:h-12 xl:w-12">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 xl:w-6 xl:h-6 text-white fill-white" viewBox="0 0 24 24">
-                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-                  </svg>
-                </div>
-                <h3 className="text-xl xl:text-2xl font-bold text-black">Customer Rating</h3>
-              </div>
-              {reviewStats.total_reviews > 0 ? (
-                <div className="flex flex-col sm:flex-row sm:items-center gap-4 xl:gap-8">
-                  <div>
-                    <div className="flex items-baseline gap-3 mb-2">
-                      <span className="text-5xl xl:text-6xl font-bold text-black">
-                        {reviewStats.average_rating.toFixed(1)}
-                      </span>
-                      <span className="text-3xl xl:text-4xl text-yellow-400">⭐</span>
+              <div
+                data-testid="customer-rating-landscape"
+                className="border-t border-gray-200 bg-gray-50/60 p-4 sm:p-5 xl:p-8"
+              >
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-black shadow-md xl:h-12 xl:w-12">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 xl:w-6 xl:h-6 text-white fill-white" viewBox="0 0 24 24">
+                        <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                      </svg>
                     </div>
-                    <span className="text-sm text-gray-600">
-                      Based on {reviewStats.total_reviews} review{reviewStats.total_reviews !== 1 ? 's' : ''}
-                    </span>
+                    <h3 className="text-xl xl:text-2xl font-bold text-black">Customer Rating</h3>
                   </div>
-                  <div className="flex flex-col gap-1">
-                    {renderStars(reviewStats.average_rating)}
-                    <span className="text-xs text-gray-500 mt-1">Excellent Service</span>
-                  </div>
+                  {reviewStats.total_reviews > 0 ? (
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center xl:gap-8">
+                      <div>
+                        <div className="flex items-baseline gap-3 mb-2">
+                          <span className="text-5xl xl:text-6xl font-bold text-black">
+                            {reviewStats.average_rating.toFixed(1)}
+                          </span>
+                          <span className="text-3xl xl:text-4xl text-yellow-400">⭐</span>
+                        </div>
+                        <span className="text-sm text-gray-600">
+                          Based on {reviewStats.total_reviews} review{reviewStats.total_reviews !== 1 ? 's' : ''}
+                        </span>
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        {renderStars(reviewStats.average_rating)}
+                        <span className="text-xs text-gray-500 mt-1">Excellent Service</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-left sm:text-right">
+                      <p className="text-gray-400 italic mb-2">No reviews yet</p>
+                      <p className="text-sm text-gray-500">Be the first to review this shop!</p>
+                    </div>
+                  )}
                 </div>
-              ) : (
-                <div className="text-center py-4">
-                  <p className="text-gray-400 italic mb-2">No reviews yet</p>
-                  <p className="text-sm text-gray-500">Be the first to review this shop!</p>
-                </div>
-              )}
               </div>
             </div>
           </section>

@@ -1369,7 +1369,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                 onClick={() => setIsSearchFocused(false)}
                 className="fixed inset-0 z-[120] bg-black/55 opacity-100 backdrop-blur-[2px] transition-opacity duration-300 motion-reduce:transition-none"
               />
-              <div role="dialog" aria-modal="true" aria-label="Search products" className="fixed left-1/2 top-1/2 z-[121] w-[min(92vw,42rem)] -translate-x-1/2 -translate-y-1/2 overflow-hidden bg-white text-[#111111] shadow-2xl transition-all duration-300 ease-out motion-reduce:transition-none">
+              <div role="dialog" aria-modal="true" aria-label="Search products and shops" className="fixed left-1/2 top-1/2 z-[121] w-[min(92vw,42rem)] -translate-x-1/2 -translate-y-1/2 overflow-hidden bg-white text-[#111111] shadow-2xl transition-all duration-300 ease-out motion-reduce:transition-none">
                 <form onSubmit={handleSearch} className="flex items-center gap-3 border-b border-[#dedede] px-5 py-4 sm:px-7">
                   <svg className="h-5 w-5 shrink-0 text-[#555555]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M21 21l-4.35-4.35m1.6-5.4a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
                   <input
@@ -1377,9 +1377,9 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                     type="text"
                     value={searchQuery}
                     onChange={(event) => setSearchQuery(event.target.value)}
-                    placeholder="Search products"
+                    placeholder="Search products or shops"
                     className="min-w-0 flex-1 border-0 bg-transparent text-base outline-none placeholder:text-[#777777]"
-                    aria-label="Search products"
+                    aria-label="Search products or shops"
                   />
                   <button type="button" onClick={() => setIsSearchFocused(false)} className="inline-flex h-10 w-10 items-center justify-center" aria-label="Close search">
                     <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={1.8} d="M6 6l12 12M18 6L6 18" /></svg>
@@ -1410,6 +1410,52 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                       </Link>
                     ))}
                   </div>}
+                  {searchShops.length > 0 && (
+                    <section data-testid="landing-search-shops" className="mt-8 border-t border-[#dedede] pt-5">
+                      <p className="mb-4 text-xs font-semibold uppercase tracking-[0.18em] text-[#555555]">{shopSuggestionLabel}</p>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {searchShops.map((shop) => (
+                          <div
+                            key={`modal-shop-${shop.id}`}
+                            data-testid="landing-search-shop-card"
+                            className="rounded-2xl border border-[#dedede] bg-white p-3.5 transition-colors hover:bg-[#f7f7f7]"
+                          >
+                            <Link href={shop.url} onClick={() => setIsSearchFocused(false)} className="flex items-center gap-3">
+                              <div className="h-12 w-12 shrink-0 overflow-hidden rounded-xl border border-[#dedede] bg-[#f3f3f3]">
+                                {shop.image ? (
+                                  <img src={shop.image} alt={shop.name} className="h-full w-full object-cover" />
+                                ) : (
+                                  <div className="flex h-full w-full items-center justify-center text-sm font-semibold text-[#777777]">S</div>
+                                )}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-semibold uppercase tracking-[0.06em]">{shop.name}</p>
+                                {shop.location && <p className="mt-1 truncate text-xs text-[#777777]">{shop.location}</p>}
+                              </div>
+                            </Link>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              <Link
+                                href={shop.url}
+                                onClick={() => setIsSearchFocused(false)}
+                                className={`${suggestionActionBaseClass} ${suggestionActionLightClass}`}
+                              >
+                                View profile
+                              </Link>
+                              {isShowroomSearch && shop.virtual_showroom_url && (
+                                <Link
+                                  href={shop.virtual_showroom_url}
+                                  onClick={() => setIsSearchFocused(false)}
+                                  className={`${suggestionActionBaseClass} ${suggestionActionDarkClass}`}
+                                >
+                                  Virtual showroom
+                                </Link>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  )}
                 </div>
               </div>
             </>
