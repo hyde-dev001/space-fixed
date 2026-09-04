@@ -378,21 +378,10 @@ const MyOrders: React.FC = () => {
       return;
     }
 
-    let orderNumber: string | null = null;
-
-    try {
-      const parsed = JSON.parse(raw) as { order_number?: string | number | null };
-      orderNumber = parsed.order_number == null ? null : String(parsed.order_number);
-    } catch (error) {
-      console.warn('Failed to parse PayMongo success notification:', error);
-    }
-
     void Swal.fire({
       icon: 'success',
       title: 'Payment Successful!',
-      text: orderNumber
-        ? `Order ${orderNumber} has been paid and is being processed.`
-        : 'Your payment has been verified and your order is being processed.',
+      text: 'Payment confirmed. We’ll update your order once it moves to the next step.',
       confirmButtonText: 'OK',
       confirmButtonColor: '#000000',
     });
