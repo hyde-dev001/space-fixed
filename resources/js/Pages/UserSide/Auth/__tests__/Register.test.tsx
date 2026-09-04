@@ -288,9 +288,13 @@ describe('customer registration document screening UI', () => {
     const screeningOverlay = screen.getByTestId('registration-screening-overlay');
     expect(screeningOverlay).toHaveAttribute('role', 'dialog');
     expect(screeningOverlay).toHaveAttribute('aria-modal', 'true');
+    expect(screeningOverlay).toHaveTextContent(/ID verification/i);
     expect(screeningOverlay).toHaveTextContent(/Preparing image/i);
     expect(screeningOverlay).toHaveTextContent(/Image uploaded/i);
     expect(screeningOverlay).toHaveTextContent(/Secure validation/i);
+    expect(screeningOverlay).toHaveTextContent(/In progress/i);
+    expect(screen.queryByText('Secure ID check')).not.toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveAttribute('aria-live', 'polite');
     expect(screen.queryByTestId('front-screening-loader')).not.toBeInTheDocument();
     expect(screen.queryByText('Checking image...', { exact: true })).not.toBeInTheDocument();
     expect(screen.queryByText(/Checking .*image\.\.\./i)).not.toBeInTheDocument();

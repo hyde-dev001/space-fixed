@@ -32,7 +32,7 @@
 
   The design specifies a flat white dialog, neutral scrim, simple two-step progress list, no decorative navy block, and no changes to screening logic.
 
-- [ ] **Step 2: Commit only the design and plan files**
+- [x] **Step 2: Commit only the design and plan files**
 
   Run:
 
@@ -54,11 +54,11 @@
 - Consumes the existing `Register` component and the current fingerprint/OCR release helpers.
 - Produces regression coverage for the overlay's accessible structure and neutral visual contract.
 
-- [ ] **Step 1: Add assertions for the presentation contract**
+- [x] **Step 1: Add assertions for the presentation contract**
 
   Keep the existing assertions for `role="dialog"`, `aria-modal="true"`, dynamic title, status steps, disabled validation button, and disappearance after OCR. Add assertions that the overlay contains `ID VERIFICATION`, `aria-live="polite"`, and the new step labels, and does not contain the removed `Secure ID check` or old `front-screening-loader` markers.
 
-- [ ] **Step 2: Run the focused test before implementation**
+- [x] **Step 2: Run the focused test before implementation**
 
   Run:
 
@@ -79,7 +79,7 @@
 - Consumes the unchanged `side?: RegistrationDocumentSide` and `status?: RegistrationOcrStatus` props.
 - Produces the same overlay mount/unmount behavior and accessible status semantics with updated presentation only.
 
-- [ ] **Step 1: Replace the current decorative markup**
+- [x] **Step 1: Replace the current decorative markup**
 
   Keep this visibility guard and dynamic copy unchanged:
 
@@ -89,7 +89,7 @@
   const title = isRecognizing ? 'Validating ID' : 'Preparing image';
   ```
 
-  Replace only the returned presentation with:
+  Replace only the returned presentation with the equivalent compact, state-aware markup. The progress list must remain dynamic: `loading` keeps the first step active and the second pending; `recognizing` marks the first step complete and the second active.
 
   ```tsx
   <div className="fixed inset-0 z-[120] flex min-h-dvh items-center justify-center overflow-y-auto bg-black/40 px-4 py-6 sm:px-6">
@@ -106,22 +106,22 @@
       </h2>
       <p className="mt-2 text-sm leading-6 text-gray-600">{description}</p>
 
-      <div className="mt-7" aria-label="Validation progress">
-        <div className="relative space-y-5">
-          <span className="absolute left-[11px] top-6 h-8 w-px bg-gray-200" aria-hidden="true" />
-          <div className="relative flex items-center gap-3">
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gray-900 text-[11px] text-white" aria-hidden="true">✓</span>
-            <span className="text-sm font-medium text-gray-900">Image uploaded</span>
-            <span className="ml-auto text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-500">Complete</span>
-          </div>
-          <div className="relative flex items-center gap-3" role="status" aria-live="polite">
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-gray-300 bg-white" aria-hidden="true">
-              <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-gray-200 border-t-gray-900 motion-reduce:animate-none" />
+      <div className="relative mt-7">
+        <span className="absolute left-3 top-6 h-8 w-px bg-gray-200" aria-hidden="true" />
+        <ol aria-label="Validation progress" className="relative space-y-5">
+          <li aria-current={isRecognizing ? undefined : 'step'}>
+            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-900 text-[11px] text-white" aria-hidden="true">
+              {isRecognizing ? <span aria-hidden="true">&#10003;</span> : <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-gray-400 border-t-white motion-reduce:animate-none" />}
             </span>
-            <span className="text-sm font-medium text-gray-900">{isRecognizing ? 'Secure validation' : 'Preparing image'}</span>
-            <span className="ml-auto text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-500">In progress</span>
-          </div>
-        </div>
+            <span>Image uploaded</span>
+            <span>{isRecognizing ? 'Complete' : 'In progress'}</span>
+          </li>
+          <li aria-current={isRecognizing ? 'step' : undefined}>
+            <span aria-hidden="true">{isRecognizing ? 'spinner' : '02'}</span>
+            <span>Secure validation</span>
+            {isRecognizing && <span>In progress</span>}
+          </li>
+        </ol>
       </div>
 
       <p className="mt-7 border-t border-gray-100 pt-4 text-xs leading-5 text-gray-500">
@@ -131,9 +131,9 @@
   </div>
   ```
 
-  Use the existing safe SVG/check approach if the codebase lint/type rules reject a text check, and keep `motion-reduce:animate-none`. Do not alter state, effects, upload handlers, or the page-level render location.
+  The source implementation uses valid `ol`/`li` structure for the progress list. Use the existing safe SVG/check approach if the codebase lint/type rules reject a text check, and keep `motion-reduce:animate-none`. Do not alter state, effects, upload handlers, or the page-level render location.
 
-- [ ] **Step 2: Run the focused tests**
+- [x] **Step 2: Run the focused tests**
 
   Run the Register test and expect all existing screening lifecycle assertions to pass.
 
@@ -148,7 +148,7 @@
 - Consumes the final `Register.tsx` and existing Vite configuration.
 - Produces a fresh manifest and hashed assets for the updated overlay.
 
-- [ ] **Step 1: Run focused and full frontend tests**
+- [x] **Step 1: Run focused and full frontend tests**
 
   ```powershell
   .\node_modules\.bin\vitest.cmd run resources/js/Pages/UserSide/Auth/__tests__/Register.test.tsx resources/js/Pages/UserSide/Shared/__tests__/Navigation.contract.test.ts resources/js/components/common/__tests__/CustomerFooter.reveal.test.ts
@@ -157,7 +157,7 @@
 
   Expected: focused tests pass and the full suite reports all test files/tests passed.
 
-- [ ] **Step 2: Generate the production build**
+- [x] **Step 2: Generate the production build**
 
   ```powershell
   .\node_modules\.bin\vite.cmd build
@@ -165,7 +165,7 @@
 
   Expected: Vite completes successfully and rewrites `public/build/manifest.json` plus current hashed assets.
 
-- [ ] **Step 3: Run diff hygiene and inspect scope**
+- [x] **Step 3: Run diff hygiene and inspect scope**
 
   ```powershell
   git diff --check
@@ -175,7 +175,7 @@
 
   Expected: no whitespace errors; only the two docs, Register component/test, and intended generated build files are staged for this change. Unrelated local work remains unstaged.
 
-- [ ] **Step 4: Commit the implementation and generated build**
+- [x] **Step 4: Commit the implementation and generated build**
 
   ```powershell
   git add resources/js/Pages/UserSide/Auth/Register.tsx resources/js/Pages/UserSide/Auth/__tests__/Register.test.tsx public/build

@@ -205,70 +205,49 @@ const DocumentScreeningOverlay = ({
 
   return (
     <div
-      className="fixed inset-0 z-[120] flex min-h-dvh items-center justify-center overflow-y-auto bg-slate-950/50 px-4 py-6 backdrop-blur-[3px] sm:px-6"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="registration-screening-title"
-      data-testid="registration-screening-overlay"
+      className="fixed inset-0 z-[120] flex min-h-dvh items-center justify-center overflow-y-auto bg-black/40 px-4 py-6 sm:px-6"
     >
-      <div className="relative w-full max-w-md overflow-hidden rounded-[28px] border border-white/80 bg-white shadow-[0_24px_80px_-24px_rgba(15,23,42,0.65)]">
-        <div className="h-1 bg-slate-950" />
-        <div className="p-6 sm:p-8">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Secure ID check</p>
-              <h2 id="registration-screening-title" className="mt-3 text-2xl font-semibold tracking-tight text-slate-950 sm:text-[28px]">{title}</h2>
-              <p className="mt-2 max-w-sm text-sm leading-6 text-slate-600">{description}</p>
-            </div>
-            <span className="relative flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-slate-950 text-white" aria-hidden="true">
-              <span className="absolute inset-2 rounded-xl border border-white/20" />
-              <svg className="relative h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                <path d="M12 3 5 6v5c0 4.5 2.9 8.5 7 10 4.1-1.5 7-5.5 7-10V6l-7-3Z" />
-                <path d="m9.5 12 1.7 1.7 3.5-3.5" />
-              </svg>
-            </span>
-          </div>
+      <div
+        className="w-full max-w-[400px] rounded-2xl border border-gray-200 bg-white p-6 font-outfit sm:p-8"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="registration-screening-title"
+        data-testid="registration-screening-overlay"
+      >
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500">ID verification</p>
+        <h2 id="registration-screening-title" className="mt-3 text-[26px] font-semibold leading-tight tracking-tight text-gray-900">{title}</h2>
+        <p className="mt-2 text-sm leading-6 text-gray-600">{description}</p>
 
-          <div className="mt-8 flex items-center gap-4" aria-hidden="true">
-            <span className="relative flex h-16 w-16 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-slate-50">
-              <span className="absolute inset-1 animate-spin rounded-full border-2 border-slate-200 border-t-slate-950 motion-reduce:animate-none" />
-              <svg className="relative h-6 w-6 text-slate-950" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                <path d="M12 7v5l3 2" />
-                <circle cx="12" cy="12" r="8.5" />
-              </svg>
-            </span>
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-slate-950">{isRecognizing ? 'Checking your document' : 'Getting your image ready'}</p>
-              <p className="mt-1 text-xs leading-5 text-slate-500">This usually takes a few seconds. Please keep this page open.</p>
-            </div>
-          </div>
-
-          <div className="mt-8 space-y-3" aria-label="Validation progress">
-            <div
-              className={`flex items-center gap-3 rounded-2xl border px-4 py-3 ${isRecognizing ? 'border-slate-200 bg-white' : 'border-slate-950 bg-slate-950 text-white'}`}
+        <div className="relative mt-7">
+          <span className="absolute left-3 top-6 h-8 w-px bg-gray-200" aria-hidden="true" />
+          <ol aria-label="Validation progress" className="relative space-y-5">
+            <li
+              className="relative flex items-center gap-3"
               aria-current={isRecognizing ? undefined : 'step'}
             >
-              <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${isRecognizing ? 'bg-slate-100 text-slate-600' : 'bg-white text-slate-950'}`}>
-                {isRecognizing ? '01' : <span aria-hidden="true">&#10003;</span>}
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gray-900 text-[11px] text-white" aria-hidden="true">
+                {isRecognizing ? <span aria-hidden="true">&#10003;</span> : <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-gray-400 border-t-white motion-reduce:animate-none" />}
               </span>
-              <span className="text-sm font-medium">Image uploaded</span>
-              {isRecognizing && <span className="ml-auto text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">Complete</span>}
-            </div>
-            <div
-              className={`flex items-center gap-3 rounded-2xl border px-4 py-3 ${isRecognizing ? 'border-slate-950 bg-slate-950 text-white' : 'border-slate-200 bg-slate-50 text-slate-500'}`}
+              <span className="text-sm font-medium text-gray-900">Image uploaded</span>
+              <span className="ml-auto text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-500">{isRecognizing ? 'Complete' : 'In progress'}</span>
+            </li>
+            <li
+              className="relative flex items-center gap-3"
               aria-current={isRecognizing ? 'step' : undefined}
             >
-              <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${isRecognizing ? 'bg-white text-slate-950' : 'bg-white text-slate-400'}`}>
-                {isRecognizing ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-slate-300 border-t-slate-950 motion-reduce:animate-none" aria-hidden="true" /> : '02'}
+              <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-[11px] font-semibold ${isRecognizing ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 bg-gray-50 text-gray-400'}`} aria-hidden="true">
+                {isRecognizing ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-gray-400 border-t-white motion-reduce:animate-none" /> : '02'}
               </span>
-              <span className="text-sm font-medium">Secure validation</span>
-              {isRecognizing && <span className="ml-auto text-[11px] font-semibold uppercase tracking-[0.1em] text-white/70">In progress</span>}
-            </div>
-          </div>
+              <span className={`text-sm font-medium ${isRecognizing ? 'text-gray-900' : 'text-gray-500'}`}>Secure validation</span>
+              {isRecognizing && <span className="ml-auto text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-500">In progress</span>}
+            </li>
+          </ol>
+        </div>
 
-          <div className="mt-6 border-t border-slate-100 pt-4" role="status" aria-live="polite">
-            <p className="text-xs leading-5 text-slate-500">Your image is processed securely and is only used to screen the selected document type.</p>
-          </div>
+        <div className="mt-7 border-t border-gray-100 pt-4" role="status" aria-live="polite" aria-atomic="true">
+          <p className="text-sm font-medium text-gray-900">{isRecognizing ? 'Checking your document' : 'Getting your image ready'}</p>
+          <p className="mt-1 text-xs leading-5 text-gray-500">This usually takes a few seconds. Please keep this page open.</p>
+          <p className="mt-3 text-xs leading-5 text-gray-500">Your image is processed securely and is only used to screen the selected document type.</p>
         </div>
       </div>
     </div>
