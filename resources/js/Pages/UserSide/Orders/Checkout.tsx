@@ -1543,7 +1543,7 @@ const Checkout: React.FC = () => {
                           }}
                           className={`w-full p-4 border rounded-lg text-left transition-all ${
                             selectedAddressId === address.id
-                              ? 'border-blue-600 bg-blue-50 dark:border-blue-500 dark:bg-blue-500/10'
+                              ? 'border-gray-950 bg-white dark:border-gray-300 dark:bg-gray-900'
                               : 'border-gray-300 dark:border-gray-700 hover:border-gray-400 dark:hover:border-gray-600'
                           }`}
                         >
@@ -1560,7 +1560,7 @@ const Checkout: React.FC = () => {
                                   e.stopPropagation();
                                   handleEditAddress(address);
                                 }}
-                                className="p-2 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded transition-colors"
+                                className="p-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors"
                                 title="Edit address"
                               >
                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1574,7 +1574,7 @@ const Checkout: React.FC = () => {
                                     e.stopPropagation();
                                     handleEditAddress(address, true);
                                   }}
-                                  className="px-2 py-1 text-sm font-semibold text-blue-700 hover:underline dark:text-blue-300"
+                                  className="px-2 py-1 text-sm font-semibold text-gray-700 hover:text-gray-950 hover:underline dark:text-gray-300 dark:hover:text-white"
                                 >
                                   Repin address
                                 </button>
@@ -1592,9 +1592,9 @@ const Checkout: React.FC = () => {
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                 </svg>
                               </button>
-                              <div className={`mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${selectedAddressId === address.id ? 'border-blue-600' : 'border-gray-300'} bg-white dark:bg-gray-800`}>
+                              <div className={`mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${selectedAddressId === address.id ? 'border-gray-950' : 'border-gray-300'} bg-white dark:bg-gray-800`}>
                                 {selectedAddressId === address.id && (
-                                  <div className="h-3 w-3 rounded-full bg-blue-600" />
+                                  <div className="h-3 w-3 rounded-full bg-gray-950 dark:bg-white" />
                                 )}
                               </div>
                             </div>
