@@ -284,7 +284,12 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
       .filter((entry) => !existingSizes.has(`${entry.system}::${entry.normalizedSize}`));
 
     if (uniqueNewSizes.length === 0) {
-      alert('Selected sizes already exist for this color.');
+      void Swal.fire({
+        icon: 'warning',
+        title: 'Duplicate size',
+        text: 'Selected sizes already exist for this color.',
+        confirmButtonColor: '#000000',
+      });
       return;
     }
 
@@ -322,7 +327,12 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
     if (!normalizedInput) return;
 
     if (selectedSizes.includes(normalizedInput)) {
-      alert('This size is already selected.');
+      void Swal.fire({
+        icon: 'warning',
+        title: 'Duplicate size',
+        text: 'This size is already selected.',
+        confirmButtonColor: '#000000',
+      });
       return;
     }
 
@@ -409,7 +419,7 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
           <button
             type="button"
             onClick={() => setShowColorPicker(true)}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors inline-flex items-center gap-2"
+            className="px-4 py-2 bg-black hover:bg-gray-800 text-white rounded-lg text-sm font-medium transition-colors inline-flex items-center gap-2"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -453,12 +463,12 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
                     onClick={() => handleQuickColorSelection(color.name)}
                     className={`group relative flex flex-col items-center gap-2 p-3 rounded-lg border-2 transition-all hover:shadow-md ${
                       combinedQuickColors.includes(color.name)
-                        ? 'border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-900/20'
-                        : 'border-gray-200 dark:border-gray-700 hover:border-blue-500 dark:hover:border-blue-400'
+                        ? 'border-gray-900 bg-gray-100 dark:border-gray-300 dark:bg-gray-700'
+                        : 'border-gray-200 dark:border-gray-700 hover:border-gray-500 dark:hover:border-gray-400'
                     }`}
                   >
                     {combinedQuickColors.includes(color.name) && (
-                      <span className="absolute right-2 top-2 inline-flex h-4 w-4 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white">
+                      <span className="absolute right-2 top-2 inline-flex h-4 w-4 items-center justify-center rounded-full bg-black text-[10px] font-bold text-white">
                         ✓
                       </span>
                     )}
@@ -475,7 +485,7 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
               <div className="mt-4 min-h-6 flex items-center gap-2">
                 {combinedQuickColors.length > 0 && (
                   <>
-                    <p className="text-xs text-blue-700 dark:text-blue-300">
+                    <p className="text-xs text-gray-700 dark:text-gray-300">
                       {combinedQuickColors.length > 1
                         ? `${combinedQuickColors.length} colors selected (will add as combined when you click Add)`
                         : `${combinedQuickColors[0]} selected (click Add to use this color)`}
@@ -515,7 +525,7 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
                 <button
                   type="button"
                   onClick={handleAddFromPicker}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
+                  className="px-4 py-2 bg-black hover:bg-gray-800 text-white rounded-lg font-medium transition-colors"
                 >
                   Add
                 </button>
@@ -564,7 +574,7 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
                   onClick={() => setSizeSystem('US')}
                   className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${
                     sizeSystem === 'US'
-                      ? 'bg-blue-600 text-white'
+                      ? 'bg-black text-white dark:bg-white dark:text-gray-900'
                       : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'
                   }`}
                 >
@@ -575,7 +585,7 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
                   onClick={() => setSizeSystem('UK')}
                   className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${
                     sizeSystem === 'UK'
-                      ? 'bg-blue-600 text-white'
+                      ? 'bg-black text-white dark:bg-white dark:text-gray-900'
                       : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'
                   }`}
                 >
@@ -586,7 +596,7 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
                   onClick={() => setSizeSystem('EU')}
                   className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${
                     sizeSystem === 'EU'
-                      ? 'bg-blue-600 text-white'
+                      ? 'bg-black text-white dark:bg-white dark:text-gray-900'
                       : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'
                   }`}
                 >
@@ -597,7 +607,7 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
                   onClick={() => setSizeSystem('AU')}
                   className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${
                     sizeSystem === 'AU'
-                      ? 'bg-blue-600 text-white'
+                      ? 'bg-black text-white dark:bg-white dark:text-gray-900'
                       : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'
                   }`}
                 >
@@ -608,7 +618,7 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
                   onClick={() => setSizeSystem('CN')}
                   className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${
                     sizeSystem === 'CN'
-                      ? 'bg-blue-600 text-white'
+                      ? 'bg-black text-white dark:bg-white dark:text-gray-900'
                       : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'
                   }`}
                 >
@@ -634,8 +644,8 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
                         isExisting
                           ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed dark:border-gray-700 dark:bg-gray-900/50 dark:text-gray-500'
                           : isSelected
-                            ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
-                            : 'border-gray-300 text-gray-700 hover:border-blue-400 dark:border-gray-600 dark:text-gray-200'
+                            ? 'border-gray-900 bg-gray-100 text-gray-900 dark:border-gray-300 dark:bg-gray-700 dark:text-gray-100'
+                            : 'border-gray-300 text-gray-700 hover:border-gray-500 dark:border-gray-600 dark:text-gray-200'
                       }`}
                     >
                       <input
@@ -643,7 +653,7 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
                         checked={isSelected}
                         disabled={isExisting}
                         onChange={() => toggleSizeSelection(size)}
-                        className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        className="h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-gray-900"
                         title={`Select ${getSizeLabel(size)}`}
                       />
                       <span>{getSizeLabel(size)}</span>
@@ -696,7 +706,7 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
               <button
                 type="button"
                 onClick={applySelectedSizes}
-                className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+                className="px-4 py-2 rounded-lg bg-black text-white hover:bg-gray-800"
               >
                 Add Selected ({selectedSizes.length})
               </button>
@@ -889,16 +899,16 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
 
       {/* Summary */}
       {colorVariants.length > 0 && (
-        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+        <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
           <div className="flex items-start gap-3">
-            <svg className="w-5 h-5 text-blue-600 dark:text-blue-400 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-5 h-5 text-gray-900 dark:text-gray-200 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <div className="flex-1">
-              <p className="text-sm font-medium text-blue-900 dark:text-blue-100">
+              <p className="text-sm font-medium text-gray-900 dark:text-white">
                 Product Summary
               </p>
-              <div className="grid grid-cols-3 gap-4 mt-2 text-sm text-blue-800 dark:text-blue-200">
+              <div className="grid grid-cols-3 gap-4 mt-2 text-sm text-gray-700 dark:text-gray-300">
                 <div>
                   <span className="font-semibold">{colorVariants.length}</span> colors
                 </div>
