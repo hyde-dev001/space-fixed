@@ -298,7 +298,7 @@ export default function ShipmentTrackingPanel({
     shipment_id: currentShipment.id,
     shipment_number: shipmentNumber,
     shipment_reference: `Shipment #${shipmentNumber}`,
-    rider: { id: null, name: 'Delivery' },
+    rider: { id: null, name: 'Rider' },
     status: liveTracking.status,
     destination: liveTracking.destination ?? {},
     location: liveTracking.location,

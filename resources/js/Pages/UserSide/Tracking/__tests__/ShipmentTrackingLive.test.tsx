@@ -39,6 +39,7 @@ const shipment: any = {
 
 const mocks = vi.hoisted(() => ({
   get: vi.fn(),
+  mapLocations: vi.fn(),
 }));
 
 vi.mock('axios', () => ({ default: { get: mocks.get } }));
@@ -49,7 +50,7 @@ vi.mock('@inertiajs/react', () => ({
 }));
 vi.mock('../../Shared/Navigation', () => ({ default: () => null }));
 vi.mock('@/components/logistics/LiveTrackingMap', () => ({
-  default: ({ locations }: { locations: Array<{ leg_id: number }> }) => (
+  default: ({ locations }: { locations: Array<{ leg_id: number }> }) => (mocks.mapLocations(locations),
     <div data-testid="customer-live-map">{locations.length} customer marker</div>
   ),
 }));
@@ -65,6 +66,9 @@ describe('ShipmentTracking live tracking', () => {
 
     expect(screen.getByText('Live delivery location')).toBeInTheDocument();
     expect(screen.getByTestId('customer-live-map')).toHaveTextContent('1 customer marker');
+    expect(mocks.mapLocations).toHaveBeenCalledWith([
+      expect.objectContaining({ rider: { id: null, name: 'Rider' } }),
+    ]);
     expect(screen.getByText('ETA 8 min')).toBeInTheDocument();
     expect(screen.getByText('3.2 km remaining')).toBeInTheDocument();
 
