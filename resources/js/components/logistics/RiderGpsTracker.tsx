@@ -90,25 +90,6 @@ const MAX_CLIENT_IMPLIED_SPEED_MPS = 100;
 const PUBLIC_IP_LOCATION_URL = 'https://ipapi.co/json/';
 const PUBLIC_IP_REQUEST_TIMEOUT_MS = 5_000;
 
-const trackingStorageKey = (legId: number): string => `solespace:rider-gps:${legId}`;
-
-const readTrackingPreference = (key: string): boolean => {
-  try {
-    return typeof window !== 'undefined' && window.sessionStorage.getItem(key) === '1';
-  } catch {
-    return false;
-  }
-};
-
-const writeTrackingPreference = (key: string, enabled: boolean): void => {
-  try {
-    if (enabled) window.sessionStorage.setItem(key, '1');
-    else window.sessionStorage.removeItem(key);
-  } catch {
-    // Session storage may be disabled; tracking still works for this page.
-  }
-};
-
 const toSentPosition = (position: GeolocationPosition): SentPosition => ({
   latitude: position.coords.latitude,
   longitude: position.coords.longitude,
@@ -244,8 +225,7 @@ export default function RiderGpsTracker({
   stationaryIntervalSeconds = 30,
   hiddenIntervalSeconds = 60,
 }: Props) {
-  const trackingKey = trackingStorageKey(legId);
-  const [tracking, setTracking] = useState(() => readTrackingPreference(trackingKey));
+  const [tracking, setTracking] = useState(enabled);
   const [serverRoute, setServerRoute] = useState<LiveTrackingRoute | null>(null);
   const [status, setStatus] = useState<'idle' | 'locating' | 'active' | 'offline' | 'error'>('idle');
   const [message, setMessage] = useState<string | null>(null);
@@ -256,8 +236,11 @@ export default function RiderGpsTracker({
   const requestInFlight = useRef(false);
 
   useEffect(() => {
-    if (enabled) return;
-    writeTrackingPreference(trackingKey, false);
+    if (enabled) {
+      setTracking(true);
+      return;
+    }
+
     setTracking(false);
     setCurrentPosition(null);
     setServerRoute(null);
@@ -266,7 +249,7 @@ export default function RiderGpsTracker({
     setStatus('idle');
     latestPosition.current = null;
     lastPosition.current = null;
-  }, [enabled, trackingKey]);
+  }, [enabled]);
 
   useEffect(() => {
     if (!tracking || !enabled) return undefined;
@@ -392,7 +375,6 @@ export default function RiderGpsTracker({
 
         if ((error as { response?: { status?: number } } | null)?.response?.status === 403) {
           setTracking(false);
-          writeTrackingPreference(trackingKey, false);
           setCurrentPosition(null);
           setServerRoute(null);
           latestPosition.current = null;
@@ -453,7 +435,6 @@ export default function RiderGpsTracker({
   const toggleTracking = () => {
     if (tracking) {
       setTracking(false);
-      writeTrackingPreference(trackingKey, false);
       setStatus('idle');
       setMessage(null);
       setCurrentPosition(null);
@@ -465,7 +446,6 @@ export default function RiderGpsTracker({
 
     setMessage(null);
     setTracking(true);
-    writeTrackingPreference(trackingKey, true);
   };
 
   const destinationPoint = destinationCoordinates(destination);
@@ -519,7 +499,7 @@ export default function RiderGpsTracker({
             {status === 'locating' && 'Getting your current location…'}
             {status === 'offline' && 'Waiting for an internet connection'}
             {status === 'error' && 'GPS tracking needs attention'}
-            {status === 'idle' && 'Share your location only while this delivery is active.'}
+            {status === 'idle' && 'GPS tracking starts automatically while this delivery is active.'}
           </p>
           {lastSentAt && (
             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">

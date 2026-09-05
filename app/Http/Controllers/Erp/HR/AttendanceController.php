@@ -1016,7 +1016,11 @@ class AttendanceController extends Controller
             return response()->json(['error' => 'You have already checked out today'], 422);
         }
 
-        if ($attendance->lunch_break_start && !$attendance->lunch_break_end) {
+        if ($attendance->lunch_break_end) {
+            return response()->json(['error' => 'Lunch break already ended'], 422);
+        }
+
+        if ($attendance->lunch_break_start) {
             return response()->json(['error' => 'Lunch break already started'], 422);
         }
 

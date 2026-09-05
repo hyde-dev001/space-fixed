@@ -17,17 +17,32 @@ const leaflet = vi.hoisted(() => {
     redraw: vi.fn(),
   };
 
+  const marker = {
+    addTo: vi.fn(),
+    bindTooltip: vi.fn(),
+    setLatLng: vi.fn(),
+    setStyle: vi.fn(),
+    unbindTooltip: vi.fn(),
+  };
+  marker.addTo.mockReturnValue(marker);
+  marker.bindTooltip.mockReturnValue(marker);
+  marker.setLatLng.mockReturnValue(marker);
+  marker.setStyle.mockReturnValue(marker);
+  marker.unbindTooltip.mockReturnValue(marker);
+
   return {
+    marker,
     latLngBounds: vi.fn(() => ({})),
     map,
     mapFactory: vi.fn(() => map),
+    markerFactory: vi.fn(() => marker),
     tile,
     tileLayer: vi.fn(() => tile),
   };
 });
 
 vi.mock('leaflet', () => ({
-  circleMarker: vi.fn(),
+  circleMarker: leaflet.markerFactory,
   latLngBounds: leaflet.latLngBounds,
   map: leaflet.mapFactory,
   polyline: vi.fn(),
@@ -70,5 +85,33 @@ describe('LiveTrackingMap', () => {
     });
     expect(leaflet.tile.redraw).not.toHaveBeenCalled();
 
+  });
+
+  it('labels an anonymous rider marker as Rider', async () => {
+    render(
+      <LiveTrackingMap
+        locations={[{
+          leg_id: 1,
+          shipment_id: 1,
+          shipment_reference: 'SHP-1',
+          rider: { id: null, name: null },
+          status: 'active',
+          destination: {},
+          location: {
+            latitude: 14.6,
+            longitude: 120.98,
+            accuracy_m: null,
+            speed_mps: null,
+            heading_deg: null,
+            recorded_at: null,
+            received_at: null,
+          },
+          stale: false,
+        }]}
+      />,
+    );
+
+    await waitFor(() => expect(leaflet.markerFactory).toHaveBeenCalled());
+    expect(leaflet.marker.bindTooltip).toHaveBeenCalledWith('Rider');
   });
 });

@@ -842,10 +842,7 @@ export default function TimeIn() {
             const data = await response.json();
             if (response.ok) {
                 setIsOnLunch(false);
-                setTimeout(() => {
-                    setLunchStartTime(null);
-                    setLunchEndTime(null);
-                }, 100);
+                setLunchEndTime(parseAttendanceTimeToDate(data.lunch_break_end) ?? getPHTime());
             } else {
                 Swal.fire('Error', data.error || 'Failed to end lunch break', 'error');
             }
@@ -1413,7 +1410,7 @@ export default function TimeIn() {
                                         </div>
                                     </button>
 
-                                    {isClockedIn && !isOnLunch && (
+                                    {isClockedIn && !isOnLunch && !lunchEndTime && (
                                         <button
                                             onClick={handleStartLunch}
                                             className="min-h-12 w-full rounded-full bg-[#111111] px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-black focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2"

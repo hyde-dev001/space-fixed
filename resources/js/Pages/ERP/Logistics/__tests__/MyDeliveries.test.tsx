@@ -624,7 +624,7 @@ describe('MyDeliveries rider interactions', () => {
     expect(screen.queryByRole('button', { name: 'Failed pickup' })).not.toBeInTheDocument();
   });
 
-  it('offers GPS tracking before a repair pickup is confirmed', () => {
+  it('automatically starts GPS tracking before a repair pickup is confirmed', () => {
     mocks.props.liveTrackingEnabled = true;
     mocks.props.deliveryData.up_next = workItem('single', 'assigned', [{
       ...leg(22, null, 'assigned'),
@@ -659,7 +659,7 @@ describe('MyDeliveries rider interactions', () => {
     render(<MyDeliveries />);
 
     expect(screen.getByRole('region', { name: 'GPS tracking' })).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Start GPS tracking' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Stop GPS tracking' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Confirm pickup' })).toBeVisible();
   });
 
@@ -697,7 +697,6 @@ describe('MyDeliveries rider interactions', () => {
     });
 
     render(<MyDeliveries />);
-    fireEvent.click(screen.getByRole('button', { name: 'Start GPS tracking' }));
 
     await waitFor(() => expect(screen.getByText('Route to repair shop')).toBeVisible());
     expect(screen.getByText('Shop address')).toBeVisible();

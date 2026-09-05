@@ -294,7 +294,23 @@ describe("MyRepairs loading performance", () => {
   });
 
   it("finishes payment confirmation without waiting for optional metadata", async () => {
-    window.history.replaceState({}, "", "/my-repairs?paymongo_success=1&pending_repair_id=77");
+    window.history.replaceState({}, "", "/my-repairs?paymongo_success=1&pending_repair_id=77&return_ts=123&return_sig=test-signature");
+    const reload = vi.fn();
+    vi.stubGlobal("location", {
+      get href() {
+        return window.document.URL;
+      },
+      get origin() {
+        return new URL(window.document.URL).origin;
+      },
+      get pathname() {
+        return new URL(window.document.URL).pathname;
+      },
+      get search() {
+        return new URL(window.document.URL).search;
+      },
+      reload,
+    });
     Object.defineProperty(window, "sessionStorage", {
       configurable: true,
       value: {
@@ -328,6 +344,8 @@ describe("MyRepairs loading performance", () => {
       "/api/customer/repairs",
       { params: undefined },
     );
+    expect(window.location.search).toBe("");
+    expect(reload).toHaveBeenCalledTimes(1);
   });
 });
 
