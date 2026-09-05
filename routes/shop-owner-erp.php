@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Http\Controllers\Erp\WorkspaceController;
+use App\Http\Controllers\Erp\ArticlesController;
 use App\Http\Controllers\Api\CRM\CRMCustomerController;
 use App\Http\Controllers\Api\CRM\CRMDashboardController;
 use App\Http\Controllers\Api\CRM\CRMReviewController;
@@ -40,6 +41,17 @@ Route::prefix('shop-owner/erp')
 Route::prefix('shop-owner/erp')
     ->name('shop-owner.erp.')
     ->group(function () use ($ownerOperationsComponent): void {
+
+        Route::get('/articles', [ArticlesController::class, 'index'])
+            ->defaults('articleAudience', 'shop-owner')
+            ->middleware('article.audience:shop-owner')
+            ->name('articles.index');
+
+        Route::get('/articles/{slug}', [ArticlesController::class, 'show'])
+            ->where('slug', '[a-z0-9-]+')
+            ->defaults('articleAudience', 'shop-owner')
+            ->middleware('article.audience:shop-owner')
+            ->name('articles.show');
 
         Route::get('/retail/dashboard', function (): \Inertia\Response {
             return Inertia::render('ShopOwner/Dashboard', [

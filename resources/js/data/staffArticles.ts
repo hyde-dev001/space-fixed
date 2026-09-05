@@ -5,8 +5,22 @@ import type {
   StaffArticleBusinessType,
   StaffArticlePermission,
 } from "./staffArticleAccess";
+import type {
+  ArticleAccess,
+  ArticleCatalog as SharedArticleCatalog,
+  ArticleError as SharedArticleError,
+  ArticleGuide,
+  ArticleLanguage as SharedArticleLanguage,
+  ArticleListItem as SharedArticleListItem,
+  ArticleOutcome as SharedArticleOutcome,
+  ArticleRelatedLink as SharedArticleRelatedLink,
+  ArticleStep as SharedArticleStep,
+  ArticleTranslation as SharedArticleTranslation,
+  ArticleWorkflowState as SharedArticleWorkflowState,
+  LocalizedText as SharedLocalizedText,
+} from "./articleGuides";
 
-export type ArticleLanguage = "en" | "tl";
+export type ArticleLanguage = SharedArticleLanguage;
 
 export type StaffArticleCategoryKey =
   | "getting-started"
@@ -15,83 +29,30 @@ export type StaffArticleCategoryKey =
   | "products"
   | "pricing";
 
-export type LocalizedText = Record<ArticleLanguage, string>;
-
-export type ArticleListItem = {
-  id: string;
-  title: string;
-  body: string;
-};
-
-export type ArticleStep = ArticleListItem & {
-  screenshotId?: string;
-};
-
-export type ArticleWorkflowState = ArticleListItem & {
-  status: string;
-  owner: string;
-};
-
-export type ArticleOutcome = ArticleListItem & {
-  owner: string;
-  customerView: string;
-  tone: "neutral" | "success" | "warning" | "danger";
-};
-
-export type ArticleError = ArticleListItem & {
-  recovery: string;
-};
-
-export type ArticleRelatedLink = {
-  slug: string;
-  label: string;
-};
-
-export type ArticleTranslation = {
-  title: string;
-  question: string;
-  summary: string;
-  audience: string;
-  keywords: readonly string[];
-  readingMinutes: number;
-  prerequisites: readonly ArticleListItem[];
-  workflow: readonly ArticleWorkflowState[];
-  steps: readonly ArticleStep[];
-  outcomes: readonly ArticleOutcome[];
-  errors: readonly ArticleError[];
-  related: readonly ArticleRelatedLink[];
-};
-
-export type ArticleScreenshot = {
-  id: string;
-  fileName: string;
-  path: string;
-  alt: LocalizedText;
-  aspectRatio: number;
-};
-
+export type LocalizedText = SharedLocalizedText;
 export type StaffArticleCategory = {
   key: StaffArticleCategoryKey;
   label: LocalizedText;
 };
+export type ArticleListItem = SharedArticleListItem;
+export type ArticleStep = SharedArticleStep;
+export type ArticleWorkflowState = SharedArticleWorkflowState;
+export type ArticleOutcome = SharedArticleOutcome;
+export type ArticleError = SharedArticleError;
+export type ArticleRelatedLink = SharedArticleRelatedLink;
+export type ArticleTranslation = SharedArticleTranslation;
 
 export type StaffArticle = {
-  slug: string;
-  order: number;
+  slug: ArticleGuide["slug"];
+  order: ArticleGuide["order"];
   category: StaffArticleCategoryKey;
   recommended?: boolean;
-  access: {
+  access: ArticleAccess & {
     anyOfPermissions: readonly (StaffArticlePermission | string)[];
     allowedBusinessTypes: readonly StaffArticleBusinessType[];
   };
-  translations: Record<ArticleLanguage, ArticleTranslation>;
-  screenshots: readonly ArticleScreenshot[];
-  sourceCoverage: {
-    routes: readonly string[];
-    pages: readonly string[];
-    permissions: readonly string[];
-    tests: readonly string[];
-  };
+  translations: Readonly<Record<ArticleLanguage, ArticleTranslation>>;
+  sourceCoverage: ArticleGuide["sourceCoverage"];
 };
 
 export const STAFF_ARTICLE_CATEGORIES: readonly StaffArticleCategory[] = [
@@ -117,20 +78,6 @@ export const STAFF_ARTICLE_CATEGORIES: readonly StaffArticleCategory[] = [
   },
 ];
 
-const screenshot = (
-  category: StaffArticleCategoryKey,
-  slug: string,
-  id: string,
-  fileName: string,
-  alt: LocalizedText,
-  aspectRatio = 16 / 9,
-): ArticleScreenshot => ({
-  id,
-  fileName,
-  path: `/images/articles/staff/${category}/${slug}/${fileName}`,
-  alt,
-  aspectRatio,
-});
 
 const defineArticle = (article: StaffArticle): StaffArticle => article;
 
@@ -153,7 +100,6 @@ type StaffArticleDraft = {
   outcomes: Bilingual<readonly ArticleOutcome[]>;
   errors: Bilingual<readonly ArticleError[]>;
   related: Bilingual<readonly ArticleRelatedLink[]>;
-  screenshots: readonly ArticleScreenshot[];
   sourceCoverage: StaffArticle["sourceCoverage"];
 };
 
@@ -189,7 +135,6 @@ const defineStaffArticle = (draft: StaffArticleDraft): StaffArticle =>
       en: buildTranslation("en", draft),
       tl: buildTranslation("tl", draft),
     },
-    screenshots: draft.screenshots,
     sourceCoverage: draft.sourceCoverage,
   });
 
@@ -248,13 +193,11 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
             id: "open-sidebar",
             title: "Open the Staff section",
             body: "From the ERP sidebar, open STAFF and choose Articles. The navigation keeps the same responsive and collapsed behavior as other ERP links.",
-            screenshotId: "step-01-open-sidebar",
           },
           {
             id: "check-guide",
             title: "Choose a guide that matches your work",
             body: "Search or filter the hub. You will only see guides allowed for your account and shop.",
-            screenshotId: "step-02-check-guide",
           },
           {
             id: "recover-access",
@@ -322,13 +265,11 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
             id: "open-sidebar",
             title: "Buksan ang Staff section",
             body: "Sa ERP sidebar, buksan ang STAFF at piliin ang Articles. Pareho ang responsive at collapsed behavior nito sa ibang ERP links.",
-            screenshotId: "step-01-open-sidebar",
           },
           {
             id: "check-guide",
             title: "Pumili ng guide na tugma sa trabaho",
             body: "Mag-search o mag-filter sa hub. Makikita mo lang ang guides na puwedeng gamitin ng account at shop mo.",
-            screenshotId: "step-02-check-guide",
           },
           {
             id: "recover-access",
@@ -368,16 +309,6 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
         ],
       },
     },
-    screenshots: [
-      screenshot("getting-started", "staff-workspace-permissions", "step-01-open-sidebar", "step-01-open-sidebar.webp", {
-        en: "ERP sidebar with the Staff Articles link highlighted.",
-        tl: "ERP sidebar na naka-highlight ang Staff Articles link.",
-      }),
-      screenshot("getting-started", "staff-workspace-permissions", "step-02-check-guide", "step-02-check-guide.webp", {
-        en: "Staff Articles hub showing guides allowed for this account.",
-        tl: "Staff Articles hub na nagpapakita ng guides na puwedeng gamitin ng account.",
-      }),
-    ],
     sourceCoverage: {
       routes: ["erp.staff.dashboard", "erp.articles.index", "erp.articles.show"],
       pages: ["resources/js/layout/AppSidebar_ERP.tsx", "resources/js/Pages/ERP/STAFF/Dashboard.tsx"],
@@ -424,13 +355,11 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
             id: "read-summary",
             title: "Read the summary cards",
             body: "Start with your open work and order counts. These numbers are for your shop and Staff view.",
-            screenshotId: "step-01-read-summary",
           },
           {
             id: "search-work",
             title: "Search or filter the list",
             body: "Use search or filters to narrow the list before opening the details.",
-            screenshotId: "step-02-search-work",
           },
           {
             id: "open-detail",
@@ -498,13 +427,11 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
             id: "read-summary",
             title: "Basahin ang summary cards",
             body: "Unahin ang open work at order counts mo. Para sa shop at Staff view mo ang mga numerong ito.",
-            screenshotId: "step-01-read-summary",
           },
           {
             id: "search-work",
             title: "Mag-search o mag-filter ng list",
             body: "Gamitin ang search o filters para paliitin ang list bago buksan ang details.",
-            screenshotId: "step-02-search-work",
           },
           {
             id: "open-detail",
@@ -544,16 +471,6 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
         ],
       },
     },
-    screenshots: [
-      screenshot("getting-started", "using-staff-dashboard", "step-01-read-summary", "step-01-read-summary.webp", {
-        en: "Staff Dashboard summary cards with work counts for the shop.",
-        tl: "Staff Dashboard summary cards na may work counts para sa shop.",
-      }),
-      screenshot("getting-started", "using-staff-dashboard", "step-02-search-work", "step-02-search-work.webp", {
-        en: "Staff Dashboard search and filter controls with sample records.",
-        tl: "Staff Dashboard search at filter controls na may sample records.",
-      }),
-    ],
     sourceCoverage: {
       routes: ["erp.staff.dashboard"],
       pages: ["resources/js/Pages/ERP/STAFF/Dashboard.tsx", "app/Http/Controllers/Staff/StaffDashboardController.php"],
@@ -603,14 +520,14 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
     },
     steps: {
       en: [
-        { id: "open-center", title: "Open Notifications", body: "Use the notification button in the header. Start with unread notices or notices that need action.", screenshotId: "step-01-open-center" },
-        { id: "follow-action", title: "Open a notice that needs action", body: "Open its linked ERP page, do or review the work there, then return to Notifications.", screenshotId: "step-02-follow-action" },
-        { id: "manage-history", title: "Manage notification history", body: "Mark items read, archive them, restore archived items, or permanently delete only when the notice is no longer needed.", screenshotId: "step-03-manage-history" },
+        { id: "open-center", title: "Open Notifications", body: "Use the notification button in the header. Start with unread notices or notices that need action." },
+        { id: "follow-action", title: "Open a notice that needs action", body: "Open its linked ERP page, do or review the work there, then return to Notifications." },
+        { id: "manage-history", title: "Manage notification history", body: "Mark items read, archive them, restore archived items, or permanently delete only when the notice is no longer needed." },
       ],
       tl: [
-        { id: "open-center", title: "Buksan ang Notifications", body: "Gamitin ang notification button sa header. Magsimula sa unread o kailangang aksyunan na notices.", screenshotId: "step-01-open-center" },
-        { id: "follow-action", title: "Buksan ang notice na kailangang aksyunan", body: "Buksan ang naka-link na ERP page, gawin o suriin ang work doon, at bumalik sa Notifications.", screenshotId: "step-02-follow-action" },
-        { id: "manage-history", title: "Ayusin ang notification history", body: "Markahan bilang read, i-archive, i-restore ang archived item, o permanenteng i-delete kapag hindi na kailangan.", screenshotId: "step-03-manage-history" },
+        { id: "open-center", title: "Buksan ang Notifications", body: "Gamitin ang notification button sa header. Magsimula sa unread o kailangang aksyunan na notices." },
+        { id: "follow-action", title: "Buksan ang notice na kailangang aksyunan", body: "Buksan ang naka-link na ERP page, gawin o suriin ang work doon, at bumalik sa Notifications." },
+        { id: "manage-history", title: "Ayusin ang notification history", body: "Markahan bilang read, i-archive, i-restore ang archived item, o permanenteng i-delete kapag hindi na kailangan." },
       ],
     },
     outcomes: {
@@ -631,11 +548,6 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
       en: [{ slug: "staff-workspace-permissions", label: "Staff workspace and permissions" }, { slug: "profile-and-password", label: "Profile and password" }],
       tl: [{ slug: "staff-workspace-permissions", label: "Staff workspace at permissions" }, { slug: "profile-and-password", label: "Profile at password" }],
     },
-    screenshots: [
-      screenshot("getting-started", "viewing-managing-notifications", "step-01-open-center", "step-01-open-center.webp", { en: "Notifications page with unread and action-needed filters.", tl: "Notifications page na may unread at action-needed filters." }),
-      screenshot("getting-started", "viewing-managing-notifications", "step-02-follow-action", "step-02-follow-action.webp", { en: "Notification with personal details hidden and a link to the Staff page.", tl: "Notification na nakatago ang personal details at may link sa Staff page." }),
-      screenshot("getting-started", "viewing-managing-notifications", "step-03-manage-history", "step-03-manage-history.webp", { en: "Notification archive and restore controls.", tl: "Notification archive at restore controls." }),
-    ],
     sourceCoverage: {
       routes: ["erp.notifications.page", "erp.notifications.settings"],
       pages: ["resources/js/Pages/Notifications/ERPNotifications.tsx", "resources/js/components/common/NotificationDropdown.tsx"],
@@ -672,14 +584,14 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
     },
     steps: {
       en: [
-        { id: "review-profile", title: "Review your profile", body: "Check your name, email, shop, and role. Ask an administrator to fix anything you cannot edit.", screenshotId: "step-01-review-profile" },
-        { id: "change-password", title: "Change the password when required", body: "Enter the current password, a new password that meets the page rules, and its confirmation. Save before leaving Profile.", screenshotId: "step-02-change-password" },
-        { id: "recover", title: "Fix a failed password change", body: "Your old password stays the same when a check fails. Fix the field with an error and try again. If you forgot it, use the password reset steps.", screenshotId: "step-03-recover" },
+        { id: "review-profile", title: "Review your profile", body: "Check your name, email, shop, and role. Ask an administrator to fix anything you cannot edit." },
+        { id: "change-password", title: "Change the password when required", body: "Enter the current password, a new password that meets the page rules, and its confirmation. Save before leaving Profile." },
+        { id: "recover", title: "Fix a failed password change", body: "Your old password stays the same when a check fails. Fix the field with an error and try again. If you forgot it, use the password reset steps." },
       ],
       tl: [
-        { id: "review-profile", title: "Suriin ang profile mo", body: "Tingnan ang pangalan, email, shop, at role mo. Ipaayos sa administrator ang hindi mo kayang i-edit.", screenshotId: "step-01-review-profile" },
-        { id: "change-password", title: "Magpalit ng password kapag kailangan", body: "Ilagay ang current password, bagong password na sumusunod sa page rules, at confirmation. I-save bago umalis sa Profile.", screenshotId: "step-02-change-password" },
-        { id: "recover", title: "Ayusin ang failed password change", body: "Mananatili ang lumang password kapag may error. Ayusin ang field na may error at subukan ulit. Kung nakalimutan ito, gamitin ang password reset steps.", screenshotId: "step-03-recover" },
+        { id: "review-profile", title: "Suriin ang profile mo", body: "Tingnan ang pangalan, email, shop, at role mo. Ipaayos sa administrator ang hindi mo kayang i-edit." },
+        { id: "change-password", title: "Magpalit ng password kapag kailangan", body: "Ilagay ang current password, bagong password na sumusunod sa page rules, at confirmation. I-save bago umalis sa Profile." },
+        { id: "recover", title: "Ayusin ang failed password change", body: "Mananatili ang lumang password kapag may error. Ayusin ang field na may error at subukan ulit. Kung nakalimutan ito, gamitin ang password reset steps." },
       ],
     },
     outcomes: {
@@ -700,11 +612,6 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
       en: [{ slug: "staff-workspace-permissions", label: "Staff workspace and permissions" }, { slug: "viewing-managing-notifications", label: "Viewing and managing notifications" }],
       tl: [{ slug: "staff-workspace-permissions", label: "Staff workspace at permissions" }, { slug: "viewing-managing-notifications", label: "Pagtingin at pamamahala ng notifications" }],
     },
-    screenshots: [
-      screenshot("getting-started", "profile-and-password", "step-01-review-profile", "step-01-review-profile.webp", { en: "Employee Profile page with personal details hidden.", tl: "Employee Profile page na nakatago ang personal details." }),
-      screenshot("getting-started", "profile-and-password", "step-02-change-password", "step-02-change-password.webp", { en: "Password change form showing its field labels and rules.", tl: "Password change form na ipinapakita ang field labels at rules." }),
-      screenshot("getting-started", "profile-and-password", "step-03-recover", "step-03-recover.webp", { en: "Profile error with a safe message for trying again.", tl: "Profile error na may ligtas na mensahe para subukan ulit." }),
-    ],
     sourceCoverage: {
       routes: ["erp.profile", "login"],
       pages: ["resources/js/Pages/ERP/Profile.tsx", "app/Http/Controllers/UserProfileController.php"],
@@ -737,14 +644,14 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
     },
     steps: {
       en: [
-        { id: "time-in", title: "Record Time In", body: "Use Time In at the start of the workday. The page checks your attendance and leave before saving.", screenshotId: "step-01-time-in" },
-        { id: "lunch", title: "Record lunch start and end", body: "Start lunch only when the action is enabled, then record Lunch End before resuming work.", screenshotId: "step-02-lunch" },
-        { id: "time-out", title: "Record Time Out", body: "Use Time Out when the workday ends. The saved attendance can include your reason and total hours.", screenshotId: "step-03-time-out" },
+        { id: "time-in", title: "Record Time In", body: "Use Time In at the start of the workday. The page checks your attendance and leave before saving." },
+        { id: "lunch", title: "Record lunch start and end", body: "Start lunch only when the action is enabled, then record Lunch End before resuming work." },
+        { id: "time-out", title: "Record Time Out", body: "Use Time Out when the workday ends. The saved attendance can include your reason and total hours." },
       ],
       tl: [
-        { id: "time-in", title: "I-record ang Time In", body: "Gamitin ang Time In sa simula ng workday. Titingnan ng page ang attendance at leave mo bago mag-save.", screenshotId: "step-01-time-in" },
-        { id: "lunch", title: "I-record ang lunch start at end", body: "Simulan ang lunch kapag enabled ang action, pagkatapos ay i-record ang Lunch End bago bumalik sa trabaho.", screenshotId: "step-02-lunch" },
-        { id: "time-out", title: "I-record ang Time Out", body: "Gamitin ang Time Out kapag tapos na ang workday. Puwedeng kasama sa saved attendance ang dahilan at total hours.", screenshotId: "step-03-time-out" },
+        { id: "time-in", title: "I-record ang Time In", body: "Gamitin ang Time In sa simula ng workday. Titingnan ng page ang attendance at leave mo bago mag-save." },
+        { id: "lunch", title: "I-record ang lunch start at end", body: "Simulan ang lunch kapag enabled ang action, pagkatapos ay i-record ang Lunch End bago bumalik sa trabaho." },
+        { id: "time-out", title: "I-record ang Time Out", body: "Gamitin ang Time Out kapag tapos na ang workday. Puwedeng kasama sa saved attendance ang dahilan at total hours." },
       ],
     },
     outcomes: {
@@ -765,11 +672,6 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
       en: [{ slug: "early-arrival-lateness-departure", label: "Early arrival, lateness, and early departure" }, { slug: "requesting-overtime", label: "Requesting and completing overtime" }],
       tl: [{ slug: "early-arrival-lateness-departure", label: "Early arrival, lateness, at early departure" }, { slug: "requesting-overtime", label: "Pag-request at pagkumpleto ng overtime" }],
     },
-    screenshots: [
-      screenshot("attendance", "daily-attendance-workflow", "step-01-time-in", "step-01-time-in.webp", { en: "Attendance page with Time In action and current status.", tl: "Attendance page na may Time In action at kasalukuyang status." }),
-      screenshot("attendance", "daily-attendance-workflow", "step-02-lunch", "step-02-lunch.webp", { en: "Attendance page showing lunch start and end actions.", tl: "Attendance page na ipinapakita ang lunch start at end actions." }),
-      screenshot("attendance", "daily-attendance-workflow", "step-03-time-out", "step-03-time-out.webp", { en: "Attendance page with Time Out and reason details.", tl: "Attendance page na may Time Out at reason details." }),
-    ],
     sourceCoverage: {
       routes: ["erp.time-in", "erp.staff.attendance"],
       pages: ["resources/js/Pages/ERP/STAFF/TimeIn.tsx", "resources/js/Pages/ERP/STAFF/timeIn.tsx", "app/Http/Controllers/Erp/HR/AttendanceController.php"],
@@ -802,14 +704,14 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
     },
     steps: {
       en: [
-        { id: "check-window", title: "Check the allowed time", body: "Check your attendance and schedule before pressing Time In.", screenshotId: "step-01-check-window" },
-        { id: "add-reason", title: "Add the required reason", body: "When the page asks for a reason, describe the exception accurately before submitting. Avoid private customer data in the note.", screenshotId: "step-02-add-reason" },
-        { id: "review-outcome", title: "Review the result", body: "After saving, check if the page shows late, early departure, or normal. Save the message for your manager if needed.", screenshotId: "step-03-review-outcome" },
+        { id: "check-window", title: "Check the allowed time", body: "Check your attendance and schedule before pressing Time In." },
+        { id: "add-reason", title: "Add the required reason", body: "When the page asks for a reason, describe the exception accurately before submitting. Avoid private customer data in the note." },
+        { id: "review-outcome", title: "Review the result", body: "After saving, check if the page shows late, early departure, or normal. Save the message for your manager if needed." },
       ],
       tl: [
-        { id: "check-window", title: "Suriin ang tamang oras", body: "Tingnan ang attendance at schedule mo bago pindutin ang Time In.", screenshotId: "step-01-check-window" },
-        { id: "add-reason", title: "Ilagay ang kailangang dahilan", body: "Kapag humingi ng reason ang page, ilarawan nang tama ang exception bago mag-submit. Huwag maglagay ng private customer data sa note.", screenshotId: "step-02-add-reason" },
-        { id: "review-outcome", title: "Suriin ang resulta", body: "Pagkatapos mag-save, tingnan kung late, early departure, o normal. Itabi ang message para sa manager kung kailangan.", screenshotId: "step-03-review-outcome" },
+        { id: "check-window", title: "Suriin ang tamang oras", body: "Tingnan ang attendance at schedule mo bago pindutin ang Time In." },
+        { id: "add-reason", title: "Ilagay ang kailangang dahilan", body: "Kapag humingi ng reason ang page, ilarawan nang tama ang exception bago mag-submit. Huwag maglagay ng private customer data sa note." },
+        { id: "review-outcome", title: "Suriin ang resulta", body: "Pagkatapos mag-save, tingnan kung late, early departure, o normal. Itabi ang message para sa manager kung kailangan." },
       ],
     },
     outcomes: {
@@ -830,11 +732,6 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
       en: [{ slug: "daily-attendance-workflow", label: "Daily attendance workflow" }, { slug: "requesting-leave", label: "Requesting leave" }],
       tl: [{ slug: "daily-attendance-workflow", label: "Daily attendance workflow" }, { slug: "requesting-leave", label: "Pag-request ng leave" }],
     },
-    screenshots: [
-      screenshot("attendance", "early-arrival-lateness-departure", "step-01-check-window", "step-01-check-window.webp", { en: "Attendance schedule with the too-early Time In button disabled.", tl: "Attendance schedule na disabled ang sobrang-agang Time In button." }),
-      screenshot("attendance", "early-arrival-lateness-departure", "step-02-add-reason", "step-02-add-reason.webp", { en: "Attendance reason field with personal details hidden.", tl: "Attendance reason field na nakatago ang personal details." }),
-      screenshot("attendance", "early-arrival-lateness-departure", "step-03-review-outcome", "step-03-review-outcome.webp", { en: "Saved attendance result with its exception label.", tl: "Saved attendance result na may exception label." }),
-    ],
     sourceCoverage: {
       routes: ["erp.time-in", "erp.staff.attendance"],
       pages: ["resources/js/Pages/ERP/STAFF/TimeIn.tsx", "app/Http/Controllers/Erp/HR/AttendanceController.php"],
@@ -871,14 +768,14 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
     },
     steps: {
       en: [
-        { id: "choose-dates", title: "Choose the leave type and dates", body: "Choose a leave type and start/end dates that fit your available balance and shop rules.", screenshotId: "step-01-choose-dates" },
-        { id: "write-reason", title: "Write a clear reason", body: "Add the reason required by the form, then review the number of days before submitting.", screenshotId: "step-02-write-reason" },
-        { id: "monitor-status", title: "Check the result", body: "Return to the request page or notification. Read the approval or rejection reason and plan your attendance.", screenshotId: "step-03-monitor-status" },
+        { id: "choose-dates", title: "Choose the leave type and dates", body: "Choose a leave type and start/end dates that fit your available balance and shop rules." },
+        { id: "write-reason", title: "Write a clear reason", body: "Add the reason required by the form, then review the number of days before submitting." },
+        { id: "monitor-status", title: "Check the result", body: "Return to the request page or notification. Read the approval or rejection reason and plan your attendance." },
       ],
       tl: [
-        { id: "choose-dates", title: "Piliin ang leave type at dates", body: "Pumili ng leave type at start/end dates na pasok sa balance at shop rules.", screenshotId: "step-01-choose-dates" },
-        { id: "write-reason", title: "Sumulat ng malinaw na dahilan", body: "Ilagay ang reason na hinihingi ng form at suriin ang bilang ng araw bago mag-submit.", screenshotId: "step-02-write-reason" },
-        { id: "monitor-status", title: "Tingnan ang resulta", body: "Bumalik sa request page o notification. Basahin ang approval o rejection reason at ayusin ang attendance plan.", screenshotId: "step-03-monitor-status" },
+        { id: "choose-dates", title: "Piliin ang leave type at dates", body: "Pumili ng leave type at start/end dates na pasok sa balance at shop rules." },
+        { id: "write-reason", title: "Sumulat ng malinaw na dahilan", body: "Ilagay ang reason na hinihingi ng form at suriin ang bilang ng araw bago mag-submit." },
+        { id: "monitor-status", title: "Tingnan ang resulta", body: "Bumalik sa request page o notification. Basahin ang approval o rejection reason at ayusin ang attendance plan." },
       ],
     },
     outcomes: {
@@ -899,11 +796,6 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
       en: [{ slug: "daily-attendance-workflow", label: "Daily attendance workflow" }, { slug: "requesting-overtime", label: "Requesting and completing overtime" }],
       tl: [{ slug: "daily-attendance-workflow", label: "Daily attendance workflow" }, { slug: "requesting-overtime", label: "Pag-request at pagkumpleto ng overtime" }],
     },
-    screenshots: [
-      screenshot("attendance", "requesting-leave", "step-01-choose-dates", "step-01-choose-dates.webp", { en: "Leave request form with type and date-range fields.", tl: "Leave request form na may type at date-range fields." }),
-      screenshot("attendance", "requesting-leave", "step-02-write-reason", "step-02-write-reason.webp", { en: "Leave request reason field with sample values.", tl: "Leave request reason field na may sample values." }),
-      screenshot("attendance", "requesting-leave", "step-03-monitor-status", "step-03-monitor-status.webp", { en: "Leave request list showing pending, approved, and rejected statuses.", tl: "Leave request list na may pending, approved, at rejected statuses." }),
-    ],
     sourceCoverage: {
       routes: ["erp.hr", "api.leave.*"],
       pages: ["resources/js/Pages/ERP/HR/HR.tsx", "app/Http/Controllers/Erp/HR/EmployeeSelfServiceController.php"],
@@ -938,14 +830,14 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
     },
     steps: {
       en: [
-        { id: "submit-request", title: "Submit hours and reason", body: "Enter the overtime date, number of hours, and a factual reason. Check that the date is not covered by approved leave.", screenshotId: "step-01-submit-request" },
-        { id: "wait-approval", title: "Wait for the result", body: "Pending does not mean you can work overtime yet. Check whether it is approved or rejected and read the reason.", screenshotId: "step-02-wait-approval" },
-        { id: "record-approved-hours", title: "Record approved overtime", body: "On an approved date, use overtime check-in and check-out when the buttons are available. The page counts the approved hours with your attendance.", screenshotId: "step-03-record-approved-hours" },
+        { id: "submit-request", title: "Submit hours and reason", body: "Enter the overtime date, number of hours, and a factual reason. Check that the date is not covered by approved leave." },
+        { id: "wait-approval", title: "Wait for the result", body: "Pending does not mean you can work overtime yet. Check whether it is approved or rejected and read the reason." },
+        { id: "record-approved-hours", title: "Record approved overtime", body: "On an approved date, use overtime check-in and check-out when the buttons are available. The page counts the approved hours with your attendance." },
       ],
       tl: [
-        { id: "submit-request", title: "Magsumite ng hours at reason", body: "Ilagay ang overtime date, bilang ng oras, at totoong dahilan. Tiyaking hindi sakop ng approved leave ang date.", screenshotId: "step-01-submit-request" },
-        { id: "wait-approval", title: "Hintayin ang resulta", body: "Hindi ibig sabihin ng Pending na puwede nang mag-overtime. Tingnan kung approved o rejected at basahin ang dahilan.", screenshotId: "step-02-wait-approval" },
-        { id: "record-approved-hours", title: "I-record ang approved overtime", body: "Sa approved date, gamitin ang overtime check-in at check-out kapag available ang buttons. Isinasama ang approved hours sa attendance mo.", screenshotId: "step-03-record-approved-hours" },
+        { id: "submit-request", title: "Magsumite ng hours at reason", body: "Ilagay ang overtime date, bilang ng oras, at totoong dahilan. Tiyaking hindi sakop ng approved leave ang date." },
+        { id: "wait-approval", title: "Hintayin ang resulta", body: "Hindi ibig sabihin ng Pending na puwede nang mag-overtime. Tingnan kung approved o rejected at basahin ang dahilan." },
+        { id: "record-approved-hours", title: "I-record ang approved overtime", body: "Sa approved date, gamitin ang overtime check-in at check-out kapag available ang buttons. Isinasama ang approved hours sa attendance mo." },
       ],
     },
     outcomes: {
@@ -966,11 +858,6 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
       en: [{ slug: "daily-attendance-workflow", label: "Daily attendance workflow" }, { slug: "requesting-leave", label: "Requesting leave" }, { slug: "viewing-printing-payslips", label: "Viewing and printing payslips" }],
       tl: [{ slug: "daily-attendance-workflow", label: "Daily attendance workflow" }, { slug: "requesting-leave", label: "Pag-request ng leave" }, { slug: "viewing-printing-payslips", label: "Pagtingin at pag-print ng payslips" }],
     },
-    screenshots: [
-      screenshot("attendance", "requesting-overtime", "step-01-submit-request", "step-01-submit-request.webp", { en: "Overtime request form with date, hours, and reason fields.", tl: "Overtime request form na may date, hours, at reason fields." }),
-      screenshot("attendance", "requesting-overtime", "step-02-wait-approval", "step-02-wait-approval.webp", { en: "Overtime request list with a pending approval status.", tl: "Overtime request list na may pending approval status." }),
-      screenshot("attendance", "requesting-overtime", "step-03-record-approved-hours", "step-03-record-approved-hours.webp", { en: "Approved overtime check-in and check-out controls.", tl: "Approved overtime check-in at check-out controls." }),
-    ],
     sourceCoverage: {
       routes: ["erp.time-in", "api.attendance.*"],
       pages: ["resources/js/Pages/ERP/STAFF/TimeIn.tsx", "app/Http/Controllers/Erp/HR/AttendanceController.php"],
@@ -1003,14 +890,14 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
     },
     steps: {
       en: [
-        { id: "find-period", title: "Find the pay period", body: "Open My Payslips and search the list for the month or pay cycle you need.", screenshotId: "step-01-find-period" },
-        { id: "read-breakdown", title: "Read the details", body: "Open a payslip and check its status, earnings, deductions, net salary, and payment details.", screenshotId: "step-02-read-breakdown" },
-        { id: "print", title: "Print the payslip", body: "Use Print after checking the period. Keep printed copies private and do not share payment details in screenshots.", screenshotId: "step-03-print" },
+        { id: "find-period", title: "Find the pay period", body: "Open My Payslips and search the list for the month or pay cycle you need." },
+        { id: "read-breakdown", title: "Read the details", body: "Open a payslip and check its status, earnings, deductions, net salary, and payment details." },
+        { id: "print", title: "Print the payslip", body: "Use Print after checking the period. Keep printed copies private and do not share payment details in images." },
       ],
       tl: [
-        { id: "find-period", title: "Hanapin ang pay period", body: "Buksan ang My Payslips at mag-search sa list para sa buwan o pay cycle na kailangan.", screenshotId: "step-01-find-period" },
-        { id: "read-breakdown", title: "Basahin ang details", body: "Buksan ang payslip at tingnan ang status, earnings, deductions, net salary, at payment details.", screenshotId: "step-02-read-breakdown" },
-        { id: "print", title: "I-print ang payslip", body: "Gamitin ang Print pagkatapos tingnan ang period. Panatilihing pribado ang printed copies at huwag ibahagi ang payment details sa screenshots.", screenshotId: "step-03-print" },
+        { id: "find-period", title: "Hanapin ang pay period", body: "Buksan ang My Payslips at mag-search sa list para sa buwan o pay cycle na kailangan." },
+        { id: "read-breakdown", title: "Basahin ang details", body: "Buksan ang payslip at tingnan ang status, earnings, deductions, net salary, at payment details." },
+        { id: "print", title: "I-print ang payslip", body: "Gamitin ang Print pagkatapos tingnan ang period. Panatilihing pribado ang printed copies at huwag ibahagi ang payment details sa images." },
       ],
     },
     outcomes: {
@@ -1031,11 +918,6 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
       en: [{ slug: "daily-attendance-workflow", label: "Daily attendance workflow" }, { slug: "profile-and-password", label: "Profile and password" }],
       tl: [{ slug: "daily-attendance-workflow", label: "Daily attendance workflow" }, { slug: "profile-and-password", label: "Profile at password" }],
     },
-    screenshots: [
-      screenshot("attendance", "viewing-printing-payslips", "step-01-find-period", "step-01-find-period.webp", { en: "Payslip period search with employee details hidden.", tl: "Payslip period search na nakatago ang employee details." }),
-      screenshot("attendance", "viewing-printing-payslips", "step-02-read-breakdown", "step-02-read-breakdown.webp", { en: "Payslip earnings, deductions, and net salary with amounts hidden.", tl: "Payslip earnings, deductions, at net salary na nakatago ang amounts." }),
-      screenshot("attendance", "viewing-printing-payslips", "step-03-print", "step-03-print.webp", { en: "Payslip Print action with sample values.", tl: "Payslip Print action na may sample values." }),
-    ],
     sourceCoverage: {
       routes: ["erp.my-payslips"],
       pages: ["resources/js/Pages/ERP/STAFF/MyPayslips.tsx", "app/Http/Controllers/Erp/HR/PayrollController.php"],
@@ -1069,14 +951,14 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
     },
     steps: {
       en: [
-        { id: "choose-tab", title: "Choose a status tab", body: "Start with Pending, Processing, Shipped, Delivered, or Cancelled to narrow the list before opening an order.", screenshotId: "step-01-choose-tab" },
-        { id: "search-order", title: "Search the order list", body: "Search by the order or customer details shown on the page, then check that it belongs to your shop.", screenshotId: "step-02-search-order" },
-        { id: "read-details", title: "Read order details", body: "Check the payment method and status, item options, total, delivery details, and refund or return status before acting.", screenshotId: "step-03-read-details" },
+        { id: "choose-tab", title: "Choose a status tab", body: "Start with Pending, Processing, Shipped, Delivered, or Cancelled to narrow the list before opening an order." },
+        { id: "search-order", title: "Search the order list", body: "Search by the order or customer details shown on the page, then check that it belongs to your shop." },
+        { id: "read-details", title: "Read order details", body: "Check the payment method and status, item options, total, delivery details, and refund or return status before acting." },
       ],
       tl: [
-        { id: "choose-tab", title: "Pumili ng status tab", body: "Magsimula sa Pending, Processing, Shipped, Delivered, o Cancelled para paliitin ang list bago magbukas ng order.", screenshotId: "step-01-choose-tab" },
-        { id: "search-order", title: "Mag-search sa order list", body: "Mag-search gamit ang order o customer details na nasa page, at tiyaking para sa shop mo ang order.", screenshotId: "step-02-search-order" },
-        { id: "read-details", title: "Basahin ang order details", body: "Tingnan ang payment method at status, item options, total, delivery details, at refund o return status bago kumilos.", screenshotId: "step-03-read-details" },
+        { id: "choose-tab", title: "Pumili ng status tab", body: "Magsimula sa Pending, Processing, Shipped, Delivered, o Cancelled para paliitin ang list bago magbukas ng order." },
+        { id: "search-order", title: "Mag-search sa order list", body: "Mag-search gamit ang order o customer details na nasa page, at tiyaking para sa shop mo ang order." },
+        { id: "read-details", title: "Basahin ang order details", body: "Tingnan ang payment method at status, item options, total, delivery details, at refund o return status bago kumilos." },
       ],
     },
     outcomes: {
@@ -1097,11 +979,6 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
       en: [{ slug: "processing-pending-retail-orders", label: "Processing one or multiple pending orders" }, { slug: "refund-return-statuses", label: "Reading refund and return statuses" }],
       tl: [{ slug: "processing-pending-retail-orders", label: "Pag-process ng isa o maraming pending orders" }, { slug: "refund-return-statuses", label: "Pagbasa ng refund at return statuses" }],
     },
-    screenshots: [
-      screenshot("orders", "understanding-retail-job-orders", "step-01-choose-tab", "step-01-choose-tab.webp", { en: "Retail Job Orders status tabs with order details hidden.", tl: "Retail Job Orders status tabs na nakatago ang order details." }),
-      screenshot("orders", "understanding-retail-job-orders", "step-02-search-order", "step-02-search-order.webp", { en: "Job Orders search controls for the shop.", tl: "Job Orders search controls para sa shop." }),
-      screenshot("orders", "understanding-retail-job-orders", "step-03-read-details", "step-03-read-details.webp", { en: "Retail order details with customer and payment details hidden.", tl: "Retail order details na nakatago ang customer at payment details." }),
-    ],
     sourceCoverage: {
       routes: ["erp.staff.job-orders"],
       pages: ["resources/js/Pages/ERP/STAFF/JobOrders.tsx", "routes/web.php"],
@@ -1138,14 +1015,14 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
     },
     steps: {
       en: [
-        { id: "open-pending", title: "Open the Pending tab", body: "Search for the order and open its details. Confirm the order is still Pending before selecting an action.", screenshotId: "step-01-open-pending" },
-        { id: "process-one", title: "Process one order", body: "Use the process button after checking the order details. Wait for the result before trying again.", screenshotId: "step-02-process-one" },
-        { id: "process-many", title: "Process several orders", body: "Select only the pending orders you checked, review the list, and submit once.", screenshotId: "step-03-process-many" },
+        { id: "open-pending", title: "Open the Pending tab", body: "Search for the order and open its details. Confirm the order is still Pending before selecting an action." },
+        { id: "process-one", title: "Process one order", body: "Use the process button after checking the order details. Wait for the result before trying again." },
+        { id: "process-many", title: "Process several orders", body: "Select only the pending orders you checked, review the list, and submit once." },
       ],
       tl: [
-        { id: "open-pending", title: "Buksan ang Pending tab", body: "Hanapin ang order at buksan ang details. Tiyaking Pending pa rin bago pumili ng action.", screenshotId: "step-01-open-pending" },
-        { id: "process-one", title: "I-process ang isang order", body: "Gamitin ang process button pagkatapos suriin ang details. Hintayin ang resulta bago ulitin.", screenshotId: "step-02-process-one" },
-        { id: "process-many", title: "I-process ang ilang orders", body: "Piliin lang ang pending orders na nasuri mo, tingnan ang list, at isang beses lang mag-submit.", screenshotId: "step-03-process-many" },
+        { id: "open-pending", title: "Buksan ang Pending tab", body: "Hanapin ang order at buksan ang details. Tiyaking Pending pa rin bago pumili ng action." },
+        { id: "process-one", title: "I-process ang isang order", body: "Gamitin ang process button pagkatapos suriin ang details. Hintayin ang resulta bago ulitin." },
+        { id: "process-many", title: "I-process ang ilang orders", body: "Piliin lang ang pending orders na nasuri mo, tingnan ang list, at isang beses lang mag-submit." },
       ],
     },
     outcomes: {
@@ -1166,11 +1043,6 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
       en: [{ slug: "understanding-retail-job-orders", label: "Understanding Retail Job Orders" }, { slug: "shipping-or-activating-pickup", label: "Shipping or activating pickup" }],
       tl: [{ slug: "understanding-retail-job-orders", label: "Pag-unawa sa Retail Job Orders" }, { slug: "shipping-or-activating-pickup", label: "Shipping o pag-activate ng pickup" }],
     },
-    screenshots: [
-      screenshot("orders", "processing-pending-retail-orders", "step-01-open-pending", "step-01-open-pending.webp", { en: "Pending order details with sample customer values.", tl: "Pending order details na may sample customer values." }),
-      screenshot("orders", "processing-pending-retail-orders", "step-02-process-one", "step-02-process-one.webp", { en: "Process button for one order and its confirmation.", tl: "Process button para sa isang order at ang confirmation nito." }),
-      screenshot("orders", "processing-pending-retail-orders", "step-03-process-many", "step-03-process-many.webp", { en: "Checked pending orders ready to process together.", tl: "Mga pending order na nasuri at handang i-process nang sabay." }),
-    ],
     sourceCoverage: {
       routes: ["erp.staff.job-orders"],
       pages: ["resources/js/Pages/ERP/STAFF/JobOrders.tsx", "app/Http/Controllers/Api/StaffOrderController.php"],
@@ -1203,14 +1075,14 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
     },
     steps: {
       en: [
-        { id: "read-coverage", title: "Read the delivery area", body: "Check whether the order uses an outside carrier or shop delivery/pickup before entering details.", screenshotId: "step-01-read-coverage" },
-        { id: "enter-carrier", title: "Enter shipping details", body: "For third-party shipping, enter only the carrier and tracking details asked for, then check them before saving.", screenshotId: "step-02-enter-carrier" },
-        { id: "activate-pickup", title: "Activate shop pickup", body: "For shop pickup, use the button when the order is ready and check the new tracking or customer message.", screenshotId: "step-03-activate-pickup" },
+        { id: "read-coverage", title: "Read the delivery area", body: "Check whether the order uses an outside carrier or shop delivery/pickup before entering details." },
+        { id: "enter-carrier", title: "Enter shipping details", body: "For third-party shipping, enter only the carrier and tracking details asked for, then check them before saving." },
+        { id: "activate-pickup", title: "Activate shop pickup", body: "For shop pickup, use the button when the order is ready and check the new tracking or customer message." },
       ],
       tl: [
-        { id: "read-coverage", title: "Basahin ang delivery area", body: "Tingnan kung outside carrier o shop delivery/pickup ang gamit bago maglagay ng details.", screenshotId: "step-01-read-coverage" },
-        { id: "enter-carrier", title: "Ilagay ang shipping details", body: "Sa third-party shipping, ilagay lang ang carrier at tracking details na hinihingi, at tingnan bago mag-save.", screenshotId: "step-02-enter-carrier" },
-        { id: "activate-pickup", title: "I-activate ang shop pickup", body: "Sa shop pickup, gamitin ang button kapag ready na ang order at tingnan ang bagong tracking o customer message.", screenshotId: "step-03-activate-pickup" },
+        { id: "read-coverage", title: "Basahin ang delivery area", body: "Tingnan kung outside carrier o shop delivery/pickup ang gamit bago maglagay ng details." },
+        { id: "enter-carrier", title: "Ilagay ang shipping details", body: "Sa third-party shipping, ilagay lang ang carrier at tracking details na hinihingi, at tingnan bago mag-save." },
+        { id: "activate-pickup", title: "I-activate ang shop pickup", body: "Sa shop pickup, gamitin ang button kapag ready na ang order at tingnan ang bagong tracking o customer message." },
       ],
     },
     outcomes: {
@@ -1231,11 +1103,6 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
       en: [{ slug: "processing-pending-retail-orders", label: "Processing one or multiple pending orders" }, { slug: "customer-delivery-receipt-disputes", label: "Customer delivery receipt and dispute evidence" }],
       tl: [{ slug: "processing-pending-retail-orders", label: "Pag-process ng isa o maraming pending orders" }, { slug: "customer-delivery-receipt-disputes", label: "Customer delivery receipt at dispute evidence" }],
     },
-    screenshots: [
-      screenshot("orders", "shipping-or-activating-pickup", "step-01-read-coverage", "step-01-read-coverage.webp", { en: "Order delivery area message with destination details hidden.", tl: "Order delivery area message na nakatago ang destination details." }),
-      screenshot("orders", "shipping-or-activating-pickup", "step-02-enter-carrier", "step-02-enter-carrier.webp", { en: "Third-party carrier and tracking fields with sample values hidden.", tl: "Third-party carrier at tracking fields na nakatago ang sample values." }),
-      screenshot("orders", "shipping-or-activating-pickup", "step-03-activate-pickup", "step-03-activate-pickup.webp", { en: "Shop-owned pickup activation action and resulting status.", tl: "Shop-owned pickup activation action at resulting status." }),
-    ],
     sourceCoverage: {
       routes: ["erp.staff.job-orders", "api.logistics.*"],
       pages: ["resources/js/Pages/ERP/STAFF/JobOrders.tsx", "app/Http/Controllers/Api/Logistics/ShipmentController.php"],
@@ -1268,14 +1135,14 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
     },
     steps: {
       en: [
-        { id: "open-cancelled", title: "Open the Cancelled tab", body: "Find the order in Cancelled instead of trying to process it from an old Pending or Processing view.", screenshotId: "step-01-open-cancelled" },
-        { id: "read-reason", title: "Read the reason and notes", body: "Check the cancellation reason, note, and delivery detail that explain why delivery stopped.", screenshotId: "step-02-read-reason" },
-        { id: "route-follow-up", title: "Follow the next step", body: "If money or a refund request is involved, use the refund/return guide. Do not restart delivery.", screenshotId: "step-03-route-follow-up" },
+        { id: "open-cancelled", title: "Open the Cancelled tab", body: "Find the order in Cancelled instead of trying to process it from an old Pending or Processing view." },
+        { id: "read-reason", title: "Read the reason and notes", body: "Check the cancellation reason, note, and delivery detail that explain why delivery stopped." },
+        { id: "route-follow-up", title: "Follow the next step", body: "If money or a refund request is involved, use the refund/return guide. Do not restart delivery." },
       ],
       tl: [
-        { id: "open-cancelled", title: "Buksan ang Cancelled tab", body: "Hanapin ang order sa Cancelled sa halip na i-process mula sa lumang Pending o Processing view.", screenshotId: "step-01-open-cancelled" },
-        { id: "read-reason", title: "Basahin ang reason at notes", body: "Tingnan ang cancellation reason, note, at delivery detail na nagpapaliwanag kung bakit huminto ang delivery.", screenshotId: "step-02-read-reason" },
-        { id: "route-follow-up", title: "Sundin ang susunod na step", body: "Kung may pera o refund request, gamitin ang refund/return guide. Huwag ibalik sa delivery ang order.", screenshotId: "step-03-route-follow-up" },
+        { id: "open-cancelled", title: "Buksan ang Cancelled tab", body: "Hanapin ang order sa Cancelled sa halip na i-process mula sa lumang Pending o Processing view." },
+        { id: "read-reason", title: "Basahin ang reason at notes", body: "Tingnan ang cancellation reason, note, at delivery detail na nagpapaliwanag kung bakit huminto ang delivery." },
+        { id: "route-follow-up", title: "Sundin ang susunod na step", body: "Kung may pera o refund request, gamitin ang refund/return guide. Huwag ibalik sa delivery ang order." },
       ],
     },
     outcomes: {
@@ -1296,11 +1163,6 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
       en: [{ slug: "understanding-retail-job-orders", label: "Understanding Retail Job Orders" }, { slug: "review-customer-refund-request", label: "Reviewing a customer refund request" }],
       tl: [{ slug: "understanding-retail-job-orders", label: "Pag-unawa sa Retail Job Orders" }, { slug: "review-customer-refund-request", label: "Pag-review ng customer refund request" }],
     },
-    screenshots: [
-      screenshot("orders", "understanding-cancelled-orders", "step-01-open-cancelled", "step-01-open-cancelled.webp", { en: "Cancelled order tab with order details hidden.", tl: "Cancelled order tab na nakatago ang order details." }),
-      screenshot("orders", "understanding-cancelled-orders", "step-02-read-reason", "step-02-read-reason.webp", { en: "Cancellation reason, notes, and delivery details with sample values.", tl: "Cancellation reason, notes, at delivery details na may sample values." }),
-      screenshot("orders", "understanding-cancelled-orders", "step-03-route-follow-up", "step-03-route-follow-up.webp", { en: "Cancelled order detail linking to a permitted refund follow-up.", tl: "Cancelled order detail na may link sa pinapayagang refund follow-up." }),
-    ],
     sourceCoverage: {
       routes: ["erp.staff.job-orders"],
       pages: ["resources/js/Pages/ERP/STAFF/JobOrders.tsx", "app/Models/Order.php"],
@@ -1322,8 +1184,8 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
     audience: { en: "Staff users who review retail refund requests.", tl: "Staff users na nagre-review ng retail refund requests." },
     keywords: { en: ["refund", "customer request", "evidence", "eligibility", "approve", "reject", "reason", "quantity"], tl: ["refund", "customer request", "evidence", "eligibility", "approve", "reject", "dahilan", "quantity"] },
     prerequisites: {
-      en: [{ id: "read-evidence", title: "Review the request proof", body: "Open the request, items, quantities, and attached proof. Do not copy private customer details into notes or screenshots." }],
-      tl: [{ id: "read-evidence", title: "Suriin ang proof ng request", body: "Buksan ang request, items, quantities, at attached proof. Huwag kopyahin ang private customer details sa notes o screenshots." }],
+      en: [{ id: "read-evidence", title: "Review the request proof", body: "Open the request, items, quantities, and attached proof. Do not copy private customer details into notes or images." }],
+      tl: [{ id: "read-evidence", title: "Suriin ang proof ng request", body: "Buksan ang request, items, quantities, at attached proof. Huwag kopyahin ang private customer details sa notes o images." }],
     },
     workflow: {
       en: [
@@ -1337,14 +1199,14 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
     },
     steps: {
       en: [
-        { id: "open-request", title: "Open the refund request", body: "Check the order, items, quantity, deadline, and shop before choosing an action.", screenshotId: "step-01-open-request" },
-        { id: "check-evidence", title: "Check the proof", body: "Read the proof and make sure another reviewer has not already decided or changed the request.", screenshotId: "step-02-check-evidence" },
-        { id: "decide", title: "Approve or reject with a reason", body: "Approve only when the request is allowed. If rejecting, enter a clear reason. Do not promise an immediate payout.", screenshotId: "step-03-decide" },
+        { id: "open-request", title: "Open the refund request", body: "Check the order, items, quantity, deadline, and shop before choosing an action." },
+        { id: "check-evidence", title: "Check the proof", body: "Read the proof and make sure another reviewer has not already decided or changed the request." },
+        { id: "decide", title: "Approve or reject with a reason", body: "Approve only when the request is allowed. If rejecting, enter a clear reason. Do not promise an immediate payout." },
       ],
       tl: [
-        { id: "open-request", title: "Buksan ang refund request", body: "Tingnan ang order, items, quantity, deadline, at shop bago pumili ng action.", screenshotId: "step-01-open-request" },
-        { id: "check-evidence", title: "Suriin ang proof", body: "Basahin ang proof at tiyaking hindi pa nagde-decide o nagbabago ng request ang ibang reviewer.", screenshotId: "step-02-check-evidence" },
-        { id: "decide", title: "Mag-approve o reject na may dahilan", body: "Mag-approve lang kapag puwede ang request. Kapag reject, maglagay ng malinaw na dahilan. Huwag mangako ng agarang payout.", screenshotId: "step-03-decide" },
+        { id: "open-request", title: "Buksan ang refund request", body: "Tingnan ang order, items, quantity, deadline, at shop bago pumili ng action." },
+        { id: "check-evidence", title: "Suriin ang proof", body: "Basahin ang proof at tiyaking hindi pa nagde-decide o nagbabago ng request ang ibang reviewer." },
+        { id: "decide", title: "Mag-approve o reject na may dahilan", body: "Mag-approve lang kapag puwede ang request. Kapag reject, maglagay ng malinaw na dahilan. Huwag mangako ng agarang payout." },
       ],
     },
     outcomes: {
@@ -1365,11 +1227,6 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
       en: [{ slug: "after-staff-refund-decision", label: "What happens after Staff approves or rejects a refund" }, { slug: "arranging-a-return", label: "Arranging a return" }],
       tl: [{ slug: "after-staff-refund-decision", label: "Ano ang mangyayari pagkatapos i-approve o i-reject ng Staff ang refund" }, { slug: "arranging-a-return", label: "Pag-aayos ng return" }],
     },
-    screenshots: [
-      screenshot("orders", "review-customer-refund-request", "step-01-open-request", "step-01-open-request.webp", { en: "Refund request details with customer identity and proof hidden.", tl: "Refund request details na nakatago ang customer identity at proof." }),
-      screenshot("orders", "review-customer-refund-request", "step-02-check-evidence", "step-02-check-evidence.webp", { en: "Refund evidence and requested-line review state.", tl: "Refund evidence at requested-line review state." }),
-      screenshot("orders", "review-customer-refund-request", "step-03-decide", "step-03-decide.webp", { en: "Refund approve/reject controls with required rejection reason field.", tl: "Refund approve/reject controls na may required rejection reason field." }),
-    ],
     sourceCoverage: {
       routes: ["erp.staff.job-orders", "api.refunds.*"],
       pages: ["resources/js/Pages/ERP/STAFF/JobOrders.tsx", "app/Services/OrderRefundService.php"],
@@ -1402,14 +1259,14 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
     },
     steps: {
       en: [
-        { id: "read-result", title: "Read the Staff decision", body: "Open the refund details and check whether Staff approved or rejected it. Read the saved reason.", screenshotId: "step-01-read-result" },
-        { id: "monitor-finance", title: "Watch the Finance step", body: "For an approved request, watch for Pending Finance. Do not tell the customer that money was already sent.", screenshotId: "step-02-monitor-finance" },
-        { id: "explain-next-step", title: "Explain who acts next", body: "Use the status to tell the customer or support team whether Finance, return logistics, or a correction comes next.", screenshotId: "step-03-explain-next-step" },
+        { id: "read-result", title: "Read the Staff decision", body: "Open the refund details and check whether Staff approved or rejected it. Read the saved reason." },
+        { id: "monitor-finance", title: "Watch the Finance step", body: "For an approved request, watch for Pending Finance. Do not tell the customer that money was already sent." },
+        { id: "explain-next-step", title: "Explain who acts next", body: "Use the status to tell the customer or support team whether Finance, return logistics, or a correction comes next." },
       ],
       tl: [
-        { id: "read-result", title: "Basahin ang Staff decision", body: "Buksan ang refund details at tingnan kung approved o rejected ng Staff. Basahin ang saved reason.", screenshotId: "step-01-read-result" },
-        { id: "monitor-finance", title: "Bantayan ang Finance step", body: "Sa approved request, bantayan ang Pending Finance. Huwag sabihin sa customer na naipadala na ang pera.", screenshotId: "step-02-monitor-finance" },
-        { id: "explain-next-step", title: "Ipaliwanag kung sino ang susunod", body: "Gamitin ang status para sabihin sa customer o support team kung Finance, return logistics, o correction ang susunod.", screenshotId: "step-03-explain-next-step" },
+        { id: "read-result", title: "Basahin ang Staff decision", body: "Buksan ang refund details at tingnan kung approved o rejected ng Staff. Basahin ang saved reason." },
+        { id: "monitor-finance", title: "Bantayan ang Finance step", body: "Sa approved request, bantayan ang Pending Finance. Huwag sabihin sa customer na naipadala na ang pera." },
+        { id: "explain-next-step", title: "Ipaliwanag kung sino ang susunod", body: "Gamitin ang status para sabihin sa customer o support team kung Finance, return logistics, o correction ang susunod." },
       ],
     },
     outcomes: {
@@ -1430,11 +1287,6 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
       en: [{ slug: "review-customer-refund-request", label: "Reviewing a customer refund request" }, { slug: "refund-return-statuses", label: "Reading refund and return statuses" }],
       tl: [{ slug: "review-customer-refund-request", label: "Pag-review ng customer refund request" }, { slug: "refund-return-statuses", label: "Pagbasa ng refund at return statuses" }],
     },
-    screenshots: [
-      screenshot("orders", "after-staff-refund-decision", "step-01-read-result", "step-01-read-result.webp", { en: "Refund detail showing the Staff decision with sample values.", tl: "Refund detail na ipinapakita ang Staff decision na may sample values." }),
-      screenshot("orders", "after-staff-refund-decision", "step-02-monitor-finance", "step-02-monitor-finance.webp", { en: "Refund status showing the pending Finance handoff.", tl: "Refund status na ipinapakita ang pending Finance handoff." }),
-      screenshot("orders", "after-staff-refund-decision", "step-03-explain-next-step", "step-03-explain-next-step.webp", { en: "Refund status and message showing who acts next, with customer details hidden.", tl: "Refund status at message kung sino ang susunod, na nakatago ang customer details." }),
-    ],
     sourceCoverage: {
       routes: ["erp.staff.job-orders", "api.refunds.*"],
       pages: ["resources/js/Pages/ERP/STAFF/JobOrders.tsx", "app/Services/OrderRefundService.php"],
@@ -1473,14 +1325,14 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
     },
     steps: {
       en: [
-        { id: "choose-source", title: "Check who will return the item", body: "Read whether the plan expects the customer to ship it, Staff to pick it up, the shop to deliver, or a third-party carrier to handle it.", screenshotId: "step-01-choose-source" },
-        { id: "record-tracking", title: "Save the needed tracking details", body: "Enter the carrier, tracking number, rider, phone, or link only when the return form asks for it. Keep private data out of screenshots.", screenshotId: "step-02-record-tracking" },
-        { id: "monitor-transit", title: "Watch the handoff", body: "Use the return status and tracking to know when Staff can confirm receipt and inspect the item.", screenshotId: "step-03-monitor-transit" },
+        { id: "choose-source", title: "Check who will return the item", body: "Read whether the plan expects the customer to ship it, Staff to pick it up, the shop to deliver, or a third-party carrier to handle it." },
+        { id: "record-tracking", title: "Save the needed tracking details", body: "Enter the carrier, tracking number, rider, phone, or link only when the return form asks for it. Keep private data out of images." },
+        { id: "monitor-transit", title: "Watch the handoff", body: "Use the return status and tracking to know when Staff can confirm receipt and inspect the item." },
       ],
       tl: [
-        { id: "choose-source", title: "Tingnan kung sino ang magsasauli", body: "Basahin kung customer ang magpapadala, Staff ang susundo, shop ang magde-deliver, o third-party carrier ang hahawak.", screenshotId: "step-01-choose-source" },
-        { id: "record-tracking", title: "I-save ang kailangang tracking details", body: "Ilagay ang carrier, tracking number, rider, phone, o link kapag hinihingi ng return form. Huwag maglagay ng private data sa screenshots.", screenshotId: "step-02-record-tracking" },
-        { id: "monitor-transit", title: "Bantayan ang turnover", body: "Gamitin ang return status at tracking para malaman kung kailan puwedeng mag-confirm ng receipt at mag-inspect ang Staff.", screenshotId: "step-03-monitor-transit" },
+        { id: "choose-source", title: "Tingnan kung sino ang magsasauli", body: "Basahin kung customer ang magpapadala, Staff ang susundo, shop ang magde-deliver, o third-party carrier ang hahawak." },
+        { id: "record-tracking", title: "I-save ang kailangang tracking details", body: "Ilagay ang carrier, tracking number, rider, phone, o link kapag hinihingi ng return form. Huwag maglagay ng private data sa images." },
+        { id: "monitor-transit", title: "Bantayan ang turnover", body: "Gamitin ang return status at tracking para malaman kung kailan puwedeng mag-confirm ng receipt at mag-inspect ang Staff." },
       ],
     },
     outcomes: {
@@ -1501,11 +1353,6 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
       en: [{ slug: "after-staff-refund-decision", label: "What happens after Staff approves or rejects a refund" }, { slug: "confirming-inspecting-returns", label: "Confirming and inspecting returned items" }],
       tl: [{ slug: "after-staff-refund-decision", label: "Ano ang mangyayari pagkatapos ng Staff refund decision" }, { slug: "confirming-inspecting-returns", label: "Pag-confirm at pag-inspect ng returned items" }],
     },
-    screenshots: [
-      screenshot("orders", "arranging-a-return", "step-01-choose-source", "step-01-choose-source.webp", { en: "Return source and coverage options with customer destination data hidden.", tl: "Return source at coverage options na nakatago ang customer destination data." }),
-      screenshot("orders", "arranging-a-return", "step-02-record-tracking", "step-02-record-tracking.webp", { en: "Return carrier and tracking fields with sample values.", tl: "Return carrier at tracking fields na may sample values." }),
-      screenshot("orders", "arranging-a-return", "step-03-monitor-transit", "step-03-monitor-transit.webp", { en: "Return tracking status while the item is in transit.", tl: "Return tracking status habang in transit ang item." }),
-    ],
     sourceCoverage: {
       routes: ["erp.staff.job-orders", "api.refunds.*", "api.logistics.*"],
       pages: ["resources/js/Pages/ERP/STAFF/JobOrders.tsx", "app/Services/OrderRefundService.php"],
@@ -1540,14 +1387,14 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
     },
     steps: {
       en: [
-        { id: "confirm-receipt", title: "Confirm the return", body: "Open the return details and check the requested and approved quantities before marking it received.", screenshotId: "step-01-confirm-receipt" },
-        { id: "inspect-condition", title: "Inspect the item", body: "Mark each allowed quantity as resellable or damaged. Keep the description factual and leave out customer details.", screenshotId: "step-02-inspect-condition" },
-        { id: "review-implication", title: "Check what happens next", body: "See whether the result goes to Finance for a refund or to stock handling, then watch the next team.", screenshotId: "step-03-review-implication" },
+        { id: "confirm-receipt", title: "Confirm the return", body: "Open the return details and check the requested and approved quantities before marking it received." },
+        { id: "inspect-condition", title: "Inspect the item", body: "Mark each allowed quantity as resellable or damaged. Keep the description factual and leave out customer details." },
+        { id: "review-implication", title: "Check what happens next", body: "See whether the result goes to Finance for a refund or to stock handling, then watch the next team." },
       ],
       tl: [
-        { id: "confirm-receipt", title: "I-confirm ang return", body: "Buksan ang return details at tingnan ang requested at approved quantities bago markahang received.", screenshotId: "step-01-confirm-receipt" },
-        { id: "inspect-condition", title: "Suriin ang item", body: "Markahan ang bawat allowed quantity bilang resellable o damaged. Dapat malinaw ang description at walang customer details.", screenshotId: "step-02-inspect-condition" },
-        { id: "review-implication", title: "Tingnan ang susunod na mangyayari", body: "Tingnan kung pupunta sa Finance para sa refund o sa stock handling ang resulta, at bantayan ang susunod na team.", screenshotId: "step-03-review-implication" },
+        { id: "confirm-receipt", title: "I-confirm ang return", body: "Buksan ang return details at tingnan ang requested at approved quantities bago markahang received." },
+        { id: "inspect-condition", title: "Suriin ang item", body: "Markahan ang bawat allowed quantity bilang resellable o damaged. Dapat malinaw ang description at walang customer details." },
+        { id: "review-implication", title: "Tingnan ang susunod na mangyayari", body: "Tingnan kung pupunta sa Finance para sa refund o sa stock handling ang resulta, at bantayan ang susunod na team." },
       ],
     },
     outcomes: {
@@ -1568,11 +1415,6 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
       en: [{ slug: "arranging-a-return", label: "Arranging a return" }, { slug: "refund-return-statuses", label: "Reading refund and return statuses" }],
       tl: [{ slug: "arranging-a-return", label: "Pag-aayos ng return" }, { slug: "refund-return-statuses", label: "Pagbasa ng refund at return statuses" }],
     },
-    screenshots: [
-      screenshot("orders", "confirming-inspecting-returns", "step-01-confirm-receipt", "step-01-confirm-receipt.webp", { en: "Return receipt confirmation with order and customer details hidden.", tl: "Return receipt confirmation na nakatago ang order at customer details." }),
-      screenshot("orders", "confirming-inspecting-returns", "step-02-inspect-condition", "step-02-inspect-condition.webp", { en: "Return inspection disposition controls for resellable and damaged items.", tl: "Return inspection disposition controls para sa resellable at damaged items." }),
-      screenshot("orders", "confirming-inspecting-returns", "step-03-review-implication", "step-03-review-implication.webp", { en: "Saved return inspection result and next-owner status.", tl: "Saved return inspection result at next-owner status." }),
-    ],
     sourceCoverage: {
       routes: ["erp.staff.job-orders", "api.refunds.*"],
       pages: ["resources/js/Pages/ERP/STAFF/JobOrders.tsx", "app/Services/OrderRefundService.php"],
@@ -1607,14 +1449,14 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
     },
     steps: {
       en: [
-        { id: "identify-stage", title: "Identify the current stage", body: "Read the status name and the order button beside it. Do not decide that a payout or receipt is done from color alone.", screenshotId: "step-01-identify-stage" },
-        { id: "find-owner", title: "Find who acts next", body: "Use the status list to see whether Staff, Finance, the customer, the carrier, or logistics acts next.", screenshotId: "step-02-find-owner" },
-        { id: "choose-recovery", title: "Choose what to do next", body: "For Rejected or Failed, read the reason and use the allowed correction, new request, return, or support step.", screenshotId: "step-03-choose-recovery" },
+        { id: "identify-stage", title: "Identify the current stage", body: "Read the status name and the order button beside it. Do not decide that a payout or receipt is done from color alone." },
+        { id: "find-owner", title: "Find who acts next", body: "Use the status list to see whether Staff, Finance, the customer, the carrier, or logistics acts next." },
+        { id: "choose-recovery", title: "Choose what to do next", body: "For Rejected or Failed, read the reason and use the allowed correction, new request, return, or support step." },
       ],
       tl: [
-        { id: "identify-stage", title: "Tukuyin ang kasalukuyang stage", body: "Basahin ang status name at ang order button sa tabi nito. Huwag isipin na tapos na ang payout o receipt dahil sa kulay lang.", screenshotId: "step-01-identify-stage" },
-        { id: "find-owner", title: "Alamin kung sino ang susunod", body: "Gamitin ang status list para malaman kung Staff, Finance, customer, carrier, o logistics ang susunod na kikilos.", screenshotId: "step-02-find-owner" },
-        { id: "choose-recovery", title: "Piliin ang susunod na gagawin", body: "Sa Rejected o Failed, basahin ang reason at gamitin ang allowed correction, bagong request, return, o support step.", screenshotId: "step-03-choose-recovery" },
+        { id: "identify-stage", title: "Tukuyin ang kasalukuyang stage", body: "Basahin ang status name at ang order button sa tabi nito. Huwag isipin na tapos na ang payout o receipt dahil sa kulay lang." },
+        { id: "find-owner", title: "Alamin kung sino ang susunod", body: "Gamitin ang status list para malaman kung Staff, Finance, customer, carrier, o logistics ang susunod na kikilos." },
+        { id: "choose-recovery", title: "Piliin ang susunod na gagawin", body: "Sa Rejected o Failed, basahin ang reason at gamitin ang allowed correction, bagong request, return, o support step." },
       ],
     },
     outcomes: {
@@ -1635,11 +1477,6 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
       en: [{ slug: "after-staff-refund-decision", label: "What happens after Staff approves or rejects a refund" }, { slug: "confirming-inspecting-returns", label: "Confirming and inspecting returned items" }],
       tl: [{ slug: "after-staff-refund-decision", label: "Ano ang mangyayari pagkatapos ng Staff refund decision" }, { slug: "confirming-inspecting-returns", label: "Pag-confirm at pag-inspect ng returned items" }],
     },
-    screenshots: [
-      screenshot("orders", "refund-return-statuses", "step-01-identify-stage", "step-01-identify-stage.webp", { en: "Refund and return status labels with order details hidden.", tl: "Refund at return status labels na nakatago ang order details." }),
-      screenshot("orders", "refund-return-statuses", "step-02-find-owner", "step-02-find-owner.webp", { en: "Return details showing who acts next.", tl: "Return details na ipinapakita kung sino ang susunod na kikilos." }),
-      screenshot("orders", "refund-return-statuses", "step-03-choose-recovery", "step-03-choose-recovery.webp", { en: "Rejected or failed return result with the reason shown.", tl: "Rejected o failed return result na ipinapakita ang dahilan." }),
-    ],
     sourceCoverage: {
       routes: ["erp.staff.job-orders", "api.refunds.*"],
       pages: ["resources/js/Pages/ERP/STAFF/JobOrders.tsx", "app/Services/OrderRefundService.php"],
@@ -1672,14 +1509,14 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
     },
     steps: {
       en: [
-        { id: "open-delivery", title: "Open the delivery details", body: "Check whether the customer confirmed or disputed receipt and read the proof status.", screenshotId: "step-01-open-delivery" },
-        { id: "check-proof", title: "Check the proof", body: "View approved proof only. Rejected or unapproved proof is not accepted delivery proof.", screenshotId: "step-02-check-proof" },
-        { id: "route-dispute", title: "Send a dispute for review", body: "Keep the disputed order and send it to Staff or logistics for review. Do not change the proof yourself.", screenshotId: "step-03-route-dispute" },
+        { id: "open-delivery", title: "Open the delivery details", body: "Check whether the customer confirmed or disputed receipt and read the proof status." },
+        { id: "check-proof", title: "Check the proof", body: "View approved proof only. Rejected or unapproved proof is not accepted delivery proof." },
+        { id: "route-dispute", title: "Send a dispute for review", body: "Keep the disputed order and send it to Staff or logistics for review. Do not change the proof yourself." },
       ],
       tl: [
-        { id: "open-delivery", title: "Buksan ang delivery details", body: "Tingnan kung kinumpirma o dinispute ng customer ang receipt at basahin ang proof status.", screenshotId: "step-01-open-delivery" },
-        { id: "check-proof", title: "Suriin ang proof", body: "Approved proof lang ang tingnan. Hindi tinatanggap na delivery proof ang rejected o unapproved proof.", screenshotId: "step-02-check-proof" },
-        { id: "route-dispute", title: "Ipadala ang dispute para sa review", body: "Panatilihin ang disputed order at ipadala sa Staff o logistics para sa review. Huwag baguhin ang proof mismo.", screenshotId: "step-03-route-dispute" },
+        { id: "open-delivery", title: "Buksan ang delivery details", body: "Tingnan kung kinumpirma o dinispute ng customer ang receipt at basahin ang proof status." },
+        { id: "check-proof", title: "Suriin ang proof", body: "Approved proof lang ang tingnan. Hindi tinatanggap na delivery proof ang rejected o unapproved proof." },
+        { id: "route-dispute", title: "Ipadala ang dispute para sa review", body: "Panatilihin ang disputed order at ipadala sa Staff o logistics para sa review. Huwag baguhin ang proof mismo." },
       ],
     },
     outcomes: {
@@ -1700,11 +1537,6 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
       en: [{ slug: "shipping-or-activating-pickup", label: "Shipping or activating pickup" }, { slug: "understanding-retail-job-orders", label: "Understanding Retail Job Orders" }],
       tl: [{ slug: "shipping-or-activating-pickup", label: "Shipping o pag-activate ng pickup" }, { slug: "understanding-retail-job-orders", label: "Pag-unawa sa Retail Job Orders" }],
     },
-    screenshots: [
-      screenshot("orders", "customer-delivery-receipt-disputes", "step-01-open-delivery", "step-01-open-delivery.webp", { en: "Delivery receipt and dispute details with sample values only.", tl: "Delivery receipt at dispute details na sample values lang." }),
-      screenshot("orders", "customer-delivery-receipt-disputes", "step-02-check-proof", "step-02-check-proof.webp", { en: "Approved delivery proof shown in the order.", tl: "Approved delivery proof na ipinapakita sa order." }),
-      screenshot("orders", "customer-delivery-receipt-disputes", "step-03-route-dispute", "step-03-route-dispute.webp", { en: "Disputed delivery record ready for review.", tl: "Disputed delivery record na handa para sa review." }),
-    ],
     sourceCoverage: {
       routes: ["erp.staff.job-orders", "api.logistics.delivery-dispute-evidence.*"],
       pages: ["resources/js/Pages/ERP/STAFF/JobOrders.tsx", "app/Http/Controllers/Api/Logistics/DeliveryDisputeEvidenceController.php"],
@@ -1738,14 +1570,14 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
     },
     steps: {
       en: [
-        { id: "open-list", title: "Open the product list", body: "Check the product name, colors, sizes, quantities, and price notes before choosing an action.", screenshotId: "step-01-open-list" },
-        { id: "search-filter", title: "Search and filter", body: "Use search and filters to find the product or stock you need.", screenshotId: "step-02-search-filter" },
-        { id: "choose-action", title: "Choose an available action", body: "Open, edit, or delete only when the page shows that button for your account and the product.", screenshotId: "step-03-choose-action" },
+        { id: "open-list", title: "Open the product list", body: "Check the product name, colors, sizes, quantities, and price notes before choosing an action." },
+        { id: "search-filter", title: "Search and filter", body: "Use search and filters to find the product or stock you need." },
+        { id: "choose-action", title: "Choose an available action", body: "Open, edit, or delete only when the page shows that button for your account and the product." },
       ],
       tl: [
-        { id: "open-list", title: "Buksan ang product list", body: "Tingnan ang product name, colors, sizes, quantities, at price notes bago pumili ng action.", screenshotId: "step-01-open-list" },
-        { id: "search-filter", title: "Mag-search at mag-filter", body: "Gamitin ang search at filters para hanapin ang kailangan mong product o stock.", screenshotId: "step-02-search-filter" },
-        { id: "choose-action", title: "Pumili ng available action", body: "Mag-open, edit, o delete lang kapag ipinakita ng page ang button para sa account at product mo.", screenshotId: "step-03-choose-action" },
+        { id: "open-list", title: "Buksan ang product list", body: "Tingnan ang product name, colors, sizes, quantities, at price notes bago pumili ng action." },
+        { id: "search-filter", title: "Mag-search at mag-filter", body: "Gamitin ang search at filters para hanapin ang kailangan mong product o stock." },
+        { id: "choose-action", title: "Pumili ng available action", body: "Mag-open, edit, o delete lang kapag ipinakita ng page ang button para sa account at product mo." },
       ],
     },
     outcomes: {
@@ -1766,11 +1598,6 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
       en: [{ slug: "creating-product-from-inventory", label: "Creating a product from inventory" }, { slug: "fixing-product-creation-errors", label: "Fixing product creation errors" }],
       tl: [{ slug: "creating-product-from-inventory", label: "Paggawa ng product mula sa inventory" }, { slug: "fixing-product-creation-errors", label: "Pag-ayos ng product creation errors" }],
     },
-    screenshots: [
-      screenshot("products", "understanding-product-management", "step-01-open-list", "step-01-open-list.webp", { en: "Product Management list with sample values only.", tl: "Product Management list na sample values lang." }),
-      screenshot("products", "understanding-product-management", "step-02-search-filter", "step-02-search-filter.webp", { en: "Product Management search and filter controls.", tl: "Product Management search at filter controls." }),
-      screenshot("products", "understanding-product-management", "step-03-choose-action", "step-03-choose-action.webp", { en: "Product row showing the actions available to Staff.", tl: "Product row na ipinapakita ang available actions para sa Staff." }),
-    ],
     sourceCoverage: {
       routes: ["erp.staff.products"],
       pages: ["resources/js/Pages/ERP/STAFF/ProductManagementWithVariants.tsx", "routes/web.php"],
@@ -1807,14 +1634,14 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
     },
     steps: {
       en: [
-        { id: "open-create", title: "Open product creation", body: "Open Product Management and choose Add New Product.", screenshotId: "step-01-open-create" },
-        { id: "select-retail", title: "Select retail stock", body: "Choose the right stock and check its colors, sizes, quantities, and shop before continuing.", screenshotId: "step-02-select-retail" },
-        { id: "save-draft", title: "Save the product draft", body: "Submit once and wait for the result. Continue to product details after the stock is accepted.", screenshotId: "step-03-save-draft" },
+        { id: "open-create", title: "Open product creation", body: "Open Product Management and choose Add New Product." },
+        { id: "select-retail", title: "Select retail stock", body: "Choose the right stock and check its colors, sizes, quantities, and shop before continuing." },
+        { id: "save-draft", title: "Save the product draft", body: "Submit once and wait for the result. Continue to product details after the stock is accepted." },
       ],
       tl: [
-        { id: "open-create", title: "Buksan ang product creation", body: "Buksan ang Product Management at piliin ang Add New Product.", screenshotId: "step-01-open-create" },
-        { id: "select-retail", title: "Piliin ang retail stock", body: "Piliin ang tamang stock at tingnan ang colors, sizes, quantities, at shop bago magpatuloy.", screenshotId: "step-02-select-retail" },
-        { id: "save-draft", title: "I-save ang product draft", body: "Isang beses mag-submit at hintayin ang result. Magpatuloy sa product details kapag tinanggap ang stock.", screenshotId: "step-03-save-draft" },
+        { id: "open-create", title: "Buksan ang product creation", body: "Buksan ang Product Management at piliin ang Add New Product." },
+        { id: "select-retail", title: "Piliin ang retail stock", body: "Piliin ang tamang stock at tingnan ang colors, sizes, quantities, at shop bago magpatuloy." },
+        { id: "save-draft", title: "I-save ang product draft", body: "Isang beses mag-submit at hintayin ang result. Magpatuloy sa product details kapag tinanggap ang stock." },
       ],
     },
     outcomes: {
@@ -1835,11 +1662,6 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
       en: [{ slug: "configuring-product-details", label: "Adding product details" }, { slug: "configuring-colors-sizes-quantities", label: "Adding colors, sizes, and quantities" }],
       tl: [{ slug: "configuring-product-details", label: "Pagdagdag ng product details" }, { slug: "configuring-colors-sizes-quantities", label: "Pagdagdag ng colors, sizes, at quantities" }],
     },
-    screenshots: [
-      screenshot("products", "creating-product-from-inventory", "step-01-open-create", "step-01-open-create.webp", { en: "Product creation entry point with sample values only.", tl: "Product creation entry point na sample values lang." }),
-      screenshot("products", "creating-product-from-inventory", "step-02-select-retail", "step-02-select-retail.webp", { en: "Retail stock selector with sample values only.", tl: "Retail stock selector na sample values lang." }),
-      screenshot("products", "creating-product-from-inventory", "step-03-save-draft", "step-03-save-draft.webp", { en: "Accepted product draft before product details are added.", tl: "Tinanggap na product draft bago idagdag ang product details." }),
-    ],
     sourceCoverage: {
       routes: ["erp.staff.products", "api.staff.products.*"],
       pages: ["resources/js/Pages/ERP/STAFF/ProductManagementWithVariants.tsx", "app/Http/Controllers/Api/ProductController.php"],
@@ -1872,14 +1694,14 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
     },
     steps: {
       en: [
-        { id: "name-description", title: "Enter the name and description", body: "Use a clear product name and an accurate description. Do not add passwords or private information.", screenshotId: "step-01-name-description" },
-        { id: "category-brand", title: "Choose the category and brand", body: "Choose an existing category, or use the create-category button if the page shows it.", screenshotId: "step-02-category-brand" },
-        { id: "price-save", title: "Enter the price and save", body: "Check the price and required fields, then save once. A price change uses a separate request.", screenshotId: "step-03-price-save" },
+        { id: "name-description", title: "Enter the name and description", body: "Use a clear product name and an accurate description. Do not add passwords or private information." },
+        { id: "category-brand", title: "Choose the category and brand", body: "Choose an existing category, or use the create-category button if the page shows it." },
+        { id: "price-save", title: "Enter the price and save", body: "Check the price and required fields, then save once. A price change uses a separate request." },
       ],
       tl: [
-        { id: "name-description", title: "Ilagay ang name at description", body: "Gumamit ng malinaw na product name at tamang description. Huwag maglagay ng password o private information.", screenshotId: "step-01-name-description" },
-        { id: "category-brand", title: "Piliin ang category at brand", body: "Pumili ng existing category, o gamitin ang create-category button kung ipinapakita ito ng page.", screenshotId: "step-02-category-brand" },
-        { id: "price-save", title: "Ilagay ang price at mag-save", body: "Suriin ang price at required fields, pagkatapos isang beses mag-save. Hiwalay na request ang pagpalit ng price.", screenshotId: "step-03-price-save" },
+        { id: "name-description", title: "Ilagay ang name at description", body: "Gumamit ng malinaw na product name at tamang description. Huwag maglagay ng password o private information." },
+        { id: "category-brand", title: "Piliin ang category at brand", body: "Pumili ng existing category, o gamitin ang create-category button kung ipinapakita ito ng page." },
+        { id: "price-save", title: "Ilagay ang price at mag-save", body: "Suriin ang price at required fields, pagkatapos isang beses mag-save. Hiwalay na request ang pagpalit ng price." },
       ],
     },
     outcomes: {
@@ -1900,11 +1722,6 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
       en: [{ slug: "creating-product-from-inventory", label: "Creating a product from inventory" }, { slug: "configuring-colors-sizes-quantities", label: "Adding colors, sizes, and quantities" }],
       tl: [{ slug: "creating-product-from-inventory", label: "Paggawa ng product mula sa inventory" }, { slug: "configuring-colors-sizes-quantities", label: "Pagdagdag ng colors, sizes, at quantities" }],
     },
-    screenshots: [
-      screenshot("products", "configuring-product-details", "step-01-name-description", "step-01-name-description.webp", { en: "Product name and description fields with sample values.", tl: "Product name at description fields na may sample values." }),
-      screenshot("products", "configuring-product-details", "step-02-category-brand", "step-02-category-brand.webp", { en: "Product category and brand controls.", tl: "Product category at brand controls." }),
-      screenshot("products", "configuring-product-details", "step-03-price-save", "step-03-price-save.webp", { en: "Product price field and save action with test values only.", tl: "Product price field at save action na test values lang." }),
-    ],
     sourceCoverage: {
       routes: ["erp.staff.products", "api.staff.products.*"],
       pages: ["resources/js/Pages/ERP/STAFF/ProductManagementWithVariants.tsx", "app/Http/Controllers/Api/ProductController.php"],
@@ -1937,14 +1754,14 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
     },
     steps: {
       en: [
-        { id: "add-color", title: "Add the color", body: "Enter the color shown on the page and make sure it is different from the colors already listed.", screenshotId: "step-01-add-color" },
-        { id: "add-sizes", title: "Add sizes and quantities", body: "Set the available sizes and give each stocked size a quantity.", screenshotId: "step-02-add-sizes" },
-        { id: "review-empty", title: "Check empty rows", body: "Fix or remove a row with no size or stock before saving. Do not use an empty row for unavailable stock.", screenshotId: "step-03-review-empty" },
+        { id: "add-color", title: "Add the color", body: "Enter the color shown on the page and make sure it is different from the colors already listed." },
+        { id: "add-sizes", title: "Add sizes and quantities", body: "Set the available sizes and give each stocked size a quantity." },
+        { id: "review-empty", title: "Check empty rows", body: "Fix or remove a row with no size or stock before saving. Do not use an empty row for unavailable stock." },
       ],
       tl: [
-        { id: "add-color", title: "Idagdag ang color", body: "Ilagay ang color na ipinapakita sa page at tiyaking iba ito sa mga color na nasa list.", screenshotId: "step-01-add-color" },
-        { id: "add-sizes", title: "Magdagdag ng sizes at quantities", body: "Itakda ang available sizes at lagyan ng quantity ang bawat size na may stock.", screenshotId: "step-02-add-sizes" },
-        { id: "review-empty", title: "Tingnan ang mga empty row", body: "Ayusin o alisin ang row na walang size o stock bago mag-save. Huwag gamitin ang empty row para sa unavailable na stock.", screenshotId: "step-03-review-empty" },
+        { id: "add-color", title: "Idagdag ang color", body: "Ilagay ang color na ipinapakita sa page at tiyaking iba ito sa mga color na nasa list." },
+        { id: "add-sizes", title: "Magdagdag ng sizes at quantities", body: "Itakda ang available sizes at lagyan ng quantity ang bawat size na may stock." },
+        { id: "review-empty", title: "Tingnan ang mga empty row", body: "Ayusin o alisin ang row na walang size o stock bago mag-save. Huwag gamitin ang empty row para sa unavailable na stock." },
       ],
     },
     outcomes: {
@@ -1965,11 +1782,6 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
       en: [{ slug: "creating-product-from-inventory", label: "Creating a product from inventory" }, { slug: "uploading-product-images", label: "Adding product images" }],
       tl: [{ slug: "creating-product-from-inventory", label: "Paggawa ng product mula sa inventory" }, { slug: "uploading-product-images", label: "Pagdagdag ng product images" }],
     },
-    screenshots: [
-      screenshot("products", "configuring-colors-sizes-quantities", "step-01-add-color", "step-01-add-color.webp", { en: "Product color editor with sample values only.", tl: "Product color editor na sample values lang." }),
-      screenshot("products", "configuring-colors-sizes-quantities", "step-02-add-sizes", "step-02-add-sizes.webp", { en: "Size and quantity controls for product stock.", tl: "Size at quantity controls para sa product stock." }),
-      screenshot("products", "configuring-colors-sizes-quantities", "step-03-review-empty", "step-03-review-empty.webp", { en: "Product row with an empty value that needs fixing.", tl: "Product row na may empty value na kailangang ayusin." }),
-    ],
     sourceCoverage: {
       routes: ["erp.staff.products", "api.staff.products.*"],
       pages: ["resources/js/Pages/ERP/STAFF/ProductManagementWithVariants.tsx", "app/Http/Controllers/Api/ProductController.php"],
@@ -2002,14 +1814,14 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
     },
     steps: {
       en: [
-        { id: "choose-color", title: "Choose the color", body: "Select the exact color before adding files so the image appears in the right place.", screenshotId: "step-01-choose-color" },
-        { id: "order-images", title: "Upload and order images", body: "Add the files, check their order, and submit once. Use clear images with private details hidden.", screenshotId: "step-02-order-images" },
-        { id: "retry-remove", title: "Retry or remove images", body: "Check the error before trying a failed upload again. Remove an existing image only when the page confirms it and the replacement is ready.", screenshotId: "step-03-retry-remove" },
+        { id: "choose-color", title: "Choose the color", body: "Select the exact color before adding files so the image appears in the right place." },
+        { id: "order-images", title: "Upload and order images", body: "Add the files, check their order, and submit once. Use clear images with private details hidden." },
+        { id: "retry-remove", title: "Retry or remove images", body: "Check the error before trying a failed upload again. Remove an existing image only when the page confirms it and the replacement is ready." },
       ],
       tl: [
-        { id: "choose-color", title: "Piliin ang color", body: "Piliin ang eksaktong color bago magdagdag ng files para mapunta sa tamang lugar ang image.", screenshotId: "step-01-choose-color" },
-        { id: "order-images", title: "Mag-upload at mag-ayos ng images", body: "Idagdag ang files, tingnan ang order, at isang beses mag-submit. Gumamit ng malinaw na images na nakatago ang private details.", screenshotId: "step-02-order-images" },
-        { id: "retry-remove", title: "Mag-retry o mag-alis ng images", body: "Tingnan muna ang error bago subukan ulit ang failed upload. Mag-remove lang kapag kinumpirma ng page at handa ang kapalit.", screenshotId: "step-03-retry-remove" },
+        { id: "choose-color", title: "Piliin ang color", body: "Piliin ang eksaktong color bago magdagdag ng files para mapunta sa tamang lugar ang image." },
+        { id: "order-images", title: "Mag-upload at mag-ayos ng images", body: "Idagdag ang files, tingnan ang order, at isang beses mag-submit. Gumamit ng malinaw na images na nakatago ang private details." },
+        { id: "retry-remove", title: "Mag-retry o mag-alis ng images", body: "Tingnan muna ang error bago subukan ulit ang failed upload. Mag-remove lang kapag kinumpirma ng page at handa ang kapalit." },
       ],
     },
     outcomes: {
@@ -2030,11 +1842,6 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
       en: [{ slug: "configuring-colors-sizes-quantities", label: "Adding colors, sizes, and quantities" }, { slug: "using-shoe-spin-viewer", label: "Using Shoe Spin Viewer" }],
       tl: [{ slug: "configuring-colors-sizes-quantities", label: "Pagdagdag ng colors, sizes, at quantities" }, { slug: "using-shoe-spin-viewer", label: "Paggamit ng Shoe Spin Viewer" }],
     },
-    screenshots: [
-      screenshot("products", "uploading-product-images", "step-01-choose-color", "step-01-choose-color.webp", { en: "Color image selector with sample values.", tl: "Color image selector na may sample values." }),
-      screenshot("products", "uploading-product-images", "step-02-order-images", "step-02-order-images.webp", { en: "Product image upload list showing display order.", tl: "Product image upload list na ipinapakita ang display order." }),
-      screenshot("products", "uploading-product-images", "step-03-retry-remove", "step-03-retry-remove.webp", { en: "Image upload failure and safe retry/remove controls.", tl: "Image upload failure at ligtas na retry/remove controls." }),
-    ],
     sourceCoverage: {
       routes: ["erp.staff.products", "api.staff.products.images.*"],
       pages: ["resources/js/Pages/ERP/STAFF/ProductManagementWithVariants.tsx", "resources/js/components/variants/ColorVariantImageUploader.tsx"],
@@ -2067,14 +1874,14 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
     },
     steps: {
       en: [
-        { id: "check-eligibility", title: "Check the tutorial and access", body: "Read the Shoe Spin Viewer tutorial and confirm that the product and shop can use it.", screenshotId: "step-01-check-eligibility" },
-        { id: "choose-target", title: "Choose the color", body: "Select the color that will hold the spin frames and check any frames already there.", screenshotId: "step-02-choose-target" },
-        { id: "upload-frames", title: "Upload frames in order", body: "Add the frames in sequence, check the order, and follow any page limit for new uploads.", screenshotId: "step-03-upload-frames" },
+        { id: "check-eligibility", title: "Check the tutorial and access", body: "Read the Shoe Spin Viewer tutorial and confirm that the product and shop can use it." },
+        { id: "choose-target", title: "Choose the color", body: "Select the color that will hold the spin frames and check any frames already there." },
+        { id: "upload-frames", title: "Upload frames in order", body: "Add the frames in sequence, check the order, and follow any page limit for new uploads." },
       ],
       tl: [
-        { id: "check-eligibility", title: "Tingnan ang tutorial at access", body: "Basahin ang Shoe Spin Viewer tutorial at tiyaking puwedeng gamitin ito ng product at shop.", screenshotId: "step-01-check-eligibility" },
-        { id: "choose-target", title: "Piliin ang color", body: "Piliin ang color na paglalagyan ng spin frames at tingnan ang mga frame na nandoon na.", screenshotId: "step-02-choose-target" },
-        { id: "upload-frames", title: "Mag-upload ng frames nang maayos ang order", body: "Magdagdag ng frames nang sunod-sunod, tingnan ang order, at sundin ang limit ng page para sa bagong upload.", screenshotId: "step-03-upload-frames" },
+        { id: "check-eligibility", title: "Tingnan ang tutorial at access", body: "Basahin ang Shoe Spin Viewer tutorial at tiyaking puwedeng gamitin ito ng product at shop." },
+        { id: "choose-target", title: "Piliin ang color", body: "Piliin ang color na paglalagyan ng spin frames at tingnan ang mga frame na nandoon na." },
+        { id: "upload-frames", title: "Mag-upload ng frames nang maayos ang order", body: "Magdagdag ng frames nang sunod-sunod, tingnan ang order, at sundin ang limit ng page para sa bagong upload." },
       ],
     },
     outcomes: {
@@ -2095,11 +1902,6 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
       en: [{ slug: "uploading-product-images", label: "Adding product images" }, { slug: "fixing-product-creation-errors", label: "Fixing product creation errors" }],
       tl: [{ slug: "uploading-product-images", label: "Pagdagdag ng product images" }, { slug: "fixing-product-creation-errors", label: "Pag-ayos ng product creation errors" }],
     },
-    screenshots: [
-      screenshot("products", "using-shoe-spin-viewer", "step-01-check-eligibility", "step-01-check-eligibility.webp", { en: "Shoe Spin Viewer tutorial and eligibility message.", tl: "Shoe Spin Viewer tutorial at eligibility message." }),
-      screenshot("products", "using-shoe-spin-viewer", "step-02-choose-target", "step-02-choose-target.webp", { en: "Target color variant and existing spin frame list.", tl: "Target color variant at existing spin frame list." }),
-      screenshot("products", "using-shoe-spin-viewer", "step-03-upload-frames", "step-03-upload-frames.webp", { en: "Ordered Shoe Spin Viewer frame upload controls.", tl: "Ordered Shoe Spin Viewer frame upload controls." }),
-    ],
     sourceCoverage: {
       routes: ["erp.staff.products", "api.staff.products.spin.*"],
       pages: ["resources/js/Pages/ERP/STAFF/ProductManagementWithVariants.tsx", "resources/js/components/ui/images/ResponsiveImage.tsx"],
@@ -2132,14 +1934,14 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
     },
     steps: {
       en: [
-        { id: "review-links", title: "Review the product and stock", body: "Before editing or deleting, read the colors, sizes, quantities, images, and linked stock.", screenshotId: "step-01-review-links" },
-        { id: "edit-save", title: "Edit and save the change", body: "Change only the fields shown by the page, check the result, and save once. A price change may need a separate request.", screenshotId: "step-02-edit-save" },
-        { id: "delete-confirm", title: "Confirm deletion only when sure", body: "Read the warning, check the product, and confirm only when you are sure and the page allows it.", screenshotId: "step-03-delete-confirm" },
+        { id: "review-links", title: "Review the product and stock", body: "Before editing or deleting, read the colors, sizes, quantities, images, and linked stock." },
+        { id: "edit-save", title: "Edit and save the change", body: "Change only the fields shown by the page, check the result, and save once. A price change may need a separate request." },
+        { id: "delete-confirm", title: "Confirm deletion only when sure", body: "Read the warning, check the product, and confirm only when you are sure and the page allows it." },
       ],
       tl: [
-        { id: "review-links", title: "Suriin ang product at stock", body: "Bago mag-edit o delete, basahin ang colors, sizes, quantities, images, at naka-link na stock.", screenshotId: "step-01-review-links" },
-        { id: "edit-save", title: "Mag-edit at mag-save ng change", body: "Baguhin lang ang fields na ipinapakita ng page, tingnan ang result, at isang beses mag-save. Maaaring hiwalay na request ang price change.", screenshotId: "step-02-edit-save" },
-        { id: "delete-confirm", title: "Mag-confirm ng deletion kapag sigurado", body: "Basahin ang warning, tingnan ang product, at mag-confirm lang kapag sigurado ka at pinapayagan ng page.", screenshotId: "step-03-delete-confirm" },
+        { id: "review-links", title: "Suriin ang product at stock", body: "Bago mag-edit o delete, basahin ang colors, sizes, quantities, images, at naka-link na stock." },
+        { id: "edit-save", title: "Mag-edit at mag-save ng change", body: "Baguhin lang ang fields na ipinapakita ng page, tingnan ang result, at isang beses mag-save. Maaaring hiwalay na request ang price change." },
+        { id: "delete-confirm", title: "Mag-confirm ng deletion kapag sigurado", body: "Basahin ang warning, tingnan ang product, at mag-confirm lang kapag sigurado ka at pinapayagan ng page." },
       ],
     },
     outcomes: {
@@ -2160,11 +1962,6 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
       en: [{ slug: "understanding-product-management", label: "Product Management basics" }, { slug: "fixing-product-creation-errors", label: "Fixing product creation errors" }],
       tl: [{ slug: "understanding-product-management", label: "Mga basic sa Product Management" }, { slug: "fixing-product-creation-errors", label: "Pag-ayos ng product creation errors" }],
     },
-    screenshots: [
-      screenshot("products", "editing-deleting-product", "step-01-review-links", "step-01-review-links.webp", { en: "Product colors and linked stock summary with sample values only.", tl: "Product colors at naka-link na stock summary na sample values lang." }),
-      screenshot("products", "editing-deleting-product", "step-02-edit-save", "step-02-edit-save.webp", { en: "Product edit form and safe save state.", tl: "Product edit form at ligtas na save state." }),
-      screenshot("products", "editing-deleting-product", "step-03-delete-confirm", "step-03-delete-confirm.webp", { en: "Product deletion warning and confirmation control.", tl: "Product deletion warning at confirmation control." }),
-    ],
     sourceCoverage: {
       routes: ["erp.staff.products", "api.staff.products.*"],
       pages: ["resources/js/Pages/ERP/STAFF/ProductManagementWithVariants.tsx", "app/Http/Controllers/Api/ProductController.php"],
@@ -2197,14 +1994,14 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
     },
     steps: {
       en: [
-        { id: "read-error", title: "Read the exact error", body: "Keep the message visible and check whether it mentions stock, color, size, quantity, image, or upload.", screenshotId: "step-01-read-error" },
-        { id: "correct-source", title: "Fix the stock or fields", body: "Choose available stock, add the needed color or size quantity, select a valid image place, or choose the right spin color.", screenshotId: "step-02-correct-source" },
-        { id: "retry-safely", title: "Retry after fixing the problem", body: "If the page asks you to wait, wait first. Then submit once and check the result before trying again.", screenshotId: "step-03-retry-safely" },
+        { id: "read-error", title: "Read the exact error", body: "Keep the message visible and check whether it mentions stock, color, size, quantity, image, or upload." },
+        { id: "correct-source", title: "Fix the stock or fields", body: "Choose available stock, add the needed color or size quantity, select a valid image place, or choose the right spin color." },
+        { id: "retry-safely", title: "Retry after fixing the problem", body: "If the page asks you to wait, wait first. Then submit once and check the result before trying again." },
       ],
       tl: [
-        { id: "read-error", title: "Basahin ang eksaktong error", body: "Panatilihing visible ang message at tingnan kung stock, color, size, quantity, image, o upload ang binabanggit.", screenshotId: "step-01-read-error" },
-        { id: "correct-source", title: "Ayusin ang stock o fields", body: "Pumili ng available na stock, ilagay ang kailangan na color o size quantity, pumili ng tamang image place, o piliin ang tamang spin color.", screenshotId: "step-02-correct-source" },
-        { id: "retry-safely", title: "Mag-retry pagkatapos ayusin", body: "Kung pinaghihintay ka ng page, maghintay muna. Pagkatapos isang beses mag-submit at tingnan ang result bago ulitin.", screenshotId: "step-03-retry-safely" },
+        { id: "read-error", title: "Basahin ang eksaktong error", body: "Panatilihing visible ang message at tingnan kung stock, color, size, quantity, image, o upload ang binabanggit." },
+        { id: "correct-source", title: "Ayusin ang stock o fields", body: "Pumili ng available na stock, ilagay ang kailangan na color o size quantity, pumili ng tamang image place, o piliin ang tamang spin color." },
+        { id: "retry-safely", title: "Mag-retry pagkatapos ayusin", body: "Kung pinaghihintay ka ng page, maghintay muna. Pagkatapos isang beses mag-submit at tingnan ang result bago ulitin." },
       ],
     },
     outcomes: {
@@ -2225,11 +2022,6 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
       en: [{ slug: "creating-product-from-inventory", label: "Creating a product from inventory" }, { slug: "uploading-product-images", label: "Adding product images" }, { slug: "using-shoe-spin-viewer", label: "Using Shoe Spin Viewer" }],
       tl: [{ slug: "creating-product-from-inventory", label: "Paggawa ng product mula sa inventory" }, { slug: "uploading-product-images", label: "Pagdagdag ng product images" }, { slug: "using-shoe-spin-viewer", label: "Paggamit ng Shoe Spin Viewer" }],
     },
-    screenshots: [
-      screenshot("products", "fixing-product-creation-errors", "step-01-read-error", "step-01-read-error.webp", { en: "Product creation validation message with sample data only.", tl: "Product creation validation message na sample data lang." }),
-      screenshot("products", "fixing-product-creation-errors", "step-02-correct-source", "step-02-correct-source.webp", { en: "Corrected inventory and variant fields before resubmission.", tl: "Corrected inventory at variant fields bago muling mag-submit." }),
-      screenshot("products", "fixing-product-creation-errors", "step-03-retry-safely", "step-03-retry-safely.webp", { en: "Safe retry state after an upload or wait message.", tl: "Safe retry state pagkatapos ng upload o wait message." }),
-    ],
     sourceCoverage: {
       routes: ["erp.staff.products", "api.staff.products.*"],
       pages: ["resources/js/Pages/ERP/STAFF/ProductManagementWithVariants.tsx", "app/Http/Controllers/Api/ProductController.php"],
@@ -2262,14 +2054,14 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
     },
     steps: {
       en: [
-        { id: "select-product", title: "Select the exact product", body: "Open shoe pricing and check the product name, color, and current price.", screenshotId: "step-01-select-product" },
-        { id: "enter-change", title: "Enter the new price", body: "Enter the new price and a short reason that the reviewer can understand.", screenshotId: "step-02-enter-change" },
-        { id: "submit-request", title: "Submit and note the status", body: "Check the request summary, submit once, and keep the request number or status for follow-up.", screenshotId: "step-03-submit-request" },
+        { id: "select-product", title: "Select the exact product", body: "Open shoe pricing and check the product name, color, and current price." },
+        { id: "enter-change", title: "Enter the new price", body: "Enter the new price and a short reason that the reviewer can understand." },
+        { id: "submit-request", title: "Submit and note the status", body: "Check the request summary, submit once, and keep the request number or status for follow-up." },
       ],
       tl: [
-        { id: "select-product", title: "Piliin ang tamang product", body: "Buksan ang shoe pricing at tingnan ang product name, color, at current price.", screenshotId: "step-01-select-product" },
-        { id: "enter-change", title: "Ilagay ang bagong price", body: "Ilagay ang bagong price at maikling dahilan na maiintindihan ng reviewer.", screenshotId: "step-02-enter-change" },
-        { id: "submit-request", title: "I-submit at tandaan ang status", body: "Suriin ang request summary, isang beses mag-submit, at itago ang request number o status para sa follow-up.", screenshotId: "step-03-submit-request" },
+        { id: "select-product", title: "Piliin ang tamang product", body: "Buksan ang shoe pricing at tingnan ang product name, color, at current price." },
+        { id: "enter-change", title: "Ilagay ang bagong price", body: "Ilagay ang bagong price at maikling dahilan na maiintindihan ng reviewer." },
+        { id: "submit-request", title: "I-submit at tandaan ang status", body: "Suriin ang request summary, isang beses mag-submit, at itago ang request number o status para sa follow-up." },
       ],
     },
     outcomes: {
@@ -2290,11 +2082,6 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
       en: [{ slug: "price-request-outcomes", label: "Price request outcomes" }, { slug: "cancelling-correcting-resubmitting-price-request", label: "Cancelling, correcting, and resubmitting a price request" }],
       tl: [{ slug: "price-request-outcomes", label: "Resulta ng price request" }, { slug: "cancelling-correcting-resubmitting-price-request", label: "Pag-cancel, pag-correct, at pag-submit ulit ng price request" }],
     },
-    screenshots: [
-      screenshot("pricing", "requesting-shoe-price-change", "step-01-select-product", "step-01-select-product.webp", { en: "Shoe pricing request with product identity and current price; sample data only.", tl: "Shoe pricing request na may product identity at current price; sample data lang." }),
-      screenshot("pricing", "requesting-shoe-price-change", "step-02-enter-change", "step-02-enter-change.webp", { en: "New price and reason fields with sample values only.", tl: "Bagong price at reason fields na sample values lang." }),
-      screenshot("pricing", "requesting-shoe-price-change", "step-03-submit-request", "step-03-submit-request.webp", { en: "Price request summary before a single submission.", tl: "Price request summary bago ang isang submission." }),
-    ],
     sourceCoverage: {
       routes: ["erp.staff.shoe-pricing", "api.staff.shoe-pricing.*"],
       pages: ["resources/js/Pages/ERP/STAFF/shoePricing.tsx"],
@@ -2329,14 +2116,14 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
     },
     steps: {
       en: [
-        { id: "read-status", title: "Read the current status", body: "Open the request and check whether it is Under Review, Approved, or Rejected before sharing the result.", screenshotId: "step-01-read-status" },
-        { id: "check-decision", title: "Check the decision details", body: "Read the reviewer note, approved price, or reason for rejection shown on the page.", screenshotId: "step-02-check-decision" },
-        { id: "communicate-effective", title: "Use the current price", body: "Use the price already applied to the product. Ask the reviewer when the status or price is unclear.", screenshotId: "step-03-communicate-effective" },
+        { id: "read-status", title: "Read the current status", body: "Open the request and check whether it is Under Review, Approved, or Rejected before sharing the result." },
+        { id: "check-decision", title: "Check the decision details", body: "Read the reviewer note, approved price, or reason for rejection shown on the page." },
+        { id: "communicate-effective", title: "Use the current price", body: "Use the price already applied to the product. Ask the reviewer when the status or price is unclear." },
       ],
       tl: [
-        { id: "read-status", title: "Basahin ang current status", body: "Buksan ang request at tingnan kung Under Review, Approved, o Rejected bago sabihin ang result.", screenshotId: "step-01-read-status" },
-        { id: "check-decision", title: "Suriin ang decision details", body: "Basahin ang reviewer note, approved price, o dahilan ng rejection na ipinapakita ng page.", screenshotId: "step-02-check-decision" },
-        { id: "communicate-effective", title: "Gamitin ang current price", body: "Gamitin ang price na nailapat na sa product. Tanungin ang reviewer kung malabo ang status o price.", screenshotId: "step-03-communicate-effective" },
+        { id: "read-status", title: "Basahin ang current status", body: "Buksan ang request at tingnan kung Under Review, Approved, o Rejected bago sabihin ang result." },
+        { id: "check-decision", title: "Suriin ang decision details", body: "Basahin ang reviewer note, approved price, o dahilan ng rejection na ipinapakita ng page." },
+        { id: "communicate-effective", title: "Gamitin ang current price", body: "Gamitin ang price na nailapat na sa product. Tanungin ang reviewer kung malabo ang status o price." },
       ],
     },
     outcomes: {
@@ -2357,11 +2144,6 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
       en: [{ slug: "requesting-shoe-price-change", label: "Requesting a shoe price change" }, { slug: "cancelling-correcting-resubmitting-price-request", label: "Cancelling, correcting, and resubmitting a price request" }],
       tl: [{ slug: "requesting-shoe-price-change", label: "Pag-request ng bagong presyo ng sapatos" }, { slug: "cancelling-correcting-resubmitting-price-request", label: "Pag-cancel, pag-correct, at pag-submit ulit ng price request" }],
     },
-    screenshots: [
-      screenshot("pricing", "price-request-outcomes", "step-01-read-status", "step-01-read-status.webp", { en: "Price request list with Under Review, Approved, and Rejected examples using sample data.", tl: "Price request list na may Under Review, Approved, at Rejected examples gamit ang sample data." }),
-      screenshot("pricing", "price-request-outcomes", "step-02-check-decision", "step-02-check-decision.webp", { en: "Reviewer decision details and applied price with sample values only.", tl: "Reviewer decision details at applied price na sample values lang." }),
-      screenshot("pricing", "price-request-outcomes", "step-03-communicate-effective", "step-03-communicate-effective.webp", { en: "Product price after the workflow has applied the approved result.", tl: "Product price pagkatapos mailapat ng workflow ang approved result." }),
-    ],
     sourceCoverage: {
       routes: ["erp.staff.shoe-pricing", "api.staff.shoe-pricing.*"],
       pages: ["resources/js/Pages/ERP/STAFF/shoePricing.tsx"],
@@ -2396,14 +2178,14 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
     },
     steps: {
       en: [
-        { id: "check-state", title: "Check before acting", body: "Open the request, note its current status and number, and avoid making a duplicate.", screenshotId: "step-01-check-state" },
-        { id: "cancel-correct", title: "Cancel or correct using the button shown", body: "Follow the confirmation text and keep the old request number for reference.", screenshotId: "step-02-cancel-correct" },
-        { id: "resubmit", title: "Send again after the status updates", body: "Wait for the cancel or correction result, then submit the new values once and check the new status.", screenshotId: "step-03-resubmit" },
+        { id: "check-state", title: "Check before acting", body: "Open the request, note its current status and number, and avoid making a duplicate." },
+        { id: "cancel-correct", title: "Cancel or correct using the button shown", body: "Follow the confirmation text and keep the old request number for reference." },
+        { id: "resubmit", title: "Send again after the status updates", body: "Wait for the cancel or correction result, then submit the new values once and check the new status." },
       ],
       tl: [
-        { id: "check-state", title: "Mag-check bago kumilos", body: "Buksan ang request, itala ang current status at number, at iwasang gumawa ng duplicate.", screenshotId: "step-01-check-state" },
-        { id: "cancel-correct", title: "Mag-cancel o mag-correct gamit ang button", body: "Sundin ang confirmation text at itago ang lumang request number para sa reference.", screenshotId: "step-02-cancel-correct" },
-        { id: "resubmit", title: "Mag-submit ulit kapag nagbago na ang status", body: "Hintayin ang cancel o correction result, saka isang beses i-submit ang bagong values at tingnan ang bagong status.", screenshotId: "step-03-resubmit" },
+        { id: "check-state", title: "Mag-check bago kumilos", body: "Buksan ang request, itala ang current status at number, at iwasang gumawa ng duplicate." },
+        { id: "cancel-correct", title: "Mag-cancel o mag-correct gamit ang button", body: "Sundin ang confirmation text at itago ang lumang request number para sa reference." },
+        { id: "resubmit", title: "Mag-submit ulit kapag nagbago na ang status", body: "Hintayin ang cancel o correction result, saka isang beses i-submit ang bagong values at tingnan ang bagong status." },
       ],
     },
     outcomes: {
@@ -2424,11 +2206,6 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
       en: [{ slug: "requesting-shoe-price-change", label: "Requesting a shoe price change" }, { slug: "price-request-outcomes", label: "Understanding price request results" }],
       tl: [{ slug: "requesting-shoe-price-change", label: "Pag-request ng bagong presyo ng sapatos" }, { slug: "price-request-outcomes", label: "Pag-unawa sa resulta ng price request" }],
     },
-    screenshots: [
-      screenshot("pricing", "cancelling-correcting-resubmitting-price-request", "step-01-check-state", "step-01-check-state.webp", { en: "Price request detail with current status and reference; sample data only.", tl: "Price request detail na may current status at reference; sample data lang." }),
-      screenshot("pricing", "cancelling-correcting-resubmitting-price-request", "step-02-cancel-correct", "step-02-cancel-correct.webp", { en: "Cancel or correction confirmation with sample values only.", tl: "Cancel o correction confirmation na sample values lang." }),
-      screenshot("pricing", "cancelling-correcting-resubmitting-price-request", "step-03-resubmit", "step-03-resubmit.webp", { en: "Corrected price request ready for one resubmission.", tl: "Corrected price request na handa para sa isang resubmission." }),
-    ],
     sourceCoverage: {
       routes: ["erp.staff.shoe-pricing", "api.staff.shoe-pricing.*"],
       pages: ["resources/js/Pages/ERP/STAFF/shoePricing.tsx"],
@@ -2461,14 +2238,14 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
     },
     steps: {
       en: [
-        { id: "find-record", title: "Find the matching record", body: "Search with only the information you need and confirm it belongs to the right customer or order.", screenshotId: "step-01-find-record" },
-        { id: "use-context", title: "Use only the needed details", body: "Read only the contact and order details needed for the task. Do not copy personal details to unapproved places.", screenshotId: "step-02-use-context" },
-        { id: "close-escalate", title: "Close or ask for help", body: "Close the detail view when finished. Ask the manager about identity, privacy, or account problems.", screenshotId: "step-03-close-escalate" },
+        { id: "find-record", title: "Find the matching record", body: "Search with only the information you need and confirm it belongs to the right customer or order." },
+        { id: "use-context", title: "Use only the needed details", body: "Read only the contact and order details needed for the task. Do not copy personal details to unapproved places." },
+        { id: "close-escalate", title: "Close or ask for help", body: "Close the detail view when finished. Ask the manager about identity, privacy, or account problems." },
       ],
       tl: [
-        { id: "find-record", title: "Hanapin ang tamang record", body: "Gamitin lang ang impormasyong kailangan at kumpirmahing tamang customer o order ang result.", screenshotId: "step-01-find-record" },
-        { id: "use-context", title: "Kailangan lang na details ang gamitin", body: "Basahin lang ang contact at order details na kailangan sa task. Huwag kopyahin ang personal details sa hindi approved na lugar.", screenshotId: "step-02-use-context" },
-        { id: "close-escalate", title: "Isara o humingi ng tulong", body: "Isara ang detail view kapag tapos na. Tanungin ang manager tungkol sa identity, privacy, o account problem.", screenshotId: "step-03-close-escalate" },
+        { id: "find-record", title: "Hanapin ang tamang record", body: "Gamitin lang ang impormasyong kailangan at kumpirmahing tamang customer o order ang result." },
+        { id: "use-context", title: "Kailangan lang na details ang gamitin", body: "Basahin lang ang contact at order details na kailangan sa task. Huwag kopyahin ang personal details sa hindi approved na lugar." },
+        { id: "close-escalate", title: "Isara o humingi ng tulong", body: "Isara ang detail view kapag tapos na. Tanungin ang manager tungkol sa identity, privacy, o account problem." },
       ],
     },
     outcomes: {
@@ -2489,11 +2266,6 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
       en: [{ slug: "understanding-retail-job-orders", label: "Understanding Retail Job Orders" }, { slug: "staff-workspace-permissions", label: "Staff workspace and permissions" }],
       tl: [{ slug: "understanding-retail-job-orders", label: "Pag-unawa sa Retail Job Orders" }, { slug: "staff-workspace-permissions", label: "Staff workspace at permissions" }],
     },
-    screenshots: [
-      screenshot("pricing", "viewing-customer-information", "step-01-find-record", "step-01-find-record.webp", { en: "Customer search and matching record with sample values only.", tl: "Customer search at matching record na sample values lang." }),
-      screenshot("pricing", "viewing-customer-information", "step-02-use-context", "step-02-use-context.webp", { en: "Customer and order details needed for the task.", tl: "Customer at order details na kailangan para sa task." }),
-      screenshot("pricing", "viewing-customer-information", "step-03-close-escalate", "step-03-close-escalate.webp", { en: "Customer detail view with close and help options visible.", tl: "Customer detail view na may close at help options." }),
-    ],
     sourceCoverage: {
       routes: ["erp.staff.customers", "erp.staff.job-orders"],
       pages: ["resources/js/Pages/ERP/STAFF/Customers.tsx", "resources/js/Pages/ERP/STAFF/JobOrders.tsx"],
@@ -2528,14 +2300,14 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
     },
     steps: {
       en: [
-        { id: "check-availability", title: "Check availability and shop", body: "Make sure the stock can be used for a product and belongs to the shop shown on the page.", screenshotId: "step-01-check-availability" },
-        { id: "review-variants", title: "Review color, size, and quantity", body: "Read the color, size, and quantity rows. Do not add a size that is not listed or mark a size with zero stock as available.", screenshotId: "step-02-review-variants" },
-        { id: "refresh-before-submit", title: "Refresh before saving", body: "If the page has been open for a while or stock may have changed, reload the data before creating, editing, or submitting the product.", screenshotId: "step-03-refresh-before-submit" },
+        { id: "check-availability", title: "Check availability and shop", body: "Make sure the stock can be used for a product and belongs to the shop shown on the page." },
+        { id: "review-variants", title: "Review color, size, and quantity", body: "Read the color, size, and quantity rows. Do not add a size that is not listed or mark a size with zero stock as available." },
+        { id: "refresh-before-submit", title: "Refresh before saving", body: "If the page has been open for a while or stock may have changed, reload the data before creating, editing, or submitting the product." },
       ],
       tl: [
-        { id: "check-availability", title: "I-check ang availability at shop", body: "Kumpirmahing puwedeng gamitin ang stock sa product at kabilang ito sa shop na ipinapakita sa page.", screenshotId: "step-01-check-availability" },
-        { id: "review-variants", title: "Suriin ang color, size, at quantity", body: "Basahin ang color, size, at quantity rows. Huwag magdagdag ng size na wala sa list o gawing available ang size na zero ang stock.", screenshotId: "step-02-review-variants" },
-        { id: "refresh-before-submit", title: "Mag-refresh bago mag-save", body: "Kung matagal nang bukas ang page o maaaring nagbago ang stock, i-reload ang data bago gumawa, mag-edit, o mag-submit ng product.", screenshotId: "step-03-refresh-before-submit" },
+        { id: "check-availability", title: "I-check ang availability at shop", body: "Kumpirmahing puwedeng gamitin ang stock sa product at kabilang ito sa shop na ipinapakita sa page." },
+        { id: "review-variants", title: "Suriin ang color, size, at quantity", body: "Basahin ang color, size, at quantity rows. Huwag magdagdag ng size na wala sa list o gawing available ang size na zero ang stock." },
+        { id: "refresh-before-submit", title: "Mag-refresh bago mag-save", body: "Kung matagal nang bukas ang page o maaaring nagbago ang stock, i-reload ang data bago gumawa, mag-edit, o mag-submit ng product." },
       ],
     },
     outcomes: {
@@ -2556,11 +2328,6 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
       en: [{ slug: "creating-product-from-inventory", label: "Creating a product from inventory" }, { slug: "configuring-colors-sizes-quantities", label: "Adding colors, sizes, and quantities" }, { slug: "fixing-product-creation-errors", label: "Fixing product creation errors" }],
       tl: [{ slug: "creating-product-from-inventory", label: "Paggawa ng product mula sa inventory" }, { slug: "configuring-colors-sizes-quantities", label: "Pagdagdag ng colors, sizes, at quantities" }, { slug: "fixing-product-creation-errors", label: "Pag-ayos ng product creation errors" }],
     },
-    screenshots: [
-      screenshot("pricing", "monitoring-product-inventory", "step-01-check-availability", "step-01-check-availability.webp", { en: "Available stock list with sample values only.", tl: "Available stock list na sample values lang." }),
-      screenshot("pricing", "monitoring-product-inventory", "step-02-review-variants", "step-02-review-variants.webp", { en: "Stock color, size, and quantity rows with sample values only.", tl: "Stock color, size, at quantity rows na sample values lang." }),
-      screenshot("pricing", "monitoring-product-inventory", "step-03-refresh-before-submit", "step-03-refresh-before-submit.webp", { en: "Current stock list before a product submission.", tl: "Current stock list bago ang product submission." }),
-    ],
     sourceCoverage: {
       routes: ["erp.staff.products", "api.erp.inventory.items"],
       pages: ["resources/js/Pages/ERP/STAFF/ProductManagementWithVariants.tsx"],
@@ -2569,3 +2336,16 @@ export const STAFF_ARTICLES: readonly StaffArticle[] = [
     },
   }),
 ];
+
+
+export const STAFF_ARTICLE_CATALOG: SharedArticleCatalog = {
+  audience: "staff",
+  label: { en: "Staff", tl: "Staff" },
+  title: { en: "Staff Articles", tl: "Mga artikulo para sa Staff" },
+  intro: {
+    en: "Simple guides for the retail Staff workspace.",
+    tl: "Mga simpleng guide para sa retail Staff workspace.",
+  },
+  categories: STAFF_ARTICLE_CATEGORIES,
+  articles: STAFF_ARTICLES,
+};

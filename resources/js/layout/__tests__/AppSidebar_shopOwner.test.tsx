@@ -149,6 +149,16 @@ it('hides disabled owner modules while keeping core dashboard visible', () => {
   expect(screen.queryByRole('link', { name: 'Shipments' })).not.toBeInTheDocument();
 });
 
+it('keeps Shop Owner Articles as the last sidebar link', () => {
+  render(<AppSidebarShopOwner />);
+
+  const articleLink = screen.getByRole('link', { name: /^Articles$/i });
+  expect(articleLink).toHaveAttribute('href', '/shop-owner/erp/articles');
+
+  const sidebarLinks = screen.getAllByRole('link');
+  expect(sidebarLinks[sidebarLinks.length - 1]).toBe(articleLink);
+});
+
 it('renders individual owner operational pages with business and module access', () => {
   state.shopModules = accessible({ logistics: true, repair_operations: true });
   render(<AppSidebarShopOwner />);

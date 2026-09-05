@@ -30,6 +30,7 @@ final class StaffArticlesController extends Controller
 
         return Inertia::render('ERP/Articles/Index', [
             'articleSlug' => $slug,
+            'articleAudience' => 'staff',
         ]);
     }
 }

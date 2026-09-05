@@ -155,7 +155,34 @@ it.each([
 
   render(<AppSidebarERP />);
 
-  expect(screen.queryByRole('link', { name: /^Articles$/i })).not.toBeInTheDocument();
+  expect(screen.queryAllByRole('link', { name: /^Articles$/i }).some((link) => link.getAttribute('href') === '/erp/articles')).toBe(false);
+});
+
+it.each([
+  { role: 'MANAGER', roles: ['MANAGER'], businessType: 'both', href: '/erp/manager/articles' },
+  { role: 'FINANCE', roles: ['FINANCE'], businessType: 'retail', href: '/finance/articles' },
+  { role: 'HR', roles: ['HR'], businessType: 'retail', href: '/erp/hr/articles' },
+  { role: 'CRM', roles: ['CRM'], businessType: 'retail', href: '/crm/articles' },
+  { role: 'CASHIER', roles: ['CASHIER'], businessType: 'retail', href: '/erp/cashier/articles' },
+  { role: 'REPAIRER', roles: ['REPAIRER'], businessType: 'repair', href: '/erp/repairer/articles' },
+  { role: 'INVENTORY', roles: ['INVENTORY'], businessType: 'retail', href: '/erp/inventory/articles' },
+  { role: 'PROCUREMENT', roles: ['PROCUREMENT'], businessType: 'retail', href: '/erp/procurement/articles' },
+  { role: 'LOGISTICS DISPATCHER', roles: ['LOGISTICS DISPATCHER'], businessType: 'retail', href: '/erp/logistics/articles' },
+])('shows only the $role article catalog at the end of its sidebar section', ({ role, roles, businessType, href }) => {
+  state.url = href;
+  state.role = role;
+  state.roles = roles;
+  state.permissions = [];
+  state.shopOwner.business_type = businessType;
+
+  render(<AppSidebarERP />);
+
+  const articleLinks = screen.getAllByRole('link', { name: /^Articles$/i });
+  expect(articleLinks).toHaveLength(1);
+  expect(articleLinks[0]).toHaveAttribute('href', href);
+
+  const sidebarLinks = screen.getAllByRole('link');
+  expect(sidebarLinks[sidebarLinks.length - 1]).toBe(articleLinks[0]);
 });
 
 it('keeps supplier orders under Inventory without showing Procurement pages', () => {
@@ -445,6 +472,7 @@ it('renders the approved Manager workspace in the required groups and order', ()
     'Rehire Approvals',
     'Reports & Analytics',
     'Audit Logs',
+    'Articles',
   ]);
 
   expect(screen.getByRole('link', { name: 'Manager Dashboard' })).toHaveAttribute('href', '/erp/manager/dashboard');
