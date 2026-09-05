@@ -174,6 +174,8 @@ class RepairPosRefundService
 
     public function requestRefund(PosTransaction $source, array $payload, int $actorId): PosRefund
     {
+        $this->ensureRepairTransaction($source);
+
         $requested = (float) $payload['requested_amount'];
         $reasonCode = (string) ($payload['reason_code'] ?? '');
         $workflowSource = strtolower(trim((string) ($payload['workflow_source'] ?? 'pos')));
@@ -591,6 +593,8 @@ class RepairPosRefundService
         string $stage = 'finance'
     ): PosRefund
     {
+        $this->ensureRepairRefund($refund);
+
         if (!in_array((string) $refund->status, ['requested', 'approved'], true)) {
             throw ValidationException::withMessages([
                 'status' => ['Only requested or approved refunds can be approved.'],
@@ -739,6 +743,8 @@ class RepairPosRefundService
 
     public function reject(PosRefund $refund, int $actorId, string $rejectionReason, string $stage = 'finance'): PosRefund
     {
+        $this->ensureRepairRefund($refund);
+
         if (in_array((string) $refund->status, ['succeeded', 'processing'], true)) {
             throw ValidationException::withMessages([
                 'status' => ['Processing or succeeded refunds can no longer be rejected.'],
@@ -812,6 +818,8 @@ class RepairPosRefundService
         array $executionContext = []
     ): PosRefund
     {
+        $this->ensureRepairRefund($refund);
+
         $status = (string) ($refund->status ?? '');
         if (in_array($status, ['succeeded', 'processing'], true)) {
             return $refund->fresh();
@@ -1450,6 +1458,40 @@ class RepairPosRefundService
             $requiresOwnerApproval = (bool) ($refund->requires_owner_approval ?? true);
             $workflowSource = strtolower((string) ($refund->workflow_source ?? 'pos'));
 
+            if ($workflowSource === 'online_myrepair') {
+                $repair = RepairRequest::query()
+                    ->whereKey((int) $refund->module_reference_id)
+                    ->where('shop_owner_id', (int) $refund->shop_owner_id)
+                    ->first(['id', 'request_id', 'customer_name', 'assigned_repairer_id']);
+
+                if ($repair && (int) $repair->assigned_repairer_id > 0) {
+                    $this->notificationService->sendToUser(
+                        userId: (int) $repair->assigned_repairer_id,
+                        type: NotificationType::REFUND_REQUEST,
+                        title: 'Repair Refund Review Required',
+                        message: "Repair refund request {$refund->refund_no} for {$repair->request_id} requires your review.",
+                        data: [
+                            'refund_id' => (int) $refund->id,
+                            'refund_no' => (string) $refund->refund_no,
+                            'repair_id' => (int) $repair->id,
+                            'repair_number' => (string) $repair->request_id,
+                            'customer_name' => (string) ($repair->customer_name ?? 'Customer'),
+                            'amount' => number_format($requestedAmount, 2, '.', ''),
+                            'workflow_source' => $workflowSource,
+                            'source_type' => 'repair_refund',
+                            'stage' => 'repairer_review',
+                            'status' => (string) ($refund->status ?? 'requested'),
+                        ],
+                        actionUrl: '/erp/staff/job-orders-repair',
+                        shopId: (int) $refund->shop_owner_id,
+                        priority: 'high',
+                        requiresAction: true,
+                    );
+
+                    return;
+                }
+            }
+
             if (!$requiresOwnerApproval && $workflowSource === 'online_myrepair') {
                 return;
             }
@@ -1803,6 +1845,24 @@ class RepairPosRefundService
                 return strtolower(trim((string) ($line->provider_reference ?? ''))) === $needle;
             })
             ->sum(fn ($line) => (float) ($line->amount ?? 0)), 2);
+    }
+
+    private function ensureRepairTransaction(PosTransaction $source): void
+    {
+        if ((string) $source->module_type !== 'repair') {
+            throw ValidationException::withMessages([
+                'source_transaction_id' => ['Only repair transactions can use the repair refund workflow.'],
+            ]);
+        }
+    }
+
+    private function ensureRepairRefund(PosRefund $refund): void
+    {
+        if ((string) $refund->module_type !== 'repair') {
+            throw ValidationException::withMessages([
+                'refund_id' => ['Only repair refunds can use this workflow.'],
+            ]);
+        }
     }
 
     private function appendExecutionNote(string $base, string $suffix): string

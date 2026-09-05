@@ -1372,6 +1372,13 @@ class RepairRequestController extends Controller
             );
         }
 
+        if ($sourceTransaction && (int) $sourceTransaction->shop_owner_id !== (int) $repair->shop_owner_id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This transaction is not linked to the selected repair shop.',
+            ], 403);
+        }
+
         if (! $sourceTransaction) {
             return response()->json([
                 'success' => false,

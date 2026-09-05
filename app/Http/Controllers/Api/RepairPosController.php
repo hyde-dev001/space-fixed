@@ -341,6 +341,13 @@ class RepairPosController extends Controller
             ], 404);
         }
 
+        if ((int) $repair->shop_owner_id !== (int) $source->shop_owner_id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This transaction is not linked to the selected repair shop.',
+            ], 403);
+        }
+
         $latestWarrantyClaim = RepairWarrantyClaim::query()
             ->where('original_repair_request_id', (int) $repair->id)
             ->latest('id')
@@ -596,7 +603,7 @@ class RepairPosController extends Controller
                 'status' => (string) $refund->status,
                 'repairer_status' => $refund->repairer_status,
                 'finance_status' => $refund->finance_status,
-                'owner_status' => $refund->owner_status,
+                'owner_status' => $refund->shop_owner_status,
                 'shop_owner_status' => $refund->shop_owner_status,
                 'requested_amount' => (float) $refund->requested_amount,
                 'approved_amount' => $refund->approved_amount === null ? null : (float) $refund->approved_amount,
