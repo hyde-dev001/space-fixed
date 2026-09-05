@@ -175,6 +175,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'old_role' => \App\Http\Middleware\RoleMiddleware::class, // Keep for rollback
             'gate.erp.access' => \App\Http\Middleware\GateErpAccess::class,
             'manager.staff' => \App\Http\Middleware\CheckManagerStaffAccess::class,
+            'staff.articles' => \App\Http\Middleware\EnsureRegularStaffArticleAccess::class,
             'manager.capability' => \App\Http\Middleware\RequireManagerCapability::class,
             'check.suspension' => \App\Http\Middleware\CheckEmployeeSuspension::class,
             // Shop Owner Access Control

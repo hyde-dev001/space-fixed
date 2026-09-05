@@ -1,0 +1,2571 @@
+import {
+  STAFF_ARTICLE_REGULAR_PERMISSIONS,
+} from "./staffArticleAccess";
+import type {
+  StaffArticleBusinessType,
+  StaffArticlePermission,
+} from "./staffArticleAccess";
+
+export type ArticleLanguage = "en" | "tl";
+
+export type StaffArticleCategoryKey =
+  | "getting-started"
+  | "attendance"
+  | "orders"
+  | "products"
+  | "pricing";
+
+export type LocalizedText = Record<ArticleLanguage, string>;
+
+export type ArticleListItem = {
+  id: string;
+  title: string;
+  body: string;
+};
+
+export type ArticleStep = ArticleListItem & {
+  screenshotId?: string;
+};
+
+export type ArticleWorkflowState = ArticleListItem & {
+  status: string;
+  owner: string;
+};
+
+export type ArticleOutcome = ArticleListItem & {
+  owner: string;
+  customerView: string;
+  tone: "neutral" | "success" | "warning" | "danger";
+};
+
+export type ArticleError = ArticleListItem & {
+  recovery: string;
+};
+
+export type ArticleRelatedLink = {
+  slug: string;
+  label: string;
+};
+
+export type ArticleTranslation = {
+  title: string;
+  question: string;
+  summary: string;
+  audience: string;
+  keywords: readonly string[];
+  readingMinutes: number;
+  prerequisites: readonly ArticleListItem[];
+  workflow: readonly ArticleWorkflowState[];
+  steps: readonly ArticleStep[];
+  outcomes: readonly ArticleOutcome[];
+  errors: readonly ArticleError[];
+  related: readonly ArticleRelatedLink[];
+};
+
+export type ArticleScreenshot = {
+  id: string;
+  fileName: string;
+  path: string;
+  alt: LocalizedText;
+  aspectRatio: number;
+};
+
+export type StaffArticleCategory = {
+  key: StaffArticleCategoryKey;
+  label: LocalizedText;
+};
+
+export type StaffArticle = {
+  slug: string;
+  order: number;
+  category: StaffArticleCategoryKey;
+  recommended?: boolean;
+  access: {
+    anyOfPermissions: readonly (StaffArticlePermission | string)[];
+    allowedBusinessTypes: readonly StaffArticleBusinessType[];
+  };
+  translations: Record<ArticleLanguage, ArticleTranslation>;
+  screenshots: readonly ArticleScreenshot[];
+  sourceCoverage: {
+    routes: readonly string[];
+    pages: readonly string[];
+    permissions: readonly string[];
+    tests: readonly string[];
+  };
+};
+
+export const STAFF_ARTICLE_CATEGORIES: readonly StaffArticleCategory[] = [
+  {
+    key: "getting-started",
+    label: { en: "Getting started", tl: "Pagsisimula" },
+  },
+  {
+    key: "attendance",
+    label: { en: "Attendance & pay", tl: "Attendance at sahod" },
+  },
+  {
+    key: "orders",
+    label: { en: "Orders & returns", tl: "Order at return" },
+  },
+  {
+    key: "products",
+    label: { en: "Product management", tl: "Pamamahala ng produkto" },
+  },
+  {
+    key: "pricing",
+    label: { en: "Pricing, customers & stock", tl: "Presyo, customer at stock" },
+  },
+];
+
+const screenshot = (
+  category: StaffArticleCategoryKey,
+  slug: string,
+  id: string,
+  fileName: string,
+  alt: LocalizedText,
+  aspectRatio = 16 / 9,
+): ArticleScreenshot => ({
+  id,
+  fileName,
+  path: `/images/articles/staff/${category}/${slug}/${fileName}`,
+  alt,
+  aspectRatio,
+});
+
+const defineArticle = (article: StaffArticle): StaffArticle => article;
+
+type Bilingual<T> = Record<ArticleLanguage, T>;
+
+type StaffArticleDraft = {
+  slug: string;
+  order: number;
+  category: StaffArticleCategoryKey;
+  recommended?: boolean;
+  access: StaffArticle["access"];
+  title: Bilingual<string>;
+  question: Bilingual<string>;
+  summary: Bilingual<string>;
+  audience: Bilingual<string>;
+  keywords: Bilingual<readonly string[]>;
+  prerequisites?: Bilingual<readonly ArticleListItem[]>;
+  workflow: Bilingual<readonly ArticleWorkflowState[]>;
+  steps: Bilingual<readonly ArticleStep[]>;
+  outcomes: Bilingual<readonly ArticleOutcome[]>;
+  errors: Bilingual<readonly ArticleError[]>;
+  related: Bilingual<readonly ArticleRelatedLink[]>;
+  screenshots: readonly ArticleScreenshot[];
+  sourceCoverage: StaffArticle["sourceCoverage"];
+};
+
+const buildTranslation = (
+  language: ArticleLanguage,
+  draft: StaffArticleDraft,
+): ArticleTranslation => ({
+  title: draft.title[language],
+  question: draft.question[language],
+  summary: draft.summary[language],
+  audience: draft.audience[language],
+  keywords: draft.keywords[language],
+  readingMinutes: Math.max(3, Math.ceil(draft.steps[language].length * 1.5)),
+  prerequisites: [
+    sharedPrerequisite(language),
+    ...(draft.prerequisites?.[language] ?? []),
+  ],
+  workflow: draft.workflow[language],
+  steps: draft.steps[language],
+  outcomes: draft.outcomes[language],
+  errors: draft.errors[language],
+  related: draft.related[language],
+});
+
+const defineStaffArticle = (draft: StaffArticleDraft): StaffArticle =>
+  defineArticle({
+    slug: draft.slug,
+    order: draft.order,
+    category: draft.category,
+    recommended: draft.recommended,
+    access: draft.access,
+    translations: {
+      en: buildTranslation("en", draft),
+      tl: buildTranslation("tl", draft),
+    },
+    screenshots: draft.screenshots,
+    sourceCoverage: draft.sourceCoverage,
+  });
+
+const sharedPrerequisite = (language: ArticleLanguage): ArticleListItem =>
+  language === "en"
+    ? {
+        id: "signed-in",
+        title: "Use an active employee account",
+        body: "Sign in through the ERP employee account. Operational pages still enforce the real permission and shop checks.",
+      }
+    : {
+        id: "signed-in",
+        title: "Gumamit ng aktibong employee account",
+        body: "Mag-sign in gamit ang ERP employee account. Ang operational pages pa rin ang nagpapatupad ng aktuwal na permission at shop checks.",
+      };
+
+const regularStaffAccess = STAFF_ARTICLE_REGULAR_PERMISSIONS;
+
+export const STAFF_ARTICLES: readonly StaffArticle[] = [
+  defineArticle({
+    slug: "staff-workspace-permissions",
+    order: 1,
+    category: "getting-started",
+    recommended: true,
+    access: {
+      anyOfPermissions: regularStaffAccess,
+      allowedBusinessTypes: ["retail", "both"],
+    },
+    translations: {
+      en: {
+        title: "Staff workspace and permissions",
+        question: "Which Staff pages can I use in this retail shop?",
+        summary: "Learn where regular retail Staff tools live, why some guides are hidden, and how to recover from an access denial.",
+        audience: "Regular retail Staff with at least one Staff workspace permission.",
+        keywords: ["staff", "workspace", "permission", "access denied", "retail", "sidebar"],
+        readingMinutes: 4,
+        prerequisites: [sharedPrerequisite("en")],
+        workflow: [
+          {
+            id: "eligible",
+            title: "Eligible account",
+            body: "The Articles link appears when your account has a regular Staff permission and your assigned shop supports retail work.",
+            status: "Available",
+            owner: "SoleSpace access rules",
+          },
+          {
+            id: "restricted",
+            title: "Restricted account",
+            body: "Cashier, repairer, logistics, and other role-specific accounts use their own workspace boundaries.",
+            status: "Unavailable",
+            owner: "Your manager or administrator",
+          },
+        ],
+        steps: [
+          {
+            id: "open-sidebar",
+            title: "Open the Staff section",
+            body: "From the ERP sidebar, open STAFF and choose Articles. The navigation keeps the same responsive and collapsed behavior as other ERP links.",
+            screenshotId: "step-01-open-sidebar",
+          },
+          {
+            id: "check-guide",
+            title: "Choose a guide that matches your work",
+            body: "Search or filter the hub. Guides disappear when their required permission or retail context is not available to your account.",
+            screenshotId: "step-02-check-guide",
+          },
+          {
+            id: "recover-access",
+            title: "Recover from an access message",
+            body: "Return to the Staff hub and contact your manager if you believe a regular Staff permission or retail assignment is missing. Do not bypass the operational page boundary.",
+          },
+        ],
+        outcomes: [
+          {
+            id: "visible-catalog",
+            title: "A permission-filtered catalog",
+            body: "You see only guides that match the current account and shop context.",
+            owner: "SoleSpace access rules",
+            customerView: "No customer-facing change occurs.",
+            tone: "success",
+          },
+          {
+            id: "no-access",
+            title: "No catalog access",
+            body: "An excluded role or non-retail shop receives a generic unavailable response.",
+            owner: "Manager or administrator",
+            customerView: "No customer-facing change occurs.",
+            tone: "warning",
+          },
+        ],
+        errors: [
+          {
+            id: "permission-denied",
+            title: "This guide is not available for your account",
+            body: "The guide requires a permission or retail context that the current session does not have.",
+            recovery: "Use the hub link to return to accessible guides, then ask your manager to verify the account assignment.",
+          },
+        ],
+        related: [
+          { slug: "using-staff-dashboard", label: "Using the Staff Dashboard" },
+          { slug: "profile-and-password", label: "Profile and password" },
+        ],
+      },
+      tl: {
+        title: "Staff workspace at permissions",
+        question: "Aling Staff pages ang magagamit ko sa retail shop na ito?",
+        summary: "Alamin kung nasaan ang regular retail Staff tools, bakit may mga guide na nakatago, at paano bumalik kapag may access denial.",
+        audience: "Regular retail Staff na may kahit isang Staff workspace permission.",
+        keywords: ["staff", "workspace", "permission", "access denied", "retail", "sidebar", "pahintulot"],
+        readingMinutes: 4,
+        prerequisites: [sharedPrerequisite("tl")],
+        workflow: [
+          {
+            id: "eligible",
+            title: "Eligible ang account",
+            body: "Lalabas ang Articles link kapag may regular Staff permission ang account at retail-capable ang assigned shop.",
+            status: "Available",
+            owner: "SoleSpace access rules",
+          },
+          {
+            id: "restricted",
+            title: "Restricted ang account",
+            body: "May sariling workspace boundary ang cashier, repairer, logistics, at iba pang role-specific accounts.",
+            status: "Unavailable",
+            owner: "Iyong manager o administrator",
+          },
+        ],
+        steps: [
+          {
+            id: "open-sidebar",
+            title: "Buksan ang Staff section",
+            body: "Sa ERP sidebar, buksan ang STAFF at piliin ang Articles. Pareho ang responsive at collapsed behavior nito sa ibang ERP links.",
+            screenshotId: "step-01-open-sidebar",
+          },
+          {
+            id: "check-guide",
+            title: "Pumili ng guide na tugma sa trabaho",
+            body: "Mag-search o mag-filter sa hub. Nawawala ang guide kapag wala ang required permission o retail context sa account.",
+            screenshotId: "step-02-check-guide",
+          },
+          {
+            id: "recover-access",
+            title: "Bumalik mula sa access message",
+            body: "Bumalik sa Staff hub at kausapin ang manager kung kulang ang regular Staff permission o retail assignment. Huwag lampasan ang operational page boundary.",
+          },
+        ],
+        outcomes: [
+          {
+            id: "visible-catalog",
+            title: "Permission-filtered na catalog",
+            body: "Makikita mo lang ang guides na tugma sa kasalukuyang account at shop context.",
+            owner: "SoleSpace access rules",
+            customerView: "Walang pagbabago sa nakikita ng customer.",
+            tone: "success",
+          },
+          {
+            id: "no-access",
+            title: "Walang catalog access",
+            body: "Ang excluded role o non-retail shop ay makakatanggap ng generic unavailable response.",
+            owner: "Manager o administrator",
+            customerView: "Walang pagbabago sa nakikita ng customer.",
+            tone: "warning",
+          },
+        ],
+        errors: [
+          {
+            id: "permission-denied",
+            title: "Hindi available ang guide para sa iyong account",
+            body: "Kailangan ng guide ng permission o retail context na wala sa kasalukuyang session.",
+            recovery: "Gamitin ang hub link para bumalik sa accessible guides, at ipasuri sa manager ang account assignment.",
+          },
+        ],
+        related: [
+          { slug: "using-staff-dashboard", label: "Paggamit ng Staff Dashboard" },
+          { slug: "profile-and-password", label: "Profile at password" },
+        ],
+      },
+    },
+    screenshots: [
+      screenshot("getting-started", "staff-workspace-permissions", "step-01-open-sidebar", "step-01-open-sidebar.webp", {
+        en: "ERP sidebar with the Staff Articles link highlighted.",
+        tl: "ERP sidebar na naka-highlight ang Staff Articles link.",
+      }),
+      screenshot("getting-started", "staff-workspace-permissions", "step-02-check-guide", "step-02-check-guide.webp", {
+        en: "Staff Articles hub showing permission-filtered guide cards.",
+        tl: "Staff Articles hub na nagpapakita ng permission-filtered guide cards.",
+      }),
+    ],
+    sourceCoverage: {
+      routes: ["erp.staff.dashboard", "erp.articles.index", "erp.articles.show"],
+      pages: ["resources/js/layout/AppSidebar_ERP.tsx", "resources/js/Pages/ERP/STAFF/Dashboard.tsx"],
+      permissions: ["access-staff-dashboard", "access-staff-job-orders"],
+      tests: ["tests/Feature/AccountDashboard/AccountDashboardRouteTest.php", "tests/Feature/Staff/StaffArticlesRouteTest.php"],
+    },
+  }),
+  defineArticle({
+    slug: "using-staff-dashboard",
+    order: 2,
+    category: "getting-started",
+    recommended: true,
+    access: {
+      anyOfPermissions: ["access-staff-dashboard"],
+      allowedBusinessTypes: ["retail", "both"],
+    },
+    translations: {
+      en: {
+        title: "Using the Staff Dashboard",
+        question: "How do I find the work assigned to me?",
+        summary: "Use the Staff Dashboard to scan assigned work, customer/order summaries, and the next page to open.",
+        audience: "Staff users with Staff Dashboard access.",
+        keywords: ["dashboard", "assigned work", "customer", "order", "search", "filter", "summary"],
+        readingMinutes: 4,
+        prerequisites: [sharedPrerequisite("en")],
+        workflow: [
+          {
+            id: "load-summary",
+            title: "Open the dashboard",
+            body: "The page loads the authenticated Staff user's shop-scoped summary and assigned open work.",
+            status: "Ready",
+            owner: "Staff user",
+          },
+          {
+            id: "open-operational-page",
+            title: "Continue to the operational page",
+            body: "Use the dashboard navigation to open Job Orders, Customers, Products, or another page you are allowed to use.",
+            status: "In progress",
+            owner: "Staff user",
+          },
+        ],
+        steps: [
+          {
+            id: "read-summary",
+            title: "Read the summary cards",
+            body: "Start with assigned open work and active order counts. These values are scoped to your shop and the current Staff view.",
+            screenshotId: "step-01-read-summary",
+          },
+          {
+            id: "search-work",
+            title: "Search or filter the queue",
+            body: "Use the available search/filter controls to narrow the worklist before opening a detail record.",
+            screenshotId: "step-02-search-work",
+          },
+          {
+            id: "open-detail",
+            title: "Open the relevant operational page",
+            body: "Follow the link to complete the action in its authoritative Staff page. The dashboard is a read summary, not a replacement for the workflow.",
+          },
+        ],
+        outcomes: [
+          {
+            id: "scoped-summary",
+            title: "Shop-scoped summary",
+            body: "You see the work and counts made available to the authenticated Staff account.",
+            owner: "Staff user",
+            customerView: "No customer-facing change occurs until an operational action is submitted.",
+            tone: "success",
+          },
+          {
+            id: "work-not-visible",
+            title: "Work is not visible",
+            body: "A missing permission or a different assignment may keep a queue or record out of this view.",
+            owner: "Manager or administrator",
+            customerView: "No customer-facing change occurs.",
+            tone: "warning",
+          },
+        ],
+        errors: [
+          {
+            id: "empty-summary",
+            title: "The summary is empty",
+            body: "An empty state can mean there is no assigned work, the filter is too narrow, or access is limited.",
+            recovery: "Clear filters, refresh the page, then ask your manager to confirm assignment and permission if the result is unexpected.",
+          },
+        ],
+        related: [
+          { slug: "understanding-retail-job-orders", label: "Understanding Retail Job Orders" },
+          { slug: "viewing-customer-information", label: "Viewing customer information" },
+        ],
+      },
+      tl: {
+        title: "Paggamit ng Staff Dashboard",
+        question: "Paano ko mahahanap ang work na naka-assign sa akin?",
+        summary: "Gamitin ang Staff Dashboard para makita ang assigned work, customer/order summaries, at susunod na page na bubuksan.",
+        audience: "Staff users na may Staff Dashboard access.",
+        keywords: ["dashboard", "assigned work", "customer", "order", "search", "filter", "summary", "nakatalagang trabaho"],
+        readingMinutes: 4,
+        prerequisites: [sharedPrerequisite("tl")],
+        workflow: [
+          {
+            id: "load-summary",
+            title: "Buksan ang dashboard",
+            body: "Nilo-load ng page ang shop-scoped summary ng authenticated Staff user at ang assigned open work.",
+            status: "Ready",
+            owner: "Staff user",
+          },
+          {
+            id: "open-operational-page",
+            title: "Pumunta sa operational page",
+            body: "Gamitin ang dashboard navigation para buksan ang Job Orders, Customers, Products, o ibang page na pinapayagan sa iyo.",
+            status: "In progress",
+            owner: "Staff user",
+          },
+        ],
+        steps: [
+          {
+            id: "read-summary",
+            title: "Basahin ang summary cards",
+            body: "Unahin ang assigned open work at active order counts. Naka-scope ang values sa shop at kasalukuyang Staff view.",
+            screenshotId: "step-01-read-summary",
+          },
+          {
+            id: "search-work",
+            title: "Mag-search o mag-filter ng queue",
+            body: "Gamitin ang available search/filter controls para paliitin ang worklist bago magbukas ng detail record.",
+            screenshotId: "step-02-search-work",
+          },
+          {
+            id: "open-detail",
+            title: "Buksan ang tamang operational page",
+            body: "Sundin ang link para gawin ang action sa authoritative Staff page. Read summary lang ang dashboard at hindi kapalit ng workflow.",
+          },
+        ],
+        outcomes: [
+          {
+            id: "scoped-summary",
+            title: "Shop-scoped na summary",
+            body: "Makikita mo ang work at counts na ibinigay sa authenticated Staff account.",
+            owner: "Staff user",
+            customerView: "Walang pagbabago sa customer hanggang walang operational action na ma-submit.",
+            tone: "success",
+          },
+          {
+            id: "work-not-visible",
+            title: "Hindi nakikita ang work",
+            body: "Maaaring mawala ang queue o record dahil sa kulang na permission o ibang assignment.",
+            owner: "Manager o administrator",
+            customerView: "Walang pagbabago sa customer.",
+            tone: "warning",
+          },
+        ],
+        errors: [
+          {
+            id: "empty-summary",
+            title: "Walang laman ang summary",
+            body: "Maaaring walang assigned work, masyadong makitid ang filter, o limitado ang access.",
+            recovery: "I-clear ang filters at i-refresh ang page. Kung hindi inaasahan, ipasuri sa manager ang assignment at permission.",
+          },
+        ],
+        related: [
+          { slug: "understanding-retail-job-orders", label: "Pag-unawa sa Retail Job Orders" },
+          { slug: "viewing-customer-information", label: "Pagtingin ng customer information" },
+        ],
+      },
+    },
+    screenshots: [
+      screenshot("getting-started", "using-staff-dashboard", "step-01-read-summary", "step-01-read-summary.webp", {
+        en: "Staff Dashboard summary cards with shop-scoped work counts.",
+        tl: "Staff Dashboard summary cards na may shop-scoped work counts.",
+      }),
+      screenshot("getting-started", "using-staff-dashboard", "step-02-search-work", "step-02-search-work.webp", {
+        en: "Staff Dashboard search and filter controls with redacted records.",
+        tl: "Staff Dashboard search at filter controls na may redacted records.",
+      }),
+    ],
+    sourceCoverage: {
+      routes: ["erp.staff.dashboard"],
+      pages: ["resources/js/Pages/ERP/STAFF/Dashboard.tsx", "app/Http/Controllers/Staff/StaffDashboardController.php"],
+      permissions: ["access-staff-dashboard"],
+      tests: ["tests/Feature/AccountDashboard/AccountDashboardRouteTest.php", "resources/js/Pages/ERP/STAFF/__tests__/Dashboard.test.tsx"],
+    },
+  }),
+  defineStaffArticle({
+    slug: "viewing-managing-notifications",
+    order: 3,
+    category: "getting-started",
+    access: {
+      anyOfPermissions: ["access-notification-center"],
+      allowedBusinessTypes: ["retail", "both"],
+    },
+    title: {
+      en: "Viewing and managing notifications",
+      tl: "Pagtingin at pamamahala ng notifications",
+    },
+    question: {
+      en: "How do I find action-required notifications and clear old ones?",
+      tl: "Paano ko mahahanap ang action-required notifications at aalisin ang luma?",
+    },
+    summary: {
+      en: "Read, filter, archive, restore, or delete notifications while keeping action-required work connected to its ERP page.",
+      tl: "Magbasa, mag-filter, mag-archive, mag-restore, o mag-delete ng notifications habang nakakonekta ang action-required work sa ERP page nito.",
+    },
+    audience: {
+      en: "Regular retail Staff with notification-center access.",
+      tl: "Regular retail Staff na may notification-center access.",
+    },
+    keywords: {
+      en: ["notifications", "unread", "read", "archive", "delete", "action required", "preferences"],
+      tl: ["notifications", "hindi nabasa", "nabasa", "archive", "delete", "kailangang aksyon", "preferences"],
+    },
+    workflow: {
+      en: [
+        { id: "inbox", title: "Notification inbox", body: "New and unread notices remain available in the ERP notification center.", status: "Unread or read", owner: "Staff user" },
+        { id: "action", title: "Action-required link", body: "An actionable notification points to the operational page where the real decision or update happens.", status: "Action required", owner: "Assigned Staff or next owner" },
+        { id: "archive", title: "Archive and restore", body: "Archiving removes a notice from the active list without erasing it; restore brings it back.", status: "Archived", owner: "Staff user" },
+      ],
+      tl: [
+        { id: "inbox", title: "Notification inbox", body: "Nananatili sa ERP notification center ang bago at unread na notices.", status: "Unread o read", owner: "Staff user" },
+        { id: "action", title: "Action-required link", body: "Itinuturo ng actionable notification ang operational page kung saan ginagawa ang tunay na decision o update.", status: "Action required", owner: "Assigned Staff o susunod na owner" },
+        { id: "archive", title: "Archive at restore", body: "Inaalis ng archive ang notice sa active list pero hindi ito binubura; ibinabalik ito ng restore.", status: "Archived", owner: "Staff user" },
+      ],
+    },
+    steps: {
+      en: [
+        { id: "open-center", title: "Open the notification center", body: "Use the header notification control and start with unread or action-required filters.", screenshotId: "step-01-open-center" },
+        { id: "follow-action", title: "Follow an action-required notice", body: "Open the linked ERP page, complete or review the work there, and return to the notification list when done.", screenshotId: "step-02-follow-action" },
+        { id: "manage-history", title: "Manage notification history", body: "Mark items read, archive them, restore archived items, or permanently delete only when the notice is no longer needed.", screenshotId: "step-03-manage-history" },
+      ],
+      tl: [
+        { id: "open-center", title: "Buksan ang notification center", body: "Gamitin ang notification control sa header at magsimula sa unread o action-required filters.", screenshotId: "step-01-open-center" },
+        { id: "follow-action", title: "Sundin ang action-required notice", body: "Buksan ang linked ERP page, gawin o suriin ang work doon, at bumalik sa notification list kapag tapos na.", screenshotId: "step-02-follow-action" },
+        { id: "manage-history", title: "Ayusin ang notification history", body: "Markahan bilang read, i-archive, i-restore ang archived item, o permanenteng i-delete kapag hindi na kailangan.", screenshotId: "step-03-manage-history" },
+      ],
+    },
+    outcomes: {
+      en: [
+        { id: "read", title: "Read state changes", body: "The notice is no longer counted as unread, but its linked work remains governed by the operational page.", owner: "Staff user", customerView: "No customer-facing change unless the linked workflow is submitted.", tone: "success" },
+        { id: "archived", title: "Archived history", body: "An archived notice leaves the active list and can be restored until it is permanently deleted.", owner: "Staff user", customerView: "No customer-facing change.", tone: "neutral" },
+      ],
+      tl: [
+        { id: "read", title: "Nagbabago ang read state", body: "Hindi na ibibilang na unread ang notice, pero ang linked work ay sakop pa rin ng operational page.", owner: "Staff user", customerView: "Walang pagbabago sa customer maliban kung ma-submit ang linked workflow.", tone: "success" },
+        { id: "archived", title: "Archived history", body: "Umaalis sa active list ang archived notice at puwedeng i-restore hanggang permanenteng ma-delete.", owner: "Staff user", customerView: "Walang pagbabago sa customer.", tone: "neutral" },
+      ],
+    },
+    errors: {
+      en: [{ id: "stale-link", title: "The action link is stale", body: "The underlying record may have changed or the current permission may no longer apply.", recovery: "Refresh the list, open the operational page directly, and ask your manager if access still looks wrong." }],
+      tl: [{ id: "stale-link", title: "Luma na ang action link", body: "Maaaring nagbago na ang underlying record o wala na ang kasalukuyang permission.", recovery: "I-refresh ang list, direktang buksan ang operational page, at ipasuri sa manager kung mali pa rin ang access." }],
+    },
+    related: {
+      en: [{ slug: "staff-workspace-permissions", label: "Staff workspace and permissions" }, { slug: "profile-and-password", label: "Profile and password" }],
+      tl: [{ slug: "staff-workspace-permissions", label: "Staff workspace at permissions" }, { slug: "profile-and-password", label: "Profile at password" }],
+    },
+    screenshots: [
+      screenshot("getting-started", "viewing-managing-notifications", "step-01-open-center", "step-01-open-center.webp", { en: "ERP notification center with unread and action-required filters.", tl: "ERP notification center na may unread at action-required filters." }),
+      screenshot("getting-started", "viewing-managing-notifications", "step-02-follow-action", "step-02-follow-action.webp", { en: "Redacted notification with a link to its Staff workflow.", tl: "Redacted notification na may link sa Staff workflow nito." }),
+      screenshot("getting-started", "viewing-managing-notifications", "step-03-manage-history", "step-03-manage-history.webp", { en: "Notification archive and restore controls.", tl: "Notification archive at restore controls." }),
+    ],
+    sourceCoverage: {
+      routes: ["erp.notifications.page", "erp.notifications.settings"],
+      pages: ["resources/js/Pages/Notifications/ERPNotifications.tsx", "resources/js/components/common/NotificationDropdown.tsx"],
+      permissions: ["access-notification-center"],
+      tests: ["tests/Feature/Notifications/NotificationCriticalFlowsTest.php", "resources/js/Pages/Notifications/__tests__/ERPNotifications.test.tsx"],
+    },
+  }),
+  defineStaffArticle({
+    slug: "profile-and-password",
+    order: 4,
+    category: "getting-started",
+    access: {
+      anyOfPermissions: ["access-profile"],
+      allowedBusinessTypes: ["retail", "both"],
+    },
+    title: { en: "Profile and password", tl: "Profile at password" },
+    question: { en: "What should I do on first login or after forgetting my password?", tl: "Ano ang gagawin ko sa first login o kapag nakalimutan ko ang password?" },
+    summary: { en: "Review account information, complete a forced first-login password change, and recover from a wrong current password.", tl: "Suriin ang account information, tapusin ang forced first-login password change, at bumawi kapag mali ang kasalukuyang password." },
+    audience: { en: "Regular retail Staff with profile access.", tl: "Regular retail Staff na may profile access." },
+    keywords: { en: ["profile", "password", "first login", "force password change", "current password", "forgot"], tl: ["profile", "password", "first login", "force password change", "kasalukuyang password", "nakalimutan"] },
+    prerequisites: {
+      en: [{ id: "know-account", title: "Know the employee account", body: "Use the invited employee email or the account credentials issued by the shop." }],
+      tl: [{ id: "know-account", title: "Alamin ang employee account", body: "Gamitin ang invited employee email o credentials na ibinigay ng shop." }],
+    },
+    workflow: {
+      en: [
+        { id: "first-login", title: "First login", body: "A forced password-change flag sends the employee to Profile before normal ERP work.", status: "Password change required", owner: "Staff user" },
+        { id: "normal-access", title: "Normal access", body: "After the password is updated successfully, normal ERP routes become available again.", status: "Active", owner: "Staff user" },
+      ],
+      tl: [
+        { id: "first-login", title: "First login", body: "Dahil sa forced password-change flag, mapupunta muna ang employee sa Profile bago ang normal ERP work.", status: "Password change required", owner: "Staff user" },
+        { id: "normal-access", title: "Normal access", body: "Kapag matagumpay ang password update, magagamit muli ang normal ERP routes.", status: "Active", owner: "Staff user" },
+      ],
+    },
+    steps: {
+      en: [
+        { id: "review-profile", title: "Review profile details", body: "Confirm your name, email, shop assignment, and role information. Ask an administrator to correct data that you cannot edit.", screenshotId: "step-01-review-profile" },
+        { id: "change-password", title: "Change the password when required", body: "Enter the current password, a new password that meets the page rules, and its confirmation. Save before leaving Profile.", screenshotId: "step-02-change-password" },
+        { id: "recover", title: "Recover from a failed update", body: "Keep the current password unchanged when validation fails. Correct the field-level error and submit again, or use the existing recovery flow if you no longer know it.", screenshotId: "step-03-recover" },
+      ],
+      tl: [
+        { id: "review-profile", title: "Suriin ang profile details", body: "Kumpirmahin ang pangalan, email, shop assignment, at role information. Ipaayos sa administrator ang data na hindi mo mae-edit.", screenshotId: "step-01-review-profile" },
+        { id: "change-password", title: "Magpalit ng password kapag kailangan", body: "Ilagay ang current password, bagong password na sumusunod sa page rules, at confirmation. I-save bago umalis sa Profile.", screenshotId: "step-02-change-password" },
+        { id: "recover", title: "Bumawi mula sa failed update", body: "Hindi mababago ang current password kapag may validation error. Ayusin ang field error at isumite ulit, o gamitin ang existing recovery flow kung hindi mo na ito alam.", screenshotId: "step-03-recover" },
+      ],
+    },
+    outcomes: {
+      en: [
+        { id: "updated", title: "Password updated", body: "The forced-change requirement clears and the account can continue to normal ERP pages.", owner: "Staff user", customerView: "No customer-facing change.", tone: "success" },
+        { id: "unchanged", title: "Password unchanged", body: "A failed validation keeps the account protected and the user must correct the problem.", owner: "Staff user or administrator", customerView: "No customer-facing change.", tone: "warning" },
+      ],
+      tl: [
+        { id: "updated", title: "Na-update ang password", body: "Maki-clear ang forced-change requirement at makakapunta na ang account sa normal ERP pages.", owner: "Staff user", customerView: "Walang pagbabago sa customer.", tone: "success" },
+        { id: "unchanged", title: "Hindi nagbago ang password", body: "Mananatiling protektado ang account kapag may validation error at kailangang ayusin ang problema.", owner: "Staff user o administrator", customerView: "Walang pagbabago sa customer.", tone: "warning" },
+      ],
+    },
+    errors: {
+      en: [{ id: "wrong-current-password", title: "Incorrect current password", body: "The server does not accept a password update when the current password is wrong.", recovery: "Re-enter the current password carefully. If it is forgotten, leave the ERP page and use the established password-recovery flow." }],
+      tl: [{ id: "wrong-current-password", title: "Mali ang current password", body: "Hindi tatanggapin ng server ang password update kapag mali ang kasalukuyang password.", recovery: "Ilagay ulit nang maingat ang current password. Kung nakalimutan ito, gamitin ang dating password-recovery flow." }],
+    },
+    related: {
+      en: [{ slug: "staff-workspace-permissions", label: "Staff workspace and permissions" }, { slug: "viewing-managing-notifications", label: "Viewing and managing notifications" }],
+      tl: [{ slug: "staff-workspace-permissions", label: "Staff workspace at permissions" }, { slug: "viewing-managing-notifications", label: "Pagtingin at pamamahala ng notifications" }],
+    },
+    screenshots: [
+      screenshot("getting-started", "profile-and-password", "step-01-review-profile", "step-01-review-profile.webp", { en: "ERP employee Profile page with personal fields redacted.", tl: "ERP employee Profile page na redacted ang personal fields." }),
+      screenshot("getting-started", "profile-and-password", "step-02-change-password", "step-02-change-password.webp", { en: "Password change form showing its field labels and rules.", tl: "Password change form na ipinapakita ang field labels at rules." }),
+      screenshot("getting-started", "profile-and-password", "step-03-recover", "step-03-recover.webp", { en: "Profile validation error with a safe recovery message.", tl: "Profile validation error na may ligtas na recovery message." }),
+    ],
+    sourceCoverage: {
+      routes: ["erp.profile", "login"],
+      pages: ["resources/js/Pages/ERP/Profile.tsx", "app/Http/Controllers/UserProfileController.php"],
+      permissions: ["access-profile"],
+      tests: ["tests/Feature/Auth/UnifiedSignInContextTest.php", "tests/Feature/Staff/StaffArticlesRouteTest.php"],
+    },
+  }),
+  defineStaffArticle({
+    slug: "daily-attendance-workflow",
+    order: 5,
+    category: "attendance",
+    access: {
+      anyOfPermissions: ["access-staff-time-in"],
+      allowedBusinessTypes: ["retail", "both"],
+    },
+    title: { en: "Daily attendance workflow", tl: "Daily attendance workflow" },
+    question: { en: "In what order should I record today's attendance?", tl: "Anong pagkakasunod ang pag-record ng attendance ngayon?" },
+    summary: { en: "Follow Time In, optional lunch, Lunch End, and Time Out while understanding disabled actions and approved leave.", tl: "Sundin ang Time In, optional lunch, Lunch End, at Time Out habang nauunawaan ang disabled actions at approved leave." },
+    audience: { en: "Staff users with attendance access.", tl: "Staff users na may attendance access." },
+    keywords: { en: ["attendance", "time in", "lunch", "time out", "approved leave", "disabled"], tl: ["attendance", "time in", "lunch", "time out", "approved leave", "disabled", "oras"] },
+    workflow: {
+      en: [
+        { id: "regular-day", title: "Regular day", body: "Record Time In, optionally start and end lunch, then record Time Out.", status: "Pending to complete", owner: "Staff user" },
+        { id: "leave-day", title: "Approved leave day", body: "The page identifies approved leave and blocks normal attendance actions where the current UI enforces that constraint.", status: "On leave", owner: "Manager/HR leave record" },
+      ],
+      tl: [
+        { id: "regular-day", title: "Regular na araw", body: "I-record ang Time In, optional na lunch start at end, at pagkatapos ay Time Out.", status: "Pending to complete", owner: "Staff user" },
+        { id: "leave-day", title: "Araw ng approved leave", body: "Ipinapakita ng page ang approved leave at hinaharang ang normal attendance actions kung iyon ang ipinapatupad ng UI.", status: "On leave", owner: "Manager/HR leave record" },
+      ],
+    },
+    steps: {
+      en: [
+        { id: "time-in", title: "Record Time In", body: "Use Time In at the start of the workday. The server checks the current attendance and leave state before saving.", screenshotId: "step-01-time-in" },
+        { id: "lunch", title: "Record lunch start and end", body: "Start lunch only when the action is enabled, then record Lunch End before resuming work.", screenshotId: "step-02-lunch" },
+        { id: "time-out", title: "Record Time Out", body: "Use Time Out when the workday ends. The stored record can include reason flags and calculated hours based on the current rules.", screenshotId: "step-03-time-out" },
+      ],
+      tl: [
+        { id: "time-in", title: "I-record ang Time In", body: "Gamitin ang Time In sa simula ng workday. Susuriin ng server ang kasalukuyang attendance at leave state bago mag-save.", screenshotId: "step-01-time-in" },
+        { id: "lunch", title: "I-record ang lunch start at end", body: "Simulan ang lunch kapag enabled ang action, pagkatapos ay i-record ang Lunch End bago bumalik sa trabaho.", screenshotId: "step-02-lunch" },
+        { id: "time-out", title: "I-record ang Time Out", body: "Gamitin ang Time Out kapag tapos na ang workday. Puwedeng may reason flags at calculated hours ang stored record ayon sa kasalukuyang rules.", screenshotId: "step-03-time-out" },
+      ],
+    },
+    outcomes: {
+      en: [
+        { id: "saved", title: "Attendance record saved", body: "The next valid action becomes available according to the stored attendance state.", owner: "Staff user", customerView: "No customer-facing change.", tone: "success" },
+        { id: "blocked", title: "Action remains disabled", body: "The page preserves the existing state when a sequence, schedule, or approved-leave rule blocks the action.", owner: "Staff user; manager/HR for corrections", customerView: "No customer-facing change.", tone: "warning" },
+      ],
+      tl: [
+        { id: "saved", title: "Na-save ang attendance record", body: "Magiging available ang susunod na valid action ayon sa stored attendance state.", owner: "Staff user", customerView: "Walang pagbabago sa customer.", tone: "success" },
+        { id: "blocked", title: "Nananatiling disabled ang action", body: "Pinapanatili ng page ang kasalukuyang state kapag hinaharang ng sequence, schedule, o approved-leave rule ang action.", owner: "Staff user; manager/HR para sa correction", customerView: "Walang pagbabago sa customer.", tone: "warning" },
+      ],
+    },
+    errors: {
+      en: [{ id: "approved-leave", title: "Attendance is blocked by approved leave", body: "The current UI prevents normal check-in when an approved leave covers today.", recovery: "Do not force a time entry. Check the leave record and ask the manager or HR owner if it is incorrect." }],
+      tl: [{ id: "approved-leave", title: "Hinaharang ng approved leave ang attendance", body: "Hindi pinapayagan ng kasalukuyang UI ang normal check-in kapag sakop ng approved leave ang araw na ito.", recovery: "Huwag piliting mag-time entry. Suriin ang leave record at kausapin ang manager o HR owner kung mali ito." }],
+    },
+    related: {
+      en: [{ slug: "early-arrival-lateness-departure", label: "Early arrival, lateness, and early departure" }, { slug: "requesting-overtime", label: "Requesting and completing overtime" }],
+      tl: [{ slug: "early-arrival-lateness-departure", label: "Early arrival, lateness, at early departure" }, { slug: "requesting-overtime", label: "Pag-request at pagkumpleto ng overtime" }],
+    },
+    screenshots: [
+      screenshot("attendance", "daily-attendance-workflow", "step-01-time-in", "step-01-time-in.webp", { en: "Attendance page with Time In action and current status.", tl: "Attendance page na may Time In action at kasalukuyang status." }),
+      screenshot("attendance", "daily-attendance-workflow", "step-02-lunch", "step-02-lunch.webp", { en: "Attendance page showing lunch start and end actions.", tl: "Attendance page na ipinapakita ang lunch start at end actions." }),
+      screenshot("attendance", "daily-attendance-workflow", "step-03-time-out", "step-03-time-out.webp", { en: "Attendance page with Time Out and reason state.", tl: "Attendance page na may Time Out at reason state." }),
+    ],
+    sourceCoverage: {
+      routes: ["erp.time-in", "erp.staff.attendance"],
+      pages: ["resources/js/Pages/ERP/STAFF/TimeIn.tsx", "resources/js/Pages/ERP/STAFF/timeIn.tsx", "app/Http/Controllers/Erp/HR/AttendanceController.php"],
+      permissions: ["access-staff-time-in"],
+      tests: ["resources/js/Pages/ERP/STAFF/__tests__/TimeIn.test.tsx", "tests/Feature/CashierPosRouteAccessTest.php"],
+    },
+  }),
+  defineStaffArticle({
+    slug: "early-arrival-lateness-departure",
+    order: 6,
+    category: "attendance",
+    access: {
+      anyOfPermissions: ["access-staff-time-in"],
+      allowedBusinessTypes: ["retail", "both"],
+    },
+    title: { en: "Early arrival, lateness, and early departure", tl: "Maagang pagdating, late, at maagang pag-alis" },
+    question: { en: "When do I need to explain an attendance exception?", tl: "Kailan kailangan ipaliwanag ang attendance exception?" },
+    summary: { en: "Understand too-early restrictions, reason capture for late or early departures, and the outcome stored with attendance.", tl: "Unawain ang restriction sa sobrang aga, reason capture para sa late o maagang pag-alis, at outcome na naka-store sa attendance." },
+    audience: { en: "Staff users with attendance access.", tl: "Staff users na may attendance access." },
+    keywords: { en: ["early arrival", "late", "lateness", "early departure", "reason", "schedule"], tl: ["early arrival", "late", "lateness", "early departure", "dahilan", "schedule"] },
+    workflow: {
+      en: [
+        { id: "too-early", title: "Too early", body: "A check-in before the allowed window is blocked so the attendance record stays tied to the shop schedule.", status: "Blocked", owner: "Attendance rules" },
+        { id: "exception", title: "Attendance exception", body: "Late arrival or early departure may ask for a reason that stays with the stored attendance outcome.", status: "Reason required or recorded", owner: "Staff user; manager/HR review" },
+      ],
+      tl: [
+        { id: "too-early", title: "Sobrang aga", body: "Hinaharang ang check-in bago ang allowed window para manatiling nakaayon ang record sa shop schedule.", status: "Blocked", owner: "Attendance rules" },
+        { id: "exception", title: "Attendance exception", body: "Maaaring humingi ng dahilan ang late arrival o early departure at isinasama ito sa stored attendance outcome.", status: "Reason required or recorded", owner: "Staff user; manager/HR review" },
+      ],
+    },
+    steps: {
+      en: [
+        { id: "check-window", title: "Check the allowed time window", body: "Review the current attendance state and schedule before pressing Time In.", screenshotId: "step-01-check-window" },
+        { id: "add-reason", title: "Add the required reason", body: "When the page asks for a reason, describe the exception accurately before submitting. Avoid private customer data in the note.", screenshotId: "step-02-add-reason" },
+        { id: "review-outcome", title: "Review the stored outcome", body: "After saving, confirm whether the page shows a late, early-departure, or normal state and keep the message for your manager if follow-up is needed.", screenshotId: "step-03-review-outcome" },
+      ],
+      tl: [
+        { id: "check-window", title: "Suriin ang allowed time window", body: "Tingnan ang kasalukuyang attendance state at schedule bago pindutin ang Time In.", screenshotId: "step-01-check-window" },
+        { id: "add-reason", title: "Ilagay ang kailangang dahilan", body: "Kapag humingi ng reason ang page, ilarawan nang tama ang exception bago mag-submit. Huwag maglagay ng private customer data sa note.", screenshotId: "step-02-add-reason" },
+        { id: "review-outcome", title: "Suriin ang stored outcome", body: "Pagkatapos mag-save, tingnan kung late, early-departure, o normal ang state at itabi ang message para sa manager kung may follow-up.", screenshotId: "step-03-review-outcome" },
+      ],
+    },
+    outcomes: {
+      en: [
+        { id: "exception-recorded", title: "Exception is recorded", body: "The attendance record keeps the reason and calculated result for the manager/HR process.", owner: "Manager or HR review", customerView: "No customer-facing change.", tone: "neutral" },
+        { id: "too-early-blocked", title: "Too-early check-in is blocked", body: "No attendance record is created for the rejected too-early action.", owner: "Staff user", customerView: "No customer-facing change.", tone: "warning" },
+      ],
+      tl: [
+        { id: "exception-recorded", title: "Naka-record ang exception", body: "Nananatili sa attendance record ang dahilan at calculated result para sa manager/HR process.", owner: "Manager o HR review", customerView: "Walang pagbabago sa customer.", tone: "neutral" },
+        { id: "too-early-blocked", title: "Blocked ang sobrang-agang check-in", body: "Walang nalilikhang attendance record para sa rejected too-early action.", owner: "Staff user", customerView: "Walang pagbabago sa customer.", tone: "warning" },
+      ],
+    },
+    errors: {
+      en: [{ id: "missing-reason", title: "A reason is required", body: "The action cannot finish until the attendance exception has a reason.", recovery: "Enter a short factual reason, submit again, and contact the manager if the reason prompt appears unexpectedly." }],
+      tl: [{ id: "missing-reason", title: "Kailangan ng dahilan", body: "Hindi matatapos ang action hanggang walang reason ang attendance exception.", recovery: "Maglagay ng maikli at totoong dahilan, isumite ulit, at kausapin ang manager kung hindi inaasahan ang prompt." }],
+    },
+    related: {
+      en: [{ slug: "daily-attendance-workflow", label: "Daily attendance workflow" }, { slug: "requesting-leave", label: "Requesting leave" }],
+      tl: [{ slug: "daily-attendance-workflow", label: "Daily attendance workflow" }, { slug: "requesting-leave", label: "Pag-request ng leave" }],
+    },
+    screenshots: [
+      screenshot("attendance", "early-arrival-lateness-departure", "step-01-check-window", "step-01-check-window.webp", { en: "Attendance schedule and disabled too-early Time In state.", tl: "Attendance schedule at disabled too-early Time In state." }),
+      screenshot("attendance", "early-arrival-lateness-departure", "step-02-add-reason", "step-02-add-reason.webp", { en: "Redacted attendance reason field for a timing exception.", tl: "Redacted attendance reason field para sa timing exception." }),
+      screenshot("attendance", "early-arrival-lateness-departure", "step-03-review-outcome", "step-03-review-outcome.webp", { en: "Saved attendance outcome with its exception label.", tl: "Saved attendance outcome na may exception label." }),
+    ],
+    sourceCoverage: {
+      routes: ["erp.time-in", "erp.staff.attendance"],
+      pages: ["resources/js/Pages/ERP/STAFF/TimeIn.tsx", "app/Http/Controllers/Erp/HR/AttendanceController.php"],
+      permissions: ["access-staff-time-in"],
+      tests: ["resources/js/Pages/ERP/STAFF/__tests__/TimeIn.test.tsx", "tests/Feature/Staff/StaffArticlesRouteTest.php"],
+    },
+  }),
+  defineStaffArticle({
+    slug: "requesting-leave",
+    order: 7,
+    category: "attendance",
+    access: {
+      anyOfPermissions: ["access-staff-leave", "access-staff-time-in"],
+      allowedBusinessTypes: ["retail", "both"],
+    },
+    title: { en: "Requesting leave", tl: "Pag-request ng leave" },
+    question: { en: "How do I submit a leave request and read its result?", tl: "Paano ako magsa-submit ng leave request at babasahin ang resulta?" },
+    summary: { en: "Choose a leave type, date range, and reason, then monitor pending, approved, or rejected outcomes.", tl: "Pumili ng leave type, date range, at dahilan, pagkatapos bantayan ang pending, approved, o rejected na outcome." },
+    audience: { en: "Staff users with leave self-service access.", tl: "Staff users na may leave self-service access." },
+    keywords: { en: ["leave", "request", "date range", "reason", "balance", "pending", "approved", "rejected"], tl: ["leave", "request", "date range", "dahilan", "balance", "pending", "approved", "rejected"] },
+    prerequisites: {
+      en: [{ id: "check-balance", title: "Check the leave balance", body: "Review the available balance and make sure the requested dates are valid for your shop policy." }],
+      tl: [{ id: "check-balance", title: "Suriin ang leave balance", body: "Tingnan ang available balance at siguraduhing valid ang dates ayon sa shop policy." }],
+    },
+    workflow: {
+      en: [
+        { id: "submitted", title: "Request submitted", body: "A valid date range, leave type, and reason creates a pending request for approval.", status: "Pending", owner: "Manager/HR approver" },
+        { id: "decision", title: "Approval decision", body: "Approved leave affects attendance on covered dates; rejection keeps normal attendance rules and stores the reason.", status: "Approved or rejected", owner: "Manager/HR approver" },
+      ],
+      tl: [
+        { id: "submitted", title: "Na-submit ang request", body: "Ang valid date range, leave type, at reason ay gumagawa ng pending request para sa approval.", status: "Pending", owner: "Manager/HR approver" },
+        { id: "decision", title: "Approval decision", body: "Naaapektuhan ng approved leave ang attendance sa sakop na dates; kapag rejected, normal attendance rules at reason ang mananatili.", status: "Approved o rejected", owner: "Manager/HR approver" },
+      ],
+    },
+    steps: {
+      en: [
+        { id: "choose-dates", title: "Choose the leave type and dates", body: "Select the leave type and a start/end date range that does not violate the available balance or date rules.", screenshotId: "step-01-choose-dates" },
+        { id: "write-reason", title: "Write a clear reason", body: "Add the reason required by the form, then review the number of days before submitting.", screenshotId: "step-02-write-reason" },
+        { id: "monitor-status", title: "Monitor the decision", body: "Keep the request page or notification available. Read the approval or rejection reason and update your attendance plan accordingly.", screenshotId: "step-03-monitor-status" },
+      ],
+      tl: [
+        { id: "choose-dates", title: "Piliin ang leave type at dates", body: "Piliin ang leave type at start/end date range na hindi lalabag sa balance o date rules.", screenshotId: "step-01-choose-dates" },
+        { id: "write-reason", title: "Sumulat ng malinaw na dahilan", body: "Ilagay ang reason na hinihingi ng form at suriin ang bilang ng araw bago mag-submit.", screenshotId: "step-02-write-reason" },
+        { id: "monitor-status", title: "Bantayan ang status", body: "Panatilihing available ang request page o notification. Basahin ang approval o rejection reason at iayon ang attendance plan.", screenshotId: "step-03-monitor-status" },
+      ],
+    },
+    outcomes: {
+      en: [
+        { id: "pending", title: "Pending review", body: "The request is waiting for the manager/HR decision; do not treat it as approved yet.", owner: "Manager/HR approver", customerView: "No customer-facing change.", tone: "warning" },
+        { id: "approved-or-rejected", title: "Approved or rejected", body: "Approved dates become leave-covered; a rejection returns the reason so the Staff user can correct future planning.", owner: "Manager/HR approver", customerView: "No customer-facing change.", tone: "neutral" },
+      ],
+      tl: [
+        { id: "pending", title: "Pending review", body: "Naghihintay ang request ng decision ng manager/HR; huwag muna itong ituring na approved.", owner: "Manager/HR approver", customerView: "Walang pagbabago sa customer.", tone: "warning" },
+        { id: "approved-or-rejected", title: "Approved o rejected", body: "Nagiging leave-covered ang approved dates; ibinabalik ng rejection ang reason para maitama ang future planning.", owner: "Manager/HR approver", customerView: "Walang pagbabago sa customer.", tone: "neutral" },
+      ],
+    },
+    errors: {
+      en: [{ id: "balance-or-date", title: "The leave dates are not valid", body: "The request can fail when the date range, leave balance, or required reason does not pass validation.", recovery: "Shorten or correct the dates, check the balance, and submit a complete reason. Ask the approver about policy questions." }],
+      tl: [{ id: "balance-or-date", title: "Hindi valid ang leave dates", body: "Maaaring bumagsak ang request kapag hindi pumasa ang date range, leave balance, o required reason sa validation.", recovery: "Ayusin o paikliin ang dates, tingnan ang balance, at magsumite ng kumpletong reason. Tanungin ang approver tungkol sa policy." }],
+    },
+    related: {
+      en: [{ slug: "daily-attendance-workflow", label: "Daily attendance workflow" }, { slug: "requesting-overtime", label: "Requesting and completing overtime" }],
+      tl: [{ slug: "daily-attendance-workflow", label: "Daily attendance workflow" }, { slug: "requesting-overtime", label: "Pag-request at pagkumpleto ng overtime" }],
+    },
+    screenshots: [
+      screenshot("attendance", "requesting-leave", "step-01-choose-dates", "step-01-choose-dates.webp", { en: "Leave request form with type and date-range fields.", tl: "Leave request form na may type at date-range fields." }),
+      screenshot("attendance", "requesting-leave", "step-02-write-reason", "step-02-write-reason.webp", { en: "Leave request reason field with the balance summary redacted.", tl: "Leave request reason field na redacted ang balance summary." }),
+      screenshot("attendance", "requesting-leave", "step-03-monitor-status", "step-03-monitor-status.webp", { en: "Leave request list showing pending, approved, and rejected statuses.", tl: "Leave request list na may pending, approved, at rejected statuses." }),
+    ],
+    sourceCoverage: {
+      routes: ["erp.hr", "api.leave.*"],
+      pages: ["resources/js/Pages/ERP/HR/HR.tsx", "app/Http/Controllers/Erp/HR/EmployeeSelfServiceController.php"],
+      permissions: ["access-staff-leave", "access-staff-time-in"],
+      tests: ["tests/Feature/Manager/ManagerLeaveApprovalTest.php", "tests/Feature/Staff/StaffArticlesRouteTest.php"],
+    },
+  }),
+  defineStaffArticle({
+    slug: "requesting-overtime",
+    order: 8,
+    category: "attendance",
+    access: {
+      anyOfPermissions: ["access-staff-time-in"],
+      allowedBusinessTypes: ["retail", "both"],
+    },
+    title: { en: "Requesting and completing overtime", tl: "Pag-request at pagkumpleto ng overtime" },
+    question: { en: "How do I request overtime and record approved overtime hours?", tl: "Paano ako magre-request ng overtime at magre-record ng approved overtime hours?" },
+    summary: { en: "Submit hours and a reason, wait for approval, then use the approved overtime check-in/check-out flow.", tl: "Magsumite ng hours at dahilan, hintayin ang approval, pagkatapos gamitin ang approved overtime check-in/check-out flow." },
+    audience: { en: "Staff users with attendance access.", tl: "Staff users na may attendance access." },
+    keywords: { en: ["overtime", "hours", "reason", "approval", "check-in", "check-out", "leave"], tl: ["overtime", "oras", "dahilan", "approval", "check-in", "check-out", "leave"] },
+    workflow: {
+      en: [
+        { id: "request", title: "Overtime request", body: "The requested date, hours, and reason wait for an approval decision.", status: "Pending", owner: "Manager/HR approver" },
+        { id: "approved-work", title: "Approved overtime", body: "Only after approval can the Staff user use the overtime check-in/check-out and receive the approved calculation.", status: "Approved", owner: "Staff user" },
+        { id: "leave-conflict", title: "Approved leave conflict", body: "The current UI blocks normal overtime actions when an approved leave covers the date.", status: "Blocked", owner: "Manager/HR record" },
+      ],
+      tl: [
+        { id: "request", title: "Overtime request", body: "Naghihintay ng approval decision ang requested date, hours, at reason.", status: "Pending", owner: "Manager/HR approver" },
+        { id: "approved-work", title: "Approved overtime", body: "Pagkatapos lang ng approval magagamit ang overtime check-in/check-out at approved calculation.", status: "Approved", owner: "Staff user" },
+        { id: "leave-conflict", title: "Conflict sa approved leave", body: "Hinaharang ng kasalukuyang UI ang normal overtime actions kapag sakop ng approved leave ang date.", status: "Blocked", owner: "Manager/HR record" },
+      ],
+    },
+    steps: {
+      en: [
+        { id: "submit-request", title: "Submit hours and reason", body: "Enter the overtime date, number of hours, and a factual reason. Check that the date is not covered by approved leave.", screenshotId: "step-01-submit-request" },
+        { id: "wait-approval", title: "Wait for the approval result", body: "Pending is not permission to work overtime. Read the approved or rejected status and any recorded reason.", screenshotId: "step-02-wait-approval" },
+        { id: "record-approved-hours", title: "Record approved overtime", body: "On an approved date, use overtime check-in and check-out as enabled. The server calculates the stored result from approved hours and attendance.", screenshotId: "step-03-record-approved-hours" },
+      ],
+      tl: [
+        { id: "submit-request", title: "Magsumite ng hours at reason", body: "Ilagay ang overtime date, bilang ng oras, at totoong dahilan. Tiyaking hindi sakop ng approved leave ang date.", screenshotId: "step-01-submit-request" },
+        { id: "wait-approval", title: "Hintayin ang approval result", body: "Hindi ibig sabihin ng Pending na puwede nang mag-overtime. Basahin ang approved o rejected status at recorded reason.", screenshotId: "step-02-wait-approval" },
+        { id: "record-approved-hours", title: "I-record ang approved overtime", body: "Sa approved date, gamitin ang overtime check-in at check-out kapag enabled. Kinakalkula ng server ang stored result mula sa approved hours at attendance.", screenshotId: "step-03-record-approved-hours" },
+      ],
+    },
+    outcomes: {
+      en: [
+        { id: "approved", title: "Approved overtime is calculated", body: "The approved hours can flow into the attendance/payroll calculation according to the current rules.", owner: "HR/payroll owner", customerView: "No customer-facing change.", tone: "success" },
+        { id: "rejected", title: "Rejected request stops", body: "A rejected request cannot be treated as approved work; read the reason before submitting a corrected future request.", owner: "Manager/HR approver", customerView: "No customer-facing change.", tone: "danger" },
+      ],
+      tl: [
+        { id: "approved", title: "Kinakalkula ang approved overtime", body: "Puwedeng pumasok ang approved hours sa attendance/payroll calculation ayon sa kasalukuyang rules.", owner: "HR/payroll owner", customerView: "Walang pagbabago sa customer.", tone: "success" },
+        { id: "rejected", title: "Humihinto ang rejected request", body: "Hindi puwedeng ituring na approved work ang rejected request; basahin ang reason bago magsumite ng corrected future request.", owner: "Manager/HR approver", customerView: "Walang pagbabago sa customer.", tone: "danger" },
+      ],
+    },
+    errors: {
+      en: [{ id: "leave-conflict", title: "Overtime is blocked on approved leave", body: "The attendance rules do not allow normal overtime actions on a covered approved-leave date.", recovery: "Check the leave and overtime dates, then ask the approver to correct the underlying record instead of bypassing the page." }],
+      tl: [{ id: "leave-conflict", title: "Blocked ang overtime sa approved leave", body: "Hindi pinapayagan ng attendance rules ang normal overtime actions sa date na sakop ng approved leave.", recovery: "Suriin ang leave at overtime dates, at ipasuri sa approver ang underlying record sa halip na lampasan ang page." }],
+    },
+    related: {
+      en: [{ slug: "daily-attendance-workflow", label: "Daily attendance workflow" }, { slug: "requesting-leave", label: "Requesting leave" }, { slug: "viewing-printing-payslips", label: "Viewing and printing payslips" }],
+      tl: [{ slug: "daily-attendance-workflow", label: "Daily attendance workflow" }, { slug: "requesting-leave", label: "Pag-request ng leave" }, { slug: "viewing-printing-payslips", label: "Pagtingin at pag-print ng payslips" }],
+    },
+    screenshots: [
+      screenshot("attendance", "requesting-overtime", "step-01-submit-request", "step-01-submit-request.webp", { en: "Overtime request form with date, hours, and reason fields.", tl: "Overtime request form na may date, hours, at reason fields." }),
+      screenshot("attendance", "requesting-overtime", "step-02-wait-approval", "step-02-wait-approval.webp", { en: "Overtime request list with a pending approval status.", tl: "Overtime request list na may pending approval status." }),
+      screenshot("attendance", "requesting-overtime", "step-03-record-approved-hours", "step-03-record-approved-hours.webp", { en: "Approved overtime check-in and check-out controls.", tl: "Approved overtime check-in at check-out controls." }),
+    ],
+    sourceCoverage: {
+      routes: ["erp.time-in", "api.attendance.*"],
+      pages: ["resources/js/Pages/ERP/STAFF/TimeIn.tsx", "app/Http/Controllers/Erp/HR/AttendanceController.php"],
+      permissions: ["access-staff-time-in"],
+      tests: ["resources/js/Pages/ERP/STAFF/__tests__/TimeIn.test.tsx", "tests/Feature/Manager/ManagerLeaveApprovalTest.php"],
+    },
+  }),
+  defineStaffArticle({
+    slug: "viewing-printing-payslips",
+    order: 9,
+    category: "attendance",
+    access: {
+      anyOfPermissions: ["access-profile"],
+      allowedBusinessTypes: ["retail", "both"],
+    },
+    title: { en: "Viewing and printing payslips", tl: "Pagtingin at pag-print ng payslips" },
+    question: { en: "How do I find a payslip and print its payment details?", tl: "Paano ko mahahanap ang payslip at mai-print ang payment details?" },
+    summary: { en: "Search payroll periods and read pending, approved, or paid payslip details, including earnings, deductions, and net salary.", tl: "Mag-search ng payroll periods at basahin ang pending, approved, o paid payslip details kasama ang earnings, deductions, at net salary." },
+    audience: { en: "Authenticated retail Staff employees with personal payslip access.", tl: "Authenticated retail Staff employees na may access sa sariling payslip." },
+    keywords: { en: ["payslip", "payroll", "period", "earnings", "deductions", "net salary", "paid", "print"], tl: ["payslip", "payroll", "period", "earnings", "deductions", "net salary", "paid", "print", "sahod"] },
+    workflow: {
+      en: [
+        { id: "period-search", title: "Search a period", body: "The employee page lists personal payslip records by payroll period.", status: "Pending, approved, or paid", owner: "Staff user" },
+        { id: "payment-record", title: "Read payment details", body: "Approved or paid records expose the available earnings, deductions, net salary, and payment details without changing payroll.", status: "Read-only", owner: "HR/payroll owner" },
+      ],
+      tl: [
+        { id: "period-search", title: "Mag-search ng period", body: "Ipinapakita ng employee page ang sariling payslip records ayon sa payroll period.", status: "Pending, approved, o paid", owner: "Staff user" },
+        { id: "payment-record", title: "Basahin ang payment details", body: "Ipinapakita ng approved o paid records ang available earnings, deductions, net salary, at payment details nang hindi binabago ang payroll.", status: "Read-only", owner: "HR/payroll owner" },
+      ],
+    },
+    steps: {
+      en: [
+        { id: "find-period", title: "Find the payroll period", body: "Open My Payslips and search or scan the period list for the month or pay cycle you need.", screenshotId: "step-01-find-period" },
+        { id: "read-breakdown", title: "Read the breakdown", body: "Open a record and check status, earnings, deductions, net salary, and any payment details shown by the page.", screenshotId: "step-02-read-breakdown" },
+        { id: "print", title: "Print the payslip", body: "Use the page's print action after confirming the period. Keep printed copies private and do not share payment references in screenshots.", screenshotId: "step-03-print" },
+      ],
+      tl: [
+        { id: "find-period", title: "Hanapin ang payroll period", body: "Buksan ang My Payslips at mag-search o mag-scan ng period list para sa buwan o pay cycle na kailangan.", screenshotId: "step-01-find-period" },
+        { id: "read-breakdown", title: "Basahin ang breakdown", body: "Buksan ang record at tingnan ang status, earnings, deductions, net salary, at payment details na ipinapakita ng page.", screenshotId: "step-02-read-breakdown" },
+        { id: "print", title: "I-print ang payslip", body: "Gamitin ang print action pagkatapos kumpirmahin ang period. Panatilihing pribado ang printed copies at huwag ibahagi ang payment references sa screenshots.", screenshotId: "step-03-print" },
+      ],
+    },
+    outcomes: {
+      en: [
+        { id: "pending", title: "Pending payslip", body: "The record is not final yet; wait for the responsible payroll stage before relying on the amount.", owner: "HR/payroll owner", customerView: "No customer-facing change.", tone: "warning" },
+        { id: "approved-paid", title: "Approved or paid payslip", body: "The available breakdown can be reviewed or printed; the Articles page does not alter payroll.", owner: "Staff user for viewing; HR/payroll for corrections", customerView: "No customer-facing change.", tone: "success" },
+      ],
+      tl: [
+        { id: "pending", title: "Pending ang payslip", body: "Hindi pa final ang record; hintayin ang responsible payroll stage bago umasa sa amount.", owner: "HR/payroll owner", customerView: "Walang pagbabago sa customer.", tone: "warning" },
+        { id: "approved-paid", title: "Approved o paid ang payslip", body: "Puwedeng basahin o i-print ang breakdown; walang binabago sa payroll ang Articles page.", owner: "Staff user sa viewing; HR/payroll sa correction", customerView: "Walang pagbabago sa customer.", tone: "success" },
+      ],
+    },
+    errors: {
+      en: [{ id: "period-not-found", title: "The period is not available", body: "A payroll period may be missing, pending, or outside the records available to this employee account.", recovery: "Clear the search and check another period. Contact HR/payroll for a missing or incorrect personal record." }],
+      tl: [{ id: "period-not-found", title: "Hindi available ang period", body: "Maaaring wala pa, pending, o wala sa records ng employee account ang payroll period.", recovery: "I-clear ang search at tingnan ang ibang period. Kausapin ang HR/payroll para sa missing o maling personal record." }],
+    },
+    related: {
+      en: [{ slug: "daily-attendance-workflow", label: "Daily attendance workflow" }, { slug: "profile-and-password", label: "Profile and password" }],
+      tl: [{ slug: "daily-attendance-workflow", label: "Daily attendance workflow" }, { slug: "profile-and-password", label: "Profile at password" }],
+    },
+    screenshots: [
+      screenshot("attendance", "viewing-printing-payslips", "step-01-find-period", "step-01-find-period.webp", { en: "Personal payslip period search with employee data redacted.", tl: "Personal payslip period search na redacted ang employee data." }),
+      screenshot("attendance", "viewing-printing-payslips", "step-02-read-breakdown", "step-02-read-breakdown.webp", { en: "Payslip earnings, deductions, and net salary breakdown with values redacted.", tl: "Payslip earnings, deductions, at net salary breakdown na redacted ang values." }),
+      screenshot("attendance", "viewing-printing-payslips", "step-03-print", "step-03-print.webp", { en: "Payslip print action and payment details with private references hidden.", tl: "Payslip print action at payment details na nakatago ang private references." }),
+    ],
+    sourceCoverage: {
+      routes: ["erp.my-payslips"],
+      pages: ["resources/js/Pages/ERP/STAFF/MyPayslips.tsx", "app/Http/Controllers/Erp/HR/PayrollController.php"],
+      permissions: ["access-profile"],
+      tests: ["resources/js/layout/__tests__/AppSidebar_ERP.test.tsx", "tests/Feature/Staff/StaffArticlesRouteTest.php"],
+    },
+  }),
+  defineStaffArticle({
+    slug: "understanding-retail-job-orders",
+    order: 10,
+    category: "orders",
+    recommended: true,
+    access: {
+      anyOfPermissions: ["access-staff-job-orders"],
+      allowedBusinessTypes: ["retail", "both"],
+    },
+    title: { en: "Understanding Retail Job Orders", tl: "Pag-unawa sa Retail Job Orders" },
+    question: { en: "What do the Retail Job Order tabs and statuses mean?", tl: "Ano ang ibig sabihin ng Retail Job Order tabs at statuses?" },
+    summary: { en: "Read the Staff order list, search records, open details, and distinguish payment, fulfilment, refund, and return status.", tl: "Basahin ang Staff order list, mag-search ng records, magbukas ng details, at paghiwalayin ang payment, fulfilment, refund, at return status." },
+    audience: { en: "Staff users with retail Job Orders access.", tl: "Staff users na may retail Job Orders access." },
+    keywords: { en: ["job orders", "pending", "processing", "shipped", "delivered", "cancelled", "payment", "status tabs"], tl: ["job orders", "pending", "processing", "shipped", "delivered", "cancelled", "payment", "status tabs"] },
+    workflow: {
+      en: [
+        { id: "fulfilment", title: "Normal fulfilment", body: "Pending orders move to Processing, then Shipped and Delivered when the next fulfilment owner completes its step.", status: "Pending -> Processing -> Shipped -> Delivered", owner: "Staff, shop/logistics, then customer delivery" },
+        { id: "exception", title: "Exception path", body: "Cancelled orders leave the normal path; refund and return statuses appear with the related order when a request exists.", status: "Cancelled or refund/return stage", owner: "Staff, Finance, or logistics by stage" },
+      ],
+      tl: [
+        { id: "fulfilment", title: "Normal fulfilment", body: "Gumagalaw ang pending orders sa Processing, pagkatapos Shipped at Delivered kapag natapos ng susunod na fulfilment owner ang step.", status: "Pending -> Processing -> Shipped -> Delivered", owner: "Staff, shop/logistics, pagkatapos customer delivery" },
+        { id: "exception", title: "Exception path", body: "Umaalis sa normal path ang cancelled orders; lumalabas ang refund at return statuses kasama ng order kapag may request.", status: "Cancelled o refund/return stage", owner: "Staff, Finance, o logistics ayon sa stage" },
+      ],
+    },
+    steps: {
+      en: [
+        { id: "choose-tab", title: "Choose a status tab", body: "Start with Pending, Processing, Shipped, Delivered, or Cancelled to narrow the queue before opening an order.", screenshotId: "step-01-choose-tab" },
+        { id: "search-order", title: "Search the order list", body: "Search by the available order/customer fields, then verify the shop-scoped record before opening it.", screenshotId: "step-02-search-order" },
+        { id: "read-details", title: "Read order details", body: "Check payment method/status, variants, totals, fulfilment data, and any refund or return stage before acting.", screenshotId: "step-03-read-details" },
+      ],
+      tl: [
+        { id: "choose-tab", title: "Pumili ng status tab", body: "Magsimula sa Pending, Processing, Shipped, Delivered, o Cancelled para paliitin ang queue bago magbukas ng order.", screenshotId: "step-01-choose-tab" },
+        { id: "search-order", title: "Mag-search sa order list", body: "Mag-search gamit ang available order/customer fields at tiyaking shop-scoped ang record bago ito buksan.", screenshotId: "step-02-search-order" },
+        { id: "read-details", title: "Basahin ang order details", body: "Tingnan ang payment method/status, variants, totals, fulfilment data, at refund o return stage bago kumilos.", screenshotId: "step-03-read-details" },
+      ],
+    },
+    outcomes: {
+      en: [
+        { id: "status-readable", title: "The next action is visible", body: "The active status and detail fields show which Staff or downstream owner should act next.", owner: "Staff user or downstream owner", customerView: "The customer sees only the operational status exposed by the order flow.", tone: "success" },
+        { id: "exception-readable", title: "An exception is separated", body: "Cancelled, refund, and return information is read as a separate branch rather than forcing the order back into fulfilment.", owner: "Staff/Finance/logistics by branch", customerView: "The customer receives the corresponding order/refund/return status.", tone: "warning" },
+      ],
+      tl: [
+        { id: "status-readable", title: "Makikita ang susunod na action", body: "Ipinapakita ng active status at detail fields kung sinong Staff o downstream owner ang susunod na kikilos.", owner: "Staff user o downstream owner", customerView: "Ang operational status lang ng order flow ang nakikita ng customer.", tone: "success" },
+        { id: "exception-readable", title: "Hiwalay ang exception", body: "Binabasa ang cancelled, refund, at return information bilang hiwalay na branch at hindi ibinabalik ang order sa fulfilment.", owner: "Staff/Finance/logistics ayon sa branch", customerView: "Makikita ng customer ang kaukulang order/refund/return status.", tone: "warning" },
+      ],
+    },
+    errors: {
+      en: [{ id: "record-missing", title: "The order does not appear", body: "A search or tab can hide an order when its status changed or the record is outside this shop scope.", recovery: "Clear filters, search the order number again, and ask the manager if the shop assignment or status still looks wrong." }],
+      tl: [{ id: "record-missing", title: "Hindi lumalabas ang order", body: "Maaaring maitago ng search o tab ang order kapag nagbago ang status o wala ang record sa shop scope.", recovery: "I-clear ang filters, hanapin muli ang order number, at ipasuri sa manager kung mali pa rin ang assignment o status." }],
+    },
+    related: {
+      en: [{ slug: "processing-pending-retail-orders", label: "Processing one or multiple pending orders" }, { slug: "refund-return-statuses", label: "Reading refund and return statuses" }],
+      tl: [{ slug: "processing-pending-retail-orders", label: "Pag-process ng isa o maraming pending orders" }, { slug: "refund-return-statuses", label: "Pagbasa ng refund at return statuses" }],
+    },
+    screenshots: [
+      screenshot("orders", "understanding-retail-job-orders", "step-01-choose-tab", "step-01-choose-tab.webp", { en: "Retail Job Orders status tabs with redacted order rows.", tl: "Retail Job Orders status tabs na redacted ang order rows." }),
+      screenshot("orders", "understanding-retail-job-orders", "step-02-search-order", "step-02-search-order.webp", { en: "Shop-scoped Job Orders search controls.", tl: "Shop-scoped Job Orders search controls." }),
+      screenshot("orders", "understanding-retail-job-orders", "step-03-read-details", "step-03-read-details.webp", { en: "Retail order details with customer and payment data redacted.", tl: "Retail order details na redacted ang customer at payment data." }),
+    ],
+    sourceCoverage: {
+      routes: ["erp.staff.job-orders"],
+      pages: ["resources/js/Pages/ERP/STAFF/JobOrders.tsx", "routes/web.php"],
+      permissions: ["access-staff-job-orders"],
+      tests: ["resources/js/Pages/ERP/STAFF/__tests__/JobOrders.shippingCoverage.test.ts", "tests/Feature/Staff/StaffArticlesRouteTest.php"],
+    },
+  }),
+  defineStaffArticle({
+    slug: "processing-pending-retail-orders",
+    order: 11,
+    category: "orders",
+    access: {
+      anyOfPermissions: ["access-staff-job-orders"],
+      allowedBusinessTypes: ["retail", "both"],
+    },
+    title: { en: "Processing one or multiple pending orders", tl: "Pag-process ng isa o maraming pending orders" },
+    question: { en: "How do I safely move pending orders into Processing?", tl: "Paano ko ligtas na ililipat sa Processing ang pending orders?" },
+    summary: { en: "Verify a pending order, process it individually or in bulk, and understand the resulting status before shipping or pickup.", tl: "I-verify ang pending order, i-process nang isa-isa o maramihan, at unawain ang bagong status bago shipping o pickup." },
+    audience: { en: "Staff users with retail Job Orders access.", tl: "Staff users na may retail Job Orders access." },
+    keywords: { en: ["process", "pending order", "bulk", "verify", "processing", "variant", "payment"], tl: ["process", "pending order", "bulk", "verify", "processing", "variant", "payment"] },
+    prerequisites: {
+      en: [{ id: "verify-order", title: "Verify order details", body: "Confirm the customer, item variants, quantities, payment state, and shop ownership before selecting a processing action." }],
+      tl: [{ id: "verify-order", title: "I-verify ang order details", body: "Kumpirmahin ang customer, item variants, quantities, payment state, at shop ownership bago pumili ng processing action." }],
+    },
+    workflow: {
+      en: [
+        { id: "review", title: "Review before processing", body: "Pending is the review queue; a Staff action should be based on the complete order detail.", status: "Pending", owner: "Staff user" },
+        { id: "processing", title: "Processing saved", body: "A successful individual or bulk action changes the order to Processing and moves it to the next fulfilment step.", status: "Processing", owner: "Staff user / fulfilment owner" },
+      ],
+      tl: [
+        { id: "review", title: "Review bago mag-process", body: "Ang Pending ang review queue; dapat nakabatay sa kumpletong order detail ang Staff action.", status: "Pending", owner: "Staff user" },
+        { id: "processing", title: "Na-save ang Processing", body: "Kapag successful ang individual o bulk action, nagiging Processing ang order at pumupunta sa susunod na fulfilment step.", status: "Processing", owner: "Staff user / fulfilment owner" },
+      ],
+    },
+    steps: {
+      en: [
+        { id: "open-pending", title: "Open the Pending tab", body: "Search for the order and open its details. Confirm the order is still Pending before selecting an action.", screenshotId: "step-01-open-pending" },
+        { id: "process-one", title: "Process one order", body: "Use the individual process action after checking the order details. Wait for the server result before trying again.", screenshotId: "step-02-process-one" },
+        { id: "process-many", title: "Process selected orders in bulk", body: "Select only the verified pending orders, review the selection, and submit the bulk action once.", screenshotId: "step-03-process-many" },
+      ],
+      tl: [
+        { id: "open-pending", title: "Buksan ang Pending tab", body: "Hanapin ang order at buksan ang details. Tiyaking Pending pa rin bago pumili ng action.", screenshotId: "step-01-open-pending" },
+        { id: "process-one", title: "I-process ang isang order", body: "Gamitin ang individual process action pagkatapos suriin ang details. Hintayin ang server result bago ulitin.", screenshotId: "step-02-process-one" },
+        { id: "process-many", title: "I-process nang maramihan ang selected orders", body: "Piliin lang ang verified pending orders, suriin ang selection, at isang beses lang i-submit ang bulk action.", screenshotId: "step-03-process-many" },
+      ],
+    },
+    outcomes: {
+      en: [
+        { id: "processing", title: "Order becomes Processing", body: "The order leaves the Pending queue and is ready for the next shipping or pickup step.", owner: "Staff or fulfilment owner", customerView: "The customer can see the order moving into processing according to the customer order view.", tone: "success" },
+        { id: "partial-failure", title: "A bulk action can report failures", body: "If one selected order cannot move, keep the successful results and review the reported item instead of blindly retrying all.", owner: "Staff user", customerView: "Only successfully updated orders change status.", tone: "warning" },
+      ],
+      tl: [
+        { id: "processing", title: "Nagiging Processing ang order", body: "Umaalis ang order sa Pending queue at handa na sa susunod na shipping o pickup step.", owner: "Staff o fulfilment owner", customerView: "Makikita ng customer ang paglipat sa processing ayon sa customer order view.", tone: "success" },
+        { id: "partial-failure", title: "Maaaring may failure sa bulk action", body: "Kung hindi gumalaw ang isang order, panatilihin ang successful results at suriin ang nireport na item sa halip na ulitin lahat.", owner: "Staff user", customerView: "Successful na orders lang ang magbabago ng status.", tone: "warning" },
+      ],
+    },
+    errors: {
+      en: [{ id: "already-changed", title: "The order is no longer Pending", body: "The server refuses a stale processing action when another update already changed the order.", recovery: "Refresh the list, read the new status, and continue from the current tab instead of submitting the old action again." }],
+      tl: [{ id: "already-changed", title: "Hindi na Pending ang order", body: "Tinatanggihan ng server ang stale processing action kapag may naunang update na nagbago sa order.", recovery: "I-refresh ang list, basahin ang bagong status, at magpatuloy mula sa kasalukuyang tab sa halip na ulitin ang lumang action." }],
+    },
+    related: {
+      en: [{ slug: "understanding-retail-job-orders", label: "Understanding Retail Job Orders" }, { slug: "shipping-or-activating-pickup", label: "Shipping or activating pickup" }],
+      tl: [{ slug: "understanding-retail-job-orders", label: "Pag-unawa sa Retail Job Orders" }, { slug: "shipping-or-activating-pickup", label: "Shipping o pag-activate ng pickup" }],
+    },
+    screenshots: [
+      screenshot("orders", "processing-pending-retail-orders", "step-01-open-pending", "step-01-open-pending.webp", { en: "Pending order details with private customer fields redacted.", tl: "Pending order details na redacted ang private customer fields." }),
+      screenshot("orders", "processing-pending-retail-orders", "step-02-process-one", "step-02-process-one.webp", { en: "Individual order processing action and confirmation state.", tl: "Individual order processing action at confirmation state." }),
+      screenshot("orders", "processing-pending-retail-orders", "step-03-process-many", "step-03-process-many.webp", { en: "Selected pending orders ready for a reviewed bulk process action.", tl: "Selected pending orders na handa para sa reviewed bulk process action." }),
+    ],
+    sourceCoverage: {
+      routes: ["erp.staff.job-orders"],
+      pages: ["resources/js/Pages/ERP/STAFF/JobOrders.tsx", "app/Http/Controllers/Api/StaffOrderController.php"],
+      permissions: ["access-staff-job-orders"],
+      tests: ["resources/js/Pages/ERP/STAFF/__tests__/JobOrders.shippingCoverage.test.ts", "resources/js/Pages/ERP/STAFF/__tests__/JobOrders.return-actions.test.tsx"],
+    },
+  }),
+  defineStaffArticle({
+    slug: "shipping-or-activating-pickup",
+    order: 12,
+    category: "orders",
+    access: {
+      anyOfPermissions: ["access-staff-job-orders"],
+      allowedBusinessTypes: ["retail", "both"],
+    },
+    title: { en: "Shipping or activating pickup", tl: "Shipping o pag-activate ng pickup" },
+    question: { en: "What is different between third-party shipping and shop pickup?", tl: "Ano ang kaibahan ng third-party shipping at shop pickup?" },
+    summary: { en: "Prepare carrier details, recognize shop-owned delivery coverage, activate pickup, and understand what the customer sees next.", tl: "Ihanda ang carrier details, kilalanin ang shop-owned delivery coverage, i-activate ang pickup, at unawain ang susunod na makikita ng customer." },
+    audience: { en: "Staff users with retail Job Orders access.", tl: "Staff users na may retail Job Orders access." },
+    keywords: { en: ["shipping", "pickup", "third-party carrier", "tracking", "shop-owned", "delivery coverage", "activate"], tl: ["shipping", "pickup", "third-party carrier", "tracking", "shop-owned", "delivery coverage", "activate"] },
+    workflow: {
+      en: [
+        { id: "third-party", title: "Third-party shipping", body: "Carrier, tracking, and delivery details are captured when the order uses an external shipping path.", status: "Shipped", owner: "Carrier/logistics after Staff handoff" },
+        { id: "shop-pickup", title: "Shop-owned pickup", body: "Pickup activation follows the shop coverage message and exposes the customer-facing pickup state.", status: "Pickup active", owner: "Shop/assigned delivery owner" },
+      ],
+      tl: [
+        { id: "third-party", title: "Third-party shipping", body: "Kinokolekta ang carrier, tracking, at delivery details kapag external shipping path ang gamit ng order.", status: "Shipped", owner: "Carrier/logistics pagkatapos ng Staff handoff" },
+        { id: "shop-pickup", title: "Shop-owned pickup", body: "Sumusunod ang pickup activation sa shop coverage message at ipinapakita ang customer-facing pickup state.", status: "Pickup active", owner: "Shop/assigned delivery owner" },
+      ],
+    },
+    steps: {
+      en: [
+        { id: "read-coverage", title: "Read the delivery coverage", body: "Confirm whether the order uses a third-party carrier or a shop-owned delivery/pickup path before entering fields.", screenshotId: "step-01-read-coverage" },
+        { id: "enter-carrier", title: "Enter external shipping details", body: "For third-party shipping, enter only the carrier/tracking values requested by the form and verify them before saving.", screenshotId: "step-02-enter-carrier" },
+        { id: "activate-pickup", title: "Activate shop pickup", body: "For shop-owned pickup, use the activation action after the order is ready and monitor the resulting tracking/customer message.", screenshotId: "step-03-activate-pickup" },
+      ],
+      tl: [
+        { id: "read-coverage", title: "Basahin ang delivery coverage", body: "Tiyaking alam kung third-party carrier o shop-owned delivery/pickup path ang order bago maglagay ng fields.", screenshotId: "step-01-read-coverage" },
+        { id: "enter-carrier", title: "Ilagay ang external shipping details", body: "Sa third-party shipping, ilagay lang ang carrier/tracking values na hinihingi at i-verify bago mag-save.", screenshotId: "step-02-enter-carrier" },
+        { id: "activate-pickup", title: "I-activate ang shop pickup", body: "Sa shop-owned pickup, gamitin ang activation action kapag ready na ang order at bantayan ang tracking/customer message.", screenshotId: "step-03-activate-pickup" },
+      ],
+    },
+    outcomes: {
+      en: [
+        { id: "carrier-handoff", title: "Carrier handoff recorded", body: "The order can show its carrier/tracking path and move to the next delivery owner.", owner: "Carrier/logistics", customerView: "The customer can receive tracking or delivery information exposed by the order view.", tone: "success" },
+        { id: "pickup-active", title: "Pickup is active", body: "Shop-owned pickup is available for the order and remains tied to the shop's coverage state.", owner: "Shop/assigned delivery owner", customerView: "The customer sees pickup activation and its available status/message.", tone: "success" },
+      ],
+      tl: [
+        { id: "carrier-handoff", title: "Naka-record ang carrier handoff", body: "Maaaring ipakita ng order ang carrier/tracking path at pumunta sa susunod na delivery owner.", owner: "Carrier/logistics", customerView: "Makakatanggap ang customer ng tracking o delivery information na ipinapakita ng order view.", tone: "success" },
+        { id: "pickup-active", title: "Active na ang pickup", body: "Available na ang shop-owned pickup at nananatiling nakatali sa coverage state ng shop.", owner: "Shop/assigned delivery owner", customerView: "Makikita ng customer ang pickup activation at status/message nito.", tone: "success" },
+      ],
+    },
+    errors: {
+      en: [{ id: "coverage-or-field", title: "The shipping action is unavailable", body: "The order may not be ready, the shop may not cover the destination, or a required carrier field may be missing.", recovery: "Read the coverage message, complete only the required fields, and refresh the order if another Staff update happened first." }],
+      tl: [{ id: "coverage-or-field", title: "Hindi available ang shipping action", body: "Maaaring hindi pa ready ang order, hindi covered ng shop ang destination, o kulang ang required carrier field.", recovery: "Basahin ang coverage message, kumpletuhin lang ang required fields, at i-refresh ang order kung may naunang Staff update." }],
+    },
+    related: {
+      en: [{ slug: "processing-pending-retail-orders", label: "Processing one or multiple pending orders" }, { slug: "customer-delivery-receipt-disputes", label: "Customer delivery receipt and dispute evidence" }],
+      tl: [{ slug: "processing-pending-retail-orders", label: "Pag-process ng isa o maraming pending orders" }, { slug: "customer-delivery-receipt-disputes", label: "Customer delivery receipt at dispute evidence" }],
+    },
+    screenshots: [
+      screenshot("orders", "shipping-or-activating-pickup", "step-01-read-coverage", "step-01-read-coverage.webp", { en: "Order delivery coverage message with private destination data hidden.", tl: "Order delivery coverage message na nakatago ang private destination data." }),
+      screenshot("orders", "shipping-or-activating-pickup", "step-02-enter-carrier", "step-02-enter-carrier.webp", { en: "Third-party carrier and tracking fields with values redacted.", tl: "Third-party carrier at tracking fields na redacted ang values." }),
+      screenshot("orders", "shipping-or-activating-pickup", "step-03-activate-pickup", "step-03-activate-pickup.webp", { en: "Shop-owned pickup activation action and resulting status.", tl: "Shop-owned pickup activation action at resulting status." }),
+    ],
+    sourceCoverage: {
+      routes: ["erp.staff.job-orders", "api.logistics.*"],
+      pages: ["resources/js/Pages/ERP/STAFF/JobOrders.tsx", "app/Http/Controllers/Api/Logistics/ShipmentController.php"],
+      permissions: ["access-staff-job-orders"],
+      tests: ["resources/js/Pages/ERP/STAFF/__tests__/JobOrders.shippingCoverage.test.ts", "tests/Feature/Logistics/LogisticsPageAccessTest.php"],
+    },
+  }),
+  defineStaffArticle({
+    slug: "understanding-cancelled-orders",
+    order: 13,
+    category: "orders",
+    access: {
+      anyOfPermissions: ["access-staff-job-orders"],
+      allowedBusinessTypes: ["retail", "both"],
+    },
+    title: { en: "Understanding cancelled orders", tl: "Pag-unawa sa cancelled orders" },
+    question: { en: "Why can a cancelled order no longer continue fulfilment?", tl: "Bakit hindi na puwedeng ituloy ang fulfilment ng cancelled order?" },
+    summary: { en: "Read cancellation reasons and notes, delivery cancellation details, and the boundary that stops a cancelled order from shipping.", tl: "Basahin ang cancellation reasons at notes, delivery cancellation details, at boundary na humihinto sa shipping ng cancelled order." },
+    audience: { en: "Staff users with retail Job Orders access.", tl: "Staff users na may retail Job Orders access." },
+    keywords: { en: ["cancelled", "cancellation", "reason", "notes", "fulfilment", "delivery stop"], tl: ["cancelled", "cancellation", "dahilan", "notes", "fulfilment", "delivery stop"] },
+    workflow: {
+      en: [
+        { id: "cancelled", title: "Cancellation recorded", body: "The order stores the cancellation status and available reason or note.", status: "Cancelled", owner: "Customer, Staff, or system cancellation owner" },
+        { id: "fulfilment-stopped", title: "Fulfilment stops", body: "A cancelled order exits the normal Pending -> Processing -> Shipped -> Delivered path.", status: "No further fulfilment", owner: "Staff/fulfilment owner" },
+      ],
+      tl: [
+        { id: "cancelled", title: "Naka-record ang cancellation", body: "Naka-store sa order ang cancelled status at available na reason o note.", status: "Cancelled", owner: "Customer, Staff, o system cancellation owner" },
+        { id: "fulfilment-stopped", title: "Humihinto ang fulfilment", body: "Umaalis ang cancelled order sa normal Pending -> Processing -> Shipped -> Delivered path.", status: "No further fulfilment", owner: "Staff/fulfilment owner" },
+      ],
+    },
+    steps: {
+      en: [
+        { id: "open-cancelled", title: "Open the Cancelled tab", body: "Find the order in Cancelled instead of trying to process it from an old Pending or Processing view.", screenshotId: "step-01-open-cancelled" },
+        { id: "read-reason", title: "Read the reason and notes", body: "Review the cancellation reason, note, and any delivery cancellation detail that explains why fulfilment stopped.", screenshotId: "step-02-read-reason" },
+        { id: "route-follow-up", title: "Follow the appropriate follow-up", body: "If money or a refund request is involved, use the refund/return guide and do not restart fulfilment.", screenshotId: "step-03-route-follow-up" },
+      ],
+      tl: [
+        { id: "open-cancelled", title: "Buksan ang Cancelled tab", body: "Hanapin ang order sa Cancelled sa halip na i-process mula sa lumang Pending o Processing view.", screenshotId: "step-01-open-cancelled" },
+        { id: "read-reason", title: "Basahin ang reason at notes", body: "Suriin ang cancellation reason, note, at delivery cancellation detail na nagpapaliwanag kung bakit huminto ang fulfilment.", screenshotId: "step-02-read-reason" },
+        { id: "route-follow-up", title: "Sundin ang tamang follow-up", body: "Kung may pera o refund request, gamitin ang refund/return guide at huwag ibalik sa fulfilment ang order.", screenshotId: "step-03-route-follow-up" },
+      ],
+    },
+    outcomes: {
+      en: [
+        { id: "fulfilment-closed", title: "Fulfilment is closed", body: "The cancelled record remains available for history and any permitted refund/return follow-up.", owner: "Staff/Finance by follow-up", customerView: "The customer sees the order as cancelled and receives the applicable refund communication.", tone: "neutral" },
+        { id: "no-restart", title: "No restart action", body: "The Staff user cannot use cancellation as a shortcut to bypass the normal order state machine.", owner: "Order workflow rules", customerView: "No new shipment is created from the cancelled order.", tone: "warning" },
+      ],
+      tl: [
+        { id: "fulfilment-closed", title: "Sarado na ang fulfilment", body: "Nananatili ang cancelled record para sa history at pinapayagang refund/return follow-up.", owner: "Staff/Finance ayon sa follow-up", customerView: "Makikita ng customer na cancelled ang order at matatanggap ang kaukulang refund communication.", tone: "neutral" },
+        { id: "no-restart", title: "Walang restart action", body: "Hindi puwedeng gamitin ng Staff ang cancellation para lampasan ang normal order state machine.", owner: "Order workflow rules", customerView: "Walang bagong shipment na nililikha mula sa cancelled order.", tone: "warning" },
+      ],
+    },
+    errors: {
+      en: [{ id: "stale-action", title: "An old action is still visible", body: "A page can contain controls from before cancellation while the server already treats the order as cancelled.", recovery: "Refresh the record and trust the current server status. Do not retry a fulfilment action against a cancelled order." }],
+      tl: [{ id: "stale-action", title: "Nakikita pa ang lumang action", body: "Maaaring may controls pa mula bago ang cancellation kahit cancelled na ang order sa server.", recovery: "I-refresh ang record at sundin ang kasalukuyang server status. Huwag ulitin ang fulfilment action." }],
+    },
+    related: {
+      en: [{ slug: "understanding-retail-job-orders", label: "Understanding Retail Job Orders" }, { slug: "review-customer-refund-request", label: "Reviewing a customer refund request" }],
+      tl: [{ slug: "understanding-retail-job-orders", label: "Pag-unawa sa Retail Job Orders" }, { slug: "review-customer-refund-request", label: "Pag-review ng customer refund request" }],
+    },
+    screenshots: [
+      screenshot("orders", "understanding-cancelled-orders", "step-01-open-cancelled", "step-01-open-cancelled.webp", { en: "Cancelled order tab with order identifiers redacted.", tl: "Cancelled order tab na redacted ang order identifiers." }),
+      screenshot("orders", "understanding-cancelled-orders", "step-02-read-reason", "step-02-read-reason.webp", { en: "Cancellation reason, notes, and delivery details with private data hidden.", tl: "Cancellation reason, notes, at delivery details na nakatago ang private data." }),
+      screenshot("orders", "understanding-cancelled-orders", "step-03-route-follow-up", "step-03-route-follow-up.webp", { en: "Cancelled order detail linking to a permitted refund follow-up.", tl: "Cancelled order detail na may link sa pinapayagang refund follow-up." }),
+    ],
+    sourceCoverage: {
+      routes: ["erp.staff.job-orders"],
+      pages: ["resources/js/Pages/ERP/STAFF/JobOrders.tsx", "app/Models/Order.php"],
+      permissions: ["access-staff-job-orders"],
+      tests: ["resources/js/Pages/ERP/STAFF/__tests__/JobOrders.return-actions.test.tsx", "tests/Feature/Staff/StaffArticlesRouteTest.php"],
+    },
+  }),
+  defineStaffArticle({
+    slug: "review-customer-refund-request",
+    order: 14,
+    category: "orders",
+    access: {
+      anyOfPermissions: ["access-staff-job-orders"],
+      allowedBusinessTypes: ["retail", "both"],
+    },
+    title: { en: "Reviewing a customer refund request", tl: "Pag-review ng customer refund request" },
+    question: { en: "What evidence and checks are required before I approve a refund request?", tl: "Anong evidence at checks ang kailangan bago mag-approve ng refund request?" },
+    summary: { en: "Review requested lines and evidence, enforce eligibility and quantity checks, approve once, or reject with a required reason.", tl: "Suriin ang requested lines at evidence, i-check ang eligibility at quantity, mag-approve nang isang beses, o mag-reject na may required reason." },
+    audience: { en: "Staff users with retail Job Orders and refund-review access.", tl: "Staff users na may retail Job Orders at refund-review access." },
+    keywords: { en: ["refund", "customer request", "evidence", "eligibility", "approve", "reject", "reason", "quantity"], tl: ["refund", "customer request", "evidence", "eligibility", "approve", "reject", "dahilan", "quantity"] },
+    prerequisites: {
+      en: [{ id: "read-evidence", title: "Review the request evidence", body: "Open the request, requested lines, quantities, and attached evidence without copying private customer details into notes or screenshots." }],
+      tl: [{ id: "read-evidence", title: "Suriin ang request evidence", body: "Buksan ang request, requested lines, quantities, at attached evidence nang hindi kinokopya ang private customer details sa notes o screenshots." }],
+    },
+    workflow: {
+      en: [
+        { id: "staff-review", title: "Staff eligibility review", body: "The Staff decision checks the requested items, quantity, evidence, and shop-scoped eligibility.", status: "Awaiting Staff approval", owner: "Staff user" },
+        { id: "decision", title: "Approve or reject", body: "Approval sends the refund flow to the next Finance stage; rejection stops this path and requires a reason.", status: "Approved or rejected", owner: "Staff user, then Finance if approved" },
+      ],
+      tl: [
+        { id: "staff-review", title: "Staff eligibility review", body: "Sinusuri ng Staff decision ang requested items, quantity, evidence, at shop-scoped eligibility.", status: "Awaiting Staff approval", owner: "Staff user" },
+        { id: "decision", title: "Approve o reject", body: "Ipinapasa ng approval ang refund flow sa susunod na Finance stage; hinihinto ng rejection ang path at kailangan ng reason.", status: "Approved o rejected", owner: "Staff user, pagkatapos Finance kung approved" },
+      ],
+    },
+    steps: {
+      en: [
+        { id: "open-request", title: "Open the refund request", body: "Verify the order, requested lines, quantity, deadline/eligibility, and shop ownership before choosing a decision.", screenshotId: "step-01-open-request" },
+        { id: "check-evidence", title: "Check evidence and repeat-review protection", body: "Read the evidence and confirm the request has not already been decided or changed by another reviewer.", screenshotId: "step-02-check-evidence" },
+        { id: "decide", title: "Approve or reject with the correct reason", body: "Approve only when eligible. If rejecting, enter the required factual reason; do not promise an immediate payout.", screenshotId: "step-03-decide" },
+      ],
+      tl: [
+        { id: "open-request", title: "Buksan ang refund request", body: "I-verify ang order, requested lines, quantity, deadline/eligibility, at shop ownership bago pumili ng decision.", screenshotId: "step-01-open-request" },
+        { id: "check-evidence", title: "Suriin ang evidence at repeat-review protection", body: "Basahin ang evidence at tiyaking hindi pa nade-decide o nababago ng ibang reviewer ang request.", screenshotId: "step-02-check-evidence" },
+        { id: "decide", title: "Mag-approve o reject na may tamang reason", body: "Mag-approve lang kung eligible. Sa rejection, ilagay ang required factual reason at huwag mangako ng agarang payout.", screenshotId: "step-03-decide" },
+      ],
+    },
+    outcomes: {
+      en: [
+        { id: "approved", title: "Staff approval recorded", body: "The request moves to the Finance-pending path; Staff approval alone does not execute money movement.", owner: "Finance next", customerView: "The customer sees a pending refund/return stage according to the order flow.", tone: "success" },
+        { id: "rejected", title: "Rejection stops the path", body: "The request stores the rejection reason and does not continue to Finance or return processing.", owner: "Staff user for a clear reason; customer support as needed", customerView: "The customer receives the rejection result/reason exposed by the refund flow.", tone: "danger" },
+      ],
+      tl: [
+        { id: "approved", title: "Naka-record ang Staff approval", body: "Pumupunta ang request sa Finance-pending path; hindi pa nito ine-execute ang money movement.", owner: "Finance ang susunod", customerView: "Makikita ng customer ang pending refund/return stage ayon sa order flow.", tone: "success" },
+        { id: "rejected", title: "Humihinto ang rejection", body: "Naka-store ang rejection reason at hindi nagpapatuloy sa Finance o return processing ang request.", owner: "Staff user para sa malinaw na reason; customer support kung kailangan", customerView: "Matatanggap ng customer ang rejection result/reason na ipinapakita ng refund flow.", tone: "danger" },
+      ],
+    },
+    errors: {
+      en: [{ id: "ineligible", title: "The request is not eligible", body: "The server can reject a request for deadline, item, quantity, duplicate-review, or evidence reasons.", recovery: "Read the exact validation message, do not retry a duplicate decision, and use the recorded reason for the next support step." }],
+      tl: [{ id: "ineligible", title: "Hindi eligible ang request", body: "Maaaring i-reject ng server dahil sa deadline, item, quantity, duplicate-review, o evidence ang request.", recovery: "Basahin ang validation message, huwag ulitin ang duplicate decision, at gamitin ang recorded reason para sa susunod na support step." }],
+    },
+    related: {
+      en: [{ slug: "after-staff-refund-decision", label: "What happens after Staff approves or rejects a refund" }, { slug: "arranging-a-return", label: "Arranging a return" }],
+      tl: [{ slug: "after-staff-refund-decision", label: "Ano ang mangyayari pagkatapos i-approve o i-reject ng Staff ang refund" }, { slug: "arranging-a-return", label: "Pag-aayos ng return" }],
+    },
+    screenshots: [
+      screenshot("orders", "review-customer-refund-request", "step-01-open-request", "step-01-open-request.webp", { en: "Refund request detail with customer identity and evidence redacted.", tl: "Refund request detail na redacted ang customer identity at evidence." }),
+      screenshot("orders", "review-customer-refund-request", "step-02-check-evidence", "step-02-check-evidence.webp", { en: "Refund evidence and requested-line review state.", tl: "Refund evidence at requested-line review state." }),
+      screenshot("orders", "review-customer-refund-request", "step-03-decide", "step-03-decide.webp", { en: "Refund approve/reject controls with required rejection reason field.", tl: "Refund approve/reject controls na may required rejection reason field." }),
+    ],
+    sourceCoverage: {
+      routes: ["erp.staff.job-orders", "api.refunds.*"],
+      pages: ["resources/js/Pages/ERP/STAFF/JobOrders.tsx", "app/Services/OrderRefundService.php"],
+      permissions: ["access-staff-job-orders"],
+      tests: ["tests/Feature/OrderRefundReturnInspectionTest.php", "resources/js/Pages/ERP/STAFF/__tests__/JobOrders.return-actions.test.tsx"],
+    },
+  }),
+  defineStaffArticle({
+    slug: "after-staff-refund-decision",
+    order: 15,
+    category: "orders",
+    access: {
+      anyOfPermissions: ["access-staff-job-orders"],
+      allowedBusinessTypes: ["retail", "both"],
+    },
+    title: { en: "What happens after Staff approves or rejects a refund", tl: "Ano ang mangyayari pagkatapos i-approve o i-reject ng Staff ang refund" },
+    question: { en: "Does Staff approval pay the customer immediately?", tl: "Nagbabayad ba agad sa customer ang Staff approval?" },
+    summary: { en: "Track the Finance handoff, understand why approval is not an immediate payout, and read the stopped path after rejection.", tl: "Bantayan ang Finance handoff, unawain kung bakit hindi agad payout ang approval, at basahin ang humintong path pagkatapos ng rejection." },
+    audience: { en: "Staff users who review customer refund requests.", tl: "Staff users na nagre-review ng customer refund requests." },
+    keywords: { en: ["refund", "approved", "rejected", "Finance", "pending", "payout", "next owner"], tl: ["refund", "approved", "rejected", "Finance", "pending", "payout", "susunod na owner"] },
+    workflow: {
+      en: [
+        { id: "staff-approved", title: "Staff approved", body: "The shop review is complete, but Finance still owns the next refund decision or execution stage.", status: "Pending Finance", owner: "Finance" },
+        { id: "staff-rejected", title: "Staff rejected", body: "The request stops at the shop review and keeps the required rejection reason.", status: "Rejected", owner: "Staff/customer support follow-up" },
+      ],
+      tl: [
+        { id: "staff-approved", title: "Approved ng Staff", body: "Tapos na ang shop review pero Finance pa rin ang may-ari ng susunod na refund decision o execution stage.", status: "Pending Finance", owner: "Finance" },
+        { id: "staff-rejected", title: "Rejected ng Staff", body: "Humihinto ang request sa shop review at pinapanatili ang required rejection reason.", status: "Rejected", owner: "Staff/customer support follow-up" },
+      ],
+    },
+    steps: {
+      en: [
+        { id: "read-result", title: "Read the Staff decision", body: "Open the refund detail and confirm whether the Staff status is approved or rejected, including the stored reason.", screenshotId: "step-01-read-result" },
+        { id: "monitor-finance", title: "Monitor the Finance handoff", body: "For an approved request, watch the Finance-pending state. Do not tell the customer that money has already moved.", screenshotId: "step-02-monitor-finance" },
+        { id: "explain-next-step", title: "Explain the next owner", body: "Use the current status to tell the customer or support owner whether Finance, return logistics, or a correction is next.", screenshotId: "step-03-explain-next-step" },
+      ],
+      tl: [
+        { id: "read-result", title: "Basahin ang Staff decision", body: "Buksan ang refund detail at kumpirmahin kung approved o rejected ang Staff status kasama ang stored reason.", screenshotId: "step-01-read-result" },
+        { id: "monitor-finance", title: "Bantayan ang Finance handoff", body: "Sa approved request, bantayan ang Finance-pending state. Huwag sabihin sa customer na gumalaw na ang pera.", screenshotId: "step-02-monitor-finance" },
+        { id: "explain-next-step", title: "Ipaliwanag ang susunod na owner", body: "Gamitin ang current status para malaman kung Finance, return logistics, o correction ang susunod.", screenshotId: "step-03-explain-next-step" },
+      ],
+    },
+    outcomes: {
+      en: [
+        { id: "finance-pending", title: "Pending Finance", body: "Staff approval hands the request to Finance; no immediate payout occurs at this stage.", owner: "Finance", customerView: "The customer sees a pending refund/return stage rather than a completed payment.", tone: "warning" },
+        { id: "stopped-rejected", title: "Rejected with reason", body: "Staff rejection stops the flow and preserves the reason for customer/support follow-up.", owner: "Staff/customer support", customerView: "The customer sees the rejection status and available reason.", tone: "danger" },
+      ],
+      tl: [
+        { id: "finance-pending", title: "Pending Finance", body: "Ipinapasa ng Staff approval ang request sa Finance; walang agarang payout sa stage na ito.", owner: "Finance", customerView: "Makikita ng customer ang pending refund/return stage at hindi completed payment.", tone: "warning" },
+        { id: "stopped-rejected", title: "Rejected na may reason", body: "Humihinto ang flow sa Staff rejection at pinapanatili ang reason para sa customer/support follow-up.", owner: "Staff/customer support", customerView: "Makikita ng customer ang rejection status at available reason.", tone: "danger" },
+      ],
+    },
+    errors: {
+      en: [{ id: "payout-assumption", title: "The customer expects an immediate payout", body: "Staff approval is only a handoff; Finance must still complete its authoritative stage.", recovery: "Share the current pending status, avoid promising a date, and follow the Finance-owned status until it changes." }],
+      tl: [{ id: "payout-assumption", title: "Umaasa ang customer ng agarang payout", body: "Handoff lang ang Staff approval; kailangan pa ring tapusin ng Finance ang authoritative stage.", recovery: "Ibahagi ang kasalukuyang pending status, huwag mangako ng petsa, at sundin ang Finance-owned status." }],
+    },
+    related: {
+      en: [{ slug: "review-customer-refund-request", label: "Reviewing a customer refund request" }, { slug: "refund-return-statuses", label: "Reading refund and return statuses" }],
+      tl: [{ slug: "review-customer-refund-request", label: "Pag-review ng customer refund request" }, { slug: "refund-return-statuses", label: "Pagbasa ng refund at return statuses" }],
+    },
+    screenshots: [
+      screenshot("orders", "after-staff-refund-decision", "step-01-read-result", "step-01-read-result.webp", { en: "Refund detail showing the Staff decision with private request data hidden.", tl: "Refund detail na ipinapakita ang Staff decision at nakatago ang private request data." }),
+      screenshot("orders", "after-staff-refund-decision", "step-02-monitor-finance", "step-02-monitor-finance.webp", { en: "Refund status showing the pending Finance handoff.", tl: "Refund status na ipinapakita ang pending Finance handoff." }),
+      screenshot("orders", "after-staff-refund-decision", "step-03-explain-next-step", "step-03-explain-next-step.webp", { en: "Refund status and next-owner message without customer identifiers.", tl: "Refund status at next-owner message na walang customer identifiers." }),
+    ],
+    sourceCoverage: {
+      routes: ["erp.staff.job-orders", "api.refunds.*"],
+      pages: ["resources/js/Pages/ERP/STAFF/JobOrders.tsx", "app/Services/OrderRefundService.php"],
+      permissions: ["access-staff-job-orders", "access-refund-approval"],
+      tests: ["tests/Feature/OrderRefundReturnInspectionTest.php", "tests/Feature/Notifications/NotificationCriticalFlowsTest.php"],
+    },
+  }),
+  defineStaffArticle({
+    slug: "arranging-a-return",
+    order: 16,
+    category: "orders",
+    access: {
+      anyOfPermissions: ["access-staff-job-orders"],
+      allowedBusinessTypes: ["retail", "both"],
+    },
+    title: { en: "Arranging a return", tl: "Pag-aayos ng return" },
+    question: { en: "Who arranges the return and which tracking fields should Staff monitor?", tl: "Sino ang nag-aayos ng return at anong tracking fields ang babantayan ng Staff?" },
+    summary: { en: "Explain Finance approval prerequisites, customer shipment, Staff pickup, shop-owned coverage, and third-party carrier details.", tl: "Ipaliwanag ang Finance approval prerequisites, customer shipment, Staff pickup, shop-owned coverage, at third-party carrier details." },
+    audience: { en: "Staff users handling an approved retail refund return path.", tl: "Staff users na humahawak ng approved retail refund return path." },
+    keywords: { en: ["return", "pickup", "customer shipment", "tracking", "carrier", "shop-owned", "Finance"], tl: ["return", "pickup", "customer shipment", "tracking", "carrier", "shop-owned", "Finance"] },
+    prerequisites: {
+      en: [{ id: "finance-approved", title: "Confirm the return is eligible to arrange", body: "Staff cannot invent a return path before the refund/Finance stage and available logistics plan permit it." }],
+      tl: [{ id: "finance-approved", title: "Kumpirmahin na puwede nang ayusin ang return", body: "Hindi puwedeng gumawa ng return path ang Staff bago payagan ito ng refund/Finance stage at available logistics plan." }],
+    },
+    workflow: {
+      en: [
+        { id: "customer-shipment", title: "Customer ships the item", body: "The customer can provide third-party return tracking when that return source is selected.", status: "Pending customer shipment", owner: "Customer" },
+        { id: "staff-pickup", title: "Staff-arranged pickup", body: "Staff records the pickup/carrier fields allowed by the shop coverage and return plan.", status: "Pending Staff pickup", owner: "Staff/shop logistics" },
+        { id: "transit", title: "Return in transit", body: "After handoff, monitor the tracking state until the item is received and inspected.", status: "In transit", owner: "Carrier/logistics" },
+      ],
+      tl: [
+        { id: "customer-shipment", title: "Nagpapadala ang customer", body: "Puwedeng magbigay ang customer ng third-party return tracking kapag iyon ang napiling return source.", status: "Pending customer shipment", owner: "Customer" },
+        { id: "staff-pickup", title: "Staff-arranged pickup", body: "Ire-record ng Staff ang pickup/carrier fields na pinapayagan ng shop coverage at return plan.", status: "Pending Staff pickup", owner: "Staff/shop logistics" },
+        { id: "transit", title: "In transit ang return", body: "Pagkatapos ng handoff, bantayan ang tracking hanggang ma-receive at ma-inspect ang item.", status: "In transit", owner: "Carrier/logistics" },
+      ],
+    },
+    steps: {
+      en: [
+        { id: "choose-source", title: "Confirm the return source", body: "Read whether the plan expects customer shipment, Staff pickup, shop-owned delivery, or a third-party carrier.", screenshotId: "step-01-choose-source" },
+        { id: "record-tracking", title: "Record the permitted tracking fields", body: "Enter carrier, tracking number, rider, phone, and link only when the current return form asks for them. Keep private data out of screenshots.", screenshotId: "step-02-record-tracking" },
+        { id: "monitor-transit", title: "Monitor the handoff", body: "Use the return status and tracking information to know when Staff can confirm receipt and inspect the item.", screenshotId: "step-03-monitor-transit" },
+      ],
+      tl: [
+        { id: "choose-source", title: "Kumpirmahin ang return source", body: "Basahin kung customer shipment, Staff pickup, shop-owned delivery, o third-party carrier ang inaasahan ng plan.", screenshotId: "step-01-choose-source" },
+        { id: "record-tracking", title: "I-record ang pinapayagang tracking fields", body: "Ilagay ang carrier, tracking number, rider, phone, at link kapag hinihingi ng return form. Huwag maglagay ng private data sa screenshots.", screenshotId: "step-02-record-tracking" },
+        { id: "monitor-transit", title: "Bantayan ang handoff", body: "Gamitin ang return status at tracking para malaman kung kailan puwedeng mag-confirm ng receipt at mag-inspect ang Staff.", screenshotId: "step-03-monitor-transit" },
+      ],
+    },
+    outcomes: {
+      en: [
+        { id: "return-arranged", title: "Return plan recorded", body: "The order records the chosen source and moves to the corresponding shipment/pickup owner.", owner: "Customer, Staff, or carrier by source", customerView: "The customer sees the selected return instruction and current status.", tone: "success" },
+        { id: "in-transit", title: "Return is in transit", body: "The return is no longer awaiting arrangement; monitor tracking and wait for receipt.", owner: "Carrier/logistics until Staff receipt", customerView: "The customer sees the return tracking/status available to the flow.", tone: "neutral" },
+      ],
+      tl: [
+        { id: "return-arranged", title: "Naka-record ang return plan", body: "Naka-record sa order ang source at pumupunta sa kaukulang shipment/pickup owner.", owner: "Customer, Staff, o carrier ayon sa source", customerView: "Makikita ng customer ang return instruction at current status.", tone: "success" },
+        { id: "in-transit", title: "In transit na ang return", body: "Hindi na naghihintay ng arrangement ang return; bantayan ang tracking at hintayin ang receipt.", owner: "Carrier/logistics hanggang Staff receipt", customerView: "Makikita ng customer ang return tracking/status na available sa flow.", tone: "neutral" },
+      ],
+    },
+    errors: {
+      en: [{ id: "missing-prerequisite", title: "The return action is not available", body: "The refund/Finance stage, coverage, or required carrier information may not permit arrangement yet.", recovery: "Read the current return status, complete the allowed prerequisite, and ask Finance or logistics about an ownership handoff." }],
+      tl: [{ id: "missing-prerequisite", title: "Hindi available ang return action", body: "Maaaring hindi pa payagan ng refund/Finance stage, coverage, o required carrier information ang arrangement.", recovery: "Basahin ang current return status, kumpletuhin ang pinapayagang prerequisite, at tanungin ang Finance o logistics tungkol sa handoff." }],
+    },
+    related: {
+      en: [{ slug: "after-staff-refund-decision", label: "What happens after Staff approves or rejects a refund" }, { slug: "confirming-inspecting-returns", label: "Confirming and inspecting returned items" }],
+      tl: [{ slug: "after-staff-refund-decision", label: "Ano ang mangyayari pagkatapos ng Staff refund decision" }, { slug: "confirming-inspecting-returns", label: "Pag-confirm at pag-inspect ng returned items" }],
+    },
+    screenshots: [
+      screenshot("orders", "arranging-a-return", "step-01-choose-source", "step-01-choose-source.webp", { en: "Return source and coverage options with customer destination data hidden.", tl: "Return source at coverage options na nakatago ang customer destination data." }),
+      screenshot("orders", "arranging-a-return", "step-02-record-tracking", "step-02-record-tracking.webp", { en: "Return carrier and tracking fields with values redacted.", tl: "Return carrier at tracking fields na redacted ang values." }),
+      screenshot("orders", "arranging-a-return", "step-03-monitor-transit", "step-03-monitor-transit.webp", { en: "Return tracking status while the item is in transit.", tl: "Return tracking status habang in transit ang item." }),
+    ],
+    sourceCoverage: {
+      routes: ["erp.staff.job-orders", "api.refunds.*", "api.logistics.*"],
+      pages: ["resources/js/Pages/ERP/STAFF/JobOrders.tsx", "app/Services/OrderRefundService.php"],
+      permissions: ["access-staff-job-orders"],
+      tests: ["tests/Feature/OrderRefundReturnInspectionTest.php", "resources/js/Pages/ERP/STAFF/__tests__/JobOrders.return-actions.test.tsx"],
+    },
+  }),
+  defineStaffArticle({
+    slug: "confirming-inspecting-returns",
+    order: 17,
+    category: "orders",
+    access: {
+      anyOfPermissions: ["access-staff-job-orders"],
+      allowedBusinessTypes: ["retail", "both"],
+    },
+    title: { en: "Confirming and inspecting returned items", tl: "Pag-confirm at pag-inspect ng returned items" },
+    question: { en: "How do I confirm a return and record whether items are resellable or damaged?", tl: "Paano ko iko-confirm ang return at ire-record kung resellable o damaged ang items?" },
+    summary: { en: "Use the allowed received state, confirm requested/approved quantities, inspect item condition, and understand inventory implications.", tl: "Gamitin ang pinapayagang received state, kumpirmahin ang requested/approved quantities, i-inspect ang kondisyon, at unawain ang epekto sa inventory." },
+    audience: { en: "Staff users with an eligible retail return to receive.", tl: "Staff users na may eligible retail return na tatanggapin." },
+    keywords: { en: ["return", "received", "inspect", "resellable", "damaged", "quantity", "inventory", "failed delivery"], tl: ["return", "received", "inspect", "resellable", "damaged", "quantity", "inventory", "failed delivery"] },
+    workflow: {
+      en: [
+        { id: "received", title: "Return received", body: "Staff can confirm an eligible return only in the state where receipt is allowed.", status: "Received", owner: "Staff user" },
+        { id: "inspection", title: "Inspection recorded", body: "The disposition and approved quantity determine the next refund/inventory handling.", status: "Processing", owner: "Staff, then Finance" },
+        { id: "failed-delivery", title: "Failed-delivery exception", body: "The logistics-driven failed-delivery exhaustion path does not offer the manual Staff confirmation action.", status: "Exception", owner: "Logistics/Finance workflow" },
+      ],
+      tl: [
+        { id: "received", title: "Natanggap ang return", body: "Puwede lang i-confirm ng Staff ang eligible return sa state kung saan pinapayagan ang receipt.", status: "Received", owner: "Staff user" },
+        { id: "inspection", title: "Naka-record ang inspection", body: "Tinutukoy ng disposition at approved quantity ang susunod na refund/inventory handling.", status: "Processing", owner: "Staff, pagkatapos Finance" },
+        { id: "failed-delivery", title: "Failed-delivery exception", body: "Walang manual Staff confirmation action sa logistics-driven failed-delivery exhaustion path.", status: "Exception", owner: "Logistics/Finance workflow" },
+      ],
+    },
+    steps: {
+      en: [
+        { id: "confirm-receipt", title: "Confirm the eligible received state", body: "Open the return detail and confirm requested and approved quantities before recording receipt.", screenshotId: "step-01-confirm-receipt" },
+        { id: "inspect-condition", title: "Inspect item condition", body: "Record whether each allowed quantity is resellable or damaged. Keep the description factual and free of customer identifiers.", screenshotId: "step-02-inspect-condition" },
+        { id: "review-implication", title: "Review the next implication", body: "Check whether the result moves toward Finance refund execution or an inventory disposition, then monitor the next owner.", screenshotId: "step-03-review-implication" },
+      ],
+      tl: [
+        { id: "confirm-receipt", title: "I-confirm ang eligible received state", body: "Buksan ang return detail at kumpirmahin ang requested at approved quantities bago i-record ang receipt.", screenshotId: "step-01-confirm-receipt" },
+        { id: "inspect-condition", title: "I-inspect ang kondisyon ng item", body: "I-record kung resellable o damaged ang bawat pinapayagang quantity. Dapat factual at walang customer identifiers ang description.", screenshotId: "step-02-inspect-condition" },
+        { id: "review-implication", title: "Suriin ang susunod na epekto", body: "Tingnan kung papunta sa Finance refund execution o inventory disposition ang result, at bantayan ang susunod na owner.", screenshotId: "step-03-review-implication" },
+      ],
+    },
+    outcomes: {
+      en: [
+        { id: "inspection-saved", title: "Inspection is saved", body: "The return keeps its received/inspection result and the next owner can act on the recorded quantity and condition.", owner: "Finance or inventory owner", customerView: "The customer sees the return/refund status exposed by the flow.", tone: "success" },
+        { id: "manual-unavailable", title: "Manual confirmation is unavailable", body: "Failed-delivery exhaustion follows the logistics-driven recovery path instead of a manual Staff receipt action.", owner: "Logistics/Finance", customerView: "The customer sees the exception or recovery status.", tone: "warning" },
+      ],
+      tl: [
+        { id: "inspection-saved", title: "Na-save ang inspection", body: "Nananatili sa return ang received/inspection result at makakakilos ang susunod na owner sa recorded quantity at condition.", owner: "Finance o inventory owner", customerView: "Makikita ng customer ang return/refund status na ipinapakita ng flow.", tone: "success" },
+        { id: "manual-unavailable", title: "Hindi available ang manual confirmation", body: "Ang failed-delivery exhaustion ay logistics-driven recovery path at hindi manual Staff receipt action.", owner: "Logistics/Finance", customerView: "Makikita ng customer ang exception o recovery status.", tone: "warning" },
+      ],
+    },
+    errors: {
+      en: [{ id: "quantity-or-state", title: "The return cannot be confirmed", body: "The server can refuse a state or quantity that is not currently allowed for this return.", recovery: "Refresh the detail, compare requested and approved quantities, and continue only when the server exposes the receive action." }],
+      tl: [{ id: "quantity-or-state", title: "Hindi ma-confirm ang return", body: "Maaaring tanggihan ng server ang state o quantity na hindi pinapayagan sa return na ito.", recovery: "I-refresh ang detail, ikumpara ang requested at approved quantities, at magpatuloy lang kapag ipinakita ng server ang receive action." }],
+    },
+    related: {
+      en: [{ slug: "arranging-a-return", label: "Arranging a return" }, { slug: "refund-return-statuses", label: "Reading refund and return statuses" }],
+      tl: [{ slug: "arranging-a-return", label: "Pag-aayos ng return" }, { slug: "refund-return-statuses", label: "Pagbasa ng refund at return statuses" }],
+    },
+    screenshots: [
+      screenshot("orders", "confirming-inspecting-returns", "step-01-confirm-receipt", "step-01-confirm-receipt.webp", { en: "Return receipt confirmation with order and customer data redacted.", tl: "Return receipt confirmation na redacted ang order at customer data." }),
+      screenshot("orders", "confirming-inspecting-returns", "step-02-inspect-condition", "step-02-inspect-condition.webp", { en: "Return inspection disposition controls for resellable and damaged items.", tl: "Return inspection disposition controls para sa resellable at damaged items." }),
+      screenshot("orders", "confirming-inspecting-returns", "step-03-review-implication", "step-03-review-implication.webp", { en: "Saved return inspection result and next-owner status.", tl: "Saved return inspection result at next-owner status." }),
+    ],
+    sourceCoverage: {
+      routes: ["erp.staff.job-orders", "api.refunds.*"],
+      pages: ["resources/js/Pages/ERP/STAFF/JobOrders.tsx", "app/Services/OrderRefundService.php"],
+      permissions: ["access-staff-job-orders"],
+      tests: ["tests/Feature/OrderRefundReturnInspectionTest.php", "resources/js/Pages/ERP/STAFF/__tests__/JobOrders.return-actions.test.tsx"],
+    },
+  }),
+  defineStaffArticle({
+    slug: "refund-return-statuses",
+    order: 18,
+    category: "orders",
+    access: {
+      anyOfPermissions: ["access-staff-job-orders"],
+      allowedBusinessTypes: ["retail", "both"],
+    },
+    title: { en: "Reading refund and return statuses", tl: "Pagbasa ng refund at return statuses" },
+    question: { en: "What does each refund or return status mean and who acts next?", tl: "Ano ang ibig sabihin ng bawat refund o return status at sino ang susunod na kikilos?" },
+    summary: { en: "Use the status vocabulary to tell awaiting approval, Finance, shipment, pickup, transit, inspection, success, rejection, and failure apart.", tl: "Gamitin ang status vocabulary para paghiwalayin ang awaiting approval, Finance, shipment, pickup, transit, inspection, success, rejection, at failure." },
+    audience: { en: "Staff users with retail refund/return visibility.", tl: "Staff users na may retail refund/return visibility." },
+    keywords: { en: ["refund", "return", "awaiting approval", "pending Finance", "customer shipment", "Staff pickup", "in transit", "received", "succeeded", "failed"], tl: ["refund", "return", "awaiting approval", "pending Finance", "customer shipment", "Staff pickup", "in transit", "received", "succeeded", "failed"] },
+    workflow: {
+      en: [
+        { id: "approval", title: "Awaiting approval", body: "The request is waiting for Staff or Finance review; no later return or payout action is final yet.", status: "Awaiting approval / Pending Finance", owner: "Staff or Finance" },
+        { id: "movement", title: "Return movement", body: "Pending customer shipment, Pending Staff pickup, In transit, and Received describe physical return custody.", status: "Pending shipment/pickup -> In transit -> Received", owner: "Customer, Staff, carrier" },
+        { id: "terminal", title: "Terminal outcome", body: "Processing, Succeeded, Rejected, and Failed tell Staff whether to monitor, explain, or escalate recovery.", status: "Processing / Succeeded / Rejected / Failed", owner: "Finance or recovery owner" },
+      ],
+      tl: [
+        { id: "approval", title: "Awaiting approval", body: "Naghihintay ang request ng Staff o Finance review; wala pang final na return o payout action.", status: "Awaiting approval / Pending Finance", owner: "Staff o Finance" },
+        { id: "movement", title: "Galaw ng return", body: "Ipinapakita ng Pending customer shipment, Pending Staff pickup, In transit, at Received ang physical return custody.", status: "Pending shipment/pickup -> In transit -> Received", owner: "Customer, Staff, carrier" },
+        { id: "terminal", title: "Terminal outcome", body: "Ipinapakita ng Processing, Succeeded, Rejected, at Failed kung magbabantay, magpapaliwanag, o mag-e-escalate ng recovery ang Staff.", status: "Processing / Succeeded / Rejected / Failed", owner: "Finance o recovery owner" },
+      ],
+    },
+    steps: {
+      en: [
+        { id: "identify-stage", title: "Identify the current stage", body: "Read the status label and the related order action; do not infer a payout or receipt from color alone.", screenshotId: "step-01-identify-stage" },
+        { id: "find-owner", title: "Find the next owner", body: "Use the status map to identify Staff, Finance, customer, carrier, or logistics as the next responsible party.", screenshotId: "step-02-find-owner" },
+        { id: "choose-recovery", title: "Choose the recovery path", body: "For Rejected or Failed, read the reason and use the permitted correction, resubmission, return, or support path.", screenshotId: "step-03-choose-recovery" },
+      ],
+      tl: [
+        { id: "identify-stage", title: "Tukuyin ang kasalukuyang stage", body: "Basahin ang status label at kaugnay na order action; huwag umasa sa kulay lang para sabihing payout o received na.", screenshotId: "step-01-identify-stage" },
+        { id: "find-owner", title: "Hanapin ang susunod na owner", body: "Gamitin ang status map para malaman kung Staff, Finance, customer, carrier, o logistics ang susunod na responsable.", screenshotId: "step-02-find-owner" },
+        { id: "choose-recovery", title: "Piliin ang recovery path", body: "Sa Rejected o Failed, basahin ang reason at gamitin ang pinapayagang correction, resubmission, return, o support path.", screenshotId: "step-03-choose-recovery" },
+      ],
+    },
+    outcomes: {
+      en: [
+        { id: "monitor", title: "Monitor a pending status", body: "Pending or in-transit statuses mean the next owner still has work; Staff should not duplicate the action.", owner: "Next owner in the status map", customerView: "The customer sees an in-progress status.", tone: "warning" },
+        { id: "terminal", title: "Explain a terminal status", body: "Succeeded, Rejected, or Failed needs the recorded result and the documented recovery boundary.", owner: "Finance or recovery owner", customerView: "The customer sees the final result or available recovery message.", tone: "neutral" },
+      ],
+      tl: [
+        { id: "monitor", title: "Bantayan ang pending status", body: "Ibig sabihin ng pending o in-transit ay may trabaho pa ang susunod na owner; huwag ulitin ng Staff ang action.", owner: "Susunod na owner sa status map", customerView: "Makikita ng customer ang in-progress status.", tone: "warning" },
+        { id: "terminal", title: "Ipaliwanag ang terminal status", body: "Kailangan ng Succeeded, Rejected, o Failed ang recorded result at documented recovery boundary.", owner: "Finance o recovery owner", customerView: "Makikita ng customer ang final result o recovery message.", tone: "neutral" },
+      ],
+    },
+    errors: {
+      en: [{ id: "status-mismatch", title: "The status and action do not match", body: "A stale page can show an old control after another owner updated the refund or return.", recovery: "Refresh the order, read the latest status/reason, and use only the action exposed by the server." }],
+      tl: [{ id: "status-mismatch", title: "Hindi tugma ang status at action", body: "Maaaring ipakita ng stale page ang lumang control matapos mag-update ang ibang owner.", recovery: "I-refresh ang order, basahin ang latest status/reason, at gamitin lang ang action na ibinibigay ng server." }],
+    },
+    related: {
+      en: [{ slug: "after-staff-refund-decision", label: "What happens after Staff approves or rejects a refund" }, { slug: "confirming-inspecting-returns", label: "Confirming and inspecting returned items" }],
+      tl: [{ slug: "after-staff-refund-decision", label: "Ano ang mangyayari pagkatapos ng Staff refund decision" }, { slug: "confirming-inspecting-returns", label: "Pag-confirm at pag-inspect ng returned items" }],
+    },
+    screenshots: [
+      screenshot("orders", "refund-return-statuses", "step-01-identify-stage", "step-01-identify-stage.webp", { en: "Refund and return status labels with order identifiers redacted.", tl: "Refund at return status labels na redacted ang order identifiers." }),
+      screenshot("orders", "refund-return-statuses", "step-02-find-owner", "step-02-find-owner.webp", { en: "Return detail showing the next-owner status message.", tl: "Return detail na ipinapakita ang next-owner status message." }),
+      screenshot("orders", "refund-return-statuses", "step-03-choose-recovery", "step-03-choose-recovery.webp", { en: "Rejected or failed return result with recovery reason visible and private data hidden.", tl: "Rejected o failed return result na visible ang recovery reason at nakatago ang private data." }),
+    ],
+    sourceCoverage: {
+      routes: ["erp.staff.job-orders", "api.refunds.*"],
+      pages: ["resources/js/Pages/ERP/STAFF/JobOrders.tsx", "app/Services/OrderRefundService.php"],
+      permissions: ["access-staff-job-orders"],
+      tests: ["tests/Feature/OrderRefundReturnInspectionTest.php", "resources/js/Pages/ERP/STAFF/__tests__/JobOrders.return-actions.test.tsx"],
+    },
+  }),
+  defineStaffArticle({
+    slug: "customer-delivery-receipt-disputes",
+    order: 19,
+    category: "orders",
+    access: {
+      anyOfPermissions: ["access-staff-job-orders"],
+      allowedBusinessTypes: ["retail", "both"],
+    },
+    title: { en: "Customer delivery receipt and dispute evidence", tl: "Customer delivery receipt at dispute evidence" },
+    question: { en: "What delivery proof can Staff see when a customer confirms or disputes receipt?", tl: "Anong delivery proof ang makikita ng Staff kapag kinumpirma o dinispute ng customer ang receipt?" },
+    summary: { en: "Distinguish confirmed and disputed delivery, approved proof visibility, and rejected or unapproved evidence behavior.", tl: "Paghiwalayin ang confirmed at disputed delivery, approved proof visibility, at rejected o unapproved evidence behavior." },
+    audience: { en: "Staff users with delivery evidence visibility in Retail Job Orders.", tl: "Staff users na may delivery evidence visibility sa Retail Job Orders." },
+    keywords: { en: ["delivery receipt", "dispute", "proof", "evidence", "approved", "rejected", "customer"], tl: ["delivery receipt", "dispute", "proof", "evidence", "approved", "rejected", "customer"] },
+    workflow: {
+      en: [
+        { id: "confirmed", title: "Customer confirmed receipt", body: "The order records a confirmed receipt outcome and approved proof can be shown when available.", status: "Confirmed", owner: "Customer then Staff/Finance visibility" },
+        { id: "disputed", title: "Customer disputes receipt", body: "The dispute evidence follows the approval/rejection boundary before it is treated as accepted proof.", status: "Disputed", owner: "Staff/logistics review" },
+      ],
+      tl: [
+        { id: "confirmed", title: "Kinumpirma ng customer ang receipt", body: "Naka-record ang confirmed receipt outcome at puwedeng ipakita ang approved proof kapag available.", status: "Confirmed", owner: "Customer pagkatapos Staff/Finance visibility" },
+        { id: "disputed", title: "Dinispute ng customer ang receipt", body: "Dumadaan ang dispute evidence sa approval/rejection boundary bago ituring na accepted proof.", status: "Disputed", owner: "Staff/logistics review" },
+      ],
+    },
+    steps: {
+      en: [
+        { id: "open-delivery", title: "Open the delivery detail", body: "Read whether the customer confirmed or disputed receipt and check the current evidence state.", screenshotId: "step-01-open-delivery" },
+        { id: "check-proof", title: "Check proof approval", body: "View approved proof only as exposed by the system. Rejected or unapproved proof is not authoritative delivery evidence.", screenshotId: "step-02-check-proof" },
+        { id: "route-dispute", title: "Route a dispute", body: "Keep the disputed record and send it to the responsible Staff/logistics review path instead of changing the evidence locally.", screenshotId: "step-03-route-dispute" },
+      ],
+      tl: [
+        { id: "open-delivery", title: "Buksan ang delivery detail", body: "Basahin kung kinumpirma o dinispute ng customer ang receipt at tingnan ang current evidence state.", screenshotId: "step-01-open-delivery" },
+        { id: "check-proof", title: "Suriin ang proof approval", body: "Approved proof lang ang tingnan ayon sa ipinapakita ng system. Hindi authoritative evidence ang rejected o unapproved proof.", screenshotId: "step-02-check-proof" },
+        { id: "route-dispute", title: "I-route ang dispute", body: "Panatilihin ang disputed record at ipadala sa tamang Staff/logistics review path sa halip na baguhin ang evidence locally.", screenshotId: "step-03-route-dispute" },
+      ],
+    },
+    outcomes: {
+      en: [
+        { id: "approved-proof", title: "Approved proof is visible", body: "Staff can use approved delivery evidence as part of the review record.", owner: "Staff/logistics review", customerView: "The customer sees the recorded receipt/dispute result.", tone: "success" },
+        { id: "unapproved-proof", title: "Unapproved proof is not accepted", body: "Rejected or unapproved evidence does not silently become proof through the Articles or order page.", owner: "Proof approval owner", customerView: "The customer sees the dispute/review state, not a falsely accepted receipt.", tone: "warning" },
+      ],
+      tl: [
+        { id: "approved-proof", title: "Visible ang approved proof", body: "Magagamit ng Staff ang approved delivery evidence bilang bahagi ng review record.", owner: "Staff/logistics review", customerView: "Makikita ng customer ang recorded receipt/dispute result.", tone: "success" },
+        { id: "unapproved-proof", title: "Hindi tinatanggap ang unapproved proof", body: "Hindi nagiging proof ang rejected o unapproved evidence sa pamamagitan lang ng Articles o order page.", owner: "Proof approval owner", customerView: "Makikita ng customer ang dispute/review state at hindi maling accepted receipt.", tone: "warning" },
+      ],
+    },
+    errors: {
+      en: [{ id: "proof-unavailable", title: "Proof is not available", body: "The evidence may still be awaiting approval, may have been rejected, or may not belong to this shop-scoped record.", recovery: "Read the delivery state, keep the dispute open, and route missing proof to the responsible logistics/review owner." }],
+      tl: [{ id: "proof-unavailable", title: "Hindi available ang proof", body: "Maaaring naghihintay pa ng approval, rejected, o hindi kabilang sa shop-scoped record ang evidence.", recovery: "Basahin ang delivery state, panatilihing open ang dispute, at i-route ang missing proof sa tamang logistics/review owner." }],
+    },
+    related: {
+      en: [{ slug: "shipping-or-activating-pickup", label: "Shipping or activating pickup" }, { slug: "understanding-retail-job-orders", label: "Understanding Retail Job Orders" }],
+      tl: [{ slug: "shipping-or-activating-pickup", label: "Shipping o pag-activate ng pickup" }, { slug: "understanding-retail-job-orders", label: "Pag-unawa sa Retail Job Orders" }],
+    },
+    screenshots: [
+      screenshot("orders", "customer-delivery-receipt-disputes", "step-01-open-delivery", "step-01-open-delivery.webp", { en: "Delivery receipt/dispute detail with customer identifiers redacted.", tl: "Delivery receipt/dispute detail na redacted ang customer identifiers." }),
+      screenshot("orders", "customer-delivery-receipt-disputes", "step-02-check-proof", "step-02-check-proof.webp", { en: "Approved proof visibility state with private evidence hidden.", tl: "Approved proof visibility state na nakatago ang private evidence." }),
+      screenshot("orders", "customer-delivery-receipt-disputes", "step-03-route-dispute", "step-03-route-dispute.webp", { en: "Disputed delivery record routed to review without changing evidence.", tl: "Disputed delivery record na naka-route sa review nang hindi binabago ang evidence." }),
+    ],
+    sourceCoverage: {
+      routes: ["erp.staff.job-orders", "api.logistics.delivery-dispute-evidence.*"],
+      pages: ["resources/js/Pages/ERP/STAFF/JobOrders.tsx", "app/Http/Controllers/Api/Logistics/DeliveryDisputeEvidenceController.php"],
+      permissions: ["access-staff-job-orders", "view-proof-of-delivery"],
+      tests: ["tests/Feature/CustomerDeliveryDisputeEvidenceTest.php", "resources/js/Pages/ERP/STAFF/__tests__/JobOrders.shippingCoverage.test.ts"],
+    },
+  }),
+  defineStaffArticle({
+    slug: "understanding-product-management",
+    order: 20,
+    category: "products",
+    recommended: true,
+    access: {
+      anyOfPermissions: ["access-product-management", "access-product-upload-staff"],
+      allowedBusinessTypes: ["retail", "both"],
+    },
+    title: { en: "Understanding Product Management", tl: "Pag-unawa sa Product Management" },
+    question: { en: "What can I find and do in the Staff Product Management page?", tl: "Ano ang makikita at magagawa ko sa Staff Product Management page?" },
+    summary: { en: "Use the product list, search and filters, variant quantities, pending pricing indicators, and available Staff actions.", tl: "Gamitin ang product list, search at filters, variant quantities, pending pricing indicators, at available Staff actions." },
+    audience: { en: "Staff users with retail product-management access.", tl: "Staff users na may retail product-management access." },
+    keywords: { en: ["product management", "search", "filter", "variant", "quantity", "pending pricing", "edit", "delete"], tl: ["product management", "search", "filter", "variant", "quantity", "pending pricing", "edit", "delete"] },
+    workflow: {
+      en: [
+        { id: "list", title: "Product list", body: "Products are shown within the shop context with their variants, quantities, and available actions.", status: "Loaded", owner: "Staff user" },
+        { id: "pending-price", title: "Pending pricing", body: "A pending price indicator means a request is still in its approval workflow and should not be treated as the active price.", status: "Under Review or pending", owner: "Finance/Shop Owner by stage" },
+      ],
+      tl: [
+        { id: "list", title: "Product list", body: "Ipinapakita ang products sa shop context kasama ang variants, quantities, at available actions.", status: "Loaded", owner: "Staff user" },
+        { id: "pending-price", title: "Pending pricing", body: "Ibig sabihin ng pending price indicator ay nasa approval workflow pa ang request at hindi pa active price.", status: "Under Review o pending", owner: "Finance/Shop Owner ayon sa stage" },
+      ],
+    },
+    steps: {
+      en: [
+        { id: "open-list", title: "Open the product list", body: "Check the product name, variants, quantities, and pricing indicators before choosing an action.", screenshotId: "step-01-open-list" },
+        { id: "search-filter", title: "Search and filter", body: "Use the list controls to find the product or stock state you need without assuming a result outside the shop scope.", screenshotId: "step-02-search-filter" },
+        { id: "choose-action", title: "Choose an available action", body: "Open, edit, or delete only when the current page exposes the action for your permission and the product state.", screenshotId: "step-03-choose-action" },
+      ],
+      tl: [
+        { id: "open-list", title: "Buksan ang product list", body: "Tingnan ang product name, variants, quantities, at pricing indicators bago pumili ng action.", screenshotId: "step-01-open-list" },
+        { id: "search-filter", title: "Mag-search at mag-filter", body: "Gamitin ang list controls para hanapin ang product o stock state nang hindi umaasa sa record na wala sa shop scope.", screenshotId: "step-02-search-filter" },
+        { id: "choose-action", title: "Pumili ng available action", body: "Mag-open, edit, o delete lang kapag ipinakita ng page ang action para sa permission at product state mo.", screenshotId: "step-03-choose-action" },
+      ],
+    },
+    outcomes: {
+      en: [
+        { id: "read-only-view", title: "Product information is visible", body: "The list helps Staff understand product and inventory context; the underlying mutation still requires its operational validation.", owner: "Staff user", customerView: "No customer-facing change from viewing the list.", tone: "success" },
+        { id: "pending-price-protected", title: "Pending price stays protected", body: "The active product price is not changed by merely viewing a pending pricing indicator.", owner: "Finance/Shop Owner approval flow", customerView: "The customer continues to see the active price until approval applies it.", tone: "warning" },
+      ],
+      tl: [
+        { id: "read-only-view", title: "Makikita ang product information", body: "Tinutulungan ng list ang Staff na maintindihan ang product at inventory context; may sariling validation pa rin ang mutation.", owner: "Staff user", customerView: "Walang customer-facing change sa pagtingin lang.", tone: "success" },
+        { id: "pending-price-protected", title: "Protektado ang pending price", body: "Hindi nagbabago ang active product price sa pagtingin lang sa pending pricing indicator.", owner: "Finance/Shop Owner approval flow", customerView: "Active price pa rin ang nakikita ng customer hanggang ma-approve at ma-apply.", tone: "warning" },
+      ],
+    },
+    errors: {
+      en: [{ id: "empty-results", title: "No products match", body: "The search/filter combination may be too narrow or the product may not be in this shop context.", recovery: "Clear filters, search a shorter product term, and ask the inventory/manager owner about a missing record." }],
+      tl: [{ id: "empty-results", title: "Walang tumugmang products", body: "Maaaring masyadong makitid ang search/filter o wala sa shop context ang product.", recovery: "I-clear ang filters, gumamit ng mas maikling product term, at tanungin ang inventory/manager owner tungkol sa missing record." }],
+    },
+    related: {
+      en: [{ slug: "creating-product-from-inventory", label: "Creating a product from inventory" }, { slug: "fixing-product-creation-errors", label: "Fixing product creation errors" }],
+      tl: [{ slug: "creating-product-from-inventory", label: "Paglikha ng product mula sa inventory" }, { slug: "fixing-product-creation-errors", label: "Pag-ayos ng product creation errors" }],
+    },
+    screenshots: [
+      screenshot("products", "understanding-product-management", "step-01-open-list", "step-01-open-list.webp", { en: "Product Management list with product and customer-sensitive values redacted.", tl: "Product Management list na redacted ang product at customer-sensitive values." }),
+      screenshot("products", "understanding-product-management", "step-02-search-filter", "step-02-search-filter.webp", { en: "Product Management search and filter controls.", tl: "Product Management search at filter controls." }),
+      screenshot("products", "understanding-product-management", "step-03-choose-action", "step-03-choose-action.webp", { en: "Product row showing permission-appropriate Staff actions.", tl: "Product row na ipinapakita ang permission-appropriate Staff actions." }),
+    ],
+    sourceCoverage: {
+      routes: ["erp.staff.products"],
+      pages: ["resources/js/Pages/ERP/STAFF/ProductManagementWithVariants.tsx", "routes/web.php"],
+      permissions: ["access-product-management", "access-product-upload-staff"],
+      tests: ["resources/js/Pages/ERP/STAFF/__tests__/JobOrders.shippingCoverage.test.ts", "tests/Feature/Staff/StaffArticlesRouteTest.php"],
+    },
+  }),
+  defineStaffArticle({
+    slug: "creating-product-from-inventory",
+    order: 21,
+    category: "products",
+    access: {
+      anyOfPermissions: ["access-product-upload-staff"],
+      allowedBusinessTypes: ["retail", "both"],
+    },
+    title: { en: "Creating a product from inventory", tl: "Paglikha ng product mula sa inventory" },
+    question: { en: "How do I start a product using available retail inventory?", tl: "Paano ako magsisimula ng product gamit ang available retail inventory?" },
+    summary: { en: "Choose an inventory source, select retail stock, respect product slots and ownership, and keep the shop restriction clear.", tl: "Pumili ng inventory source, piliin ang retail stock, sundin ang product slots at ownership, at panatilihin ang shop restriction." },
+    audience: { en: "Staff users allowed to upload/manage retail products.", tl: "Staff users na pinapayagang mag-upload/manage ng retail products." },
+    keywords: { en: ["create product", "inventory", "retail stock", "product slot", "ownership", "business restriction"], tl: ["create product", "inventory", "retail stock", "product slot", "ownership", "business restriction"] },
+    prerequisites: {
+      en: [{ id: "inventory-source", title: "Have an eligible inventory source", body: "Only available retail inventory in the current shop context can be used as the product source." }],
+      tl: [{ id: "inventory-source", title: "Magkaroon ng eligible inventory source", body: "Available retail inventory lang sa kasalukuyang shop context ang puwedeng gawing product source." }],
+    },
+    workflow: {
+      en: [
+        { id: "select-source", title: "Select inventory", body: "The product draft begins from an inventory item owned by the same shop.", status: "Draft", owner: "Staff user" },
+        { id: "slot-check", title: "Pass slot and ownership checks", body: "The server validates the product slot, business type, and inventory ownership before creation.", status: "Validated or rejected", owner: "Product rules" },
+      ],
+      tl: [
+        { id: "select-source", title: "Pumili ng inventory", body: "Nagsisimula ang product draft sa inventory item na pagmamay-ari ng parehong shop.", status: "Draft", owner: "Staff user" },
+        { id: "slot-check", title: "Pumasa sa slot at ownership checks", body: "Sinusuri ng server ang product slot, business type, at inventory ownership bago lumikha.", status: "Validated o rejected", owner: "Product rules" },
+      ],
+    },
+    steps: {
+      en: [
+        { id: "open-create", title: "Open the create flow", body: "Start Product Management creation and choose the inventory-backed source offered for your shop.", screenshotId: "step-01-open-create" },
+        { id: "select-retail", title: "Select retail inventory", body: "Choose the correct inventory item and confirm its colors, sizes, quantities, and ownership before continuing.", screenshotId: "step-02-select-retail" },
+        { id: "save-draft", title: "Save the product draft", body: "Submit once and wait for the server validation result. Continue to product details only after the source is accepted.", screenshotId: "step-03-save-draft" },
+      ],
+      tl: [
+        { id: "open-create", title: "Buksan ang create flow", body: "Simulan ang Product Management creation at piliin ang inventory-backed source para sa shop.", screenshotId: "step-01-open-create" },
+        { id: "select-retail", title: "Piliin ang retail inventory", body: "Piliin ang tamang inventory item at kumpirmahin ang colors, sizes, quantities, at ownership bago magpatuloy.", screenshotId: "step-02-select-retail" },
+        { id: "save-draft", title: "I-save ang product draft", body: "Isang beses lang mag-submit at hintayin ang server validation. Magpatuloy sa product details kapag accepted ang source.", screenshotId: "step-03-save-draft" },
+      ],
+    },
+    outcomes: {
+      en: [
+        { id: "draft-created", title: "Product draft created", body: "The accepted inventory source becomes the basis for configuring the new product.", owner: "Staff user", customerView: "The product is not customer-visible until the product workflow makes it available.", tone: "success" },
+        { id: "source-rejected", title: "Source rejected", body: "No product is created when the inventory, slot, business, or ownership rule fails.", owner: "Staff user/manager for correction", customerView: "No new product is exposed to customers.", tone: "danger" },
+      ],
+      tl: [
+        { id: "draft-created", title: "Nalikha ang product draft", body: "Nagiging basehan ng bagong product configuration ang accepted inventory source.", owner: "Staff user", customerView: "Hindi pa nakikita ng customer ang product hanggang maging available sa workflow.", tone: "success" },
+        { id: "source-rejected", title: "Rejected ang source", body: "Walang nalilikhang product kapag bumagsak ang inventory, slot, business, o ownership rule.", owner: "Staff user/manager para sa correction", customerView: "Walang bagong product na nakikita ng customer.", tone: "danger" },
+      ],
+    },
+    errors: {
+      en: [{ id: "inventory-unavailable", title: "Inventory is unavailable", body: "The selected stock may already be used, belong to another shop, or not satisfy the retail product rule.", recovery: "Choose an available shop-owned retail inventory item, refresh the source list, and submit again only after verifying it." }],
+      tl: [{ id: "inventory-unavailable", title: "Hindi available ang inventory", body: "Maaaring nagamit na, ibang shop ang may-ari, o hindi pasok sa retail product rule ang stock.", recovery: "Pumili ng available na shop-owned retail inventory item, i-refresh ang source list, at isumite ulit kapag verified." }],
+    },
+    related: {
+      en: [{ slug: "configuring-product-details", label: "Configuring product details" }, { slug: "configuring-colors-sizes-quantities", label: "Configuring colors, sizes, and quantities" }],
+      tl: [{ slug: "configuring-product-details", label: "Pag-configure ng product details" }, { slug: "configuring-colors-sizes-quantities", label: "Pag-configure ng colors, sizes, at quantities" }],
+    },
+    screenshots: [
+      screenshot("products", "creating-product-from-inventory", "step-01-open-create", "step-01-open-create.webp", { en: "Product creation entry point with shop context visible and private data hidden.", tl: "Product creation entry point na visible ang shop context at nakatago ang private data." }),
+      screenshot("products", "creating-product-from-inventory", "step-02-select-retail", "step-02-select-retail.webp", { en: "Retail inventory source selector with item identifiers redacted.", tl: "Retail inventory source selector na redacted ang item identifiers." }),
+      screenshot("products", "creating-product-from-inventory", "step-03-save-draft", "step-03-save-draft.webp", { en: "Accepted product draft state before entering product details.", tl: "Accepted product draft state bago ilagay ang product details." }),
+    ],
+    sourceCoverage: {
+      routes: ["erp.staff.products", "api.staff.products.*"],
+      pages: ["resources/js/Pages/ERP/STAFF/ProductManagementWithVariants.tsx", "app/Http/Controllers/Api/ProductController.php"],
+      permissions: ["access-product-upload-staff"],
+      tests: ["tests/Feature/ShopOwnerProductIsolationTest.php", "resources/js/Pages/ERP/STAFF/__tests__/JobOrders.shippingCoverage.test.ts"],
+    },
+  }),
+  defineStaffArticle({
+    slug: "configuring-product-details",
+    order: 22,
+    category: "products",
+    access: {
+      anyOfPermissions: ["access-product-upload-staff"],
+      allowedBusinessTypes: ["retail", "both"],
+    },
+    title: { en: "Configuring product details", tl: "Pag-configure ng product details" },
+    question: { en: "Which name, description, category, brand, and price fields are required?", tl: "Aling name, description, category, brand, at price fields ang required?" },
+    summary: { en: "Complete the core product fields, create a category when allowed, and understand which values are validated before save.", tl: "Kumpletuhin ang core product fields, gumawa ng category kapag pinapayagan, at unawain ang values na vini-validate bago mag-save." },
+    audience: { en: "Staff users allowed to create retail products.", tl: "Staff users na pinapayagang lumikha ng retail products." },
+    keywords: { en: ["product details", "name", "description", "category", "brand", "price", "required field"], tl: ["product details", "name", "description", "category", "brand", "price", "required field"] },
+    workflow: {
+      en: [
+        { id: "draft-details", title: "Complete draft details", body: "The product stays in the draft form while required name, description, category, brand, and price values are checked.", status: "Draft", owner: "Staff user" },
+        { id: "saved-details", title: "Details accepted", body: "A successful save moves the product to the next variant/image configuration step.", status: "Saved or ready for variants", owner: "Staff user" },
+      ],
+      tl: [
+        { id: "draft-details", title: "Kumpletuhin ang draft details", body: "Nananatili sa draft form ang product habang chine-check ang required name, description, category, brand, at price values.", status: "Draft", owner: "Staff user" },
+        { id: "saved-details", title: "Tinanggap ang details", body: "Kapag successful ang save, pupunta ang product sa susunod na variant/image configuration step.", status: "Saved o ready for variants", owner: "Staff user" },
+      ],
+    },
+    steps: {
+      en: [
+        { id: "name-description", title: "Enter name and description", body: "Use a clear customer-facing product name and accurate description; do not include internal credentials or private data.", screenshotId: "step-01-name-description" },
+        { id: "category-brand", title: "Choose category and brand", body: "Select an existing category or use the available create-category control when the page permits it.", screenshotId: "step-02-category-brand" },
+        { id: "price-save", title: "Enter price and save", body: "Review the price and required fields, then save once. A price-change request is a separate Finance workflow after the product exists.", screenshotId: "step-03-price-save" },
+      ],
+      tl: [
+        { id: "name-description", title: "Ilagay ang name at description", body: "Gumamit ng malinaw na customer-facing product name at tamang description; huwag maglagay ng credentials o private data.", screenshotId: "step-01-name-description" },
+        { id: "category-brand", title: "Piliin ang category at brand", body: "Pumili ng existing category o gamitin ang create-category control kapag pinapayagan ng page.", screenshotId: "step-02-category-brand" },
+        { id: "price-save", title: "Ilagay ang price at mag-save", body: "Suriin ang price at required fields, pagkatapos isang beses mag-save. Hiwalay na Finance workflow ang price-change request.", screenshotId: "step-03-price-save" },
+      ],
+    },
+    outcomes: {
+      en: [
+        { id: "details-saved", title: "Core details saved", body: "The product can continue to colors, sizes, quantities, and images.", owner: "Staff user", customerView: "Visibility depends on the product availability state; saving alone does not promise publication.", tone: "success" },
+        { id: "validation-stops", title: "Validation stops the save", body: "The draft remains available for correction and no partial invalid product is published.", owner: "Staff user", customerView: "No invalid product is exposed.", tone: "warning" },
+      ],
+      tl: [
+        { id: "details-saved", title: "Na-save ang core details", body: "Makakapagpatuloy ang product sa colors, sizes, quantities, at images.", owner: "Staff user", customerView: "Depende sa availability state ang visibility; hindi pangako ng publication ang save lang.", tone: "success" },
+        { id: "validation-stops", title: "Hinihinto ng validation ang save", body: "Nananatiling available ang draft para sa correction at walang invalid partial product na napo-publish.", owner: "Staff user", customerView: "Walang invalid product na nakikita.", tone: "warning" },
+      ],
+    },
+    errors: {
+      en: [{ id: "required-field", title: "A required field is missing", body: "The product cannot save until its required text, category, brand, or price value passes validation.", recovery: "Read the field message, complete the missing value, and submit again without duplicating the request." }],
+      tl: [{ id: "required-field", title: "May kulang na required field", body: "Hindi mase-save ang product hanggang pumasa ang required text, category, brand, o price value sa validation.", recovery: "Basahin ang field message, kumpletuhin ang kulang, at isumite ulit nang hindi dinodoble ang request." }],
+    },
+    related: {
+      en: [{ slug: "creating-product-from-inventory", label: "Creating a product from inventory" }, { slug: "configuring-colors-sizes-quantities", label: "Configuring colors, sizes, and quantities" }],
+      tl: [{ slug: "creating-product-from-inventory", label: "Paglikha ng product mula sa inventory" }, { slug: "configuring-colors-sizes-quantities", label: "Pag-configure ng colors, sizes, at quantities" }],
+    },
+    screenshots: [
+      screenshot("products", "configuring-product-details", "step-01-name-description", "step-01-name-description.webp", { en: "Product name and description fields with internal/private data excluded.", tl: "Product name at description fields na walang internal/private data." }),
+      screenshot("products", "configuring-product-details", "step-02-category-brand", "step-02-category-brand.webp", { en: "Product category and brand controls.", tl: "Product category at brand controls." }),
+      screenshot("products", "configuring-product-details", "step-03-price-save", "step-03-price-save.webp", { en: "Product price field and save action with test values only.", tl: "Product price field at save action na test values lang." }),
+    ],
+    sourceCoverage: {
+      routes: ["erp.staff.products", "api.staff.products.*"],
+      pages: ["resources/js/Pages/ERP/STAFF/ProductManagementWithVariants.tsx", "app/Http/Controllers/Api/ProductController.php"],
+      permissions: ["access-product-upload-staff"],
+      tests: ["tests/Feature/ShopOwnerProductIsolationTest.php", "resources/js/Pages/ERP/STAFF/__tests__/JobOrders.shippingCoverage.test.ts"],
+    },
+  }),
+  defineStaffArticle({
+    slug: "configuring-colors-sizes-quantities",
+    order: 23,
+    category: "products",
+    access: {
+      anyOfPermissions: ["access-product-upload-staff", "access-color-variant-manager"],
+      allowedBusinessTypes: ["retail", "both"],
+    },
+    title: { en: "Configuring colors, sizes, and quantities", tl: "Pag-configure ng colors, sizes, at quantities" },
+    question: { en: "Why are color variants and non-zero size quantities required?", tl: "Bakit required ang color variants at non-zero size quantities?" },
+    summary: { en: "Create the required color variant, add size quantities, and understand the difference between inventory variants and empty variants.", tl: "Gumawa ng required color variant, maglagay ng size quantities, at unawain ang inventory variants at empty variants." },
+    audience: { en: "Staff users with retail product variant access.", tl: "Staff users na may retail product variant access." },
+    keywords: { en: ["colors", "sizes", "quantities", "variant", "non-zero", "inventory variant", "empty variant"], tl: ["colors", "sizes", "quantities", "variant", "non-zero", "inventory variant", "empty variant"] },
+    workflow: {
+      en: [
+        { id: "color-required", title: "Color variant required", body: "A product needs a valid color variant before size and image work can be completed.", status: "Variant required", owner: "Staff user" },
+        { id: "quantity-validation", title: "Quantity validation", body: "At least one applicable non-zero size quantity must pass the inventory/product rules.", status: "Validated or error", owner: "Product rules" },
+      ],
+      tl: [
+        { id: "color-required", title: "Required ang color variant", body: "Kailangan ng product ng valid color variant bago matapos ang size at image work.", status: "Variant required", owner: "Staff user" },
+        { id: "quantity-validation", title: "Quantity validation", body: "Kailangang pumasa sa inventory/product rules ang kahit isang applicable non-zero size quantity.", status: "Validated o error", owner: "Product rules" },
+      ],
+    },
+    steps: {
+      en: [
+        { id: "add-color", title: "Add the color variant", body: "Enter the color value shown by the interface and keep the variant distinct from existing colors.", screenshotId: "step-01-add-color" },
+        { id: "add-sizes", title: "Add sizes and quantities", body: "Set the available sizes and non-zero quantities that belong to the selected inventory/product variant.", screenshotId: "step-02-add-sizes" },
+        { id: "review-empty", title: "Review empty variants", body: "Fix or remove an empty variant before saving. Do not use an empty color/size row as a substitute for unavailable stock.", screenshotId: "step-03-review-empty" },
+      ],
+      tl: [
+        { id: "add-color", title: "Idagdag ang color variant", body: "Ilagay ang color value na ipinapakita ng interface at gawing distinct ito sa existing colors.", screenshotId: "step-01-add-color" },
+        { id: "add-sizes", title: "Magdagdag ng sizes at quantities", body: "Itakda ang available sizes at non-zero quantities na kabilang sa napiling inventory/product variant.", screenshotId: "step-02-add-sizes" },
+        { id: "review-empty", title: "Suriin ang empty variants", body: "Ayusin o alisin ang empty variant bago mag-save. Huwag gawing kapalit ng unavailable stock ang empty color/size row.", screenshotId: "step-03-review-empty" },
+      ],
+    },
+    outcomes: {
+      en: [
+        { id: "variant-valid", title: "Variant configuration accepted", body: "The product can continue to image upload and availability validation.", owner: "Staff user", customerView: "Customers see only variants the product availability workflow exposes.", tone: "success" },
+        { id: "variant-invalid", title: "Variant configuration rejected", body: "The product remains unsubmitted until the missing color or zero/invalid quantity is corrected.", owner: "Staff user", customerView: "No incomplete variant is exposed.", tone: "danger" },
+      ],
+      tl: [
+        { id: "variant-valid", title: "Tinanggap ang variant configuration", body: "Makakapagpatuloy ang product sa image upload at availability validation.", owner: "Staff user", customerView: "Variants lang na ibinibigay ng availability workflow ang nakikita ng customer.", tone: "success" },
+        { id: "variant-invalid", title: "Rejected ang variant configuration", body: "Hindi mase-submit ang product hanggang maitama ang kulang na color o zero/invalid quantity.", owner: "Staff user", customerView: "Walang incomplete variant na nakikita.", tone: "danger" },
+      ],
+    },
+    errors: {
+      en: [{ id: "zero-quantity", title: "A variant has no valid quantity", body: "A required size/color combination cannot be saved with an empty or zero quantity when stock is required.", recovery: "Select the correct inventory-backed size and set a valid non-zero quantity, or remove the empty variant before retrying." }],
+      tl: [{ id: "zero-quantity", title: "Walang valid quantity ang variant", body: "Hindi mase-save ang required size/color combination kapag empty o zero ang quantity kung kailangan ng stock.", recovery: "Piliin ang tamang inventory-backed size at maglagay ng valid non-zero quantity, o alisin ang empty variant." }],
+    },
+    related: {
+      en: [{ slug: "creating-product-from-inventory", label: "Creating a product from inventory" }, { slug: "uploading-product-images", label: "Uploading product images" }],
+      tl: [{ slug: "creating-product-from-inventory", label: "Paglikha ng product mula sa inventory" }, { slug: "uploading-product-images", label: "Pag-upload ng product images" }],
+    },
+    screenshots: [
+      screenshot("products", "configuring-colors-sizes-quantities", "step-01-add-color", "step-01-add-color.webp", { en: "Product color variant editor with product values anonymized.", tl: "Product color variant editor na anonymized ang product values." }),
+      screenshot("products", "configuring-colors-sizes-quantities", "step-02-add-sizes", "step-02-add-sizes.webp", { en: "Size and non-zero quantity controls for an inventory variant.", tl: "Size at non-zero quantity controls para sa inventory variant." }),
+      screenshot("products", "configuring-colors-sizes-quantities", "step-03-review-empty", "step-03-review-empty.webp", { en: "Empty variant validation state.", tl: "Empty variant validation state." }),
+    ],
+    sourceCoverage: {
+      routes: ["erp.staff.products", "api.staff.products.*"],
+      pages: ["resources/js/Pages/ERP/STAFF/ProductManagementWithVariants.tsx", "app/Http/Controllers/Api/ProductController.php"],
+      permissions: ["access-product-upload-staff", "access-color-variant-manager"],
+      tests: ["tests/Feature/ShopOwnerProductIsolationTest.php", "resources/js/Pages/ERP/STAFF/__tests__/JobOrders.shippingCoverage.test.ts"],
+    },
+  }),
+  defineStaffArticle({
+    slug: "uploading-product-images",
+    order: 24,
+    category: "products",
+    access: {
+      anyOfPermissions: ["access-product-upload-staff"],
+      allowedBusinessTypes: ["retail", "both"],
+    },
+    title: { en: "Uploading product images", tl: "Pag-upload ng product images" },
+    question: { en: "How do I attach, order, retry, and remove color-variant images?", tl: "Paano ako mag-a-attach, mag-aayos, magre-retry, at mag-aalis ng color-variant images?" },
+    summary: { en: "Attach images to the right color variant, keep their order clear, and recover from upload or existing-image removal errors.", tl: "I-attach ang images sa tamang color variant, panatilihing malinaw ang order, at bumawi sa upload o removal errors." },
+    audience: { en: "Staff users allowed to manage retail product images.", tl: "Staff users na pinapayagang mag-manage ng retail product images." },
+    keywords: { en: ["images", "upload", "color variant", "order", "retry", "remove", "failure"], tl: ["images", "upload", "color variant", "order", "retry", "remove", "failure"] },
+    workflow: {
+      en: [
+        { id: "attach", title: "Attach to a color", body: "Each image belongs to a selected color variant and remains part of the product draft until saved.", status: "Draft image", owner: "Staff user" },
+        { id: "upload", title: "Upload result", body: "A successful upload preserves image order; a failed upload stays recoverable without claiming that the image exists.", status: "Uploaded or failed", owner: "Staff user" },
+      ],
+      tl: [
+        { id: "attach", title: "I-attach sa color", body: "Bawat image ay kabilang sa napiling color variant at bahagi ng product draft hanggang ma-save.", status: "Draft image", owner: "Staff user" },
+        { id: "upload", title: "Upload result", body: "Pinapanatili ng successful upload ang image order; recoverable ang failed upload nang hindi sinasabing existing na ang image.", status: "Uploaded o failed", owner: "Staff user" },
+      ],
+    },
+    steps: {
+      en: [
+        { id: "choose-color", title: "Choose the color variant", body: "Select the exact color before adding files so the image appears under the correct variant.", screenshotId: "step-01-choose-color" },
+        { id: "order-images", title: "Upload and order images", body: "Add the files, check their displayed order, and submit once. Use legible, redacted interface captures only for future screenshots.", screenshotId: "step-02-order-images" },
+        { id: "retry-remove", title: "Retry or remove existing images", body: "Retry a failed upload after checking the error. Remove an existing image only when the page confirms the operation and the replacement is ready.", screenshotId: "step-03-retry-remove" },
+      ],
+      tl: [
+        { id: "choose-color", title: "Piliin ang color variant", body: "Piliin ang eksaktong color bago magdagdag ng files para mapunta sa tamang variant ang image.", screenshotId: "step-01-choose-color" },
+        { id: "order-images", title: "Mag-upload at mag-ayos ng images", body: "Idagdag ang files, tingnan ang displayed order, at isang beses mag-submit. Redacted at malinaw na interface captures lang para sa screenshots.", screenshotId: "step-02-order-images" },
+        { id: "retry-remove", title: "Mag-retry o mag-alis ng existing images", body: "Mag-retry ng failed upload pagkatapos tingnan ang error. Mag-remove lang kapag kinumpirma ng page at handa ang kapalit.", screenshotId: "step-03-retry-remove" },
+      ],
+    },
+    outcomes: {
+      en: [
+        { id: "images-saved", title: "Images saved in order", body: "The product keeps the image-to-color association and display order supplied by the accepted upload.", owner: "Staff user", customerView: "Customers see images only when the product availability flow exposes the product.", tone: "success" },
+        { id: "upload-failed", title: "Upload remains failed", body: "A failed file is not treated as an existing product image and can be retried or replaced.", owner: "Staff user", customerView: "No failed image is exposed as a valid product asset.", tone: "warning" },
+      ],
+      tl: [
+        { id: "images-saved", title: "Na-save ang images sa tamang order", body: "Nananatili ang image-to-color association at display order ng accepted upload.", owner: "Staff user", customerView: "Makikita lang ng customer ang images kapag exposed na ang product sa availability flow.", tone: "success" },
+        { id: "upload-failed", title: "Failed pa rin ang upload", body: "Hindi itinuturing na existing product image ang failed file at puwedeng i-retry o palitan.", owner: "Staff user", customerView: "Walang failed image na lumalabas bilang valid product asset.", tone: "warning" },
+      ],
+    },
+    errors: {
+      en: [{ id: "upload-error", title: "The image upload failed", body: "The file may be invalid, too large, rate-limited, or rejected by the current product/image rule.", recovery: "Read the server message, correct the file or wait for the limit window, then retry once. Keep the existing image until a replacement succeeds." }],
+      tl: [{ id: "upload-error", title: "Bumagsak ang image upload", body: "Maaaring invalid, masyadong malaki, rate-limited, o rejected ng product/image rule ang file.", recovery: "Basahin ang server message, ayusin ang file o hintayin ang limit window, at isang beses mag-retry. Panatilihin ang existing image hanggang successful ang kapalit." }],
+    },
+    related: {
+      en: [{ slug: "configuring-colors-sizes-quantities", label: "Configuring colors, sizes, and quantities" }, { slug: "using-shoe-spin-viewer", label: "Using Shoe Spin Viewer images" }],
+      tl: [{ slug: "configuring-colors-sizes-quantities", label: "Pag-configure ng colors, sizes, at quantities" }, { slug: "using-shoe-spin-viewer", label: "Paggamit ng Shoe Spin Viewer images" }],
+    },
+    screenshots: [
+      screenshot("products", "uploading-product-images", "step-01-choose-color", "step-01-choose-color.webp", { en: "Color variant image selector with product identifiers redacted.", tl: "Color variant image selector na redacted ang product identifiers." }),
+      screenshot("products", "uploading-product-images", "step-02-order-images", "step-02-order-images.webp", { en: "Product image upload list showing display order.", tl: "Product image upload list na ipinapakita ang display order." }),
+      screenshot("products", "uploading-product-images", "step-03-retry-remove", "step-03-retry-remove.webp", { en: "Image upload failure and safe retry/remove controls.", tl: "Image upload failure at ligtas na retry/remove controls." }),
+    ],
+    sourceCoverage: {
+      routes: ["erp.staff.products", "api.staff.products.images.*"],
+      pages: ["resources/js/Pages/ERP/STAFF/ProductManagementWithVariants.tsx", "resources/js/components/variants/ColorVariantImageUploader.tsx"],
+      permissions: ["access-product-upload-staff"],
+      tests: ["tests/Feature/ShopOwnerProductIsolationTest.php", "resources/js/Pages/ERP/STAFF/__tests__/JobOrders.shippingCoverage.test.ts"],
+    },
+  }),
+  defineStaffArticle({
+    slug: "using-shoe-spin-viewer",
+    order: 25,
+    category: "products",
+    access: {
+      anyOfPermissions: ["access-product-upload-staff"],
+      allowedBusinessTypes: ["retail", "both"],
+    },
+    title: { en: "Using Shoe Spin Viewer images", tl: "Paggamit ng Shoe Spin Viewer images" },
+    question: { en: "How do I add ordered frames for the Shoe Spin Viewer?", tl: "Paano ako mag-a-add ng ordered frames para sa Shoe Spin Viewer?" },
+    summary: { en: "Check company eligibility, choose the target color variant, preserve frame order, and follow the existing spin tutorial and upload limits.", tl: "Suriin ang company eligibility, piliin ang target color variant, panatilihin ang frame order, at sundin ang existing spin tutorial at upload limits." },
+    audience: { en: "Eligible retail Staff users with product image access.", tl: "Eligible retail Staff users na may product image access." },
+    keywords: { en: ["Shoe Spin Viewer", "spin", "frames", "ordered", "eligibility", "color variant", "tutorial"], tl: ["Shoe Spin Viewer", "spin", "frames", "ordered", "eligibility", "color variant", "tutorial"] },
+    workflow: {
+      en: [
+        { id: "eligibility", title: "Viewer eligibility", body: "The product and shop must meet the current company-type/feature eligibility before spin frames are accepted.", status: "Eligible or restricted", owner: "Product rules" },
+        { id: "frames", title: "Ordered frame set", body: "Accepted frames remain ordered under the target color variant and are used by the existing Shoe Spin Viewer.", status: "Frames saved", owner: "Staff user/product page" },
+      ],
+      tl: [
+        { id: "eligibility", title: "Viewer eligibility", body: "Kailangang pasok ang product at shop sa kasalukuyang company-type/feature eligibility bago tanggapin ang spin frames.", status: "Eligible o restricted", owner: "Product rules" },
+        { id: "frames", title: "Ordered frame set", body: "Nananatiling naka-order ang accepted frames sa target color variant at ginagamit ng existing Shoe Spin Viewer.", status: "Frames saved", owner: "Staff user/product page" },
+      ],
+    },
+    steps: {
+      en: [
+        { id: "check-eligibility", title: "Check eligibility and tutorial", body: "Read the existing Shoe Spin Viewer tutorial and confirm the product/shop meets the current eligibility rule.", screenshotId: "step-01-check-eligibility" },
+        { id: "choose-target", title: "Choose the target color variant", body: "Select the variant that owns the spin frames and verify existing frames before adding new files.", screenshotId: "step-02-choose-target" },
+        { id: "upload-frames", title: "Upload ordered frames", body: "Add frames in sequence, review the order, and respect the current new-upload restriction or rate limit.", screenshotId: "step-03-upload-frames" },
+      ],
+      tl: [
+        { id: "check-eligibility", title: "Suriin ang eligibility at tutorial", body: "Basahin ang existing Shoe Spin Viewer tutorial at tiyaking pasok ang product/shop sa current eligibility rule.", screenshotId: "step-01-check-eligibility" },
+        { id: "choose-target", title: "Piliin ang target color variant", body: "Piliin ang variant na may-ari ng spin frames at i-verify ang existing frames bago magdagdag.", screenshotId: "step-02-choose-target" },
+        { id: "upload-frames", title: "Mag-upload ng ordered frames", body: "Magdagdag ng frames nang sunod-sunod, suriin ang order, at sundin ang current new-upload restriction o rate limit.", screenshotId: "step-03-upload-frames" },
+      ],
+    },
+    outcomes: {
+      en: [
+        { id: "spin-ready", title: "Frames are ready", body: "The ordered frame set can be consumed by the Shoe Spin Viewer on the product flow.", owner: "Product page/Staff user", customerView: "Eligible customers can use the spin experience when the product is visible.", tone: "success" },
+        { id: "restricted", title: "Spin upload is restricted", body: "The existing frames stay unchanged when eligibility, target variant, or upload rules fail.", owner: "Staff user/manager for correction", customerView: "The customer sees the existing product image experience.", tone: "warning" },
+      ],
+      tl: [
+        { id: "spin-ready", title: "Handa na ang frames", body: "Magagamit ng product flow ang ordered frame set sa Shoe Spin Viewer.", owner: "Product page/Staff user", customerView: "Magagamit ng eligible customers ang spin experience kapag visible ang product.", tone: "success" },
+        { id: "restricted", title: "Restricted ang spin upload", body: "Hindi nagbabago ang existing frames kapag bumagsak ang eligibility, target variant, o upload rules.", owner: "Staff user/manager para sa correction", customerView: "Existing product image experience pa rin ang nakikita ng customer.", tone: "warning" },
+      ],
+    },
+    errors: {
+      en: [{ id: "spin-target", title: "The spin target or eligibility is invalid", body: "The product may not qualify, the selected color may not be the supported target, or a new-frame rule may block the upload.", recovery: "Read the tutorial/error, select the supported variant, and keep existing frames until the server accepts the corrected upload." }],
+      tl: [{ id: "spin-target", title: "Invalid ang spin target o eligibility", body: "Maaaring hindi qualified ang product, maling color ang napili, o hinaharang ng new-frame rule ang upload.", recovery: "Basahin ang tutorial/error, piliin ang supported variant, at panatilihin ang existing frames hanggang tanggapin ng server." }],
+    },
+    related: {
+      en: [{ slug: "uploading-product-images", label: "Uploading product images" }, { slug: "fixing-product-creation-errors", label: "Fixing product creation errors" }],
+      tl: [{ slug: "uploading-product-images", label: "Pag-upload ng product images" }, { slug: "fixing-product-creation-errors", label: "Pag-ayos ng product creation errors" }],
+    },
+    screenshots: [
+      screenshot("products", "using-shoe-spin-viewer", "step-01-check-eligibility", "step-01-check-eligibility.webp", { en: "Shoe Spin Viewer tutorial and eligibility message.", tl: "Shoe Spin Viewer tutorial at eligibility message." }),
+      screenshot("products", "using-shoe-spin-viewer", "step-02-choose-target", "step-02-choose-target.webp", { en: "Target color variant and existing spin frame list.", tl: "Target color variant at existing spin frame list." }),
+      screenshot("products", "using-shoe-spin-viewer", "step-03-upload-frames", "step-03-upload-frames.webp", { en: "Ordered Shoe Spin Viewer frame upload controls.", tl: "Ordered Shoe Spin Viewer frame upload controls." }),
+    ],
+    sourceCoverage: {
+      routes: ["erp.staff.products", "api.staff.products.spin.*"],
+      pages: ["resources/js/Pages/ERP/STAFF/ProductManagementWithVariants.tsx", "resources/js/components/ui/images/ResponsiveImage.tsx"],
+      permissions: ["access-product-upload-staff"],
+      tests: ["tests/Feature/ShopOwnerProductIsolationTest.php", "resources/js/Pages/UserSide/Products/showroomRooms.test.ts"],
+    },
+  }),
+  defineStaffArticle({
+    slug: "editing-deleting-product",
+    order: 26,
+    category: "products",
+    access: {
+      anyOfPermissions: ["access-product-management", "access-product-upload-staff"],
+      allowedBusinessTypes: ["retail", "both"],
+    },
+    title: { en: "Editing or deleting a product", tl: "Pag-edit o pag-delete ng product" },
+    question: { en: "What happens to variants and linked inventory when I edit or delete a product?", tl: "Ano ang mangyayari sa variants at linked inventory kapag nag-edit o nag-delete ako ng product?" },
+    summary: { en: "Use Staff edit limits, understand linked inventory behavior, and pause before an irreversible product or variant deletion.", tl: "Sundin ang Staff edit limits, unawain ang linked inventory behavior, at huminto muna bago irreversible product o variant deletion." },
+    audience: { en: "Staff users with the product action exposed by the current page.", tl: "Staff users na may product action na ipinapakita ng current page." },
+    keywords: { en: ["edit", "delete", "product", "variant", "linked inventory", "irreversible", "warning"], tl: ["edit", "delete", "product", "variant", "linked inventory", "irreversible", "warning"] },
+    workflow: {
+      en: [
+        { id: "edit", title: "Edit allowed fields", body: "The page exposes only the Staff fields and product state that can be changed in the current workflow.", status: "Updated or validation error", owner: "Staff user" },
+        { id: "delete", title: "Delete confirmation", body: "Deletion requires a deliberate confirmation because variants and linked behavior may be affected.", status: "Deleted or cancelled", owner: "Staff user/product rules" },
+      ],
+      tl: [
+        { id: "edit", title: "I-edit ang pinapayagang fields", body: "Ang Staff fields at product state lang na puwedeng baguhin sa workflow ang ipinapakita ng page.", status: "Updated o validation error", owner: "Staff user" },
+        { id: "delete", title: "Delete confirmation", body: "Kailangan ng malinaw na confirmation ang deletion dahil maaaring maapektuhan ang variants at linked behavior.", status: "Deleted o cancelled", owner: "Staff user/product rules" },
+      ],
+    },
+    steps: {
+      en: [
+        { id: "review-links", title: "Review variants and linked inventory", body: "Before editing or deleting, read the product's colors, sizes, quantities, images, and inventory relationship.", screenshotId: "step-01-review-links" },
+        { id: "edit-save", title: "Edit and save a valid change", body: "Change only supported fields, review the result, and save once. A price change may require the separate request workflow.", screenshotId: "step-02-edit-save" },
+        { id: "delete-confirm", title: "Confirm deletion only when intended", body: "Read the irreversible warning, verify the product, and confirm only when the shop owner/workflow permits the deletion.", screenshotId: "step-03-delete-confirm" },
+      ],
+      tl: [
+        { id: "review-links", title: "Suriin ang variants at linked inventory", body: "Bago mag-edit o delete, basahin ang colors, sizes, quantities, images, at inventory relationship ng product.", screenshotId: "step-01-review-links" },
+        { id: "edit-save", title: "Mag-edit at mag-save ng valid change", body: "Baguhin lang ang supported fields, suriin ang result, at isang beses mag-save. Hiwalay na request workflow ang price change.", screenshotId: "step-02-edit-save" },
+        { id: "delete-confirm", title: "Mag-confirm ng deletion kapag sigurado", body: "Basahin ang irreversible warning, i-verify ang product, at mag-confirm lang kapag pinapayagan ng shop owner/workflow.", screenshotId: "step-03-delete-confirm" },
+      ],
+    },
+    outcomes: {
+      en: [
+        { id: "edited", title: "Product updated", body: "The accepted edit changes the product record within the current Staff boundary.", owner: "Staff user/product rules", customerView: "Customers see the updated value when the product remains available.", tone: "success" },
+        { id: "deleted", title: "Product deleted", body: "The product and its supported variant relationship follow the server's deletion behavior; do not assume inventory is silently recreated.", owner: "Product/inventory owner", customerView: "The deleted product is no longer available through the product flow.", tone: "danger" },
+      ],
+      tl: [
+        { id: "edited", title: "Na-update ang product", body: "Binabago ng accepted edit ang product record sa loob ng Staff boundary.", owner: "Staff user/product rules", customerView: "Makikita ng customer ang updated value kung available pa ang product.", tone: "success" },
+        { id: "deleted", title: "Na-delete ang product", body: "Sinusunod ng product at supported variant relationship ang server deletion behavior; huwag ipagpalagay na awtomatikong nalilikha ulit ang inventory.", owner: "Product/inventory owner", customerView: "Hindi na available ang deleted product sa product flow.", tone: "danger" },
+      ],
+    },
+    errors: {
+      en: [{ id: "linked-state", title: "The edit or deletion is blocked", body: "A linked inventory state, permission, validation rule, or product workflow may prevent the action.", recovery: "Refresh the product, read the server reason, and ask the product/inventory owner before removing a linked record or retrying." }],
+      tl: [{ id: "linked-state", title: "Blocked ang edit o deletion", body: "Maaaring harangin ng linked inventory state, permission, validation rule, o product workflow ang action.", recovery: "I-refresh ang product, basahin ang server reason, at tanungin ang product/inventory owner bago mag-remove o mag-retry." }],
+    },
+    related: {
+      en: [{ slug: "understanding-product-management", label: "Understanding Product Management" }, { slug: "fixing-product-creation-errors", label: "Fixing product creation errors" }],
+      tl: [{ slug: "understanding-product-management", label: "Pag-unawa sa Product Management" }, { slug: "fixing-product-creation-errors", label: "Pag-ayos ng product creation errors" }],
+    },
+    screenshots: [
+      screenshot("products", "editing-deleting-product", "step-01-review-links", "step-01-review-links.webp", { en: "Product variants and linked inventory summary with identifiers redacted.", tl: "Product variants at linked inventory summary na redacted ang identifiers." }),
+      screenshot("products", "editing-deleting-product", "step-02-edit-save", "step-02-edit-save.webp", { en: "Product edit form and safe save state.", tl: "Product edit form at ligtas na save state." }),
+      screenshot("products", "editing-deleting-product", "step-03-delete-confirm", "step-03-delete-confirm.webp", { en: "Irreversible product deletion warning and confirmation control.", tl: "Irreversible product deletion warning at confirmation control." }),
+    ],
+    sourceCoverage: {
+      routes: ["erp.staff.products", "api.staff.products.*"],
+      pages: ["resources/js/Pages/ERP/STAFF/ProductManagementWithVariants.tsx", "app/Http/Controllers/Api/ProductController.php"],
+      permissions: ["access-product-management", "access-product-upload-staff"],
+      tests: ["tests/Feature/ShopOwnerProductIsolationTest.php", "resources/js/Pages/ERP/STAFF/__tests__/JobOrders.shippingCoverage.test.ts"],
+    },
+  }),
+  defineStaffArticle({
+    slug: "fixing-product-creation-errors",
+    order: 27,
+    category: "products",
+    access: {
+      anyOfPermissions: ["access-product-management", "access-product-upload-staff"],
+      allowedBusinessTypes: ["retail", "both"],
+    },
+    title: { en: "Fixing product creation errors", tl: "Pag-ayos ng product creation errors" },
+    question: { en: "How do I recover from an inventory, variant, image, or rate-limit error?", tl: "Paano ako babawi sa inventory, variant, image, o rate-limit error?" },
+    summary: { en: "Use the server message to fix unavailable inventory, missing colors/sizes, empty variants, image slots, spin targets, uploads, and throttling.", tl: "Gamitin ang server message para ayusin ang unavailable inventory, missing colors/sizes, empty variants, image slots, spin targets, uploads, at throttling." },
+    audience: { en: "Staff users creating or maintaining retail products.", tl: "Staff users na gumagawa o nagma-maintain ng retail products." },
+    keywords: { en: ["product error", "inventory unavailable", "missing color", "zero quantity", "image slot", "spin target", "upload failure", "rate limiting"], tl: ["product error", "inventory unavailable", "missing color", "zero quantity", "image slot", "spin target", "upload failure", "rate limiting"] },
+    workflow: {
+      en: [
+        { id: "validation", title: "Validation error", body: "The server returns a field or business-rule message and keeps the invalid operation from being accepted.", status: "Error", owner: "Staff user" },
+        { id: "retry", title: "Correct and retry", body: "After the source, variant, file, or timing is corrected, the Staff user may submit the relevant step again.", status: "Recoverable", owner: "Staff user" },
+      ],
+      tl: [
+        { id: "validation", title: "Validation error", body: "Nagbabalik ang server ng field o business-rule message at hindi tinatanggap ang invalid operation.", status: "Error", owner: "Staff user" },
+        { id: "retry", title: "Itama at mag-retry", body: "Kapag naayos ang source, variant, file, o timing, puwedeng isumite ulit ng Staff ang tamang step.", status: "Recoverable", owner: "Staff user" },
+      ],
+    },
+    steps: {
+      en: [
+        { id: "read-error", title: "Read the exact error", body: "Keep the server message visible and identify whether it names inventory, color/size, quantity, image, spin, or rate limiting.", screenshotId: "step-01-read-error" },
+        { id: "correct-source", title: "Correct the source or fields", body: "Choose available shop-owned inventory, add the required color/non-zero size, select a valid image slot, or target the supported spin variant.", screenshotId: "step-02-correct-source" },
+        { id: "retry-safely", title: "Retry once the rule is satisfied", body: "Wait out a rate limit, submit once, and confirm the server result before repeating any action.", screenshotId: "step-03-retry-safely" },
+      ],
+      tl: [
+        { id: "read-error", title: "Basahin ang eksaktong error", body: "Panatilihing visible ang server message at tukuyin kung inventory, color/size, quantity, image, spin, o rate limiting ang problema.", screenshotId: "step-01-read-error" },
+        { id: "correct-source", title: "Itama ang source o fields", body: "Pumili ng available shop-owned inventory, magdagdag ng required color/non-zero size, valid image slot, o supported spin variant.", screenshotId: "step-02-correct-source" },
+        { id: "retry-safely", title: "Mag-retry kapag pasok na sa rule", body: "Hintayin ang rate limit, isang beses mag-submit, at kumpirmahin ang server result bago ulitin ang action.", screenshotId: "step-03-retry-safely" },
+      ],
+    },
+    outcomes: {
+      en: [
+        { id: "corrected", title: "Creation step succeeds", body: "The corrected product/source/variant/image step continues to the next configured stage.", owner: "Staff user", customerView: "Only a valid available product can proceed toward customer visibility.", tone: "success" },
+        { id: "blocked", title: "Creation remains blocked", body: "The invalid request is not partially accepted; use the message and the relevant guide to recover.", owner: "Staff user/manager or product owner", customerView: "No invalid product change is exposed.", tone: "danger" },
+      ],
+      tl: [
+        { id: "corrected", title: "Successful ang creation step", body: "Nagpapatuloy sa susunod na configured stage ang na-correct na product/source/variant/image step.", owner: "Staff user", customerView: "Valid at available product lang ang makakapunta sa customer visibility.", tone: "success" },
+        { id: "blocked", title: "Blocked pa rin ang creation", body: "Hindi bahagyang tinatanggap ang invalid request; gamitin ang message at tamang guide para makabawi.", owner: "Staff user/manager o product owner", customerView: "Walang invalid product change na nakikita.", tone: "danger" },
+      ],
+    },
+    errors: {
+      en: [{ id: "rate-limit", title: "Too many attempts", body: "Repeated uploads or mutations can trigger the server's rate limit and temporarily block another submission.", recovery: "Stop retrying, preserve the current draft, wait for the limit window, and submit one corrected request." }],
+      tl: [{ id: "rate-limit", title: "Masyadong maraming attempts", body: "Maaaring ma-trigger ng paulit-ulit na uploads o mutations ang server rate limit at pansamantalang harangan ang submission.", recovery: "Itigil ang pag-retry, panatilihin ang draft, hintayin ang limit window, at isang corrected request lang ang isumite." }],
+    },
+    related: {
+      en: [{ slug: "creating-product-from-inventory", label: "Creating a product from inventory" }, { slug: "uploading-product-images", label: "Uploading product images" }, { slug: "using-shoe-spin-viewer", label: "Using Shoe Spin Viewer images" }],
+      tl: [{ slug: "creating-product-from-inventory", label: "Paglikha ng product mula sa inventory" }, { slug: "uploading-product-images", label: "Pag-upload ng product images" }, { slug: "using-shoe-spin-viewer", label: "Paggamit ng Shoe Spin Viewer images" }],
+    },
+    screenshots: [
+      screenshot("products", "fixing-product-creation-errors", "step-01-read-error", "step-01-read-error.webp", { en: "Product creation validation message with sample data only.", tl: "Product creation validation message na sample data lang." }),
+      screenshot("products", "fixing-product-creation-errors", "step-02-correct-source", "step-02-correct-source.webp", { en: "Corrected inventory and variant fields before resubmission.", tl: "Corrected inventory at variant fields bago muling mag-submit." }),
+      screenshot("products", "fixing-product-creation-errors", "step-03-retry-safely", "step-03-retry-safely.webp", { en: "Safe retry state after an upload or rate-limit error.", tl: "Safe retry state pagkatapos ng upload o rate-limit error." }),
+    ],
+    sourceCoverage: {
+      routes: ["erp.staff.products", "api.staff.products.*"],
+      pages: ["resources/js/Pages/ERP/STAFF/ProductManagementWithVariants.tsx", "app/Http/Controllers/Api/ProductController.php"],
+      permissions: ["access-product-management", "access-product-upload-staff"],
+      tests: ["tests/Feature/ShopOwnerProductIsolationTest.php", "resources/js/Pages/ERP/STAFF/__tests__/JobOrders.shippingCoverage.test.ts"],
+    },
+  }),
+  defineStaffArticle({
+    slug: "requesting-shoe-price-change",
+    order: 28,
+    category: "pricing",
+    access: {
+      anyOfPermissions: ["access-shoe-pricing"],
+      allowedBusinessTypes: ["retail", "both"],
+    },
+    title: { en: "Requesting a shoe price change", tl: "Pag-request ng pagbabago sa presyo ng sapatos" },
+    question: { en: "How do I request a price change without editing the live price directly?", tl: "Paano ako magre-request ng price change nang hindi direktang ine-edit ang live price?" },
+    summary: { en: "Submit a clear shoe price request, explain the business reason, and wait for the designated review decision before promising a new customer price.", tl: "Mag-submit ng malinaw na shoe price request, ilagay ang business reason, at hintayin ang designated review decision bago mangako ng bagong customer price." },
+    audience: { en: "Retail Staff users who can access the shoe pricing workflow.", tl: "Retail Staff users na may access sa shoe pricing workflow." },
+    keywords: { en: ["shoe pricing", "price change", "request", "review", "current price", "proposed price"], tl: ["shoe pricing", "price change", "request", "review", "current price", "proposed price"] },
+    workflow: {
+      en: [
+        { id: "draft", title: "Prepare the request", body: "Record the product, current price, proposed price, and reason using the pricing page's available fields.", status: "Draft", owner: "Staff user" },
+        { id: "review", title: "Send for review", body: "Submit the request once after checking the values; the request enters the configured approval queue.", status: "Under Review", owner: "Finance/Owner reviewer" },
+      ],
+      tl: [
+        { id: "draft", title: "Ihanda ang request", body: "I-record ang product, current price, proposed price, at dahilan gamit ang available fields sa pricing page.", status: "Draft", owner: "Staff user" },
+        { id: "review", title: "Ipadala para sa review", body: "Isang beses i-submit ang request pagkatapos i-check ang values; mapupunta ito sa configured approval queue.", status: "Under Review", owner: "Finance/Owner reviewer" },
+      ],
+    },
+    steps: {
+      en: [
+        { id: "select-product", title: "Select the exact product", body: "Open the shoe pricing workflow and verify the product name, variant context, and current displayed price.", screenshotId: "step-01-select-product" },
+        { id: "enter-change", title: "Enter the proposed change", body: "Provide the proposed price and a concise reason that a reviewer can verify against the product or business context.", screenshotId: "step-02-enter-change" },
+        { id: "submit-request", title: "Submit and record the status", body: "Review the request summary, submit once, and keep the request reference or status for follow-up.", screenshotId: "step-03-submit-request" },
+      ],
+      tl: [
+        { id: "select-product", title: "Piliin ang eksaktong product", body: "Buksan ang shoe pricing workflow at i-verify ang product name, variant context, at kasalukuyang displayed price.", screenshotId: "step-01-select-product" },
+        { id: "enter-change", title: "Ilagay ang proposed change", body: "Ilagay ang proposed price at maikling dahilan na maaaring i-verify ng reviewer sa product o business context.", screenshotId: "step-02-enter-change" },
+        { id: "submit-request", title: "I-submit at i-record ang status", body: "Suriin ang request summary, isang beses mag-submit, at itago ang request reference o status para sa follow-up.", screenshotId: "step-03-submit-request" },
+      ],
+    },
+    outcomes: {
+      en: [
+        { id: "submitted", title: "Request is Under Review", body: "The proposed value is a request, not a live price change. Wait for the configured reviewer outcome.", owner: "Finance/Owner reviewer", customerView: "Customers continue to see the approved live price until a decision is applied.", tone: "warning" },
+        { id: "not-submitted", title: "Request stays in Staff control", body: "An incomplete or invalid request remains unsent so the Staff user can correct it before review.", owner: "Staff user", customerView: "No unapproved price is exposed to customers.", tone: "neutral" },
+      ],
+      tl: [
+        { id: "submitted", title: "Under Review ang request", body: "Request lang ang proposed value, hindi pa live price change. Hintayin ang configured reviewer outcome.", owner: "Finance/Owner reviewer", customerView: "Approved live price pa rin ang nakikita ng customers hanggang may decision na mailapat.", tone: "warning" },
+        { id: "not-submitted", title: "Nasa Staff control pa ang request", body: "Hindi ipinapadala ang incomplete o invalid request para maitama muna ito ng Staff bago ang review.", owner: "Staff user", customerView: "Walang unapproved price na nakikita ng customers.", tone: "neutral" },
+      ],
+    },
+    errors: {
+      en: [{ id: "invalid-price", title: "The request cannot be submitted", body: "A product may be missing, the proposed value may fail validation, or another request may already be pending.", recovery: "Check the exact server message, verify the product and amount, and do not create a duplicate request while one is pending." }],
+      tl: [{ id: "invalid-price", title: "Hindi ma-submit ang request", body: "Maaaring walang product, hindi valid ang proposed value, o may pending request na para sa product.", recovery: "Basahin ang eksaktong server message, i-verify ang product at amount, at huwag gumawa ng duplicate habang pending pa." }],
+    },
+    related: {
+      en: [{ slug: "price-request-outcomes", label: "Price request outcomes" }, { slug: "cancelling-correcting-resubmitting-price-request", label: "Cancelling, correcting, and resubmitting a price request" }],
+      tl: [{ slug: "price-request-outcomes", label: "Mga outcome ng price request" }, { slug: "cancelling-correcting-resubmitting-price-request", label: "Pag-cancel, pag-correct, at muling pag-submit ng price request" }],
+    },
+    screenshots: [
+      screenshot("pricing", "requesting-shoe-price-change", "step-01-select-product", "step-01-select-product.webp", { en: "Shoe pricing request with product identity and current price; sample data only.", tl: "Shoe pricing request na may product identity at current price; sample data lang." }),
+      screenshot("pricing", "requesting-shoe-price-change", "step-02-enter-change", "step-02-enter-change.webp", { en: "Proposed price and business reason fields with sample data only.", tl: "Proposed price at business reason fields na sample data lang." }),
+      screenshot("pricing", "requesting-shoe-price-change", "step-03-submit-request", "step-03-submit-request.webp", { en: "Price request summary before a single submission.", tl: "Price request summary bago ang isang submission." }),
+    ],
+    sourceCoverage: {
+      routes: ["erp.staff.shoe-pricing", "api.staff.shoe-pricing.*"],
+      pages: ["resources/js/Pages/ERP/STAFF/shoePricing.tsx"],
+      permissions: ["access-shoe-pricing"],
+      tests: ["tests/Feature/Finance/PriceChangeApprovalWorkflowTest.php"],
+    },
+  }),
+  defineStaffArticle({
+    slug: "price-request-outcomes",
+    order: 29,
+    category: "pricing",
+    access: {
+      anyOfPermissions: ["access-shoe-pricing"],
+      allowedBusinessTypes: ["retail", "both"],
+    },
+    title: { en: "Understanding price request outcomes", tl: "Pag-unawa sa mga outcome ng price request" },
+    question: { en: "What do Approved, Under Review, and Rejected mean for a shoe price request?", tl: "Ano ang ibig sabihin ng Approved, Under Review, at tinanggihan para sa shoe price request?" },
+    summary: { en: "Read the approval state correctly, know who owns the next action, and communicate only the price that the system has actually applied.", tl: "Basahin nang tama ang approval state, alamin kung sino ang may susunod na action, at sabihin lang ang presyong aktuwal nang nailapat ng system." },
+    audience: { en: "Retail Staff users tracking submitted shoe price requests.", tl: "Retail Staff users na nagta-track ng submitted shoe price requests." },
+    keywords: { en: ["approved", "under review", "rejected", "price request", "outcome", "effective price"], tl: ["approved", "under review", "tinanggihan", "rejected", "price request", "effective price"] },
+    workflow: {
+      en: [
+        { id: "under-review", title: "Under Review", body: "A reviewer has not made the final decision; the requested amount is not yet the effective price.", status: "Under Review", owner: "Finance/Owner reviewer" },
+        { id: "approved", title: "Approved", body: "The configured reviewer accepts the request and the system applies the approved value according to the workflow.", status: "Approved", owner: "Finance/Owner reviewer" },
+        { id: "rejected", title: "Rejected", body: "The reviewer declines the request; the existing approved price remains until a valid later change is applied.", status: "Rejected", owner: "Finance/Owner reviewer" },
+      ],
+      tl: [
+        { id: "under-review", title: "Under Review", body: "Wala pang final decision ang reviewer; hindi pa effective price ang requested amount.", status: "Under Review", owner: "Finance/Owner reviewer" },
+        { id: "approved", title: "Approved", body: "Ina-approve ng configured reviewer ang request at inilalapat ng system ang approved value ayon sa workflow.", status: "Approved", owner: "Finance/Owner reviewer" },
+        { id: "rejected", title: "Tinanggihan", body: "Tinatanggihan ng reviewer ang request; nananatili ang existing approved price hanggang may valid na bagong change.", status: "Rejected", owner: "Finance/Owner reviewer" },
+      ],
+    },
+    steps: {
+      en: [
+        { id: "read-status", title: "Read the current status", body: "Open the request and distinguish Under Review from Approved or Rejected before discussing the result.", screenshotId: "step-01-read-status" },
+        { id: "check-decision", title: "Check the decision details", body: "Review the reviewer note, approved value, or rejection reason that the page makes available.", screenshotId: "step-02-check-decision" },
+        { id: "communicate-effective", title: "Communicate the effective price", body: "Use the product's currently applied price for customer-facing work; escalate unclear or conflicting states.", screenshotId: "step-03-communicate-effective" },
+      ],
+      tl: [
+        { id: "read-status", title: "Basahin ang current status", body: "Buksan ang request at paghiwalayin ang Under Review sa Approved o Rejected bago pag-usapan ang result.", screenshotId: "step-01-read-status" },
+        { id: "check-decision", title: "Suriin ang decision details", body: "Basahin ang reviewer note, approved value, o rejection reason na ipinapakita ng page.", screenshotId: "step-02-check-decision" },
+        { id: "communicate-effective", title: "Sabihin ang effective price", body: "Gamitin ang kasalukuyang applied price para sa customer-facing work; i-escalate ang malabo o conflicting states.", screenshotId: "step-03-communicate-effective" },
+      ],
+    },
+    outcomes: {
+      en: [
+        { id: "approved", title: "Approved value is effective", body: "The approved amount can be used after the system shows that it has been applied successfully.", owner: "Pricing workflow/system", customerView: "Customers can see the effective approved price when the product is visible and available.", tone: "success" },
+        { id: "rejected", title: "Existing price remains", body: "A rejected request does not authorize Staff to change the price manually or promise the proposed amount.", owner: "Staff user and reviewer", customerView: "Customers continue to see the existing approved price.", tone: "danger" },
+      ],
+      tl: [
+        { id: "approved", title: "Effective ang approved value", body: "Magagamit ang approved amount kapag ipinakita ng system na matagumpay na itong nailapat.", owner: "Pricing workflow/system", customerView: "Makikita ng customers ang effective approved price kapag visible at available ang product.", tone: "success" },
+        { id: "rejected", title: "Nananatili ang existing price", body: "Hindi nagbibigay ng pahintulot ang rejected request na manu-manong baguhin ng Staff ang presyo o mangako ng proposed amount.", owner: "Staff user at reviewer", customerView: "Existing approved price pa rin ang nakikita ng customers.", tone: "danger" },
+      ],
+    },
+    errors: {
+      en: [{ id: "stale-status", title: "The status is unclear or stale", body: "A page may be out of date, a decision may still be processing, or the applied product value may not match the request view.", recovery: "Refresh once, compare the request and product records, and escalate to the reviewer rather than announcing an unverified price." }],
+      tl: [{ id: "stale-status", title: "Malabo o luma ang status", body: "Maaaring luma ang page, pinoproseso pa ang decision, o hindi tugma ang applied product value sa request view.", recovery: "Isang beses mag-refresh, ikumpara ang request at product records, at i-escalate sa reviewer sa halip na mag-anunsyo ng hindi verified na presyo." }],
+    },
+    related: {
+      en: [{ slug: "requesting-shoe-price-change", label: "Requesting a shoe price change" }, { slug: "cancelling-correcting-resubmitting-price-request", label: "Cancelling, correcting, and resubmitting a price request" }],
+      tl: [{ slug: "requesting-shoe-price-change", label: "Pag-request ng pagbabago sa presyo ng sapatos" }, { slug: "cancelling-correcting-resubmitting-price-request", label: "Pag-cancel, pag-correct, at muling pag-submit ng price request" }],
+    },
+    screenshots: [
+      screenshot("pricing", "price-request-outcomes", "step-01-read-status", "step-01-read-status.webp", { en: "Price request list with Under Review, Approved, and Rejected examples using sample data.", tl: "Price request list na may Under Review, Approved, at Rejected examples gamit ang sample data." }),
+      screenshot("pricing", "price-request-outcomes", "step-02-check-decision", "step-02-check-decision.webp", { en: "Reviewer decision details and applied value with identifiers redacted.", tl: "Reviewer decision details at applied value na redacted ang identifiers." }),
+      screenshot("pricing", "price-request-outcomes", "step-03-communicate-effective", "step-03-communicate-effective.webp", { en: "Product price after the workflow has applied the approved result.", tl: "Product price pagkatapos mailapat ng workflow ang approved result." }),
+    ],
+    sourceCoverage: {
+      routes: ["erp.staff.shoe-pricing", "api.staff.shoe-pricing.*"],
+      pages: ["resources/js/Pages/ERP/STAFF/shoePricing.tsx"],
+      permissions: ["access-shoe-pricing"],
+      tests: ["tests/Feature/Finance/PriceChangeApprovalWorkflowTest.php"],
+    },
+  }),
+  defineStaffArticle({
+    slug: "cancelling-correcting-resubmitting-price-request",
+    order: 30,
+    category: "pricing",
+    access: {
+      anyOfPermissions: ["access-shoe-pricing"],
+      allowedBusinessTypes: ["retail", "both"],
+    },
+    title: { en: "Cancelling, correcting, and resubmitting a price request", tl: "Pag-cancel, pag-correct, at muling pag-submit ng price request" },
+    question: { en: "How do I fix a price request that has the wrong product, amount, or reason?", tl: "Paano ko aayusin ang price request na maling product, amount, o dahilan?" },
+    summary: { en: "Use the available cancel or correction path, preserve the audit trail, and submit a new request only after the original state is clear.", tl: "Gamitin ang available cancel o correction path, panatilihin ang audit trail, at mag-submit ulit kapag malinaw na ang original state." },
+    audience: { en: "Retail Staff users managing their submitted shoe price requests.", tl: "Retail Staff users na nagma-manage ng submitted shoe price requests." },
+    keywords: { en: ["cancel request", "correct request", "resubmit", "duplicate", "audit trail"], tl: ["cancel request", "correct request", "resubmit", "duplicate", "audit trail"] },
+    workflow: {
+      en: [
+        { id: "identify", title: "Identify the current request state", body: "Check whether the request is still editable, already Under Review, approved, or rejected before choosing a correction path.", status: "Current state", owner: "Staff user" },
+        { id: "cancel", title: "Cancel or correct", body: "Use the page action that matches the state; do not overwrite a historical decision to hide an error.", status: "Cancelled or corrected", owner: "Staff user/workflow" },
+        { id: "resubmit", title: "Resubmit a clean request", body: "Create the corrected request with the right product, value, and reason, then track its new status.", status: "New request", owner: "Staff user/reviewer" },
+      ],
+      tl: [
+        { id: "identify", title: "Tukuyin ang current request state", body: "Suriin kung editable pa, Under Review na, approved, o rejected ang request bago pumili ng correction path.", status: "Current state", owner: "Staff user" },
+        { id: "cancel", title: "Mag-cancel o mag-correct", body: "Gamitin ang page action na tugma sa state; huwag itago ang error sa historical decision sa pamamagitan ng overwrite.", status: "Cancelled o corrected", owner: "Staff user/workflow" },
+        { id: "resubmit", title: "Mag-submit ng malinis na request", body: "Gumawa ng corrected request na tama ang product, value, at reason, at i-track ang bagong status.", status: "New request", owner: "Staff user/reviewer" },
+      ],
+    },
+    steps: {
+      en: [
+        { id: "check-state", title: "Check before acting", body: "Open the request details and record its current state and reference so you do not create a duplicate correction.", screenshotId: "step-01-check-state" },
+        { id: "cancel-correct", title: "Cancel or correct using the exposed action", body: "Follow the confirmation text and keep the original request reference in the audit trail.", screenshotId: "step-02-cancel-correct" },
+        { id: "resubmit", title: "Resubmit after the state updates", body: "Wait for the cancellation or correction result, then submit the new values once and confirm the new request status.", screenshotId: "step-03-resubmit" },
+      ],
+      tl: [
+        { id: "check-state", title: "Mag-check bago kumilos", body: "Buksan ang request details at itala ang current state at reference para hindi makagawa ng duplicate correction.", screenshotId: "step-01-check-state" },
+        { id: "cancel-correct", title: "Mag-cancel o mag-correct gamit ang exposed action", body: "Sundin ang confirmation text at panatilihin ang original request reference sa audit trail.", screenshotId: "step-02-cancel-correct" },
+        { id: "resubmit", title: "Mag-submit ulit kapag updated na ang state", body: "Hintayin ang cancellation o correction result, saka isang beses i-submit ang bagong values at kumpirmahin ang bagong status.", screenshotId: "step-03-resubmit" },
+      ],
+    },
+    outcomes: {
+      en: [
+        { id: "corrected", title: "A traceable corrected request exists", body: "The old request remains understandable and the new request contains the corrected values for review.", owner: "Staff user/reviewer", customerView: "Customers see only the currently approved price, not an unreviewed draft.", tone: "success" },
+        { id: "blocked", title: "Resubmission is held", body: "The page may block a duplicate or a state-incompatible action until the first request is resolved.", owner: "Pricing workflow", customerView: "The existing approved price stays in effect.", tone: "warning" },
+      ],
+      tl: [
+        { id: "corrected", title: "May traceable corrected request", body: "Nananatiling malinaw ang lumang request at may corrected values ang bagong request para sa review.", owner: "Staff user/reviewer", customerView: "Currently approved price lang ang nakikita ng customers, hindi ang unreviewed draft.", tone: "success" },
+        { id: "blocked", title: "Naka-hold ang resubmission", body: "Maaaring harangan ng page ang duplicate o maling-state action hanggang ma-resolve ang unang request.", owner: "Pricing workflow", customerView: "Nananatiling epektibo ang existing approved price.", tone: "warning" },
+      ],
+    },
+    errors: {
+      en: [{ id: "state-conflict", title: "The request cannot be changed in its current state", body: "Another user may have decided it, or the workflow may require a different action for an Under Review or approved request.", recovery: "Stop and read the current status, keep the reference, and ask the reviewer which supported correction path to use." }],
+      tl: [{ id: "state-conflict", title: "Hindi mabago ang request sa current state nito", body: "Maaaring may ibang user nang nag-decide o may ibang action na kailangan para sa Under Review o approved request.", recovery: "Huminto at basahin ang current status, itago ang reference, at tanungin ang reviewer kung anong supported correction path ang gagamitin." }],
+    },
+    related: {
+      en: [{ slug: "requesting-shoe-price-change", label: "Requesting a shoe price change" }, { slug: "price-request-outcomes", label: "Understanding price request outcomes" }],
+      tl: [{ slug: "requesting-shoe-price-change", label: "Pag-request ng pagbabago sa presyo ng sapatos" }, { slug: "price-request-outcomes", label: "Pag-unawa sa mga outcome ng price request" }],
+    },
+    screenshots: [
+      screenshot("pricing", "cancelling-correcting-resubmitting-price-request", "step-01-check-state", "step-01-check-state.webp", { en: "Price request detail with current status and reference; sample data only.", tl: "Price request detail na may current status at reference; sample data lang." }),
+      screenshot("pricing", "cancelling-correcting-resubmitting-price-request", "step-02-cancel-correct", "step-02-cancel-correct.webp", { en: "Cancel or correction confirmation with identifiers redacted.", tl: "Cancel o correction confirmation na redacted ang identifiers." }),
+      screenshot("pricing", "cancelling-correcting-resubmitting-price-request", "step-03-resubmit", "step-03-resubmit.webp", { en: "Corrected price request ready for one resubmission.", tl: "Corrected price request na handa para sa isang resubmission." }),
+    ],
+    sourceCoverage: {
+      routes: ["erp.staff.shoe-pricing", "api.staff.shoe-pricing.*"],
+      pages: ["resources/js/Pages/ERP/STAFF/shoePricing.tsx"],
+      permissions: ["access-shoe-pricing"],
+      tests: ["tests/Feature/Finance/PriceChangeApprovalWorkflowTest.php"],
+    },
+  }),
+  defineStaffArticle({
+    slug: "viewing-customer-information",
+    order: 31,
+    category: "pricing",
+    access: {
+      anyOfPermissions: ["access-staff-customers", "access-staff-job-orders"],
+      allowedBusinessTypes: ["retail", "both"],
+    },
+    title: { en: "Viewing customer information safely", tl: "Ligtas na pagtingin sa customer information" },
+    question: { en: "What customer information can I view, and how should I use it?", tl: "Anong customer information ang puwede kong tingnan, at paano ko ito gagamitin?" },
+    summary: { en: "Open customer context only for the work at hand, verify identity carefully, and keep personal information inside the authorized ERP workflow.", tl: "Buksan ang customer context para lang sa kasalukuyang trabaho, maingat na i-verify ang identity, at panatilihin ang personal information sa authorized ERP workflow." },
+    audience: { en: "Retail Staff users handling customer or order follow-up.", tl: "Retail Staff users na nagha-handle ng customer o order follow-up." },
+    keywords: { en: ["customers", "customer information", "privacy", "order follow-up", "identity"], tl: ["customers", "customer information", "privacy", "order follow-up", "identity"] },
+    workflow: {
+      en: [
+        { id: "open", title: "Open the customer context", body: "Use the Customer page or an authorized order link to view the record needed for the current task.", status: "Viewed", owner: "Staff user" },
+        { id: "verify", title: "Verify before discussing an order", body: "Compare the available identifiers and order context; do not disclose details to an unverified requester.", status: "Verified or escalated", owner: "Staff user" },
+      ],
+      tl: [
+        { id: "open", title: "Buksan ang customer context", body: "Gamitin ang Customer page o authorized order link para tingnan ang record na kailangan sa kasalukuyang task.", status: "Viewed", owner: "Staff user" },
+        { id: "verify", title: "Mag-verify bago pag-usapan ang order", body: "I-compare ang available identifiers at order context; huwag mag-disclose sa hindi verified na requester.", status: "Verified o escalated", owner: "Staff user" },
+      ],
+    },
+    steps: {
+      en: [
+        { id: "find-record", title: "Find the matching record", body: "Search using the minimum information needed and confirm the result belongs to the right customer or order.", screenshotId: "step-01-find-record" },
+        { id: "use-context", title: "Use only the needed fields", body: "Read the contact and order context required to complete the task; avoid copying personal details into unapproved channels.", screenshotId: "step-02-use-context" },
+        { id: "close-escalate", title: "Close or escalate safely", body: "Return to the task, close the detail view when finished, and escalate identity, privacy, or account issues through the approved path.", screenshotId: "step-03-close-escalate" },
+      ],
+      tl: [
+        { id: "find-record", title: "Hanapin ang katugmang record", body: "Gamitin ang pinakamaliit na impormasyong kailangan at kumpirmahing tamang customer o order ang result.", screenshotId: "step-01-find-record" },
+        { id: "use-context", title: "Kailangan lang na fields ang gamitin", body: "Basahin ang contact at order context na kailangan sa task; huwag kopyahin ang personal details sa hindi approved na channels.", screenshotId: "step-02-use-context" },
+        { id: "close-escalate", title: "Isara o i-escalate nang ligtas", body: "Bumalik sa task, isara ang detail view kapag tapos na, at i-escalate ang identity, privacy, o account issues sa approved path.", screenshotId: "step-03-close-escalate" },
+      ],
+    },
+    outcomes: {
+      en: [
+        { id: "task-complete", title: "Customer follow-up is traceable", body: "The Staff user completes the authorized order or customer task using the record's current information.", owner: "Staff user/order workflow", customerView: "The customer receives only the communication or service action supported by the workflow.", tone: "success" },
+        { id: "privacy-escalated", title: "Sensitive concern is escalated", body: "Identity mismatch, privacy concern, or access gap is routed to the responsible owner instead of being worked around.", owner: "Manager/authorized owner", customerView: "The customer's information remains protected while the concern is reviewed.", tone: "warning" },
+      ],
+      tl: [
+        { id: "task-complete", title: "Traceable ang customer follow-up", body: "Nakukumpleto ng Staff ang authorized order o customer task gamit ang current information ng record.", owner: "Staff user/order workflow", customerView: "Communication o service action lang na suportado ng workflow ang natatanggap ng customer.", tone: "success" },
+        { id: "privacy-escalated", title: "Na-escalate ang sensitive concern", body: "Ang identity mismatch, privacy concern, o access gap ay ipinapasa sa responsible owner sa halip na lampasan.", owner: "Manager/authorized owner", customerView: "Napoprotektahan ang customer information habang nire-review ang concern.", tone: "warning" },
+      ],
+    },
+    errors: {
+      en: [{ id: "mismatch", title: "The customer or order does not match", body: "A similar name, incomplete record, or missing permission can lead to the wrong customer context.", recovery: "Do not disclose or edit anything; stop, verify the identifiers, and escalate the mismatch to the manager or authorized owner." }],
+      tl: [{ id: "mismatch", title: "Hindi tugma ang customer o order", body: "Maaaring magdala sa maling customer context ang kaparehong pangalan, kulang na record, o missing permission.", recovery: "Huwag mag-disclose o mag-edit; huminto, i-verify ang identifiers, at i-escalate ang mismatch sa manager o authorized owner." }],
+    },
+    related: {
+      en: [{ slug: "understanding-retail-job-orders", label: "Understanding Retail Job Orders" }, { slug: "staff-workspace-permissions", label: "Staff workspace and permissions" }],
+      tl: [{ slug: "understanding-retail-job-orders", label: "Pag-unawa sa Retail Job Orders" }, { slug: "staff-workspace-permissions", label: "Staff workspace at permissions" }],
+    },
+    screenshots: [
+      screenshot("pricing", "viewing-customer-information", "step-01-find-record", "step-01-find-record.webp", { en: "Customer search and matching record with personal identifiers redacted.", tl: "Customer search at matching record na redacted ang personal identifiers." }),
+      screenshot("pricing", "viewing-customer-information", "step-02-use-context", "step-02-use-context.webp", { en: "Minimum customer and order context needed for an authorized task.", tl: "Minimum customer at order context na kailangan para sa authorized task." }),
+      screenshot("pricing", "viewing-customer-information", "step-03-close-escalate", "step-03-close-escalate.webp", { en: "Customer detail view with safe close and escalation path visible.", tl: "Customer detail view na may safe close at visible na escalation path." }),
+    ],
+    sourceCoverage: {
+      routes: ["erp.staff.customers", "erp.staff.job-orders"],
+      pages: ["resources/js/Pages/ERP/STAFF/Customers.tsx", "resources/js/Pages/ERP/STAFF/JobOrders.tsx"],
+      permissions: ["access-staff-customers", "access-staff-job-orders"],
+      tests: ["resources/js/Pages/ERP/CRM/__tests__/Customers.contract.test.ts", "tests/Feature/Staff/StaffArticlesRouteTest.php"],
+    },
+  }),
+  defineStaffArticle({
+    slug: "monitoring-product-inventory",
+    order: 32,
+    category: "pricing",
+    access: {
+      anyOfPermissions: ["access-product-management", "access-product-upload-staff"],
+      allowedBusinessTypes: ["retail", "both"],
+    },
+    title: { en: "Monitoring product inventory", tl: "Pag-monitor ng product inventory" },
+    question: { en: "How do I check whether a product has usable stock before creating or updating its listing?", tl: "Paano ko iche-check kung may usable stock ang product bago gumawa o mag-update ng listing?" },
+    summary: { en: "Read the inventory snapshot, variant quantities, availability, and source relationship before product work so the listing reflects stock the shop can actually use.", tl: "Basahin ang inventory snapshot, variant quantities, availability, at source relationship bago mag-product work para tumugma ang listing sa stock na aktuwal na magagamit ng shop." },
+    audience: { en: "Retail Staff users creating or maintaining product listings from shop inventory.", tl: "Retail Staff users na gumagawa o nagma-maintain ng product listings mula sa shop inventory." },
+    keywords: { en: ["product inventory", "stock", "available", "variant quantity", "inventory source", "out of stock"], tl: ["product inventory", "stock", "available", "variant quantity", "inventory source", "out of stock"] },
+    workflow: {
+      en: [
+        { id: "load", title: "Load the available inventory", body: "The product page requests the inventory items eligible for the current retail product workflow.", status: "Loading or loaded", owner: "Staff user/page" },
+        { id: "select", title: "Select a usable source", body: "Choose an available shop-owned source and review its variants before using it for a product listing.", status: "Available or blocked", owner: "Staff user/inventory rules" },
+        { id: "maintain", title: "Monitor after product changes", body: "Recheck quantities and availability when variants or product state change; do not treat an old snapshot as a live guarantee.", status: "Current snapshot", owner: "Staff user/inventory owner" },
+      ],
+      tl: [
+        { id: "load", title: "I-load ang available inventory", body: "Humihingi ang product page ng inventory items na eligible sa kasalukuyang retail product workflow.", status: "Loading o loaded", owner: "Staff user/page" },
+        { id: "select", title: "Pumili ng usable source", body: "Pumili ng available na shop-owned source at suriin ang variants nito bago gamitin sa product listing.", status: "Available o blocked", owner: "Staff user/inventory rules" },
+        { id: "maintain", title: "Mag-monitor pagkatapos ng product changes", body: "Muling suriin ang quantities at availability kapag nagbago ang variants o product state; huwag ituring na live guarantee ang lumang snapshot.", status: "Current snapshot", owner: "Staff user/inventory owner" },
+      ],
+    },
+    steps: {
+      en: [
+        { id: "check-availability", title: "Check availability and source", body: "Confirm the inventory item is available for product use and belongs to the shop context shown by the page.", screenshotId: "step-01-check-availability" },
+        { id: "review-variants", title: "Review color, size, and quantity", body: "Read the variant rows and quantities; do not invent a size or mark a zero-quantity variant as available.", screenshotId: "step-02-review-variants" },
+        { id: "refresh-before-submit", title: "Refresh before the final mutation", body: "If the page has been open or stock may have changed, reload the current data before creating, editing, or submitting the product.", screenshotId: "step-03-refresh-before-submit" },
+      ],
+      tl: [
+        { id: "check-availability", title: "I-check ang availability at source", body: "Kumpirmahing available ang inventory item para sa product use at kabilang ito sa shop context na ipinapakita ng page.", screenshotId: "step-01-check-availability" },
+        { id: "review-variants", title: "Suriin ang color, size, at quantity", body: "Basahin ang variant rows at quantities; huwag gumawa ng size o ituring na available ang zero-quantity variant.", screenshotId: "step-02-review-variants" },
+        { id: "refresh-before-submit", title: "Mag-refresh bago ang final mutation", body: "Kung matagal nang bukas ang page o maaaring nagbago ang stock, i-reload ang current data bago gumawa, mag-edit, o mag-submit ng product.", screenshotId: "step-03-refresh-before-submit" },
+      ],
+    },
+    outcomes: {
+      en: [
+        { id: "usable", title: "Product work uses current stock context", body: "A valid source and variant snapshot gives the Staff user a defensible starting point for product creation or maintenance.", owner: "Staff user/product workflow", customerView: "Customers are less likely to see a listing that cannot be fulfilled from the available stock context.", tone: "success" },
+        { id: "unavailable", title: "Product work is blocked or needs refresh", body: "Unavailable inventory, zero quantity, or stale data must be corrected or refreshed before continuing.", owner: "Staff user/inventory owner", customerView: "The unavailable source is not presented as ready stock.", tone: "warning" },
+      ],
+      tl: [
+        { id: "usable", title: "Current stock context ang gamit sa product work", body: "Ang valid source at variant snapshot ay nagbibigay sa Staff ng maaasahang starting point para sa product creation o maintenance.", owner: "Staff user/product workflow", customerView: "Mas mababa ang posibilidad na makakita ang customer ng listing na hindi ma-fulfill mula sa available stock context.", tone: "success" },
+        { id: "unavailable", title: "Blocked o kailangang i-refresh ang product work", body: "Ang unavailable inventory, zero quantity, o stale data ay kailangang ayusin o i-refresh bago magpatuloy.", owner: "Staff user/inventory owner", customerView: "Hindi ipinapakitang ready stock ang unavailable source.", tone: "warning" },
+      ],
+    },
+    errors: {
+      en: [{ id: "stale-inventory", title: "Inventory is missing or no longer available", body: "The source may have been used, changed, removed, or rejected by the server after the page loaded.", recovery: "Refresh the inventory list, choose a currently eligible source, and ask the inventory owner when the stock relationship is unexpected." }],
+      tl: [{ id: "stale-inventory", title: "Missing o hindi na available ang inventory", body: "Maaaring nagamit, nagbago, na-remove, o na-reject ng server ang source pagkatapos mag-load ng page.", recovery: "I-refresh ang inventory list, pumili ng kasalukuyang eligible source, at tanungin ang inventory owner kung hindi inaasahan ang stock relationship." }],
+    },
+    related: {
+      en: [{ slug: "creating-product-from-inventory", label: "Creating a product from inventory" }, { slug: "configuring-colors-sizes-quantities", label: "Configuring colors, sizes, and quantities" }, { slug: "fixing-product-creation-errors", label: "Fixing product creation errors" }],
+      tl: [{ slug: "creating-product-from-inventory", label: "Paglikha ng product mula sa inventory" }, { slug: "configuring-colors-sizes-quantities", label: "Pag-configure ng colors, sizes, at quantities" }, { slug: "fixing-product-creation-errors", label: "Pag-ayos ng product creation errors" }],
+    },
+    screenshots: [
+      screenshot("pricing", "monitoring-product-inventory", "step-01-check-availability", "step-01-check-availability.webp", { en: "Eligible inventory source list with shop identifiers redacted.", tl: "Eligible inventory source list na redacted ang shop identifiers." }),
+      screenshot("pricing", "monitoring-product-inventory", "step-02-review-variants", "step-02-review-variants.webp", { en: "Inventory color, size, and quantity rows with sample data only.", tl: "Inventory color, size, at quantity rows na sample data lang." }),
+      screenshot("pricing", "monitoring-product-inventory", "step-03-refresh-before-submit", "step-03-refresh-before-submit.webp", { en: "Current inventory snapshot before a product submission.", tl: "Current inventory snapshot bago ang product submission." }),
+    ],
+    sourceCoverage: {
+      routes: ["erp.staff.products", "api.erp.inventory.items"],
+      pages: ["resources/js/Pages/ERP/STAFF/ProductManagementWithVariants.tsx"],
+      permissions: ["access-product-management", "access-product-upload-staff"],
+      tests: ["tests/Feature/ProductInventoryTest.php", "resources/js/Pages/ERP/inventory/__tests__/ProductInventory.owner-actions.test.tsx"],
+    },
+  }),
+];

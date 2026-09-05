@@ -120,6 +120,44 @@ function moduleStates(overrides: Record<string, boolean> = {}) {
   );
 }
 
+it('shows Staff Articles for an eligible retail Staff viewer and keeps it active on detail routes', () => {
+  state.url = '/erp/articles';
+  state.role = 'STAFF';
+  state.roles = ['Staff'];
+  state.permissions = ['access-staff-dashboard'];
+  state.shopOwner.business_type = 'retail';
+
+  const { unmount } = render(<AppSidebarERP />);
+
+  expect(screen.getByRole('link', { name: /^Articles$/i })).toHaveAttribute('href', '/erp/articles');
+  expect(screen.getByRole('link', { name: /^Articles$/i })).toHaveClass('menu-item-active');
+  unmount();
+
+  state.url = '/erp/articles/daily-attendance-workflow';
+  render(<AppSidebarERP />);
+
+  expect(screen.getByRole('link', { name: /^Articles$/i })).toHaveClass('menu-item-active');
+});
+
+it.each([
+  { role: 'Cashier', roles: ['Cashier'], businessType: 'retail' },
+  { role: 'STAFF', roles: ['Repairer'], businessType: 'retail' },
+  { role: 'STAFF', roles: ['Logistics Dispatcher'], businessType: 'retail' },
+  { role: 'STAFF', roles: ['Inventory'], businessType: 'retail' },
+  { role: 'STAFF', roles: ['Procurement'], businessType: 'retail' },
+  { role: 'STAFF', roles: ['Staff'], businessType: 'repair' },
+])('hides Staff Articles for $role in a $businessType context', ({ role, roles, businessType }) => {
+  state.url = '/erp/articles';
+  state.role = role;
+  state.roles = roles;
+  state.permissions = ['access-staff-dashboard'];
+  state.shopOwner.business_type = businessType;
+
+  render(<AppSidebarERP />);
+
+  expect(screen.queryByRole('link', { name: /^Articles$/i })).not.toBeInTheDocument();
+});
+
 it('keeps supplier orders under Inventory without showing Procurement pages', () => {
   state.role = 'Inventory Manager';
   state.roles = ['Inventory Manager'];

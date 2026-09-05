@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\LeaveController;
 use App\Http\Controllers\Api\ManagerController;
 use App\Http\Controllers\EmailVerificationController;
+use App\Http\Controllers\Erp\StaffArticlesController;
 use App\Http\Controllers\ForgotPasswordOtpController;
 use App\Http\Controllers\InvitationController;
 use App\Http\Controllers\PrivateSensitiveDocumentController;
@@ -2523,6 +2524,19 @@ Route::prefix('erp/procurement')->name('erp.procurement.')->middleware('auth:use
     Route::get('/suppliers-management', [\App\Http\Controllers\Erp\ReadPageController::class, 'procurementSuppliers'])
         ->middleware('permission:view-procurement|access-suppliers-management')
         ->name('suppliers-management');
+});
+
+// Staff Articles routes use a separate regular-Staff audience gate because the
+// compatibility manager.staff middleware also admits repairer accounts.
+Route::prefix('erp/articles')->name('erp.articles.')->middleware([
+    'auth:user',
+    'check.suspension',
+    'staff.articles',
+])->group(function () {
+    Route::get('/', [StaffArticlesController::class, 'index'])->name('index');
+    Route::get('/{slug}', [StaffArticlesController::class, 'show'])
+        ->where('slug', '[a-z0-9-]+')
+        ->name('show');
 });
 
 // STAFF routes (both MANAGER and STAFF can access)
