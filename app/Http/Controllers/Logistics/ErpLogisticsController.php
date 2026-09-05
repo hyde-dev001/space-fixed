@@ -244,8 +244,9 @@ class ErpLogisticsController extends Controller
         $search = trim((string) ($request->validate([
             'search' => ['nullable', 'string', 'max:100'],
         ])['search'] ?? ''));
-        $tab = in_array($request->query('tab'), ['upcoming', 'history', 'issues', 'all'], true)
-            ? $request->query('tab')
+        $requestedTab = $request->query('tab');
+        $tab = in_array($requestedTab, ['upcoming', 'history', 'issues', 'all'], true)
+            ? $requestedTab
             : 'upcoming';
         $business = in_array($request->query('business'), ['all', 'retail', 'repair'], true)
             ? $request->query('business')
@@ -362,6 +363,9 @@ class ErpLogisticsController extends Controller
         $upNext = $upcoming->first();
 
         $issues = $this->issueItems($batches, $standalone, $rider);
+        if ($requestedTab === null && $issues->isNotEmpty()) {
+            $tab = 'issues';
+        }
         $source = match ($tab) {
             'upcoming' => $workItems->where('group', 'upcoming')
                 ->reject(fn (array $item) => $item['key'] === ($upNext['key'] ?? null)),

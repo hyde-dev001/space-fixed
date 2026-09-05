@@ -1285,4 +1285,35 @@ describe('MyDeliveries rider interactions', () => {
     expect((form as FormData).get('notes')).toBe('Motorcycle puncture on route.');
     expect((form as FormData).get('photo_files[]')).toBe(photo);
   });
+
+  it('shows and submits a replacement proof after dispatcher rejection', async () => {
+    mocks.props.deliveryData.filters = {
+      tab: 'issues',
+      business: 'all',
+      window: 'all',
+      search: '',
+    };
+    mocks.props.deliveryData.list.data = [{
+      item_type: 'issue',
+      issue_type: 'proof_correction',
+      key: 'proof-correction:12:18',
+      id: 18,
+      delivery_id: 12,
+      parent_key: 'single:12',
+      business_types: ['retail'],
+      reason: 'The delivery image is not readable.',
+      proof_id: 18,
+      replacement_allowed: true,
+    }];
+
+    render(<MyDeliveries />);
+
+    expect(screen.getByText('Replace delivery proof')).toBeVisible();
+    const proof = new File(['replacement'], 'replacement.jpg', { type: 'image/jpeg' });
+    fireEvent.change(screen.getByLabelText('Replacement delivery proof'), { target: { files: [proof] } });
+    fireEvent.click(screen.getByRole('button', { name: 'Submit replacement proof' }));
+
+    await waitFor(() => expect(mocks.recordProof).toHaveBeenCalledWith(12, expect.any(FormData)));
+    expect((mocks.recordProof.mock.calls[0][1] as FormData).get('replaces_proof_id')).toBe('18');
+  });
 });
