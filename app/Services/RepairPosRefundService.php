@@ -226,7 +226,7 @@ class RepairPosRefundService
             'request_type' => $payload['request_type'],
             'requested_amount' => $requested,
             'reason_code' => $payload['reason_code'],
-            'reason_notes' => $payload['reason_notes'] ?? null,
+            'reason_notes' => PosRefund::normalizeReasonNotes($payload['reason_notes'] ?? null),
             'paymongo_payment_id' => $payload['paymongo_payment_id'] ?? null,
             'paymongo_payment_ids' => $this->normalizeGatewayReferences(
                 is_array($payload['paymongo_payment_ids'] ?? null) ? $payload['paymongo_payment_ids'] : []
@@ -653,7 +653,7 @@ class RepairPosRefundService
 
         $requiresOwnerApproval = (bool) ($refund->requires_owner_approval ?? true);
 
-        $notes = trim((string) ($refund->reason_notes ?? ''));
+        $notes = trim((string) (PosRefund::normalizeReasonNotes($refund->reason_notes) ?? ''));
         if ($approvalNote) {
             $notes = trim($notes . "\n\nApproval note: " . trim($approvalNote));
         }

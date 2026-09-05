@@ -254,7 +254,7 @@ final class OwnerApprovalHistoryService
                             $this->directReviewSummary($review, 'Finance', false), $review['action'],
                             $review['decision_at'], $this->dateString($refund->requested_at),
                             $this->numericAmount($refund->approved_amount) ?? $this->numericAmount($refund->requested_amount),
-                            $this->text($refund->reason_notes),
+							$this->text(PosRefund::normalizeReasonNotes($refund->reason_notes)),
                             $this->localReviewerName($owner, $review['reviewer_id']) ?? 'Finance',
                         );
                     }
@@ -270,7 +270,7 @@ final class OwnerApprovalHistoryService
                         $this->dateString($refund->approved_at) ?? $this->dateString($refund->updated_at),
                         $this->dateString($refund->requested_at),
                         $this->numericAmount($refund->approved_amount) ?? $this->numericAmount($refund->requested_amount),
-                        $this->text($refund->reason_notes),
+						$this->text(PosRefund::normalizeReasonNotes($refund->reason_notes)),
                         $this->ownerDisplayName($owner),
                     );
                 }

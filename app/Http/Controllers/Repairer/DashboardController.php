@@ -111,19 +111,26 @@ class DashboardController extends Controller
             ->map(function ($group, $serviceName) {
                 $requests = $group->count();
                 
-                // Calculate average turnaround for completed repairs
                 $completedRepairs = $group->filter(function ($item) {
                     return $item['request']->completed_at !== null;
                 });
-                
-                $avgDays = 0;
-                if ($completedRepairs->count() > 0) {
-                    $totalHours = $completedRepairs->sum(function ($item) {
-                        return Carbon::parse($item['request']->created_at)
-                            ->diffInHours($item['request']->completed_at);
-                    });
-                    $avgDays = round($totalHours / $completedRepairs->count() / 24, 1);
-                }
+
+                $completedMinutes = $completedRepairs
+                    ->map(function ($item) {
+                        $startedAt = $item['request']->started_at ?? $item['request']->created_at;
+
+                        return Carbon::parse($startedAt)->diffInMinutes($item['request']->completed_at);
+                    })
+                    ->filter(fn ($minutes) => $minutes >= 0);
+                $averageMinutes = $completedMinutes->isNotEmpty()
+                    ? $completedMinutes->average()
+                    : null;
+                $estimatedDuration = trim((string) ($group->first()['service']->duration ?? ''));
+                $avgTurnaround = $averageMinutes !== null
+                    ? ($averageMinutes >= 1440
+                        ? round($averageMinutes / 1440, 1) . ' days'
+                        : '<1 day')
+                    : ($estimatedDuration !== '' ? 'Est. ' . $estimatedDuration : 'N/A');
                 
                 $lastRequested = Carbon::parse($group->max(function ($item) {
                     return $item['request']->created_at;
@@ -132,7 +139,7 @@ class DashboardController extends Controller
                 return [
                     'service' => $serviceName,
                     'requests' => $requests,
-                    'avgTurnaround' => $avgDays > 0 ? $avgDays . ' days' : 'N/A',
+                    'avgTurnaround' => $avgTurnaround,
                     'lastRequested' => $lastRequested->isToday() 
                         ? 'Today, ' . $lastRequested->format('g:i A')
                         : ($lastRequested->isYesterday() 

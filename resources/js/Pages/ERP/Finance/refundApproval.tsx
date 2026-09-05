@@ -293,6 +293,7 @@ interface RefundRequest {
 	requestDate: string;
 	refundReason?: string;
 	refundNote?: string;
+	reasonDetails?: string;
 	reason: string;
 	status: "Pending" | "Approved" | "Rejected";
 	rawStatus?: string;
@@ -300,6 +301,7 @@ interface RefundRequest {
 	financeStatus?: string;
 	requiresOwnerApproval?: boolean;
 	approvalStage?: string;
+	approvalStageLabel?: string | null;
 	returnStatus?: string | null;
 	canExecutePayout?: boolean;
 	refundExecutedAt?: string | null;
@@ -342,8 +344,13 @@ const parseCurrencyToNumber = (value: string): number => {
 
 const normalizeReasonDetails = (reason: unknown, otherReasonNote?: unknown): string => {
 	const raw = String(reason ?? "").trim();
-	const stripped = raw.replace(/\bRefund scope:\s*(?:full|partial)\b[\s\S]*$/i, "").trim();
-	const base = stripped !== "" ? stripped : raw;
+	const withoutMedia = raw
+		.split(/\r?\n/)
+		.filter((line) => !/^\s*Uploaded media references\s*:/i.test(line))
+		.join("\n")
+		.trim();
+	const stripped = withoutMedia.replace(/\bRefund scope:\s*(?:full|partial)\b[\s\S]*$/i, "").trim();
+	const base = stripped !== "" ? stripped : withoutMedia;
 	const other = String(otherReasonNote ?? "").trim();
 
 	if (other !== "" && !base.toLowerCase().includes(other.toLowerCase())) {
@@ -354,12 +361,40 @@ const normalizeReasonDetails = (reason: unknown, otherReasonNote?: unknown): str
 };
 
 const normalizeRefundRequestForDisplay = (item: RefundRequest): RefundRequest => {
-	const normalizedReason = normalizeReasonDetails(item.reason, (item as any).otherReasonNote ?? (item as any).other_reason_note);
+	const otherReasonNote = (item as any).otherReasonNote ?? (item as any).other_reason_note;
+	const normalizedReason = normalizeReasonDetails(item.reasonDetails || item.reason, otherReasonNote);
+	const normalizedNote = normalizeReasonDetails(item.refundNote, otherReasonNote);
 	return {
 		...item,
 		reason: normalizedReason,
-		refundNote: normalizeReasonDetails(item.refundNote, (item as any).otherReasonNote ?? (item as any).other_reason_note),
+		reasonDetails: normalizedReason,
+		refundNote: normalizedNote,
 	};
+};
+
+export const getApprovalStageLabel = (
+	request: Pick<RefundRequest, "refundType" | "approvalStageLabel" | "approvalStage" | "financeStatus" | "shopOwnerStatus">,
+): string | null => {
+	const explicitLabel = String(request.approvalStageLabel || "").trim();
+	if (explicitLabel) return explicitLabel;
+	if (request.refundType !== "repair") return null;
+
+	const approvalStage = String(request.approvalStage || "").toLowerCase();
+	const financeStatus = String(request.financeStatus || "").toLowerCase();
+	const shopOwnerStatus = String(request.shopOwnerStatus || "").toLowerCase();
+
+	if (approvalStage === "shop_owner" || (
+		financeStatus === "approved_initial"
+		&& !["approved", "skipped"].includes(shopOwnerStatus)
+	)) {
+		return "Waiting for shop owner approval";
+	}
+
+	if (approvalStage === "finance_initial" || financeStatus === "pending") {
+		return "Waiting for Finance approval";
+	}
+
+	return null;
 };
 
 const resolveFinanceDisplayStatus = (item: RefundRequest): RefundRequest["status"] => {
@@ -400,6 +435,7 @@ const normalizeFinanceRefundRequest = (item: RefundRequest): RefundRequest => {
 	return {
 		...normalized,
 		status: resolveFinanceDisplayStatus(normalized),
+		approvalStageLabel: getApprovalStageLabel(normalized),
 	};
 };
 
@@ -1516,18 +1552,23 @@ export default function RefundApproval() {
 											<div className="flex flex-wrap items-center gap-2">
 												<span
 													className={`px-2 py-1 rounded-full text-xs font-semibold ${
-														request.status === "Pending"
+														request.approvalStageLabel?.startsWith('Waiting') === true
 															? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300"
 															: request.status === "Approved"
 															? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300"
 															: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
 													}`}
 												>
-													{request.status}
+													{request.approvalStageLabel?.startsWith('Waiting') ? request.approvalStageLabel : request.status}
 												</span>
 												{canExecuteRefundPayout(request) && (
 													<span className="px-2 py-1 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300">
 														Payout Ready
+													</span>
+												)}
+												{request.approvalStageLabel && !request.approvalStageLabel.startsWith('Waiting') && (
+													<span className="px-2 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+														{request.approvalStageLabel}
 													</span>
 												)}
 											</div>
@@ -1666,6 +1707,13 @@ export default function RefundApproval() {
 									</div>
 								)}
 
+								{selectedRequest.approvalStageLabel && (
+									<div className="border border-blue-200 dark:border-blue-900/60 rounded-lg p-4 bg-blue-50 dark:bg-blue-900/20">
+										<p className="text-xs uppercase tracking-wide text-blue-700 dark:text-blue-300">Next workflow stage</p>
+										<p className="mt-1 text-sm font-semibold text-blue-900 dark:text-blue-100">{selectedRequest.approvalStageLabel}</p>
+									</div>
+								)}
+
 								<div>
 									<p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Reason for Refund</p>
 									<div className="border border-gray-200 dark:border-gray-800 rounded-lg p-4 text-sm text-gray-900 dark:text-gray-100 bg-gray-50 dark:bg-gray-800/40">
@@ -1676,7 +1724,7 @@ export default function RefundApproval() {
 								<div>
 									<p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Reason Details</p>
 									<div className="border border-gray-200 dark:border-gray-800 rounded-lg p-4 text-sm text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-900">
-										{selectedRequest.reason}
+										{selectedRequest.reasonDetails || selectedRequest.refundNote || selectedRequest.reason || "No additional details provided."}
 									</div>
 								</div>
 

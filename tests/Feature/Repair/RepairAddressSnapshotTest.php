@@ -98,6 +98,19 @@ class RepairAddressSnapshotTest extends TestCase
         $this->assertSame(0.0, (float) $repair->return_delivery_fee);
     }
 
+    public function test_repair_booking_phone_must_be_exactly_eleven_digits(): void
+    {
+        $this->withoutMiddleware();
+
+        [$customer, $shop, $service] = $this->fixtures();
+
+        $this->submit($customer, $shop, $service, [
+            'phone' => '0917123456',
+            'intake_delivery_method' => 'walk_in',
+            'return_delivery_method' => 'walk_in',
+        ])->assertUnprocessable()->assertJsonValidationErrors('phone');
+    }
+
     public function test_foreign_addresses_and_outside_coverage_are_rejected_only_for_shop_owned_choices(): void
     {
         [$customer, $shop, $service] = $this->fixtures();

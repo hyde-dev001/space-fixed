@@ -19,7 +19,7 @@ export default function Shipments() {
             <tbody className="divide-y divide-gray-100">
               {shipments.map((shipment) => (
                 <tr key={shipment.id}>
-                  <td className="px-4 py-3 font-semibold">#{shipment.id}</td>
+                  <td className="px-4 py-3 font-semibold">#{shipment.shipment_number ?? shipment.id}</td>
                   <td>{shipment.purpose}</td>
                   <td>{shipment.status}</td>
                   <td>{shipment.source_type} #{shipment.source_id}</td>

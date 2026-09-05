@@ -75,6 +75,7 @@ class CustomerTrackingService
 
         return [
             'id' => $shipment->id,
+            'shipment_number' => $shipment->shipment_number,
             'purpose' => $shipment->purpose,
             'status' => $shipment->status->value,
             'source_type' => $shipment->source_type,

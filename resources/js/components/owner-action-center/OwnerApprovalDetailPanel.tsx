@@ -45,8 +45,10 @@ const normalizedStatus = (value: unknown): string => (
   typeof value === "string" ? value.toLowerCase().replace(/[\s-]+/g, "_") : ""
 );
 
-const isTerminal = (detail: ApprovalDetail): boolean => {
-  const status = detail.status ?? detail.approval_status ?? (isRecord(detail.approval) ? detail.approval.status : null);
+const isTerminal = (detail: ApprovalDetail, sourceType: string): boolean => {
+  const status = sourceType === "repair_package_price_change"
+    ? detail.approval_status ?? detail.status ?? (isRecord(detail.approval) ? detail.approval.status : null)
+    : detail.status ?? detail.approval_status ?? (isRecord(detail.approval) ? detail.approval.status : null);
   return terminalStatuses.has(normalizedStatus(status));
 };
 
@@ -260,7 +262,7 @@ export default function OwnerApprovalDetailPanel({
     );
   }
 
-  const canDecide = item.owner_action_required && item.primary_bucket === "needs_my_decision" && detail !== null && !isTerminal(detail);
+  const canDecide = item.owner_action_required && item.primary_bucket === "needs_my_decision" && detail !== null && !isTerminal(detail, item.source_type);
   const Renderer = definition.renderer;
 
   return (

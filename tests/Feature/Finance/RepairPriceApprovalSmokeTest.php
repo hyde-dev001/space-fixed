@@ -486,6 +486,36 @@ class RepairPriceApprovalSmokeTest extends TestCase
             ->assertStatus(400);
     }
 
+    public function test_shop_owner_cannot_approve_another_shop_package_price_change(): void
+    {
+        $this->withoutMiddleware();
+
+        $owner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'both',
+            'registration_type' => 'individual',
+        ]);
+        $otherOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'both',
+            'registration_type' => 'individual',
+        ]);
+        $package = RepairPackage::create([
+            'shop_owner_id' => $otherOwner->id,
+            'name' => 'Other shop package',
+            'package_price' => 599,
+            'status' => 'active',
+            'approval_status' => 'finance_approved',
+            'approval_workflow_version' => 'repair_finance_owner_finance',
+        ]);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->postJson("/api/shop-owner/repair-price-changes/{$package->id}/approve", [
+                'request_type' => 'package',
+            ])
+            ->assertNotFound();
+
+        $this->assertSame('finance_approved', $package->fresh()->approval_status);
+    }
+
     private function enableOwnerPriceApproval(int $shopOwnerId): void
     {
         $this->setOwnerPriceApproval($shopOwnerId, true);

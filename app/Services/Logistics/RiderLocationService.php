@@ -253,7 +253,10 @@ class RiderLocationService
         return [
             'leg_id' => $leg?->id,
             'shipment_id' => $shipment?->id,
-            'shipment_reference' => $shipment ? "Shipment #{$shipment->id}" : null,
+            'shipment_number' => $shipment?->shipment_number,
+            'shipment_reference' => $shipment
+                ? 'Shipment #' . ($shipment->shipment_number ?? $shipment->id)
+                : null,
             'rider' => [
                 'id' => $location->riderProfile?->id,
                 'name' => $location->riderProfile?->name,

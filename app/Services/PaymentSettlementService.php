@@ -150,7 +150,6 @@ class PaymentSettlementService
         RepairRequest $repair,
         array $breakdown,
         ?string $paymentReference = null,
-        bool $posWalkInNeedsRepairerReview = false,
     ): RepairRequest
     {
         $phase = (string) $breakdown['phase'];
@@ -248,13 +247,8 @@ class PaymentSettlementService
             ? round((float) $breakdown['service_total'] - round((float) $breakdown['service_total'] * 0.5, 2) + (float) $repair->return_delivery_fee, 2)
             : round((float) $repair->return_delivery_fee, 2);
         $completed = $phase === 'final' || ($phase === 'initial' && $finalDue <= 0);
-        $reopenRepairerReview = $posWalkInNeedsRepairerReview
-            && $phase === 'initial'
-            && (int) ($repair->assigned_repairer_id ?? 0) > 0
-            && in_array((string) $repair->status, ['pending', 'repairer_accepted'], true);
         $advanceAcceptedRepair = $phase === 'initial'
-            && (string) $repair->status === 'repairer_accepted'
-            && ! $reopenRepairerReview;
+            && (string) $repair->status === 'repairer_accepted';
         $paymentReferences = $this->appendRepairPaymentReference(
             is_array($repair->paymongo_payment_ids) ? $repair->paymongo_payment_ids : null,
             $paymentReference,
@@ -281,9 +275,7 @@ class PaymentSettlementService
 
         if ($phase === 'initial') {
             $this->repairDeliveryService->tryCreateIntakeShipment($settledRepair);
-            if ($reopenRepairerReview) {
-                $settledRepair->update(['status' => 'assigned_to_repairer']);
-            } elseif ($advanceAcceptedRepair) {
+            if ($advanceAcceptedRepair) {
                 $settledRepair->update(['status' => 'pending']);
             }
         } else {

@@ -40,6 +40,27 @@ class ShipmentRequestServiceTest extends TestCase
         ]);
     }
 
+    public function test_shipment_numbers_restart_for_each_shop_owner(): void
+    {
+        $shopA = ShopOwner::factory()->create();
+        $shopB = ShopOwner::factory()->create();
+        $requestShipment = fn (ShopOwner $shop, int $sourceId) => app(ShipmentRequestService::class)->requestShipment([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'order',
+            'source_id' => $sourceId,
+            'purpose' => 'retail_delivery',
+            'legs' => [['leg_type' => 'outbound']],
+        ]);
+
+        $firstA = $requestShipment($shopA, 1101);
+        $secondA = $requestShipment($shopA, 1102);
+        $firstB = $requestShipment($shopB, 2201);
+
+        $this->assertSame(1, $firstA->shipment_number);
+        $this->assertSame(2, $secondA->shipment_number);
+        $this->assertSame(1, $firstB->shipment_number);
+    }
+
     public function test_it_accepts_an_active_internal_assignment_method(): void
     {
         $shop = ShopOwner::factory()->create();

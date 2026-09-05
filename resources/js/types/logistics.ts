@@ -219,6 +219,7 @@ export type TrackingShipmentEvent = {
 
 export type TrackingShipment = {
   id: number;
+  shipment_number?: number | null;
   purpose: string;
   status: string;
   source_type: string;
@@ -261,6 +262,7 @@ export type PaginatedResponse<T> = {
 
 export type LogisticsShipment = {
   id: number;
+  shipment_number?: number | null;
   purpose: string;
   status: string;
   source_type: string;

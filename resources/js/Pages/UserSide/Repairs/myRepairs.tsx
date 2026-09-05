@@ -3356,10 +3356,7 @@ const MyRepairs: React.FC = () => {
       const otherReasonSummary = refundReason === 'Other' && refundOtherReason.trim().length > 0
         ? `Other reason details: ${refundOtherReason.trim()}`
         : '';
-      const mediaSummary = refundMedia.length > 0
-        ? `Uploaded media references: ${refundMedia.map((file) => file.name).join(', ')}`
-        : '';
-      const reasonNotes = [otherReasonSummary, refundNote.trim(), mediaSummary].filter(Boolean).join('\n').slice(0, 2000);
+      const reasonNotes = [otherReasonSummary, refundNote.trim()].filter(Boolean).join('\n').slice(0, 2000);
 
       const preferredReturnChannel: PreferredReturnChannel =
         originalMethodOnly

@@ -687,8 +687,10 @@ class RepairPosPaymentFlowTest extends TestCase
     }
 
     #[Test]
-    public function registered_walk_in_pos_payment_keeps_repairer_decision_open(): void
+    public function registered_walk_in_pos_payment_preserves_accepted_repair_for_physical_receipt(): void
     {
+        $this->withoutMiddleware();
+
         $shopOwner = \App\Models\ShopOwner::factory()->approved()->create([
             'business_type' => 'both',
             'registration_type' => 'company',
@@ -712,6 +714,7 @@ class RepairPosPaymentFlowTest extends TestCase
         $repairer = \App\Models\User::factory()->create([
             'shop_owner_id' => $shopOwner->id,
             'status' => 'active',
+            'role' => 'REPAIRER',
         ]);
         $repairer->assignRole($repairerRole);
 
@@ -731,7 +734,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'delivery_method' => 'walk_in',
             'total' => 1000,
             'final_total' => 1000,
-            'status' => 'pending',
+            'status' => 'repairer_accepted',
             'payment_status' => 'pending',
             'payment_status_derived' => 'unpaid',
             'total_paid_amount' => 0,
@@ -751,18 +754,15 @@ class RepairPosPaymentFlowTest extends TestCase
         $checkout->assertOk()->assertJsonPath('success', true);
 
         $repair->refresh();
-        $this->assertSame('assigned_to_repairer', (string) $repair->status);
+        $this->assertSame('pending', (string) $repair->status);
         $this->assertSame('paid', (string) $repair->payment_status_derived);
 
-        $reject = $this->actingAs($repairer, 'user')
-            ->postJson('/api/repairer/repairs/' . $repair->id . '/reject', [
-                'reason_category' => 'skills_gap',
-                'reason_text' => 'This repair needs skills that are not available today.',
-            ]);
+        $received = $this->actingAs($repairer, 'user')
+            ->postJson('/api/repairer/repairs/' . $repair->id . '/mark-received');
 
-        $reject->assertOk()
+        $received->assertOk()
             ->assertJsonPath('success', true)
-            ->assertJsonPath('repair.status', 'repairer_rejected');
+            ->assertJsonPath('repair.status', 'received');
     }
 
     #[Test]

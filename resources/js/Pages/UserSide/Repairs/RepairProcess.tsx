@@ -395,7 +395,7 @@ const RepairProcess: React.FC = () => {
         ...prev,
         customerName: parsed.customerName || '',
         email: parsed.email || '',
-        phone: parsed.phone || '',
+        phone: (parsed.phone || '').replace(/\D/g, '').slice(0, 11),
         shoeType: parsed.shoeType || '',
         brand: parsed.brand || '',
       }));
@@ -702,7 +702,8 @@ const RepairProcess: React.FC = () => {
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    const nextValue = name === 'phone' ? value.replace(/\D/g, '').slice(0, 11) : value;
+    setFormData(prev => ({ ...prev, [name]: nextValue }));
   };
 
   const handleServiceToggle = (serviceId: number) => {
@@ -940,6 +941,16 @@ const RepairProcess: React.FC = () => {
       Swal.fire({
         title: 'Missing Information',
         text: 'Please fill in all required fields',
+        icon: 'warning',
+        confirmButtonColor: '#000000',
+      });
+      return;
+    }
+
+    if (!/^[0-9]{11}$/.test(formData.phone)) {
+      Swal.fire({
+        title: 'Invalid Phone Number',
+        text: 'Phone number must be exactly 11 digits.',
         icon: 'warning',
         confirmButtonColor: '#000000',
       });
@@ -1293,8 +1304,12 @@ const RepairProcess: React.FC = () => {
                         name="phone"
                         value={formData.phone}
                         onChange={handleInputChange}
+                        inputMode="numeric"
+                        maxLength={11}
+                        pattern="[0-9]{11}"
+                        autoComplete="tel"
                         className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
-                        placeholder="+63 912 345 6789"
+                        placeholder="09XXXXXXXXX"
                         required
                       />
                     </div>

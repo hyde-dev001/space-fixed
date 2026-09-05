@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   canExecuteRefundPayout,
   canFinanceAuthorizeRefund,
+  getApprovalStageLabel,
   getFinanceApprovalNotice,
 } from "../refundApproval";
 
@@ -50,5 +51,14 @@ describe("Finance customer refund gates", () => {
     expect(repairNotice).toContain("No retail item return");
     expect(repairNotice).not.toContain("Staff receives");
     expect(retailNotice).toContain("Staff receives");
+  });
+
+  it("labels a repair refund waiting for shop owner approval", () => {
+    expect(getApprovalStageLabel(request({
+      refundType: "repair",
+      approvalStage: "shop_owner",
+      financeStatus: "approved_initial",
+      shopOwnerStatus: "pending",
+    }))).toBe("Waiting for shop owner approval");
   });
 });

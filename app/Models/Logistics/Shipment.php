@@ -15,6 +15,7 @@ class Shipment extends Model
     use HasFactory;
 
     protected $fillable = [
+        'shipment_number',
         'shop_owner_id',
         'source_type',
         'source_id',
@@ -27,6 +28,7 @@ class Shipment extends Model
     ];
 
     protected $casts = [
+        'shipment_number' => 'integer',
         'status' => ShipmentStatus::class,
         'completed_at' => 'datetime',
         'cancelled_at' => 'datetime',

@@ -17,7 +17,9 @@ import {
 export default function PriceApprovalDetails({ detail, item }: ApprovalDetailRendererProps) {
   const oldPrice = pick(detail, "current_price", "old_price", "old_package_price", "previous_price");
   const newPrice = pick(detail, "proposed_price", "new_price", "package_price", "price");
-  const status = pick(detail, "status", "approval_status", "raw_status") ?? "pending_owner";
+  const status = (item.source_type === "repair_package_price_change"
+    ? pick(detail, "approval_status", "status", "raw_status")
+    : pick(detail, "status", "approval_status", "raw_status")) ?? "pending_owner";
   const hasNotes = hasAny(detail, "reason", "change_reason", "request_notes", "finance_notes", "notes", "rejection_reason");
 
   return (
