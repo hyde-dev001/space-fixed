@@ -185,6 +185,26 @@ it.each([
   expect(sidebarLinks[sidebarLinks.length - 1]).toBe(articleLinks[0]);
 });
 
+it('keeps Repairer accounts out of Staff attendance and opens Articles from the logo', () => {
+  state.url = '/erp/repairer/articles';
+  state.role = 'REPAIRER';
+  state.roles = ['REPAIRER'];
+  state.permissions = [];
+  state.shopOwner.business_type = 'repair';
+
+  render(<AppSidebarERP />);
+
+  expect(screen.getByRole('link', { name: 'SoleSpace' })).toHaveAttribute(
+    'href',
+    '/erp/repairer/articles',
+  );
+  expect(screen.queryByRole('link', { name: /log attendance/i })).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: /^Articles$/i })).toHaveAttribute(
+    'href',
+    '/erp/repairer/articles',
+  );
+});
+
 it('keeps supplier orders under Inventory without showing Procurement pages', () => {
   state.role = 'Inventory Manager';
   state.roles = ['Inventory Manager'];

@@ -35,12 +35,10 @@ const detailCopy = {
     unavailable: "Article unavailable",
     unavailableMessage: "This guide is not available for the access or shop settings of this account.",
     returnHub: "Return to articles",
-    audience: "Who can use this",
     prerequisites: "Before you start",
     workflow: "What happens to the work",
     steps: "Steps",
     outcomes: "What happens next",
-    errors: "Common problems and what to do",
     related: "Related articles",
     owner: "Next owner",
     customerView: "What the customer sees",
@@ -56,12 +54,10 @@ const detailCopy = {
     unavailable: "Hindi available ang artikulo",
     unavailableMessage: "Hindi available ang guide para sa access o shop settings ng account na ito.",
     returnHub: "Bumalik sa mga artikulo",
-    audience: "Sino ang puwedeng gumamit",
     prerequisites: "Bago ka magsimula",
     workflow: "Ano ang mangyayari sa work",
     steps: "Mga hakbang",
     outcomes: "Ano ang susunod na mangyayari",
-    errors: "Karaniwang problema at gagawin",
     related: "Kaugnay na mga artikulo",
     owner: "Susunod na owner",
     customerView: "Makikita ng customer",
@@ -193,14 +189,6 @@ export default function ArticleDetail({
           <h1 className="mt-5 max-w-4xl text-3xl font-bold tracking-tight text-gray-950 dark:text-white sm:text-5xl">{translation.title}</h1>
           <p className="mt-4 max-w-3xl text-lg font-medium leading-8 text-gray-700 dark:text-gray-200">{translation.question}</p>
           <p className="mt-5 max-w-3xl text-base leading-7 text-gray-600 dark:text-gray-300">{translation.summary}</p>
-
-          <div className="mt-6 flex items-start gap-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-950">
-            <ShieldCheck aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0 text-gray-700 dark:text-gray-200" />
-            <div>
-              <h2 className="text-sm font-semibold text-gray-950 dark:text-white">{labels.audience}</h2>
-              <p className="mt-1 text-sm leading-6 text-gray-600 dark:text-gray-300">{translation.audience}</p>
-            </div>
-          </div>
         </header>
 
         <div className="space-y-12 py-8">
@@ -279,22 +267,6 @@ export default function ArticleDetail({
                     <div><dt className="font-semibold text-gray-950 dark:text-white">{labels.owner}</dt><dd className="mt-1 text-gray-600 dark:text-gray-300">{outcome.owner}</dd></div>
                     <div><dt className="font-semibold text-gray-950 dark:text-white">{labels.customerView}</dt><dd className="mt-1 text-gray-600 dark:text-gray-300">{outcome.customerView}</dd></div>
                   </dl>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <section aria-labelledby="article-errors">
-            <div className="flex items-center gap-3">
-              <CircleAlert aria-hidden="true" className="h-5 w-5 text-red-700 dark:text-red-300" />
-              <h2 id="article-errors" className="text-2xl font-semibold tracking-tight text-gray-950 dark:text-white">{labels.errors}</h2>
-            </div>
-            <div className="mt-5 grid gap-4 md:grid-cols-2">
-              {translation.errors.map((error) => (
-                <div key={error.id} className="rounded-xl border border-red-200 bg-red-50/60 p-5 dark:border-red-900 dark:bg-red-950/20">
-                  <h3 className="font-semibold text-gray-950 dark:text-white">{error.title}</h3>
-                  <p className="mt-2 text-sm leading-6 text-gray-700 dark:text-gray-200">{error.body}</p>
-                  <p className="mt-4 border-l-2 border-red-400 pl-3 text-sm leading-6 text-gray-700 dark:border-red-500 dark:text-gray-200"><span className="font-semibold">{labels.recovery}:</span> {error.recovery}</p>
                 </div>
               ))}
             </div>

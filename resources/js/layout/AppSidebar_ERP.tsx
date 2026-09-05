@@ -1358,7 +1358,7 @@ const EmployeeSidebarERP: React.FC = () => {
     if (hasLogisticsAccess() && !hasStaffAccess()) return "logistics";
     if (hasStaffAccess()) return "staff";
     if (hasLogisticsAccess()) return "logistics";
-    if (hasRepairerAccess()) return "repair";
+    if (hasRepairerAccess()) return null;
     if (hasCashierAccess()) return "cashier";
     if (hasManagerAccess()) return "manager";
     if (hasInventoryAccess()) return "inventory";
@@ -2335,6 +2335,10 @@ const EmployeeSidebarERP: React.FC = () => {
     );
   };
 
+  const logoHref = hasRepairerAccess() && !hasStaffAccess() && !hasLogisticsAccess()
+    ? getHrefByRoute("erp.repairer.articles.index")
+    : route("erp.time-in");
+
   return (
     <aside
       className={`erp-sidebar fixed mt-16 flex flex-col xl:mt-0 top-0 px-5 left-0 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-900 h-screen transition-all duration-300 ease-in-out z-50 border-r border-gray-200
@@ -2355,7 +2359,7 @@ const EmployeeSidebarERP: React.FC = () => {
           !isExpanded && !isHovered ? "xl:justify-center" : "justify-start"
         }`}
       >
-        <Link href={route("erp.time-in")} className="flex items-center gap-2 hover:scale-105 transition-transform duration-200">
+        <Link href={logoHref} className="flex items-center gap-2 hover:scale-105 transition-transform duration-200">
           {isExpanded || isHovered || isMobileOpen ? (
             <span className="text-xl font-bold tracking-tight text-gray-900 dark:text-gray-100">
               SoleSpace

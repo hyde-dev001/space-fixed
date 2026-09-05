@@ -108,7 +108,7 @@ describe("Staff Articles page", () => {
     expect(screen.getAllByText(/staff pages and access/i).length).toBeGreaterThan(0);
   });
 
-  it("renders valid details, an invalid slug, and an inaccessible known slug", async () => {
+  it("renders valid details, an invalid slug, and any article in the active catalog", async () => {
     const { rerender } = render(<ArticlesIndex />);
 
     await screen.findByRole("heading", { name: /staff articles/i });
@@ -117,6 +117,8 @@ describe("Staff Articles page", () => {
     rerender(<ArticlesIndex />);
     expect(await screen.findByRole("heading", { name: /daily attendance workflow/i })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /what happens next/i })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /who can use this/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /common problems and what to do/i })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: /back to all articles/i })).toHaveAttribute(
       "href",
       "/erp/articles",
@@ -131,7 +133,7 @@ describe("Staff Articles page", () => {
     pageState.props.auth.permissions = ["access-staff-job-orders"];
     pageState.url = "/erp/articles/creating-product-from-inventory";
     rerender(<ArticlesIndex />);
-    expect(await screen.findByRole("heading", { name: /article unavailable/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /creating a product from inventory/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /back to all articles/i })).toHaveAttribute(
       "href",
       "/erp/articles",
@@ -169,5 +171,22 @@ describe("Staff Articles page", () => {
     expect(screen.getAllByRole("link").some((link) => (
       link.getAttribute("href")?.startsWith("/erp/manager/articles/") ?? false
     ))).toBe(true);
+  });
+
+  it("shows the active Repairer catalog even when the shared permission list is incomplete", async () => {
+    pageState.props.articleAudience = "repairer";
+    pageState.props.auth.permissions = [];
+    pageState.props.auth.user.role = "STAFF";
+    pageState.props.auth.user.roles = [];
+    pageState.props.auth.user.shop_owner = { business_type: "repair" };
+    pageState.props.auth.shop_owner = { business_type: "repair" };
+    pageState.url = "/erp/repairer/articles";
+    window.history.replaceState({}, "", "/erp/repairer/articles");
+
+    render(<ArticlesIndex />);
+
+    expect(await screen.findByRole("heading", { name: /repairer articles/i })).toBeInTheDocument();
+    expect(screen.getByText(/7 articles/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/use the repair dashboard/i).length).toBeGreaterThan(0);
   });
 });
