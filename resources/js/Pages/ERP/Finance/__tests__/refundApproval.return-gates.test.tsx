@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { canExecuteRefundPayout, canFinanceAuthorizeRefund } from "../refundApproval";
+import {
+  canExecuteRefundPayout,
+  canFinanceAuthorizeRefund,
+  getFinanceApprovalNotice,
+} from "../refundApproval";
 
 const request = (overrides: Record<string, unknown> = {}) => ({
   id: 1,
@@ -36,5 +40,15 @@ describe("Finance customer refund gates", () => {
       financeStatus: "approved",
       returnStatus: "received",
     }))).toBe(true);
+  });
+
+  it("does not apply the retail return inspection message to repair refunds", () => {
+    const repairNotice = getFinanceApprovalNotice({ refundType: "repair" });
+    const retailNotice = getFinanceApprovalNotice({ refundType: "order" });
+
+    expect(repairNotice).toContain("repair-service refund");
+    expect(repairNotice).toContain("No retail item return");
+    expect(repairNotice).not.toContain("Staff receives");
+    expect(retailNotice).toContain("Staff receives");
   });
 });

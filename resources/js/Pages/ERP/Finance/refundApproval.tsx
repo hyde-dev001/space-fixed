@@ -266,6 +266,9 @@ const ReceiptIcon = ({ className }: { className?: string }) => (
 interface RefundRequest {
 	id: number;
 	refundType?: "order" | "repair";
+	sourceType?: string;
+	repairNumber?: string | null;
+	receiptNumber?: string | null;
 	workflowSource?: string;
 	repairerStatus?: string;
 	preferredReturnChannel?: string;
@@ -297,7 +300,7 @@ interface RefundRequest {
 	financeStatus?: string;
 	requiresOwnerApproval?: boolean;
 	approvalStage?: string;
-	returnStatus?: string;
+	returnStatus?: string | null;
 	canExecutePayout?: boolean;
 	refundExecutedAt?: string | null;
 	refundedAt?: string | null;
@@ -415,6 +418,16 @@ export const canFinanceAuthorizeRefund = (request: RefundRequest): boolean => {
 		&& (financeStatus === "pending"
 			|| (requiresOwnerApproval && financeStatus === "approved_initial"))
 		&& !["rejected", "failed", "succeeded", "completed", "paid"].includes(rawStatus);
+};
+
+export const getFinanceApprovalNotice = (
+	request: Pick<RefundRequest, "refundType">,
+): string => {
+	if (request.refundType === "repair") {
+		return "No retail item return or Staff inspection is required for this repair-service refund. Finance approval authorizes the refund; payout follows the existing repair payout stage.";
+	}
+
+	return "Money can be released only after Staff receives and inspects every returned item.";
 };
 
 export const canExecuteRefundPayout = (request: RefundRequest): boolean => {
@@ -889,18 +902,26 @@ export default function RefundApproval() {
 				</select>
 			`
 			: "";
+		const repairSourceHtml = request.refundType === "repair"
+			? `
+				<p style="margin-bottom: 0.5rem;"><strong>Source:</strong> Repair service</p>
+				<p style="margin-bottom: 0.5rem;"><strong>Repair #:</strong> ${request.repairNumber || "Not available"}</p>
+				<p style="margin-bottom: 0.5rem;"><strong>Receipt #:</strong> ${request.receiptNumber || request.orderNumber || "Not available"}</p>
+			`
+			: "";
 		const result = await Swal.fire({
 			title: (request as any).approvalStage === "finance_final" ? "Finalize Refund Approval?" : "Approve Refund?",
 			html: `
 				<div style="text-align: left; margin-top: 1rem;">
 					<p style="margin-bottom: 0.5rem;"><strong>Order:</strong> ${request.orderNumber}</p>
+					${repairSourceHtml}
 					<p style="margin-bottom: 0.5rem;"><strong>Customer:</strong> ${request.customerName}</p>
 					<p style="margin-bottom: 0.5rem;"><strong>Amount:</strong> ${getPayoutAmountDisplay(request)}</p>
 					<p style="margin-bottom: 0.5rem;"><strong>Method:</strong> ${request.refundMethod}</p>
 					<p style="margin-bottom: 0.5rem;"><strong>Requested by:</strong> ${request.requestedBy}</p>
 					<p style="margin-bottom: 0.5rem;"><strong>Reason:</strong> ${request.reason}</p>
 					<p style="margin-bottom: 0.5rem;"><strong>Action:</strong> Finance authorization only</p>
-					<p style="margin-bottom: 0;color:#92400e;"><strong>No payout yet.</strong> Money can be released only after Staff receives and inspects every returned item.</p>
+					<p style="margin-bottom: 0;color:#92400e;"><strong>${request.refundType === "repair" ? "Repair refund:" : "No payout yet."}</strong> ${getFinanceApprovalNotice(request)}</p>
 					${shippingDecisionHtml}
 				</div>
 			`,
@@ -1625,6 +1646,26 @@ export default function RefundApproval() {
 
 						<div className="px-8 py-6 overflow-y-auto max-h-[70vh]">
 							<div className="space-y-6">
+								{selectedRequest.refundType === "repair" && (
+									<div>
+										<p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Refund source</p>
+										<div className="border border-gray-200 dark:border-gray-800 rounded-lg p-4 text-sm text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-900 grid grid-cols-1 sm:grid-cols-3 gap-3">
+											<div>
+												<p className="text-xs uppercase tracking-wide text-gray-500">Source</p>
+												<p className="font-semibold text-gray-900 dark:text-gray-100">Repair service</p>
+											</div>
+											<div>
+												<p className="text-xs uppercase tracking-wide text-gray-500">Repair #</p>
+												<p className="font-semibold text-gray-900 dark:text-gray-100">{selectedRequest.repairNumber || "Not available"}</p>
+											</div>
+											<div>
+												<p className="text-xs uppercase tracking-wide text-gray-500">Receipt #</p>
+												<p className="font-semibold text-gray-900 dark:text-gray-100">{selectedRequest.receiptNumber || selectedRequest.orderNumber || "Not available"}</p>
+											</div>
+										</div>
+									</div>
+								)}
+
 								<div>
 									<p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Reason for Refund</p>
 									<div className="border border-gray-200 dark:border-gray-800 rounded-lg p-4 text-sm text-gray-900 dark:text-gray-100 bg-gray-50 dark:bg-gray-800/40">

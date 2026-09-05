@@ -90,6 +90,15 @@ type ReceiptRefundEntry = {
 	items?: ReceiptRefundEntryItem[];
 };
 
+type ReceiptLatestRefund = {
+	id: number;
+	status: string;
+	workflowSource?: string | null;
+	repairerStatus?: string | null;
+	financeStatus?: string | null;
+	shopOwnerStatus?: string | null;
+};
+
 type ReceiptSnapshot = {
 	moduleType?: "repair" | "retail";
 	transactionId?: number;
@@ -101,10 +110,7 @@ type ReceiptSnapshot = {
 	dueType?: PosDueType | null;
 	paidAmount: number;
 	refundEntries: ReceiptRefundEntry[];
-	latestRefund?: {
-		id: number;
-		status: string;
-	};
+	latestRefund?: ReceiptLatestRefund;
 	receiptNo: string;
 	createdAtISO: string;
 	dateLabel: string;
@@ -281,6 +287,60 @@ const getRefundStatusHint = (status: string | undefined): string => {
 	if (normalized === "succeeded") return "Refund payout completed";
 	if (normalized === "rejected") return "Refund request was rejected";
 	return "";
+};
+
+export const getRepairRefundStatusPresentation = (
+	refund: Pick<ReceiptLatestRefund, "status" | "workflowSource" | "repairerStatus" | "financeStatus" | "shopOwnerStatus">,
+): { label: string; hint: string } => {
+	const rawStatus = String(refund.status || "").toLowerCase();
+	const workflowSource = String(refund.workflowSource || "").toLowerCase();
+	const repairerStatus = String(refund.repairerStatus || "").toLowerCase();
+	const financeStatus = String(refund.financeStatus || "").toLowerCase();
+	const shopOwnerStatus = String(refund.shopOwnerStatus || "").toLowerCase();
+
+	if (["succeeded", "completed", "paid"].includes(rawStatus)) {
+		return { label: "Refunded", hint: "Refund payout completed" };
+	}
+
+	if (["failed", "rejected", "cancelled", "canceled"].includes(rawStatus)) {
+		return rawStatus === "failed"
+			? { label: "Refund Failed", hint: "Refund payout failed" }
+			: { label: "Rejected", hint: "Refund request was rejected" };
+	}
+
+	if (rawStatus === "processing") {
+		return { label: "Processing", hint: "Refund payout is being processed" };
+	}
+
+	if (workflowSource === "online_myrepair" && repairerStatus === "pending") {
+		return { label: "Under Repairer Review", hint: "Waiting for repairer review" };
+	}
+
+	if (financeStatus === "pending") {
+		return { label: "Under Finance Review", hint: "Pending Finance approval" };
+	}
+
+	if (financeStatus === "approved_initial" && !["approved", "skipped"].includes(shopOwnerStatus)) {
+		return { label: "Under Owner Review", hint: "Pending shop owner approval" };
+	}
+
+	if (rawStatus === "approved") {
+		return { label: "Approved", hint: "Approved, ready for payout execution" };
+	}
+
+	if (rawStatus === "requested") {
+		return { label: "Requested", hint: "Refund request submitted" };
+	}
+
+	return { label: rawStatus || "Refund update", hint: "Refund status updated" };
+};
+
+const getReceiptLatestRefundPresentation = (receipt: ReceiptSnapshot): { label: string; hint: string } | null => {
+	if (receipt.moduleType !== "repair" || !receipt.latestRefund) {
+		return null;
+	}
+
+	return getRepairRefundStatusPresentation(receipt.latestRefund);
 };
 
 const getRefundStatusClass = (status: string): string => {
@@ -1016,6 +1076,10 @@ const PointOfSalePage = () => {
 						latestRefund: latestRefund ? {
 							id: Number(latestRefund?.id || 0),
 							status: String(latestRefund?.status || "requested"),
+							workflowSource: latestRefund?.workflow_source,
+							repairerStatus: latestRefund?.repairer_status,
+							financeStatus: latestRefund?.finance_status,
+							shopOwnerStatus: latestRefund?.shop_owner_status,
 						} : undefined,
 						receiptNo: String(row?.receipt?.receipt_no ?? row?.transaction_no ?? `POS-${index + 1}`),
 						createdAtISO: issuedAt,
@@ -3945,14 +4009,14 @@ const PointOfSalePage = () => {
 														<p className="text-xs text-slate-600">Customer: {receipt.customerName}</p>
 														<p className="text-xs text-slate-600">Method: {receipt.paymentMethod.toUpperCase()} | Phase: {getDueTypeLabel(receipt.dueType)}</p>
 														{receipt.latestRefund?.status && (
-															<p className="text-[11px] text-slate-500">{getRefundStatusHint(receipt.latestRefund.status)}</p>
+															<p className="text-[11px] text-slate-500">{getReceiptLatestRefundPresentation(receipt)?.hint ?? getRefundStatusHint(receipt.latestRefund.status)}</p>
 														)}
 													</div>
 													<div className="flex items-center gap-2">
 														<p className="text-sm font-bold text-slate-900">{formatPeso(receipt.totalDue)}</p>
 														{receipt.latestRefund?.status && (
 															<span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-slate-700">
-																{receipt.latestRefund.status}
+																{getReceiptLatestRefundPresentation(receipt)?.label ?? receipt.latestRefund.status}
 															</span>
 														)}
 														{canRequestWarrantyClaimFromReceipt(receipt) && (

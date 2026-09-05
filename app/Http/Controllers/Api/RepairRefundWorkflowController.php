@@ -167,6 +167,10 @@ class RepairRefundWorkflowController extends Controller
             ->where('module_type', 'repair')
             ->where('shop_owner_id', (int) ($actor->shop_owner_id ?? 0))
             ->where('repairer_status', 'pending')
+            ->whereHas('repairRequest', function ($query) use ($actor): void {
+                $query->where('shop_owner_id', (int) ($actor->shop_owner_id ?? 0))
+                    ->where('assigned_repairer_id', (int) ($actor->id ?? 0));
+            })
             ->latest('id')
             ->get();
 
@@ -179,6 +183,7 @@ class RepairRefundWorkflowController extends Controller
     public function repairerApprove(Request $request, PosRefund $refund, RepairOnlineRefundWorkflowService $service)
     {
         $actor = Auth::guard('user')->user();
+        $this->authorizeRepairerRefund($actor, $refund);
 
         $validated = $request->validate([
             'assessment_note' => ['required', 'string', 'max:2000'],
@@ -198,6 +203,7 @@ class RepairRefundWorkflowController extends Controller
     public function repairerReject(Request $request, PosRefund $refund, RepairOnlineRefundWorkflowService $service)
     {
         $actor = Auth::guard('user')->user();
+        $this->authorizeRepairerRefund($actor, $refund);
 
         $validated = $request->validate([
             'assessment_note' => ['required', 'string', 'max:2000'],
@@ -217,6 +223,7 @@ class RepairRefundWorkflowController extends Controller
     public function financeApprove(Request $request, PosRefund $refund, RepairPosRefundService $service)
     {
         $actor = Auth::guard('user')->user();
+        $this->authorizeFinanceRefund($actor, $refund);
 
         $validated = $request->validate([
             'approved_amount' => ['nullable', 'numeric', 'min:0.01'],
@@ -237,6 +244,7 @@ class RepairRefundWorkflowController extends Controller
     public function financeReject(Request $request, PosRefund $refund, RepairPosRefundService $service)
     {
         $actor = Auth::guard('user')->user();
+        $this->authorizeFinanceRefund($actor, $refund);
 
         $validated = $request->validate([
             'reason' => ['required', 'string', 'max:255'],
@@ -308,6 +316,7 @@ class RepairRefundWorkflowController extends Controller
     public function ownerApprove(Request $request, PosRefund $refund, RepairPosRefundService $service)
     {
         $actor = Auth::guard('shop_owner')->user() ?? Auth::guard('user')->user();
+        $this->authorizeShopOwnerRefund($actor, $refund);
 
         $validated = $request->validate([
             'approved_amount' => ['nullable', 'numeric', 'min:0.01'],
@@ -328,6 +337,7 @@ class RepairRefundWorkflowController extends Controller
     public function ownerReject(Request $request, PosRefund $refund, RepairPosRefundService $service)
     {
         $actor = Auth::guard('shop_owner')->user() ?? Auth::guard('user')->user();
+        $this->authorizeShopOwnerRefund($actor, $refund);
 
         $validated = $request->validate([
             'reason' => ['required', 'string', 'max:255'],
@@ -409,6 +419,34 @@ class RepairRefundWorkflowController extends Controller
         return strtolower((string) ($actor->registration_type ?? '')) === 'individual';
     }
 
+    private function authorizeRepairerRefund(?object $actor, PosRefund $refund): void
+    {
+        $authorized = $actor
+            && (string) $refund->module_type === 'repair'
+            && (int) ($actor->shop_owner_id ?? 0) === (int) $refund->shop_owner_id
+            && RepairRequest::query()
+                ->whereKey((int) $refund->module_reference_id)
+                ->where('shop_owner_id', (int) $refund->shop_owner_id)
+                ->where('assigned_repairer_id', (int) $actor->id)
+                ->exists();
+
+        abort_unless($authorized, 403);
+    }
+
+    private function authorizeFinanceRefund(?object $actor, PosRefund $refund): void
+    {
+        abort_unless($actor && $this->canFinanceExecute($actor, $refund), 403);
+    }
+
+    private function authorizeShopOwnerRefund(?object $actor, PosRefund $refund): void
+    {
+        $authorized = $actor
+            && (string) $refund->module_type === 'repair'
+            && (int) ($actor->id ?? 0) === (int) $refund->shop_owner_id;
+
+        abort_unless($authorized, 403);
+    }
+
     private function canFinanceExecute(object $actor, PosRefund $refund): bool
     {
         if ((string) $refund->module_type !== 'repair') {
@@ -452,7 +490,7 @@ class RepairRefundWorkflowController extends Controller
                 'sourceTransaction:id,transaction_no,shop_owner_id,customer_type,customer_id,walk_in_name,module_type,module_reference_id,total_amount,paid_amount',
                 'sourceTransaction.receipt:id,pos_transaction_id,receipt_no',
                 'sourceTransaction.paymentLines:id,pos_transaction_id,tender_type,provider_reference,status',
-                'repairRequest:id,customer_name,paymongo_payment_id',
+                'repairRequest:id,request_id,customer_name,paymongo_payment_id',
                 'requestedByUser:id,name',
                 'legs:id,pos_refund_id,leg_type,requested_amount,approved_amount,status',
             ])
@@ -615,7 +653,10 @@ class RepairRefundWorkflowController extends Controller
             'financeStatus' => (string) ($refund->finance_status ?? 'pending'),
             'requiresOwnerApproval' => $requiresOwnerApproval,
             'approvalStage' => $approvalStage,
-            'returnStatus' => 'received',
+            'sourceType' => 'repair',
+            'repairNumber' => $repair?->request_id,
+            'receiptNumber' => $receiptNo !== '' ? $receiptNo : null,
+            'returnStatus' => null,
             'canExecutePayout' => $canExecutePayout,
             'refundExecutedAt' => optional($refund->executed_at)->toDateTimeString(),
             'refundedAt' => optional($refund->executed_at)->toDateTimeString(),
