@@ -8,6 +8,7 @@ import {
   HorizontaLDots,
 } from "../icons";
 import { useSidebar } from "../context/SidebarContext";
+import { isRegularStaffViewer } from "../data/staffArticleAccess";
 import type { ShopModuleKey } from "../types/shopModules";
 import { getManagerBusinessCapabilities } from "../utils/managerBusinessCapabilities";
 import { canRenderShopModule } from "../utils/shopModuleAccess";
@@ -652,6 +653,18 @@ const staffItems: NavItem[] = [
   },
   {
     icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M5 4h10l4 4v12H5z"></path>
+        <path d="M15 4v4h4"></path>
+        <path d="M8 13h8"></path>
+        <path d="M8 17h6"></path>
+      </svg>
+    ),
+    name: "Articles",
+    route: "erp.articles.index",
+  },
+  {
+    icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
         <path d="M6 6h15l-1.5 9h-12z" />
         <circle cx="9" cy="19" r="1.5" />
@@ -1138,6 +1151,7 @@ const EmployeeSidebarERP: React.FC = () => {
     "erp.staff.request-material": "/erp/staff/request-material",
     "erp.staff.attendance": "/erp/staff/attendance",
     "erp.staff.customers": "/erp/staff/customers",
+    "erp.articles.index": "/erp/articles",
     "erp.my-payslips": "/erp/my-payslips",
   };
 
@@ -1785,9 +1799,24 @@ const EmployeeSidebarERP: React.FC = () => {
   const getFilteredStaffItems = () => {
     if (isCashierOnly) return [];
 
+    const hasStaffArticleAccess = isRegularStaffViewer({
+      permissions: Array.isArray(permissions)
+        ? permissions.filter((value: unknown): value is string => typeof value === 'string')
+        : [],
+      roles: Array.isArray(roles)
+        ? roles.filter((value: unknown): value is string => typeof value === 'string')
+        : [],
+      legacyRole: typeof role === 'string' ? role : null,
+      businessType: rawBusinessType,
+    });
+
     return staffItems.filter((item) => {
       if (item.route?.startsWith("erp.logistics.")) {
         return false;
+      }
+
+      if (item.route === "erp.articles.index") {
+        return hasStaffArticleAccess;
       }
 
       // Dashboard - check simplified permission

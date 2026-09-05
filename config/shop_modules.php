@@ -171,6 +171,8 @@ $routeBuckets = [
         'erp.notifications.update-preferences',
         'erp.password.update',
         'erp.profile',
+        'erp.articles.index',
+        'erp.articles.show',
         'erp.staff.',
         'erp.staff.dashboard',
         'erp.staff.pricing-services',
