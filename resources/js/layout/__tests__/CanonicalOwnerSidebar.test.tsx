@@ -273,6 +273,17 @@ it("does not render Business Settings as a primary navigation group", () => {
   expect(screen.queryByRole("link", { name: "Profile" })).not.toBeInTheDocument();
 });
 
+it("keeps Shop Owner Articles at the bottom of the primary navigation", () => {
+  render(<CanonicalOwnerSidebar metadata={metadata()} />);
+
+  const articleLink = screen.getByRole("link", { name: "Articles" });
+  expect(articleLink).toHaveAttribute("href", "/shop-owner/erp/articles");
+  expect(screen.getByTestId("canonical-owner-articles-navigation")).toContainElement(articleLink);
+
+  const primaryLinks = within(screen.getByTestId("canonical-owner-primary-navigation")).getAllByRole("link");
+  expect(primaryLinks[primaryLinks.length - 1]).toBe(articleLink);
+});
+
 it("reads presentation metadata directly without needing client authorization inputs", () => {
   render(<CanonicalOwnerSidebar metadata={metadata()} />);
 

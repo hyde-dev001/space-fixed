@@ -176,6 +176,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'gate.erp.access' => \App\Http\Middleware\GateErpAccess::class,
             'manager.staff' => \App\Http\Middleware\CheckManagerStaffAccess::class,
             'staff.articles' => \App\Http\Middleware\EnsureRegularStaffArticleAccess::class,
+            'article.audience' => \App\Http\Middleware\EnsureArticleAudienceAccess::class,
             'manager.capability' => \App\Http\Middleware\RequireManagerCapability::class,
             'check.suspension' => \App\Http\Middleware\CheckEmployeeSuspension::class,
             // Shop Owner Access Control

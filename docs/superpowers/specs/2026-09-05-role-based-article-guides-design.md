@@ -1,6 +1,6 @@
 # Role-Based ERP Article Guides
 
-**Status:** Ready for user review  
+**Status:** Ready for user review
 **Date:** 2026-09-05
 
 ## Goal

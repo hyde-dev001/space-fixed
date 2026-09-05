@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\LeaveController;
 use App\Http\Controllers\Api\ManagerController;
 use App\Http\Controllers\EmailVerificationController;
+use App\Http\Controllers\Erp\ArticlesController;
 use App\Http\Controllers\Erp\StaffArticlesController;
 use App\Http\Controllers\ForgotPasswordOtpController;
 use App\Http\Controllers\InvitationController;
@@ -2528,6 +2529,37 @@ Route::prefix('erp/procurement')->name('erp.procurement.')->middleware('auth:use
 
 // Staff Articles routes use a separate regular-Staff audience gate because the
 // compatibility manager.staff middleware also admits repairer accounts.
+$employeeArticleRoutes = [
+    ['prefix' => 'erp/manager/articles', 'name' => 'erp.manager.', 'audience' => 'manager'],
+    ['prefix' => 'finance/articles', 'name' => 'finance.', 'audience' => 'finance'],
+    ['prefix' => 'erp/hr/articles', 'name' => 'erp.hr.', 'audience' => 'hr'],
+    ['prefix' => 'crm/articles', 'name' => 'crm.', 'audience' => 'crm'],
+    ['prefix' => 'erp/cashier/articles', 'name' => 'erp.cashier.', 'audience' => 'cashier'],
+    ['prefix' => 'erp/repairer/articles', 'name' => 'erp.repairer.', 'audience' => 'repairer'],
+    ['prefix' => 'erp/inventory/articles', 'name' => 'erp.inventory.', 'audience' => 'inventory'],
+    ['prefix' => 'erp/procurement/articles', 'name' => 'erp.procurement.', 'audience' => 'procurement'],
+    ['prefix' => 'erp/logistics/articles', 'name' => 'erp.logistics.', 'audience' => 'logistics-dispatcher'],
+];
+
+foreach ($employeeArticleRoutes as $articleRoute) {
+    Route::prefix($articleRoute['prefix'])
+        ->name($articleRoute['name'])
+        ->middleware([
+            'auth:user',
+            'check.suspension',
+            'article.audience:'.$articleRoute['audience'],
+        ])
+        ->group(function () use ($articleRoute): void {
+            Route::get('/', [ArticlesController::class, 'index'])
+                ->defaults('articleAudience', $articleRoute['audience'])
+                ->name('articles.index');
+            Route::get('/{slug}', [ArticlesController::class, 'show'])
+                ->where('slug', '[a-z0-9-]+')
+                ->defaults('articleAudience', $articleRoute['audience'])
+                ->name('articles.show');
+        });
+}
+
 Route::prefix('erp/articles')->name('erp.articles.')->middleware([
     'auth:user',
     'check.suspension',

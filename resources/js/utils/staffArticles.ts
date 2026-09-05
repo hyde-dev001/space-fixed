@@ -1,13 +1,25 @@
 import {
   isRegularStaffViewer,
-  normalizeStaffArticleBusinessType,
 } from "../data/staffArticleAccess";
 import {
-  STAFF_ARTICLE_CATEGORIES,
+  STAFF_ARTICLE_CATALOG,
   STAFF_ARTICLES,
 } from "../data/staffArticles";
 import type {
+  ArticleCategorySummary,
+  ArticleGuide,
   ArticleLanguage,
+  ArticleViewer,
+} from "../data/articleGuides";
+import {
+  getArticleCategories,
+  getArticleBySlug,
+  isArticleAccessible,
+  resolveRelatedArticles,
+  searchArticles,
+} from "./articleGuides";
+import type {
+  ArticleLanguage as StaffArticleLanguage,
   StaffArticle,
   StaffArticleCategory,
 } from "../data/staffArticles";
@@ -17,32 +29,25 @@ export type StaffArticleCategorySummary = StaffArticleCategory & {
   count: number;
 };
 
-const normalizeSearchText = (value: unknown): string =>
-  String(value ?? "")
-    .trim()
-    .toLocaleLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
+const staffCatalog = (articles: readonly StaffArticle[]) => ({
+  ...STAFF_ARTICLE_CATALOG,
+  articles,
+});
+
+const toArticleViewer = (viewer: StaffArticleViewer): ArticleViewer => ({
+  permissions: viewer.permissions,
+  roles: viewer.roles,
+  legacyRole: viewer.legacyRole,
+  businessType: viewer.businessType,
+});
 
 export const isStaffArticleAccessible = (
   article: StaffArticle,
   viewer: StaffArticleViewer,
-): boolean => {
-  if (!isRegularStaffViewer(viewer)) return false;
-
-  const businessType = normalizeStaffArticleBusinessType(viewer.businessType);
-  if (businessType !== "retail" && businessType !== "both") return false;
-
-  const hasArticlePermission = article.access.anyOfPermissions.some((permission) =>
-    viewer.permissions.includes(permission),
-  );
-
-  return (
-    hasArticlePermission &&
-    article.access.allowedBusinessTypes.includes(businessType)
-  );
-};
-
+): boolean => (
+  isRegularStaffViewer(viewer)
+  && isArticleAccessible(article, toArticleViewer(viewer))
+);
 export const getAccessibleStaffArticles = (
   viewer: StaffArticleViewer,
   catalog: readonly StaffArticle[] = STAFF_ARTICLES,
@@ -51,70 +56,32 @@ export const getAccessibleStaffArticles = (
 export const getStaffArticleBySlug = (
   slug: string | null | undefined,
   catalog: readonly StaffArticle[] = STAFF_ARTICLES,
-): StaffArticle | undefined => {
-  const normalizedSlug = String(slug ?? "").trim().toLocaleLowerCase();
-
-  return catalog.find((article) => article.slug === normalizedSlug);
-};
-
-const getSearchFields = (
-  article: StaffArticle,
-  language: ArticleLanguage,
-): string[] => {
-  const copy = article.translations[language];
-
-  return [
-    copy.title,
-    copy.question,
-    copy.summary,
-    copy.audience,
-    ...copy.keywords,
-    ...copy.prerequisites.flatMap(({ title, body }) => [title, body]),
-    ...copy.workflow.flatMap(({ title, body, status, owner }) => [title, body, status, owner]),
-    ...copy.steps.flatMap(({ title, body }) => [title, body]),
-    ...copy.outcomes.flatMap(({ title, body, owner, customerView }) => [title, body, owner, customerView]),
-    ...copy.errors.flatMap(({ title, body, recovery }) => [title, body, recovery]),
-    ...copy.related.map(({ label }) => label),
-  ];
-};
+): StaffArticle | undefined => (
+  getArticleBySlug(staffCatalog(catalog), slug) as StaffArticle | undefined
+);
 
 export const searchStaffArticles = (
   articles: readonly StaffArticle[],
   query: string,
-  language: ArticleLanguage,
-): StaffArticle[] => {
-  const normalizedQuery = normalizeSearchText(query);
-
-  if (!normalizedQuery) return [...articles];
-
-  const terms = normalizedQuery.split(/\s+/).filter(Boolean);
-
-  return articles.filter((article) => {
-    const searchText = normalizeSearchText(getSearchFields(article, language).join(" "));
-
-    return terms.every((term) => searchText.includes(term));
-  });
-};
+  language: StaffArticleLanguage,
+): StaffArticle[] => (
+  searchArticles(articles as readonly ArticleGuide[], query, language) as StaffArticle[]
+);
 
 export const getStaffArticleCategories = (
   articles: readonly StaffArticle[],
-): StaffArticleCategorySummary[] =>
-  STAFF_ARTICLE_CATEGORIES.flatMap((category) => {
-    const count = articles.filter((article) => article.category === category.key).length;
-
-    return count > 0 ? [{ ...category, count }] : [];
-  });
+): StaffArticleCategorySummary[] => (
+  getArticleCategories(STAFF_ARTICLE_CATALOG, articles as readonly ArticleGuide[]) as ArticleCategorySummary[]
+).map((category) => category as StaffArticleCategorySummary);
 
 export const resolveRelatedStaffArticles = (
   article: StaffArticle,
   accessibleArticles: readonly StaffArticle[],
   language: ArticleLanguage,
-): Array<{ article: StaffArticle; label: string }> => {
-  const accessibleBySlug = new Map(accessibleArticles.map((item) => [item.slug, item]));
-
-  return article.translations[language].related.flatMap((related) => {
-    const relatedArticle = accessibleBySlug.get(related.slug);
-
-    return relatedArticle ? [{ article: relatedArticle, label: related.label }] : [];
-  });
-};
+): Array<{ article: StaffArticle; label: string }> => (
+  resolveRelatedArticles(
+    article as ArticleGuide,
+    accessibleArticles as readonly ArticleGuide[],
+    language,
+  ) as Array<{ article: StaffArticle; label: string }>
+);

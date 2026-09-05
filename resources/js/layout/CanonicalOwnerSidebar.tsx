@@ -44,6 +44,7 @@ const hasActiveChild = (path: string, item: OwnerShellItem): boolean => (
 
 const visibleLabelClass = "transition-opacity duration-200 motion-reduce:transition-none";
 const EXPANDED_GROUPS_STORAGE_KEY = "canonicalOwnerSidebarExpandedGroups";
+const OWNER_ARTICLES_PATH = "/shop-owner/erp/articles";
 
 const ITEM_ICONS: Record<string, LucideIcon> = {
   home: Home,
@@ -112,6 +113,11 @@ const CanonicalOwnerSidebar = ({ metadata }: CanonicalOwnerSidebarProps) => {
   const groups = useMemo<OwnerShellGroup[]>(
     () => [...metadata.groups]
       .filter((group) => group.key !== "settings")
+      .map((group) => ({
+        ...group,
+        items: group.items.filter((item) => item.canonical_url !== OWNER_ARTICLES_PATH),
+      }))
+      .filter((group) => group.items.some((item) => item.available))
       .sort((left, right) => left.order - right.order),
     [metadata.groups],
   );
@@ -250,6 +256,26 @@ const CanonicalOwnerSidebar = ({ metadata }: CanonicalOwnerSidebarProps) => {
               </li>
             );
           })}
+        </ul>
+        <ul className="mt-auto space-y-1 border-t border-gray-200 pt-4 dark:border-gray-800" data-testid="canonical-owner-articles-navigation">
+          <li>
+            <Link
+              href={OWNER_ARTICLES_PATH}
+              className={`flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] dark:focus-visible:ring-blue-300 ${currentPath === OWNER_ARTICLES_PATH || currentPath.startsWith(`${OWNER_ARTICLES_PATH}/`)
+                ? "menu-item-active bg-[#111111] text-white dark:bg-blue-500/15 dark:text-blue-300"
+                : "text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white"
+                }`}
+              aria-current={currentPath === OWNER_ARTICLES_PATH || currentPath.startsWith(`${OWNER_ARTICLES_PATH}/`) ? "page" : undefined}
+              title={showLabels ? undefined : "Articles"}
+            >
+              <FileText
+                data-testid="canonical-owner-articles-icon"
+                aria-hidden="true"
+                className="h-4 w-4 shrink-0"
+              />
+              <span className={showLabels ? visibleLabelClass : "sr-only"}>Articles</span>
+            </Link>
+          </li>
         </ul>
       </nav>
 

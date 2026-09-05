@@ -22,6 +22,7 @@ const pageState = vi.hoisted(() => ({
   url: "/erp/articles",
   props: {
     articleSlug: null as string | null,
+    articleAudience: "staff" as string,
     auth: {
       permissions: [] as string[],
       user: {
@@ -49,6 +50,7 @@ vi.mock("../../../../layout/AppLayout_ERP", () => ({
 beforeEach(() => {
   pageState.url = "/erp/articles";
   pageState.props.articleSlug = null;
+  pageState.props.articleAudience = "staff";
   pageState.props.auth.permissions = [...fullPermissions];
   pageState.props.auth.user.role = "STAFF";
   pageState.props.auth.user.roles = ["Staff"];
@@ -59,10 +61,10 @@ beforeEach(() => {
 });
 
 describe("Staff Articles page", () => {
-  it("renders the searchable hub, recommendations, categories, and results", () => {
+  it("renders the searchable hub, recommendations, categories, and results", async () => {
     render(<ArticlesIndex />);
 
-    expect(screen.getByRole("heading", { name: /staff articles/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /staff articles/i })).toBeInTheDocument();
     expect(screen.getByRole("searchbox", { name: /search staff articles/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /getting started/i })).toBeInTheDocument();
     expect(screen.getAllByText(/staff pages and access/i).length).toBeGreaterThan(0);
@@ -70,30 +72,32 @@ describe("Staff Articles page", () => {
     expect(screen.getByText(/32 articles/i)).toBeInTheDocument();
   });
 
-  it("supports Tagalog search and persists the language choice", () => {
+  it("supports Tagalog search and persists the language choice", async () => {
     render(<ArticlesIndex />);
 
+    await screen.findByRole("heading", { name: /staff articles/i });
     fireEvent.click(screen.getByRole("button", { name: /tagalog/i }));
 
     expect(localStorage.getItem("solespace:staff-articles:language")).toBe("tl");
-    expect(screen.getByRole("heading", { name: /mga artikulo para sa staff/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /mga artikulo para sa staff/i })).toBeInTheDocument();
 
     fireEvent.change(screen.getByRole("searchbox", { name: /maghanap/i }), {
       target: { value: "tinanggihan" },
     });
 
-    expect(screen.getByText(/resulta ng price request/i)).toBeInTheDocument();
+    expect(await screen.findByText(/resulta ng price request/i)).toBeInTheDocument();
   });
 
-  it("shows a no-results reset state and preserves search/filter state in the URL", () => {
+  it("shows a no-results reset state and preserves search/filter state in the URL", async () => {
     render(<ArticlesIndex />);
 
+    await screen.findByRole("searchbox", { name: /search staff articles/i });
     fireEvent.change(screen.getByRole("searchbox", { name: /search staff articles/i }), {
       target: { value: "no matching article" },
     });
     fireEvent.click(screen.getByRole("button", { name: /orders & returns/i }));
 
-    expect(screen.getByText(/no staff articles match/i)).toBeInTheDocument();
+    expect(await screen.findByText(/no staff articles match/i)).toBeInTheDocument();
     expect(window.location.search).toContain("q=no+matching+article");
     expect(window.location.search).toContain("category=orders");
 
@@ -104,15 +108,16 @@ describe("Staff Articles page", () => {
     expect(screen.getAllByText(/staff pages and access/i).length).toBeGreaterThan(0);
   });
 
-  it("renders valid details, an invalid slug, and an inaccessible known slug", () => {
+  it("renders valid details, an invalid slug, and an inaccessible known slug", async () => {
     const { rerender } = render(<ArticlesIndex />);
 
+    await screen.findByRole("heading", { name: /staff articles/i });
     pageState.props.articleSlug = "daily-attendance-workflow";
     pageState.url = "/erp/articles/daily-attendance-workflow";
     rerender(<ArticlesIndex />);
-    expect(screen.getByRole("heading", { name: /daily attendance workflow/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /daily attendance workflow/i })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /what happens next/i })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /back to all staff articles/i })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /back to all articles/i })).toHaveAttribute(
       "href",
       "/erp/articles",
     );
@@ -120,27 +125,49 @@ describe("Staff Articles page", () => {
     pageState.props.articleSlug = "does-not-exist";
     pageState.url = "/erp/articles/does-not-exist";
     rerender(<ArticlesIndex />);
-    expect(screen.getByRole("heading", { name: /article not found/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /article not found/i })).toBeInTheDocument();
 
     pageState.props.articleSlug = "creating-product-from-inventory";
     pageState.props.auth.permissions = ["access-staff-job-orders"];
     pageState.url = "/erp/articles/creating-product-from-inventory";
     rerender(<ArticlesIndex />);
-    expect(screen.getByRole("heading", { name: /article unavailable/i })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /back to all staff articles/i })).toHaveAttribute(
+    expect(await screen.findByRole("heading", { name: /article unavailable/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /back to all articles/i })).toHaveAttribute(
       "href",
       "/erp/articles",
     );
   });
 
-  it("hydrates query and category state from the browser URL without a network search", () => {
+  it("hydrates query and category state from the browser URL without a network search", async () => {
     window.history.replaceState({}, "", "/erp/articles?q=refund&category=orders");
     render(<ArticlesIndex />);
 
-    expect(screen.getByRole("searchbox", { name: /search staff articles/i })).toHaveValue("refund");
+    expect(await screen.findByRole("searchbox", { name: /search staff articles/i })).toHaveValue("refund");
     expect(screen.getByRole("button", { name: /orders & returns/i })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
+  });
+
+  it("keeps each account on its own article catalog", async () => {
+    const { rerender } = render(<ArticlesIndex />);
+
+    await screen.findByRole("heading", { name: /staff articles/i });
+
+    pageState.props.articleAudience = "manager";
+    pageState.props.auth.permissions = ["access-manager-dashboard"];
+    pageState.props.auth.user.role = "MANAGER";
+    pageState.props.auth.user.roles = ["Manager"];
+    pageState.url = "/erp/manager/articles";
+    window.history.replaceState({}, "", "/erp/manager/articles");
+    rerender(<ArticlesIndex />);
+
+    expect(await screen.findByRole("heading", { name: /manager articles/i })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /staff articles/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("searchbox", { name: /search manager articles/i })).toBeInTheDocument();
+    expect(screen.getAllByText(/use the manager dashboard/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("link").some((link) => (
+      link.getAttribute("href")?.startsWith("/erp/manager/articles/") ?? false
+    ))).toBe(true);
   });
 });

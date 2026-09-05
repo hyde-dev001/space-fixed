@@ -149,6 +149,18 @@ const approvalWorkflowItems: NavItem[] = [
   },
 ];
 
+const ownerArticlesItem: NavItem = {
+  icon: (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M5 4h10l4 4v12H5z" />
+      <path d="M15 4v4h4" />
+      <path d="M8 13h8M8 17h6" />
+    </svg>
+  ),
+  name: "Articles",
+  path: "/shop-owner/erp/articles",
+};
+
 const individualOperationsItems: NavItem[] = [
   {
     icon: <CalenderIcon className="w-5 h-5" />,
@@ -945,6 +957,7 @@ const AppSidebar_shopOwner: React.FC<AppSidebarShopOwnerProps> = ({ activeModule
               )}
             </div>
           </div>
+          {!activeModule && renderMenuItems([ownerArticlesItem], "main")}
         </nav>
 
       </div>

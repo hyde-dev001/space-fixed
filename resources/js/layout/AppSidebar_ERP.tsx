@@ -54,6 +54,74 @@ const managerMyPayslipsItem: NavItem = {
 
 const managerSelfServiceItems: NavItem[] = [attendanceItem, managerMyPayslipsItem];
 
+const articlesIcon = (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M5 4h10l4 4v12H5z" />
+    <path d="M15 4v4h4" />
+    <path d="M8 13h8M8 17h6" />
+  </svg>
+);
+
+const staffArticlesItem: NavItem = {
+  icon: articlesIcon,
+  name: "Articles",
+  route: "erp.articles.index",
+};
+
+const managerArticlesItem: NavItem = {
+  icon: articlesIcon,
+  name: "Articles",
+  route: "erp.manager.articles.index",
+};
+
+const financeArticlesItem: NavItem = {
+  icon: articlesIcon,
+  name: "Articles",
+  route: "finance.articles.index",
+};
+
+const hrArticlesItem: NavItem = {
+  icon: articlesIcon,
+  name: "Articles",
+  route: "erp.hr.articles.index",
+};
+
+const crmArticlesItem: NavItem = {
+  icon: articlesIcon,
+  name: "Articles",
+  route: "crm.articles.index",
+};
+
+const cashierArticlesItem: NavItem = {
+  icon: articlesIcon,
+  name: "Articles",
+  route: "erp.cashier.articles.index",
+};
+
+const repairerArticlesItem: NavItem = {
+  icon: articlesIcon,
+  name: "Articles",
+  route: "erp.repairer.articles.index",
+};
+
+const inventoryArticlesItem: NavItem = {
+  icon: articlesIcon,
+  name: "Articles",
+  route: "erp.inventory.articles.index",
+};
+
+const procurementArticlesItem: NavItem = {
+  icon: articlesIcon,
+  name: "Articles",
+  route: "erp.procurement.articles.index",
+};
+
+const logisticsArticlesItem: NavItem = {
+  icon: articlesIcon,
+  name: "Articles",
+  route: "erp.logistics.articles.index",
+};
+
 const navItems: NavItem[] = [
   {
     icon: (
@@ -653,18 +721,6 @@ const staffItems: NavItem[] = [
   },
   {
     icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M5 4h10l4 4v12H5z"></path>
-        <path d="M15 4v4h4"></path>
-        <path d="M8 13h8"></path>
-        <path d="M8 17h6"></path>
-      </svg>
-    ),
-    name: "Articles",
-    route: "erp.articles.index",
-  },
-  {
-    icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
         <path d="M6 6h15l-1.5 9h-12z" />
         <circle cx="9" cy="19" r="1.5" />
@@ -1069,6 +1125,16 @@ const EmployeeSidebarERP: React.FC = () => {
     "erp.staff.attendance": "/erp/staff/attendance",
     "erp.staff.customers": "/erp/staff/customers",
     "erp.time-in": "/erp/time-in",
+    "erp.articles.index": "/erp/articles",
+    "erp.manager.articles.index": "/erp/manager/articles",
+    "finance.articles.index": "/finance/articles",
+    "erp.hr.articles.index": "/erp/hr/articles",
+    "crm.articles.index": "/crm/articles",
+    "erp.cashier.articles.index": "/erp/cashier/articles",
+    "erp.repairer.articles.index": "/erp/repairer/articles",
+    "erp.inventory.articles.index": "/erp/inventory/articles",
+    "erp.procurement.articles.index": "/erp/procurement/articles",
+    "erp.logistics.articles.index": "/erp/logistics/articles",
   };
 
   // Map all route names to their paths for comprehensive active state matching
@@ -1152,6 +1218,15 @@ const EmployeeSidebarERP: React.FC = () => {
     "erp.staff.attendance": "/erp/staff/attendance",
     "erp.staff.customers": "/erp/staff/customers",
     "erp.articles.index": "/erp/articles",
+    "erp.manager.articles.index": "/erp/manager/articles",
+    "finance.articles.index": "/finance/articles",
+    "erp.hr.articles.index": "/erp/hr/articles",
+    "crm.articles.index": "/crm/articles",
+    "erp.cashier.articles.index": "/erp/cashier/articles",
+    "erp.repairer.articles.index": "/erp/repairer/articles",
+    "erp.inventory.articles.index": "/erp/inventory/articles",
+    "erp.procurement.articles.index": "/erp/procurement/articles",
+    "erp.logistics.articles.index": "/erp/logistics/articles",
     "erp.my-payslips": "/erp/my-payslips",
   };
 
@@ -1480,7 +1555,16 @@ const EmployeeSidebarERP: React.FC = () => {
 
   // Check if user has any finance permissions
   const hasFinanceAccess = () => {
-    if (normalizedRoles.includes('SHOP OWNER') || normalizedRole === 'SHOP OWNER') {
+    if (
+      normalizedRoles.includes('SHOP OWNER')
+      || normalizedRole === 'SHOP OWNER'
+      || normalizedRoles.includes('FINANCE')
+      || normalizedRoles.includes('FINANCE STAFF')
+      || normalizedRoles.includes('FINANCE MANAGER')
+      || normalizedRole === 'FINANCE'
+      || normalizedRole === 'FINANCE STAFF'
+      || normalizedRole === 'FINANCE MANAGER'
+    ) {
       return true;
     }
 
@@ -1518,6 +1602,8 @@ const EmployeeSidebarERP: React.FC = () => {
 
   // Check if user has any CRM permissions
   const hasCRMAccess = () => {
+    if (normalizedRoles.includes('CRM') || normalizedRole === 'CRM') return true;
+
     const crmPermissions = [
       'access-crm-dashboard',
       'access-crm-customers',
@@ -1612,8 +1698,140 @@ const EmployeeSidebarERP: React.FC = () => {
   };
 
   const hasCashierAccess = () => {
-    return permissions.includes('access-unified-pos');
+    return normalizedRoles.includes('CASHIER')
+      || normalizedRole === 'CASHIER'
+      || permissions.includes('access-unified-pos');
   };
+
+  const hasArticleRoleOrPermission = (allowedRoles: string[], allowedPermissions: string[]) => (
+    allowedRoles.some((allowedRole) => normalizedRoles.includes(allowedRole) || normalizedRole === allowedRole)
+    || allowedPermissions.some((permission) => permissions.includes(permission))
+  );
+
+  const hasStaffArticlesAccess = () => isRegularStaffViewer({
+    permissions: Array.isArray(permissions)
+      ? permissions.filter((value: unknown): value is string => typeof value === 'string')
+      : [],
+    roles: Array.isArray(roles)
+      ? roles.filter((value: unknown): value is string => typeof value === 'string')
+      : [],
+    legacyRole: typeof role === 'string' ? role : null,
+    businessType: rawBusinessType,
+  });
+
+  const hasManagerArticlesAccess = () => hasArticleRoleOrPermission(
+    ['MANAGER'],
+    [
+      'access-manager-dashboard',
+      'access-manager-job-orders',
+      'access-manager-repair-jobs',
+      'access-manager-staff-workload',
+      'access-manager-leave-approvals',
+      'access-manager-suspension-approvals',
+      'access-manager-termination-approvals',
+      'access-manager-rehire-approvals',
+      'access-manager-reports',
+      'access-manager-audit-logs',
+      'access-inventory-overview',
+    ],
+  );
+
+  const hasFinanceArticlesAccess = () => hasArticleRoleOrPermission(
+    ['FINANCE', 'FINANCE STAFF', 'FINANCE MANAGER'],
+    [
+      'access-finance-dashboard',
+      'access-finance-expenses',
+      'access-finance-invoices',
+      'access-repair-price-approval',
+      'access-shoe-price-approval',
+      'access-approval-workflow',
+      'access-purchase-request-approval',
+      'access-payslip-approval',
+      'access-refund-approval',
+    ],
+  );
+
+  const hasHRArticlesAccess = () => hasArticleRoleOrPermission(
+    ['HR'],
+    [
+      'access-hr-dashboard',
+      'access-employee-directory',
+      'access-user-access-control',
+      'access-attendance-records',
+      'access-leave-approvals',
+      'access-overtime-approvals',
+      'access-payslip-generation',
+      'access-view-payslip',
+      'access-salary-changes',
+      'access-suspend-accounts',
+    ],
+  );
+
+  const hasCRMArticlesAccess = () => hasArticleRoleOrPermission(
+    ['CRM'],
+    [
+      'access-crm-dashboard',
+      'access-crm-customers',
+      'access-customer-support',
+      'access-customer-reviews',
+      'access-crm-messages',
+    ],
+  );
+
+  const hasCashierArticlesAccess = () => hasArticleRoleOrPermission(
+    ['CASHIER'],
+    ['access-unified-pos'],
+  );
+
+  const hasRepairerArticlesAccess = () => isRepairCapableBusiness && hasArticleRoleOrPermission(
+    ['REPAIRER'],
+    [
+      'access-repairer-dashboard',
+      'access-repair-job-orders',
+      'access-upload-service',
+      'access-pricing-services',
+      'access-repair-stocks',
+      'access-repairer-support',
+      'access-unified-pos',
+    ],
+  );
+
+  const hasInventoryArticlesAccess = () => hasArticleRoleOrPermission(
+    ['INVENTORY', 'INVENTORY MANAGER'],
+    [
+      'view-inventory',
+      'access-inventory-dashboard',
+      'access-product-inventory',
+      'access-stock-movement',
+      'access-upload-inventory',
+      'access-request-material-approval',
+      'access-inventory-request-material-approval',
+    ],
+  );
+
+  const hasProcurementArticlesAccess = () => hasArticleRoleOrPermission(
+    ['PROCUREMENT', 'PROCUREMENT MANAGER'],
+    [
+      'view-procurement',
+      'access-procurement-dashboard',
+      'access-purchase-requests',
+      'access-purchase-orders',
+      'access-stock-request-approval',
+      'access-suppliers-management',
+    ],
+  );
+
+  const hasLogisticsDispatcherArticlesAccess = () => !hasLogisticsRiderRole && hasArticleRoleOrPermission(
+    ['LOGISTICS DISPATCHER'],
+    [
+      'view-logistics-dashboard',
+      'view-logistics-shipments',
+      'view-logistics-deliveries',
+      'view-logistics-batches',
+      'manage-logistics-settings',
+      'configure-logistics-settings',
+    ],
+  );
 
   // Filter manager items based on user permissions
   const hasManagerPageReadAccess = (permission: string, legacyPermission?: string) => {
@@ -1682,7 +1900,12 @@ const EmployeeSidebarERP: React.FC = () => {
   // NOTE: 'access-inventory-overview' is intentionally excluded — it belongs to the Manager's
   // own overview page inside the Manager module, NOT the full Inventory module.
   const hasInventoryAccess = () => {
-    if (normalizedRoles.includes('INVENTORY MANAGER')) return true;
+    if (
+      normalizedRoles.includes('INVENTORY')
+      || normalizedRoles.includes('INVENTORY MANAGER')
+      || normalizedRole === 'INVENTORY'
+      || normalizedRole === 'INVENTORY MANAGER'
+    ) return true;
     if (permissions.includes('view-inventory')) return true;
     // Only individual inventory module page permissions grant sidebar access
     const inventoryPagePermissions = [
@@ -1698,7 +1921,12 @@ const EmployeeSidebarERP: React.FC = () => {
 
   // Check if user has Procurement Manager role or explicit procurement gate permission
   const hasProcurementAccess = () => {
-    if (normalizedRoles.includes('PROCUREMENT MANAGER')) return true;
+    if (
+      normalizedRoles.includes('PROCUREMENT')
+      || normalizedRoles.includes('PROCUREMENT MANAGER')
+      || normalizedRole === 'PROCUREMENT'
+      || normalizedRole === 'PROCUREMENT MANAGER'
+    ) return true;
     if (permissions.includes('view-procurement')) return true;
     // Also grant access if user has any individual procurement page permission
     const procurementPagePermissions = [
@@ -1799,24 +2027,9 @@ const EmployeeSidebarERP: React.FC = () => {
   const getFilteredStaffItems = () => {
     if (isCashierOnly) return [];
 
-    const hasStaffArticleAccess = isRegularStaffViewer({
-      permissions: Array.isArray(permissions)
-        ? permissions.filter((value: unknown): value is string => typeof value === 'string')
-        : [],
-      roles: Array.isArray(roles)
-        ? roles.filter((value: unknown): value is string => typeof value === 'string')
-        : [],
-      legacyRole: typeof role === 'string' ? role : null,
-      businessType: rawBusinessType,
-    });
-
     return staffItems.filter((item) => {
       if (item.route?.startsWith("erp.logistics.")) {
         return false;
-      }
-
-      if (item.route === "erp.articles.index") {
-        return hasStaffArticleAccess;
       }
 
       // Dashboard - check simplified permission
@@ -2175,7 +2388,7 @@ const EmployeeSidebarERP: React.FC = () => {
                     <HorizontaLDots className="size-6" />
                   )}
                 </h2>
-                {renderMenuItems(deduplicateItems(withAttendanceForSection("logistics", [...getFilteredLogisticsItems(), myPayslipsItem])), "logistics")}
+                {renderMenuItems(deduplicateItems(withAttendanceForSection("logistics", [...getFilteredLogisticsItems(), myPayslipsItem, ...(hasLogisticsDispatcherArticlesAccess() ? [logisticsArticlesItem] : [])])), "logistics")}
               </div>
             </div>
           </nav>
@@ -2198,7 +2411,7 @@ const EmployeeSidebarERP: React.FC = () => {
                     <HorizontaLDots className="size-6" />
                   )}
                 </h2>
-                {renderMenuItems(deduplicateItems(withAttendanceForSection("staff", [...getFilteredStaffItems(), myPayslipsItem])), "staff")}
+                {renderMenuItems(deduplicateItems(withAttendanceForSection("staff", [...getFilteredStaffItems(), myPayslipsItem, ...(hasStaffArticlesAccess() ? [staffArticlesItem] : [])])), "staff")}
               </div>
             </div>
           </nav>
@@ -2221,7 +2434,7 @@ const EmployeeSidebarERP: React.FC = () => {
                     <HorizontaLDots className="size-6" />
                   )}
                 </h2>
-                {renderMenuItems(deduplicateItems(withAttendanceForSection("repair", [...getFilteredRepairItems(), myPayslipsItem])), "repair")}
+                {renderMenuItems(deduplicateItems(withAttendanceForSection("repair", [...getFilteredRepairItems(), myPayslipsItem, ...(hasRepairerArticlesAccess() ? [repairerArticlesItem] : [])])), "repair")}
               </div>
             </div>
           </nav>
@@ -2244,7 +2457,7 @@ const EmployeeSidebarERP: React.FC = () => {
                   )}
                 </h2>
                 {renderMenuItems(
-                  deduplicateItems(withAttendanceForSection("cashier", [...cashierItems, myPayslipsItem])),
+                  deduplicateItems(withAttendanceForSection("cashier", [...cashierItems, myPayslipsItem, ...(hasCashierArticlesAccess() ? [cashierArticlesItem] : [])])),
                   "cashier"
                 )}
               </div>
@@ -2274,6 +2487,7 @@ const EmployeeSidebarERP: React.FC = () => {
                     {renderManagerSection("OPERATIONS", "operations")}
                     {renderManagerSection("PEOPLE & APPROVALS", "people")}
                     {renderManagerSection("REVIEW", "review")}
+                    {hasManagerArticlesAccess() && renderMenuItems([managerArticlesItem], "manager")}
                   </div>
                 </div>
               </div>
@@ -2297,7 +2511,7 @@ const EmployeeSidebarERP: React.FC = () => {
                       <HorizontaLDots className="size-6" />
                     )}
                   </h2>
-                  {renderMenuItems(deduplicateItems(withAttendanceForSection("inventory", [...getFilteredInventoryItems(), myPayslipsItem])), "manager")}
+                  {renderMenuItems(deduplicateItems(withAttendanceForSection("inventory", [...getFilteredInventoryItems(), myPayslipsItem, ...(hasInventoryArticlesAccess() ? [inventoryArticlesItem] : [])])), "manager")}
                 </div>
               </div>
             </nav>
@@ -2319,7 +2533,7 @@ const EmployeeSidebarERP: React.FC = () => {
                       <HorizontaLDots />
                     )}
                   </h2>
-                  {renderMenuItems(deduplicateItems(withAttendanceForSection("procurement", [...procurementItems, myPayslipsItem])), "manager")}
+                  {renderMenuItems(deduplicateItems(withAttendanceForSection("procurement", [...procurementItems, myPayslipsItem, ...(hasProcurementArticlesAccess() ? [procurementArticlesItem] : [])])), "manager")}
                 </div>
               </div>
             </nav>
@@ -2342,7 +2556,7 @@ const EmployeeSidebarERP: React.FC = () => {
                   )}
                 </h2>
                 {renderMenuItems(
-                  deduplicateItems(withAttendanceForSection("hr", [...getFilteredHRItems(), myPayslipsItem])),
+                  deduplicateItems(withAttendanceForSection("hr", [...getFilteredHRItems(), myPayslipsItem, ...(hasHRArticlesAccess() ? [hrArticlesItem] : [])])),
                   "hr"
                 )}
               </div>
@@ -2366,7 +2580,7 @@ const EmployeeSidebarERP: React.FC = () => {
                     <HorizontaLDots className="size-6" />
                   )}
                 </h2>
-                {renderMenuItems(deduplicateItems(withAttendanceForSection("finance", [...getFilteredFinanceItems(), myPayslipsItem])), "finance")}
+                {renderMenuItems(deduplicateItems(withAttendanceForSection("finance", [...getFilteredFinanceItems(), myPayslipsItem, ...(hasFinanceArticlesAccess() ? [financeArticlesItem] : [])])), "finance")}
               </div>
             </div>
           </nav>
@@ -2388,7 +2602,7 @@ const EmployeeSidebarERP: React.FC = () => {
                     <HorizontaLDots className="size-6" />
                   )}
                 </h2>
-                {renderMenuItems(deduplicateItems(withAttendanceForSection("crm", [...crmItems, myPayslipsItem])), "crm")}
+                {renderMenuItems(deduplicateItems(withAttendanceForSection("crm", [...crmItems, myPayslipsItem, ...(hasCRMArticlesAccess() ? [crmArticlesItem] : [])])), "crm")}
               </div>
             </div>
           </nav>

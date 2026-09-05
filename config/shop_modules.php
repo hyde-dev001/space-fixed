@@ -173,6 +173,24 @@ $routeBuckets = [
         'erp.profile',
         'erp.articles.index',
         'erp.articles.show',
+        'erp.manager.articles.index',
+        'erp.manager.articles.show',
+        'finance.articles.index',
+        'finance.articles.show',
+        'erp.hr.articles.index',
+        'erp.hr.articles.show',
+        'crm.articles.index',
+        'crm.articles.show',
+        'erp.cashier.articles.index',
+        'erp.cashier.articles.show',
+        'erp.repairer.articles.index',
+        'erp.repairer.articles.show',
+        'erp.inventory.articles.index',
+        'erp.inventory.articles.show',
+        'erp.procurement.articles.index',
+        'erp.procurement.articles.show',
+        'erp.logistics.articles.index',
+        'erp.logistics.articles.show',
         'erp.staff.',
         'erp.staff.dashboard',
         'erp.staff.pricing-services',
@@ -2522,6 +2540,31 @@ if (isset($routes['shop-owner.shell.audit'])) {
     $routes['shop-owner.shell.audit']['owner_denial_reason'] = null;
     $routes['shop-owner.shell.audit']['supporting_routes'] = ['shop_owner.audit.index'];
 }
+
+// Articles are a read-only core page. Keep the owner catalog outside the
+// module gates so every approved owner variant can open its own guides.
+$ownerArticlesRoute = $routeEntry(
+    modules: $modules,
+    classification: 'core',
+    mode: null,
+    moduleKeys: [],
+    methods: ['GET'],
+    audience: 'shop_owner',
+    actorGuard: 'shop_owner',
+    action: 'view',
+    ownerDenialReason: 'owner_articles_not_exposed',
+    navigationGroup: 'articles',
+    selfService: false,
+);
+$ownerArticlesRoute['registration_types'] = ['company', 'individual'];
+$ownerArticlesRoute['business_types'] = ['retail', 'repair', 'both'];
+$ownerArticlesRoute['owner_access'] = 'allowed';
+$ownerArticlesRoute['owner_denial_reason'] = null;
+$ownerArticlesRoute['actor_persistence'] = 'server_resolved_shop_owner';
+$ownerArticlesRoute['navigation_label'] = 'Articles';
+$ownerArticlesRoute['navigation_visible'] = true;
+$routes['shop-owner.erp.articles.index'] = $ownerArticlesRoute;
+$routes['shop-owner.erp.articles.show'] = $ownerArticlesRoute;
 
 return [
     'enforcement_enabled' => (bool) env('SHOP_MODULE_ENFORCEMENT_ENABLED', false),

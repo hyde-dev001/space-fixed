@@ -1,6 +1,3 @@
-import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
-
 import { describe, expect, it } from "vitest";
 
 import {
@@ -47,7 +44,7 @@ describe("Staff Articles catalog", () => {
     );
   });
 
-  it("keeps bilingual structural identifiers and screenshot contracts in parity", () => {
+  it("keeps bilingual text structure in parity without screenshots", () => {
     for (const article of STAFF_ARTICLES) {
       const english = article.translations.en;
       const tagalog = article.translations.tl;
@@ -68,8 +65,8 @@ describe("Staff Articles catalog", () => {
       expect(english.prerequisites.map(({ id }) => id)).toEqual(
         tagalog.prerequisites.map(({ id }) => id),
       );
-      expect(english.steps.map(({ id, screenshotId }) => ({ id, screenshotId }))).toEqual(
-        tagalog.steps.map(({ id, screenshotId }) => ({ id, screenshotId })),
+      expect(english.steps.map(({ id }) => id)).toEqual(
+        tagalog.steps.map(({ id }) => id),
       );
       expect(english.workflow.map(({ id }) => id)).toEqual(
         tagalog.workflow.map(({ id }) => id),
@@ -84,43 +81,16 @@ describe("Staff Articles catalog", () => {
         tagalog.related.map(({ slug }) => slug),
       );
 
-      expect(english.steps.length).toBeGreaterThan(0);
+      expect(english.steps.length).toBeGreaterThanOrEqual(3);
       expect(english.outcomes.length).toBeGreaterThan(0);
       expect(english.errors.length).toBeGreaterThan(0);
       expect(english.workflow.length).toBeGreaterThan(0);
-      expect(article.screenshots.length).toBeGreaterThan(0);
-
-      for (const screenshot of article.screenshots) {
-        expect(screenshot.path).toBe(
-          `/images/articles/staff/${article.category}/${article.slug}/${screenshot.fileName}`,
-        );
-        expect(screenshot.alt.en.trim()).not.toBe("");
-        expect(screenshot.alt.tl.trim()).not.toBe("");
-        expect(screenshot.aspectRatio).toBeGreaterThan(0);
-      }
+      expect(english.steps.every((step) => !("screenshotId" in step))).toBe(true);
+      expect("screenshots" in article).toBe(false);
     }
   });
 
-  it("has a real WebP screenshot for every catalog slot", () => {
-    const screenshots = STAFF_ARTICLES.flatMap((article) => article.screenshots);
-
-    expect(screenshots).toHaveLength(94);
-
-    for (const screenshot of screenshots) {
-      const filePath = resolve(process.cwd(), "public", screenshot.path.replace(/^\//, ""));
-
-      const exists = existsSync(filePath);
-
-      expect(exists, screenshot.path).toBe(true);
-      if (!exists) continue;
-
-      const bytes = readFileSync(filePath);
-      expect(bytes.subarray(0, 4).toString("ascii"), screenshot.path).toBe("RIFF");
-      expect(bytes.subarray(8, 12).toString("ascii"), screenshot.path).toBe("WEBP");
-    }
-  });
-
-  it("keeps related links resolvable inside the same static catalog", () => {
+  it("keeps related links resolvable inside the Staff catalog", () => {
     for (const article of STAFF_ARTICLES) {
       for (const related of article.translations.en.related) {
         expect(getStaffArticleBySlug(related.slug)).toBeDefined();
