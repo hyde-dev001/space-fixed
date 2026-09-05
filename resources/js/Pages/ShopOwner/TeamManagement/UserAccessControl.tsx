@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Head, router, usePage } from '@inertiajs/react';
 import AppLayoutShopOwner from '../../../layout/AppLayout_shopOwner';
+import AppLayoutERP from '../../../layout/AppLayout_ERP';
 import Swal from 'sweetalert2';
 import Button from '../../../components/ui/button/Button';
 import { Modal } from '../../../components/ui/modal';
@@ -49,7 +50,7 @@ interface Employee {
   name: string;
   email: string;
   role: string;
-  status: 'active' | 'inactive';
+  status: EmployeeStatus;
   createdAt: Date;
   salary?: number | string;
   hire_date?: string;
@@ -64,6 +65,27 @@ interface Employee {
   primaryRole?: string;
   additionalRoles?: string[];
 }
+
+type EmployeeStatus = 'active' | 'inactive' | 'suspended' | 'terminated';
+
+const canonicalEmployeeStatus = (value: unknown): EmployeeStatus => {
+  switch (String(value ?? '').trim().toLowerCase()) {
+    case 'active':
+      return 'active';
+    case 'inactive':
+      return 'inactive';
+    case 'suspended':
+      return 'suspended';
+    case 'terminated':
+      return 'terminated';
+    case 'on_leave':
+    case 'on-leave':
+    case 'probation':
+      return 'active';
+    default:
+      return 'inactive';
+  }
+};
 
 interface Role {
   id: number;
@@ -162,6 +184,8 @@ const MetricCard: React.FC<MetricData> = ({
 
 const UserAccessControl: React.FC = () => {
   const pageProps = usePage().props as any;
+  const erpMode = pageProps?.erpMode === true;
+  const Layout = erpMode ? AppLayoutERP : AppLayoutShopOwner;
   const flash = pageProps.flash || {};
   const initialEmployees = pageProps.employees;
   
@@ -336,6 +360,8 @@ const UserAccessControl: React.FC = () => {
     Repairer: 'Repairer',
     Inventory: 'Inventory',
     Procurement: 'Procurement',
+    'Logistics Dispatcher': 'Logistics Dispatcher',
+    'Logistics Rider': 'Logistics Rider',
     'Inventory Manager': 'Inventory',
     'Procurement Manager': 'Procurement',
     Staff: 'Staff',
@@ -343,6 +369,8 @@ const UserAccessControl: React.FC = () => {
     FINANCE: 'Finance',
     INVENTORY: 'Inventory',
     PROCUREMENT: 'Procurement',
+    LOGISTICS_DISPATCHER: 'Logistics Dispatcher',
+    LOGISTICS_RIDER: 'Logistics Rider',
     REPAIRER: 'Repairer',
     INVENTORY_MANAGER: 'Inventory',
     PROCUREMENT_MANAGER: 'Procurement',
@@ -365,9 +393,13 @@ const UserAccessControl: React.FC = () => {
       REPAIRER: 'Repairer',
       INVENTORY: 'Inventory',
       PROCUREMENT: 'Procurement',
+      LOGISTICS_DISPATCHER: 'Logistics Dispatcher',
+      LOGISTICS_RIDER: 'Logistics Rider',
       STAFF: 'Staff',
       'INVENTORY MANAGER': 'Inventory',
       'PROCUREMENT MANAGER': 'Procurement',
+      'LOGISTICS DISPATCHER': 'Logistics Dispatcher',
+      'LOGISTICS RIDER': 'Logistics Rider',
     };
 
     return aliases[normalizedKey] || role.trim();
@@ -379,6 +411,7 @@ const UserAccessControl: React.FC = () => {
     return {
       ...emp,
       role: normalizeRoleName(emp.role ?? emp.roleName ?? emp.primaryRole ?? emp.department ?? 'Staff'),
+      status: canonicalEmployeeStatus(emp.status),
       roleName: emp.roleName ? normalizeRoleName(emp.roleName) : emp.roleName,
       primaryRole: normalizeRoleName(emp.primaryRole ?? emp.roleName ?? emp.role ?? emp.department ?? 'Staff'),
       additionalRoles: Array.isArray(emp.additionalRoles)
@@ -702,6 +735,8 @@ const UserAccessControl: React.FC = () => {
       'Repairer': 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800 text-indigo-800 dark:text-indigo-300',
       'Inventory': 'bg-teal-50 dark:bg-teal-900/20 border-teal-200 dark:border-teal-800 text-teal-800 dark:text-teal-300',
       'Procurement': 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300',
+      'Logistics Dispatcher': 'bg-sky-50 dark:bg-sky-900/20 border-sky-200 dark:border-sky-800 text-sky-800 dark:text-sky-300',
+      'Logistics Rider': 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300',
       'Inventory Manager': 'bg-teal-50 dark:bg-teal-900/20 border-teal-200 dark:border-teal-800 text-teal-800 dark:text-teal-300',
       'Procurement Manager': 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300',
       'Staff': 'bg-gray-50 dark:bg-gray-900/20 border-gray-200 dark:border-gray-800 text-gray-800 dark:text-gray-300',
@@ -782,6 +817,8 @@ const UserAccessControl: React.FC = () => {
       { value: 'Repairer', label: 'Repairer' },
       { value: 'Inventory', label: 'Inventory' },
       { value: 'Procurement', label: 'Procurement' },
+      { value: 'Logistics Dispatcher', label: 'Logistics Dispatcher' },
+      { value: 'Logistics Rider', label: 'Logistics Rider' },
       { value: 'Staff', label: 'Staff' },
     ];
 
@@ -1808,7 +1845,7 @@ const UserAccessControl: React.FC = () => {
                       <TableRow key={employee.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
                         <TableCell className="px-6 py-4">
                           <div className="flex items-center space-x-3">
-                            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-semibold">
+                            <div className="w-10 h-10 bg-gray-950 dark:bg-gradient-to-br dark:from-blue-500 dark:to-purple-600 rounded-full flex items-center justify-center text-white font-semibold">
                               {employee.name.charAt(0).toUpperCase()}
                             </div>
                             <div>
@@ -1985,7 +2022,7 @@ const UserAccessControl: React.FC = () => {
                       <TableRow key={user.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
                         <TableCell className="px-6 py-4">
                           <div className="flex items-center space-x-3">
-                            <div className="w-10 h-10 bg-gradient-to-br from-orange-500 to-red-600 rounded-full flex items-center justify-center text-white font-semibold">
+                            <div className="w-10 h-10 bg-gray-950 dark:bg-gradient-to-br dark:from-orange-500 dark:to-red-600 rounded-full flex items-center justify-center text-white font-semibold">
                               {user.name.charAt(0).toUpperCase()}
                             </div>
                             <span className="font-medium text-gray-900 dark:text-white">{user.name}</span>
@@ -2097,10 +2134,10 @@ const UserAccessControl: React.FC = () => {
   };
 
   return (
-    <AppLayoutShopOwner>
+    <Layout>
       <Head title="User Access Control" />
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-        <div className="max-w-7xl mx-auto p-6">
+        <div className="w-full">
           {/* Header */}
           <div className="mb-8">
             <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-2">User Access Control</h1>
@@ -3242,7 +3279,7 @@ const UserAccessControl: React.FC = () => {
           )}
         </div>
       </div>
-    </AppLayoutShopOwner>
+    </Layout>
   );
 };
 

@@ -73,7 +73,10 @@ export interface PurchaseOrder {
     expected_delivery_date?: string;
     actual_delivery_date?: string;
     payment_terms: string;
-    status: 'draft' | 'sent' | 'confirmed' | 'in_transit' | 'delivered' | 'completed' | 'cancelled';
+    status: 'draft' | 'sent' | 'confirmed' | 'in_transit' | 'partially_received' | 'delivered' | 'completed' | 'cancelled';
+    is_historical?: boolean;
+    items?: PurchaseOrderItem[];
+    receipts?: PurchaseOrderReceipt[];
     status_label?: string;
     cancellation_reason?: string;
     ordered_by: number;
@@ -91,6 +94,43 @@ export interface PurchaseOrder {
     days_since_delivery?: number;
     created_at: string;
     updated_at: string;
+}
+
+export interface PurchaseOrderItem {
+    id: number;
+    purchase_order_id: number;
+    purchase_request_id?: number;
+    product_name: string;
+    requested_size?: string;
+    requested_color?: string;
+    ordered_quantity: number;
+    accepted_quantity: number;
+    remaining_quantity: number;
+    unit_cost: number;
+    line_total: number;
+    quantity_multiplier: number;
+    eligible_size_ids?: number[];
+    inventory_item?: InventoryItem;
+}
+
+export interface PurchaseOrderReceiptItem {
+    id: number;
+    purchase_order_item_id: number;
+    received_quantity: number;
+    defective_quantity: number;
+    accepted_quantity: number;
+    purchase_order_item?: PurchaseOrderItem;
+}
+
+export interface PurchaseOrderReceipt {
+    id: number;
+    purchase_order_id: number;
+    source: 'manual' | 'migration';
+    status: 'posted' | 'voided';
+    received_at: string;
+    notes?: string;
+    void_reason?: string;
+    items: PurchaseOrderReceiptItem[];
 }
 
 export interface StockRequestApproval {
@@ -120,6 +160,9 @@ export interface StockRequestApproval {
     inventory_approved_date?: string;
     inventory_approval_notes?: string;
     notes?: string;
+    inventory_approval_status?: 'not_required' | 'pending' | 'approved' | 'rejected' | string;
+    inventory_approval_status_label?: string;
+    inventory_approver?: User;
     approval_notes?: string;
     rejection_reason?: string;
     days_pending?: number;
@@ -158,6 +201,55 @@ export interface ProcurementSettings {
     updated_at: string;
 }
 
+export interface ProcurementDashboardSummary {
+    purchase_requests: number;
+    awaiting_review: number;
+    purchase_orders: number;
+    open_order_value: number | string;
+}
+
+export interface ProcurementDashboardMonth {
+    label: string;
+    start: string;
+    end: string;
+    purchase_requests: number;
+    purchase_orders: number;
+}
+
+export interface ProcurementDashboardStatus {
+    key: string;
+    label: string;
+    count: number;
+}
+
+export interface ProcurementDashboardActivity {
+    type: 'Purchase request' | 'Purchase order';
+    reference: string;
+    description: string;
+    status: string;
+    amount: number | string;
+    occurred_at: string;
+    url: string | null;
+}
+
+export interface ProcurementDashboard {
+    title: string;
+    description: string;
+    summary: ProcurementDashboardSummary;
+    trend: {
+        period_label: string;
+        months: ProcurementDashboardMonth[];
+    };
+    request_statuses: ProcurementDashboardStatus[];
+    order_statuses: ProcurementDashboardStatus[];
+    recent_activity: ProcurementDashboardActivity[];
+    refreshed_at: string;
+    links?: {
+        purchase_requests?: string;
+        purchase_orders?: string;
+    };
+}
+
 // Metrics interfaces
 export interface ProcurementMetrics {
     total_purchase_requests: number;
@@ -180,11 +272,16 @@ export interface PurchaseRequestMetrics {
 }
 
 export interface PurchaseOrderMetrics {
-    total: number;
-    active: number;
-    completed: number;
-    cancelled: number;
-    overdue: number;
+    total_purchase_orders: number;
+    active_orders: number;
+    awaiting_closure_orders: number;
+    completed_orders: number;
+    cancelled_orders: number;
+    overdue_orders: number;
+    draft_orders: number;
+    total_value: number;
+    completed_value: number;
+    average_order_value: number;
 }
 
 export interface StockRequestMetrics {
@@ -230,6 +327,7 @@ export interface PurchaseOrderFilters {
 export interface StockRequestFilters {
     search?: string;
     status?: string;
+    available_for_purchase_request?: boolean;
     priority?: string;
     request_source?: 'manual' | 'repair';
     page?: number;
@@ -278,7 +376,7 @@ export interface RejectPurchaseRequestPayload {
 }
 
 export interface CreatePurchaseOrderPayload {
-    pr_id: number;
+    purchase_request_ids: number[];
     expected_delivery_date?: string;
     payment_terms: string;
     notes?: string;
@@ -291,9 +389,20 @@ export interface UpdatePurchaseOrderPayload {
 }
 
 export interface UpdatePurchaseOrderStatusPayload {
-    status: 'sent' | 'confirmed' | 'in_transit' | 'delivered' | 'completed';
+    status: 'sent' | 'confirmed' | 'in_transit' | 'completed';
     notes?: string;
-    actual_delivery_date?: string;
+}
+
+export interface CreatePurchaseOrderReceiptPayload {
+    idempotency_key: string;
+    received_at?: string;
+    notes?: string;
+    items: Array<{
+        purchase_order_item_id: number;
+        received_quantity: number;
+        defective_quantity: number;
+        size_quantities?: Array<{ inventory_size_id: number; received_quantity: number; defective_quantity: number }>;
+    }>;
 }
 
 export interface CancelPurchaseOrderPayload {
@@ -360,14 +469,12 @@ export interface PaginatedResponse<T> {
 
 // API response interfaces
 export interface ApiResponse<T = any> {
-    success: boolean;
-    message?: string;
-    data?: T;
+    message: string;
+    data: T;
     errors?: Record<string, string[]>;
 }
 
 export interface ApiErrorResponse {
-    success: false;
     message: string;
     errors?: Record<string, string[]>;
 }

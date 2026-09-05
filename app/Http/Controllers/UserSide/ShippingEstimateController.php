@@ -5,57 +5,88 @@ namespace App\Http\Controllers\UserSide;
 use App\Http\Controllers\Controller;
 use App\Models\Product;
 use App\Models\ShopOwner;
+use App\Models\UserAddress;
+use App\Services\AddressCoordinateService;
+use App\Services\Logistics\DeliveryScheduleService;
+use App\Services\NominatimService;
 use App\Services\ShippingEstimateService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class ShippingEstimateController extends Controller
 {
-    private const CITY_COORDINATE_FALLBACKS = [
-        'bacoor' => ['lat' => 14.4598, 'lng' => 120.9290],
-        'imus' => ['lat' => 14.4297, 'lng' => 120.9367],
-        'dasmariñas' => ['lat' => 14.3294, 'lng' => 120.9367],
-        'dasmarinas' => ['lat' => 14.3294, 'lng' => 120.9367],
-        'general trias' => ['lat' => 14.3830, 'lng' => 120.8845],
-        'trece martires' => ['lat' => 14.2854, 'lng' => 120.8671],
-        'tagaytay' => ['lat' => 14.1153, 'lng' => 120.9629],
-        'city of cavite' => ['lat' => 14.4830, 'lng' => 120.8980],
-        'cavite city' => ['lat' => 14.4830, 'lng' => 120.8980],
-    ];
-
-    public function __construct(private readonly ShippingEstimateService $shippingEstimateService)
-    {
-    }
+    public function __construct(
+        private readonly ShippingEstimateService $shippingEstimateService,
+        private readonly AddressCoordinateService $coordinates,
+        private readonly DeliveryScheduleService $deliverySchedules,
+        private readonly NominatimService $nominatim,
+    ) {}
 
     public function estimate(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'shop_owner_id' => ['nullable', 'integer', 'exists:shop_owners,id'],
-            'item_pids' => ['nullable', 'array'],
+            'item_pids' => [
+                'bail',
+                'nullable',
+                'array',
+                'max:100',
+                function (string $attribute, mixed $value, \Closure $fail): void {
+                    foreach ($value as $pid) {
+                        if (!is_scalar($pid)) {
+                            $fail('The item pids field contains an invalid product identifier.');
+                            return;
+                        }
+                    }
+                },
+                Rule::exists('products', 'id')->whereNull('deleted_at'),
+            ],
             'item_pids.*' => ['integer'],
+            'address_id' => ['nullable', 'integer'],
             'shipping_address_line' => ['nullable', 'string', 'max:255'],
             'shipping_barangay' => ['nullable', 'string', 'max:100'],
             'shipping_city' => ['required', 'string', 'max:100'],
             'shipping_region' => ['required', 'string', 'max:100'],
             'shipping_postal_code' => ['nullable', 'string', 'max:10'],
+            'shipping_latitude' => ['nullable', 'required_with:shipping_longitude', 'numeric', 'between:4.5,21.5'],
+            'shipping_longitude' => ['nullable', 'required_with:shipping_latitude', 'numeric', 'between:116,127'],
         ]);
+
+        $address = null;
+        if (($validated['address_id'] ?? null) !== null) {
+            $address = $request->user('user')?->addresses()->find((int) $validated['address_id']);
+            if (!$address) {
+                throw ValidationException::withMessages(['address_id' => 'The selected address is invalid.']);
+            }
+        }
 
         $shopOwner = $this->resolveShopOwner($validated);
         if (!$shopOwner) {
             return $this->fallbackResponse('Shop information is unavailable.');
         }
+        $draftCoordinates = isset($validated['shipping_latitude'], $validated['shipping_longitude'])
+            ? ['lat' => (float) $validated['shipping_latitude'], 'lng' => (float) $validated['shipping_longitude']]
+            : null;
+        $coverage = $this->shopOwnedCoverage($shopOwner, $address, $draftCoordinates);
 
         $shopCoordinates = $this->resolveShopCoordinates($shopOwner);
         if (!$shopCoordinates) {
-            return $this->fallbackResponse('Shop location is unavailable.');
+            return $this->fallbackResponse('Shop location is unavailable.', $coverage);
         }
 
-        $address = $this->buildAddressString($validated);
-        $customerCoordinates = $this->geocodeCustomerAddress($validated, $address);
+        $customerCoordinates = $draftCoordinates;
         if (!$customerCoordinates) {
-            return $this->fallbackResponse('Unable to resolve customer location.');
+            $resolved = $this->coordinates->geocode($validated);
+            $customerCoordinates = $resolved ? [
+                'lat' => $resolved['latitude'],
+                'lng' => $resolved['longitude'],
+            ] : null;
+        }
+        if (!$customerCoordinates) {
+            return $this->fallbackResponse('Unable to resolve customer location.', $coverage);
         }
 
         $distanceKm = $this->getRouteDistanceKm(
@@ -75,7 +106,7 @@ class ShippingEstimateController extends Controller
             );
 
             if ($distanceKm <= 0) {
-                return $this->fallbackResponse('Unable to calculate route distance.');
+                return $this->fallbackResponse('Unable to calculate route distance.', $coverage);
             }
         }
 
@@ -95,15 +126,12 @@ class ShippingEstimateController extends Controller
             'distance_label' => number_format((float) $estimate['distance_km'], 1) . ' km from shop',
             'customer_notice' => 'Estimated only. Final shipping fee will be confirmed after order once booking with Lalamove or J&T is completed (third-party carrier).',
             'pay_after_order_notice' => 'Shipping is not included in your checkout total and will be paid upon delivery of your order',
+            'shop_owned' => $coverage,
         ]);
     }
 
     private function resolveShopOwner(array $validated): ?ShopOwner
     {
-        if (!empty($validated['shop_owner_id'])) {
-            return ShopOwner::query()->find((int) $validated['shop_owner_id']);
-        }
-
         $pids = collect($validated['item_pids'] ?? [])
             ->filter(fn ($pid) => is_numeric($pid))
             ->map(fn ($pid) => (int) $pid)
@@ -113,97 +141,42 @@ class ShippingEstimateController extends Controller
             return null;
         }
 
-        $shopOwnerId = Product::query()
+        $shopOwnerIds = Product::query()
             ->whereIn('id', $pids->all())
-            ->whereNotNull('shop_owner_id')
-            ->value('shop_owner_id');
+            ->pluck('shop_owner_id')
+            ->unique();
 
-        return $shopOwnerId ? ShopOwner::query()->find((int) $shopOwnerId) : null;
+        if ($shopOwnerIds->contains(null)) {
+            throw ValidationException::withMessages(['item_pids' => 'Products must belong to a shop.']);
+        }
+
+        if ($shopOwnerIds->count() > 1) {
+            throw ValidationException::withMessages(['item_pids' => 'Products must belong to one shop.']);
+        }
+
+        return $shopOwnerIds->isNotEmpty()
+            ? ShopOwner::query()->find((int) $shopOwnerIds->first())
+            : null;
     }
 
-    private function buildAddressString(array $validated): string
+    private function shopOwnedCoverage(ShopOwner $shopOwner, ?UserAddress $address, ?array $draftCoordinates): array
     {
-        $parts = [
-            $validated['shipping_address_line'] ?? null,
-            $validated['shipping_barangay'] ?? null,
-            $validated['shipping_city'] ?? null,
-            $validated['shipping_region'] ?? null,
-            $validated['shipping_postal_code'] ?? null,
-            'Philippines',
-        ];
+        try {
+            return $this->deliverySchedules->coverage(
+                $shopOwner,
+                $draftCoordinates['lat'] ?? ($address?->latitude !== null ? (float) $address->latitude : null),
+                $draftCoordinates['lng'] ?? ($address?->longitude !== null ? (float) $address->longitude : null),
+            );
+        } catch (\Throwable $exception) {
+            Log::warning('Shipping estimate logistics coverage failed', ['message' => $exception->getMessage()]);
 
-        return implode(', ', array_values(array_filter($parts, fn ($part) => filled($part))));
-    }
-
-    private function geocodeCustomerAddress(array $validated, string $primaryAddress): ?array
-    {
-        $queries = [];
-
-        if (filled($primaryAddress)) {
-            $queries[] = $primaryAddress;
+            return [
+                'available' => false,
+                'reason' => 'logistics_unavailable',
+                'distance_km' => null,
+                'coverage_radius_km' => null,
+            ];
         }
-
-        $city = trim((string) ($validated['shipping_city'] ?? ''));
-        $region = trim((string) ($validated['shipping_region'] ?? ''));
-        $postalCode = trim((string) ($validated['shipping_postal_code'] ?? ''));
-        $barangay = trim((string) ($validated['shipping_barangay'] ?? ''));
-        $addressLine = trim((string) ($validated['shipping_address_line'] ?? ''));
-
-        // Reduce strictness progressively to avoid geocoding misses on noisy inputs.
-        if ($addressLine !== '' && $city !== '' && $region !== '') {
-            $queries[] = implode(', ', array_filter([$addressLine, $city, $region, 'Philippines']));
-        }
-
-        if ($barangay !== '' && $city !== '' && $region !== '') {
-            $queries[] = implode(', ', array_filter([$barangay, $city, $region, 'Philippines']));
-        }
-
-        if ($city !== '' && $region !== '' && $postalCode !== '') {
-            $queries[] = implode(', ', array_filter([$city, $region, $postalCode, 'Philippines']));
-        }
-
-        if ($city !== '' && $region !== '') {
-            $queries[] = implode(', ', array_filter([$city, $region, 'Philippines']));
-        }
-
-        $queries = array_values(array_unique(array_filter($queries)));
-
-        foreach ($queries as $query) {
-            $coordinates = $this->geocodeAddress($query);
-            if ($coordinates) {
-                return $coordinates;
-            }
-        }
-
-        if ($city !== '') {
-            $fallbackCoordinates = $this->resolveCityFallbackCoordinates($city);
-            if ($fallbackCoordinates) {
-                return $fallbackCoordinates;
-            }
-        }
-
-        return null;
-    }
-
-    private function resolveCityFallbackCoordinates(string $city): ?array
-    {
-        $normalizedCity = $this->normalizeLocationKey($city);
-
-        return self::CITY_COORDINATE_FALLBACKS[$normalizedCity] ?? null;
-    }
-
-    private function normalizeLocationKey(string $value): string
-    {
-        $normalized = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $value);
-
-        if ($normalized === false || $normalized === null) {
-            $normalized = $value;
-        }
-
-        $normalized = strtolower(trim($normalized));
-        $normalized = preg_replace('/\s+/', ' ', $normalized) ?? $normalized;
-
-        return $normalized;
     }
 
     private function resolveShopCoordinates(ShopOwner $shopOwner): ?array
@@ -226,25 +199,8 @@ class ShippingEstimateController extends Controller
     private function geocodeAddress(string $address): ?array
     {
         try {
-            $response = Http::timeout(10)
-                ->withHeaders([
-                    'Accept' => 'application/json',
-                    'User-Agent' => 'SoleSpace Shipping Estimate/1.0',
-                ])
-                ->get('https://nominatim.openstreetmap.org/search', [
-                    'q' => $address,
-                    'format' => 'jsonv2',
-                    'limit' => 1,
-                    'countrycodes' => 'ph',
-                    'addressdetails' => 0,
-                ]);
-
-            if ($response->failed()) {
-                return null;
-            }
-
-            $result = $response->json();
-            if (!is_array($result) || empty($result[0]['lat']) || empty($result[0]['lon'])) {
+            $result = $this->nominatim->search($address, false, 1, true);
+            if (! isset($result[0])) {
                 return null;
             }
 
@@ -287,7 +243,7 @@ class ShippingEstimateController extends Controller
         }
     }
 
-    private function fallbackResponse(string $reason): JsonResponse
+    private function fallbackResponse(string $reason, ?array $coverage = null): JsonResponse
     {
         return response()->json([
             'success' => true,
@@ -296,6 +252,12 @@ class ShippingEstimateController extends Controller
             'customer_notice' => 'Estimated shipping is unavailable right now. Final fee will be confirmed after order via Lalamove or J&T (third-party carrier).',
             'pay_after_order_notice' => 'Shipping is not included in your checkout total and will be paid upon delivery of your order',
             'reason' => $reason,
+            'shop_owned' => $coverage ?? [
+                'available' => false,
+                'reason' => 'logistics_unavailable',
+                'distance_km' => null,
+                'coverage_radius_km' => null,
+            ],
         ]);
     }
 

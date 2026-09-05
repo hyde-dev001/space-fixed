@@ -2,12 +2,16 @@
 import '../css/app.css';
 
 import { createRoot } from 'react-dom/client';
+import { useEffect, useState } from 'react';
 import { createInertiaApp, router } from '@inertiajs/react';
 import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import { ThemeProvider } from './context/ThemeContext';
 import { SidebarProvider } from './context/SidebarContext';
 import { QueryProvider } from './providers/QueryProvider';
 import { CartProvider } from './contexts/CartContext';
+import { dismissAppLoader } from './utils/appLoader';
+import { syncPageTheme } from './utils/pageTheme';
+import { CustomerPageTransition } from './components/common/CustomerPageTransition';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 const USER_SIDE_SCROLLBAR_CLASS = 'userside-hide-scrollbar';
@@ -16,6 +20,37 @@ const syncUserSideScrollbar = (componentName = '') => {
     const isUserSidePage = componentName.startsWith('UserSide/');
     document.documentElement.classList.toggle(USER_SIDE_SCROLLBAR_CLASS, isUserSidePage);
     document.body.classList.toggle(USER_SIDE_SCROLLBAR_CLASS, isUserSidePage);
+};
+
+const syncPagePresentation = (componentName = '') => {
+    syncUserSideScrollbar(componentName);
+    syncPageTheme(componentName);
+};
+
+const ApplicationProviders = ({ initialComponent, children }) => {
+    const [component, setComponent] = useState(initialComponent);
+
+    useEffect(() => {
+        return router.on('navigate', (event) => {
+            setComponent(event.detail?.page?.component ?? '');
+        });
+    }, []);
+
+    const isUserSidePage = component.startsWith('UserSide/');
+    const isUserAuthPage = component.startsWith('UserSide/Auth/');
+
+    return (
+        <QueryProvider>
+            <ThemeProvider>
+                <SidebarProvider>
+                    <CartProvider syncEnabled={isUserSidePage && !isUserAuthPage}>
+                        {children}
+                    </CartProvider>
+                    <CustomerPageTransition />
+                </SidebarProvider>
+            </ThemeProvider>
+        </QueryProvider>
+    );
 };
 
 // Update CSRF token after each Inertia navigation
@@ -29,7 +64,7 @@ router.on('navigate', (event) => {
         }
     }
 
-    syncUserSideScrollbar(page?.component ?? '');
+    syncPagePresentation(page?.component ?? '');
 });
 
 createInertiaApp({
@@ -63,35 +98,17 @@ createInertiaApp({
     },
     setup({ el, App, props }) {
         const root = createRoot(el);
-        
-        // Check if the current page is a user-side page (should not have dark mode)
-        const isUserSidePage = props.initialPage.component.startsWith('UserSide/');
-        syncUserSideScrollbar(props.initialPage.component ?? '');
 
-        // Always wrap with QueryProvider for global state management
-        if (isUserSidePage) {
-            root.render(
-                <QueryProvider>
-                    <ThemeProvider>
-                        <CartProvider>
-                            <App {...props} />
-                        </CartProvider>
-                    </ThemeProvider>
-                </QueryProvider>
-            );
-        } else {
-            root.render(
-                <QueryProvider>
-                    <ThemeProvider>
-                        <SidebarProvider>
-                            <CartProvider>
-                                <App {...props} />
-                            </CartProvider>
-                        </SidebarProvider>
-                    </ThemeProvider>
-                </QueryProvider>
-            );
-        }
+        const component = props.initialPage.component ?? '';
+        syncPagePresentation(component);
+
+        root.render(
+            <ApplicationProviders initialComponent={component}>
+                <App {...props} />
+            </ApplicationProviders>
+        );
+
+        dismissAppLoader();
     },
     progress: {
         color: '#465fff',

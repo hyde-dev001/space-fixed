@@ -11,6 +11,8 @@ use Spatie\OpeningHours\OpeningHours;
 use App\Enums\ShopOwnerStatus;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
  * ShopOwner Model
@@ -30,7 +32,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  */
 class ShopOwner extends Authenticatable implements MustVerifyEmail
 {
-    use HasFactory, Notifiable, HasRoles;
+    use HasFactory, Notifiable, HasRoles, SoftDeletes;
 
     /**
      * The guard name for this model (for Spatie Permission)
@@ -64,7 +66,7 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
         'registration_type',    // Individual or company registration
         'high_value_threshold', // Approval threshold for high value repairs
         'require_two_way_approval', // Require owner approval on high value repairs
-        'repair_payment_policy', // deposit_50 | full_upfront
+        'repair_payment_policy', // full_upfront; deposit_50 is legacy-only
         'repair_workload_limit', // Max concurrent active repairs (default 20)
         'repair_warranty_days', // Warranty period in days for repair claims
         'warranty_enabled', // Toggle warranty claim filing for this shop
@@ -141,6 +143,27 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
         return $this->hasMany(ShopDocument::class);
     }
 
+    public function currentSuspension(): BelongsTo
+    {
+        return $this->belongsTo(AccountSuspension::class, 'current_suspension_id');
+    }
+
+    public function suspensionHistory(): HasMany
+    {
+        return $this->hasMany(AccountSuspension::class, 'account_id')
+            ->where('account_type', AccountSuspension::ACCOUNT_TYPE_SHOP_OWNER);
+    }
+
+    public function upgradeRequests(): HasMany
+    {
+        return $this->hasMany(ShopOwnerUpgradeRequest::class, 'shop_owner_id');
+    }
+
+    public function modules(): HasMany
+    {
+        return $this->hasMany(ShopOwnerModule::class, 'shop_owner_id');
+    }
+
     /**
      * Get repair packages created under this shop.
      */
@@ -159,6 +182,20 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
         return $this->hasOne(ShopOwnerSubscription::class, 'shop_owner_id')
             ->where('status', 'active')
             ->latestOfMany('ends_at');
+    }
+
+    public function logisticsSetting(): HasOne
+    {
+        return $this->hasOne(\App\Models\Logistics\LogisticsSetting::class);
+    }
+
+    public function logisticsModules(): array
+    {
+        return match (strtolower(trim((string) $this->business_type))) {
+            'repair' => ['repair'],
+            'both', 'both (retail & repair)' => ['retail', 'repair'],
+            default => ['retail'],
+        };
     }
 
     /**

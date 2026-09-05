@@ -1,4 +1,4 @@
-import { Head, router } from "@inertiajs/react";
+import { Head, router, usePage } from "@inertiajs/react";
 import React, { useMemo, useState, useEffect } from "react";
 import Swal from "sweetalert2";
 import { useTaxRates } from "../../../hooks/useFinanceQueries";
@@ -60,6 +60,9 @@ const paymentConditions = [
 ];
 
 export default function FinanceCreateInvoice() {
+	const { auth, ownerMode: pageOwnerMode } = usePage().props as any;
+	const ownerMode = pageOwnerMode === true || auth?.erpActor?.ownerMode === true;
+	const invoicesUrl = ownerMode ? '/shop-owner/erp/finance/invoices' : '/finance?section=invoice-generation';
 	const api = useFinanceApi();
 	const [rows, setRows] = useState<ProductRow[]>([]);
 	const [editingRow, setEditingRow] = useState<ProductRow | null>(null);
@@ -73,7 +76,7 @@ export default function FinanceCreateInvoice() {
 	const [loading, setLoading] = useState(false);
 
 	// React Query hooks - automatically handle loading, caching, refetching
-	const { data: taxRates = [], isLoading: isLoadingTaxRates } = useTaxRates();
+	const { data: taxRates = [], isLoading: isLoadingTaxRates, isError: isTaxRatesError } = useTaxRates();
 
 	const [invoiceNumber, setInvoiceNumber] = useState("INV-" + Date.now());
 	const [customerName, setCustomerName] = useState("");
@@ -309,7 +312,7 @@ export default function FinanceCreateInvoice() {
 				items: items,
 			};
 
-			const response = await api.post("/api/finance/session/invoices", invoiceData);
+			const response = await api.post("/api/finance/invoices", invoiceData);
 			if (!response.ok) {
 				throw new Error(response.error || "Failed to create invoice");
 			}
@@ -321,7 +324,7 @@ export default function FinanceCreateInvoice() {
 				confirmButtonColor: "#2563eb",
 			});
 
-		router.visit('/finance?section=invoice-generation');
+			router.visit(invoicesUrl);
 		} catch (error) {
 			await Swal.fire({
 				title: "Error",
@@ -338,10 +341,10 @@ export default function FinanceCreateInvoice() {
 		<>
 			<Head title="Create Invoice - Solespace ERP" />
 			<div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-6 px-4 sm:px-6 lg:px-8">
-				<div className="max-w-7xl mx-auto space-y-6 pb-20">
+				<div className="w-full space-y-6 pb-20">
 					<div>
 						<a
-							href="/finance?section=invoice-generation"
+							href={invoicesUrl}
 							className="inline-flex items-center gap-2 text-sm font-semibold text-gray-600 hover:text-gray-700"
 						>
 							<ArrowLeftIcon className="w-4 h-4" />
@@ -580,6 +583,9 @@ export default function FinanceCreateInvoice() {
 								</div>
 							</div>
 
+							{isTaxRatesError && (
+								<p className="text-xs text-red-600 dark:text-red-400">Tax rates could not be loaded. Check your Finance tax access.</p>
+							)}
 							{taxRates.length > 0 && (
 								<div className="col-span-full mt-3">
 									<label className="text-xs text-gray-600 dark:text-gray-400">Tax Rate</label>

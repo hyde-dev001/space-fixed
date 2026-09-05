@@ -1,0 +1,139 @@
+import React from 'react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import FlaggedAccounts from '../FlaggedAccounts';
+
+const { postMock, getMock, reloadMock, swalFireMock, usePageMock } = vi.hoisted(() => ({
+  postMock: vi.fn(),
+  getMock: vi.fn(),
+  reloadMock: vi.fn(),
+  swalFireMock: vi.fn(),
+  usePageMock: vi.fn(),
+}));
+
+vi.mock('@inertiajs/react', () => ({
+  Head: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
+  Link: ({ children, href, ...props }: { children?: React.ReactNode; href?: string }) => <a href={href} {...props}>{children}</a>,
+  router: { get: getMock, reload: reloadMock },
+  usePage: () => usePageMock(),
+}));
+
+vi.mock('axios', () => ({
+  default: { post: postMock },
+}));
+
+vi.mock('sweetalert2', () => ({
+  default: { fire: swalFireMock },
+}));
+
+vi.mock('../../../../layout/AppLayout', () => ({
+  default: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
+}));
+
+const account = (status: string) => ({
+  id: '12',
+  username: 'Customer One',
+  email: 'customer@example.test',
+  flaggedReason: 'Fake Review',
+  flaggedDate: '2026-08-12T12:00:00.000Z',
+  status,
+  reportedBy: 'Sole Space',
+});
+
+beforeEach(() => {
+  postMock.mockReset();
+  getMock.mockReset();
+  reloadMock.mockReset();
+  swalFireMock.mockReset();
+  usePageMock.mockReset();
+  swalFireMock.mockResolvedValue({ isConfirmed: true, value: 'Confirmed suspension reason.' });
+  postMock.mockResolvedValue({ data: { status: 'account_suspended', changed: true } });
+  usePageMock.mockReturnValue({ props: { flaggedAccounts: [account('pending_review')] } });
+});
+
+describe('Flagged account state UI', () => {
+  it('provides a back link to user management', () => {
+    render(<FlaggedAccounts />);
+
+    expect(screen.getByRole('link', { name: 'Back to User Management' }))
+      .toHaveAttribute('href', '/admin/users');
+  });
+
+  it('shows domain status labels and only valid pending controls', () => {
+    usePageMock.mockReturnValue({ props: { flaggedAccounts: [account('account_suspended')] } });
+    render(<FlaggedAccounts />);
+
+    expect(screen.getAllByText('Account suspended').length).toBeGreaterThan(0);
+    expect(screen.queryByRole('button', { name: 'Dismiss' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Ban' })).not.toBeInTheDocument();
+  });
+
+  it('requires a suspension reason and posts the domain action', async () => {
+    render(<FlaggedAccounts />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Review' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Mark under investigation' }));
+
+    await waitFor(() => expect(postMock).toHaveBeenCalledWith(
+      '/admin/flagged-accounts/12/mark-reviewed',
+      {},
+    ));
+
+    postMock.mockClear();
+    cleanup();
+    usePageMock.mockReturnValue({ props: { flaggedAccounts: [account('under_investigation')] } });
+    render(<FlaggedAccounts />);
+    fireEvent.click(screen.getAllByRole('button', { name: 'Review' })[0]);
+    fireEvent.click(screen.getByRole('button', { name: 'Suspend account' }));
+
+    await waitFor(() => expect(postMock).toHaveBeenCalledWith(
+      '/admin/flagged-accounts/12/ban',
+      { admin_notes: 'Confirmed suspension reason.' },
+    ));
+  });
+
+  it('sends filters and pagination through a server paginator', async () => {
+    const item = account('pending_review');
+    usePageMock.mockReturnValue({
+      props: {
+        flaggedAccounts: {
+          data: [item],
+          current_page: 1,
+          last_page: 2,
+          per_page: 1,
+          total: 2,
+          from: 1,
+          to: 1,
+          links: [],
+        },
+        stats: {
+          total: 2,
+          pending_review: 2,
+          under_investigation: 0,
+          dismissed: 0,
+          account_suspended: 0,
+        },
+        filters: { search: '', status: 'all' },
+      },
+    });
+
+    render(<FlaggedAccounts />);
+
+    fireEvent.change(screen.getByPlaceholderText(/Search by username/), {
+      target: { value: 'Customer' },
+    });
+
+    await waitFor(() => expect(getMock).toHaveBeenCalledWith(
+      '/admin/flagged-accounts',
+      { search: 'Customer', status: 'all', page: 1 },
+      expect.any(Object),
+    ));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    expect(getMock).toHaveBeenCalledWith(
+      '/admin/flagged-accounts',
+      { search: 'Customer', status: 'all', page: 2 },
+      expect.any(Object),
+    );
+  });
+});

@@ -1,10 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Head, Link, usePage, router } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 import Swal from '@/Pages/UserSide/Shared/UserModal';
 import axios from 'axios';
 import { navigateBackOr } from '../Shared/backNavigation';
 import { openTermsPolicyModal } from '../../../utils/termsPolicyModal';
+import {
+  PHILIPPINE_LOCATIONS,
+  getCityMunicipalityOptions,
+  normalizeCityMunicipalitySelection,
+  normalizeProvinceSelection,
+} from '@/data/philippineLocations';
+import CustomerAddressMapPicker from '@/components/address/CustomerAddressMapPicker';
+import { resolvePolicySectionsForFlow } from '../../../utils/policySectionResolver';
 
 interface CartItem {
   id: string;
@@ -51,6 +60,8 @@ interface UserAddress {
   postal_code?: string;
   full_address?: string;
   is_default?: boolean;
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 interface ShippingEstimateData {
@@ -61,24 +72,43 @@ interface ShippingEstimateData {
   distance_label?: string;
   customer_notice?: string;
   pay_after_order_notice?: string;
+  shop_owned?: {
+    available: boolean;
+    reason: 'address_needs_pin' | 'shop_needs_pin' | 'outside_coverage' | 'logistics_unavailable' | null;
+    distance_km: number | null;
+    coverage_radius_km: number | null;
+  };
 }
 
 interface AppliedVoucherSummary {
   id: number;
   name: string;
   code?: string | null;
+  target: 'items' | 'shipping';
   scope: 'shop_wide' | 'product_specific';
   discount_mode: 'percentage' | 'fixed';
   value: number;
 }
 
+type VoucherClaimStatus = 'claimed' | 'claimable' | 'redeemed' | 'unavailable';
+type VoucherEligibility = 'eligible' | 'minimum_spend' | 'not_applicable' | 'shipping_unavailable' | 'shipping_fee_required' | 'unavailable';
+
 interface AvailableVoucherOption {
   id: number;
   name: string;
   code?: string | null;
+  target: 'items' | 'shipping';
+  scope: 'shop_wide' | 'product_specific';
   discount_mode: 'percentage' | 'fixed';
   value: number;
   min_spend: number;
+  claim_status: VoucherClaimStatus;
+  eligibility: VoucherEligibility;
+  eligibility_message: string;
+  eligible_subtotal: number;
+  remaining_spend: number;
+  claim_product_id: number | null;
+  can_claim: boolean;
 }
 
 interface PromoPreviewData {
@@ -89,74 +119,17 @@ interface PromoPreviewData {
   net_subtotal: number;
   vat_amount: number;
   vat_rate: number;
+  raw_shipping_fee: number;
+  shipping_voucher_discount: number;
+  discounted_shipping_fee: number;
+  shipping_voucher_error?: string | null;
   applied_voucher?: AppliedVoucherSummary | null;
   available_vouchers?: AvailableVoucherOption[];
   voucher_code_suggestions?: AvailableVoucherOption[];
   voucher_error?: string | null;
 }
 
-interface CityOption {
-  value: string;
-  label: string;
-  aliases?: string[];
-}
-
 type PaymentMethod = 'paymongo';
-
-const DEFAULT_SHIPPING_REGION = 'Cavite';
-
-const PH_CITY_OPTIONS: CityOption[] = [
-  { value: 'Bacoor', label: 'Bacoor' },
-  { value: 'Cavite City', label: 'Cavite City', aliases: ['City of Cavite'] },
-  { value: 'Dasmariñas', label: 'Dasmariñas', aliases: ['Dasmarinas'] },
-  { value: 'General Trias', label: 'General Trias' },
-  { value: 'Imus', label: 'Imus' },
-  { value: 'Tagaytay', label: 'Tagaytay' },
-  { value: 'Trece Martires', label: 'Trece Martires' },
-  { value: 'Alfonso', label: 'Alfonso' },
-  { value: 'Amadeo', label: 'Amadeo' },
-  { value: 'Carmona', label: 'Carmona' },
-  { value: 'General Emilio Aguinaldo', label: 'Gen. Emilio Aguinaldo', aliases: ['Gen Emilio Aguinaldo'] },
-  { value: 'General Mariano Alvarez', label: 'Gen. Mariano Alvarez', aliases: ['Gen Mariano Alvarez', 'GMA'] },
-  { value: 'Indang', label: 'Indang' },
-  { value: 'Kawit', label: 'Kawit' },
-  { value: 'Magallanes', label: 'Magallanes' },
-  { value: 'Maragondon', label: 'Maragondon' },
-  { value: 'Mendez', label: 'Mendez' },
-  { value: 'Naic', label: 'Naic' },
-  { value: 'Noveleta', label: 'Noveleta' },
-  { value: 'Rosario', label: 'Rosario' },
-  { value: 'Silang', label: 'Silang' },
-  { value: 'Tanza', label: 'Tanza' },
-  { value: 'Ternate', label: 'Ternate' },
-];
-
-const normalizeCityKey = (value: string) => value
-  .normalize('NFD')
-  .replace(/[\u0300-\u036f]/g, '')
-  .replace(/\./g, '')
-  .replace(/\s+/g, ' ')
-  .trim()
-  .toLowerCase();
-
-const CITY_OPTION_LOOKUP = PH_CITY_OPTIONS.reduce<Map<string, string>>((lookup, option) => {
-  const candidates = [option.value, option.label, ...(option.aliases || [])];
-
-  candidates.forEach((candidate) => {
-    const key = normalizeCityKey(candidate);
-    if (key && !lookup.has(key)) {
-      lookup.set(key, option.value);
-    }
-  });
-
-  return lookup;
-}, new Map<string, string>());
-
-const normalizeCitySelection = (city?: string | null) => {
-  const normalizedCityKey = normalizeCityKey(city || '');
-  if (!normalizedCityKey) return '';
-  return CITY_OPTION_LOOKUP.get(normalizedCityKey) || '';
-};
 
 const toFiniteNumber = (value: unknown, fallback = 0): number => {
   if (typeof value === 'number') {
@@ -171,6 +144,43 @@ const toFiniteNumber = (value: unknown, fallback = 0): number => {
 
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const formatVoucherMoney = (value: number): string => `₱${toFiniteNumber(value).toLocaleString(undefined, {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 2,
+})}`;
+
+const formatVoucherBenefit = (voucher: AvailableVoucherOption): string => {
+  const value = toFiniteNumber(voucher.value);
+  const targetLabel = voucher.target === 'shipping' ? 'shipping' : 'items';
+
+  if (voucher.discount_mode === 'percentage') {
+    return `${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}% off ${targetLabel}`;
+  }
+
+  return `${formatVoucherMoney(value)} off ${targetLabel}`;
+};
+
+const voucherClaimStatusLabel = (status: VoucherClaimStatus): string => {
+  if (status === 'claimed') return 'Claimed';
+  if (status === 'claimable') return 'Available to claim';
+  if (status === 'redeemed') return 'Already used';
+  return 'Unavailable';
+};
+
+const voucherClaimStatusClass = (status: VoucherClaimStatus): string => {
+  if (status === 'claimed') return 'border-blue-200 bg-blue-50 text-blue-700';
+  if (status === 'claimable') return 'border-gray-200 bg-gray-50 text-gray-700';
+  if (status === 'redeemed') return 'border-gray-200 bg-gray-100 text-gray-500';
+  return 'border-red-200 bg-red-50 text-red-700';
+};
+
+const voucherEligibilityClass = (eligibility: VoucherEligibility): string => {
+  if (eligibility === 'eligible') return 'text-emerald-700';
+  if (eligibility === 'minimum_spend') return 'text-amber-700';
+  if (eligibility === 'shipping_unavailable' || eligibility === 'shipping_fee_required') return 'text-red-600';
+  return 'text-gray-500';
 };
 
 const Payment: React.FC = () => {
@@ -202,17 +212,25 @@ const Payment: React.FC = () => {
   const [shippingAddressLine, setShippingAddressLine] = useState('');
   const [shippingBarangay, setShippingBarangay] = useState('');
   const [shippingPostalCode, setShippingPostalCode] = useState('');
+  const [shippingLatitude, setShippingLatitude] = useState<number | null>(null);
+  const [shippingLongitude, setShippingLongitude] = useState<number | null>(null);
   const [shippingCity, setShippingCity] = useState('');
   const [shippingRegion, setShippingRegion] = useState('');
-  const [saveAddressForLater, setSaveAddressForLater] = useState(true);
+  const cityMunicipalityOptions = getCityMunicipalityOptions(shippingRegion);
+  const [setAsDefaultAddress, setSetAsDefaultAddress] = useState(false);
   const [userAddresses, setUserAddresses] = useState<UserAddress[]>([]);
   const [isAddressSheetOpen, setIsAddressSheetOpen] = useState(false);
   const [isAddressLoading, setIsAddressLoading] = useState(false);
+  const [isAddressSaving, setIsAddressSaving] = useState(false);
+  const [addressSaveStatus, setAddressSaveStatus] = useState<string | null>(null);
   const [addressSheetMode, setAddressSheetMode] = useState<'list' | 'form'>('list');
   const [editingAddressId, setEditingAddressId] = useState<number | null>(null);
+  const addressMapRef = useRef<HTMLDivElement | null>(null);
   const [shippingEstimate, setShippingEstimate] = useState<ShippingEstimateData | null>(null);
+  const [shopOwnedCoverage, setShopOwnedCoverage] = useState<NonNullable<ShippingEstimateData['shop_owned']> | null>(null);
   const [isShippingEstimateLoading, setIsShippingEstimateLoading] = useState(false);
   const [shippingEstimateReason, setShippingEstimateReason] = useState<string | null>(null);
+  const shippingEstimateRequestRef = useRef(0);
   const [promoPreview, setPromoPreview] = useState<PromoPreviewData | null>(null);
   const [isPromoPreviewLoading, setIsPromoPreviewLoading] = useState(false);
   const [selectedVoucherCampaignId, setSelectedVoucherCampaignId] = useState<number | null>(null);
@@ -220,12 +238,19 @@ const Payment: React.FC = () => {
   const [appliedVoucherCode, setAppliedVoucherCode] = useState('');
   const [isVoucherSelectionEnabled, setIsVoucherSelectionEnabled] = useState(true);
   const [isVoucherSuggestionOpen, setIsVoucherSuggestionOpen] = useState(false);
+  const [claimingVoucherCampaignId, setClaimingVoucherCampaignId] = useState<number | null>(null);
+  const [voucherClaimError, setVoucherClaimError] = useState<string | null>(null);
+  const [voucherPreviewRefreshKey, setVoucherPreviewRefreshKey] = useState(0);
   const [hasVoucherInputInteraction, setHasVoucherInputInteraction] = useState(false);
   const voucherInputContainerRef = useRef<HTMLDivElement | null>(null);
   const desktopCityDropdownRef = useRef<HTMLDivElement | null>(null);
   const sheetCityDropdownRef = useRef<HTMLDivElement | null>(null);
+  const desktopProvinceDropdownRef = useRef<HTMLDivElement | null>(null);
+  const sheetProvinceDropdownRef = useRef<HTMLDivElement | null>(null);
   const [isDesktopCityDropdownOpen, setIsDesktopCityDropdownOpen] = useState(false);
   const [isSheetCityDropdownOpen, setIsSheetCityDropdownOpen] = useState(false);
+  const [isDesktopProvinceDropdownOpen, setIsDesktopProvinceDropdownOpen] = useState(false);
+  const [isSheetProvinceDropdownOpen, setIsSheetProvinceDropdownOpen] = useState(false);
   const [paymentRecovery, setPaymentRecovery] = useState<{
     scope: 'order' | 'repair';
     id: number;
@@ -311,6 +336,62 @@ const Payment: React.FC = () => {
     setIsVoucherSuggestionOpen(false);
   };
 
+  const handleUseVoucher = (voucher: AvailableVoucherOption) => {
+    const normalizedCode = normalizeVoucherCode(String(voucher.code || voucher.name || ''));
+    if (!normalizedCode) {
+      return;
+    }
+
+    setIsVoucherSelectionEnabled(true);
+    setSelectedVoucherCampaignId(voucher.id);
+    setHasVoucherInputInteraction(true);
+    setVoucherCodeInput(normalizedCode);
+    setAppliedVoucherCode(normalizedCode);
+    setVoucherClaimError(null);
+    setIsVoucherSuggestionOpen(false);
+  };
+
+  const handleClaimVoucher = async (voucher: AvailableVoucherOption, applyAfterClaim: boolean) => {
+    if (!voucher.can_claim || voucher.claim_product_id === null || claimingVoucherCampaignId !== null) {
+      return;
+    }
+
+    setClaimingVoucherCampaignId(voucher.id);
+    setVoucherClaimError(null);
+
+    try {
+      const csrfToken = document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content ?? '';
+      const response = await fetch(`/api/products/${voucher.claim_product_id}/vouchers/${voucher.id}/claim`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          'X-CSRF-TOKEN': csrfToken,
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+      });
+      const payload = await response.json().catch(() => ({})) as { success?: boolean; message?: string };
+
+      if (!response.ok || payload.success === false) {
+        throw new Error(payload.message || 'Unable to claim this voucher right now.');
+      }
+
+      if (applyAfterClaim) {
+        handleUseVoucher(voucher);
+      } else {
+        setIsVoucherSuggestionOpen(true);
+      }
+
+      setVoucherPreviewRefreshKey((current) => current + 1);
+    } catch (error) {
+      setVoucherClaimError(error instanceof Error ? error.message : 'Unable to claim this voucher right now.');
+      setIsVoucherSuggestionOpen(true);
+    } finally {
+      setClaimingVoucherCampaignId(null);
+    }
+  };
+
   const handleClearVoucherSelection = () => {
     setIsVoucherSelectionEnabled(false);
     setSelectedVoucherCampaignId(null);
@@ -320,15 +401,83 @@ const Payment: React.FC = () => {
     setIsVoucherSuggestionOpen(false);
   };
 
+  const handleProvinceChange = (province: string) => {
+    setShippingRegion(normalizeProvinceSelection(province));
+    setShippingCity('');
+    setShippingEstimate(null);
+    setShippingEstimateReason(null);
+    setIsShippingEstimateLoading(false);
+    setIsDesktopProvinceDropdownOpen(false);
+    setIsSheetProvinceDropdownOpen(false);
+    setIsDesktopCityDropdownOpen(false);
+    setIsSheetCityDropdownOpen(false);
+  };
+
+  const handleDropdownTriggerKeyDown = (
+    event: React.KeyboardEvent<HTMLButtonElement>,
+    setOpen: React.Dispatch<React.SetStateAction<boolean>>,
+    containerRef: React.RefObject<HTMLDivElement | null>,
+  ) => {
+    if (event.key === 'Escape') {
+      setOpen(false);
+      return;
+    }
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+
+    event.preventDefault();
+    setOpen(true);
+    requestAnimationFrame(() => {
+      const options = containerRef.current?.querySelectorAll<HTMLElement>('[role="option"]');
+      options?.[event.key === 'ArrowUp' ? options.length - 1 : 0]?.focus();
+    });
+  };
+
+  const handleListboxKeyDown = (
+    event: React.KeyboardEvent<HTMLDivElement>,
+    setOpen: React.Dispatch<React.SetStateAction<boolean>>,
+    containerRef: React.RefObject<HTMLDivElement | null>,
+  ) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      setOpen(false);
+      containerRef.current?.querySelector<HTMLButtonElement>('button')?.focus();
+      return;
+    }
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+
+    event.preventDefault();
+    const options = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('[role="option"]'));
+    const currentIndex = options.indexOf(document.activeElement as HTMLElement);
+    const offset = event.key === 'ArrowDown' ? 1 : -1;
+    options[(currentIndex + offset + options.length) % options.length]?.focus();
+  };
+
   const handleCityChange = (city: string) => {
-    const selectedCity = normalizeCitySelection(city);
+    const selectedCity = normalizeCityMunicipalitySelection(shippingRegion, city);
     setShippingCity(selectedCity);
-    setShippingRegion(selectedCity ? DEFAULT_SHIPPING_REGION : '');
     setShippingEstimate(null);
     setShippingEstimateReason(null);
     setIsShippingEstimateLoading(Boolean(selectedCity));
     setIsDesktopCityDropdownOpen(false);
     setIsSheetCityDropdownOpen(false);
+  };
+
+  const handleAddressMapChange = (location: {
+    displayName: string;
+    region: string;
+    province: string;
+    city: string;
+    barangay: string;
+    postalCode: string;
+    latitude: number;
+    longitude: number;
+  }) => {
+    setShippingLatitude(location.latitude);
+    setShippingLongitude(location.longitude);
+    setShippingRegion(location.province || location.region);
+    setShippingCity(location.city);
+    setShippingBarangay(location.barangay);
+    setShippingPostalCode(location.postalCode);
   };
 
   const formatAddressDisplay = (addr?: Partial<UserAddress> | null) => {
@@ -338,20 +487,24 @@ const Payment: React.FC = () => {
   };
 
   const applySelectedAddress = (addr: UserAddress) => {
+    setSetAsDefaultAddress(Boolean(addr.is_default));
     setCustomerName(addr.name || '');
     setCustomerPhone(addr.phone || '');
     setShippingAddressLine(addr.address_line || '');
-    const selectedCity = normalizeCitySelection(addr.city);
-    setShippingRegion(addr.region || (selectedCity ? DEFAULT_SHIPPING_REGION : ''));
-    setShippingCity(selectedCity);
+    const selectedProvince = normalizeProvinceSelection(addr.province || addr.region);
+    const selectedCity = normalizeCityMunicipalitySelection(selectedProvince, addr.city);
+    setShippingRegion(selectedProvince || addr.province || addr.region || '');
+    setShippingCity(selectedCity || addr.city || '');
     setShippingBarangay(addr.barangay || '');
     setShippingPostalCode(addr.postal_code || '');
+    setShippingLatitude(addr.latitude ?? null);
+    setShippingLongitude(addr.longitude ?? null);
     setCheckoutData((prev) => prev
       ? {
           ...prev,
           address_id: addr.id,
-          shipping_region: addr.region || null,
-          shipping_province: addr.province || addr.region || null,
+          shipping_region: selectedProvince || addr.province || addr.region || null,
+          shipping_province: selectedProvince || addr.province || addr.region || null,
           shipping_city: selectedCity || addr.city || null,
           shipping_barangay: addr.barangay || null,
           shipping_postal_code: addr.postal_code || null,
@@ -360,9 +513,15 @@ const Payment: React.FC = () => {
       : prev);
   };
 
+  const restoreSelectedAddress = () => {
+    const selectedAddress = userAddresses.find((address) => address.id === checkoutData?.address_id);
+    if (selectedAddress) applySelectedAddress(selectedAddress);
+  };
+
   const openAddressSheet = async () => {
     setAddressSheetMode('list');
     setEditingAddressId(null);
+    setAddressSaveStatus(null);
 
     if (!user) {
       setIsAddressSheetOpen(true);
@@ -394,11 +553,24 @@ const Payment: React.FC = () => {
   };
 
   const handleUseAddressFromForm = async () => {
-    if (!customerName || !customerPhone || !shippingAddressLine || !shippingBarangay || !shippingCity || !shippingRegion || !shippingPostalCode) {
+    const normalizedShippingCity = normalizeCityMunicipalitySelection(shippingRegion, shippingCity);
+    if (!/^\d{11}$/.test(customerPhone)) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Invalid phone number',
+        text: 'Phone number must contain exactly 11 digits.',
+        confirmButtonColor: '#000000',
+      });
+      return;
+    }
+
+    if (!customerName || !customerPhone || !shippingAddressLine || !shippingBarangay || !normalizedShippingCity || !shippingRegion || !shippingPostalCode) {
       Swal.fire({
         icon: 'warning',
         title: 'Missing fields',
-        text: 'Please fill all required address fields.',
+        text: shippingCity && !normalizedShippingCity
+          ? 'Please reselect a city or municipality for the selected province.'
+          : 'Please fill all required address fields.',
         confirmButtonColor: '#000000',
       });
       return;
@@ -410,6 +582,8 @@ const Payment: React.FC = () => {
       return;
     }
 
+    setIsAddressSaving(true);
+    setAddressSaveStatus(null);
     try {
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
       const isEditingAddress = editingAddressId !== null;
@@ -429,10 +603,12 @@ const Payment: React.FC = () => {
           address_line: shippingAddressLine,
           region: shippingRegion,
           province: shippingRegion,
-          city: normalizeCitySelection(shippingCity) || shippingCity,
+          city: normalizedShippingCity,
           barangay: shippingBarangay,
           postal_code: shippingPostalCode,
-          is_default: userAddresses.length === 0,
+          latitude: shippingLatitude,
+          longitude: shippingLongitude,
+          is_default: setAsDefaultAddress,
         }),
       });
 
@@ -453,27 +629,38 @@ const Payment: React.FC = () => {
       }
 
       setEditingAddressId(null);
-      setIsAddressSheetOpen(false);
       setAddressSheetMode('list');
+      setAddressSaveStatus('Address saved. You can select it from the list.');
     } catch (error) {
-      console.warn('Failed to save address from sheet:', error);
-      setEditingAddressId(null);
-      setIsAddressSheetOpen(false);
-      setAddressSheetMode('list');
+      setAddressSaveStatus('We could not save this address. Please try again.');
+    } finally {
+      setIsAddressSaving(false);
     }
   };
 
-  const handleEditAddressFromList = (addr: UserAddress) => {
+  const handleEditAddressFromList = (addr: UserAddress, focusMap = false) => {
+    setIsAddressSheetOpen(true);
+    setAddressSaveStatus(null);
     setEditingAddressId(addr.id);
+    setSetAsDefaultAddress(Boolean(addr.is_default));
     setCustomerName(addr.name || '');
     setCustomerPhone(addr.phone || '');
     setShippingAddressLine(addr.address_line || '');
-    const selectedCity = normalizeCitySelection(addr.city);
-    setShippingRegion(addr.region || (selectedCity ? DEFAULT_SHIPPING_REGION : ''));
-    setShippingCity(selectedCity);
+    const selectedProvince = normalizeProvinceSelection(addr.province || addr.region);
+    const selectedCity = normalizeCityMunicipalitySelection(selectedProvince, addr.city);
+    setShippingRegion(selectedProvince || addr.province || addr.region || '');
+    setShippingCity(selectedCity || addr.city || '');
     setShippingBarangay(addr.barangay || '');
     setShippingPostalCode(addr.postal_code || '');
+    setShippingLatitude(addr.latitude ?? null);
+    setShippingLongitude(addr.longitude ?? null);
     setAddressSheetMode('form');
+    if (focusMap) {
+      requestAnimationFrame(() => {
+        addressMapRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        addressMapRef.current?.querySelector<HTMLInputElement>('input')?.focus();
+      });
+    }
   };
 
   const handleDeleteAddressFromForm = async () => {
@@ -639,9 +826,10 @@ const Payment: React.FC = () => {
           setShippingAddressLine(data.shipping_address_line || '');
           setShippingBarangay(data.shipping_barangay || '');
           setShippingPostalCode(data.shipping_postal_code || '');
-          const savedCity = normalizeCitySelection(data.shipping_city);
-          setShippingCity(savedCity);
-          setShippingRegion(data.shipping_region || (savedCity ? DEFAULT_SHIPPING_REGION : ''));
+          const selectedProvince = normalizeProvinceSelection(data.shipping_province || data.shipping_region);
+          const selectedCity = normalizeCityMunicipalitySelection(selectedProvince, data.shipping_city);
+          setShippingRegion(selectedProvince || data.shipping_province || data.shipping_region || '');
+          setShippingCity(selectedCity || data.shipping_city || '');
           return;
         } catch (e) {
           console.error('Failed to parse checkout data:', e);
@@ -905,19 +1093,127 @@ const Payment: React.FC = () => {
     }
   }, [user]);
 
+  const requestShippingEstimate = async (
+    addressId: number | null | undefined,
+    signal?: AbortSignal,
+  ): Promise<ShippingEstimateData> => {
+    if (!checkoutData) throw new Error('Checkout data is unavailable.');
+
+    const city = normalizeCityMunicipalitySelection(shippingRegion, shippingCity);
+    const region = shippingRegion.trim();
+    const itemPids = checkoutData.items
+      .map((item) => Number(item.pid))
+      .filter((pid) => Number.isInteger(pid) && pid > 0);
+    if (!city || !region || itemPids.length === 0) {
+      throw new Error('Unable to calculate shipping for the current address.');
+    }
+
+    const requestId = ++shippingEstimateRequestRef.current;
+    setIsShippingEstimateLoading(true);
+    let responseCoverage: NonNullable<ShippingEstimateData['shop_owned']> | null = null;
+
+    try {
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+      const response = await fetch('/api/shipping/estimate', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'X-CSRF-TOKEN': csrfToken,
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+        body: JSON.stringify({
+          item_pids: itemPids,
+          address_id: addressId,
+          shipping_address_line: shippingAddressLine,
+          shipping_barangay: shippingBarangay,
+          shipping_city: city,
+          shipping_region: region,
+          shipping_postal_code: shippingPostalCode,
+          shipping_latitude: shippingLatitude,
+          shipping_longitude: shippingLongitude,
+        }),
+        signal,
+      });
+
+      if (!response.ok) {
+        let reason = `Unable to fetch shipping estimate (HTTP ${response.status}).`;
+        try {
+          const errorData = await response.json();
+          reason = errorData?.reason || errorData?.message || reason;
+        } catch {
+          // Keep the status-based message when the response is not JSON.
+        }
+        if (response.status === 429) reason = 'Too many shipping estimate requests. Please wait a few seconds and try again.';
+        if (response.status === 419) reason = 'Session expired or CSRF token mismatch. Please refresh the page and try again.';
+        throw new Error(reason);
+      }
+
+      const data = await response.json();
+      responseCoverage = data?.shop_owned ?? {
+        available: false,
+        reason: 'logistics_unavailable',
+        distance_km: null,
+        coverage_radius_km: null,
+      };
+      if (!data?.has_estimate) {
+        throw new Error(data?.reason || 'Shipping fee is currently unavailable.');
+      }
+
+      const estimate: ShippingEstimateData = {
+        distance_km: Number(data.distance_km || 0),
+        base_fee: Number(data.base_fee || 0),
+        min_fee: Number(data.min_fee || 0),
+        max_fee: Number(data.max_fee || 0),
+        distance_label: data.distance_label,
+        customer_notice: data.customer_notice,
+        pay_after_order_notice: data.pay_after_order_notice,
+        shop_owned: data.shop_owned,
+      };
+
+      if (requestId !== shippingEstimateRequestRef.current || signal?.aborted) return estimate;
+      setShippingEstimate(estimate);
+      setShopOwnedCoverage(responseCoverage);
+      setShippingEstimateReason(null);
+      return estimate;
+    } catch (error) {
+      if (requestId === shippingEstimateRequestRef.current && !signal?.aborted) {
+        const reason = error instanceof Error
+          ? error.message
+          : 'Network issue while calculating shipping estimate. Please check your connection and try again.';
+        setShippingEstimate(null);
+        setShopOwnedCoverage(responseCoverage ?? {
+          available: false,
+          reason: 'logistics_unavailable',
+          distance_km: null,
+          coverage_radius_km: null,
+        });
+        setShippingEstimateReason(reason);
+      }
+      throw error;
+    } finally {
+      if (requestId === shippingEstimateRequestRef.current && !signal?.aborted) {
+        setIsShippingEstimateLoading(false);
+      }
+    }
+  };
+
   useEffect(() => {
     if (!checkoutData || isPremiumPayment || isRepairPayment) {
       setShippingEstimate(null);
+      setShopOwnedCoverage(null);
       setIsShippingEstimateLoading(false);
       setShippingEstimateReason(null);
       return;
     }
 
-    const city = normalizeCitySelection(shippingCity);
+    const city = normalizeCityMunicipalitySelection(shippingRegion, shippingCity);
     const region = shippingRegion.trim();
 
     if (!city || !region) {
       setShippingEstimate(null);
+      setShopOwnedCoverage(null);
       setIsShippingEstimateLoading(false);
       setShippingEstimateReason('Enter city and region to calculate shipping fee.');
       return;
@@ -929,88 +1225,22 @@ const Payment: React.FC = () => {
 
     if (itemPids.length === 0) {
       setShippingEstimate(null);
+      setShopOwnedCoverage(null);
       setIsShippingEstimateLoading(false);
       setShippingEstimateReason('Unable to resolve product location for shipping estimate.');
       return;
     }
 
     setShippingEstimate(null);
+    setShopOwnedCoverage(null);
     setShippingEstimateReason(null);
     setIsShippingEstimateLoading(true);
 
     const controller = new AbortController();
-    const timer = window.setTimeout(async () => {
-      try {
-        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
-        const response = await fetch('/api/shipping/estimate', {
-          method: 'POST',
-          credentials: 'include',
-          headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json',
-            'X-CSRF-TOKEN': csrfToken,
-            'X-Requested-With': 'XMLHttpRequest',
-          },
-          body: JSON.stringify({
-            item_pids: itemPids,
-            shipping_address_line: shippingAddressLine,
-            shipping_barangay: shippingBarangay,
-            shipping_city: city,
-            shipping_region: region,
-            shipping_postal_code: shippingPostalCode,
-          }),
-          signal: controller.signal,
-        });
-
-        if (!response.ok) {
-          let serverReason = `Unable to fetch shipping estimate (HTTP ${response.status}).`;
-          try {
-            const errorData = await response.json();
-            serverReason = errorData?.reason || errorData?.message || serverReason;
-          } catch {
-            // Keep the default message when response is not JSON.
-          }
-
-          if (response.status === 429) {
-            serverReason = 'Too many shipping estimate requests. Please wait a few seconds and try again.';
-          }
-
-          if (response.status === 419) {
-            serverReason = 'Session expired or CSRF token mismatch. Please refresh the page and try again.';
-          }
-
-          setShippingEstimate(null);
-          setShippingEstimateReason(serverReason);
-          return;
-        }
-
-        const data = await response.json();
-        if (data?.has_estimate) {
-          setShippingEstimate({
-            distance_km: Number(data.distance_km || 0),
-            base_fee: Number(data.base_fee || 0),
-            min_fee: Number(data.min_fee || 0),
-            max_fee: Number(data.max_fee || 0),
-            distance_label: data.distance_label,
-            customer_notice: data.customer_notice,
-            pay_after_order_notice: data.pay_after_order_notice,
-          });
-          setShippingEstimateReason(null);
-        } else {
-          setShippingEstimate(null);
-          setShippingEstimateReason(data?.reason || 'Shipping fee is currently unavailable.');
-        }
-      } catch (error) {
-        if (!controller.signal.aborted) {
-          setShippingEstimate(null);
-          setShippingEstimateReason('Network issue while calculating shipping estimate. Please check your connection and try again.');
-          console.warn('Shipping estimate lookup failed:', error);
-        }
-      } finally {
-        if (!controller.signal.aborted) {
-          setIsShippingEstimateLoading(false);
-        }
-      }
+    const timer = window.setTimeout(() => {
+      requestShippingEstimate(checkoutData.address_id, controller.signal).catch((error) => {
+        if (!controller.signal.aborted) console.warn('Shipping estimate lookup failed:', error);
+      });
     }, 500);
 
     return () => {
@@ -1026,6 +1256,8 @@ const Payment: React.FC = () => {
     shippingCity,
     shippingRegion,
     shippingPostalCode,
+    shippingLatitude,
+    shippingLongitude,
   ]);
 
   useEffect(() => {
@@ -1064,6 +1296,10 @@ const Payment: React.FC = () => {
         const promoPayload: any = {
           items: promoPreviewItems,
           disable_voucher: !isVoucherSelectionEnabled,
+          shipping_fee: Math.max(0, toFiniteNumber(shippingEstimate?.max_fee ?? checkoutData.shipping_fee, 0)),
+          address_id: checkoutData.address_id,
+          shipping_latitude: shippingLatitude,
+          shipping_longitude: shippingLongitude,
         };
 
         if (selectedVoucherCampaignId !== null && selectedVoucherCampaignId > 0) {
@@ -1110,7 +1346,18 @@ const Payment: React.FC = () => {
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [checkoutData, isPremiumPayment, isRepairPayment, selectedVoucherCampaignId, appliedVoucherCode, isVoucherSelectionEnabled]);
+  }, [
+    checkoutData,
+    isPremiumPayment,
+    isRepairPayment,
+    selectedVoucherCampaignId,
+    appliedVoucherCode,
+    isVoucherSelectionEnabled,
+    shippingEstimate?.max_fee,
+    shippingLatitude,
+    shippingLongitude,
+    voucherPreviewRefreshKey,
+  ]);
 
   useEffect(() => {
     if (isPremiumPayment) {
@@ -1347,7 +1594,8 @@ const Payment: React.FC = () => {
       setIsLoadingPolicy(true);
 
       try {
-        const activeResponse = await fetch(`/api/policies/shops/${policyShopOwnerId}/active`, {
+        const policyFlow = isRepairPayment ? 'repair' : 'retail';
+        const activeResponse = await fetch(`/api/policies/shops/${policyShopOwnerId}/active?flow=${policyFlow}`, {
           headers: { Accept: 'application/json' },
           credentials: 'include',
         });
@@ -1363,7 +1611,12 @@ const Payment: React.FC = () => {
 
         const activePayload = await activeResponse.json();
         const resolvedVersionId = Number(activePayload?.data?.id || 0);
-        const resolvedSections = (activePayload?.data?.policy_sections_json || {}) as Record<string, string>;
+        const rawSections = (activePayload?.data?.policy_sections_json || {}) as Record<string, string>;
+        const resolvedSections = resolvePolicySectionsForFlow(
+          rawSections,
+          policyFlow,
+          String(activePayload?.data?.business_type_scope || ''),
+        );
 
         if (!cancelled) {
           setActivePolicyVersionId(Number.isFinite(resolvedVersionId) && resolvedVersionId > 0 ? resolvedVersionId : null);
@@ -1530,17 +1783,14 @@ const Payment: React.FC = () => {
   };
 
   useEffect(() => {
-    if (normalizeCitySelection(shippingCity) && !shippingRegion.trim()) {
-      setShippingRegion(DEFAULT_SHIPPING_REGION);
-    }
-  }, [shippingCity, shippingRegion]);
-
-  useEffect(() => {
     if (selectedVoucherCampaignId === null) {
       return;
     }
 
-    const availableVoucherIds = (promoPreview?.available_vouchers || []).map((voucher) => voucher.id);
+    const availableVoucherIds = [
+      ...(promoPreview?.available_vouchers || []),
+      ...(promoPreview?.voucher_code_suggestions || []),
+    ].map((voucher) => voucher.id);
     if (!availableVoucherIds.includes(selectedVoucherCampaignId)) {
       setSelectedVoucherCampaignId(null);
     }
@@ -1580,6 +1830,14 @@ const Payment: React.FC = () => {
 
       if (sheetCityDropdownRef.current && !sheetCityDropdownRef.current.contains(target)) {
         setIsSheetCityDropdownOpen(false);
+      }
+
+      if (desktopProvinceDropdownRef.current && !desktopProvinceDropdownRef.current.contains(target)) {
+        setIsDesktopProvinceDropdownOpen(false);
+      }
+
+      if (sheetProvinceDropdownRef.current && !sheetProvinceDropdownRef.current.contains(target)) {
+        setIsSheetProvinceDropdownOpen(false);
       }
     };
 
@@ -1637,46 +1895,58 @@ const Payment: React.FC = () => {
     setter(cleaned);
   };
 
-  // Save address to user account
-  const saveAddressToAccount = async (orderId: number | undefined) => {
-    if (!saveAddressForLater || !orderId) return;
+  const handlePhoneChange = (value: string) => {
+    setCustomerPhone(value.replace(/\D/g, '').slice(0, 11));
+  };
 
-    try {
-      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
-      
-      const addressData = {
+  // Persist the delivery address before creating an order so its address_id is current.
+  const saveAddressToAccount = async (): Promise<number | null> => {
+    if (!user || isPremiumPayment || isRepairPayment) return checkoutData?.address_id ?? null;
+    const normalizedShippingCity = normalizeCityMunicipalitySelection(shippingRegion, shippingCity);
+    if (!normalizedShippingCity) {
+      throw new Error('Please select a valid city or municipality before checkout.');
+    }
+
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+    const targetAddressId = checkoutData?.address_id ?? null;
+    const response = await fetch(targetAddressId ? `/api/user/addresses/${targetAddressId}` : '/api/user/addresses', {
+      method: targetAddressId ? 'PUT' : 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'X-CSRF-TOKEN': csrfToken,
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+      credentials: 'include',
+      body: JSON.stringify({
         name: customerName,
         phone: customerPhone,
         address_line: shippingAddressLine,
-        region: shippingRegion || DEFAULT_SHIPPING_REGION,
-        province: shippingRegion || DEFAULT_SHIPPING_REGION, // Use region as province
-        city: normalizeCitySelection(shippingCity) || shippingCity,
+        region: shippingRegion,
+        province: shippingRegion,
+        city: normalizedShippingCity,
         barangay: shippingBarangay,
         postal_code: shippingPostalCode,
-        is_default: true,
-      };
+        latitude: shippingLatitude,
+        longitude: shippingLongitude,
+        is_default: setAsDefaultAddress,
+      }),
+    });
 
-      const response = await fetch('/api/user/addresses', {
-        method: 'POST',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-          'X-CSRF-TOKEN': csrfToken,
-          'X-Requested-With': 'XMLHttpRequest',
-        },
-        credentials: 'include',
-        body: JSON.stringify(addressData),
-      });
-
-      if (response.ok) {
-        console.log('Address saved successfully');
-      } else {
-        console.warn('Failed to save address, but order was created');
-      }
-    } catch (error) {
-      console.warn('Unable to save address:', error);
-      // Don't fail - order was already created
+    if (!response.ok) {
+      throw new Error('Unable to save delivery address. Please try again.');
     }
+
+    const savedAddress: UserAddress | undefined = (await response.json()).address;
+    if (!savedAddress?.id) {
+      throw new Error('Unable to save delivery address. Please try again.');
+    }
+
+    setUserAddresses((prev) => targetAddressId
+      ? prev.map((address) => address.id === savedAddress.id ? savedAddress : address)
+      : [savedAddress, ...prev]);
+    setCheckoutData((prev) => (prev ? { ...prev, address_id: savedAddress.id } : prev));
+    return savedAddress.id;
   };
 
   const handleCreateNewPaymentSession = async () => {
@@ -1784,11 +2054,11 @@ const Payment: React.FC = () => {
       return;
     }
 
-    const computedShippingFee = !isPremiumPayment && !isRepairPayment
+    let computedShippingFee = !isPremiumPayment && !isRepairPayment
       ? Math.max(0, Number(shippingEstimate?.max_fee ?? 0))
       : 0;
     const normalizedSubtotalAmount = Math.max(0, toFiniteNumber(promoPreview?.final_subtotal, checkoutData.total_amount));
-    const normalizedShippingCity = normalizeCitySelection(shippingCity) || shippingCity;
+    const normalizedShippingCity = normalizeCityMunicipalitySelection(shippingRegion, shippingCity);
 
     // Validate required fields
     if (!customerEmail || !customerName || !customerPhone) {
@@ -1802,12 +2072,25 @@ const Payment: React.FC = () => {
       return;
     }
 
+    if (!/^\d{11}$/.test(customerPhone)) {
+      setPayError('Phone number must contain exactly 11 digits.');
+      Swal.fire({
+        icon: 'warning',
+        title: 'Invalid phone number',
+        text: 'Phone number must contain exactly 11 digits.',
+        confirmButtonColor: '#000000',
+      });
+      return;
+    }
+
     if (!shippingAddressLine || !shippingBarangay || !normalizedShippingCity || !shippingRegion || !shippingPostalCode) {
       setPayError('Please fill in all required shipping address fields.');
       Swal.fire({
         icon: 'warning',
         title: 'Missing Address',
-        text: 'Please fill in all required shipping address fields.',
+        text: shippingCity && !normalizedShippingCity
+          ? 'Please reselect a city or municipality for the selected province.'
+          : 'Please fill in all required shipping address fields.',
         confirmButtonColor: '#000000',
       });
       return;
@@ -1842,7 +2125,28 @@ const Payment: React.FC = () => {
     setPayError(null);
 
     try {
-      // First, create the order
+      const savedAddressId = await saveAddressToAccount();
+
+      if (!isPremiumPayment && !isRepairPayment) {
+        try {
+          const refreshedEstimate = await requestShippingEstimate(savedAddressId);
+          computedShippingFee = Math.max(0, Number(refreshedEstimate.max_fee || 0));
+          if (computedShippingFee <= 0) throw new Error('Shipping fee is unavailable.');
+        } catch {
+          const reason = 'Your address was saved, but shipping could not be refreshed. Please retry checkout.';
+          setPayError(reason);
+          await Swal.fire({
+            icon: 'warning',
+            title: 'Shipping Refresh Needed',
+            text: reason,
+            confirmButtonColor: '#000000',
+          });
+          setIsProcessing(false);
+          return;
+        }
+      }
+
+      // Create the order only after its delivery address is persisted.
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
       
       const orderData = {
@@ -1853,9 +2157,9 @@ const Payment: React.FC = () => {
         customer_email: customerEmail,
         customer_phone: customerPhone,
         shipping_address: `${shippingAddressLine}, ${shippingBarangay}, ${normalizedShippingCity}, ${shippingRegion} ${shippingPostalCode}`,
-        address_id: checkoutData.address_id ?? null,
+        address_id: savedAddressId,
         shipping_region: shippingRegion,
-        shipping_province: null,
+        shipping_province: shippingRegion,
         shipping_city: normalizedShippingCity,
         shipping_barangay: shippingBarangay,
         shipping_postal_code: shippingPostalCode,
@@ -1891,9 +2195,6 @@ const Payment: React.FC = () => {
 
       const orderId = orderResult.order?.id || orderResult.order_id;
       sessionStorage.setItem('pendingOrderId', orderId);
-
-      // Save address if checkbox is checked
-      await saveAddressToAccount(orderId);
 
       // Create a dedicated payment retry session that also persists fresh link metadata.
       const response = await fetch(`/api/orders/${orderId}/retry-payment-session`, {
@@ -1948,13 +2249,22 @@ const Payment: React.FC = () => {
 
   const rawSubtotal = Math.max(0, toFiniteNumber(promoPreview?.final_subtotal, checkoutData.total_amount));
   const checkoutShipping = Math.max(0, toFiniteNumber(checkoutData.shipping_fee, 0));
-  const selectedCity = normalizeCitySelection(shippingCity);
+  const selectedCity = normalizeCityMunicipalitySelection(shippingRegion, shippingCity);
   const hasSelectedCity = Boolean(selectedCity);
   const shipping = !isPremiumPayment && !isRepairPayment
     ? (hasSelectedCity
       ? Math.max(0, Number(shippingEstimate?.max_fee ?? checkoutShipping ?? 0))
       : 0)
     : 0;
+  const previewRawShippingFee = toFiniteNumber(promoPreview?.raw_shipping_fee, Number.NaN);
+  const hasMatchingShippingPreview = Number.isFinite(previewRawShippingFee)
+    && Math.abs(previewRawShippingFee - shipping) < 0.01;
+  const shippingVoucherDiscount = !isPremiumPayment && !isRepairPayment && hasMatchingShippingPreview
+    ? Math.min(shipping, Math.max(0, toFiniteNumber(promoPreview?.shipping_voucher_discount, 0)))
+    : 0;
+  const discountedShipping = !isPremiumPayment && !isRepairPayment && hasMatchingShippingPreview
+    ? Math.min(shipping, Math.max(0, toFiniteNumber(promoPreview?.discounted_shipping_fee, shipping)))
+    : shipping;
   const parsedVatRate = toFiniteNumber(promoPreview?.vat_rate, toFiniteNumber(checkoutData.vat_rate, 12));
   const vatRatePercent = Number.isFinite(parsedVatRate) && parsedVatRate >= 0 ? parsedVatRate : 12;
   const hasStoredVat = (promoPreview?.vat_amount !== undefined && promoPreview?.vat_amount !== null)
@@ -1980,8 +2290,8 @@ const Payment: React.FC = () => {
     ? normalizedRawSubtotal
     : subtotal;
   const total = !isPremiumPayment && !isRepairPayment
-    ? productTotalInclusive + shipping
-    : subtotal + shipping;
+    ? productTotalInclusive + discountedShipping
+    : subtotal + discountedShipping;
   const vatLabel = `VAT (${vatRatePercent}%)`;
   const vatDisplay = `₱${vatAmount.toLocaleString()}`;
   const voucherDiscountAmount = !isPremiumPayment && !isRepairPayment
@@ -1990,6 +2300,9 @@ const Payment: React.FC = () => {
   const appliedVoucherLabel = promoPreview?.applied_voucher?.name
     || promoPreview?.applied_voucher?.code
     || 'Voucher';
+  const shippingVoucherLabel = promoPreview?.applied_voucher?.target === 'shipping'
+    ? (promoPreview.applied_voucher.name || promoPreview.applied_voucher.code || 'Shipping voucher')
+    : 'Shipping voucher';
   const availableVouchers = promoPreview?.available_vouchers || [];
   const voucherCodeSuggestions = promoPreview?.voucher_code_suggestions || [];
   const voucherSuggestionMap = new Map<number, AvailableVoucherOption>();
@@ -2015,23 +2328,61 @@ const Payment: React.FC = () => {
     return candidateCode !== '' && candidateCode === normalizeVoucherCode(voucherCodeInput);
   });
   const voucherErrorMessage = promoPreview?.voucher_error || null;
+  const shippingVoucherErrorMessage = promoPreview?.shipping_voucher_error || null;
   const showVoucherSuggestionDropdown = isVoucherSuggestionOpen && !hasExactVoucherSuggestionMatch;
   const itemCount = checkoutData.items.reduce((sum, item) => sum + Math.max(1, Math.trunc(toFiniteNumber(item.qty, 1))), 0);
   const hasShippingEstimate = Boolean(shippingEstimate) && hasSelectedCity;
   const shippingSummaryValue = hasSelectedCity
-    ? (hasShippingEstimate ? `₱${shipping.toLocaleString()}` : (isShippingEstimateLoading ? 'Calculating...' : 'Unavailable'))
-    : 'Select a city';
+    ? (hasShippingEstimate ? `₱${discountedShipping.toLocaleString()}` : (isShippingEstimateLoading ? 'Calculating...' : 'Unavailable'))
+    : '';
   const isShippingCalculating = hasSelectedCity && isShippingEstimateLoading;
   const shippingCarrierNote = hasShippingEstimate
     ? ''
-    : (hasSelectedCity
-      ? (shippingEstimateReason || 'Complete your delivery address to calculate shipping.')
-      : 'Select a city to calculate shipping.');
+    : (hasSelectedCity ? (shippingEstimateReason || 'Complete your delivery address to calculate shipping.') : '');
   const shippingPayLaterNotice = hasShippingEstimate
     ? ''
-    : (hasSelectedCity
-      ? 'Shipping fee must be calculated before you can continue to payment.'
-      : 'Shipping fee will appear after you select a city.');
+    : (hasSelectedCity ? 'Shipping fee must be calculated before you can continue to payment.' : '');
+  const selectedSavedAddress = userAddresses.find((address) => address.id === checkoutData.address_id);
+  const shopOwnedCoverageDetails = [
+    shopOwnedCoverage?.distance_km != null ? `${shopOwnedCoverage.distance_km.toLocaleString()} km away` : null,
+    shopOwnedCoverage?.coverage_radius_km != null ? `${shopOwnedCoverage.coverage_radius_km.toLocaleString()} km coverage radius` : null,
+  ].filter(Boolean).join(' · ');
+  const shopOwnedCoverageLabel = shopOwnedCoverage?.available
+    ? 'Eligible for Shop-owned Logistics'
+    : shopOwnedCoverage?.reason === 'outside_coverage'
+      ? 'Outside Shop-owned coverage'
+      : shopOwnedCoverage?.reason === 'address_needs_pin'
+        ? 'Pin this address to check Shop-owned coverage'
+        : shopOwnedCoverage?.reason === 'shop_needs_pin'
+          ? 'Shop location is not pinned'
+          : shopOwnedCoverage
+            ? 'Shop-owned logistics is unavailable'
+            : '';
+  const shopOwnedCoverageNotice = shopOwnedCoverageLabel ? (
+    <div
+      role="status"
+      aria-live="polite"
+      className={`mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border px-3 py-2 text-xs leading-relaxed ${
+        shopOwnedCoverage?.available
+          ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+          : shopOwnedCoverage?.reason === 'outside_coverage'
+            ? 'border-amber-200 bg-amber-50 text-amber-900'
+            : 'border-gray-200 bg-gray-50 text-gray-700'
+      }`}
+    >
+      <span className="font-medium">{shopOwnedCoverageLabel}</span>
+      {shopOwnedCoverageDetails && <span>{shopOwnedCoverageDetails}</span>}
+      {shopOwnedCoverage?.reason === 'address_needs_pin' && selectedSavedAddress && (
+        <button
+          type="button"
+          onClick={() => handleEditAddressFromList(selectedSavedAddress, true)}
+          className="font-semibold underline underline-offset-2"
+        >
+          Repin address
+        </button>
+      )}
+    </div>
+  ) : null;
   const fullShippingAddress = [shippingAddressLine, shippingBarangay, shippingCity, shippingRegion]
     .filter(Boolean)
     .join(', ');
@@ -2071,10 +2422,10 @@ const Payment: React.FC = () => {
       `}</style>
       <Head title="Payment" />
 
-      {!isPremiumPayment && <div className="hidden xl:block"><Navigation /></div>}
+      {!isPremiumPayment && <Navigation />}
 
       <main className={`flex-1 ${!isPremiumPayment ? 'xl:pt-28' : ''}`}>
-        <div className="max-w-6xl mx-auto py-0 xl:py-10 px-4 xl:px-4 text-black">
+        <div className="max-w-7xl mx-auto py-0 xl:py-10 px-4 xl:px-8 text-black">
           {paymentRecovery && (
             <div className="mx-4 xl:mx-0 mb-4 rounded-lg border border-amber-300 bg-amber-50 p-4">
               <p className="text-sm font-medium text-amber-900 mb-2">
@@ -2175,12 +2526,16 @@ const Payment: React.FC = () => {
                       {isShippingCalculating
                         ? 'Calculating...'
                         : hasShippingEstimate
-                          ? `₱${shipping.toLocaleString()}`
+                          ? `₱${discountedShipping.toLocaleString()}`
                           : 'Unavailable'}
                     </span>
                   </span>
                 </div>
+                {shippingVoucherDiscount > 0 && (
+                  <p className="mt-1 text-right text-xs text-emerald-700">Shipping voucher saved ₱{shippingVoucherDiscount.toLocaleString()}</p>
+                )}
               </div>
+              {shopOwnedCoverageNotice}
             </div>
 
             <div className="mt-2 bg-white px-4 py-4 md:px-6 md:py-5 border-y border-gray-200">
@@ -2207,6 +2562,12 @@ const Payment: React.FC = () => {
                     <span className="font-semibold text-emerald-700">-₱{voucherDiscountAmount.toLocaleString()}</span>
                   </div>
                 )}
+                {!isPromoPreviewLoading && shippingVoucherDiscount > 0 && (
+                  <div className="flex items-center justify-between pl-3 text-xs md:text-sm">
+                    <span className="text-emerald-700 font-semibold">{shippingVoucherLabel}</span>
+                    <span className="font-semibold text-emerald-700">-₱{shippingVoucherDiscount.toLocaleString()}</span>
+                  </div>
+                )}
 
                 <div className="pt-2">
                   <div className="flex items-start justify-between gap-3">
@@ -2218,8 +2579,15 @@ const Payment: React.FC = () => {
                       <span>{shippingSummaryValue}</span>
                     </span>
                   </div>
+                  {shippingVoucherDiscount > 0 && (
+                    <div className="mt-1 flex items-center justify-between text-xs text-gray-500">
+                      <span>Original shipping</span>
+                      <span className="line-through">₱{shipping.toLocaleString()}</span>
+                    </div>
+                  )}
                   {shippingCarrierNote && <p className="text-xs text-gray-500 mt-1 leading-relaxed">{shippingCarrierNote}</p>}
                   {shippingPayLaterNotice && <p className="text-xs text-gray-500 mt-1 leading-relaxed">{shippingPayLaterNotice}</p>}
+                  {shippingVoucherErrorMessage && <p className="text-xs font-medium text-red-600 mt-1 leading-relaxed">{shippingVoucherErrorMessage}</p>}
                 </div>
 
                 <div className="flex items-center justify-between pt-0.5">
@@ -2320,13 +2688,19 @@ const Payment: React.FC = () => {
               </div>
             )}
 
-            {isAddressSheetOpen && (
-              <div className="fixed inset-0 z-40 bg-white overflow-y-auto">
+            {isAddressSheetOpen && createPortal((
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="address-sheet-title"
+                className="fixed inset-0 z-[100001] overflow-y-auto bg-white xl:left-auto xl:w-[min(42rem,100%)] xl:border-l xl:border-gray-200 xl:shadow-2xl"
+              >
                 <div className="sticky top-0 z-10 bg-white border-b border-gray-200 px-4 py-4 flex items-center justify-between">
                   <button
                     type="button"
                     onClick={() => {
                       if (addressSheetMode === 'form') {
+                        restoreSelectedAddress();
                         setEditingAddressId(null);
                         setAddressSheetMode('list');
                         return;
@@ -2338,9 +2712,15 @@ const Payment: React.FC = () => {
                   >
                     &larr;
                   </button>
-                  <h2 className="text-2xl font-semibold text-black">{addressSheetMode === 'form' ? (editingAddressId ? 'Edit address' : 'Add address') : 'Your addresses'}</h2>
+                  <h2 id="address-sheet-title" className="text-2xl font-semibold text-black">{addressSheetMode === 'form' ? (editingAddressId ? 'Edit address' : 'Add address') : 'Your addresses'}</h2>
                   <div className="w-6" />
                 </div>
+
+                {addressSaveStatus && (
+                  <p aria-live="polite" className="border-b border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
+                    {addressSaveStatus}
+                  </p>
+                )}
 
                 {addressSheetMode === 'list' ? (
                   <>
@@ -2348,6 +2728,8 @@ const Payment: React.FC = () => {
                       type="button"
                       onClick={() => {
                         setEditingAddressId(null);
+                        setAddressSaveStatus(null);
+                        setSetAsDefaultAddress(false);
                         setAddressSheetMode('form');
                       }}
                       className="w-full px-4 py-5 border-b border-gray-200 flex items-center justify-between text-left"
@@ -2398,6 +2780,18 @@ const Payment: React.FC = () => {
                                 >
                                   Edit
                                 </button>
+                                {(addr.latitude == null || addr.longitude == null) && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleEditAddressFromList(addr, true);
+                                    }}
+                                    className="shrink-0 text-sm font-semibold text-blue-700 underline"
+                                  >
+                                    Repin address
+                                  </button>
+                                )}
                               </div>
                             </div>
                           );
@@ -2435,7 +2829,87 @@ const Payment: React.FC = () => {
                       onChange={e => setShippingBarangay(e.target.value)}
                       className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
                     />
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                      <div ref={sheetProvinceDropdownRef} className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setIsSheetProvinceDropdownOpen((prev) => !prev)}
+                          onKeyDown={(event) => handleDropdownTriggerKeyDown(event, setIsSheetProvinceDropdownOpen, sheetProvinceDropdownRef)}
+                          className="flex w-full items-center justify-between rounded border border-gray-300 bg-white px-4 py-3 text-left"
+                          aria-label="Province"
+                          aria-haspopup="listbox"
+                          aria-expanded={isSheetProvinceDropdownOpen}
+                        >
+                          <span className={shippingRegion ? 'text-black' : 'text-gray-500'}>{shippingRegion || 'Select Province'}</span>
+                          <span className={`text-gray-500 transition-transform ${isSheetProvinceDropdownOpen ? 'rotate-180' : ''}`}>▾</span>
+                        </button>
+                        {isSheetProvinceDropdownOpen && (
+                          <div
+                            role="listbox"
+                            onKeyDown={(event) => handleListboxKeyDown(event, setIsSheetProvinceDropdownOpen, sheetProvinceDropdownRef)}
+                            className="hide-scrollbar absolute left-0 right-0 top-full z-40 mt-1 max-h-56 overflow-y-auto rounded border border-gray-300 bg-white shadow-lg"
+                          >
+                            {PHILIPPINE_LOCATIONS.map((province) => (
+                              <button
+                                key={province.name}
+                                type="button"
+                                role="option"
+                                aria-selected={shippingRegion === province.name}
+                                onClick={() => handleProvinceChange(province.name)}
+                                className={`w-full border-b border-gray-100 px-4 py-2 text-left text-sm hover:bg-gray-50 last:border-b-0 ${shippingRegion === province.name ? 'bg-gray-50 font-medium text-black' : 'text-black'}`}
+                              >
+                                {province.name}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div ref={sheetCityDropdownRef} className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setIsSheetCityDropdownOpen((prev) => !prev)}
+                          onKeyDown={(event) => handleDropdownTriggerKeyDown(event, setIsSheetCityDropdownOpen, sheetCityDropdownRef)}
+                          disabled={!shippingRegion}
+                          className="flex w-full items-center justify-between rounded border border-gray-300 bg-white px-4 py-3 text-left disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
+                          title="City/Municipality"
+                          aria-label="City/Municipality"
+                          aria-haspopup="listbox"
+                          aria-expanded={isSheetCityDropdownOpen}
+                        >
+                          <span className={shippingCity ? 'text-black' : 'text-gray-500'}>{shippingCity || 'Select City/Municipality'}</span>
+                          <span className={`text-gray-500 transition-transform ${isSheetCityDropdownOpen ? 'rotate-180' : ''}`}>▾</span>
+                        </button>
+
+                        {isSheetCityDropdownOpen && (
+                          <div
+                            role="listbox"
+                            onKeyDown={(event) => handleListboxKeyDown(event, setIsSheetCityDropdownOpen, sheetCityDropdownRef)}
+                            className="hide-scrollbar absolute left-0 right-0 top-full z-40 mt-1 max-h-56 overflow-y-auto rounded border border-gray-300 bg-white shadow-lg"
+                          >
+                            <button
+                              type="button"
+                              role="option"
+                              aria-selected={!shippingCity}
+                              onClick={() => handleCityChange('')}
+                              className="w-full border-b border-gray-100 px-4 py-2 text-left text-sm text-gray-600 hover:bg-gray-50"
+                            >
+                              Select City/Municipality
+                            </button>
+                            {cityMunicipalityOptions.map((city) => (
+                              <button
+                                key={city}
+                                type="button"
+                                role="option"
+                                aria-selected={shippingCity === city}
+                                onClick={() => handleCityChange(city)}
+                                className={`w-full border-b border-gray-100 px-4 py-2 text-left text-sm hover:bg-gray-50 last:border-b-0 ${shippingCity === city ? 'bg-gray-50 font-medium text-black' : 'text-black'}`}
+                              >
+                                {city}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                       <input
                         type="text"
                         placeholder="Postal code"
@@ -2443,56 +2917,37 @@ const Payment: React.FC = () => {
                         onChange={e => handlePostalCodeChange(e.target.value, setShippingPostalCode)}
                         className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
                       />
-                      <div ref={sheetCityDropdownRef} className="relative">
-                        <button
-                          type="button"
-                          onClick={() => setIsSheetCityDropdownOpen((prev) => !prev)}
-                          className="flex w-full items-center justify-between rounded border border-gray-300 bg-white px-4 py-3 text-left"
-                          title="City"
-                          aria-label="City"
-                          aria-haspopup="listbox"
-                        >
-                          <span className={shippingCity ? 'text-black' : 'text-gray-500'}>{shippingCity || 'Select City'}</span>
-                          <span className={`text-gray-500 transition-transform ${isSheetCityDropdownOpen ? 'rotate-180' : ''}`}>▾</span>
-                        </button>
-
-                        {isSheetCityDropdownOpen && (
-                          <div className="hide-scrollbar absolute left-0 right-0 top-full z-40 mt-1 max-h-56 overflow-y-auto rounded border border-gray-300 bg-white shadow-lg">
-                            <button
-                              type="button"
-                              onClick={() => handleCityChange('')}
-                              className="w-full border-b border-gray-100 px-4 py-2 text-left text-sm text-gray-600 hover:bg-gray-50"
-                            >
-                              Select City
-                            </button>
-                            {PH_CITY_OPTIONS.map((cityOption) => (
-                              <button
-                                key={cityOption.value}
-                                type="button"
-                                onClick={() => handleCityChange(cityOption.value)}
-                                className={`w-full border-b border-gray-100 px-4 py-2 text-left text-sm hover:bg-gray-50 last:border-b-0 ${shippingCity === cityOption.value ? 'bg-gray-50 font-medium text-black' : 'text-black'}`}
-                              >
-                                {cityOption.label}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
                     </div>
                     <input
                       type="tel"
                       placeholder="Phone"
                       value={customerPhone}
-                      onChange={e => setCustomerPhone(e.target.value)}
+                      onChange={e => handlePhoneChange(e.target.value)}
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      maxLength={11}
                       className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
                     />
+
+                    <div ref={addressMapRef}>
+                      <p className="mb-2 text-sm text-gray-600">
+                        Pin the exact delivery entrance, then check the address details above.
+                      </p>
+                      <CustomerAddressMapPicker
+                        value={shippingLatitude !== null && shippingLongitude !== null
+                          ? { latitude: shippingLatitude, longitude: shippingLongitude }
+                          : null}
+                        onChange={handleAddressMapChange}
+                      />
+                    </div>
 
                     <button
                       type="button"
                       onClick={handleUseAddressFromForm}
-                      className="w-full mt-2 rounded-lg bg-gray-900 py-3 text-base font-semibold text-white"
+                      disabled={isAddressSaving}
+                      className="w-full mt-2 rounded-lg bg-gray-900 py-3 text-base font-semibold text-white disabled:cursor-not-allowed disabled:bg-gray-400"
                     >
-                      {editingAddressId ? 'Save changes' : 'Use this address'}
+                      {isAddressSaving ? 'Saving address...' : editingAddressId ? 'Save changes' : 'Use this address'}
                     </button>
 
                     {editingAddressId && (
@@ -2508,7 +2963,7 @@ const Payment: React.FC = () => {
                 )}
 
               </div>
-            )}
+            ), document.body)}
           </div>
 
           <div className="hidden xl:grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
@@ -2534,7 +2989,18 @@ const Payment: React.FC = () => {
 
               {/* Delivery Section */}
               <div className="mb-10">
-                {!isPremiumPayment && <h2 className="text-xl font-bold text-black mb-5">Delivery</h2>}
+                {!isPremiumPayment && (
+                  <div className="mb-5 flex items-center justify-between gap-4">
+                    <h2 className="text-xl font-bold text-black">Delivery</h2>
+                    <button
+                      type="button"
+                      onClick={openAddressSheet}
+                      className="rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-black transition hover:bg-gray-50"
+                    >
+                      Manage addresses
+                    </button>
+                  </div>
+                )}
                 <div className="space-y-5">
                   {/* First Name & Last Name */}
                   <div className="grid grid-cols-2 gap-5">
@@ -2588,10 +3054,96 @@ const Payment: React.FC = () => {
                     </div>
                   )}
 
-                  {/* Postal Code, City, and Region */}
+                  {/* Province, city/municipality, and postal code */}
                   {!isPremiumPayment && (
                     <>
-                      <div className="grid grid-cols-2 gap-5">
+                      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+                        <div>
+                          <label className="block text-sm font-medium text-black mb-2.5">Province</label>
+                          <div ref={desktopProvinceDropdownRef} className="relative">
+                            <button
+                              type="button"
+                              onClick={() => setIsDesktopProvinceDropdownOpen((prev) => !prev)}
+                              onKeyDown={(event) => handleDropdownTriggerKeyDown(event, setIsDesktopProvinceDropdownOpen, desktopProvinceDropdownRef)}
+                              className="flex w-full items-center justify-between rounded border border-gray-300 bg-white px-4 py-3 text-left text-base"
+                              aria-label="Province"
+                              aria-haspopup="listbox"
+                              aria-expanded={isDesktopProvinceDropdownOpen}
+                            >
+                              <span className={shippingRegion ? 'text-black' : 'text-gray-500'}>{shippingRegion || 'Select Province'}</span>
+                              <span className={`text-gray-500 transition-transform ${isDesktopProvinceDropdownOpen ? 'rotate-180' : ''}`}>▾</span>
+                            </button>
+                            {isDesktopProvinceDropdownOpen && (
+                              <div
+                                role="listbox"
+                                onKeyDown={(event) => handleListboxKeyDown(event, setIsDesktopProvinceDropdownOpen, desktopProvinceDropdownRef)}
+                                className="hide-scrollbar absolute left-0 right-0 top-full z-[1001] mt-1 max-h-56 overflow-y-auto rounded border border-gray-300 bg-white shadow-lg"
+                              >
+                                {PHILIPPINE_LOCATIONS.map((province) => (
+                                  <button
+                                    key={province.name}
+                                    type="button"
+                                    role="option"
+                                    aria-selected={shippingRegion === province.name}
+                                    onClick={() => handleProvinceChange(province.name)}
+                                    className={`w-full border-b border-gray-100 px-4 py-2 text-left text-sm hover:bg-gray-50 last:border-b-0 ${shippingRegion === province.name ? 'bg-gray-50 font-medium text-black' : 'text-black'}`}
+                                  >
+                                    {province.name}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-black mb-2.5">City/Municipality</label>
+                          <div ref={desktopCityDropdownRef} className="relative">
+                            <button
+                              type="button"
+                              onClick={() => setIsDesktopCityDropdownOpen((prev) => !prev)}
+                              onKeyDown={(event) => handleDropdownTriggerKeyDown(event, setIsDesktopCityDropdownOpen, desktopCityDropdownRef)}
+                              disabled={!shippingRegion}
+                              className="flex w-full items-center justify-between rounded border border-gray-300 bg-white px-4 py-3 text-left text-base disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
+                              title="City/Municipality"
+                              aria-label="City/Municipality"
+                              aria-haspopup="listbox"
+                              aria-expanded={isDesktopCityDropdownOpen}
+                            >
+                              <span className={shippingCity ? 'text-black' : 'text-gray-500'}>{shippingCity || 'Select City/Municipality'}</span>
+                              <span className={`text-gray-500 transition-transform ${isDesktopCityDropdownOpen ? 'rotate-180' : ''}`}>▾</span>
+                            </button>
+
+                            {isDesktopCityDropdownOpen && (
+                              <div
+                                role="listbox"
+                                onKeyDown={(event) => handleListboxKeyDown(event, setIsDesktopCityDropdownOpen, desktopCityDropdownRef)}
+                                className="hide-scrollbar absolute left-0 right-0 top-full z-[1001] mt-1 max-h-56 overflow-y-auto rounded border border-gray-300 bg-white shadow-lg"
+                              >
+                                <button
+                                  type="button"
+                                  role="option"
+                                  aria-selected={!shippingCity}
+                                  onClick={() => handleCityChange('')}
+                                  className="w-full border-b border-gray-100 px-4 py-2 text-left text-sm text-gray-600 hover:bg-gray-50"
+                                >
+                                  Select City/Municipality
+                                </button>
+                                {cityMunicipalityOptions.map((city) => (
+                                  <button
+                                    key={city}
+                                    type="button"
+                                    role="option"
+                                    aria-selected={shippingCity === city}
+                                    onClick={() => handleCityChange(city)}
+                                    className={`w-full border-b border-gray-100 px-4 py-2 text-left text-sm hover:bg-gray-50 last:border-b-0 ${shippingCity === city ? 'bg-gray-50 font-medium text-black' : 'text-black'}`}
+                                  >
+                                    {city}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
                         <div>
                           <label className="block text-sm font-medium text-black mb-2.5">Postal code</label>
                           <input
@@ -2603,46 +3155,22 @@ const Payment: React.FC = () => {
                             className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white text-base"
                           />
                         </div>
-                        <div>
-                          <label className="block text-sm font-medium text-black mb-2.5">City</label>
-                          <div ref={desktopCityDropdownRef} className="relative">
-                            <button
-                              type="button"
-                              onClick={() => setIsDesktopCityDropdownOpen((prev) => !prev)}
-                              className="flex w-full items-center justify-between rounded border border-gray-300 bg-white px-4 py-3 text-left text-base"
-                              title="City"
-                              aria-label="City"
-                              aria-haspopup="listbox"
-                            >
-                              <span className={shippingCity ? 'text-black' : 'text-gray-500'}>{shippingCity || 'Select City'}</span>
-                              <span className={`text-gray-500 transition-transform ${isDesktopCityDropdownOpen ? 'rotate-180' : ''}`}>▾</span>
-                            </button>
-
-                            {isDesktopCityDropdownOpen && (
-                              <div className="hide-scrollbar absolute left-0 right-0 top-full z-40 mt-1 max-h-56 overflow-y-auto rounded border border-gray-300 bg-white shadow-lg">
-                                <button
-                                  type="button"
-                                  onClick={() => handleCityChange('')}
-                                  className="w-full border-b border-gray-100 px-4 py-2 text-left text-sm text-gray-600 hover:bg-gray-50"
-                                >
-                                  Select City
-                                </button>
-                                {PH_CITY_OPTIONS.map((cityOption) => (
-                                  <button
-                                    key={cityOption.value}
-                                    type="button"
-                                    onClick={() => handleCityChange(cityOption.value)}
-                                    className={`w-full border-b border-gray-100 px-4 py-2 text-left text-sm hover:bg-gray-50 last:border-b-0 ${shippingCity === cityOption.value ? 'bg-gray-50 font-medium text-black' : 'text-black'}`}
-                                  >
-                                    {cityOption.label}
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </div>
                       </div>
                     </>
+                  )}
+
+                  {!isPremiumPayment && (
+                    <div>
+                      <p className="mb-2 text-sm text-gray-600">
+                        Pin the exact delivery entrance, then check the address details above.
+                      </p>
+                      <CustomerAddressMapPicker
+                        value={shippingLatitude !== null && shippingLongitude !== null
+                          ? { latitude: shippingLatitude, longitude: shippingLongitude }
+                          : null}
+                        onChange={handleAddressMapChange}
+                      />
+                    </div>
                   )}
 
                   {/* Phone */}
@@ -2652,23 +3180,267 @@ const Payment: React.FC = () => {
                       type="tel"
                       placeholder="Phone"
                       value={customerPhone}
-                      onChange={e => setCustomerPhone(e.target.value)}
+                      onChange={e => handlePhoneChange(e.target.value)}
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      maxLength={11}
                       className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white text-base"
                     />
                   </div>
 
-                  {/* Save info */}
-                  <label className="flex items-center gap-3 pt-2">
-                    <input 
-                      type="checkbox" 
-                      title="Save my information for faster checkout"
-                      aria-label="Save my information for faster checkout"
-                      checked={saveAddressForLater}
-                      onChange={e => setSaveAddressForLater(e.target.checked)}
-                      className="w-5 h-5" 
-                    />
-                    <span className="text-base text-black">Save my information for a faster checkout</span>
-                  </label>
+                  <section
+                    data-testid="desktop-voucher-section"
+                    className="mt-2 w-full rounded-xl border border-[#cacacb] bg-white p-2 shadow-none"
+                  >
+                    <div className="space-y-1.5">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <label htmlFor="desktop-voucher-code" className="block text-xs font-medium uppercase tracking-wide text-[#111111]">
+                            Voucher
+                          </label>
+                          <p className="mt-0.5 text-xs text-[#707072]">Type a voucher code or choose from suggestions.</p>
+                        </div>
+                        {isPromoPreviewLoading && (
+                          <span data-testid="desktop-voucher-loading" role="status" aria-live="polite" className="shrink-0 pt-0.5 text-xs text-[#707072]">
+                            Checking vouchers...
+                          </span>
+                        )}
+                      </div>
+
+                        <div ref={voucherInputContainerRef} className="relative">
+                          <div className="flex items-stretch">
+                            <input
+                              type="text"
+                              id="desktop-voucher-code"
+                              aria-label="Voucher code"
+                              aria-expanded={showVoucherSuggestionDropdown}
+                              value={voucherCodeInput}
+                              onFocus={() => setIsVoucherSuggestionOpen(true)}
+                              onClick={() => setIsVoucherSuggestionOpen(true)}
+                              onChange={(e) => {
+                                const nextVoucherCode = e.target.value.toUpperCase();
+                                const normalizedNextVoucherCode = normalizeVoucherCode(nextVoucherCode);
+
+                                setSelectedVoucherCampaignId(null);
+                                setHasVoucherInputInteraction(true);
+                                setVoucherCodeInput(nextVoucherCode);
+
+                                if (normalizedNextVoucherCode === '') {
+                                  setAppliedVoucherCode('');
+                                  setIsVoucherSelectionEnabled(false);
+                                }
+
+                                setIsVoucherSuggestionOpen(true);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  handleApplyVoucherCode();
+                                }
+
+                                if (e.key === 'Escape') {
+                                  setIsVoucherSuggestionOpen(false);
+                                }
+                              }}
+                              placeholder="Enter voucher code"
+                              className="h-11 min-w-0 flex-1 rounded-l-xl rounded-r-none border border-[#cacacb] bg-[#f5f5f5] px-3 text-sm text-[#111111] outline-none transition focus:border-gray-900 focus:bg-white focus:ring-2 focus:ring-gray-200"
+                            />
+
+                            <button
+                              type="button"
+                              onClick={handleApplyVoucherCode}
+                              className="min-h-11 w-24 shrink-0 rounded-r-xl rounded-l-none bg-gray-900 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2"
+                            >
+                              Apply
+                            </button>
+                          </div>
+
+                          {showVoucherSuggestionDropdown && (
+                            <div
+                              data-testid="desktop-voucher-suggestions"
+                              role="listbox"
+                              aria-label="Voucher suggestions"
+                              onKeyDown={(event) => {
+                                if (event.key === 'Escape') {
+                                  event.preventDefault();
+                                  setIsVoucherSuggestionOpen(false);
+                                }
+                              }}
+                              className="hide-scrollbar absolute left-0 right-0 top-full z-40 mt-1 max-h-[min(20rem,calc(100vh-12rem))] overflow-y-auto rounded-xl border border-[#cacacb] bg-white p-1 shadow-none"
+                            >
+                              {filteredVoucherCodeSuggestions.length > 0 ? (
+                                <div className="space-y-1">
+                                  {filteredVoucherCodeSuggestions.map((voucher) => {
+                                    const displayName = voucher.name || voucher.code || 'Voucher';
+                                    const displayCode = normalizeVoucherCode(String(voucher.code || voucher.name || ''));
+                                    const isEligible = voucher.eligibility === 'eligible';
+                                    const canUseVoucher = voucher.claim_status === 'claimed' && isEligible;
+                                    const isClaiming = claimingVoucherCampaignId === voucher.id;
+                                    const minimumSpend = toFiniteNumber(voucher.min_spend);
+                                    const eligibleSubtotal = toFiniteNumber(voucher.eligible_subtotal);
+                                    const remainingSpend = toFiniteNumber(voucher.remaining_spend);
+                                    const spendProgress = minimumSpend > 0
+                                      ? Math.min(100, (eligibleSubtotal / minimumSpend) * 100)
+                                      : 100;
+
+                                    return (
+                                      <div
+                                        key={voucher.id}
+                                        data-testid="voucher-suggestion-card"
+                                        role="option"
+                                        tabIndex={voucher.claim_status === 'redeemed' ? -1 : 0}
+                                        aria-selected={selectedVoucherCampaignId === voucher.id}
+                                        aria-disabled={!canUseVoucher && !voucher.can_claim}
+                                        onKeyDown={(event) => {
+                                          if ((event.key === 'Enter' || event.key === ' ') && canUseVoucher) {
+                                            event.preventDefault();
+                                            handleUseVoucher(voucher);
+                                          }
+                                        }}
+                                        className={'group relative overflow-hidden rounded-xl border text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 ' + (selectedVoucherCampaignId === voucher.id ? 'border-gray-900 bg-[#f5f5f5]' : 'border-[#cacacb] bg-white hover:border-gray-900')}
+                                      >
+                                        <div className="grid min-h-[7rem] grid-cols-[3.25rem_minmax(0,1fr)_6.5rem] items-stretch">
+                                          <div className="flex flex-col items-center justify-center border-r border-dashed border-[#cacacb] bg-[#f5f5f5] px-1 py-2 text-center">
+                                            <div className="flex h-9 w-9 items-center justify-center rounded-full border border-[#cacacb] bg-white text-base font-semibold text-[#111111]" aria-hidden="true">
+                                              %
+                                            </div>
+                                            <span className="mt-1 rounded-full bg-[#111111] px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-white">
+                                              {voucher.target === 'shipping' ? 'Shipping' : 'Shop'}
+                                            </span>
+                                          </div>
+
+                                          <div className="min-w-0 px-2 py-1.5 leading-tight">
+                                            <div className="flex flex-wrap items-start justify-between gap-1">
+                                              <div className="min-w-0">
+                                                <p className="inline truncate text-sm font-semibold text-[#111111]">{displayName}</p>
+                                                {displayCode && normalizeVoucherCode(displayName) !== displayCode && (
+                                                  <p className="ml-1 inline truncate font-mono text-[11px] font-semibold tracking-wide text-[#707072]">{displayCode}</p>
+                                                )}
+                                              </div>
+                                              <span className={voucherClaimStatusClass(voucher.claim_status) + ' shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide'}>
+                                                {voucherClaimStatusLabel(voucher.claim_status)}
+                                              </span>
+                                            </div>
+
+                                            <p className="mt-1 inline text-lg font-semibold leading-tight text-[#111111]">
+                                              {formatVoucherBenefit(voucher)}
+                                            </p>
+
+                                            {minimumSpend > 0 && (
+                                              <>
+                                                <p className="ml-2 inline text-sm text-[#39393b]">Min. spend {formatVoucherMoney(minimumSpend)}</p>
+                                                <div className="mt-1 rounded-md bg-[#f5f5f5] px-1.5 py-1.5">
+                                                  <div className="flex items-center justify-between gap-1 text-[11px] text-[#707072]">
+                                                    <span>{formatVoucherMoney(eligibleSubtotal)} eligible</span>
+                                                    <span>{remainingSpend > 0 ? formatVoucherMoney(remainingSpend) + ' more' : 'Requirement met'}</span>
+                                                  </div>
+                                                  <div className="mt-1 h-1 overflow-hidden rounded-full bg-[#e5e5e5]" aria-hidden="true">
+                                                    <div className="h-full rounded-full bg-[#d30005]" style={{ width: String(spendProgress) + '%' }} />
+                                                  </div>
+                                                </div>
+                                                <p className={(remainingSpend > 0 ? 'text-amber-700' : 'text-emerald-700') + ' ml-1 inline align-middle text-xs font-medium'}>
+                                                  {remainingSpend > 0 ? 'Add ' + formatVoucherMoney(remainingSpend) + ' more to unlock this voucher.' : 'Eligible for this order.'}
+                                                </p>
+                                              </>
+                                            )}
+
+                                            <div className="ml-2 inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5 align-middle text-xs text-[#707072]">
+                                              <span>{voucher.target === 'shipping' ? 'Shipping' : 'Items'}</span>
+                                              <span aria-hidden="true">·</span>
+                                              <span>{voucher.scope === 'shop_wide' ? 'Shop-wide' : 'Selected products'}</span>
+                                              <span aria-hidden="true">·</span>
+                                              <span>T&amp;C apply</span>
+                                            </div>
+
+                                            <p className={voucherEligibilityClass(voucher.eligibility) + ' ml-2 inline align-middle text-xs font-medium'}>
+                                              {voucher.eligibility_message}
+                                            </p>
+                                          </div>
+
+                                          <div className="flex min-w-0 flex-col items-stretch justify-center gap-1 border-l border-[#cacacb] px-1 py-1.5">
+                                            {isClaiming ? (
+                                              <button type="button" disabled className="min-h-11 w-full whitespace-nowrap rounded-xl bg-[#f5f5f5] px-1 text-xs font-semibold text-[#707072]">
+                                                Claiming…
+                                              </button>
+                                            ) : canUseVoucher ? (
+                                              <button
+                                                type="button"
+                                                onClick={() => handleUseVoucher(voucher)}
+                                                className="min-h-11 w-full whitespace-nowrap rounded-xl bg-gray-900 px-1 text-sm font-medium text-white transition-colors hover:bg-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2"
+                                              >
+                                                Use voucher
+                                              </button>
+                                            ) : voucher.claim_status === 'claimable' && voucher.can_claim ? (
+                                              <button
+                                                type="button"
+                                                onClick={() => void handleClaimVoucher(voucher, isEligible)}
+                                                className="min-h-11 w-full whitespace-nowrap rounded-xl bg-gray-900 px-1 text-xs font-medium text-white transition-colors hover:bg-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2"
+                                              >
+                                                {isEligible ? 'Claim & use' : 'Claim for later'}
+                                              </button>
+                                            ) : (
+                                              <span className="text-center text-xs font-semibold text-[#707072]">
+                                                {voucher.claim_status === 'redeemed' ? 'Already used' : voucher.claim_status === 'claimed' ? 'Claimed' : 'Not available'}
+                                              </span>
+                                            )}
+                                          </div>
+                                        </div>
+
+                                        {minimumSpend > 0 && remainingSpend > 0 && (
+                                          <div className="border-t border-[#cacacb] px-2 py-1.5 text-xs font-medium text-[#111111]">
+                                            {'Add ' + formatVoucherMoney(remainingSpend) + ', to get ' + formatVoucherBenefit(voucher).replace(/\s+(shipping|items)$/i, '')}
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              ) : (
+                                <div className="rounded-md border border-dashed border-[#e5e5e5] px-2 py-3 text-center text-xs text-[#707072]">
+                                  No matching vouchers
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {(selectedVoucherCampaignId !== null || appliedVoucherCode) && (
+                          <button
+                            type="button"
+                            onClick={handleClearVoucherSelection}
+                            className="inline-flex min-h-11 items-center rounded-xl bg-[#f5f5f5] px-3 py-1 text-xs font-medium text-[#111111] transition-colors hover:bg-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2"
+                          >
+                            Clear voucher selection
+                          </button>
+                        )}
+
+                        {voucherErrorMessage && (
+                          <p role="alert" className="text-sm font-medium text-red-700">{voucherErrorMessage}</p>
+                        )}
+
+                        {voucherClaimError && (
+                          <p role="alert" className="text-sm font-medium text-red-700">{voucherClaimError}</p>
+                        )}
+                    </div>
+                  </section>
+
+                  {/* Delivery address persistence */}
+                  <div className="pt-2">
+                    <p className="text-sm text-gray-600">
+                      Your delivery address will be saved or updated for order fulfillment.
+                    </p>
+                    <label className="mt-3 flex items-center gap-3">
+                      <input
+                        type="checkbox"
+                        title="Set as my default delivery address"
+                        aria-label="Set as my default delivery address"
+                        checked={setAsDefaultAddress}
+                        onChange={e => setSetAsDefaultAddress(e.target.checked)}
+                        className="w-5 h-5"
+                      />
+                      <span className="text-base text-black">Set as my default delivery address</span>
+                    </label>
+                  </div>
 
                   {/* Text notification */}
                   <label className="flex items-center gap-3 pt-1">
@@ -2817,114 +3589,6 @@ const Payment: React.FC = () => {
                   ))}
                 </div>
 
-                {/* Auto-applied voucher */}
-                <div className="mb-4 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm">
-                  {isPromoPreviewLoading ? (
-                    <p className="text-gray-600">Checking claimed vouchers...</p>
-                  ) : (
-                    <div className="space-y-2">
-                      <label className="block text-xs font-semibold uppercase tracking-wide text-gray-700">
-                        Voucher
-                      </label>
-                      <p className="text-xs text-gray-600">Type a voucher code or choose from suggestions.</p>
-                      <div className="flex items-center gap-2">
-                        <div ref={voucherInputContainerRef} className="relative flex-1">
-                          <input
-                            type="text"
-                            aria-label="Voucher code"
-                            value={voucherCodeInput}
-                            onFocus={() => setIsVoucherSuggestionOpen(true)}
-                            onClick={() => setIsVoucherSuggestionOpen(true)}
-                            onChange={(e) => {
-                              const nextVoucherCode = e.target.value.toUpperCase();
-                              const normalizedNextVoucherCode = normalizeVoucherCode(nextVoucherCode);
-
-                              setSelectedVoucherCampaignId(null);
-                              setHasVoucherInputInteraction(true);
-                              setVoucherCodeInput(nextVoucherCode);
-
-                              if (normalizedNextVoucherCode === '') {
-                                setAppliedVoucherCode('');
-                                setIsVoucherSelectionEnabled(false);
-                              }
-
-                              setIsVoucherSuggestionOpen(true);
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                e.preventDefault();
-                                handleApplyVoucherCode();
-                              }
-
-                              if (e.key === 'Escape') {
-                                setIsVoucherSuggestionOpen(false);
-                              }
-                            }}
-                            placeholder="Enter voucher code"
-                            className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-black"
-                          />
-                          {showVoucherSuggestionDropdown && (
-                            <div className="hide-scrollbar absolute z-30 mt-1 max-h-44 w-full overflow-y-auto rounded-md border border-gray-200 bg-white shadow-lg">
-                              {filteredVoucherCodeSuggestions.length > 0 ? (
-                                filteredVoucherCodeSuggestions.map((voucher) => {
-                                  const displayName = voucher.name || voucher.code || 'Voucher';
-                                  const displayCode = normalizeVoucherCode(String(voucher.code || voucher.name || ''));
-
-                                  return (
-                                    <button
-                                      key={voucher.id}
-                                      type="button"
-                                      onMouseDown={(e) => {
-                                        e.preventDefault();
-                                        const normalizedCode = normalizeVoucherCode(displayCode);
-                                        setIsVoucherSelectionEnabled(true);
-                                        setSelectedVoucherCampaignId(voucher.id);
-                                        setHasVoucherInputInteraction(true);
-                                        setVoucherCodeInput(normalizedCode);
-                                        setAppliedVoucherCode(normalizedCode);
-                                        setIsVoucherSuggestionOpen(false);
-                                      }}
-                                      className="w-full border-b border-gray-100 px-3 py-2 text-left text-sm text-black hover:bg-gray-50 last:border-b-0"
-                                    >
-                                      <span className="block font-medium text-black">{displayName}</span>
-                                      {voucher.code && voucher.name && normalizeVoucherCode(voucher.code) !== normalizeVoucherCode(voucher.name) && (
-                                        <span className="block text-xs text-gray-500">{normalizeVoucherCode(voucher.code)}</span>
-                                      )}
-                                    </button>
-                                  );
-                                })
-                              ) : (
-                                <div className="px-3 py-2 text-sm text-gray-500">No available vouchers</div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={handleApplyVoucherCode}
-                          className="rounded-md bg-gray-900 px-3 py-2 text-xs font-semibold text-white hover:bg-black"
-                        >
-                          Apply
-                        </button>
-                      </div>
-
-                      {(selectedVoucherCampaignId !== null || appliedVoucherCode) && (
-                        <button
-                          type="button"
-                          onClick={handleClearVoucherSelection}
-                          className="text-xs font-medium text-gray-700 underline hover:text-black"
-                        >
-                          Clear voucher selection
-                        </button>
-                      )}
-
-                      {voucherErrorMessage && (
-                        <p className="text-xs font-medium text-red-600">{voucherErrorMessage}</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-
                 {/* Summary */}
                 <div className="space-y-3 mb-4">
                   <div className="flex justify-between text-sm">
@@ -2943,13 +3607,27 @@ const Payment: React.FC = () => {
                       <span className="text-emerald-700 font-medium">-₱{voucherDiscountAmount.toLocaleString()}</span>
                     </div>
                   )}
+                  {!isPromoPreviewLoading && shippingVoucherDiscount > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-emerald-700 font-semibold">{shippingVoucherLabel}</span>
+                      <span className="text-emerald-700 font-medium">-₱{shippingVoucherDiscount.toLocaleString()}</span>
+                    </div>
+                  )}
                   <div className="text-sm">
                     <div className="flex items-start justify-between gap-3">
                       <span className="text-gray-600">Shipping</span>
                       <span className="text-black text-right font-medium max-w-[70%] wrap-break-word">{shippingSummaryValue}</span>
                     </div>
+                    {shippingVoucherDiscount > 0 && (
+                      <div className="mt-1 flex items-center justify-between text-xs text-gray-500">
+                        <span>Original shipping</span>
+                        <span className="line-through">₱{shipping.toLocaleString()}</span>
+                      </div>
+                    )}
                     {shippingCarrierNote && <p className="text-xs text-gray-500 mt-1 leading-relaxed">{shippingCarrierNote}</p>}
                     {shippingPayLaterNotice && <p className="text-xs text-gray-500 mt-1 leading-relaxed">{shippingPayLaterNotice}</p>}
+                    {shippingVoucherErrorMessage && <p className="text-xs font-medium text-red-600 mt-1 leading-relaxed">{shippingVoucherErrorMessage}</p>}
+                    {shopOwnedCoverageNotice}
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">{vatLabel}</span>

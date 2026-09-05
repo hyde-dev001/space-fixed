@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
+import axios from 'axios';
 import Swal from 'sweetalert2';
 import AppLayout from '../../../layout/AppLayout';
 
@@ -35,6 +36,7 @@ interface ShopGroup {
   shop_status: string;
   total_reports: number;
   open_reports: number;
+  open_report_ids?: number[];
   latest_reason: string;
   latest_date: string | null;
   pattern_flags: string[];
@@ -43,7 +45,17 @@ interface ShopGroup {
   warnings_until_suspension: number;
   next_warn_will_suspend: boolean;
   priority: 'high' | 'medium' | 'normal';
-  reports: Report[];
+  reports?: Report[];
+}
+
+interface ShopGroupPage {
+  data: ShopGroup[];
+  current_page: number;
+  last_page: number;
+  per_page: number;
+  total: number;
+  from: number | null;
+  to: number | null;
 }
 
 interface Stats {
@@ -54,11 +66,25 @@ interface Stats {
 }
 
 interface PageProps {
-  shopGroups: ShopGroup[];
+  shopGroups: ShopGroup[] | ShopGroupPage;
   stats: Stats;
+  filters?: { search?: string | null; priority?: string; status?: string };
   success?: string;
   error?: string;
 }
+
+interface ReportDetail {
+  reports: {
+    data: Report[];
+    current_page: number;
+    last_page: number;
+    per_page: number;
+    total: number;
+  };
+  open_report_ids: number[];
+}
+
+const isShopGroupPage = (value: ShopGroup[] | ShopGroupPage): value is ShopGroupPage => !Array.isArray(value);
 
 // ── Icons ──────────────────────────────────────────────────────────────────────
 const FlagIcon = ({ className }: { className?: string }) => (
@@ -107,30 +133,23 @@ const XIcon = ({ className }: { className?: string }) => (
 const StatCard = ({
   title,
   value,
-  color,
   icon: Icon,
 }: {
   title: string;
   value: number;
-  color: string;
   icon: React.FC<{ className?: string }>;
 }) => {
-  const gradients: Record<string, string> = {
-    blue: 'from-blue-500 to-blue-700',
-    yellow: 'from-yellow-400 to-orange-500',
-    red: 'from-red-500 to-rose-600',
-    green: 'from-green-500 to-emerald-600',
-  };
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+    <div className="metrics-card overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition hover:border-gray-300 hover:shadow-md dark:border-gray-800 dark:bg-gray-800 dark:hover:border-gray-700">
       <div className="p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div className={`p-3 rounded-xl bg-gradient-to-br ${gradients[color]} shadow-lg`}>
-            <Icon className="w-6 h-6 text-white" />
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-gray-200 bg-gray-100 text-gray-900 dark:border-gray-700 dark:bg-gray-700 dark:text-gray-100">
+            <Icon className="h-6 w-6" />
           </div>
+          <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-600 dark:bg-gray-700 dark:text-gray-300">Snapshot</span>
         </div>
-        <p className="text-sm font-medium text-gray-500 dark:text-gray-400">{title}</p>
-        <p className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{value}</p>
+        <p className="mt-5 text-sm font-medium text-gray-500 dark:text-gray-400">{title}</p>
+        <p className="mt-1 text-3xl font-bold text-gray-900 dark:text-white">{value}</p>
       </div>
     </div>
   );
@@ -202,8 +221,12 @@ const ActionModal = ({
   const [action, setAction] = useState<'dismiss' | 'warn' | 'suspend' | ''>('');
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  const openReportIds = shopGroup.open_report_ids ?? [];
 
   const nextWarnStrike = Math.min(shopGroup.warning_strike + 1, shopGroup.warning_limit);
+  const suspensionPending = action === 'suspend'
+    || (action === 'warn' && shopGroup.next_warn_will_suspend);
 
   const handleSubmit = () => {
     if (!action) return;
@@ -215,7 +238,7 @@ const ActionModal = ({
     };
 
     const warnings: Record<string, string> = {
-      dismiss: 'This will mark all open reports as dismissed.',
+      dismiss: `This will mark ${openReportIds.length} selected report(s) as dismissed.`,
       warn: shopGroup.next_warn_will_suspend
         ? `Current warning level is <b>${shopGroup.warning_strike}/${shopGroup.warning_limit}</b>. Applying warn now will auto-escalate this shop to <b>suspension</b>.`
         : `Current warning level is <b>${shopGroup.warning_strike}/${shopGroup.warning_limit}</b>. This warn action will move the shop to <b>${nextWarnStrike}/${shopGroup.warning_limit}</b>.`,
@@ -233,19 +256,25 @@ const ActionModal = ({
     }).then((result) => {
       if (!result.isConfirmed) return;
 
+      setErrorMessage('');
       setSubmitting(true);
       router.post(
         `/admin/shop-reports/${shopGroup.shop_owner_id}/action`,
-        { action, admin_notes: notes },
+        {
+          action,
+          report_ids: openReportIds,
+          admin_notes: notes,
+        },
         {
           preserveScroll: true,
           onSuccess: () => {
-            setSubmitting(false);
             onClose();
           },
-          onError: () => {
-            setSubmitting(false);
+          onError: (errors) => {
+            const firstError = Object.values(errors)[0];
+            setErrorMessage(Array.isArray(firstError) ? firstError[0] : firstError ?? 'The server did not apply this decision.');
           },
+          onFinish: () => setSubmitting(false),
         }
       );
     });
@@ -278,6 +307,11 @@ const ActionModal = ({
               ? ' • Next warn will auto-suspend this shop.'
               : ` • ${shopGroup.warnings_until_suspension} warning(s) before auto-suspension.`}
           </div>
+          {errorMessage && (
+            <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-700 dark:bg-red-900/20 dark:text-red-300">
+              {errorMessage}
+            </p>
+          )}
 
           {/* Action selector */}
           <div>
@@ -325,14 +359,14 @@ const ActionModal = ({
           {/* Notes */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Admin Notes {action === 'suspend' && <span className="text-red-500">*</span>}
+              Admin Notes {suspensionPending && <span className="text-red-500">*</span>}
             </label>
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               rows={3}
               placeholder={
-                action === 'suspend'
+                suspensionPending
                   ? 'Reason for suspension (required — will be shown to shop owner)...'
                   : 'Optional notes for this action...'
               }
@@ -340,7 +374,7 @@ const ActionModal = ({
             />
           </div>
 
-          {action === 'suspend' && (
+          {suspensionPending && (
             <p className="text-xs text-red-500 dark:text-red-400 flex items-center gap-1">
               <AlertIcon className="w-4 h-4 flex-shrink-0" />
               This will immediately suspend the shop and block access.
@@ -358,7 +392,7 @@ const ActionModal = ({
           </button>
           <button
             onClick={handleSubmit}
-            disabled={!action || submitting || (action === 'suspend' && !notes.trim())}
+            disabled={!action || submitting || !openReportIds.length || (suspensionPending && !notes.trim())}
             className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed bg-blue-600 hover:bg-blue-700"
           >
             {submitting ? 'Processing…' : 'Confirm Action'}
@@ -421,12 +455,20 @@ const ReportRow = ({ report }: { report: Report }) => (
 const ShopGroupRow = ({
   group,
   onAction,
+  onLoadReports,
+  detail,
+  loadingDetail,
 }: {
   group: ShopGroup;
   onAction: (g: ShopGroup) => void;
+  onLoadReports: (g: ShopGroup) => void;
+  detail?: ReportDetail;
+  loadingDetail: boolean;
+  detailError?: string;
 }) => {
   const [expanded, setExpanded] = useState(false);
   const hasOpenReports = group.open_reports > 0;
+  const reports = detail?.reports.data ?? group.reports ?? [];
 
   return (
     <div
@@ -500,7 +542,10 @@ const ShopGroupRow = ({
               </button>
             )}
             <button
-              onClick={() => setExpanded(!expanded)}
+              onClick={() => {
+                setExpanded(!expanded);
+                if (!expanded && !detail) onLoadReports(group);
+              }}
               className="p-2 rounded-xl border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-500 transition-colors"
               title="View all reports"
             >
@@ -518,9 +563,16 @@ const ShopGroupRow = ({
       {expanded && (
         <div className="border-t border-gray-100 dark:border-gray-700 p-5 space-y-3">
           <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-            All Reports ({group.reports.length})
+            Reports on this page ({reports.length})
           </p>
-          {group.reports.map((r) => (
+          {loadingDetail && <p className="text-sm text-gray-500">Loading reports…</p>}
+          {!loadingDetail && detailError && (
+            <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-700 dark:bg-red-900/20 dark:text-red-300">
+              {detailError}
+            </p>
+          )}
+          {!loadingDetail && !detailError && reports.length === 0 && <p className="text-sm text-gray-500">No report rows are available.</p>}
+          {reports.map((r) => (
             <ReportRow key={r.id} report={r} />
           ))}
         </div>
@@ -531,14 +583,93 @@ const ShopGroupRow = ({
 
 // ── Main Page ──────────────────────────────────────────────────────────────────
 export default function ShopReports() {
-  const { shopGroups, stats, success, error: errorMsg } = usePage<PageProps>().props;
-
-  const [search, setSearch] = useState('');
-  const [priorityFilter, setPriorityFilter] = useState<string>('all');
+  const { shopGroups, stats, filters, success, error: errorMsg } = usePage<PageProps>().props;
+  const serverPage = isShopGroupPage(shopGroups) ? shopGroups : null;
+  const serverPaginated = serverPage !== null;
+  const rows: ShopGroup[] = Array.isArray(shopGroups) ? shopGroups : shopGroups.data;
+  const [search, setSearch] = useState(filters?.search ?? '');
+  const [priorityFilter, setPriorityFilter] = useState<string>(filters?.priority ?? 'all');
+  const [statusFilter, setStatusFilter] = useState<string>(filters?.status ?? 'all');
   const [actionTarget, setActionTarget] = useState<ShopGroup | null>(null);
+  const [details, setDetails] = useState<Record<number, ReportDetail>>({});
+  const [loadingDetail, setLoadingDetail] = useState<number | null>(null);
+  const [detailErrors, setDetailErrors] = useState<Record<number, string>>({});
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const skipInitialSearch = useRef(true);
+
+  const requestPage = (page: number, overrides: { priority?: string; status?: string } = {}) => {
+    router.get('/admin/shop-reports', {
+      search: search || undefined,
+      priority: overrides.priority ?? priorityFilter,
+      status: overrides.status ?? statusFilter,
+      page,
+    }, {
+      preserveState: true,
+      preserveScroll: true,
+      replace: true,
+    });
+  };
+
+  useEffect(() => {
+    if (!serverPaginated) return;
+    if (skipInitialSearch.current) {
+      skipInitialSearch.current = false;
+      return;
+    }
+
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => requestPage(1), 250);
+
+    return () => {
+      if (searchTimer.current) clearTimeout(searchTimer.current);
+    };
+  }, [search]);
+
+  const loadReports = async (group: ShopGroup): Promise<ReportDetail | null> => {
+    if (details[group.shop_owner_id]) return details[group.shop_owner_id];
+
+    setLoadingDetail(group.shop_owner_id);
+    setDetailErrors((current) => {
+      const next = { ...current };
+      delete next[group.shop_owner_id];
+      return next;
+    });
+    try {
+      const response = await axios.get(`/admin/shop-reports/${group.shop_owner_id}`, {
+        params: { per_page: 100 },
+      });
+      const detail = response.data as ReportDetail;
+      setDetails((current) => ({ ...current, [group.shop_owner_id]: detail }));
+      return detail;
+    } catch {
+      setDetailErrors((current) => ({
+        ...current,
+        [group.shop_owner_id]: 'The report details could not be loaded. Try again.',
+      }));
+      return null;
+    } finally {
+      setLoadingDetail(null);
+    }
+  };
+
+  const handleAction = async (group: ShopGroup) => {
+    if (group.open_report_ids?.length) {
+      setActionTarget(group);
+      return;
+    }
+
+    const detail = await loadReports(group);
+    if (detail) {
+      setActionTarget({
+        ...group,
+        open_report_ids: detail.open_report_ids,
+        reports: detail.reports.data,
+      });
+    }
+  };
 
   // Filters
-  const filtered = shopGroups.filter((g) => {
+  const filtered = serverPaginated ? rows : rows.filter((g) => {
     const matchSearch =
       !search ||
       g.business_name.toLowerCase().includes(search.toLowerCase()) ||
@@ -579,10 +710,10 @@ export default function ShopReports() {
 
         {/* ── Stats ── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          <StatCard title="Total Reports" value={stats.total_reports} color="blue" icon={FlagIcon} />
-          <StatCard title="Pending Review" value={stats.pending_review} color="yellow" icon={AlertIcon} />
-          <StatCard title="High Priority Shops" value={stats.high_priority} color="red" icon={AlertIcon} />
-          <StatCard title="Resolved" value={stats.resolved} color="green" icon={ShieldIcon} />
+          <StatCard title="Total Reports" value={stats.total_reports} icon={FlagIcon} />
+          <StatCard title="Pending Review" value={stats.pending_review} icon={AlertIcon} />
+          <StatCard title="High Priority Shops" value={stats.high_priority} icon={AlertIcon} />
+          <StatCard title="Resolved" value={stats.resolved} icon={ShieldIcon} />
         </div>
 
         {/* ── Filters ── */}
@@ -599,7 +730,11 @@ export default function ShopReports() {
           </div>
           <select
             value={priorityFilter}
-            onChange={(e) => setPriorityFilter(e.target.value)}
+            onChange={(e) => {
+              const nextPriority = e.target.value;
+              setPriorityFilter(nextPriority);
+              if (serverPaginated) requestPage(1, { priority: nextPriority });
+            }}
             className="px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
           >
             <option value="all">All Priorities</option>
@@ -607,11 +742,26 @@ export default function ShopReports() {
             <option value="medium">🟡 Needs Review (3–4 reports)</option>
             <option value="normal">⚪ Normal</option>
           </select>
+          <select
+            value={statusFilter}
+            aria-label="Filter reports by status"
+            onChange={(e) => {
+              const nextStatus = e.target.value;
+              setStatusFilter(nextStatus);
+              if (serverPaginated) requestPage(1, { status: nextStatus });
+            }}
+            className="px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
+          >
+            <option value="all">All statuses</option>
+            <option value="open">Open</option>
+            <option value="resolved">Resolved</option>
+          </select>
         </div>
 
         {/* ── Results count ── */}
         <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-          Showing <span className="font-semibold text-gray-700 dark:text-gray-200">{filtered.length}</span> shop(s)
+          Showing <span className="font-semibold text-gray-700 dark:text-gray-200">{serverPage?.from ?? (filtered.length ? 1 : 0)}-{serverPage?.to ?? filtered.length}</span> of{' '}
+          <span className="font-semibold text-gray-700 dark:text-gray-200">{serverPage?.total ?? filtered.length}</span> shop(s)
           {priorityFilter !== 'all' && ' matching filter'}
         </p>
 
@@ -630,9 +780,38 @@ export default function ShopReports() {
               <ShopGroupRow
                 key={group.shop_owner_id}
                 group={group}
-                onAction={setActionTarget}
+                onAction={(target) => void handleAction(target)}
+                onLoadReports={(target) => void loadReports(target)}
+                detail={details[group.shop_owner_id]}
+                loadingDetail={loadingDetail === group.shop_owner_id}
+                detailError={detailErrors[group.shop_owner_id]}
               />
             ))}
+          </div>
+        )}
+        {serverPage && serverPage.last_page > 1 && (
+          <div className="mt-6 flex items-center justify-between rounded-xl border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
+            <button
+              type="button"
+              title="Previous page"
+              aria-label="Previous page"
+              disabled={serverPage.current_page <= 1}
+              onClick={() => requestPage(Math.max(1, serverPage.current_page - 1))}
+              className="rounded-lg border px-3 py-2 text-sm disabled:opacity-50"
+            >
+              Previous
+            </button>
+            <span className="text-sm text-gray-500">Page {serverPage.current_page} of {serverPage.last_page}</span>
+            <button
+              type="button"
+              title="Next page"
+              aria-label="Next page"
+              disabled={serverPage.current_page >= serverPage.last_page}
+              onClick={() => requestPage(Math.min(serverPage.last_page, serverPage.current_page + 1))}
+              className="rounded-lg border px-3 py-2 text-sm disabled:opacity-50"
+            >
+              Next page
+            </button>
           </div>
         )}
       </div>

@@ -5,7 +5,7 @@ import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import { stockRequestApi } from "@/services/stockRequestApi";
 import { inventoryItemAPI } from "@/services/inventoryAPI";
 import { workflowFeedback } from "@/utils/workflowFeedback";
-import { clearModalDraft, loadModalDraft, saveModalDraft } from "@/utils/modalDraft";
+import { clearModalDraft, loadModalDraft, saveModalDraft, scopedModalDraftKey } from "@/utils/modalDraft";
 import type { InventoryItem } from "@/types/inventory";
 import type { StockRequestApproval } from "@/types/procurement";
 
@@ -99,6 +99,26 @@ function isAllSizesRequest(value?: string | null): boolean {
 	const normalized = (value ?? "").trim().toLowerCase().replace(/[\s-]+/g, "_");
 	if (!normalized) return true;
 	return ["all", "all_sizes", "all_size", "any"].includes(normalized);
+}
+
+function getAvailableSizeLabelsForRequest(request: StockRequestApproval): string[] {
+	if (!isAllSizesRequest(request.requested_size) || request.inventory_item?.category !== "shoes") return [];
+
+	const item = request.inventory_item as any;
+	const allSizes = Array.isArray(item?.sizes) ? item.sizes : [];
+	const requestedColor = (request.requested_color ?? "").trim().toLowerCase();
+	const matchedVariant = requestedColor
+		? (item?.color_variants ?? []).find((variant: any) => String(variant.color_name).trim().toLowerCase() === requestedColor)
+		: null;
+	const sizes = matchedVariant?.sizes?.length
+		? matchedVariant.sizes
+		: matchedVariant
+			? allSizes.filter((size: any) => Number(size.inventory_color_variant_id) === Number(matchedVariant.id))
+			: allSizes;
+
+	return Array.from(new Set(
+		sizes.map((size: any) => formatRequestedSizeLabel(size.size, size.size_system)).filter(Boolean),
+	));
 }
 
 function formatDatetime(dateString: string): string {
@@ -203,7 +223,9 @@ const MetricCard = ({ title, value, description, icon: Icon, color }: MetricCard
 };
 
 export default function StockRequest() {
-	const { initialRequests, initialInventoryItems } = usePage().props as any;
+		const { auth, initialRequests, initialInventoryItems } = usePage().props as any;
+		const ownerMode = auth?.erpActor?.ownerMode === true;
+		const draftKey = scopedModalDraftKey(STOCK_REQUEST_DRAFT_KEY, auth?.user?.shop_owner_id, auth?.user?.id);
 	const [requests, setRequests] = useState<StockRequestApproval[]>(initialRequests?.data ?? []);
 	const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>(initialInventoryItems?.data ?? []);
 	const [isLoading, setIsLoading] = useState(false);
@@ -215,6 +237,10 @@ export default function StockRequest() {
 	const [isSubmittingCreateRequest, setIsSubmittingCreateRequest] = useState(false);
 	const [formData, setFormData] = useState<RequestFormState>(initialFormState);
 	const [viewingRequest, setViewingRequest] = useState<StockRequestApproval | null>(null);
+	useEffect(() => {
+		const id = Number(new URLSearchParams(window.location.search).get("stock_request"));
+		if (id > 0) setViewingRequest(requests.find((request) => request.id === id) ?? null);
+	}, [requests]);
 	const [isProductPickerOpen, setIsProductPickerOpen] = useState(false);
 	const [productPickerSearch, setProductPickerSearch] = useState("");
 	const isCreateFormDirty = useMemo(
@@ -231,11 +257,15 @@ export default function StockRequest() {
 	useEffect(() => {
 		if (!isCreateModalOpen) return;
 		if (isCreateFormDirty) {
-			saveModalDraft(STOCK_REQUEST_DRAFT_KEY, formData);
+				saveModalDraft(draftKey, formData);
 			return;
 		}
-		clearModalDraft(STOCK_REQUEST_DRAFT_KEY);
-	}, [formData, isCreateFormDirty, isCreateModalOpen]);
+			clearModalDraft(draftKey);
+		}, [draftKey, formData, isCreateFormDirty, isCreateModalOpen]);
+
+		useEffect(() => {
+			clearModalDraft(STOCK_REQUEST_DRAFT_KEY);
+		}, []);
 
 	useEffect(() => {
 		if (!isCreateModalOpen || !isCreateFormDirty) return;
@@ -317,53 +347,29 @@ export default function StockRequest() {
 		return sizeOptionsForSelectedColor.find((option) => option.label === formData.requestSize) ?? null;
 	}, [formData.requestSize, sizeOptionsForSelectedColor]);
 
-	const inventoryItemsById = useMemo(() => {
-		const map = new Map<number, InventoryItem>();
-		for (const item of inventoryItems) {
-			map.set(Number(item.id), item);
-		}
-		return map;
-	}, [inventoryItems]);
+	const allSizesPerSizeBasis = selectedItem?.category === "shoes" && !formData.requestSize.trim();
+	const eligibleSizeCountForAllSizes = useMemo(() => {
+		if (!selectedItem || selectedItem.category !== "shoes" || formData.requestSize.trim()) return 0;
 
-	const getAllSizeMultiplierForRequest = (request: StockRequestApproval): number => {
-		if (!isAllSizesRequest(request.requested_size)) {
-			return 1;
+		if (hasColorVariants) {
+			return sizeOptionsForSelectedColor.length;
 		}
 
-		const inventoryItemId = Number(request.inventory_item_id);
-		const item = inventoryItemsById.get(inventoryItemId);
-		if (!item || item.category !== "shoes") {
-			return 1;
-		}
+		const labels = new Set(
+			(selectedItem.sizes ?? [])
+				.map((sizeOption: any) => formatRequestedSizeLabel(String(sizeOption.size), sizeOption.size_system))
+				.filter(Boolean),
+		);
+		return labels.size;
+	}, [formData.requestSize, hasColorVariants, selectedItem, sizeOptionsForSelectedColor]);
 
-		const requestedColor = (request.requested_color ?? "").trim().toLowerCase();
-		if (requestedColor) {
-			const matchedVariant = (item.color_variants ?? []).find(
-				(variant) => String(variant.color_name).trim().toLowerCase() === requestedColor,
-			);
-
-			if (matchedVariant) {
-				const variantSizeCount = (matchedVariant.sizes ?? []).length;
-				if (variantSizeCount > 0) {
-					return variantSizeCount;
-				}
-
-				const scopedSizeCount = (item.sizes ?? []).filter(
-					(sizeOption) => Number(sizeOption.inventory_color_variant_id) === Number(matchedVariant.id),
-				).length;
-
-				if (scopedSizeCount > 0) {
-					return scopedSizeCount;
-				}
-			}
-		}
-
-		const fallbackSizeCount = (item.sizes ?? []).length;
-		return fallbackSizeCount > 0 ? fallbackSizeCount : 1;
-	};
+	const enteredQuantity = Number(formData.quantityNeeded);
+	const physicalTotalPreview = Number.isFinite(enteredQuantity) && enteredQuantity > 0
+		? enteredQuantity * eligibleSizeCountForAllSizes
+		: 0;
 
 	const getEffectiveQuantityNeeded = (request: StockRequestApproval): number => {
-		return Number(request.quantity_needed ?? 0) * getAllSizeMultiplierForRequest(request);
+		return Number(request.quantity_needed ?? 0);
 	};
 
 	useEffect(() => {
@@ -389,6 +395,8 @@ export default function StockRequest() {
 	}, [formData.requestSize, sizeOptionsForSelectedColor]);
 
 	const refreshData = async () => {
+		if (ownerMode) return;
+
 		setIsLoading(true);
 		try {
 			const [requestsRes, itemsRes] = await Promise.all([
@@ -406,7 +414,7 @@ export default function StockRequest() {
 
 	useEffect(() => {
 		void refreshData();
-	}, []);
+	}, [ownerMode]);
 
 	const filteredData = useMemo(() => {
 		const query = searchQuery.trim().toLowerCase();
@@ -467,11 +475,20 @@ export default function StockRequest() {
 			return;
 		}
 
+		if (allSizesPerSizeBasis && eligibleSizeCountForAllSizes < 1) {
+			await workflowFeedback.warning(
+				"No configured sizes",
+				"Configure at least one size before requesting All Sizes.",
+			);
+			return;
+		}
+
 		setIsSubmittingCreateRequest(true);
 		try {
 			const createdRequest = await stockRequestApi.createFromInventory({
 				inventory_item_id: Number(formData.inventoryItemId),
 				quantity_needed:   parsedQty,
+				quantity_basis:    allSizesPerSizeBasis ? "per_size" : "total",
 				priority:          formData.priority,
 				requested_size:    formData.requestSize || undefined,
 				requested_color:   formData.requestColor || undefined,
@@ -483,7 +500,7 @@ export default function StockRequest() {
 				...prev.filter((request) => request.id !== createdRequest.id),
 			]);
 			void refreshData();
-			clearModalDraft(STOCK_REQUEST_DRAFT_KEY);
+			clearModalDraft(draftKey);
 			setFormData(initialFormState);
 			setIsCreateModalOpen(false);
 			setCurrentPage(1);
@@ -500,7 +517,9 @@ export default function StockRequest() {
 	};
 
 	const handleOpenCreateModal = async () => {
-		const savedDraft = loadModalDraft<Partial<RequestFormState>>(STOCK_REQUEST_DRAFT_KEY);
+		if (ownerMode) return;
+
+			const savedDraft = loadModalDraft<Partial<RequestFormState>>(draftKey);
 
 		if (!savedDraft) {
 			setFormData(initialFormState);
@@ -518,7 +537,7 @@ export default function StockRequest() {
 		if (shouldRestore.isConfirmed) {
 			setFormData({ ...initialFormState, ...savedDraft });
 		} else {
-			clearModalDraft(STOCK_REQUEST_DRAFT_KEY);
+				clearModalDraft(draftKey);
 			setFormData(initialFormState);
 		}
 
@@ -531,7 +550,7 @@ export default function StockRequest() {
 		if (!isCreateFormDirty) {
 			setIsCreateModalOpen(false);
 			setFormData(initialFormState);
-			clearModalDraft(STOCK_REQUEST_DRAFT_KEY);
+				clearModalDraft(draftKey);
 			return;
 		}
 
@@ -544,7 +563,7 @@ export default function StockRequest() {
 
 		if (!confirmClose.isConfirmed) return;
 
-		saveModalDraft(STOCK_REQUEST_DRAFT_KEY, formData);
+			saveModalDraft(draftKey, formData);
 		setIsCreateModalOpen(false);
 		setFormData(initialFormState);
 	};
@@ -575,14 +594,16 @@ export default function StockRequest() {
 						<p className="text-gray-600 dark:text-gray-400">Create and track replenishment requests to Procurement for low or out-of-stock items</p>
 					</div>
 					<div className="flex flex-wrap items-center gap-2">
-						<button
-							onClick={() => {
-								void handleOpenCreateModal();
-							}}
-							className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
-						>
-							+ New Request
-						</button>
+						{!ownerMode && (
+							<button
+								onClick={() => {
+									void handleOpenCreateModal();
+								}}
+								className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
+							>
+								+ New Request
+							</button>
+						)}
 					</div>
 				</div>
 
@@ -884,29 +905,39 @@ export default function StockRequest() {
 
 						<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 							<div>
-								<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Quantity Needed *</label>									<input
-										type="number"
-										min={1}
-										value={formData.quantityNeeded}
-										onChange={(event) => setFormData((prev) => ({ ...prev, quantityNeeded: event.target.value }))}
-										placeholder="e.g., 40"
-										className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
-									/>
-								</div>
-								<div>
-									<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Priority *</label>
-									<select
-										title="Select request priority"
-										aria-label="Select request priority"
-										value={formData.priority}
-										onChange={(event) => setFormData((prev) => ({ ...prev, priority: event.target.value as "high" | "medium" | "low" }))}
-										className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
-									>
-										<option value="high">High</option>
-										<option value="medium">Medium</option>
-										<option value="low">Low</option>
-									</select>
-								</div>
+								<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+									{allSizesPerSizeBasis ? "Quantity per size *" : "Quantity Needed *"}
+								</label>
+								<input
+									type="number"
+									min={1}
+									value={formData.quantityNeeded}
+									onChange={(event) => setFormData((prev) => ({ ...prev, quantityNeeded: event.target.value }))}
+									placeholder="e.g., 40"
+									className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
+								/>
+								{allSizesPerSizeBasis && (
+									<p className="mt-2 text-xs text-indigo-600 dark:text-indigo-300">
+										{eligibleSizeCountForAllSizes > 0
+											? `${eligibleSizeCountForAllSizes} eligible sizes x ${formData.quantityNeeded || 0} = ${physicalTotalPreview} total units`
+											: "Select a configured color to see the physical total."}
+									</p>
+								)}
+							</div>
+							<div>
+								<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Priority *</label>
+								<select
+									title="Select request priority"
+									aria-label="Select request priority"
+									value={formData.priority}
+									onChange={(event) => setFormData((prev) => ({ ...prev, priority: event.target.value as "high" | "medium" | "low" }))}
+									className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
+								>
+									<option value="high">High</option>
+									<option value="medium">Medium</option>
+									<option value="low">Low</option>
+								</select>
+							</div>
 							</div>
 
 							<div>
@@ -968,8 +999,14 @@ export default function StockRequest() {
 
 							<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
-									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Quantity Needed</p>
-									<p className="text-base font-semibold text-gray-900 dark:text-white">{getEffectiveQuantityNeeded(viewingRequest)}</p>
+									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
+										{viewingRequest.inventory_item?.category === "shoes" && isAllSizesRequest(viewingRequest.requested_size)
+											? "Total Quantity (All Sizes)"
+											: "Quantity Needed"}
+									</p>
+									<p className="text-base font-semibold text-gray-900 dark:text-white">
+										{getEffectiveQuantityNeeded(viewingRequest)}{viewingRequest.inventory_item?.category === "shoes" && isAllSizesRequest(viewingRequest.requested_size) ? " units" : ""}
+									</p>
 								</div>
 								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
 									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Priority</p>
@@ -983,6 +1020,13 @@ export default function StockRequest() {
 								<div className="rounded-xl bg-indigo-50 dark:bg-indigo-900/20 p-4 border border-indigo-200 dark:border-indigo-800">
 									<p className="text-sm font-medium text-indigo-600 dark:text-indigo-400 mb-1">Requested Size</p>
 									<p className="text-base font-semibold text-gray-900 dark:text-white">{getRequestedSizeLabel(viewingRequest.requested_size)}</p>
+								</div>
+							)}
+
+							{getAvailableSizeLabelsForRequest(viewingRequest).length > 0 && (
+								<div className="rounded-xl bg-blue-50 dark:bg-blue-900/20 p-4 border border-blue-200 dark:border-blue-800">
+									<p className="text-sm font-medium text-blue-600 dark:text-blue-400 mb-1">Available Sizes {viewingRequest.requested_color ? `(${viewingRequest.requested_color})` : ""}</p>
+									<p className="text-base font-semibold text-gray-900 dark:text-white">{getAvailableSizeLabelsForRequest(viewingRequest).join(", ")}</p>
 								</div>
 							)}
 

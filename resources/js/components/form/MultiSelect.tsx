@@ -223,9 +223,9 @@ const MultiSelect: React.FC<MultiSelectProps> = ({
                 return (
                   <div
                     key={option.value}
-                    className={`hover:bg-primary/5 w-full cursor-pointer rounded-t border-b border-gray-200 dark:border-gray-800 ${
-                      isFocused ? "bg-primary/5" : ""
-                    } ${isSelected ? "bg-primary/10" : ""}`}
+                    className={`w-full cursor-pointer rounded-t border-b border-gray-200 transition-colors hover:bg-gray-100 dark:border-gray-800 dark:hover:bg-gray-800 ${
+                      isFocused ? "bg-gray-100 dark:bg-gray-700" : ""
+                    } ${isSelected ? "bg-gray-100 dark:bg-gray-700" : ""}`}
                     onClick={() => handleSelect(option.value)}
                     role="option"
                     aria-selected={isSelected}

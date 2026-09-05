@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useEffect } from "react";
 import { createPortal } from "react-dom";
+import { usePage } from "@inertiajs/react";
 import Swal from "sweetalert2";
 
 // Icon Components
@@ -255,6 +256,11 @@ const transformAttendanceFromApi = (apiRecord: any) => {
 };
 
 const ViewAttendance: React.FC = () => {
+  const { auth, initialAttendance } = usePage().props as any;
+  const ownerMode = auth?.erpActor?.ownerMode === true;
+  const seededAttendance = Array.isArray(initialAttendance?.data)
+    ? initialAttendance.data.map(transformAttendanceFromApi)
+    : [];
   const [filterMonth, setFilterMonth] = useState(
     new Date().toISOString().slice(0, 7)
   );
@@ -269,15 +275,25 @@ const ViewAttendance: React.FC = () => {
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(7);
-  const [attendanceData, setAttendanceData] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [paginationMeta, setPaginationMeta] = useState<any>(null);
+  const [attendanceData, setAttendanceData] = useState<any[]>(seededAttendance);
+  const [isLoading, setIsLoading] = useState(!ownerMode && !initialAttendance);
+  const [paginationMeta, setPaginationMeta] = useState<any>(initialAttendance && !ownerMode ? {
+    current_page: initialAttendance.current_page,
+    last_page: initialAttendance.last_page,
+    per_page: initialAttendance.per_page,
+    total: initialAttendance.total,
+  } : null);
   const [geofenceEnabled, setGeofenceEnabled] = useState(false);
   const [geofenceRadius, setGeofenceRadius] = useState(100);
   const [violationsOnly, setViolationsOnly] = useState(false);
 
   // Fetch attendance records from API
   useEffect(() => {
+    if (ownerMode || initialAttendance) {
+      setIsLoading(false);
+      return;
+    }
+
     const fetchAttendance = async () => {
       setIsLoading(true);
       try {
@@ -343,7 +359,7 @@ const ViewAttendance: React.FC = () => {
     };
 
     fetchAttendance();
-  }, [filterMonth, selectedStatus, currentPage, itemsPerPage, violationsOnly]);
+  }, [filterMonth, initialAttendance, ownerMode, selectedStatus, currentPage, itemsPerPage, violationsOnly]);
 
   // Calculate statistics
   const stats = useMemo(() => {
@@ -755,8 +771,8 @@ const ViewAttendance: React.FC = () => {
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
                         <div className="flex-shrink-0 h-10 w-10">
-                          <div className="h-10 w-10 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
-                            <span className="text-blue-600 dark:text-blue-300 font-medium text-sm">
+                          <div className="h-10 w-10 rounded-full bg-gray-950 dark:bg-blue-900 flex items-center justify-center">
+                            <span className="text-white dark:text-blue-300 font-medium text-sm">
                               {getInitials(record.name)}
                             </span>
                           </div>
@@ -825,22 +841,24 @@ const ViewAttendance: React.FC = () => {
                         >
                           <EyeIcon className="size-5" />
                         </button>
-                        <button
-                          onClick={() => {
-                            setEditRecord(record);
-                            setEditForm({
-                              checkIn:  record.checkInRaw || '',
-                              checkOut: record.checkOutRaw || '',
-                              status:   record.status,
-                              notes:    record.notes || '',
-                            });
-                            setIsEditModalOpen(true);
-                          }}
-                          className="inline-flex items-center justify-center p-2 rounded-lg text-amber-600 hover:bg-amber-100 dark:text-amber-400 dark:hover:bg-amber-900/30 transition-colors duration-200"
-                          title="Correct attendance record"
-                        >
-                          <PencilIcon className="size-5" />
-                        </button>
+                        {!ownerMode && (
+                          <button
+                            onClick={() => {
+                              setEditRecord(record);
+                              setEditForm({
+                                checkIn:  record.checkInRaw || '',
+                                checkOut: record.checkOutRaw || '',
+                                status:   record.status,
+                                notes:    record.notes || '',
+                              });
+                              setIsEditModalOpen(true);
+                            }}
+                            className="inline-flex items-center justify-center p-2 rounded-lg text-amber-600 hover:bg-amber-100 dark:text-amber-400 dark:hover:bg-amber-900/30 transition-colors duration-200"
+                            title="Correct attendance record"
+                          >
+                            <PencilIcon className="size-5" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

@@ -3,24 +3,40 @@ import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import Swal from "sweetalert2";
-import { computeCanPay, getPhoneDisplayForReceipt } from "../../Repairs/posPaymentValidation";
+import {
+	computeCanPay,
+	getPhoneDisplayForReceipt,
+	isOptionalEmailValid,
+	normalizeCustomerField,
+	normalizeOptionalCustomerEmail,
+	normalizeOptionalCustomerId,
+} from "../../Repairs/posPaymentValidation";
 import { repairPosHistoryApi } from "../../../services/repairPosHistoryApi";
 import { buildRepairBreakdown } from "../../../utils/repairPricing";
 import { PosMode, resolveAllowedModes } from "./posModeResolver";
 
 type PaymentMethod = "cash" | "gcash" | "card";
 type PosDueType = "deposit" | "balance" | "full";
-type ManualPaymentPolicy = "deposit_50" | "full_upfront";
+type ManualPaymentPolicy = "full_upfront";
 
 type RepairOrderOption = {
 	id: string;
+	requestNumber?: string;
 	customer: string;
+	customerName: string;
+	customerPhone: string;
+	customerEmail: string;
 	customerId?: number | null;
 	paymentPolicy?: "deposit_50" | "full_upfront";
 	paymentStatus?: string;
 	status?: string;
 	returnDeliveryMethod?: "walk_in" | "customer_pickup" | "shop_delivery" | string;
 	dueTypeToCollect?: PosDueType | null;
+	paymentPhase?: string | null;
+	collectible?: boolean;
+	collectibleAmount: number;
+	outstandingBalance: number;
+	totalPaidAmount: number;
 	service: string;
 	amount: number;
 	requestedServices: string[];
@@ -74,6 +90,15 @@ type ReceiptRefundEntry = {
 	items?: ReceiptRefundEntryItem[];
 };
 
+type ReceiptLatestRefund = {
+	id: number;
+	status: string;
+	workflowSource?: string | null;
+	repairerStatus?: string | null;
+	financeStatus?: string | null;
+	shopOwnerStatus?: string | null;
+};
+
 type ReceiptSnapshot = {
 	moduleType?: "repair" | "retail";
 	transactionId?: number;
@@ -85,10 +110,7 @@ type ReceiptSnapshot = {
 	dueType?: PosDueType | null;
 	paidAmount: number;
 	refundEntries: ReceiptRefundEntry[];
-	latestRefund?: {
-		id: number;
-		status: string;
-	};
+	latestRefund?: ReceiptLatestRefund;
 	receiptNo: string;
 	createdAtISO: string;
 	dateLabel: string;
@@ -173,6 +195,12 @@ const hasOpenOrCompletedRefund = (receipt: ReceiptSnapshot): boolean => {
 
 const canExecuteReceiptRefund = (receipt: ReceiptSnapshot): boolean => {
 	return receipt.customerType === "walk_in" && String(receipt.latestRefund?.status || "").toLowerCase() === "approved";
+};
+
+const isManualRejectedNoAccountRepair = (receipt: ReceiptSnapshot): boolean => {
+	return receipt.moduleType !== "retail"
+		&& receipt.customerType === "walk_in"
+		&& String(receipt.repairStatus || "").toLowerCase() === "rejected";
 };
 
 const hasRefundLifecycleRecord = (receipt: ReceiptSnapshot): boolean => {
@@ -261,6 +289,60 @@ const getRefundStatusHint = (status: string | undefined): string => {
 	return "";
 };
 
+export const getRepairRefundStatusPresentation = (
+	refund: Pick<ReceiptLatestRefund, "status" | "workflowSource" | "repairerStatus" | "financeStatus" | "shopOwnerStatus">,
+): { label: string; hint: string } => {
+	const rawStatus = String(refund.status || "").toLowerCase();
+	const workflowSource = String(refund.workflowSource || "").toLowerCase();
+	const repairerStatus = String(refund.repairerStatus || "").toLowerCase();
+	const financeStatus = String(refund.financeStatus || "").toLowerCase();
+	const shopOwnerStatus = String(refund.shopOwnerStatus || "").toLowerCase();
+
+	if (["succeeded", "completed", "paid"].includes(rawStatus)) {
+		return { label: "Refunded", hint: "Refund payout completed" };
+	}
+
+	if (["failed", "rejected", "cancelled", "canceled"].includes(rawStatus)) {
+		return rawStatus === "failed"
+			? { label: "Refund Failed", hint: "Refund payout failed" }
+			: { label: "Rejected", hint: "Refund request was rejected" };
+	}
+
+	if (rawStatus === "processing") {
+		return { label: "Processing", hint: "Refund payout is being processed" };
+	}
+
+	if (workflowSource === "online_myrepair" && repairerStatus === "pending") {
+		return { label: "Under Repairer Review", hint: "Waiting for repairer review" };
+	}
+
+	if (financeStatus === "pending") {
+		return { label: "Under Finance Review", hint: "Pending Finance approval" };
+	}
+
+	if (financeStatus === "approved_initial" && !["approved", "skipped"].includes(shopOwnerStatus)) {
+		return { label: "Under Owner Review", hint: "Pending shop owner approval" };
+	}
+
+	if (rawStatus === "approved") {
+		return { label: "Approved", hint: "Approved, ready for payout execution" };
+	}
+
+	if (rawStatus === "requested") {
+		return { label: "Requested", hint: "Refund request submitted" };
+	}
+
+	return { label: rawStatus || "Refund update", hint: "Refund status updated" };
+};
+
+const getReceiptLatestRefundPresentation = (receipt: ReceiptSnapshot): { label: string; hint: string } | null => {
+	if (receipt.moduleType !== "repair" || !receipt.latestRefund) {
+		return null;
+	}
+
+	return getRepairRefundStatusPresentation(receipt.latestRefund);
+};
+
 const getRefundStatusClass = (status: string): string => {
 	switch (String(status || "").toLowerCase()) {
 		case "succeeded":
@@ -278,6 +360,7 @@ const getRefundStatusClass = (status: string): string => {
 };
 
 const SERVICES_PER_PAGE = 6;
+const RETAIL_PRODUCTS_PER_PAGE = 9;
 const VAT_RATE = 12;
 
 const normalizeDueType = (value: string | null): PosDueType => {
@@ -289,73 +372,7 @@ const normalizeDueType = (value: string | null): PosDueType => {
 };
 
 const normalizePaymentPolicy = (value: unknown): "deposit_50" | "full_upfront" => {
-	return value === "full_upfront" ? "full_upfront" : "deposit_50";
-};
-
-const POS_ATTACHABLE_WORKFLOW_STATUSES = new Set([
-	"repairer_accepted",
-	"waiting_customer_confirmation",
-	"owner_approval_pending",
-	"owner_approved",
-	"confirmed",
-	"pending",
-	"received",
-	"in_progress",
-	"in-progress",
-	"awaiting_parts",
-	"ready_for_pickup",
-	"ready-for-pickup",
-]);
-
-const isPosAttachEligibleStatus = (status: string): boolean => {
-	return POS_ATTACHABLE_WORKFLOW_STATUSES.has(status);
-};
-
-const resolveDueTypeForPolicy = (policy: "deposit_50" | "full_upfront", requestedDueType: PosDueType): PosDueType => {
-	if (policy === "full_upfront") return "full";
-	if (requestedDueType === "deposit" || requestedDueType === "balance") return requestedDueType;
-	return "deposit";
-};
-
-const resolveOutstandingDueType = (order: Pick<RepairOrderOption, "paymentPolicy" | "paymentStatus" | "status" | "returnDeliveryMethod">): PosDueType | null => {
-	const policy = order.paymentPolicy ?? "deposit_50";
-	const paymentStatus = String(order.paymentStatus ?? "").toLowerCase();
-	const workflowStatus = String(order.status ?? "").toLowerCase();
-	const returnMethod = String(order.returnDeliveryMethod ?? "").toLowerCase();
-	const isDepositSettled = paymentStatus === "paid" || paymentStatus === "partially_paid";
-
-	if (!isPosAttachEligibleStatus(workflowStatus)) {
-		return null;
-	}
-
-	if (paymentStatus === "refunded" || paymentStatus === "partially_refunded") {
-		return null;
-	}
-
-	if (policy === "full_upfront") {
-		return paymentStatus === "paid" || paymentStatus === "completed" || paymentStatus === "partially_paid" ? null : "full";
-	}
-
-	if (paymentStatus === "completed") return null;
-	if (isDepositSettled) {
-		if (returnMethod === "shop_delivery") return null;
-
-		if (workflowStatus === "ready-for-pickup" || workflowStatus === "ready_for_pickup") {
-			return "balance";
-		}
-
-		return null;
-	}
-
-	return "deposit";
-};
-
-const computeDueAmountForOrder = (order: RepairOrderOption, dueType: PosDueType): number => {
-	if (dueType === "full") {
-		return Number(order.amount || 0);
-	}
-
-	return Math.round((Number(order.amount || 0) / 2) * 100) / 100;
+	return value === "deposit_50" ? "deposit_50" : "full_upfront";
 };
 
 const mapTenderType = (method: PaymentMethod): "cash" | "paymongo_card" | "paymongo_wallet" => {
@@ -510,14 +527,7 @@ const PointOfSalePage = () => {
 	const businessType = resolvePosBusinessType(props as any);
 	const allowedModes = useMemo(() => resolveAllowedModes(businessType), [businessType]);
 	const [mode, setMode] = useState<PosMode>(allowedModes[0]);
-	const shopRepairPaymentPolicy: ManualPaymentPolicy =
-		String(
-			(props as any)?.auth?.shop_owner?.repair_payment_policy
-			?? (props as any)?.auth?.user?.shop_owner?.repair_payment_policy
-			?? (props as any)?.shop_settings?.repair_payment_policy
-		) === "full_upfront"
-			? "full_upfront"
-			: "deposit_50";
+	const shopRepairPaymentPolicy: ManualPaymentPolicy = "full_upfront";
 	const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
 	const requestedRepairRequestId = String(urlParams.get("repair_request_id") || "");
 	const requestedDueType = normalizeDueType(urlParams.get("due_type"));
@@ -555,6 +565,7 @@ const PointOfSalePage = () => {
 	const [isLoadingData, setIsLoadingData] = useState<boolean>(false);
 	const [retailSearch, setRetailSearch] = useState<string>("");
 	const [retailProducts, setRetailProducts] = useState<RetailCatalogProduct[]>([]);
+	const [retailPage, setRetailPage] = useState<number>(1);
 	const [retailLoading, setRetailLoading] = useState<boolean>(false);
 	const [retailCart, setRetailCart] = useState<RetailCartItem[]>([]);
 	const [retailSelectionByProduct, setRetailSelectionByProduct] = useState<Record<number, { size: string; color: string }>>({});
@@ -645,7 +656,8 @@ const PointOfSalePage = () => {
 					const mappedOrders: RepairOrderOption[] = rawOrders
 						.map((entry: any, index: number) => {
 							const amount = Number(
-								entry?.final_total
+								entry?.collection_summary?.grand_total
+								?? entry?.final_total
 								?? entry?.pricing_breakdown?.final_total
 								?? entry?.total
 								?? entry?.finalPrice
@@ -676,6 +688,12 @@ const PointOfSalePage = () => {
 								.filter((serviceName: string) => serviceName.length > 0);
 
 							const packageName = String(entry?.pricing_breakdown?.package_name ?? "").trim();
+							const customerName = normalizeCustomerField(entry?.customer_name)
+								|| normalizeCustomerField(entry?.user?.name)
+								|| [entry?.user?.first_name, entry?.user?.last_name].map(normalizeCustomerField).filter(Boolean).join(' ');
+							const customerPhone = normalizeCustomerField(entry?.phone) || normalizeCustomerField(entry?.user?.phone);
+							const customerEmail = normalizeOptionalCustomerEmail(entry?.email)
+								|| normalizeOptionalCustomerEmail(entry?.user?.email);
 							const primaryService = String(
 								entry?.service
 								?? entry?.item
@@ -684,24 +702,45 @@ const PointOfSalePage = () => {
 								?? requestedServices[0]
 								?? "Repair Service"
 							);
+							const collectibleAmount = Number(
+								entry?.collectible_amount
+								?? entry?.collection_summary?.collectible_amount
+								?? 0,
+							);
+							const outstandingBalance = Number(
+								entry?.outstanding_balance
+								?? entry?.collection_summary?.outstanding_balance
+								?? 0,
+							);
+							const totalPaidAmount = Number(
+								entry?.collection_summary?.total_paid_amount
+								?? entry?.total_paid_amount
+								?? 0,
+							);
 							return {
 								id: String(entry?.id ?? `R-${index}`),
-								customer: String(entry?.customer ?? entry?.customer_name ?? "Walk-in Customer"),
-								customerId: Number.isFinite(Number(entry?.customer_id)) ? Number(entry.customer_id) : null,
+								requestNumber: String(entry?.request_id ?? "").trim() || undefined,
+								customer: customerName || "Walk-in Customer",
+								customerId: normalizeOptionalCustomerId(entry?.customer_id ?? entry?.user_id),
+								customerName,
+								customerPhone,
+								customerEmail,
 								paymentPolicy: normalizePaymentPolicy(entry?.payment_policy_snapshot ?? entry?.payment_policy ?? entry?.shop_owner?.repair_payment_policy),
 								paymentStatus: String(entry?.payment_status ?? "pending"),
 								status: String(entry?.status ?? ""),
 								returnDeliveryMethod: String(entry?.return_delivery_method ?? (entry?.delivery_method === "walk_in" ? "walk_in" : "customer_pickup")),
+								dueTypeToCollect: parseDueType(entry?.due_type ?? entry?.collection_summary?.due_type),
+								paymentPhase: entry?.phase ?? entry?.collection_summary?.phase ?? null,
+								collectible: Boolean(entry?.collectible ?? entry?.collection_summary?.collectible),
+								collectibleAmount: Number.isFinite(collectibleAmount) ? collectibleAmount : 0,
+								outstandingBalance: Number.isFinite(outstandingBalance) ? outstandingBalance : 0,
+								totalPaidAmount: Number.isFinite(totalPaidAmount) ? totalPaidAmount : 0,
 								service: primaryService,
 								amount: Number.isFinite(amount) ? amount : 0,
 								requestedServices: requestedServices.length > 0 ? requestedServices : [primaryService],
 							};
 						})
-						.filter((entry: RepairOrderOption) => entry.amount > 0)
-						.map((entry: RepairOrderOption) => ({
-							...entry,
-							dueTypeToCollect: resolveOutstandingDueType(entry),
-						}));
+						.filter((entry: RepairOrderOption) => entry.amount > 0 && entry.collectibleAmount > 0 && entry.collectible === true && entry.dueTypeToCollect !== null);
 
 					const mappedManualQueueOrders: RepairOrderOption[] = rawManualQueue
 						.map((row: any, index: number) => {
@@ -711,14 +750,24 @@ const PointOfSalePage = () => {
 
 							return {
 								id: String(row?.id ?? `MQ-${index}`),
-								customer: String(row?.customer_name ?? "Walk-in Customer"),
-								customerId: null,
+								requestNumber: requestNo,
+								customer: normalizeCustomerField(row?.customer_name) || "Walk-in Customer",
+								customerId: normalizeOptionalCustomerId(row?.customer_id),
+								customerName: normalizeCustomerField(row?.customer_name),
+								customerPhone: normalizeCustomerField(row?.phone),
+								customerEmail: normalizeOptionalCustomerEmail(row?.email),
 								paymentPolicy: normalizePaymentPolicy(row?.payment_policy),
 								paymentStatus: queueDueType === null ? "completed" : "partially_paid",
 								status: String(row?.status ?? ""),
 								returnDeliveryMethod: "walk_in",
 								service: `Manual Walk-in (${requestNo})`,
 								amount: Number.isFinite(amount) ? amount : 0,
+								collectible: queueDueType !== null,
+								collectibleAmount: Number.isFinite(Number(row?.remaining_balance))
+									? Number(row.remaining_balance)
+									: (queueDueType === "full" ? amount : Math.round((amount / 2) * 100) / 100),
+								outstandingBalance: Number(row?.remaining_balance ?? 0),
+								totalPaidAmount: Number(row?.paid ?? 0),
 								requestedServices: [`Manual Walk-in (${requestNo})`],
 								dueTypeToCollect: queueDueType,
 							};
@@ -742,6 +791,9 @@ const PointOfSalePage = () => {
 							customer: queueOrder.customer || existing.customer,
 							service: queueOrder.service || existing.service,
 							amount: queueOrder.amount > 0 ? queueOrder.amount : existing.amount,
+							collectibleAmount: queueOrder.collectibleAmount > 0 ? queueOrder.collectibleAmount : existing.collectibleAmount,
+							outstandingBalance: queueOrder.outstandingBalance > 0 ? queueOrder.outstandingBalance : existing.outstandingBalance,
+							totalPaidAmount: queueOrder.totalPaidAmount > 0 ? queueOrder.totalPaidAmount : existing.totalPaidAmount,
 							dueTypeToCollect: queueOrder.dueTypeToCollect ?? existing.dueTypeToCollect,
 						});
 					}
@@ -1024,6 +1076,10 @@ const PointOfSalePage = () => {
 						latestRefund: latestRefund ? {
 							id: Number(latestRefund?.id || 0),
 							status: String(latestRefund?.status || "requested"),
+							workflowSource: latestRefund?.workflow_source,
+							repairerStatus: latestRefund?.repairer_status,
+							financeStatus: latestRefund?.finance_status,
+							shopOwnerStatus: latestRefund?.shop_owner_status,
 						} : undefined,
 						receiptNo: String(row?.receipt?.receipt_no ?? row?.transaction_no ?? `POS-${index + 1}`),
 						createdAtISO: issuedAt,
@@ -1036,7 +1092,7 @@ const PointOfSalePage = () => {
 							minute: "2-digit",
 						}),
 						cashierName: String(row?.created_by ?? cashierName),
-						customerName: String(receiptPayload?.customer?.name ?? row?.walk_in_name ?? "Customer"),
+						customerName: String(receiptPayload?.customer?.name ?? row?.walk_in_name ?? (moduleType === 'retail' ? 'Walk-in Customer' : 'Customer')),
 						customerPhone: String(receiptPayload?.customer?.phone ?? row?.walk_in_phone ?? ""),
 						paymentReference: String(row?.payment_lines?.[0]?.provider_reference ?? "") || null,
 						paymentMethod,
@@ -1098,6 +1154,80 @@ const PointOfSalePage = () => {
 		fetchRefundQueue();
 	}, [isRefundQueueOpen]);
 
+	const handleManualRejectedNoAccountRefund = async (receipt: ReceiptSnapshot) => {
+		const transactionId = Number(receipt.transactionId ?? 0);
+		if (transactionId <= 0) {
+			await Swal.fire({
+				icon: "warning",
+				title: "Refund Unavailable",
+				text: "This record has no linked transaction reference.",
+				confirmButtonColor: "#b45309",
+			});
+			return;
+		}
+
+		const requestedAmount = resolveRefundRequestAmount(receipt);
+		const refundConfirmation = await Swal.fire({
+			icon: "warning",
+			title: "Confirm Manual POS Refund",
+			html: `Record a manual refund for <b>${formatPeso(requestedAmount)}</b> after the Manager rejected this repair.`,
+			showCancelButton: true,
+			confirmButtonText: "Yes, Refund",
+			cancelButtonText: "Cancel",
+			confirmButtonColor: "#dc2626",
+		});
+
+		if (!refundConfirmation.isConfirmed) {
+			return;
+		}
+
+		try {
+			const response = await repairPosHistoryApi.manualRefundRejectedNoAccount({
+				source_transaction_id: transactionId,
+				receipt_no: receipt.receiptNo,
+			});
+			const refundId = Number((response.data as any)?.refund_id ?? 0);
+			const approvedAmount = Number(
+				(response.data as any)?.data?.approved_amount ?? requestedAmount,
+			);
+			const nextStatus = String((response.data as any)?.data?.status ?? "succeeded").toLowerCase();
+
+			setReceiptHistory((prev) => prev.map((entry) => (
+				entry.receiptNo === receipt.receiptNo
+					? {
+						...entry,
+						refundEntries: [
+							{
+								status: nextStatus,
+								approvedAmount: nextStatus === "succeeded" ? approvedAmount : 0,
+							},
+							...entry.refundEntries,
+						],
+						latestRefund: {
+							id: refundId > 0 ? refundId : Number(entry.latestRefund?.id ?? 0),
+							status: nextStatus,
+						},
+					}
+					: entry
+			)));
+
+			await Swal.fire({
+				icon: "success",
+				title: "Manual POS Refund Recorded",
+				text: "The refund was recorded successfully. No Finance approval is required.",
+				confirmButtonColor: "#10b981",
+			});
+		} catch (error: any) {
+			const message = error?.response?.data?.message || "Unable to record the manual POS refund.";
+			await Swal.fire({
+				icon: "error",
+				title: "Refund Failed",
+				text: message,
+				confirmButtonColor: "#dc2626",
+			});
+		}
+	};
+
 	const handleRequestRefund = async (receipt: ReceiptSnapshot) => {
 		if (isActiveWarrantyClaimStatus(receipt.latestWarrantyClaimStatus)) {
 			await Swal.fire({
@@ -1116,6 +1246,11 @@ const PointOfSalePage = () => {
 				text: "A refund is already in progress/completed for this receipt or its repair request.",
 				confirmButtonColor: "#2563eb",
 			});
+			return;
+		}
+
+		if (isManualRejectedNoAccountRepair(receipt)) {
+			await handleManualRejectedNoAccountRefund(receipt);
 			return;
 		}
 
@@ -1688,13 +1823,14 @@ const PointOfSalePage = () => {
 		if (!requestedRepairRequestId || selectedRepairOrder) return;
 
 		const targetOrder = repairOrders.find((entry) => entry.id === requestedRepairRequestId);
-		if (!targetOrder) return;
+		if (!targetOrder || !targetOrder.collectible || !targetOrder.dueTypeToCollect || targetOrder.collectibleAmount <= 0) return;
 
-		const resolvedDueType = resolveDueTypeForPolicy(targetOrder.paymentPolicy ?? "deposit_50", requestedDueType);
-		const dueAmount = computeDueAmountForOrder(targetOrder, resolvedDueType);
+		const resolvedDueType = targetOrder.dueTypeToCollect;
+		const dueAmount = targetOrder.collectibleAmount;
 		setSelectedRepairOrder(targetOrder);
-		setCustomerName(targetOrder.customer);
-		setCustomerEmail("");
+		setCustomerName(targetOrder.customerName);
+		setCustomerPhone(targetOrder.customerPhone);
+		setCustomerEmail(targetOrder.customerEmail);
 		setItems([
 			{
 				id: `order-${targetOrder.id}-${resolvedDueType}`,
@@ -1714,7 +1850,7 @@ const PointOfSalePage = () => {
 		return !selectedRepairOrder && !requestedRepairRequestId;
 	}, [requestedRepairRequestId, selectedRepairOrder]);
 
-	const dueTypeForManualCheckout: PosDueType = shopRepairPaymentPolicy === "deposit_50" ? "deposit" : "full";
+	const dueTypeForManualCheckout: PosDueType = "full";
 
 	const chargeableSubtotal = useMemo(() => {
 		if (!isManualStandaloneCheckout) {
@@ -1755,6 +1891,7 @@ const PointOfSalePage = () => {
 		itemsCount: items.length,
 		customerName,
 		customerPhone,
+		customerEmail,
 		paymentMethod,
 		cashReceivedInput,
 		hasInsufficientCash,
@@ -1764,13 +1901,15 @@ const PointOfSalePage = () => {
 	const payDisableReason = useMemo(() => {
 		if (isProcessingPayment) return "Processing payment...";
 		if (items.length === 0) return "Add at least one service before checkout.";
-		if (customerName.trim().length === 0) return "Customer name is required.";
-		if (paymentMethod === "cash" && !isCustomerPhoneValid) return "Cash payments require an 11-digit phone number.";
+		if (selectedRepairOrder && (customerName.trim().length === 0 || !isCustomerPhoneValid)) return 'This repair order is missing canonical customer name or phone. Update the repair record before checkout.';
+		if (customerName.trim().length === 0) return 'Customer name is required.';
+		if (!isCustomerPhoneValid) return 'Repair checkout requires an 11-digit phone number.';
+		if (!isOptionalEmailValid(customerEmail)) return 'Enter a valid email address or leave email blank.';
 		if (paymentMethod === "cash" && !hasCashInput) return "Enter cash received for cash payments.";
 		if (paymentMethod !== "cash" && !hasProofReference) return "Enter proof reference for GCash/Card payments.";
 		if (hasInsufficientCash) return `Insufficient cash by ${formatPeso(shortValue)}.`;
 		return "";
-	}, [customerName, hasCashInput, hasInsufficientCash, hasProofReference, isCustomerPhoneValid, isProcessingPayment, items.length, paymentMethod, shortValue]);
+	}, [customerEmail, customerName, hasCashInput, hasInsufficientCash, hasProofReference, isCustomerPhoneValid, isProcessingPayment, items.length, paymentMethod, selectedRepairOrder, shortValue]);
 	const retailSubtotal = useMemo(() => {
 		return retailCart.reduce((sum, item) => sum + (item.qty * item.unitPrice), 0);
 	}, [retailCart]);
@@ -1792,24 +1931,29 @@ const PointOfSalePage = () => {
 		itemsCount: retailCart.length,
 		customerName: retailCustomerName,
 		customerPhone: retailCustomerPhone,
+		customerEmail: retailCustomerEmail,
 		paymentMethod: retailPaymentMethod,
 		cashReceivedInput: retailCashReceivedInput,
 		hasInsufficientCash: retailHasInsufficientCash,
 		proofReference: retailProofReference,
+		requireCustomerInfo: false,
 	});
 	const retailPayDisableReason = useMemo(() => {
 		if (retailProcessingPayment) return "Processing payment...";
 		if (retailCart.length === 0) return "Add at least one product before checkout.";
-		if (retailCustomerName.trim().length === 0) return "Customer name is required.";
+		if (!isOptionalEmailValid(retailCustomerEmail)) return 'Enter a valid email address or leave email blank.';
 		if (retailPaymentMethod === "cash" && retailCashReceivedInput.trim().length === 0) return "Enter cash received for cash payments.";
 		if (retailPaymentMethod !== "cash" && retailProofReference.trim().length === 0) return "Enter proof reference for GCash/Card payments.";
 		if (retailHasInsufficientCash) return `Insufficient cash by ${formatPeso(retailShortValue)}.`;
 		return "";
-	}, [retailCart.length, retailCashReceivedInput, retailCustomerName, retailHasInsufficientCash, retailPaymentMethod, retailProcessingPayment, retailProofReference, retailShortValue]);
+	}, [retailCart.length, retailCashReceivedInput, retailCustomerEmail, retailHasInsufficientCash, retailPaymentMethod, retailProcessingPayment, retailProofReference, retailShortValue]);
 	const effectiveDueType = useMemo(() => {
-		const policy = selectedRepairOrder?.paymentPolicy ?? "deposit_50";
-		return resolveDueTypeForPolicy(policy, requestedDueType);
-	}, [requestedDueType, selectedRepairOrder]);
+		if (selectedRepairOrder) {
+			return selectedRepairOrder.dueTypeToCollect ?? "full";
+		}
+
+		return dueTypeForManualCheckout;
+	}, [dueTypeForManualCheckout, selectedRepairOrder]);
 	const hasRepairOrderItem = useMemo(() => items.some((item) => item.source === "repair-order"), [items]);
 
 	useEffect(() => {
@@ -1891,8 +2035,9 @@ const PointOfSalePage = () => {
 	};
 
 	const addFromRepairOrder = (order: RepairOrderOption) => {
-		const resolvedDueType = order.dueTypeToCollect ?? resolveDueTypeForPolicy(order.paymentPolicy ?? "deposit_50", requestedDueType);
-		const dueAmount = computeDueAmountForOrder(order, resolvedDueType);
+		const resolvedDueType = order.dueTypeToCollect;
+		const dueAmount = order.collectibleAmount;
+		if (!order.collectible || !resolvedDueType || dueAmount <= 0) return;
 		setItems([
 			{
 				id: `order-${order.id}-${resolvedDueType}`,
@@ -1903,8 +2048,9 @@ const PointOfSalePage = () => {
 			},
 		]);
 		setSelectedRepairOrder(order);
-		setCustomerName(order.customer);
-		setCustomerEmail("");
+		setCustomerName(order.customerName);
+		setCustomerPhone(order.customerPhone);
+		setCustomerEmail(order.customerEmail);
 		setOrderSearch("");
 		setIsOrderModalOpen(false);
 	};
@@ -1999,7 +2145,7 @@ const PointOfSalePage = () => {
 	const filteredRepairOrders = useMemo(() => {
 		const query = orderSearch.trim().toLowerCase();
 		const attachableOrders = repairOrders
-			.filter((order) => order.dueTypeToCollect !== null)
+			.filter((order) => order.collectible === true && order.collectibleAmount > 0 && order.dueTypeToCollect !== null)
 			.filter((order) => !hasRequestedDueType || order.dueTypeToCollect === requestedDueType);
 
 		if (!query) return attachableOrders;
@@ -2179,6 +2325,15 @@ const PointOfSalePage = () => {
 		return filteredServiceCatalog.slice(start, start + SERVICES_PER_PAGE);
 	}, [filteredServiceCatalog, servicePage]);
 
+	const totalRetailPages = useMemo(() => {
+		return Math.max(1, Math.ceil(retailProducts.length / RETAIL_PRODUCTS_PER_PAGE));
+	}, [retailProducts.length]);
+
+	const paginatedRetailProducts = useMemo(() => {
+		const start = (retailPage - 1) * RETAIL_PRODUCTS_PER_PAGE;
+		return retailProducts.slice(start, start + RETAIL_PRODUCTS_PER_PAGE);
+	}, [retailPage, retailProducts]);
+
 	useEffect(() => {
 		setServicePage(1);
 	}, [serviceSearch]);
@@ -2188,6 +2343,16 @@ const PointOfSalePage = () => {
 			setServicePage(totalServicePages);
 		}
 	}, [servicePage, totalServicePages]);
+
+	useEffect(() => {
+		setRetailPage(1);
+	}, [retailSearch]);
+
+	useEffect(() => {
+		if (retailPage > totalRetailPages) {
+			setRetailPage(totalRetailPages);
+		}
+	}, [retailPage, totalRetailPages]);
 
 	const removeItem = (id: string) => {
 		setItems((prev) => {
@@ -2605,7 +2770,7 @@ const PointOfSalePage = () => {
 				{
 					idempotency_key: idempotencyKey,
 					customer_type: "walk_in",
-					walk_in_name: retailCustomerName.trim(),
+					walk_in_name: retailCustomerName.trim() || null,
 					walk_in_phone: retailCustomerPhone.trim() || null,
 					walk_in_email: retailCustomerEmail.trim() || null,
 					items: retailCart.map((item) => ({
@@ -2649,7 +2814,7 @@ const PointOfSalePage = () => {
 					minute: "2-digit",
 				}),
 				cashierName,
-				customerName: retailCustomerName.trim(),
+				customerName: retailCustomerName.trim() || 'Walk-in Customer',
 				customerPhone: getPhoneDisplayForReceipt(retailPaymentMethod, retailCustomerPhone),
 				paymentReference: retailPaymentMethod === "cash" ? null : retailProofReference.trim(),
 				paymentMethod: retailPaymentMethod,
@@ -2756,7 +2921,7 @@ const PointOfSalePage = () => {
 				}
 			`}</style>
 
-			<div className="space-y-6 p-4 md:p-6">
+			<div className="cashier-pos-page space-y-6 p-4 md:p-6">
 				{!isOrderModalOpen && !isRefundQueueOpen && !isReceiptModalOpen && !isHistoryModalOpen && (
 				<div className="flex items-center justify-between">
 					<div>
@@ -2824,7 +2989,7 @@ const PointOfSalePage = () => {
 						<section className="space-y-6 xl:col-span-8 xl:flex xl:h-full xl:flex-col xl:space-y-0 xl:gap-6">
 							<div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
 								<h2 className="mb-2 text-base font-semibold text-slate-900">Customer Information</h2>
-								<p className="mb-3 text-xs text-slate-500">Capture walk-in details before checkout.</p>
+								<p className="mb-3 text-xs text-slate-500">Optional for walk-in purchases. Add details if the customer wants them on the receipt.</p>
 								<div className="grid grid-cols-1 gap-2 md:grid-cols-3">
 									<input
 										title="Retail customer name"
@@ -2891,8 +3056,9 @@ const PointOfSalePage = () => {
 								) : retailProducts.length === 0 ? (
 									<div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">No retail products found for this shop.</div>
 								) : (
-									<div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 xl:flex-1 xl:min-h-0 xl:content-start xl:overflow-y-auto xl:pr-1">
-										{retailProducts.map((product) => {
+									<div className="flex min-h-0 flex-col xl:flex-1">
+										<div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 xl:flex-1 xl:min-h-0 xl:content-start xl:overflow-y-auto xl:pr-1">
+										{paginatedRetailProducts.map((product) => {
 											const isSelected = retailCart.some((entry) => entry.productId === product.id);
 											const inCartQty = retailCart
 												.filter((entry) => entry.productId === product.id)
@@ -3008,7 +3174,36 @@ const PointOfSalePage = () => {
 													</div>
 												</div>
 											);
-										})}
+											})}
+										</div>
+										<nav className="mt-4 flex flex-col gap-3 border-t border-slate-200 pt-4 text-sm text-slate-700 sm:flex-row sm:items-center sm:justify-between" aria-label="Retail product pagination">
+										<p>
+											Showing {(retailPage - 1) * RETAIL_PRODUCTS_PER_PAGE + 1} to {Math.min(retailPage * RETAIL_PRODUCTS_PER_PAGE, retailProducts.length)} of {retailProducts.length} products
+										</p>
+										<div className="flex items-center gap-2">
+											<button
+												type="button"
+												aria-label="Previous retail product page"
+												onClick={() => setRetailPage((prev) => Math.max(prev - 1, 1))}
+												disabled={retailPage === 1}
+												className="h-9 w-9 rounded-lg border border-slate-300 text-slate-500 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+											>
+												&#8249;
+											</button>
+											<div aria-current="page" className="h-9 min-w-10 rounded-lg bg-blue-600 px-3 text-center text-sm font-semibold leading-9 text-white">
+												{retailPage}
+											</div>
+											<button
+												type="button"
+												aria-label="Next retail product page"
+												onClick={() => setRetailPage((prev) => Math.min(prev + 1, totalRetailPages))}
+												disabled={retailPage === totalRetailPages}
+												className="h-9 w-9 rounded-lg border border-slate-300 text-slate-500 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+											>
+												&#8250;
+											</button>
+										</div>
+										</nav>
 									</div>
 								)}
 							</div>
@@ -3294,10 +3489,12 @@ const PointOfSalePage = () => {
 						<div className="grid grid-cols-1 gap-4">
 							<div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
 								<h2 className="mb-2 text-base font-semibold text-slate-900">Customer Information</h2>
-								<p className="mb-3 text-xs text-slate-500">Input customer name. Phone is required for cash and optional for GCash/Card. Email is optional.</p>
+								<p className="mb-3 text-xs text-slate-500">Customer Name * and Phone Number * are required for every repair checkout. Email is optional.</p>
 								<div className="grid grid-cols-1 gap-2 md:grid-cols-3">
 									<input
 										title="Customer name"
+										required
+										aria-required="true"
 										value={customerName}
 										onChange={(event) => setCustomerName(event.target.value)}
 										disabled={!!selectedRepairOrder}
@@ -3306,12 +3503,15 @@ const PointOfSalePage = () => {
 									/>
 									<input
 										title="Customer phone number"
+										required
+										aria-required="true"
 										type="text"
 										inputMode="numeric"
 										pattern="[0-9]*"
 										maxLength={11}
 										value={customerPhone}
 										onChange={(event) => setCustomerPhone(toDigitsOnly(event.target.value).slice(0, 11))}
+										disabled={!!selectedRepairOrder}
 										placeholder="Phone number"
 										className="rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500"
 									/>
@@ -3325,12 +3525,12 @@ const PointOfSalePage = () => {
 										className="rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500 disabled:bg-slate-100"
 									/>
 								</div>
-								{paymentMethod === "cash" && customerPhone.length > 0 && !isCustomerPhoneValid && (
+								{customerPhone.length > 0 && !isCustomerPhoneValid && (
 									<p className="mt-2 text-xs font-semibold text-red-600">Phone number must be exactly 11 digits.</p>
 								)}
 								<p className="mt-2 text-xs text-slate-500">These details will appear on the printed receipt.</p>
 								{selectedRepairOrder && (
-									<p className="mt-1 text-xs font-semibold text-blue-700">Customer name is locked because this order is attached from Job Order Repair.</p>
+									<p className="mt-1 text-xs font-semibold text-blue-700">Customer details are locked because this order is attached from Job Order Repair.</p>
 								)}
 							</div>
 						</div>
@@ -3377,12 +3577,12 @@ const PointOfSalePage = () => {
 														key={`package-${pkg.id}`}
 														onClick={() => addPackageToOrder(pkg)}
 														disabled={!!selectedRepairOrder}
-														className="h-56 rounded-xl border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-blue-300 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
+														className="h-56 rounded-xl border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-slate-400 hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
 													>
 														<div className="flex h-full flex-col">
 															<div className="flex items-start justify-between">
 																<span className="rounded-full bg-slate-200 px-2 py-1 text-[10px] font-semibold uppercase text-slate-600">Package</span>
-																<span className={`flex h-6 w-6 items-center justify-center rounded-full border ${selected ? "border-blue-500 bg-blue-500 text-white" : "border-slate-300"}`}>
+																<span className={`flex h-6 w-6 items-center justify-center rounded-full border ${selected ? "border-slate-900 bg-slate-900 text-white" : "border-slate-300"}`}>
 																	{selected && (
 																		<svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
 																			<path d="M4 10l4 4 8-8" />
@@ -3441,14 +3641,14 @@ const PointOfSalePage = () => {
 														disabled={!canSelectService}
 														className={`h-56 rounded-xl border p-4 text-left transition ${
 															canSelectService
-																? "border-slate-200 bg-slate-50 hover:border-blue-300 hover:bg-blue-50"
+																? "border-slate-200 bg-slate-50 hover:border-slate-400 hover:bg-white"
 																: "border-slate-200 bg-slate-100 opacity-45 grayscale cursor-not-allowed"
 														}`}
 													>
 														<div className="flex h-full flex-col">
 															<div className="flex items-start justify-between">
 																<span className="rounded-full bg-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-600">{service.category}</span>
-																<span className={`flex h-6 w-6 items-center justify-center rounded-full border ${selected ? "border-blue-500 bg-blue-500 text-white" : "border-slate-300"}`}>
+																<span className={`flex h-6 w-6 items-center justify-center rounded-full border ${selected ? "border-slate-900 bg-slate-900 text-white" : "border-slate-300"}`}>
 																	{selected && (
 																		<svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
 																			<path d="M4 10l4 4 8-8" />
@@ -3466,7 +3666,7 @@ const PointOfSalePage = () => {
 																<p className="text-xs text-slate-500">{service.duration}</p>
 															</div>
 															{activeManualPackage && isIncludedByPackage && <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Included in package</span>}
-															{activeManualPackage && !isIncludedByPackage && <span className="text-[10px] font-semibold uppercase tracking-wider text-blue-700">Add-on</span>}
+															{activeManualPackage && !isIncludedByPackage && <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-700">Add-on</span>}
 															{selectedRepairOrder && isRequestedService && <span className="text-[10px] font-semibold uppercase tracking-wider text-emerald-700">Requested</span>}
 														</div>
 													</button>
@@ -3606,7 +3806,7 @@ const PointOfSalePage = () => {
 							<label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Payment Method</label>
 							{isManualStandaloneCheckout && (
 								<p className="text-[11px] text-slate-500">
-									Manual policy from Shop Settings: {shopRepairPaymentPolicy === "deposit_50" ? "50/50 deposit" : "Full upfront"}
+									Manual policy from Shop Settings: Full Payment Upfront
 								</p>
 							)}
 							<select
@@ -3650,12 +3850,7 @@ const PointOfSalePage = () => {
 							<div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
 								<div className="space-y-2 text-sm">
 									<div className="flex items-center justify-between text-slate-600"><span>Service Subtotal</span><span>{formatPeso(subtotal)}</span></div>
-									{isManualStandaloneCheckout && dueTypeForManualCheckout === "deposit" && (
-										<div className="flex items-center justify-between text-slate-600"><span>Deposit Base (50%)</span><span>{formatPeso(chargeableSubtotal)}</span></div>
-									)}
-									{(!isManualStandaloneCheckout || dueTypeForManualCheckout !== "deposit") && (
-										<div className="flex items-center justify-between text-slate-600"><span>Chargeable Subtotal</span><span>{formatPeso(chargeableSubtotal)}</span></div>
-									)}
+									<div className="flex items-center justify-between text-slate-600"><span>Chargeable Subtotal</span><span>{formatPeso(chargeableSubtotal)}</span></div>
 									<div className="flex items-center justify-between text-slate-600"><span>Subtotal (Before VAT)</span><span>{formatPeso(dueBreakdown.netSubtotal)}</span></div>
 									<div className="flex items-center justify-between text-slate-600"><span>Discount</span><span>- {formatPeso(discount)}</span></div>
 									<div className="flex items-center justify-between text-slate-600"><span>VAT ({VAT_RATE}%)</span><span>{formatPeso(vatAmount)}</span></div>
@@ -3741,10 +3936,12 @@ const PointOfSalePage = () => {
 										filteredRepairOrders.map((order) => (
 											<div key={order.id} className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
 												<div>
+													<p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{order.requestNumber || `Repair #${order.id}`}</p>
 													<p className="font-semibold text-slate-900">{order.customer}</p>
 													<p className="text-sm text-slate-600">{order.service}</p>
 													<p className="text-xs text-slate-500">Services: {order.requestedServices.join(", ")}</p>
-													<p className="text-xs text-slate-500">Estimated amount {formatPeso(order.amount)}</p>
+													<p className="text-xs text-slate-500">Total {formatPeso(order.amount)} · Paid {formatPeso(order.totalPaidAmount)}</p>
+													<p className="text-xs font-semibold text-blue-700">Collect {getDueTypeLabel(order.dueTypeToCollect)} {formatPeso(order.collectibleAmount)} · Remaining {formatPeso(order.outstandingBalance)}</p>
 												</div>
 												<button
 													type="button"
@@ -3812,14 +4009,14 @@ const PointOfSalePage = () => {
 														<p className="text-xs text-slate-600">Customer: {receipt.customerName}</p>
 														<p className="text-xs text-slate-600">Method: {receipt.paymentMethod.toUpperCase()} | Phase: {getDueTypeLabel(receipt.dueType)}</p>
 														{receipt.latestRefund?.status && (
-															<p className="text-[11px] text-slate-500">{getRefundStatusHint(receipt.latestRefund.status)}</p>
+															<p className="text-[11px] text-slate-500">{getReceiptLatestRefundPresentation(receipt)?.hint ?? getRefundStatusHint(receipt.latestRefund.status)}</p>
 														)}
 													</div>
 													<div className="flex items-center gap-2">
 														<p className="text-sm font-bold text-slate-900">{formatPeso(receipt.totalDue)}</p>
 														{receipt.latestRefund?.status && (
 															<span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-slate-700">
-																{receipt.latestRefund.status}
+																{getReceiptLatestRefundPresentation(receipt)?.label ?? receipt.latestRefund.status}
 															</span>
 														)}
 														{canRequestWarrantyClaimFromReceipt(receipt) && (
@@ -3839,8 +4036,8 @@ const PointOfSalePage = () => {
 															<button
 																type="button"
 																onClick={() => handleRequestRefund(receipt)}
-																title="Request Refund"
-																aria-label="Request Refund"
+																title={isManualRejectedNoAccountRepair(receipt) ? "Manual POS Refund" : "Request Refund"}
+																aria-label={isManualRejectedNoAccountRepair(receipt) ? "Manual POS Refund" : "Request Refund"}
 																className="inline-flex items-center justify-center bg-transparent p-1 text-amber-600 transition-colors hover:text-amber-700"
 															>
 																<svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

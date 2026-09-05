@@ -6,15 +6,19 @@ use App\Http\Controllers\Controller;
 use App\Models\Approval;
 use App\Models\PriceChangeRequest;
 use App\Models\Product;
+use App\Models\ShopOwner;
 use App\Models\User;
 use App\Enums\ApprovalStatus;
 use App\Enums\PriceChangeStatus;
 use App\Services\NotificationService;
 use App\Services\PriceChangeApprovalService;
 use App\Services\ShopOwnerApprovalPolicyService;
+use App\Support\Finance\FinanceErrorResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 
 class PriceChangeRequestController extends Controller
 {
@@ -143,6 +147,8 @@ class PriceChangeRequestController extends Controller
                                 $actor,
                                 $requiresOwnerApproval
                             );
+                        } else {
+                            throw new \RuntimeException('Unable to resolve the Shop Owner approval actor.');
                         }
                     } catch (\Exception $e) {
                         \Log::error('Failed to refresh price change approval workflow', [
@@ -150,6 +156,7 @@ class PriceChangeRequestController extends Controller
                             'requires_owner_approval' => $requiresOwnerApproval,
                             'error' => $e->getMessage()
                         ]);
+                        throw $e;
                     }
                 }
 
@@ -230,6 +237,8 @@ class PriceChangeRequestController extends Controller
                         $actor,
                         $requiresOwnerApproval
                     );
+                } else {
+                    throw new \RuntimeException('Unable to resolve the Shop Owner approval actor.');
                 }
             } catch (\Exception $e) {
                 \Log::error('Failed to create price change approval workflow', [
@@ -237,7 +246,7 @@ class PriceChangeRequestController extends Controller
                     'requires_owner_approval' => $requiresOwnerApproval,
                     'error' => $e->getMessage()
                 ]);
-                // Continue despite error - request is still created
+                throw $e;
             }
 
             try {
@@ -259,12 +268,7 @@ class PriceChangeRequestController extends Controller
             ], 201);
         } catch (\Exception $e) {
             DB::rollBack();
-            \Log::error('Error creating/updating price change request: ' . $e->getMessage());
-            
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to submit price change request',
-            ], 500);
+            return FinanceErrorResponse::json($e, 'price_change.create', 500, ['record_id' => $productId, 'shop_id' => $shopOwnerId]);
         }
     }
 
@@ -340,6 +344,29 @@ class PriceChangeRequestController extends Controller
         ]);
     }
 
+    public function ownerShow(int $id)
+    {
+        $shopOwner = Auth::guard('shop_owner')->user();
+        if (!$shopOwner) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        $priceChangeRequest = PriceChangeRequest::query()
+            ->with(['product', 'requester', 'financeReviewer', 'ownerReviewer', 'approval'])
+            ->where('shop_owner_id', (int) $shopOwner->id)
+            ->whereKey($id)
+            ->first();
+
+        if (!$priceChangeRequest) {
+            return response()->json(['message' => 'Price change request not found'], 404);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => $priceChangeRequest,
+        ]);
+    }
+
     /**
      * Get all owner-relevant requests (for metrics calculation)
      */
@@ -406,33 +433,34 @@ class PriceChangeRequestController extends Controller
 
         $priceChangeRequest = PriceChangeRequest::findOrFail($id);
         $actor = Auth::guard('user')->user() ?? Auth::user();
+        $isPending = $priceChangeRequest->status === PriceChangeStatus::PENDING;
         
         // Create approval workflow if missing (for old requests created before the fix)
-        if (!$priceChangeRequest->approval_id) {
+        if (!$priceChangeRequest->approval_id && $isPending) {
             try {
-                $requiresOwnerApproval = $this->shopOwnerApprovalPolicyService->requiresOwnerApprovalForPriceChange(
-                    (int) $priceChangeRequest->shop_owner_id,
-                    (float) $priceChangeRequest->current_price,
-                    (float) $priceChangeRequest->proposed_price
-                );
-                
                 $shopOwnerUser = $this->resolveShopOwnerApproverUser((int) $priceChangeRequest->shop_owner_id);
                 if ($shopOwnerUser) {
                     $this->priceChangeApprovalService->createPriceChangeApproval(
                         $priceChangeRequest,
                         $shopOwnerUser,
                         $actor,
-                        $requiresOwnerApproval
+                        $this->shopOwnerApprovalPolicyService->requiresOwnerApprovalForPriceChange(
+                            (int) $priceChangeRequest->shop_owner_id,
+                            (float) $priceChangeRequest->current_price,
+                            (float) $priceChangeRequest->proposed_price
+                        ),
                     );
                     // Refresh to get the newly created approval
                     $priceChangeRequest->refresh();
+                } else {
+                    throw new \RuntimeException('Unable to resolve the Shop Owner approval actor.');
                 }
             } catch (\Exception $e) {
                 \Log::warning('Failed to create approval workflow for existing request', [
                     'price_change_id' => $priceChangeRequest->id,
                     'error' => $e->getMessage()
                 ]);
-                // Continue - will use legacy path if approval still not created
+                throw $e;
             }
         }
 
@@ -511,11 +539,7 @@ class PriceChangeRequestController extends Controller
                 ]);
             } catch (\Throwable $e) {
                 DB::rollBack();
-
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Failed to apply final approved price: ' . $e->getMessage(),
-                ], 500);
+                return FinanceErrorResponse::json($e, 'price_change.finance_approve', 500, ['record_id' => $id, 'shop_id' => $priceChangeRequest->shop_owner_id]);
             }
         }
 
@@ -659,7 +683,13 @@ class PriceChangeRequestController extends Controller
     public function ownerApprove($id)
     {
         $shopOwner = Auth::guard('shop_owner')->user();
-        $priceChangeRequest = PriceChangeRequest::findOrFail($id);
+        if (! $shopOwner instanceof ShopOwner) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
+        }
+
+        $priceChangeRequest = PriceChangeRequest::query()
+            ->where('shop_owner_id', $shopOwner->id)
+            ->findOrFail($id);
 
         // New 4-step workflow
         if ($priceChangeRequest->approval_id && $priceChangeRequest->approval_workflow_version === 'v4_multi_level') {
@@ -794,10 +824,7 @@ class PriceChangeRequestController extends Controller
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to apply price change: ' . $e->getMessage(),
-            ], 500);
+            return FinanceErrorResponse::json($e, 'price_change.owner_approve', 500, ['record_id' => $id, 'shop_id' => $shopOwner->id]);
         }
     }
 
@@ -811,7 +838,13 @@ class PriceChangeRequestController extends Controller
         ]);
 
         $shopOwner = Auth::guard('shop_owner')->user();
-        $priceChangeRequest = PriceChangeRequest::findOrFail($id);
+        if (! $shopOwner instanceof ShopOwner) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
+        }
+
+        $priceChangeRequest = PriceChangeRequest::query()
+            ->where('shop_owner_id', $shopOwner->id)
+            ->findOrFail($id);
 
         // New 4-step workflow
         if ($priceChangeRequest->approval_id && $priceChangeRequest->approval_workflow_version === 'v4_multi_level') {
@@ -1031,17 +1064,19 @@ class PriceChangeRequestController extends Controller
 
     private function resolveShopOwnerApproverUser(int $shopOwnerId): ?User
     {
-        // Preferred: legacy coupled identity where user.id == shop_owner.id.
-        $exactOwner = User::find($shopOwnerId);
-        if ($exactOwner) {
-            return $exactOwner;
+        $shopOwner = ShopOwner::query()->find($shopOwnerId);
+        if (! $shopOwner) {
+            return null;
         }
 
-        // Next: explicit shop-owner role within the same shop.
+        // Prefer an explicitly linked owner account. Never infer ownership
+        // from a numeric User::id == ShopOwner::id collision.
         $roleScopedOwner = User::query()
             ->where('shop_owner_id', $shopOwnerId)
-            ->whereHas('roles', function ($query) {
-                $query->whereIn('name', ['shop-owner', 'Shop Owner']);
+            ->where(function ($query) {
+                $query->whereHas('roles', function ($roles) {
+                    $roles->whereIn('name', ['shop-owner', 'Shop Owner', 'SHOP_OWNER', 'shop_owner']);
+                })->orWhereIn('role', ['shop-owner', 'Shop Owner', 'SHOP_OWNER', 'shop_owner']);
             })
             ->orderByDesc('id')
             ->first();
@@ -1050,17 +1085,74 @@ class PriceChangeRequestController extends Controller
             return $roleScopedOwner;
         }
 
-        // Fallback: any ERP user account linked to this shop owner record.
-        $linkedUser = User::query()
-            ->where('shop_owner_id', $shopOwnerId)
-            ->orderByDesc('id')
-            ->first();
+        $ownerEmail = strtolower(trim((string) $shopOwner->email));
+        if ($ownerEmail !== '') {
+            $mappedByEmail = User::query()
+                ->where('shop_owner_id', $shopOwnerId)
+                ->whereRaw('LOWER(email) = ?', [$ownerEmail])
+                ->orderByDesc('id')
+                ->first();
 
-        if ($linkedUser) {
-            return $linkedUser;
+            if ($mappedByEmail) {
+                return $mappedByEmail;
+            }
         }
 
-        return null;
+        // Keep generic Approval's User foreign keys usable when the
+        // authenticated ShopOwner has no ERP mirror yet. The deterministic
+        // proxy is linked only to this owner and is never selected by ID.
+        $fallbackEmail = 'shopowner+' . $shopOwnerId . '@solespace.local';
+        $existingProxy = User::query()
+            ->whereRaw('LOWER(email) = ?', [strtolower($fallbackEmail)])
+            ->where(function ($query) use ($shopOwnerId) {
+                $query->whereNull('shop_owner_id')
+                    ->orWhere('shop_owner_id', $shopOwnerId);
+            })
+            ->first();
+
+        if ($existingProxy) {
+            $existingProxy->forceFill([
+                'shop_owner_id' => $shopOwnerId,
+                'role' => 'STAFF',
+                'email_verified_at' => $existingProxy->email_verified_at ?: now(),
+            ])->save();
+
+            try {
+                if (! $existingProxy->hasRole('Shop Owner')) {
+                    $existingProxy->assignRole('Shop Owner');
+                }
+            } catch (\Throwable) {
+                // The legacy role table may not be installed in all environments.
+            }
+
+            return $existingProxy;
+        }
+
+        $firstName = trim((string) ($shopOwner->first_name ?? 'Shop')) ?: 'Shop';
+        $lastName = trim((string) ($shopOwner->last_name ?? 'Owner')) ?: 'Owner';
+
+        try {
+            $ownerProxy = User::query()->create([
+                'first_name' => $firstName,
+                'last_name' => $lastName,
+                'name' => trim($firstName . ' ' . $lastName),
+                'email' => $fallbackEmail,
+                'password' => Hash::make(Str::random(40)),
+                'shop_owner_id' => $shopOwnerId,
+                'role' => 'STAFF',
+                'email_verified_at' => now(),
+            ]);
+
+            try {
+                $ownerProxy->assignRole('Shop Owner');
+            } catch (\Throwable) {
+                // The legacy role table may not be installed in all environments.
+            }
+
+            return $ownerProxy;
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     private function reconcileFinalizedProductPrice($priceChangeRequest): void

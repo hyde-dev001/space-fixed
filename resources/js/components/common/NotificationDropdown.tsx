@@ -9,6 +9,8 @@ import { X, Bell, CheckCheck } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { useRecentNotifications, useMarkAsRead, useMarkAllAsRead } from '../../hooks/useNotifications';
 import NotificationItem from './NotificationItem';
+import { ThemeToggleButton } from './ThemeToggleButton';
+import { resolveNotificationActionUrl } from '../../utils/resolveNotificationActionUrl';
 
 interface NotificationDropdownProps {
   basePath: string;
@@ -90,18 +92,6 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
     return `${href}${separator}${key}=${encodeURIComponent(String(value))}`;
   };
 
-  const resolveLegacyActionUrl = (actionUrl?: string | null): string | null => {
-    const normalized = String(actionUrl || '').trim();
-    if (!normalized) return null;
-
-    // Legacy repair-refund finance links no longer have a dedicated page route.
-    if (normalized === '/erp/finance/repair-refunds') {
-      return '/finance?section=refund-approvals';
-    }
-
-    return normalized;
-  };
-
   const getStaffRepairHighlightValue = (notification: { id: number; data?: any }) => {
     const data = notification.data || {};
     return data.repair_id || data.repair_request_id || data.request_id || data.order_number || notification.id;
@@ -114,9 +104,7 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
     const isRepairNotification =
       type.includes('repair') ||
       data.repair_id ||
-      data.repair_request_id ||
-      data.request_id ||
-      data.order_number;
+      data.repair_request_id;
 
     if (isRepairNotification) {
       const repairHighlight = getStaffRepairHighlightValue(notification);
@@ -145,7 +133,7 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
   const getNotificationHref = (notification: { id: number; type?: string; data?: any; action_url?: string | null }) => {
     const notificationType = String(notification.type || '').toLowerCase();
     const notificationData = notification.data || {};
-    const actionUrl = resolveLegacyActionUrl(notification.action_url);
+    const actionUrl = resolveNotificationActionUrl(notification.action_url, notificationType, notificationData);
     const isShopOwnerBase = basePath.includes('shop-owner');
     const isRepairNotification =
       notificationType.includes('repair')
@@ -182,6 +170,9 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
       }
     }
 
+    // Canonical and migrated destinations take priority over broad type fallbacks.
+    if (actionUrl) return actionUrl;
+
     // Shop owner: repair notifications go to Job Orders Repair page
     if (isShopOwnerBase && isRepairNotification) {
       const repairId = notificationData?.repair_id || notificationData?.repair_request_id || notification.id;
@@ -192,9 +183,6 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
     if (isShopOwnerBase && isOrderNotification) {
       return '/shop-owner/job-orders-retail';
     }
-
-    // Use explicit action_url when set (all live DB notifications have this)
-    if (actionUrl) return actionUrl;
 
     // Customer: repair notifications go to my-repairs
     if (!basePath.includes('shop-owner') && !basePath.includes('staff') && notification.type?.includes('repair')) {
@@ -281,12 +269,12 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
   return (
     <div
       ref={dropdownRef}
-      className="fixed left-2 right-2 top-16 z-70 flex max-h-[calc(100vh-5rem)] flex-col rounded-xl border border-gray-200 bg-white shadow-xl sm:absolute sm:left-auto sm:right-0 sm:top-auto sm:mt-2 sm:w-96 sm:max-h-150 dark:bg-gray-900 dark:border-gray-700"
+      className="fixed left-2 right-2 top-16 z-70 flex max-h-[calc(100vh-5rem)] flex-col rounded-xl border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-900 sm:absolute sm:left-auto sm:right-0 sm:top-auto sm:mt-2 sm:w-96 sm:max-h-150"
     >
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+      <div className="flex items-center justify-between border-b border-gray-200 p-4 dark:border-gray-700">
         <div className="flex items-center gap-2">
-          <Bell size={20} className="text-gray-600 dark:text-gray-300" />
+          <Bell size={20} className="text-gray-700 dark:text-gray-300" />
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
             Notifications
           </h3>
@@ -301,14 +289,17 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
           <button
             onClick={handleMarkAllAsRead}
             disabled={unreadCount === 0 || markAllAsRead.isPending}
-            className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-gray-100 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed dark:text-gray-400 dark:hover:text-blue-400 dark:hover:bg-gray-800"
+            className="rounded p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-blue-400"
+            aria-label="Mark all as read"
             title="Mark all as read"
           >
             <CheckCheck size={18} />
           </button>
+          {isCustomerView && <ThemeToggleButton />}
           <button
             onClick={onClose}
-            className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors dark:text-gray-400 dark:hover:text-gray-200 dark:hover:bg-gray-800"
+            className="rounded p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+            aria-label="Close notifications"
             title="Close notifications"
           >
             <X size={18} />
@@ -346,11 +337,11 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
 
       {/* Footer */}
       {sortedNotifications.length > 0 && (
-        <div className="p-3 border-t border-gray-200 dark:border-gray-700">
+        <div className="border-t border-gray-200 p-3 dark:border-gray-700">
           <div className="flex items-center justify-between gap-2">
             <Link
               href={basePath.includes('shop-owner') ? '/shop-owner/notifications/settings' : (basePath.includes('staff') || basePath.includes('hr')) ? '/erp/notifications/settings' : '/notifications/settings'}
-              className="flex-1 text-center text-sm font-medium text-gray-600 hover:text-gray-800 transition-colors dark:text-gray-300 dark:hover:text-white"
+              className="flex-1 text-center text-sm font-medium text-gray-600 transition-colors hover:text-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-gray-300 dark:hover:text-white"
               onClick={onClose}
             >
               Settings
@@ -358,7 +349,7 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
             <span className="text-gray-300 dark:text-gray-600">|</span>
             <Link
               href={notificationsListHref}
-              className="flex-1 text-center text-sm font-medium text-blue-600 hover:text-blue-700 transition-colors"
+              className="flex-1 text-center text-sm font-medium text-blue-600 transition-colors hover:text-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
               onClick={onClose}
             >
               View All

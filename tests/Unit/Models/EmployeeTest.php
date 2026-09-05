@@ -2,6 +2,7 @@
 
 namespace Tests\Unit\Models;
 
+use App\Enums\EmployeeStatus;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 use App\Models\ShopOwner;
@@ -9,7 +10,9 @@ use App\Models\Employee;
 use App\Models\HR\Department;
 use App\Models\HR\LeaveBalance;
 use App\Models\HR\AttendanceRecord;
+use App\Repositories\HR\EmployeeRepository;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 
 class EmployeeTest extends TestCase
 {
@@ -120,22 +123,102 @@ class EmployeeTest extends TestCase
     #[Test]
     public function test_employee_can_be_suspended()
     {
-        $this->assertEquals('active', $this->employee->status);
+        $this->assertSame(EmployeeStatus::ACTIVE, $this->employee->status);
 
         $this->employee->update(['status' => 'suspended']);
 
-        $this->assertEquals('suspended', $this->employee->fresh()->status);
+        $this->assertSame(EmployeeStatus::SUSPENDED, $this->employee->fresh()->status);
     }
 
     #[Test]
     public function test_employee_can_be_activated()
     {
         $this->employee->update(['status' => 'suspended']);
-        $this->assertEquals('suspended', $this->employee->status);
+        $this->assertSame(EmployeeStatus::SUSPENDED, $this->employee->status);
 
         $this->employee->update(['status' => 'active']);
 
-        $this->assertEquals('active', $this->employee->fresh()->status);
+        $this->assertSame(EmployeeStatus::ACTIVE, $this->employee->fresh()->status);
+    }
+
+    #[Test]
+    public function test_inactive_employee_can_be_reactivated()
+    {
+        $this->employee->update(['status' => EmployeeStatus::INACTIVE]);
+
+        $this->employee->activate();
+
+        $this->assertSame(EmployeeStatus::ACTIVE, $this->employee->fresh()->status);
+    }
+
+    #[Test]
+    public function terminated_employee_cannot_use_model_activation_or_suspension_helpers()
+    {
+        $this->employee->update(['status' => EmployeeStatus::TERMINATED]);
+
+        try {
+            $this->employee->suspend();
+            $this->fail('A terminated employee must not be suspended through the model helper.');
+        } catch (\LogicException) {
+            // Expected: terminated employment must use the rehire workflow.
+        }
+
+        $this->expectException(\LogicException::class);
+        $this->employee->activate();
+    }
+
+    #[Test]
+    public function legacy_repository_helpers_cannot_change_terminated_employment()
+    {
+        $this->employee->update(['status' => EmployeeStatus::TERMINATED]);
+
+        $repository = app(EmployeeRepository::class);
+
+        $this->assertFalse($repository->suspend($this->employee->id, $this->shopOwner->id));
+        $this->assertFalse($repository->activate($this->employee->id, $this->shopOwner->id));
+        $this->assertSame(EmployeeStatus::TERMINATED, $this->employee->fresh()->status);
+    }
+
+    #[Test]
+    public function test_termination_is_canonical_while_legacy_leave_value_remains_available_for_reconciliation()
+    {
+        $migrationPath = base_path('database/migrations/2026_08_15_000001_expand_employee_status_enum_for_canonical_states.php');
+        $this->assertFileExists($migrationPath);
+
+        $migration = require $migrationPath;
+        $migration->up();
+
+        $legacyEmployee = Employee::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'status' => EmployeeStatus::ACTIVE,
+        ]);
+        DB::table('employees')->where('id', $legacyEmployee->id)->update(['status' => 'on_leave']);
+
+        $terminatedEmployee = Employee::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'status' => EmployeeStatus::TERMINATED,
+        ]);
+
+        $this->assertSame('on_leave', DB::table('employees')->where('id', $legacyEmployee->id)->value('status'));
+        $this->assertSame('terminated', DB::table('employees')->where('id', $terminatedEmployee->id)->value('status'));
+        $this->assertSame(EmployeeStatus::TERMINATED, $terminatedEmployee->fresh()->status);
+
+        $this->expectException(\RuntimeException::class);
+        $migration->down();
+    }
+
+    #[Test]
+    public function test_legacy_employee_status_remains_hydratable_before_reconciliation(): void
+    {
+        $employee = Employee::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'status' => EmployeeStatus::ACTIVE,
+        ]);
+        DB::table('employees')->where('id', $employee->id)->update(['status' => 'on_leave']);
+
+        $freshEmployee = $employee->fresh();
+
+        $this->assertSame('on_leave', $freshEmployee->status);
     }
 
     #[Test]

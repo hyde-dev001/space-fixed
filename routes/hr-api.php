@@ -37,6 +37,7 @@ use App\Http\Controllers\Erp\HR\AuditLogController as HRAuditLogController;
 use App\Http\Controllers\Erp\HR\NotificationController;
 use App\Http\Controllers\Erp\HR\HRAnalyticsController;
 use App\Http\Controllers\Erp\HR\SuspensionRequestController;
+use App\Http\Controllers\Erp\HR\EmployeeLifecycleRequestController;
 use App\Http\Controllers\Erp\HR\SalaryChangeController;
 use App\Http\Controllers\Erp\HR\HolidayCalendarController;
 
@@ -44,7 +45,7 @@ use App\Http\Controllers\Erp\HR\HolidayCalendarController;
  * ERP Notification Routes (All ERP users)
  * Notifications are available to all authenticated ERP staff, regardless of department
  */
-Route::prefix('api/hr/notifications')->middleware(['auth:user', 'shop.isolation'])->group(function () {
+Route::prefix('api/hr/notifications')->middleware(['web', 'auth:user', 'shop.isolation'])->group(function () {
     Route::get('/', [NotificationController::class, 'index'])->name('hr.notifications.index');
     Route::get('/recent', [NotificationController::class, 'recent'])->name('hr.notifications.recent');
     Route::get('/unread-count', [NotificationController::class, 'unreadCount'])->name('hr.notifications.unread_count');
@@ -59,10 +60,30 @@ Route::prefix('api/hr/notifications')->middleware(['auth:user', 'shop.isolation'
 
 /**
  * HR Module Routes
- * All routes require authentication and permission-based access
- * Users must have at least one HR-related permission (view-employees, view-attendance, view-payroll)
+ * Most routes require authentication and permission-based access. The leave
+ * workflow is declared immediately above because it has its own canonical
+ * Manager/HR/Shop Owner authorization checks.
  */
-Route::prefix('api/hr')->middleware(['auth:user', 'permission:access-hr-dashboard|access-employee-directory|access-attendance-records|access-leave-approvals|access-overtime-approvals|manage-attendance|access-payslip-generation|access-view-payslip|manage-salary-changes|approve-salary-change|override-salary-retroactive', 'shop.isolation'])->group(function () {
+
+/**
+ * Leave approval routes use the canonical controller authorization because
+ * Manager access is capability-based and does not require the legacy global
+ * HR permission gate. The controller still enforces the exact read/decision
+ * capability, role, and shop scope for every request.
+ */
+Route::prefix('api/hr/leave-requests')->middleware(['web', 'auth:user', 'shop.isolation'])->group(function () {
+    Route::get('/', [LeaveController::class, 'index'])->name('hr.leave.index');
+    Route::post('/', [LeaveController::class, 'store'])->name('hr.leave.store');
+    Route::get('/pending', [LeaveController::class, 'getPending'])->name('hr.leave.pending');
+    Route::get('/employee/{employeeId}/balance', [LeaveController::class, 'getBalance'])->name('hr.leave.balance');
+    Route::get('/{id}', [LeaveController::class, 'show'])->name('hr.leave.show');
+    Route::put('/{id}', [LeaveController::class, 'update'])->name('hr.leave.update');
+    Route::delete('/{id}', [LeaveController::class, 'destroy'])->name('hr.leave.destroy');
+    Route::post('/{id}/approve', [LeaveController::class, 'approve'])->name('hr.leave.approve');
+    Route::post('/{id}/reject', [LeaveController::class, 'reject'])->name('hr.leave.reject');
+});
+
+Route::prefix('api/hr')->middleware(['web', 'auth:user', 'permission:access-hr-dashboard|access-employee-directory|access-attendance-records|access-leave-approvals|access-manager-leave-approvals|decide-manager-leave-approvals|access-overtime-approvals|manage-attendance|access-payslip-generation|access-view-payslip|request-employee-suspensions|request-employee-terminations|request-employee-rehires|manage-salary-changes|approve-salary-change|override-salary-retroactive', 'shop.isolation'])->group(function () {
     // ============================================
     // DASHBOARD & ANALYTICS
     // ============================================
@@ -78,8 +99,8 @@ Route::prefix('api/hr')->middleware(['auth:user', 'permission:access-hr-dashboar
         Route::get('/{id}', [EmployeeController::class, 'show'])->name('hr.employees.show');
         Route::put('/{id}', [EmployeeController::class, 'update'])->name('hr.employees.update');
         Route::delete('/{id}', [EmployeeController::class, 'destroy'])->name('hr.employees.destroy');
-        Route::post('/{id}/suspend', [EmployeeController::class, 'suspend'])->name('hr.employees.suspend');
         Route::post('/{id}/activate', [EmployeeController::class, 'activate'])->name('hr.employees.activate');
+        Route::post('/{id}/suspend', [EmployeeController::class, 'suspend'])->name('hr.employees.suspend');
         Route::post('/{userId}/roles/sync', [\App\Http\Controllers\ShopOwner\UserAccessControlController::class, 'syncAdditionalRoles'])->name('hr.employees.roles.sync');
         
         // Invitation Management
@@ -96,6 +117,21 @@ Route::prefix('api/hr')->middleware(['auth:user', 'permission:access-hr-dashboar
         Route::get('/', [SuspensionRequestController::class, 'index'])->name('hr.suspension_requests.index');
         Route::post('/', [SuspensionRequestController::class, 'store'])->name('hr.suspension_requests.store');
         Route::get('/{id}', [SuspensionRequestController::class, 'show'])->name('hr.suspension_requests.show');
+    });
+
+    // ============================================
+    // EMPLOYEE LIFECYCLE REQUESTS (HR -> Manager -> Company Shop Owner)
+    // ============================================
+    Route::prefix('termination-requests')->group(function () {
+        Route::get('/', [EmployeeLifecycleRequestController::class, 'indexTermination'])->name('hr.termination_requests.index');
+        Route::post('/', [EmployeeLifecycleRequestController::class, 'storeTermination'])->name('hr.termination_requests.store');
+        Route::get('/{id}', [EmployeeLifecycleRequestController::class, 'showTermination'])->whereNumber('id')->name('hr.termination_requests.show');
+    });
+
+    Route::prefix('rehire-requests')->group(function () {
+        Route::get('/', [EmployeeLifecycleRequestController::class, 'indexRehire'])->name('hr.rehire_requests.index');
+        Route::post('/', [EmployeeLifecycleRequestController::class, 'storeRehire'])->name('hr.rehire_requests.store');
+        Route::get('/{id}', [EmployeeLifecycleRequestController::class, 'showRehire'])->whereNumber('id')->name('hr.rehire_requests.show');
     });
 
     // ============================================
@@ -144,21 +180,6 @@ Route::prefix('api/hr')->middleware(['auth:user', 'permission:access-hr-dashboar
         Route::patch('/{id}', [AttendanceController::class, 'update'])->name('hr.attendance.patch');
         Route::put('/{id}', [AttendanceController::class, 'update'])->name('hr.attendance.update');
         Route::delete('/{id}', [AttendanceController::class, 'destroy'])->name('hr.attendance.destroy');
-    });
-
-    // ============================================
-    // LEAVE MANAGEMENT
-    // ============================================
-    Route::prefix('leave-requests')->group(function () {
-        Route::get('/', [LeaveController::class, 'index'])->name('hr.leave.index');
-        Route::post('/', [LeaveController::class, 'store'])->name('hr.leave.store');
-        Route::get('/pending', [LeaveController::class, 'getPending'])->name('hr.leave.pending');
-        Route::get('/employee/{employeeId}/balance', [LeaveController::class, 'getBalance'])->name('hr.leave.balance');
-        Route::get('/{id}', [LeaveController::class, 'show'])->name('hr.leave.show');
-        Route::put('/{id}', [LeaveController::class, 'update'])->name('hr.leave.update');
-        Route::delete('/{id}', [LeaveController::class, 'destroy'])->name('hr.leave.destroy');
-        Route::post('/{id}/approve', [LeaveController::class, 'approve'])->name('hr.leave.approve');
-        Route::post('/{id}/reject', [LeaveController::class, 'reject'])->name('hr.leave.reject');
     });
 
     // ============================================
@@ -302,7 +323,7 @@ Route::prefix('api/hr')->middleware(['auth:user', 'permission:access-hr-dashboar
  * Accessible to ALL authenticated employees (no role restriction)
  * All employees need to clock in/out regardless of their role
  */
-Route::prefix('api/staff')->middleware(['auth:user'])->group(function () {
+Route::prefix('api/staff')->middleware(['web', 'auth:user'])->group(function () {
     // ============================================
     // SELF-SERVICE ATTENDANCE
     // ============================================

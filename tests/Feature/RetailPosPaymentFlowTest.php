@@ -2,9 +2,12 @@
 
 namespace Tests\Feature;
 
+use App\Models\OrderItem;
 use App\Models\PosTransaction;
 use App\Models\Product;
+use App\Models\ProductVariant;
 use App\Models\ShopOwner;
+use App\Services\OrderReceiptService;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\Test;
@@ -13,6 +16,58 @@ use Tests\TestCase;
 class RetailPosPaymentFlowTest extends TestCase
 {
     use RefreshDatabase;
+
+    #[Test]
+    public function anonymous_retail_checkout_is_allowed_and_uses_walk_in_display_name(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'retail',
+        ]);
+
+        /** @var User $cashier */
+        $cashier = User::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+        ]);
+
+        $product = Product::create([
+            'shop_owner_id' => $shopOwner->id,
+            'name' => 'Anonymous Retail POS Sneaker',
+            'slug' => 'anonymous-retail-pos-sneaker-' . random_int(1000, 9999),
+            'price' => 500,
+            'stock_quantity' => 10,
+            'is_active' => true,
+        ]);
+
+        $response = $this->actingAs($cashier, 'user')
+            ->postJson('/api/retail-pos/checkout', [
+                'idempotency_key' => 'retail-anonymous-12345',
+                'customer_type' => 'walk_in',
+                'walk_in_name' => null,
+                'walk_in_phone' => null,
+                'walk_in_email' => null,
+                'items' => [[
+                    'product_id' => $product->id,
+                    'qty' => 1,
+                    'unit_price' => 500,
+                ]],
+                'payment_lines' => [[
+                    'tender_type' => 'cash',
+                    'amount' => 500,
+                ]],
+            ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('success', true);
+
+        $transaction = PosTransaction::query()->findOrFail((int) $response->json('data.id'));
+        $this->assertNull($transaction->customer_id);
+        $this->assertNull($transaction->walk_in_name);
+        $this->assertSame('Walk-in Customer', (string) $transaction->sourceOrder()->value('customer_name'));
+        $this->assertSame(
+            'Walk-in Customer',
+            (string) data_get($transaction->receipt()->value('print_payload'), 'customer.name'),
+        );
+    }
 
     #[Test]
     public function retail_walk_in_checkout_creates_retail_pos_transaction(): void
@@ -34,6 +89,13 @@ class RetailPosPaymentFlowTest extends TestCase
             'stock_quantity' => 10,
             'is_active' => true,
         ]);
+        $variant = ProductVariant::create([
+            'product_id' => $product->id,
+            'size' => '42',
+            'color' => 'Black',
+            'quantity' => 10,
+            'is_active' => true,
+        ]);
 
         $response = $this->actingAs($cashier, 'user')
             ->postJson('/api/retail-pos/checkout', [
@@ -45,6 +107,8 @@ class RetailPosPaymentFlowTest extends TestCase
                     'product_id' => $product->id,
                     'qty' => 1,
                     'unit_price' => 500,
+                    'size' => '42',
+                    'color' => 'Black',
                 ]],
                 'payment_lines' => [[
                     'tender_type' => 'cash',
@@ -62,5 +126,18 @@ class RetailPosPaymentFlowTest extends TestCase
         $this->assertSame('retail', (string) $transaction->module_type);
         $this->assertSame('paid', (string) $transaction->status);
         $this->assertSame(9, (int) $product->fresh()->stock_quantity);
+        $this->assertSame($variant->id, OrderItem::where('order_id', $transaction->module_reference_id)->value('product_variant_id'));
+
+        $order = $transaction->sourceOrder()->firstOrFail();
+        $receiptService = app(OrderReceiptService::class);
+        $this->assertTrue(
+            $receiptService->isPosOrder($order),
+            'Retail POS orders must be identified from the canonical POS transaction source.',
+        );
+        $this->assertFalse($receiptService->canConfirm($order));
+        $this->assertSame(
+            'invalid_state',
+            $receiptService->confirm($order)['result'],
+        );
     }
 }

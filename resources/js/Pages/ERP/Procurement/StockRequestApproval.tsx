@@ -171,13 +171,20 @@ const MetricCard = ({ title, value, description, icon: Icon, color }: MetricCard
 };
 
 export default function StockRequest() {
-	const { initialData } = usePage().props as any;
+	const { auth, initialData } = usePage().props as any;
+	const ownerMode = auth?.erpActor?.ownerMode === true;
 	const sanitizeRequests = (items: StockRequestApproval[] = []): StockRequestApproval[] => {
 		return items.map((request) => ({ ...request, sku_code: "" }));
 	};
-	const [requests, setRequests] = useState<StockRequestApproval[]>(sanitizeRequests(initialData?.data ?? []));
-	const [loading, setLoading] = useState(false);
-	const [metrics, setMetrics] = useState<StockRequestMetrics>({ total: 0, pending: 0, accepted: 0, rejected: 0 });
+	const seededRequests = sanitizeRequests(initialData?.data ?? []);
+	const [requests, setRequests] = useState<StockRequestApproval[]>(seededRequests);
+	const [loading, setLoading] = useState(!ownerMode && !initialData);
+	const [metrics, setMetrics] = useState<StockRequestMetrics>(() => ({
+		total: seededRequests.length,
+		pending: seededRequests.filter((request) => request.status === "pending").length,
+		accepted: seededRequests.filter((request) => request.status === "accepted").length,
+		rejected: seededRequests.filter((request) => request.status === "rejected").length,
+	}));
 	const [searchQuery, setSearchQuery] = useState("");
 	const [statusFilter, setStatusFilter] = useState<"All" | StockRequestApproval["status"]>("All");
 	const [priorityFilter, setPriorityFilter] = useState<"All" | StockRequestApproval["priority"]>("All");
@@ -186,6 +193,8 @@ export default function StockRequest() {
 	const [isActionProcessing, setIsActionProcessing] = useState(false);
 
 	const fetchRequests = async () => {
+		if (ownerMode || initialData) return;
+
 		try {
 			setLoading(true);
 			const response = await stockRequestApi.getAll({ per_page: 100 });
@@ -203,6 +212,8 @@ export default function StockRequest() {
 	};
 
 	const fetchMetrics = async () => {
+		if (ownerMode || initialData) return;
+
 		try {
 			const data: any = await stockRequestApi.getMetrics();
 			setMetrics({
@@ -217,9 +228,9 @@ export default function StockRequest() {
 	};
 
 	useEffect(() => {
-		fetchRequests();
-		fetchMetrics();
-	}, []);
+		void fetchRequests();
+		void fetchMetrics();
+	}, [ownerMode, initialData]);
 
 	const filteredData = useMemo(() => {
 		const query = searchQuery.trim().toLowerCase();
@@ -340,7 +351,43 @@ export default function StockRequest() {
 		return category !== "repair_materials";
 	};
 
+	const getInventoryApprovalMeta = (request: StockRequestApproval) => {
+		const fallbackStatus = request.request_source !== "repair"
+			? "not_required"
+			: request.inventory_approved_date
+				? "approved"
+				: request.status === "rejected"
+					? "rejected"
+					: "pending";
+		const status = String(request.inventory_approval_status || fallbackStatus).toLowerCase();
+		const labels: Record<string, string> = {
+			not_required: "Not Required",
+			pending: "Pending",
+			approved: "Approved",
+			rejected: "Rejected",
+		};
+		const classes: Record<string, string> = {
+			not_required: "border border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200",
+			pending: "border border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-300",
+			approved: "border border-green-200 bg-green-100 text-green-700 dark:border-green-800 dark:bg-green-900/30 dark:text-green-300",
+			rejected: "border border-red-200 bg-red-100 text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-300",
+		};
+
+		return {
+			status,
+			label: request.inventory_approval_status_label || labels[status] || "Pending",
+			className: classes[status] || classes.pending,
+		};
+	};
+
 	const handleAccept = async (request: StockRequestApproval) => {
+		if (ownerMode) return;
+
+		if (request.request_source === "repair" && getInventoryApprovalMeta(request).status !== "approved") {
+			await workflowFeedback.warning("Waiting for Inventory", "Repair material requests can be processed after Inventory approval.");
+			return;
+		}
+
 		if (!["pending", "needs_details"].includes(request.status)) {
 			await workflowFeedback.warning("Cannot approve", "Only pending or needs-details requests can be approved.");
 			return;
@@ -373,6 +420,13 @@ export default function StockRequest() {
 	};
 
 	const handleReject = async (request: StockRequestApproval) => {
+		if (ownerMode) return;
+
+		if (request.request_source === "repair" && getInventoryApprovalMeta(request).status !== "approved") {
+			await workflowFeedback.warning("Waiting for Inventory", "Repair material requests can be processed after Inventory approval.");
+			return;
+		}
+
 		if (!["pending", "needs_details"].includes(request.status)) {
 			await workflowFeedback.warning("Cannot reject", "Only pending or needs-details requests can be rejected.");
 			return;
@@ -542,6 +596,11 @@ export default function StockRequest() {
 													{request.repair_request_id && (
 														<span className="text-xs text-gray-500 dark:text-gray-400">Repair #{request.repair_request_id}</span>
 													)}
+													{request.request_source === "repair" && (
+														<span className={`inline-flex w-fit items-center rounded-full px-2.5 py-1 text-xs font-semibold ${getInventoryApprovalMeta(request).className}`}>
+															Inventory Approval: {getInventoryApprovalMeta(request).label}
+														</span>
+													)}
 												</div>
 											</td>
 											<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300 whitespace-nowrap">
@@ -645,8 +704,14 @@ export default function StockRequest() {
 
 								<div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
 									<div className="rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-800/40">
-										<p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Quantity Needed</p>
-										<p className="mt-1 text-lg font-semibold tabular-nums text-gray-900 dark:text-white">{formatQuantity(viewingRequest.quantity_needed)}</p>
+										<p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+											{viewingRequest.inventory_item?.category === "shoes" && isAllSizesRequest(viewingRequest.requested_size)
+												? "Total Quantity Across All Sizes"
+												: "Quantity Needed"}
+										</p>
+										<p className="mt-1 text-lg font-semibold tabular-nums text-gray-900 dark:text-white">
+											{formatQuantity(viewingRequest.quantity_needed)}{viewingRequest.inventory_item?.category === "shoes" && isAllSizesRequest(viewingRequest.requested_size) ? " units" : ""}
+										</p>
 									</div>
 									<div className="rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-800/40">
 										<p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Priority</p>
@@ -700,6 +765,15 @@ export default function StockRequest() {
 										<p>Requester Role: {getRequesterRoleLabel(viewingRequest)}</p>
 										{viewingRequest.repair_request_id ? <p>Repair Request ID: {viewingRequest.repair_request_id}</p> : <p>Repair Request ID: N/A</p>}
 									</div>
+									{viewingRequest.request_source === "repair" && (
+										<div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+											<span>Inventory Approval:</span>
+											<span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${getInventoryApprovalMeta(viewingRequest).className}`}>
+												{getInventoryApprovalMeta(viewingRequest).label}
+											</span>
+											{viewingRequest.inventory_approver?.name && <span>by {viewingRequest.inventory_approver.name}</span>}
+										</div>
+									)}
 								</div>
 
 								{viewingRequest.rejection_reason && (
@@ -725,22 +799,22 @@ export default function StockRequest() {
 								>
 									Close
 								</button>
-								<div className="flex w-full gap-3 sm:w-auto">
+								{!ownerMode && <div className="flex w-full gap-3 sm:w-auto">
 									<button
 										onClick={() => handleReject(viewingRequest)}
-										disabled={!(["pending", "needs_details"] as const).includes(viewingRequest.status) || isActionProcessing}
+										disabled={!(["pending", "needs_details"] as const).includes(viewingRequest.status) || isActionProcessing || (viewingRequest.request_source === "repair" && getInventoryApprovalMeta(viewingRequest).status !== "approved")}
 										className="flex-1 rounded-lg bg-red-600 px-4 py-2 font-medium text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50 sm:min-w-32"
 									>
 										Reject
 									</button>
 									<button
 										onClick={() => handleAccept(viewingRequest)}
-										disabled={!(["pending", "needs_details"] as const).includes(viewingRequest.status) || isActionProcessing}
+										disabled={!(["pending", "needs_details"] as const).includes(viewingRequest.status) || isActionProcessing || (viewingRequest.request_source === "repair" && getInventoryApprovalMeta(viewingRequest).status !== "approved")}
 										className="flex-1 rounded-lg bg-green-600 px-4 py-2 font-medium text-white transition-colors hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50 sm:min-w-32"
 									>
 										Approve
 									</button>
-								</div>
+								</div>}
 							</div>
 						</div>
 					</div>

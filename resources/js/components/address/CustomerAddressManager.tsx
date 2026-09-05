@@ -1,0 +1,614 @@
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { LoaderCircle, Pencil, Star, Trash2 } from 'lucide-react';
+import CustomerAddressMapPicker from './CustomerAddressMapPicker';
+import {
+  PHILIPPINE_LOCATIONS,
+  getCityMunicipalityOptions,
+  normalizeCityMunicipalitySelection,
+  normalizeProvinceSelection,
+} from '@/data/philippineLocations';
+
+export type CustomerAddress = {
+  id: number;
+  name: string;
+  phone: string;
+  address_line: string;
+  barangay: string;
+  city: string;
+  province: string;
+  region: string;
+  postal_code: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  delivery_instructions: string | null;
+  is_default: boolean;
+};
+
+type Props = {
+  onSelect: (address: CustomerAddress) => void;
+  onSelectionCleared?: () => void;
+  initialAddressId?: number | null;
+  allowIncompleteMapAddress?: boolean;
+  embeddedInForm?: boolean;
+  disabled?: boolean;
+  title?: string;
+  description?: string;
+  showAddTrigger?: boolean;
+  showAddressSummary?: boolean;
+  showSavedAddressesInModal?: boolean;
+  modalMode?: 'add' | 'edit';
+  isModalOpen?: boolean;
+  onModalOpenChange?: (open: boolean) => void;
+};
+
+type AddressForm = Omit<CustomerAddress, 'id'>;
+
+const emptyForm = (): AddressForm => ({
+  name: '', phone: '', address_line: '', barangay: '', city: '', province: '', region: '',
+  postal_code: '', latitude: null, longitude: null, delivery_instructions: '', is_default: false,
+});
+
+const fullAddress = (address: CustomerAddress) => [
+  address.address_line, address.barangay, address.city, address.province, address.postal_code,
+].filter(Boolean).join(', ');
+
+const addressToForm = (address: CustomerAddress): AddressForm => {
+  const province = normalizeProvinceSelection(address.province || address.region) || address.province;
+
+  return {
+    name: address.name,
+    phone: address.phone,
+    address_line: address.address_line,
+    barangay: address.barangay,
+    city: normalizeCityMunicipalitySelection(province, address.city) || address.city,
+    province,
+    region: address.region || province,
+    postal_code: address.postal_code,
+    latitude: address.latitude,
+    longitude: address.longitude,
+    delivery_instructions: address.delivery_instructions || '',
+    is_default: address.is_default,
+  };
+};
+
+export default function CustomerAddressManager({
+  onSelect,
+  onSelectionCleared,
+  initialAddressId = null,
+  allowIncompleteMapAddress = false,
+  embeddedInForm = false,
+  disabled = false,
+  title = 'Delivery address',
+  description = 'Choose where the rider should go. You can still use walk-in or your own courier.',
+  showAddTrigger = true,
+  showAddressSummary = true,
+  showSavedAddressesInModal = false,
+  modalMode = 'add',
+  isModalOpen: controlledModalOpen = false,
+  onModalOpenChange,
+}: Props) {
+  const [addresses, setAddresses] = useState<CustomerAddress[]>([]);
+  const [selectedId, setSelectedId] = useState<number | null>(initialAddressId);
+  const [editingId, setEditingId] = useState<number | null | undefined>(undefined);
+  const [modalView, setModalView] = useState<'list' | 'form'>('form');
+  const [form, setForm] = useState<AddressForm>(emptyForm);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [mutating, setMutating] = useState<{ id: number; action: 'default' | 'delete' } | null>(null);
+  const [status, setStatus] = useState('Loading saved addresses…');
+  const [error, setError] = useState<string | null>(null);
+  const modalRef = useRef<HTMLDivElement | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const selectedIdRef = useRef<number | null>(initialAddressId);
+  const onSelectRef = useRef(onSelect);
+  const onSelectionClearedRef = useRef(onSelectionCleared);
+  const mountedRef = useRef(true);
+  const cities = useMemo(() => getCityMunicipalityOptions(form.province), [form.province]);
+  const isModalControlled = onModalOpenChange !== undefined;
+  const modalOpen = isModalControlled
+    ? controlledModalOpen
+    : editingId !== undefined || modalView === 'list';
+  const visibleModalView = isModalControlled && controlledModalOpen && showSavedAddressesInModal && editingId === undefined
+    ? 'list'
+    : modalView;
+
+  useEffect(() => {
+    onSelectRef.current = onSelect;
+    onSelectionClearedRef.current = onSelectionCleared;
+  }, [onSelect, onSelectionCleared]);
+
+  useEffect(() => {
+    return () => { mountedRef.current = false; };
+  }, []);
+
+  const loadAddresses = useCallback(async (preferredId?: number | null) => {
+    setLoading(true);
+    try {
+      const response = await fetch('/api/user/addresses', {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+        credentials: 'include',
+      });
+      if (!response.ok) throw new Error('Unable to load your saved addresses.');
+
+      const { addresses: loaded = [] } = await response.json() as { addresses?: CustomerAddress[] };
+      if (!mountedRef.current) return null;
+
+      setAddresses(loaded);
+      const selected = loaded.find((address) => address.id === preferredId)
+        ?? (preferredId === undefined
+          ? loaded.find((address) => address.id === selectedIdRef.current)
+          : undefined)
+        ?? loaded.find((address) => address.is_default)
+        ?? loaded[0];
+      const nextSelectedId = selected?.id ?? null;
+      selectedIdRef.current = nextSelectedId;
+      setSelectedId(nextSelectedId);
+
+      if (selected) {
+        onSelectRef.current(selected);
+        setStatus('Delivery address ready.');
+      } else {
+        onSelectionClearedRef.current?.();
+        setStatus('No saved addresses yet. Add one to check shop coverage.');
+      }
+
+      return selected ?? null;
+    } finally {
+      if (mountedRef.current) setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadAddresses().catch((reason: Error) => {
+      if (!mountedRef.current) return;
+      setError(reason.message);
+      setLoading(false);
+    });
+  }, [loadAddresses]);
+
+  const select = (address: CustomerAddress) => {
+    selectedIdRef.current = address.id;
+    setSelectedId(address.id);
+    setStatus('Delivery address selected.');
+    onSelect(address);
+  };
+
+  const openAdd = () => {
+    setEditingId(null);
+    setModalView('form');
+    setForm(emptyForm());
+    setError(null);
+    onModalOpenChange?.(true);
+  };
+
+  const openEdit = (address: CustomerAddress) => {
+    setEditingId(address.id);
+    setModalView('form');
+    setForm(addressToForm(address));
+    setError(null);
+    onModalOpenChange?.(true);
+  };
+
+  const openSavedAddresses = () => {
+    setEditingId(undefined);
+    setModalView('list');
+    setForm(emptyForm());
+    setError(null);
+  };
+
+  const closeModal = useCallback(() => {
+    setEditingId(undefined);
+    setModalView('form');
+    setError(null);
+    onModalOpenChange?.(false);
+  }, [onModalOpenChange]);
+
+  useEffect(() => {
+    if (!isModalControlled) return;
+
+    if (controlledModalOpen && editingId === undefined) {
+      if (showSavedAddressesInModal) {
+        setModalView('list');
+        setForm(emptyForm());
+      } else {
+        const addressToEdit = modalMode === 'edit'
+          ? addresses.find((address) => address.id === selectedId)
+          : undefined;
+        setModalView('form');
+        setEditingId(addressToEdit?.id ?? null);
+        setForm(addressToEdit ? addressToForm(addressToEdit) : emptyForm());
+      }
+      setError(null);
+    }
+
+    if (!controlledModalOpen && editingId !== undefined) {
+      setEditingId(undefined);
+      setModalView('form');
+      setError(null);
+    }
+  }, [addresses, controlledModalOpen, editingId, isModalControlled, modalMode, selectedId, showSavedAddressesInModal]);
+
+  useEffect(() => {
+    if (!modalOpen) return;
+
+    const previousActiveElement = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    const focusTimer = window.setTimeout(() => closeButtonRef.current?.focus(), 0);
+
+    document.body.style.overflow = 'hidden';
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeModal();
+        return;
+      }
+
+      if (event.key !== 'Tab' || !modalRef.current) return;
+
+      const focusable = Array.from(modalRef.current.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+      ));
+      if (focusable.length === 0) return;
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.clearTimeout(focusTimer);
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', handleKeyDown);
+      if (previousActiveElement && document.contains(previousActiveElement)) previousActiveElement.focus();
+    };
+  }, [closeModal, modalOpen]);
+
+  const update = <K extends keyof AddressForm>(key: K, value: AddressForm[K]) => {
+    setForm((current) => ({ ...current, [key]: value }));
+  };
+
+  const save = async () => {
+    setError(null);
+    if (form.latitude === null || form.longitude === null) {
+      setError('Pin the exact delivery entrance on the map before saving.');
+      return;
+    }
+
+    const city = normalizeCityMunicipalitySelection(form.province, form.city);
+    const phone = form.phone.replace(/\D/g, '');
+    if (!form.name.trim() || !phone || !form.address_line.trim()
+      || !form.barangay.trim() || !form.province || !city) {
+      setError('Complete the required address details before saving.');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const response = await fetch(editingId ? `/api/user/addresses/${editingId}` : '/api/user/addresses', {
+        method: editingId ? 'PUT' : 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          'X-CSRF-TOKEN': document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content ?? '',
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+        credentials: 'include',
+        body: JSON.stringify({ ...form, phone, city, region: form.region || form.province }),
+      });
+      const payload = await response.json().catch(() => ({})) as { address?: CustomerAddress; message?: string };
+      if (!response.ok || !payload.address) throw new Error(payload.message || 'Unable to save this address.');
+
+      const saved = payload.address;
+      setAddresses((current) => editingId
+        ? current.map((address) => address.id === saved.id ? saved : address)
+        : [saved, ...current.filter((address) => address.id !== saved.id)]);
+      setEditingId(undefined);
+      setModalView('form');
+      onModalOpenChange?.(false);
+      selectedIdRef.current = saved.id;
+      setSelectedId(saved.id);
+      setStatus('Address saved and selected.');
+      onSelectRef.current(saved);
+      try {
+        await loadAddresses(saved.id);
+        setStatus('Address saved and selected.');
+      } catch (reason) {
+        setError(`Address saved, but the saved-address list could not refresh: ${(reason as Error).message}`);
+      }
+    } catch (reason) {
+      setError((reason as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const setDefault = async (address: CustomerAddress) => {
+    setError(null);
+    setMutating({ id: address.id, action: 'default' });
+    try {
+      const response = await fetch(`/api/user/addresses/${address.id}/set-default`, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'X-CSRF-TOKEN': document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content ?? '',
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+        credentials: 'include',
+      });
+      const payload = await response.json().catch(() => ({})) as { message?: string };
+      if (!response.ok) throw new Error(payload.message || 'Unable to set this address as default.');
+      await loadAddresses(address.id);
+      setStatus('Default address updated.');
+    } catch (reason) {
+      setError((reason as Error).message);
+    } finally {
+      setMutating(null);
+    }
+  };
+
+  const remove = async (address: CustomerAddress) => {
+    if (!window.confirm(`Delete the saved address at ${address.address_line}?`)) return;
+
+    setError(null);
+    setMutating({ id: address.id, action: 'delete' });
+    try {
+      const response = await fetch(`/api/user/addresses/${address.id}`, {
+        method: 'DELETE',
+        headers: {
+          Accept: 'application/json',
+          'X-CSRF-TOKEN': document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content ?? '',
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+        credentials: 'include',
+      });
+      const payload = await response.json().catch(() => ({})) as { message?: string };
+      if (!response.ok) throw new Error(payload.message || 'Unable to delete this address.');
+      await loadAddresses(selectedIdRef.current === address.id ? null : undefined);
+      setStatus('Address deleted.');
+    } catch (reason) {
+      setError((reason as Error).message);
+    } finally {
+      setMutating(null);
+    }
+  };
+
+  const savedAddressCards = (
+    <div className="userside-address-card-list grid gap-3 sm:grid-cols-2">
+      {addresses.map((address) => {
+        const isMutating = mutating?.id === address.id;
+
+        return (
+          <div key={address.id} aria-busy={isMutating} className={`userside-address-card rounded-xl border p-3 transition-colors ${selectedId === address.id ? 'userside-address-card--selected border-gray-950 bg-white ring-1 ring-gray-950' : 'border-gray-200 bg-white'}`}>
+            <button
+              type="button"
+              aria-label={`Use address at ${address.address_line}`}
+              aria-pressed={selectedId === address.id}
+              disabled={disabled}
+              onClick={() => select(address)}
+              className="min-h-11 w-full text-left focus:outline-none focus:ring-2 focus:ring-gray-950"
+            >
+              <span className="flex flex-wrap items-center gap-2 font-semibold text-gray-950">
+                {address.name}
+                {address.is_default && <span className="rounded-full bg-gray-950 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-white">Default</span>}
+              </span>
+              <span className="block text-sm text-gray-700">{fullAddress(address)}</span>
+              {address.latitude === null || address.longitude === null
+                ? <span className="mt-1 block text-xs font-semibold text-gray-600">Pin required</span>
+                : <span className="mt-1 block text-xs font-semibold text-gray-950">Pinned address</span>}
+            </button>
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                aria-label={`Edit ${address.address_line}`}
+                title="Edit saved address"
+                disabled={disabled || isMutating}
+                onClick={() => openEdit(address)}
+                className="userside-address-icon-button userside-address-icon-button--edit inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-950 shadow-sm transition-colors hover:border-gray-950 hover:bg-gray-100 hover:text-gray-950 focus:outline-none focus:ring-2 focus:ring-gray-950 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Pencil aria-hidden="true" size={17} strokeWidth={2} />
+              </button>
+              {!address.is_default && (
+                <button
+                  type="button"
+                  aria-label={`Set as default ${address.address_line}`}
+                  title={isMutating && mutating?.action === 'default' ? 'Setting as default address…' : 'Set as default address'}
+                  disabled={disabled || isMutating}
+                  onClick={() => void setDefault(address)}
+                  className="userside-address-icon-button userside-address-icon-button--default inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-800 shadow-sm transition-colors hover:border-gray-950 hover:bg-gray-100 hover:text-gray-950 focus:outline-none focus:ring-2 focus:ring-gray-950 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isMutating && mutating?.action === 'default'
+                    ? <LoaderCircle aria-hidden="true" className="animate-spin" size={17} />
+                    : <Star aria-hidden="true" size={17} strokeWidth={2} />}
+                </button>
+              )}
+              <button
+                type="button"
+                aria-label={`Delete ${address.address_line}`}
+                title={isMutating && mutating?.action === 'delete' ? 'Deleting saved address…' : 'Delete saved address'}
+                disabled={disabled || isMutating}
+                onClick={() => void remove(address)}
+                className="userside-address-icon-button userside-address-icon-button--delete inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-950 shadow-sm transition-colors hover:border-gray-950 hover:bg-gray-100 hover:text-gray-950 focus:outline-none focus:ring-2 focus:ring-gray-950 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isMutating && mutating?.action === 'delete'
+                  ? <LoaderCircle aria-hidden="true" className="animate-spin" size={17} />
+                  : <Trash2 aria-hidden="true" size={17} strokeWidth={2} />}
+              </button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+
+  const AddressFormWrapper = embeddedInForm ? 'div' : 'form';
+
+  const addressSummary = (
+    <div className="space-y-3 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="font-semibold text-gray-950">{title}</h2>
+          <p className="text-sm text-gray-600">{description}</p>
+        </div>
+        {showAddTrigger && (
+          <button type="button" disabled={disabled} onClick={openAdd} className="min-h-11 shrink-0 px-1 text-sm font-semibold text-gray-900 underline underline-offset-4 transition-colors hover:text-gray-950 focus:outline-none focus:ring-2 focus:ring-gray-950 disabled:opacity-50">
+            Add address
+          </button>
+        )}
+      </div>
+
+      <p aria-live="polite" role="status" className="text-sm text-gray-600">{loading ? 'Loading saved addresses…' : status}</p>
+      {error && editingId === undefined && <p role="alert" className="text-sm text-red-700">{error}</p>}
+
+      {!loading && addresses.length > 0 && savedAddressCards}
+    </div>
+  );
+
+  return (
+    <>
+      {showAddressSummary ? addressSummary : (
+        <div className="sr-only">
+          <p aria-live="polite" role="status">{loading ? 'Loading saved addresses...' : status}</p>
+          {error && editingId === undefined && <p role="alert">{error}</p>}
+        </div>
+      )}
+
+      {modalOpen && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/50 p-3 backdrop-blur-[2px] sm:p-5"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closeModal();
+          }}
+        >
+          <div
+            ref={modalRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="customer-address-modal-title"
+            tabIndex={-1}
+            className="userside-address-modal flex max-h-[min(92dvh,52rem)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl"
+          >
+            <div className="userside-address-modal__header flex items-start justify-between gap-4 border-b border-gray-200 px-4 py-4 sm:px-6">
+              <div>
+                <p className="mb-1 text-xs font-semibold uppercase tracking-[0.14em] text-gray-950">Delivery address</p>
+                <h2 id="customer-address-modal-title" className="text-xl font-semibold text-gray-950">
+                  {visibleModalView === 'list' ? 'Saved delivery addresses' : editingId ? 'Edit delivery address' : 'Add delivery address'}
+                </h2>
+                <p className="mt-1 text-sm text-gray-600">
+                  {visibleModalView === 'list' ? 'Choose a saved address or add a new one.' : 'Use a precise map pin so nearby repair shops can confirm coverage.'}
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-1">
+                {showSavedAddressesInModal && visibleModalView === 'list' && (
+                  <button type="button" onClick={openAdd} className="min-h-11 px-2 text-xs font-semibold text-gray-950 underline underline-offset-4 transition-colors hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-950 sm:text-sm">
+                    Add new address
+                  </button>
+                )}
+                {showSavedAddressesInModal && visibleModalView === 'form' && (
+                  <button type="button" onClick={openSavedAddresses} className="min-h-11 px-2 text-xs font-semibold text-gray-950 underline underline-offset-4 transition-colors hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-950 sm:text-sm">
+                    Saved addresses
+                  </button>
+                )}
+                {!showSavedAddressesInModal && editingId && (
+                  <button type="button" onClick={openAdd} className="min-h-11 px-2 text-xs font-semibold text-gray-950 underline underline-offset-4 transition-colors hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-950 sm:text-sm">
+                    Add new address
+                  </button>
+                )}
+                <button
+                ref={closeButtonRef}
+                type="button"
+                aria-label="Close address modal"
+                onClick={closeModal}
+                className="userside-address-modal-close inline-flex min-h-11 min-w-11 items-center justify-center rounded-full text-2xl leading-none text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-950 focus:outline-none focus:ring-2 focus:ring-gray-950"
+              >
+                <span aria-hidden="true">×</span>
+                </button>
+              </div>
+            </div>
+            <div className="userside-address-modal__content overflow-y-auto p-4 sm:p-6">
+              {visibleModalView === 'list' ? (
+                <div className="space-y-4">
+                  <p className="text-sm font-semibold uppercase tracking-[0.12em] text-gray-500">Your saved addresses</p>
+                  {loading && <p role="status" className="rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-600">Loading saved addresses...</p>}
+                  {!loading && addresses.length > 0 && savedAddressCards}
+                  {!loading && addresses.length === 0 && (
+                    <div className="rounded-2xl border border-dashed border-gray-300 bg-gray-50 p-6 text-center">
+                      <p className="font-semibold text-gray-950">No saved addresses yet</p>
+                      <p className="mt-1 text-sm text-gray-600">Add an address once and it will stay here for your next repair request.</p>
+                    </div>
+                  )}
+                  {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
+                </div>
+              ) : (
+              <AddressFormWrapper
+                className="space-y-4"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void save();
+                }}
+              >
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="text-sm font-medium text-gray-800">Full name<input required value={form.name} onChange={(event) => update('name', event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3" /></label>
+            <label className="text-sm font-medium text-gray-800">Phone<input required aria-label="Phone" type="tel" inputMode="numeric" pattern="[0-9]*" maxLength={20} value={form.phone} onChange={(event) => update('phone', event.target.value.replace(/\D/g, ''))} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3 transition-shadow focus:border-gray-950 focus:outline-none focus:ring-2 focus:ring-gray-950/10" /><span className="mt-1 block text-xs font-normal text-gray-500">Digits only. Keep the leading 0.</span></label>
+            <label className="sm:col-span-2 text-sm font-medium text-gray-800">House no., street, subdivision or building<input required value={form.address_line} onChange={(event) => update('address_line', event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3" /></label>
+            <label className="text-sm font-medium text-gray-800">Province<select required value={form.province} onChange={(event) => setForm((current) => ({ ...current, province: event.target.value, region: event.target.value, city: '' }))} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3"><option value="">Choose province</option>{PHILIPPINE_LOCATIONS.map(({ name }) => <option key={name}>{name}</option>)}</select></label>
+            <label className="text-sm font-medium text-gray-800">City/Municipality<select required value={form.city} onChange={(event) => update('city', event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3"><option value="">Choose city or municipality</option>{cities.map((city) => <option key={city}>{city}</option>)}</select></label>
+            <label className="text-sm font-medium text-gray-800">Barangay<input required value={form.barangay} onChange={(event) => update('barangay', event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3" /></label>
+            <label className="text-sm font-medium text-gray-800">Postal code<input value={form.postal_code ?? ''} onChange={(event) => update('postal_code', event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3" /></label>
+          </div>
+          <div>
+            <p className="mb-2 text-sm font-medium text-gray-800">Pin the exact delivery entrance</p>
+            <CustomerAddressMapPicker
+              allowIncompleteAddress={allowIncompleteMapAddress}
+              embeddedInForm={embeddedInForm}
+              value={form.latitude !== null && form.longitude !== null ? { latitude: form.latitude, longitude: form.longitude } : null}
+              onChange={(location) => {
+                setForm((current) => ({
+                  ...current,
+                  province: normalizeProvinceSelection(location.province || location.region) || current.province,
+                  region: location.region || current.region,
+                  city: normalizeCityMunicipalitySelection(
+                    normalizeProvinceSelection(location.province || location.region) || current.province,
+                    location.city,
+                  ) || current.city,
+                  barangay: location.barangay || current.barangay,
+                  postal_code: location.postalCode || current.postal_code,
+                  latitude: location.latitude,
+                  longitude: location.longitude,
+                }));
+              }}
+            />
+          </div>
+          <label className="block text-sm font-medium text-gray-800">Delivery instructions (optional)<textarea value={form.delivery_instructions ?? ''} onChange={(event) => update('delivery_instructions', event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2" rows={2} /></label>
+          {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
+          <div className="flex flex-col-reverse gap-3 border-t border-gray-200 pt-4 sm:flex-row sm:justify-end">
+            <button type="button" onClick={closeModal} className="min-h-11 rounded-lg px-4 text-sm font-semibold text-gray-700 underline underline-offset-4 transition-colors hover:text-gray-950 focus:outline-none focus:ring-2 focus:ring-gray-950">
+              Cancel
+            </button>
+            <button
+              type={embeddedInForm ? 'button' : 'submit'}
+              onClick={embeddedInForm ? () => void save() : undefined}
+              disabled={saving}
+              className="min-h-11 rounded-lg bg-gray-950 px-5 text-sm font-semibold text-white transition-colors hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-950 disabled:opacity-60"
+            >
+              {saving ? 'Saving…' : editingId ? 'Save changes' : 'Save address'}
+            </button>
+          </div>
+        </AddressFormWrapper>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}

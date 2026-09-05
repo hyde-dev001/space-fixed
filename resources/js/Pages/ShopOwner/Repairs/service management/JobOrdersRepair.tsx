@@ -2,10 +2,65 @@ import { useMemo, useState, useEffect, useRef } from "react";
 import Swal from "sweetalert2";
 import { Head, usePage } from "@inertiajs/react";
 import AppLayoutShopOwner from "../../../../layout/AppLayout_shopOwner";
+import AppLayoutERP from "../../../../layout/AppLayout_ERP";
 import ErrorModal from "../../../../components/common/ErrorModal";
+import { MoneyIcon } from "../../../../components/common/MoneyIcon";
 import axios from "axios";
 import { buildRepairBreakdown, type RepairTaxMode } from "../../../../utils/repairPricing";
 import type { RepairMaterialUsage, RepairMaterialInventoryItem, RepairMaterialPlanItem } from "../../../../services/repairMaterialsApi";
+
+type IntakeHandoffEvent = {
+  id?: number | string;
+  label?: string;
+  description?: string;
+  message?: string;
+  event_type?: string;
+  status?: string;
+  occurred_at?: string | null;
+  created_at?: string | null;
+};
+
+type IntakeHandoff = {
+  shipment_id?: number | null;
+  shipment_status?: string | null;
+  leg_id?: number | null;
+  leg_status?: string | null;
+  proof_status?: string | null;
+  proof_review_state?: string | null;
+  proof_correction_required?: boolean;
+  can_confirm_receipt?: boolean;
+  blocked_reason?: string | null;
+  scheduled_delivery_date?: string | null;
+  delivery_window?: string | null;
+  events?: IntakeHandoffEvent[];
+};
+
+type ReturnHandoff = {
+  visible?: boolean;
+  method?: "walk_in" | "customer_pickup" | "shop_delivery";
+  can_release?: boolean;
+  can_confirm_receipt?: boolean;
+  action_label?: string;
+  blocked_reason?: string | null;
+  shipment_status?: string | null;
+  leg_status?: string | null;
+  proof_status?: string | null;
+  proof_review_state?: string | null;
+  proof_correction_required?: boolean;
+  external_tracking?: {
+    carrier?: string | null;
+    tracking_number?: string | null;
+    tracking_url?: string | null;
+  } | null;
+  events?: IntakeHandoffEvent[];
+  recovery?: {
+    code: "returned_to_shop_awaiting_arrangement";
+    label: string;
+    state: "awaiting_arrangement" | "awaiting_payment" | "shop_pickup" | "ready_for_dispatch";
+    can_schedule_redelivery: boolean;
+    can_set_shop_pickup: boolean;
+  } | null;
+};
 
 type RepairOrder = {
   id: string;
@@ -28,8 +83,10 @@ type RepairOrder = {
   shoeType?: string;
   brand?: string;
   serviceType?: "pickup" | "walkin";
-  intakeDeliveryMethod?: "walk_in" | "customer_delivery";
+  intakeDeliveryMethod?: "walk_in" | "customer_delivery" | "shop_pickup";
+  intakeHandoff?: IntakeHandoff | null;
   returnDeliveryMethod?: "walk_in" | "customer_pickup" | "shop_delivery";
+  returnHandoff?: ReturnHandoff | null;
   pickupAddressLine?: string;
   pickupBarangay?: string;
   pickupCity?: string;
@@ -314,12 +371,6 @@ const CheckCircleIcon: React.FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
-const CurrencyDollarIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-  </svg>
-);
-
 const MagnifyingGlassIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -462,6 +513,8 @@ export default function JobOrdersRepair() {
   const pollingTimeoutRef = useRef<number | null>(null);
   // Repair workload limit — server prop is source of truth; localStorage is a cross-tab cache
   const pageProps = usePage().props as any;
+  const erpMode = pageProps?.erpMode === true;
+  const Layout = erpMode ? AppLayoutERP : AppLayoutShopOwner;
   const { repair_workload_limit: propLimit } = pageProps;
   const isIndividualRepairShop = String(
     pageProps?.auth?.shop_owner?.registration_type
@@ -631,13 +684,15 @@ export default function JobOrdersRepair() {
           shoeType: repair.shoe_type,
           brand: repair.brand,
           intakeDeliveryMethod: repair.intake_delivery_method || (repair.delivery_method === 'walk_in' ? 'walk_in' : 'customer_delivery'),
-          serviceType: currentOverrides[String(repair.id)] || (repair.delivery_method === 'pickup' ? 'pickup' : 'walkin'),
+          intakeHandoff: repair.intake_handoff || null,
+          serviceType: currentOverrides[String(repair.id)] || ((repair.intake_delivery_method || repair.delivery_method) === 'walk_in' ? 'walkin' : 'pickup'),
           returnDeliveryMethod: repair.return_delivery_method || (repair.delivery_method === 'walk_in' ? 'walk_in' : 'customer_pickup'),
-          pickupAddressLine: repair.pickup_address?.address_line || null,
-          pickupBarangay: repair.pickup_address?.barangay || null,
-          pickupCity: repair.pickup_address?.city || null,
-          pickupRegion: repair.pickup_address?.region || null,
-          pickupPostalCode: repair.pickup_address?.postal_code || null,
+          returnHandoff: repair.return_handoff || null,
+          pickupAddressLine: (repair.intake_address || repair.pickup_address)?.address_line || null,
+          pickupBarangay: (repair.intake_address || repair.pickup_address)?.barangay || null,
+          pickupCity: (repair.intake_address || repair.pickup_address)?.city || null,
+          pickupRegion: (repair.intake_address || repair.pickup_address)?.region || null,
+          pickupPostalCode: (repair.intake_address || repair.pickup_address)?.postal_code || null,
           returnAddressLine: repair.return_address?.address_line || null,
           returnBarangay: repair.return_address?.barangay || null,
           returnCity: repair.return_address?.city || null,
@@ -1129,13 +1184,12 @@ export default function JobOrdersRepair() {
     }
   };
 
-  const canMarkReceived = (order: Pick<RepairOrder, 'payment_status'>) => {
-    const normalized = (order.payment_status ?? '').toLowerCase();
-    return normalized === 'paid' || normalized === 'completed';
+  const canMarkReceived = (order: Pick<RepairOrder, 'intakeHandoff'>) => {
+    return Boolean(order.intakeHandoff?.can_confirm_receipt);
   };
 
-  const getMarkReceivedBlockedMessage = () => {
-    return 'Payment is required before marking shoes as received (collect payment first to prevent errors)';
+  const getMarkReceivedBlockedMessage = (order: Pick<RepairOrder, 'intakeHandoff'>) => {
+    return order.intakeHandoff?.blocked_reason || 'Physical receipt is not available yet.';
   };
 
   const isWalkInReturn = (order: Pick<RepairOrder, 'returnDeliveryMethod' | 'serviceType'>) => {
@@ -1144,56 +1198,14 @@ export default function JobOrdersRepair() {
     return order.serviceType === 'walkin';
   };
 
-  const isWalkInIntake = (order: Pick<RepairOrder, 'serviceType'>) => {
-    return order.serviceType === 'walkin';
+  const isWalkInIntake = (order: Pick<RepairOrder, 'intakeDeliveryMethod' | 'serviceType'>) => {
+    return order.intakeDeliveryMethod
+      ? order.intakeDeliveryMethod === 'walk_in'
+      : order.serviceType === 'walkin';
   };
 
-  const isPosManualWalkIn = (order: Pick<RepairOrder, 'id' | 'serviceType'>) => {
+  const isPosManualWalkIn = (order: Pick<RepairOrder, 'id' | 'intakeDeliveryMethod' | 'serviceType'>) => {
     return isWalkInIntake(order) && String(order.id || '').toUpperCase().startsWith('REP-POS-');
-  };
-
-  const isInShopPaymentDueNow = (order: Pick<RepairOrder, 'status' | 'payment_policy' | 'payment_status' | 'returnDeliveryMethod' | 'serviceType' | 'isWarrantyJob' | 'billingMode'>) => {
-    if (isWarrantyNoChargeOrder(order)) return false;
-
-    const status = (order.payment_status ?? '').toLowerCase();
-    const isDepositSettled = status === 'paid' || status === 'partially_paid';
-    const policy = order.payment_policy ?? 'deposit_50';
-    const returnMethod = order.returnDeliveryMethod;
-
-    if (returnMethod === 'shop_delivery') return false;
-
-    const canCollectInShop =
-      isWalkInIntake(order)
-      || returnMethod === 'walk_in'
-      || returnMethod === 'customer_pickup';
-
-    if (order.status === 'cancelled') return false;
-    if (!canCollectInShop) return false;
-    if (status === 'completed') return false;
-    if (policy === 'full_upfront') {
-      return ['pending', 'failed', 'expired', ''].includes(status);
-    }
-
-    if (['pending', 'failed', 'expired', ''].includes(status)) return true;
-    if (isDepositSettled) return order.status === 'ready-for-pickup';
-    return false;
-  };
-
-  const getMarkPaidInShopLabel = (order: Pick<RepairOrder, 'payment_policy' | 'payment_status'>) => {
-    const status = (order.payment_status ?? '').toLowerCase();
-    if ((order.payment_policy ?? 'deposit_50') === 'deposit_50' && (status === 'paid' || status === 'partially_paid')) {
-      return 'Proceed to POS (Collect Remaining Balance)';
-    }
-    return 'Proceed to POS (Collect Payment)';
-  };
-
-  const resolvePosDueType = (order: Pick<RepairOrder, 'payment_policy' | 'payment_status'>): 'deposit' | 'balance' | 'full' => {
-    const policy = order.payment_policy ?? 'deposit_50';
-    const status = (order.payment_status ?? '').toLowerCase();
-
-    if (policy === 'full_upfront') return 'full';
-    if (status === 'paid' || status === 'partially_paid') return 'balance';
-    return 'deposit';
   };
 
   const canActivateOnlineRemainingBalance = (order: Pick<RepairOrder, 'status' | 'payment_policy' | 'payment_status' | 'returnDeliveryMethod' | 'serviceType' | 'payment_enabled' | 'isWarrantyJob' | 'billingMode'>) => {
@@ -1218,15 +1230,20 @@ export default function JobOrdersRepair() {
   };
 
   const handleMarkReceived = async (order: RepairOrder) => {
+    const handoffCopy = order.intakeDeliveryMethod === 'walk_in'
+      ? 'Confirm that the customer has dropped off the shoes at your shop.'
+      : order.intakeDeliveryMethod === 'shop_pickup'
+        ? 'Confirm that the assigned shop rider has handed the shoes over at your shop.'
+        : 'Confirm that the customer-arranged courier has handed the shoes over at your shop.';
     const result = await Swal.fire({
-      title: "Mark as Received?",
+      title: "Confirm physical receipt?",
       html: `
-        <p class="text-gray-700 mb-2">${order.serviceType === 'walkin' ? 'Confirm that the customer has dropped off the shoes at your shop.' : 'Confirm that you have received the shoes from the delivery service.'}</p>
+        <p class="text-gray-700 mb-2">${handoffCopy}</p>
         <p class="font-semibold text-gray-900">${order.service} for ${order.customer}</p>
       `,
       icon: "question",
       showCancelButton: true,
-      confirmButtonText: "Yes, mark received",
+      confirmButtonText: "Confirm physical receipt",
       cancelButtonText: "Cancel",
       confirmButtonColor: "#2563eb",
     });
@@ -1248,10 +1265,7 @@ export default function JobOrdersRepair() {
       const data = await response.json();
 
       if (data.success) {
-        setOrders((prev) =>
-          prev.map((o) => (o.id === order.id ? { ...o, status: "received" } : o))
-        );
-        setViewOrder((prev) => prev ? { ...prev, status: "received" } : null);
+        await fetchOrders();
         setSelectedTab("received");
         setCurrentPage(1);
 
@@ -1274,43 +1288,6 @@ export default function JobOrdersRepair() {
         confirmButtonText: "OK",
         confirmButtonColor: "#2563eb",
       });
-    }
-  };
-
-  const handleChangeDeliveryMethod = async (order: RepairOrder) => {
-    const current = order.serviceType === 'pickup' ? 'pickup' : 'walkin';
-    const next: 'pickup' | 'walkin' = current === 'pickup' ? 'walkin' : 'pickup';
-    const nextLabel = next === 'walkin' ? 'Walk In (customer brings shoes)' : 'Pick Up (arrange courier)';
-
-    const result = await Swal.fire({
-      title: 'Change Delivery Method?',
-      text: `Switch to: ${nextLabel}`,
-      icon: 'question',
-      showCancelButton: true,
-      confirmButtonText: 'Yes, change it',
-      cancelButtonText: 'Cancel',
-      confirmButtonColor: '#2563eb',
-    });
-
-    if (!result.isConfirmed) return;
-
-    try {
-      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-      const response = await fetch(`/api/shop-owner/repairs/${order.database_id}/delivery-method`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken || '', 'Accept': 'application/json' },
-        body: JSON.stringify({ delivery_method: next === 'walkin' ? 'walk_in' : 'pickup' }),
-      });
-      const data = await response.json();
-      if (data.success) {
-        setOrders(prev => prev.map(o => o.id === order.id ? { ...o, serviceType: next } : o));
-        if (viewOrder && viewOrder.id === order.id) setViewOrder(prev => prev ? { ...prev, serviceType: next } : prev);
-        await Swal.fire({ title: 'Updated', text: `Delivery method changed to ${nextLabel}.`, icon: 'success', confirmButtonText: 'OK', confirmButtonColor: '#2563eb' });
-      } else {
-        throw new Error(data.message || 'Failed to update');
-      }
-    } catch (error: any) {
-      await Swal.fire({ title: 'Failed', text: error.message || 'Please try again.', icon: 'error', confirmButtonText: 'OK' });
     }
   };
 
@@ -1712,17 +1689,14 @@ export default function JobOrdersRepair() {
     }
   };
 
-  const handleActivatePickup = async (orderId: string) => {
-    const targetOrder =
-      (viewOrder && String(viewOrder.database_id) === orderId ? viewOrder : null) ||
-      orders.find((order) => String(order.database_id) === orderId) ||
-      null;
-    const isShopPickupReturn = targetOrder ? isWalkInReturn(targetOrder) : false;
+  const handleActivatePickup = async (targetOrder: RepairOrder) => {
+    const handoff = targetOrder.returnHandoff;
+    const actionLabel = handoff?.action_label || 'Record return handoff';
 
-    if (targetOrder && !isFullyPaidForRelease(targetOrder)) {
+    if (!handoff?.can_release) {
       await Swal.fire({
-        title: 'Payment Required',
-        text: getReleasePaymentBlockedMessage(targetOrder),
+        title: 'Handoff not available',
+        text: handoff?.blocked_reason || 'Refresh the repair and check the return requirements.',
         icon: 'warning',
         confirmButtonColor: '#2563eb',
       });
@@ -1730,13 +1704,13 @@ export default function JobOrdersRepair() {
     }
 
     const result = await Swal.fire({
-      title: isShopPickupReturn ? 'Mark as Received?' : 'Activate Pickup Confirmation?',
-      text: isShopPickupReturn
-        ? 'Confirm that the customer already picked up the shoes at the shop.'
-        : 'This will allow the customer to confirm they have received their item.',
+      title: `${actionLabel}?`,
+      text: targetOrder.returnDeliveryMethod === 'walk_in'
+        ? 'Confirm that the repaired shoes are being released directly to the customer.'
+        : 'Confirm that the repaired shoes were handed to the correct courier or rider.',
       icon: 'question',
       showCancelButton: true,
-      confirmButtonText: isShopPickupReturn ? 'Yes, Mark Received' : 'Activate',
+      confirmButtonText: actionLabel,
       cancelButtonText: 'Cancel',
       confirmButtonColor: '#2563eb',
     });
@@ -1744,31 +1718,15 @@ export default function JobOrdersRepair() {
     if (!result.isConfirmed) return;
 
     try {
-      const response = await axios.post(`/api/shop-owner/repairs/${orderId}/activate-pickup`);
+      const response = await axios.post(`/api/shop-owner/repairs/${targetOrder.database_id}/activate-pickup`);
       
       if (response.data.success) {
-        setOrders((prev) =>
-          prev.map((o) =>
-            String(o.database_id) === orderId
-              ? { ...o, pickup_enabled: true, pickup_enabled_at: new Date().toISOString() }
-              : o
-          )
-        );
-
-        setViewOrder((prev) =>
-          prev && String(prev.database_id) === orderId
-            ? { ...prev, pickup_enabled: true, pickup_enabled_at: new Date().toISOString() }
-            : prev
-        );
-
         setIsViewModalOpen(false);
         setViewOrder(null);
 
         await Swal.fire({
-          title: isShopPickupReturn ? 'Marked as Received!' : 'Pickup Activated!',
-          text: isShopPickupReturn
-            ? 'The shoes were marked as picked up by the customer.'
-            : 'Customer can now confirm they received their item.',
+          title: 'Handoff recorded',
+          text: 'The customer can now confirm receipt of the repaired shoes.',
           icon: 'success',
           confirmButtonColor: '#2563eb',
         });
@@ -1777,7 +1735,7 @@ export default function JobOrdersRepair() {
     } catch (error: any) {
       await Swal.fire({
         title: 'Error',
-        text: error.response?.data?.message || (isShopPickupReturn ? 'Failed to mark as received' : 'Failed to activate pickup'),
+        text: error.response?.data?.message || 'Failed to record the return handoff.',
         icon: 'error',
       });
     }
@@ -1792,7 +1750,7 @@ export default function JobOrdersRepair() {
     if (targetOrder && isPosManualWalkIn(targetOrder)) {
       await Swal.fire({
         title: 'Not Required',
-        text: 'POS walk-in repairs do not need payment activation. Use Proceed to POS when a payment phase is due.',
+        text: 'This walk-in repair is already recorded as an in-shop transaction; online payment activation is not needed.',
         icon: 'info',
         confirmButtonColor: '#2563eb',
       });
@@ -1844,39 +1802,6 @@ export default function JobOrdersRepair() {
         icon: 'error',
       });
     }
-  };
-
-  const handleMarkPaidInShop = async (order: RepairOrder) => {
-    const dueNow = isInShopPaymentDueNow(order);
-    if (!dueNow) {
-      await Swal.fire({
-        title: 'Payment Not Due',
-        text: 'No payable repair phase is currently due for in-shop payment.',
-        icon: 'info',
-        confirmButtonColor: '#2563eb',
-      });
-      return;
-    }
-
-    const result = await Swal.fire({
-      title: getMarkPaidInShopLabel(order),
-      text: 'Continue to the POS screen to complete and issue a receipt.',
-      icon: 'question',
-      showCancelButton: true,
-      confirmButtonText: 'Proceed to POS',
-      cancelButtonText: 'Cancel',
-      confirmButtonColor: '#2563eb',
-    });
-
-    if (!result.isConfirmed) return;
-
-    const dueType = resolvePosDueType(order);
-    const query = new URLSearchParams({
-      repair_request_id: String(order.database_id),
-      due_type: dueType,
-    });
-
-    window.location.href = `/shop-owner/point-of-sale?${query.toString()}`;
   };
 
   const handleCompleteWork = async (order: RepairOrder) => {
@@ -2117,10 +2042,21 @@ export default function JobOrdersRepair() {
     }
   };
 
-  const formatServiceType = (serviceType?: RepairOrder["serviceType"]) => {
-    if (serviceType === "pickup") return "Pick Up";
-    if (serviceType === "walkin") return "Walk In";
+  const formatIntakeDeliveryMethod = (order: Pick<RepairOrder, 'intakeDeliveryMethod' | 'serviceType'>) => {
+    if (order.intakeDeliveryMethod === "walk_in") return "Customer drop-off";
+    if (order.intakeDeliveryMethod === "customer_delivery") return "Customer-arranged courier";
+    if (order.intakeDeliveryMethod === "shop_pickup") return "Shop rider pickup";
+    if (order.serviceType === "walkin") return "Customer drop-off";
+    if (order.serviceType === "pickup") return "Customer-arranged courier";
     return "Not specified";
+  };
+
+  const formatLogisticsStatus = (status?: string | null) => {
+    if (!status) return "Not available";
+    if (status === "proof_correction_required") return "Proof correction required";
+    return status
+      .replace(/_/g, " ")
+      .replace(/\b\w/g, (letter) => letter.toUpperCase());
   };
 
   const getReturnDeliveryMethod = (order: RepairOrder): "walk_in" | "customer_pickup" | "shop_delivery" => {
@@ -2300,7 +2236,7 @@ export default function JobOrdersRepair() {
   };
 
   return (
-    <AppLayoutShopOwner>
+    <Layout>
       <Head title="Repair Services - Solespace ERP" />
       {error && <ErrorModal message={error} onClose={() => setError(null)} />}
       
@@ -2352,7 +2288,7 @@ export default function JobOrdersRepair() {
             value={`₱${stats.totalRevenue.toLocaleString()}`}
             change={18}
             changeType="increase"
-            icon={CurrencyDollarIcon}
+            icon={MoneyIcon}
             color="success"
             description="From repair services before VAT"
           />
@@ -2641,7 +2577,7 @@ export default function JobOrdersRepair() {
                         </div>
                       </td>
                       <td className="px-4 py-4 text-sm text-gray-900 dark:text-white">
-                        {formatServiceType(order.serviceType)}
+                        {formatIntakeDeliveryMethod(order)}
                       </td>
                       <td className="px-4 py-4 text-sm text-gray-900 dark:text-white font-medium">
                         {isWarrantyNoChargeOrder(order) ? (
@@ -2691,25 +2627,27 @@ export default function JobOrdersRepair() {
                             <EyeIcon className="size-5" />
                           </button>
 
+                          {order.status === "pending" && order.intakeHandoff && (
+                            <button
+                              onClick={() => handleMarkReceived(order)}
+                              disabled={!canMarkReceived(order)}
+                              className={`inline-flex items-center justify-center p-2 rounded-lg transition-colors ${
+                                canMarkReceived(order)
+                                  ? 'text-cyan-600 hover:text-cyan-700 hover:bg-cyan-50 dark:text-cyan-400 dark:hover:text-cyan-300 dark:hover:bg-cyan-900/30'
+                                  : 'text-gray-400 cursor-not-allowed'
+                              }`}
+                              title={
+                                canMarkReceived(order)
+                                  ? 'Confirm physical receipt'
+                                  : getMarkReceivedBlockedMessage(order)
+                              }
+                              aria-label="Review physical receipt"
+                            >
+                              <PackageIcon className="size-5" />
+                            </button>
+                          )}
                           {(order.status === "owner_approved" || order.status === "repairer_accepted" || order.status === "waiting_customer_confirmation" || order.status === "pending") && (
                             <>
-                              <button
-                                onClick={() => handleMarkReceived(order)}
-                                disabled={!canMarkReceived(order)}
-                                className={`inline-flex items-center justify-center p-2 rounded-lg transition-colors ${
-                                  canMarkReceived(order)
-                                    ? 'text-cyan-600 hover:text-cyan-700 hover:bg-cyan-50 dark:text-cyan-400 dark:hover:text-cyan-300 dark:hover:bg-cyan-900/30'
-                                    : 'text-gray-400 cursor-not-allowed'
-                                }`}
-                                title={
-                                  canMarkReceived(order)
-                                    ? 'Mark shoes as received at shop'
-                                    : getMarkReceivedBlockedMessage()
-                                }
-                                aria-label="Mark as Received"
-                              >
-                                <PackageIcon className="size-5" />
-                              </button>
                               {!isWarrantyNoChargeOrder(order) && !order.payment_enabled && !isPosManualWalkIn(order) && (
                                 <button
                                   onClick={() => handleActivatePayment(String(order.database_id))}
@@ -2717,26 +2655,7 @@ export default function JobOrdersRepair() {
                                   title="Activate payment for this repair"
                                   aria-label="Activate Payment"
                                 >
-                                  <CurrencyDollarIcon className="size-5" />
-                                </button>
-                              )}
-                              {isWalkInIntake(order) && !isWarrantyNoChargeOrder(order) && (
-                                <button
-                                  onClick={() => handleMarkPaidInShop(order)}
-                                  disabled={!isInShopPaymentDueNow(order)}
-                                  className={`inline-flex items-center justify-center p-2 rounded-lg transition-colors ${
-                                    isInShopPaymentDueNow(order)
-                                      ? 'text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:text-emerald-300 dark:hover:bg-emerald-900/30'
-                                      : 'text-gray-400 cursor-not-allowed'
-                                  }`}
-                                  title={
-                                    isInShopPaymentDueNow(order)
-                                      ? getMarkPaidInShopLabel(order)
-                                      : 'No payable phase is currently due for in-shop payment'
-                                  }
-                                  aria-label="Proceed to POS"
-                                >
-                                  <CurrencyDollarIcon className="size-5" />
+                                  <MoneyIcon className="size-5" />
                                 </button>
                               )}
                             </>
@@ -2751,7 +2670,7 @@ export default function JobOrdersRepair() {
                                   title="Activate payment for this repair"
                                   aria-label="Activate Payment"
                                 >
-                                  <CurrencyDollarIcon className="size-5" />
+                                  <MoneyIcon className="size-5" />
                                 </button>
                               )}
                               <button
@@ -2775,81 +2694,30 @@ export default function JobOrdersRepair() {
                               <CheckCircleIcon className="size-5" />
                             </button>
                           )}
-                          {order.status === "ready-for-pickup" && !isWalkInReturn(order) && (
-                            <>
-                              {canActivateOnlineRemainingBalance(order) && (
-                                <button
-                                  onClick={() => handleActivatePayment(String(order.database_id))}
-                                  className="inline-flex items-center justify-center p-2 rounded-lg text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:text-amber-300 dark:hover:bg-amber-900/30 transition-colors"
-                                  title="Activate online payment for remaining balance"
-                                  aria-label="Activate Remaining Balance"
-                                >
-                                  <CurrencyDollarIcon className="size-5" />
-                                </button>
-                              )}
-                              <button
-                                onClick={() => handleShipOrder(order)}
-                                className="inline-flex items-center justify-center p-2 rounded-lg text-green-600 hover:text-green-700 hover:bg-green-50 dark:text-green-400 dark:hover:text-green-300 dark:hover:bg-green-900/30 transition-colors"
-                                title="Ship this repair order"
-                                aria-label="Ship this repair order"
-                              >
-                                <CheckCircleIcon className="size-5" />
-                              </button>
-                            </>
-                          )}
-                          {order.status === "ready-for-pickup" && isWalkInReturn(order) && (
+                          {order.status === "ready-for-pickup" && canActivateOnlineRemainingBalance(order) && (
                             <button
-                              onClick={() => handleActivatePickup(String(order.database_id))}
-                              disabled={!isFullyPaidForRelease(order)}
-                              className={`inline-flex items-center justify-center p-2 rounded-lg transition-colors ${
-                                !isFullyPaidForRelease(order)
-                                  ? 'text-gray-400 cursor-not-allowed'
-                                  : 'text-purple-600 hover:text-purple-700 hover:bg-purple-50 dark:text-purple-400 dark:hover:text-purple-300 dark:hover:bg-purple-900/30'
-                              }`}
-                              title={
-                                !isFullyPaidForRelease(order)
-                                  ? getReleasePaymentBlockedMessage(order)
-                                  : 'Mark repaired shoe as received in-shop'
-                              }
-                              aria-label="Mark Received"
+                              onClick={() => handleActivatePayment(String(order.database_id))}
+                              className="inline-flex items-center justify-center p-2 rounded-lg text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:text-amber-300 dark:hover:bg-amber-900/30 transition-colors"
+                              title="Activate online payment for remaining balance"
+                              aria-label="Activate Remaining Balance"
                             >
-                              <PackageIcon className="size-5" />
+                              <MoneyIcon className="size-5" />
                             </button>
                           )}
-                          {order.status === "ready-for-pickup" && !isWarrantyNoChargeOrder(order) && isInShopPaymentDueNow(order) && (
+                          {order.returnHandoff
+                            && order.returnHandoff.visible !== false
+                            && !order.returnHandoff.recovery
+                            && ["ready-for-pickup", "shipped"].includes(order.status) && (
                             <button
-                              onClick={() => handleMarkPaidInShop(order)}
-                              disabled={!isInShopPaymentDueNow(order)}
+                              onClick={() => handleActivatePickup(order)}
+                              disabled={!order.returnHandoff.can_release}
                               className={`inline-flex items-center justify-center p-2 rounded-lg transition-colors ${
-                                isInShopPaymentDueNow(order)
-                                  ? 'text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:text-emerald-300 dark:hover:bg-emerald-900/30'
+                                order.returnHandoff.can_release
+                                  ? 'text-purple-600 hover:text-purple-700 hover:bg-purple-50 dark:text-purple-400 dark:hover:text-purple-300 dark:hover:bg-purple-900/30'
                                   : 'text-gray-400 cursor-not-allowed'
                               }`}
-                              title={
-                                isInShopPaymentDueNow(order)
-                                  ? getMarkPaidInShopLabel(order)
-                                  : 'No payable phase is currently due for in-shop payment'
-                              }
-                              aria-label="Proceed to POS"
-                            >
-                              <CurrencyDollarIcon className="size-5" />
-                            </button>
-                          )}
-                          {order.status === "shipped" && (
-                            <button
-                              onClick={() => handleActivatePickup(String(order.database_id))}
-                              disabled={Boolean(order.pickup_enabled || order.pickup_enabled_at)}
-                              className={`inline-flex items-center justify-center p-2 rounded-lg transition-colors ${
-                                order.pickup_enabled || order.pickup_enabled_at
-                                  ? 'text-gray-400 cursor-not-allowed'
-                                  : 'text-purple-600 hover:text-purple-700 hover:bg-purple-50 dark:text-purple-400 dark:hover:text-purple-300 dark:hover:bg-purple-900/30'
-                              }`}
-                              title={
-                                order.pickup_enabled || order.pickup_enabled_at
-                                  ? 'Waiting for customer receive confirmation'
-                                  : 'Activate customer receive confirmation'
-                              }
-                              aria-label="Activate Receive"
+                              title={order.returnHandoff.blocked_reason || order.returnHandoff.action_label}
+                              aria-label={order.returnHandoff.action_label || 'Record return handoff'}
                             >
                               <PackageIcon className="size-5" />
                             </button>
@@ -3015,22 +2883,7 @@ export default function JobOrdersRepair() {
 
                 {/* Service Details */}
                 <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
-                  <div className="mb-2 flex items-center justify-between">
-                    <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Service Details</p>
-                    {!['received','in-progress','awaiting_parts','completed','ready-for-pickup','picked_up','cancelled','rejected'].includes(viewOrder.status) && (
-                      <button
-                        type="button"
-                        onClick={() => handleChangeDeliveryMethod(viewOrder)}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-300 bg-white text-gray-600 hover:bg-gray-50 hover:text-blue-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-                        title="Edit intake delivery method"
-                        aria-label="Edit intake delivery method"
-                      >
-                        <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                          <path d="M13.586 3.586a2 2 0 112.828 2.828l-8.19 8.19a1 1 0 01-.439.263l-3 1a1 1 0 01-1.264-1.264l1-3a1 1 0 01.263-.439l8.19-8.19zM12.172 5L6 11.172V13h1.828L14 6.828 12.172 5z" />
-                        </svg>
-                      </button>
-                    )}
-                  </div>
+                  <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Service Details</p>
                   <div className="bg-gray-50 dark:bg-gray-900/30 rounded-lg p-4 space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-gray-600 dark:text-gray-400">Shoe Type</span>
@@ -3059,7 +2912,7 @@ export default function JobOrdersRepair() {
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-gray-600 dark:text-gray-400">Intake Delivery Method</span>
                       <span className="text-sm font-medium text-gray-900 dark:text-white">
-                        {formatServiceType(viewOrder.serviceType)}
+                        {formatIntakeDeliveryMethod(viewOrder)}
                       </span>
                     </div>
                     <div className="flex items-center justify-between">
@@ -3113,6 +2966,188 @@ export default function JobOrdersRepair() {
                     )}
                   </div>
                 </div>
+
+                {viewOrder.intakeHandoff && viewOrder.intakeDeliveryMethod === 'shop_pickup' && (
+                  <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
+                      Intake logistics
+                    </p>
+                    <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm dark:border-blue-800 dark:bg-blue-900/20">
+                      <p className="font-semibold text-gray-900 dark:text-white">Delivery progress</p>
+                      <dl className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                        <div>
+                          <dt className="text-xs text-gray-500 dark:text-gray-400">Shipment</dt>
+                          <dd className="font-medium text-gray-900 dark:text-white">{formatLogisticsStatus(viewOrder.intakeHandoff.shipment_status)}</dd>
+                        </div>
+                        <div>
+                          <dt className="text-xs text-gray-500 dark:text-gray-400">Pickup leg</dt>
+                          <dd className="font-medium text-gray-900 dark:text-white">{formatLogisticsStatus(viewOrder.intakeHandoff.leg_status)}</dd>
+                        </div>
+                        <div>
+                          <dt className="text-xs text-gray-500 dark:text-gray-400">Proof</dt>
+                          <dd className="font-medium text-gray-900 dark:text-white">{formatLogisticsStatus(viewOrder.intakeHandoff.proof_status)}</dd>
+                        </div>
+                      </dl>
+                      {(viewOrder.intakeHandoff.scheduled_delivery_date || viewOrder.intakeHandoff.delivery_window) && (
+                        <p className="mt-3 text-gray-700 dark:text-gray-300">
+                          Scheduled: {viewOrder.intakeHandoff.scheduled_delivery_date || 'Date pending'}
+                          {viewOrder.intakeHandoff.delivery_window
+                            ? ` · ${formatLogisticsStatus(viewOrder.intakeHandoff.delivery_window)}`
+                            : ''}
+                        </p>
+                      )}
+                      {viewOrder.intakeHandoff.events && viewOrder.intakeHandoff.events.length > 0 && (
+                        <ol className="mt-4 space-y-2 border-l-2 border-blue-300 pl-4 dark:border-blue-700">
+                          {viewOrder.intakeHandoff.events.map((event, index) => (
+                            <li key={event.id ?? index}>
+                              <p className="font-medium text-gray-900 dark:text-white">
+                                {event.label
+                                  || event.description
+                                  || event.message
+                                  || formatLogisticsStatus(event.event_type || event.status)}
+                              </p>
+                              {(event.occurred_at || event.created_at) && (
+                                <p className="text-xs text-gray-500 dark:text-gray-400">
+                                  {new Date(event.occurred_at || event.created_at || '').toLocaleString()}
+                                </p>
+                              )}
+                            </li>
+                          ))}
+                        </ol>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => fetchOrders()}
+                        className="mt-4 inline-flex items-center justify-center rounded-md border border-blue-300 bg-white px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 dark:border-blue-700 dark:bg-gray-900 dark:text-blue-300 dark:hover:bg-blue-900/40"
+                      >
+                        Refresh delivery status
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {viewOrder.returnHandoff && viewOrder.returnHandoff.visible !== false && (
+                  <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
+                      {viewOrder.returnHandoff.recovery ? "Return recovery" : "Return handoff"}
+                    </p>
+                    {viewOrder.returnHandoff.recovery ? (
+                      <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm dark:border-amber-700 dark:bg-amber-900/20">
+                        <p className="font-semibold text-gray-900 dark:text-white">
+                          {viewOrder.returnHandoff.recovery.label}
+                        </p>
+                        <p className="mt-1 text-gray-700 dark:text-gray-300">
+                          {viewOrder.returnHandoff.recovery.state === "awaiting_payment"
+                            ? "Waiting for the customer to confirm the address and pay the new delivery fee."
+                            : viewOrder.returnHandoff.recovery.state === "shop_pickup"
+                              ? "Keep the repaired shoes at the shop until the customer collects them."
+                              : viewOrder.returnHandoff.recovery.state === "ready_for_dispatch"
+                                ? "The re-delivery fee is paid. The Dispatcher can assign the new delivery."
+                                : "Customer must choose re-delivery or shop pickup in My Repairs."}
+                        </p>
+                        {viewOrder.returnHandoff.recovery.state === "shop_pickup" && (
+                          <button
+                            type="button"
+                            onClick={() => handleActivatePickup(viewOrder)}
+                            disabled={!viewOrder.returnHandoff.can_release}
+                            className="mt-4 min-h-11 w-full rounded-md bg-purple-600 px-4 py-2 font-semibold text-white hover:bg-purple-700 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:text-gray-600"
+                          >
+                            {viewOrder.returnHandoff.action_label || "Release to customer"}
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                    <div className="rounded-lg border border-purple-200 bg-purple-50 p-4 text-sm dark:border-purple-800 dark:bg-purple-900/20">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="font-semibold text-gray-900 dark:text-white">
+                            {formatReturnDeliveryMethod(viewOrder)}
+                          </p>
+                          {viewOrder.returnHandoff.blocked_reason && !viewOrder.returnHandoff.can_release && (
+                            <p className="mt-1 text-amber-700 dark:text-amber-300">
+                              {viewOrder.returnHandoff.blocked_reason}
+                            </p>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleActivatePickup(viewOrder)}
+                          disabled={!viewOrder.returnHandoff.can_release}
+                          aria-label={viewOrder.returnHandoff.action_label || 'Record return handoff'}
+                          className={`rounded-md px-3 py-2 font-semibold ${
+                            viewOrder.returnHandoff.can_release
+                              ? 'bg-purple-600 text-white hover:bg-purple-700'
+                              : 'cursor-not-allowed bg-gray-200 text-gray-500 dark:bg-gray-800 dark:text-gray-400'
+                          }`}
+                        >
+                          {viewOrder.returnHandoff.action_label || 'Record return handoff'}
+                        </button>
+                      </div>
+
+                      {viewOrder.returnDeliveryMethod === 'customer_pickup' && (
+                        <div className="mt-4 rounded-lg border border-purple-100 bg-white p-3 dark:border-purple-900 dark:bg-gray-900">
+                          <p className="font-semibold text-gray-900 dark:text-white">Customer courier tracking</p>
+                          {viewOrder.returnHandoff.external_tracking?.tracking_number ? (
+                            <dl className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                              <div>
+                                <dt className="text-xs text-gray-500 dark:text-gray-400">Carrier</dt>
+                                <dd className="font-medium text-gray-900 dark:text-white">
+                                  {viewOrder.returnHandoff.external_tracking.carrier || 'Not provided'}
+                                </dd>
+                              </div>
+                              <div>
+                                <dt className="text-xs text-gray-500 dark:text-gray-400">Tracking number</dt>
+                                <dd className="font-medium text-gray-900 dark:text-white">
+                                  {viewOrder.returnHandoff.external_tracking.tracking_number}
+                                </dd>
+                              </div>
+                              {viewOrder.returnHandoff.external_tracking.tracking_url && (
+                                <div className="sm:col-span-2">
+                                  <a
+                                    href={viewOrder.returnHandoff.external_tracking.tracking_url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="font-semibold text-purple-700 underline dark:text-purple-300"
+                                  >
+                                    Open courier tracking
+                                  </a>
+                                </div>
+                              )}
+                            </dl>
+                          ) : (
+                            <p className="mt-2 text-gray-600 dark:text-gray-300">
+                              The customer has not provided tracking details yet.
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                      {viewOrder.returnDeliveryMethod === 'shop_delivery' && (
+                        <dl className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                          <div>
+                            <dt className="text-xs text-gray-500 dark:text-gray-400">Shipment</dt>
+                            <dd className="font-medium text-gray-900 dark:text-white">
+                              {formatLogisticsStatus(viewOrder.returnHandoff.shipment_status)}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="text-xs text-gray-500 dark:text-gray-400">Delivery leg</dt>
+                            <dd className="font-medium text-gray-900 dark:text-white">
+                              {formatLogisticsStatus(viewOrder.returnHandoff.leg_status)}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="text-xs text-gray-500 dark:text-gray-400">Proof</dt>
+                            <dd className="font-medium text-gray-900 dark:text-white">
+                              {formatLogisticsStatus(viewOrder.returnHandoff.proof_status)}
+                            </dd>
+                          </div>
+                        </dl>
+                      )}
+                    </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Selected Services */}
                 {viewOrder.selectedServices && viewOrder.selectedServices.length > 0 && (
@@ -3283,7 +3318,7 @@ export default function JobOrdersRepair() {
                 )}
 
                 {/* Pickup Address */}
-                {viewOrder.serviceType === "pickup" && viewOrder.intakeDeliveryMethod !== 'customer_delivery' && (
+                {viewOrder.intakeDeliveryMethod === 'shop_pickup' && (
                   <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
                     <>
                     <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
@@ -3305,15 +3340,10 @@ export default function JobOrdersRepair() {
                               {[viewOrder.pickupRegion, viewOrder.pickupPostalCode].filter(Boolean).join(" ")}
                             </div>
                           )}
-                          <div className="mt-3 pt-3 border-t border-amber-200 dark:border-amber-700">
-                            <p className="text-xs text-amber-800 dark:text-amber-400 font-medium">
-                              Instructions: Contact a delivery service (Lalamove, Grab, etc.) to collect the shoes from this address and bring them to your shop.
-                            </p>
-                          </div>
                         </div>
                       ) : (
                         <div className="text-sm text-gray-500 dark:text-gray-400 italic">
-                          No pickup address provided. This may be a walk-in repair or address was not collected during submission.
+                          No pickup address is available.
                         </div>
                       )}
                     </div>
@@ -3424,10 +3454,28 @@ export default function JobOrdersRepair() {
                     </button>
                   </div>
                 )}
-                {/* After acceptance - both pickup and walk-in need to wait for physical receipt */}
-                {/* Ready to mark as received - for both pickup and walk-in */}
-                {(viewOrder.status === "confirmed" || viewOrder.status === "owner_approved" || viewOrder.status === "repairer_accepted" || viewOrder.status === "waiting_customer_confirmation" || viewOrder.status === "pending") && (
-                  <div className="text-sm text-gray-600 dark:text-gray-400">Use action icons in the table row to process this order.</div>
+
+                {viewOrder.status === "pending" && viewOrder.intakeHandoff && (
+                  <div className="min-w-[16rem] flex-1">
+                    <button
+                      type="button"
+                      onClick={() => handleMarkReceived(viewOrder)}
+                      disabled={!canMarkReceived(viewOrder)}
+                      className={`w-full rounded-lg px-4 py-2.5 font-semibold transition-colors ${
+                        canMarkReceived(viewOrder)
+                          ? 'bg-cyan-600 text-white hover:bg-cyan-700'
+                          : 'cursor-not-allowed bg-gray-200 text-gray-500 dark:bg-gray-800 dark:text-gray-400'
+                      }`}
+                      aria-label="Confirm physical receipt"
+                    >
+                      Confirm physical receipt
+                    </button>
+                    {!canMarkReceived(viewOrder) && (
+                      <p className="mt-2 text-sm text-amber-700 dark:text-amber-300" role="status">
+                        {getMarkReceivedBlockedMessage(viewOrder)}
+                      </p>
+                    )}
+                  </div>
                 )}
 
                 {viewOrder.status === "received" && (
@@ -3729,7 +3777,7 @@ export default function JobOrdersRepair() {
         )}
 
       </div>
-    </AppLayoutShopOwner>
+    </Layout>
   );
 }
 

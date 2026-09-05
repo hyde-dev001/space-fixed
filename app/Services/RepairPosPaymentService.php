@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\PosPaymentLine;
 use App\Models\PosTransaction;
+use App\Models\RepairPaymentSession;
 use App\Models\RepairRequest;
 use App\Support\Tax\VatInclusiveCalculator;
 use Illuminate\Support\Facades\DB;
@@ -13,42 +14,14 @@ class RepairPosPaymentService
 {
     private const VAT_RATE_PERCENT = 12.0;
 
+    public function __construct(
+        private readonly PaymentSettlementService $paymentSettlementService,
+    ) {}
+
     public function checkout(RepairRequest $repair, array $payload, int $actorId): PosTransaction
     {
         $dueType = (string) $payload['due_type'];
         $idempotencyKey = (string) ($payload['idempotency_key'] ?? '');
-        $phaseLockKey = sprintf('repair:%d:%s', (int) $repair->id, strtolower($dueType));
-        $policy = (string) ($repair->payment_policy_snapshot ?: $repair->payment_policy ?: 'deposit_50');
-        $normalizedPolicy = $policy === 'full_upfront' ? 'full_upfront' : 'deposit_50';
-
-        $allowedDueTypes = $normalizedPolicy === 'full_upfront'
-            ? ['full']
-            : ['deposit', 'balance'];
-
-        if (!in_array($dueType, $allowedDueTypes, true)) {
-            throw ValidationException::withMessages([
-                'due_type' => ['Selected due type is not allowed for the current payment policy.'],
-            ]);
-        }
-
-        $totalInclusive = $this->resolveRepairTotalInclusive($repair, $dueType, $normalizedPolicy);
-
-        $dueTotal = $normalizedPolicy === 'full_upfront'
-            ? round($totalInclusive, 2)
-            : round($totalInclusive * 0.5, 2);
-
-        $breakdown = VatInclusiveCalculator::extract($dueTotal, self::VAT_RATE_PERCENT);
-        $dueSubtotal = (float) $breakdown['net'];
-        $vatAmount = (float) $breakdown['vat'];
-        $dueAmount = (float) $breakdown['total'];
-
-        $paidAmount = collect($payload['payment_lines'])->sum(fn ($line) => (float) $line['amount']);
-
-        if (round($paidAmount, 2) !== round($dueAmount, 2)) {
-            throw ValidationException::withMessages([
-                'payment_lines' => ['Paid amount must exactly match due amount.'],
-            ]);
-        }
 
         if ($idempotencyKey !== '') {
             $replay = PosTransaction::query()
@@ -65,12 +38,31 @@ class RepairPosPaymentService
             }
         }
 
+        $phaseBreakdown = $this->paymentSettlementService->repairPaymentBreakdown($repair, $dueType);
+        $serviceTax = VatInclusiveCalculator::extract((float) $phaseBreakdown['service_amount'], self::VAT_RATE_PERCENT);
+        $dueSubtotal = round((float) $serviceTax['net'] + (float) $phaseBreakdown['delivery_amount'], 2);
+        $vatAmount = (float) $serviceTax['vat'];
+        $dueAmount = (float) $phaseBreakdown['total_amount'];
+
+        $paidAmount = collect($payload['payment_lines'])->sum(fn ($line) => (float) $line['amount']);
+
+        if (round($dueAmount, 2) <= 0 || round($paidAmount, 2) !== round($dueAmount, 2)) {
+            throw ValidationException::withMessages([
+                'payment_lines' => ['Paid amount must exactly match due amount.'],
+            ]);
+        }
+
         $alreadySettled = PosTransaction::query()
             ->where('module_type', 'repair')
             ->where('module_reference_id', $repair->id)
             ->where('due_type', $dueType)
             ->whereIn('status', ['paid', 'partially_refunded', 'refunded'])
-            ->exists();
+            ->exists()
+            || RepairPaymentSession::query()
+                ->where('repair_request_id', $repair->id)
+                ->where('phase', $phaseBreakdown['phase'])
+                ->whereIn('status', ['paid', 'reconciliation'])
+                ->exists();
 
         if ($alreadySettled) {
             throw ValidationException::withMessages([
@@ -78,26 +70,49 @@ class RepairPosPaymentService
             ]);
         }
 
-        return DB::transaction(function () use ($repair, $payload, $actorId, $paidAmount, $dueAmount, $dueType, $dueSubtotal, $vatAmount, $normalizedPolicy) {
-            $storedPaidAmount = round((float) ($repair->total_paid_amount ?? 0), 2);
-            $posPaidAmountBefore = (float) PosTransaction::query()
+        return DB::transaction(function () use ($repair, $payload, $actorId, $paidAmount, $dueType) {
+            $lockedRepair = RepairRequest::query()->lockForUpdate()->findOrFail($repair->id);
+            $canonicalCustomer = $this->canonicalizeRepairCustomer($lockedRepair, $payload);
+            $phaseBreakdown = $this->paymentSettlementService->repairPaymentBreakdown($lockedRepair, $dueType);
+            $serviceTax = VatInclusiveCalculator::extract((float) $phaseBreakdown['service_amount'], self::VAT_RATE_PERCENT);
+            $dueSubtotal = round((float) $serviceTax['net'] + (float) $phaseBreakdown['delivery_amount'], 2);
+            $vatAmount = (float) $serviceTax['vat'];
+            $dueAmount = (float) $phaseBreakdown['total_amount'];
+
+            if (round($dueAmount, 2) <= 0 || round($paidAmount, 2) !== round($dueAmount, 2)) {
+                throw ValidationException::withMessages([
+                    'payment_lines' => ['Paid amount must exactly match due amount.'],
+                ]);
+            }
+
+            if (PosTransaction::query()
                 ->where('module_type', 'repair')
-                ->where('module_reference_id', $repair->id)
-                ->where('status', 'paid')
-                ->sum('paid_amount');
+                ->where('module_reference_id', $lockedRepair->id)
+                ->where('due_type', $dueType)
+                ->whereIn('status', ['paid', 'partially_refunded', 'refunded'])
+                ->exists()
+                || RepairPaymentSession::query()
+                    ->where('repair_request_id', $lockedRepair->id)
+                    ->where('phase', $phaseBreakdown['phase'])
+                    ->whereIn('status', ['paid', 'reconciliation'])
+                    ->exists()) {
+                throw ValidationException::withMessages([
+                    'due_type' => ['PAYMENT_PHASE_ALREADY_SETTLED'],
+                ]);
+            }
 
             $transaction = PosTransaction::create([
                 'transaction_no' => 'POS-' . now()->format('YmdHis') . '-' . str_pad((string) random_int(1, 9999), 4, '0', STR_PAD_LEFT),
                 'idempotency_key' => (string) ($payload['idempotency_key'] ?? ''),
                 'phase_lock_key' => sprintf('repair:%d:%s', (int) $repair->id, strtolower((string) $dueType)),
-                'shop_owner_id' => $repair->shop_owner_id,
+                'shop_owner_id' => $lockedRepair->shop_owner_id,
                 'module_type' => 'repair',
-                'module_reference_id' => $repair->id,
-                'customer_type' => (string) $payload['customer_type'],
-                'customer_id' => $payload['customer_id'] ?? null,
-                'walk_in_name' => $payload['walk_in_name'] ?? null,
-                'walk_in_phone' => $payload['walk_in_phone'] ?? null,
-                'walk_in_email' => $payload['walk_in_email'] ?? null,
+                'module_reference_id' => $lockedRepair->id,
+                'customer_type' => $canonicalCustomer['customer_type'],
+                'customer_id' => $canonicalCustomer['customer_id'],
+                'walk_in_name' => $canonicalCustomer['walk_in_name'],
+                'walk_in_phone' => $canonicalCustomer['walk_in_phone'],
+                'walk_in_email' => $canonicalCustomer['walk_in_email'],
                 'due_type' => $dueType,
                 'subtotal' => $dueSubtotal,
                 'tax_amount' => $vatAmount,
@@ -110,6 +125,14 @@ class RepairPosPaymentService
                 'metadata' => [
                     'vat_rate' => self::VAT_RATE_PERCENT,
                     'tax_mode' => 'vat_inclusive',
+                    'policy' => $phaseBreakdown['policy'],
+                    'phase' => $phaseBreakdown['phase'],
+                    'leg' => $phaseBreakdown['leg'],
+                    'service_amount' => $phaseBreakdown['service_amount'],
+                    'delivery_amount' => $phaseBreakdown['delivery_amount'],
+                    'snapshot_version' => $phaseBreakdown['snapshot_version'],
+                    'delivery_method' => $phaseBreakdown['delivery_method'],
+                    'quote' => $phaseBreakdown['quote'],
                 ],
             ]);
 
@@ -125,48 +148,22 @@ class RepairPosPaymentService
                 ]);
             }
 
-            $posPaidAmountAfter = (float) PosTransaction::query()
-                ->where('module_type', 'repair')
-                ->where('module_reference_id', $repair->id)
-                ->where('status', 'paid')
-                ->sum('paid_amount');
-
-            // Keep any previously recorded non-POS amount (e.g., prior PayMongo payment)
-            // while refreshing the POS-ledger component after this checkout.
-            $nonPosPaidCarry = max(0.0, round($storedPaidAmount - $posPaidAmountBefore, 2));
-            $totalPaid = round($posPaidAmountAfter + $nonPosPaidCarry, 2);
-
-            $paidDueTypes = PosTransaction::query()
-                ->where('module_type', 'repair')
-                ->where('module_reference_id', $repair->id)
-                ->where('status', 'paid')
-                ->pluck('due_type')
-                ->map(fn ($value) => strtolower((string) $value))
-                ->all();
-
-            $hasDepositPayment = in_array('deposit', $paidDueTypes, true);
-            $hasBalancePayment = in_array('balance', $paidDueTypes, true);
-            $hasFullPayment = in_array('full', $paidDueTypes, true);
-
-            $canonicalStatus = 'unpaid';
-            if ($normalizedPolicy === 'full_upfront') {
-                if ($hasFullPayment || $totalPaid > 0) {
-                    $canonicalStatus = 'completed';
-                }
-            } else {
-                if ($hasBalancePayment) {
-                    $canonicalStatus = 'completed';
-                } elseif ($hasDepositPayment || $totalPaid > 0) {
-                    $canonicalStatus = 'paid';
-                }
-            }
-
-            $repair->update([
-                'payment_status' => $canonicalStatus,
-                'total_paid_amount' => $totalPaid,
-                'payment_status_derived' => $canonicalStatus,
+            $this->paymentSettlementService->settleRepairPhasePaid(
+                $lockedRepair,
+                $phaseBreakdown,
+                null,
+            );
+            RepairPaymentSession::query()
+                ->where('repair_request_id', $lockedRepair->id)
+                ->where('phase', $phaseBreakdown['phase'])
+                ->where('status', 'pending')
+                ->update([
+                    'status' => 'invalidated',
+                    'invalidated_at' => now(),
+                ]);
+            $lockedRepair->update([
                 'latest_pos_transaction_id' => $transaction->id,
-                'payment_policy_snapshot' => $repair->payment_policy_snapshot ?: $repair->payment_policy,
+                'payment_policy_snapshot' => $lockedRepair->payment_policy_snapshot ?: $lockedRepair->payment_policy,
             ]);
 
             $transaction->load('paymentLines');
@@ -174,6 +171,100 @@ class RepairPosPaymentService
 
             return $transaction->fresh(['paymentLines']);
         });
+    }
+
+    private function canonicalizeRepairCustomer(RepairRequest $repair, array $payload): array
+    {
+        $repair->loadMissing('user');
+        $repairCustomerId = (int) ($repair->user_id ?? 0);
+        $requestedCustomerType = (string) ($payload['customer_type'] ?? '');
+        $requestedCustomerId = $payload['customer_id'] ?? null;
+        $requestedCustomerId = $requestedCustomerId === null || $requestedCustomerId === ''
+            ? null
+            : (int) $requestedCustomerId;
+        $isMissing = static function ($value): bool {
+            $normalized = strtolower(trim((string) $value));
+
+            return $normalized === '' || $normalized === 'n/a';
+        };
+        $userName = trim((string) ($repair->user?->first_name ?? '') . ' ' . (string) ($repair->user?->last_name ?? ''));
+        if ($userName === '') {
+            $userName = trim((string) ($repair->user?->name ?? ''));
+        }
+        $repairName = trim((string) ($repair->customer_name ?? ''));
+        $repairPhone = trim((string) ($repair->phone ?? ''));
+        $canonicalName = !$isMissing($repairName) ? $repairName : $userName;
+        $canonicalPhone = !$isMissing($repairPhone) ? $repairPhone : trim((string) ($repair->user?->phone ?? ''));
+        $canonicalEmail = trim((string) ($repair->email ?? ''));
+        if (strtolower($canonicalEmail) === 'n/a') {
+            $canonicalEmail = '';
+        }
+
+        if ($repairCustomerId > 0) {
+            if ($requestedCustomerType !== 'registered') {
+                throw ValidationException::withMessages([
+                    'customer_type' => ['This repair is linked to a registered customer.'],
+                ]);
+            }
+
+            if ($requestedCustomerId !== $repairCustomerId) {
+                throw ValidationException::withMessages([
+                    'customer_id' => ['The selected customer does not own this repair.'],
+                ]);
+            }
+
+            if ($isMissing($canonicalName)) {
+                throw ValidationException::withMessages([
+                    'walk_in_name' => ['This repair order is missing its canonical customer name. Update the repair record before checkout.'],
+                ]);
+            }
+
+            if ($isMissing($canonicalPhone)) {
+                throw ValidationException::withMessages([
+                    'walk_in_phone' => ['This repair order is missing its canonical customer phone. Update the repair record before checkout.'],
+                ]);
+            }
+
+            return [
+                'customer_type' => 'registered',
+                'customer_id' => $repairCustomerId,
+                'walk_in_name' => null,
+                'walk_in_phone' => null,
+                'walk_in_email' => null,
+            ];
+        }
+
+        if ($requestedCustomerType !== 'walk_in') {
+            throw ValidationException::withMessages([
+                'customer_type' => ['This repair is a walk-in repair and has no registered customer.'],
+            ]);
+        }
+
+        if ($requestedCustomerId !== null) {
+            throw ValidationException::withMessages([
+                'customer_id' => ['Walk-in repairs cannot be linked to a registered customer.'],
+            ]);
+        }
+
+        if ($isMissing($canonicalName)) {
+            throw ValidationException::withMessages([
+                'walk_in_name' => ['This repair order is missing its canonical customer name. Update the repair record before checkout.'],
+            ]);
+        }
+
+        if ($isMissing($canonicalPhone)) {
+            throw ValidationException::withMessages([
+                'walk_in_phone' => ['This repair order is missing its canonical customer phone. Update the repair record before checkout.'],
+            ]);
+        }
+
+        return [
+            'customer_type' => 'walk_in',
+            'customer_id' => null,
+            'walk_in_name' => $canonicalName,
+            'walk_in_phone' => $canonicalPhone,
+            'walk_in_email' => $canonicalEmail !== '' ? $canonicalEmail : null,
+        ];
     }
 
     public function verifyPaymentLine(PosPaymentLine $line, array $payload, int $actorId): array
@@ -265,51 +356,5 @@ class RepairPosPaymentService
                 'transaction' => $transaction->fresh(['paymentLines']),
             ];
         });
-    }
-
-    private function resolveRepairTotalInclusive(RepairRequest $repair, string $dueType, string $normalizedPolicy): float
-    {
-        $pricingBreakdown = is_array($repair->pricing_breakdown)
-            ? $repair->pricing_breakdown
-            : [];
-
-        $pricingMode = strtolower((string) ($pricingBreakdown['mode'] ?? ''));
-        $packagePrice = round((float) ($repair->package_price ?? ($pricingBreakdown['package_price'] ?? 0)), 2);
-        $addOnsTotal = round((float) ($repair->add_ons_total ?? ($pricingBreakdown['add_ons_total'] ?? 0)), 2);
-        $packagePlusAddOns = !is_null($repair->repair_package_id)
-            ? round($packagePrice + $addOnsTotal, 2)
-            : 0.0;
-
-        $candidates = [
-            round((float) ($repair->final_total ?? 0), 2),
-            round((float) ($repair->total ?? 0), 2),
-            round((float) ($pricingBreakdown['base_total'] ?? 0), 2),
-            round((float) ($pricingBreakdown['final_total'] ?? 0), 2),
-            $packagePlusAddOns,
-        ];
-
-        $positiveCandidates = array_values(array_filter($candidates, static fn ($value) => $value > 0));
-        $resolved = $positiveCandidates !== [] ? max($positiveCandidates) : 0.0;
-
-        if ($pricingMode !== 'manual_pos' && $resolved <= 0) {
-            $resolved = round((float) ($repair->final_total ?? $repair->total ?? 0), 2);
-        }
-
-        if ($normalizedPolicy === 'deposit_50' && $dueType === 'balance') {
-            $storedPaidAmount = round((float) ($repair->total_paid_amount ?? 0), 2);
-            $ledgerPaidAmount = round((float) PosTransaction::query()
-                ->where('module_type', 'repair')
-                ->where('module_reference_id', $repair->id)
-                ->whereIn('status', ['paid', 'partially_refunded', 'refunded'])
-                ->sum('paid_amount'), 2);
-
-            $paidSoFar = max($storedPaidAmount, $ledgerPaidAmount);
-
-            if ($paidSoFar > 0) {
-                $resolved = max($resolved, round($paidSoFar * 2, 2));
-            }
-        }
-
-        return round(max($resolved, 0), 2);
     }
 }

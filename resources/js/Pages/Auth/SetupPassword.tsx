@@ -52,7 +52,7 @@ export default function SetupPassword({ email, token, shopOwner }: SetupPassword
                 }
             `}</style>
 
-            <div className="min-h-screen bg-white">
+            <div className="userside-auth-page min-h-screen bg-white">
                 <Navigation />
 
                 <div className="relative overflow-hidden px-4 py-14 sm:py-20">
@@ -61,7 +61,7 @@ export default function SetupPassword({ email, token, shopOwner }: SetupPassword
                         <div className="absolute -bottom-28 -right-24 h-96 w-96 rounded-full bg-gray-100 blur-3xl" />
                     </div>
 
-                    <div className="relative max-w-md mx-auto rounded-3xl border border-gray-200 bg-white shadow-2xl p-8">
+                    <div className="userside-auth-card relative max-w-md mx-auto rounded-3xl border border-gray-200 bg-white shadow-2xl p-8">
                         <div className="text-center mb-8">
                             <div className="w-16 h-16 bg-black rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg">
                                 <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -69,10 +69,10 @@ export default function SetupPassword({ email, token, shopOwner }: SetupPassword
                                 </svg>
                             </div>
 
-                            <h1 className="text-3xl font-bold text-gray-900 mb-2">
+                            <h1 className="userside-auth-title text-3xl font-bold text-gray-900 mb-2">
                                 Welcome, {shopOwner.first_name}!
                             </h1>
-                            <p className="text-gray-600">Set up your password for</p>
+                            <p className="userside-auth-subtitle text-gray-600">Set up your password for</p>
                             <p className="font-semibold text-black mt-1">{shopOwner.business_name}</p>
                         </div>
 
@@ -103,7 +103,7 @@ export default function SetupPassword({ email, token, shopOwner }: SetupPassword
                                         type={showPassword ? 'text' : 'password'}
                                         value={data.password}
                                         onChange={(e) => setData('password', e.target.value)}
-                                        className={`password-input w-full px-4 py-3 pr-12 border rounded-lg appearance-none focus:ring-2 focus:ring-black focus:border-black ${
+                                        className={`userside-auth-input password-input w-full px-4 py-3 pr-12 border rounded-lg appearance-none focus:ring-2 focus:ring-black focus:border-black ${
                                             errors.password ? 'border-black' : 'border-gray-300'
                                         }`}
                                         placeholder="Enter your password"
@@ -143,7 +143,7 @@ export default function SetupPassword({ email, token, shopOwner }: SetupPassword
                                         type={showConfirmPassword ? 'text' : 'password'}
                                         value={data.password_confirmation}
                                         onChange={(e) => setData('password_confirmation', e.target.value)}
-                                        className={`password-input w-full px-4 py-3 pr-12 border rounded-lg appearance-none focus:ring-2 focus:ring-black focus:border-black ${
+                                        className={`userside-auth-input password-input w-full px-4 py-3 pr-12 border rounded-lg appearance-none focus:ring-2 focus:ring-black focus:border-black ${
                                             errors.password_confirmation ? 'border-black' : 'border-gray-300'
                                         }`}
                                         placeholder="Confirm your password"
@@ -191,7 +191,7 @@ export default function SetupPassword({ email, token, shopOwner }: SetupPassword
                             <button
                                 type="submit"
                                 disabled={processing}
-                                className="w-full bg-black hover:bg-gray-900 text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="userside-auth-primary w-full bg-black hover:bg-gray-900 text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 {processing ? (
                                     <span className="flex items-center justify-center">

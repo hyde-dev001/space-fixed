@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Head, usePage, Link } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 import ReportShopModal from '../../../components/ReportShopModal';
 import { navigateBackOr } from '../Shared/backNavigation';
+import CustomerAddressManager, { type CustomerAddress } from '@/components/address/CustomerAddressManager';
 
 interface ShopHours {
   day: string;
@@ -81,6 +82,14 @@ interface Props {
   };
 }
 
+type CoverageQuote = {
+  status: 'idle' | 'loading' | 'ready' | 'error';
+  available?: boolean;
+  reason?: string | null;
+  distance_km?: number | null;
+  fee?: number | null;
+};
+
 const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) => {
   const { auth } = usePage().props as any;
   const isAuthenticated = !!auth?.user;
@@ -91,6 +100,8 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
   const [hoverRating, setHoverRating] = useState(0);
   const [selectedServices, setSelectedServices] = useState<number[]>([]);
   const [selectedPackageId, setSelectedPackageId] = useState<number | null>(null);
+  const [selectedAddress, setSelectedAddress] = useState<CustomerAddress | null>(null);
+  const [coverageQuote, setCoverageQuote] = useState<CoverageQuote>({ status: 'idle' });
   const [showMoreActions, setShowMoreActions] = useState(false);
   const [enlargedImage, setEnlargedImage] = useState<string | null>(null);
   const [imageUploadGroups, setImageUploadGroups] = useState<Array<{id: string; file: File | null; preview: string}>>([{id: '0', file: null, preview: ''}]);
@@ -109,6 +120,36 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
   const [selectedRatingFilter, setSelectedRatingFilter] = useState<number | 'all'>('all');
   const [currentReviewPage, setCurrentReviewPage] = useState(1);
   const reviewsPerPage = 10;
+  const initialAddressId = Number(new URLSearchParams(window.location.search).get('address_id')) || null;
+
+  const handleAddressSelect = useCallback((address: CustomerAddress) => {
+    setSelectedAddress(address);
+  }, []);
+
+  useEffect(() => {
+    if (!selectedAddress) {
+      setCoverageQuote({ status: 'idle' });
+      return;
+    }
+
+    const controller = new AbortController();
+    setCoverageQuote({ status: 'loading' });
+    fetch(`/api/repair/shops/${shop.id}/delivery-quote?address_id=${selectedAddress.id}`, {
+      credentials: 'include',
+      headers: { Accept: 'application/json' },
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error('Coverage request failed');
+        return response.json();
+      })
+      .then((quote) => setCoverageQuote({ status: 'ready', ...quote }))
+      .catch((error) => {
+        if ((error as Error).name !== 'AbortError') setCoverageQuote({ status: 'error' });
+      });
+
+    return () => controller.abort();
+  }, [selectedAddress, shop.id]);
 
   const createImageUploadGroup = () => ({
     id: Math.random().toString(36).slice(2, 11),
@@ -292,14 +333,9 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
   };
 
   const shopStatus = checkIfOpen();
-  const normalizedRepairPaymentPolicy = shop.repair_payment_policy === 'full_upfront' ? 'full_upfront' : 'deposit_50';
-  const paymentPolicyLabel = normalizedRepairPaymentPolicy === 'full_upfront'
-    ? 'Full Payment Upfront'
-    : '50% Deposit + 50% on Pickup';
-  const paymentPolicyHint = normalizedRepairPaymentPolicy === 'full_upfront'
-    ? 'Customer pays full amount before service starts.'
-    : 'Customer pays half upfront and half when claiming repaired shoes.';
-  const requestRepairHref = `/repair-process?shop=${shop.id}${selectedPackageId ? `&package=${selectedPackageId}` : ''}${selectedServices.length > 0 ? `&services=${selectedServices.join(',')}` : ''}`;
+  const paymentPolicyLabel = 'Full Payment Upfront';
+  const paymentPolicyHint = 'Customer pays full amount before service starts.';
+  const requestRepairHref = `/repair-process?shop=${shop.id}${selectedPackageId ? `&package=${selectedPackageId}` : ''}${selectedServices.length > 0 ? `&services=${selectedServices.join(',')}` : ''}${selectedAddress ? `&address_id=${selectedAddress.id}` : ''}`;
   const selectionSummary = selectedPackageId
     ? '(1 package selected)'
     : selectedServices.length > 0
@@ -459,7 +495,7 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
   return (
     <>
       <Head title={shop.name} />
-      <div className="min-h-screen bg-white font-outfit antialiased">
+      <div className="userside-repair-shop-page min-h-screen bg-white font-outfit antialiased">
         <Navigation />
 
         <div className="max-w-6xl mx-auto px-4 xl:px-12 pt-18 xl:pt-24 pb-28 xl:py-20">
@@ -516,20 +552,58 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
             <p className="text-base xl:text-lg text-gray-700 leading-relaxed max-w-3xl">{shop.description}</p>
           </div>
 
+          {isAuthenticated && (
+            <section className="mb-8 space-y-3 xl:mb-10" aria-labelledby="repair-delivery-address-heading">
+              <div className="sr-only" id="repair-delivery-address-heading">Repair delivery address</div>
+              <CustomerAddressManager
+                onSelect={handleAddressSelect}
+                onSelectionCleared={() => setSelectedAddress(null)}
+                initialAddressId={initialAddressId}
+              />
+              {selectedAddress && (
+                <div className={`rounded-2xl border p-4 ${
+                  coverageQuote.status === 'ready' && coverageQuote.available
+                    ? 'border-green-200 bg-green-50 text-green-900'
+                    : coverageQuote.status === 'ready' && coverageQuote.reason === 'outside_coverage'
+                      ? 'border-amber-200 bg-amber-50 text-amber-900'
+                      : 'border-gray-200 bg-gray-50 text-gray-800'
+                }`} role="status" aria-live="polite">
+                  <p className="font-semibold">
+                    {coverageQuote.status === 'loading' && 'Checking shop rider coverage...'}
+                    {coverageQuote.status === 'error' && 'Coverage unavailable'}
+                    {coverageQuote.status === 'ready' && coverageQuote.available && 'Within coverage'}
+                    {coverageQuote.status === 'ready' && coverageQuote.reason === 'outside_coverage' && 'Outside coverage'}
+                    {coverageQuote.status === 'ready' && coverageQuote.reason === 'address_needs_pin' && 'Pin required'}
+                    {coverageQuote.status === 'ready' && !coverageQuote.available && !['outside_coverage', 'address_needs_pin'].includes(coverageQuote.reason ?? '') && 'Shop delivery unavailable'}
+                  </p>
+                  {coverageQuote.status === 'ready' && coverageQuote.available && (
+                    <p className="mt-1 text-sm">
+                      {coverageQuote.distance_km != null ? `${coverageQuote.distance_km} km · ` : ''}
+                      Estimated one-way fee: ₱{Number(coverageQuote.fee ?? 0).toLocaleString('en-PH')}
+                    </p>
+                  )}
+                  <p className="mt-1 text-sm">You will choose shop pickup, walk-in, or third-party delivery on the next step.</p>
+                </div>
+              )}
+            </section>
+          )}
+
           {/* Info Grid */}
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 xl:gap-6 mb-8 xl:mb-10">
-            {/* Shop Information */}
-            <div className="bg-linear-to-br from-gray-50 to-white rounded-3xl p-4 sm:p-5 xl:p-8 border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5 xl:mb-6">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 xl:w-12 xl:h-12 bg-black rounded-xl flex items-center justify-center shadow-md">
+          <section
+            className="mb-8 overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm xl:mb-10"
+            aria-labelledby="repair-shop-information-heading"
+            data-testid="repair-shop-info-rating"
+          >
+            <div className="flex flex-col gap-3 border-b border-gray-200 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5 xl:p-8">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-black shadow-md xl:h-12 xl:w-12">
                     <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 xl:w-6 xl:h-6 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" />
                     </svg>
-                  </div>
-                  <h3 className="text-xl xl:text-2xl font-bold text-black">Shop Information</h3>
                 </div>
-                <div className="flex items-center gap-2 w-full sm:w-auto">
+                <h2 id="repair-shop-information-heading" className="text-xl font-bold text-black xl:text-2xl">Shop Information</h2>
+              </div>
+              <div className="flex w-full items-center gap-2 sm:w-auto">
                   <Link
                     href={`/message/${shop.id}`}
                     className="px-4 xl:px-6 py-2.5 border border-gray-300 rounded-lg text-sm font-semibold text-black hover:bg-black hover:text-white hover:border-black transition-all flex-1 sm:flex-none text-center"
@@ -568,9 +642,12 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                       )}
                     </div>
                   )}
-                </div>
               </div>
-              <div className="space-y-3 xl:space-y-4 text-sm text-gray-700">
+            </div>
+
+            <div className="flex flex-col">
+              <div className="p-4 sm:p-5 xl:p-8">
+                <div className="space-y-3 text-sm text-gray-700 xl:space-y-4">
                 <div className="flex items-start gap-3 rounded-2xl border border-gray-100 bg-white/80 p-3.5 xl:p-4">
                   <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-black mt-0.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" />
@@ -582,15 +659,15 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                     </div>
                   </div>
                 </div>
-                <div className="flex items-start gap-3 rounded-2xl border border-blue-100 bg-blue-50/70 p-3.5 xl:p-4">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-blue-700 mt-0.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <div className="flex items-start gap-3 rounded-2xl border border-gray-100 bg-gray-50 p-3.5 xl:p-4">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-black mt-0.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M12 1v22" />
                     <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7H14a3.5 3.5 0 0 1 0 7H6" />
                   </svg>
                   <div className="min-w-0">
-                    <div className="font-bold text-blue-900 mb-1">Repair Payment Policy</div>
-                    <div className="text-blue-900 font-semibold leading-6">{paymentPolicyLabel}</div>
-                    <p className="text-blue-800/90 text-xs sm:text-sm mt-1 leading-5">{paymentPolicyHint}</p>
+                    <div className="font-bold text-black mb-1">Repair Payment Policy</div>
+                    <div className="text-black font-semibold leading-6">{paymentPolicyLabel}</div>
+                    <p className="text-gray-600 text-xs sm:text-sm mt-1 leading-5">{paymentPolicyHint}</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-3 rounded-2xl border border-gray-100 bg-white/80 p-3.5 xl:p-4">
@@ -663,44 +740,50 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                   </div>
                 </div>
               </div>
-            </div>
-
-            {/* Shop Rating */}
-            <div className="bg-linear-to-br from-yellow-50 to-white rounded-2xl p-5 xl:p-8 border border-yellow-100 shadow-sm hover:shadow-md transition-shadow">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-10 h-10 xl:w-12 xl:h-12 bg-yellow-400 rounded-xl flex items-center justify-center shadow-md">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 xl:w-6 xl:h-6 text-white fill-white" viewBox="0 0 24 24">
-                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-                  </svg>
-                </div>
-                <h3 className="text-xl xl:text-2xl font-bold text-black">Customer Rating</h3>
               </div>
-              {reviewStats.total_reviews > 0 ? (
-                <div className="flex flex-col sm:flex-row sm:items-center gap-4 xl:gap-8">
-                  <div>
-                    <div className="flex items-baseline gap-3 mb-2">
-                      <span className="text-5xl xl:text-6xl font-bold text-black">
-                        {reviewStats.average_rating.toFixed(1)}
-                      </span>
-                      <span className="text-3xl xl:text-4xl text-yellow-400">⭐</span>
+
+              {/* Shop Rating */}
+              <div
+                data-testid="customer-rating-landscape"
+                className="border-t border-gray-200 bg-gray-50/60 p-4 sm:p-5 xl:p-8"
+              >
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-black shadow-md xl:h-12 xl:w-12">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 xl:w-6 xl:h-6 text-white fill-white" viewBox="0 0 24 24">
+                        <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                      </svg>
                     </div>
-                    <span className="text-sm text-gray-600">
-                      Based on {reviewStats.total_reviews} review{reviewStats.total_reviews !== 1 ? 's' : ''}
-                    </span>
+                    <h3 className="text-xl xl:text-2xl font-bold text-black">Customer Rating</h3>
                   </div>
-                  <div className="flex flex-col gap-1">
-                    {renderStars(reviewStats.average_rating)}
-                    <span className="text-xs text-gray-500 mt-1">Excellent Service</span>
-                  </div>
+                  {reviewStats.total_reviews > 0 ? (
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center xl:gap-8">
+                      <div>
+                        <div className="flex items-baseline gap-3 mb-2">
+                          <span className="text-5xl xl:text-6xl font-bold text-black">
+                            {reviewStats.average_rating.toFixed(1)}
+                          </span>
+                          <span className="text-3xl xl:text-4xl text-yellow-400">⭐</span>
+                        </div>
+                        <span className="text-sm text-gray-600">
+                          Based on {reviewStats.total_reviews} review{reviewStats.total_reviews !== 1 ? 's' : ''}
+                        </span>
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        {renderStars(reviewStats.average_rating)}
+                        <span className="text-xs text-gray-500 mt-1">Excellent Service</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-left sm:text-right">
+                      <p className="text-gray-400 italic mb-2">No reviews yet</p>
+                      <p className="text-sm text-gray-500">Be the first to review this shop!</p>
+                    </div>
+                  )}
                 </div>
-              ) : (
-                <div className="text-center py-4">
-                  <p className="text-gray-400 italic mb-2">No reviews yet</p>
-                  <p className="text-sm text-gray-500">Be the first to review this shop!</p>
-                </div>
-              )}
+              </div>
             </div>
-          </div>
+          </section>
 
           {/* Repair Services Section */}
           <div className="mb-10 xl:mb-12">
@@ -716,10 +799,10 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                         key={pkg.id}
                         type="button"
                         onClick={() => handlePackageToggle(pkg.id)}
-                        className={`w-75 min-w-75 sm:w-85 sm:min-w-85 xl:w-full xl:min-w-0 h-62.5 sm:h-65 xl:h-full shrink-0 bg-white rounded-2xl p-5 xl:p-6 border-2 transition-all cursor-pointer text-left snap-start ${
+                        className={`repair-package-card w-75 min-w-75 sm:w-85 sm:min-w-85 xl:w-full xl:min-w-0 h-62.5 sm:h-65 xl:h-full shrink-0 bg-white rounded-2xl p-5 xl:p-6 border-2 transition-all cursor-pointer text-left snap-start ${
                           isSelected
-                            ? 'border-black shadow-md'
-                            : 'border-gray-200 hover:border-gray-300 hover:shadow-lg'
+                            ? 'repair-package-card--selected border-black shadow-md dark:border-[#7da2ff] dark:bg-[#1b2f50]'
+                            : 'border-gray-200 hover:border-gray-300 hover:shadow-lg dark:border-slate-700 dark:hover:border-slate-500'
                         }`}
                       >
                         <div className="flex flex-col h-full">
@@ -731,12 +814,12 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                               <h3 className="text-base xl:text-lg font-bold text-black leading-snug wrap-break-word">{pkg.name}</h3>
                               <p className="text-sm text-gray-600 mt-1 leading-5 wrap-break-word">{pkg.description || 'Repair package offer'}</p>
                             </div>
-                            <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
+                            <div className={`repair-package-selection-indicator w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
                               isSelected
-                                ? 'border-black bg-black'
-                                : 'border-gray-300'
+                                ? 'repair-package-selection-indicator--selected border-black bg-black dark:border-[#b8cdff] dark:bg-[#b8cdff]'
+                                : 'border-gray-300 dark:border-slate-600'
                             }`}>
-                              {isSelected && <span className="block w-2 h-2 rounded-full bg-white" />}
+                              {isSelected && <span className="block w-2 h-2 rounded-full bg-white dark:bg-slate-950" />}
                             </div>
                           </div>
 
@@ -1082,8 +1165,8 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                   <div key={review.id} className="bg-linear-to-br from-white to-gray-50 rounded-2xl p-5 xl:p-8 border border-gray-100 hover:shadow-lg transition-all">
                     <div className="flex items-start gap-4 xl:gap-6">
                       {/* User Avatar */}
-                      <div className="w-14 h-14 xl:w-20 xl:h-20 rounded-2xl bg-linear-to-br from-gray-100 to-gray-200 border-2 border-gray-200 overflow-hidden shrink-0 flex items-center justify-center shadow-md">
-                        <span className="text-xl xl:text-2xl font-bold text-gray-600">
+                      <div className="w-14 h-14 xl:w-20 xl:h-20 rounded-2xl bg-gray-950 dark:bg-linear-to-br dark:from-gray-100 dark:to-gray-200 border-2 border-gray-950 dark:border-gray-200 overflow-hidden shrink-0 flex items-center justify-center shadow-md">
+                        <span className="text-xl xl:text-2xl font-bold text-white dark:text-gray-600">
                           {review.user_name.charAt(0).toUpperCase()}
                         </span>
                       </div>

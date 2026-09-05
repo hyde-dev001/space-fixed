@@ -14,7 +14,7 @@ class ShopOwnerTwoFactorLoginFlowTest extends TestCase
     use RefreshDatabase;
 
     #[Test]
-    public function unified_login_redirects_to_two_factor_challenge_and_stores_session_entry(): void
+    public function owner_login_redirects_to_two_factor_challenge_and_stores_session_entry(): void
     {
         Mail::fake();
 
@@ -24,7 +24,7 @@ class ShopOwnerTwoFactorLoginFlowTest extends TestCase
             'two_factor_email_enabled' => true,
         ]);
 
-        $response = $this->post('/user/login', [
+        $response = $this->post('/shop-owner/login', [
             'email' => $shopOwner->email,
             'password' => 'Password1!',
         ]);

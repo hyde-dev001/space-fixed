@@ -2,9 +2,14 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 import { useCart } from '../../../contexts/CartContext';
-import NotificationBell from '../../../Components/common/NotificationBell';
-import StarRating from '../../../Components/common/StarRating';
+import NotificationBell from "../../../components/common/NotificationBell";
+import StarRating from '../../../components/common/StarRating';
 import { useBadgeCounts } from '../../../hooks/useBadgeCounts';
+import { GPS_POSITION_OPTIONS, getCurrentPositionWithTimeout } from '@/utils/geolocation';
+import { CustomerFooterReveal } from '../../../components/common/CustomerFooter';
+import { useScrollReveal } from '../Shared/useScrollReveal';
+import ProductQuickView from '../../../components/products/ProductQuickView';
+import type { ProductQuickViewColorVariant } from '../../../components/products/ProductQuickView';
 
 type Product = {
   id: number;
@@ -18,6 +23,9 @@ type Product = {
   gallery_images?: string[];
   brand: string | null;
   stock_quantity: number;
+  sizes_available?: unknown[] | null;
+  colors_available?: unknown[] | null;
+  color_variants?: ProductQuickViewColorVariant[] | null;
   description?: string | null;
   average_rating?: number;
   shop_owner?: {
@@ -73,7 +81,7 @@ const Products: React.FC<Props> = () => {
     ? liveBadgeCounts.chatIconCount
     : initialChatIconCount;
   const cartBadgeCount = Number((page.props as any)?.cartIconCount ?? (cartLoading ? 0 : cartCount) ?? 0);
-  const meHref = isAuthenticated ? '/customer-profile' : '/user/login';
+  const meHref = isAuthenticated ? '/customer-profile' : '/login';
   const urlParams = new URLSearchParams(window.location.search);
   const searchParam = urlParams.get('search') || '';
   const rawCategoryParam = (urlParams.get('category') || '').toLowerCase();
@@ -94,6 +102,7 @@ const Products: React.FC<Props> = () => {
   const [lastPage, setLastPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [activeImageIndexes, setActiveImageIndexes] = useState<Record<number, number>>({});
+  const [quickViewProduct, setQuickViewProduct] = useState<Product | null>(null);
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [locating, setLocating] = useState(false);
   const [locError, setLocError] = useState<string | null>(null);
@@ -107,6 +116,9 @@ const Products: React.FC<Props> = () => {
   const mobileSearchContainerRef = useRef<HTMLDivElement | null>(null);
   const mobileSearchAbortRef = useRef<AbortController | null>(null);
   const hoverTimersRef = useRef<Record<number, number>>({});
+  const quickViewTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const revealRootRef = useRef<HTMLDivElement | null>(null);
+  useScrollReveal(revealRootRef);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -361,6 +373,11 @@ const Products: React.FC<Props> = () => {
     return Array.from(new Set(images));
   };
 
+  const getProductHref = (product: Product) =>
+    activeCategory
+      ? `/products/${product.slug}?category=${encodeURIComponent(activeCategory)}`
+      : `/products/${product.slug}`;
+
   const startImageCycle = (product: Product) => {
     const images = getProductImages(product);
     if (images.length <= 1) return;
@@ -391,6 +408,15 @@ const Products: React.FC<Props> = () => {
     setActiveImageIndexes((prev) => ({ ...prev, [productId]: 0 }));
   };
 
+  const closeQuickView = useCallback(() => setQuickViewProduct(null), []);
+
+  const openQuickView = (product: Product, event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    quickViewTriggerRef.current = event.currentTarget;
+    setQuickViewProduct(product);
+  };
+
   // --- Near Me ---
   const requestLocation = useCallback(() => {
     if (!navigator.geolocation) {
@@ -399,16 +425,14 @@ const Products: React.FC<Props> = () => {
     }
     setLocating(true);
     setLocError(null);
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
+    void getCurrentPositionWithTimeout(GPS_POSITION_OPTIONS)
+      .then((position) => {
         setUserCoords({ lat: position.coords.latitude, lng: position.coords.longitude });
-        setLocating(false);
-      },
-      () => {
+      })
+      .catch(() => {
         setLocError('Location access denied. Please allow location access and try again.');
-        setLocating(false);
-      },
-    );
+      })
+      .finally(() => setLocating(false));
   }, []);
 
   useEffect(() => {
@@ -505,7 +529,8 @@ const Products: React.FC<Props> = () => {
   return (
     <>
       <Head title="Products" />
-      <div className="min-h-screen bg-white font-outfit antialiased">
+      <CustomerFooterReveal>
+      <div ref={revealRootRef} className="userside-products-page min-h-screen bg-white font-outfit antialiased">
         <div className="hidden xl:block">
           <Navigation />
         </div>
@@ -659,27 +684,6 @@ const Products: React.FC<Props> = () => {
                   {isAuthenticated ? (
                     <>
                       <Link
-                        href="/my-orders"
-                        onClick={() => setMobileAccountOpen(false)}
-                        className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-black hover:bg-gray-50 border-b border-gray-100"
-                      >
-                        <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                        </svg>
-                        Orders
-                      </Link>
-                      <Link
-                        href="/my-repairs"
-                        onClick={() => setMobileAccountOpen(false)}
-                        className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-black hover:bg-gray-50 border-b border-gray-100"
-                      >
-                        <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        </svg>
-                        Repair
-                      </Link>
-                      <Link
                         href="/customer-profile"
                         onClick={() => setMobileAccountOpen(false)}
                         className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-black hover:bg-gray-50 border-b border-gray-100"
@@ -689,6 +693,16 @@ const Products: React.FC<Props> = () => {
                         </svg>
                         Edit Profile
                       </Link>
+                      <Link
+                        href="/shop-owner-register"
+                        onClick={() => setMobileAccountOpen(false)}
+                        className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-black hover:bg-gray-50 border-b border-gray-100"
+                      >
+                        <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2m8-8a4 4 0 100-8 4 4 0 000 8zm6-3v6m3-3h-6" />
+                        </svg>
+                        Join Our Team
+                      </Link>
                       <button
                         type="button"
                         onClick={() => { setMobileAccountOpen(false); handleLogout(); }}
@@ -697,12 +711,12 @@ const Products: React.FC<Props> = () => {
                         <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                         </svg>
-                        Log Out
+                        Log out
                       </button>
                     </>
                   ) : (
                     <Link
-                      href="/user/login"
+                      href="/login"
                       onClick={() => setMobileAccountOpen(false)}
                       className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-black hover:bg-gray-50"
                     >
@@ -737,7 +751,7 @@ const Products: React.FC<Props> = () => {
         </div>
 
         <div className="mx-auto w-full max-w-[430px] px-4 pb-24 pt-16 md:max-w-none md:px-5 lg:px-6 xl:max-w-[1920px] xl:px-6 xl:pb-20 xl:pt-32 2xl:px-12 2xl:pb-20">
-          <div className="mb-8 w-full md:max-w-none">
+          <div data-scroll-reveal className="scroll-reveal relative z-30 mb-8 w-full md:max-w-none">
             <div className="flex items-center justify-between gap-4 mb-6">
               <nav className="text-[11px] xl:text-xs text-black/55 tracking-[0.18em] uppercase">
                 <Link href="/" className="hover:text-black transition-colors">Home</Link>
@@ -768,7 +782,7 @@ const Products: React.FC<Props> = () => {
                 </button>
 
                 {isSortOpen && (
-                  <div className="absolute right-0 left-auto z-20 mt-3 w-[min(92vw,14.5rem)] rounded-2xl border border-gray-300 bg-white py-3 shadow-[0_20px_40px_-24px_rgba(15,23,42,0.55)] xl:w-56" role="menu">
+                  <div className="absolute right-0 left-auto z-40 mt-3 w-[min(92vw,14.5rem)] rounded-2xl border border-gray-300 bg-white py-3 shadow-[0_20px_40px_-24px_rgba(15,23,42,0.55)] xl:w-56" role="menu">
                     {sortOptions.map((option) => {
                       const isActive = sortBy === option.value;
 
@@ -809,14 +823,16 @@ const Products: React.FC<Props> = () => {
             </div>
           )}
 
-          <h1 className="mb-2 text-2xl sm:text-3xl font-bold tracking-tight text-black uppercase xl:mb-3 xl:text-4xl xl:font-bold 2xl:text-5xl">
-            {searchQuery ? `Search Results for "${searchQuery}"` : 'ALL SHOES'}
-          </h1>
-          <p className="mb-8 max-w-3xl text-sm sm:text-base font-light leading-relaxed text-black/65 xl:mb-10">
-            {searchQuery 
-              ? `Showing results matching "${searchQuery}"`
-              : 'Discover our curated selection of shoes. Browse by style, price, and location. Click any product to view details and select your size.'}
-          </p>
+          {searchQuery && (
+            <>
+              <h1 className="mb-2 text-2xl sm:text-3xl font-bold tracking-tight text-black uppercase xl:mb-3 xl:text-4xl xl:font-bold 2xl:text-5xl">
+                Search Results for "{searchQuery}"
+              </h1>
+              <p className="mb-8 max-w-3xl text-sm sm:text-base font-light leading-relaxed text-black/65 xl:mb-10">
+                Showing results matching "{searchQuery}"
+              </p>
+            </>
+          )}
 
           {searchQuery && (
             <div className="mb-10">
@@ -890,111 +906,125 @@ const Products: React.FC<Props> = () => {
                 const activeImageIndex = activeImageIndexes[p.id] ?? 0;
                 const activeImage = productImages[activeImageIndex] ?? p.main_image;
                 const shopDist = (sortBy === 'near_me' && userCoords) ? getShopDistance(p) : null;
-                const productHref = activeCategory
-                  ? `/products/${p.slug}?category=${encodeURIComponent(activeCategory)}`
-                  : `/products/${p.slug}`;
+                const productHref = getProductHref(p);
 
                 return (
-                <Link
-                  key={p.id}
-                  href={productHref}
-                  className="group block h-full rounded-2xl border border-gray-200 bg-white shadow-[0_12px_28px_-24px_rgba(15,23,42,0.45)] transition-all duration-300 hover:-translate-y-1 hover:border-gray-300 hover:shadow-[0_24px_40px_-24px_rgba(15,23,42,0.55)] xl:rounded-3xl xl:border-gray-300 xl:shadow-[0_16px_35px_-24px_rgba(15,23,42,0.45)]"
-                  onMouseEnter={() => startImageCycle(p)}
-                  onMouseLeave={() => stopImageCycle(p.id)}
-                >
-                  <div className="relative flex h-full flex-col overflow-hidden rounded-2xl bg-white xl:rounded-3xl">
-                    {p.compare_at_price && p.compare_at_price > p.price && (
-                      <div className="absolute left-4 top-4 bg-red-600 text-white text-[10px] px-3 py-1.5 rounded-full font-semibold uppercase tracking-[0.14em] z-10 shadow-sm">
-                        SALE
-                      </div>
-                    )}
-                    {p.stock_quantity === 0 && (
-                      <div className="absolute left-4 top-4 bg-black text-white text-[10px] px-3 py-1.5 rounded-full font-semibold uppercase tracking-[0.14em] z-10 shadow-sm">
-                        SOLD OUT
-                      </div>
-                    )}
-
-                    <div className="relative aspect-3/4 overflow-hidden bg-gray-50 xl:aspect-square">
-                      {activeImage ? (
-                        <>
-                          {productImages.map((image, imageIndex) => {
-                            const isActiveImage = imageIndex === activeImageIndex;
-
-                            return (
-                              <img
-                                key={`${p.id}-${imageIndex}`}
-                                src={image}
-                                alt={p.name}
-                                className={`absolute inset-0 h-full w-full object-cover transition-all duration-700 ease-in-out ${
-                                  isActiveImage
-                                    ? 'opacity-100 scale-100 group-hover:scale-110'
-                                    : 'opacity-0 scale-100 pointer-events-none'
-                                }`}
-                                loading="lazy"
-                                onError={(e) => {
-                                  if (p.main_image) {
-                                    e.currentTarget.src = p.main_image;
-                                  }
-                                }}
-                              />
-                            );
-                          })}
-                        </>
-                      ) : (
-                        <div className="text-gray-400 text-sm">No Image</div>
-                      )}
-                    </div>
-
-                    <div className="flex min-h-36 flex-col border-t border-gray-200 p-2.5 xl:min-h-48.5 xl:p-3.5">
-                      <div className="flex items-start justify-between gap-2 mb-1">
-                        <h3 className="mb-1 min-h-8 line-clamp-2 text-xs font-bold uppercase tracking-[0.06em] text-black flex-1 xl:mb-1.5 xl:min-h-10 xl:text-sm">{p.name}</h3>
-                        <div className="shrink-0">
-                          {p.average_rating !== undefined && (
-                            <StarRating rating={p.average_rating} size="sm" />
-                          )}
-                        </div>
-                      </div>
-                      
-                      <div className="mb-1 min-h-4 xl:mb-1.5 xl:min-h-[1.1rem]">
-                        {p.brand && (
-                          <p className="text-[10px] uppercase tracking-[0.12em] text-black/55 xl:text-xs">{p.brand}</p>
-                        )}
-                      </div>
-                      
-                      <div className="mb-1 hidden min-h-[1.1rem] xl:mb-1.5 xl:block">
-                        {p.shop_owner && (
-                          <p className="text-xs text-black/60">
-                            Sold by{' '}
-                            <span
-                              className="font-semibold text-black hover:underline"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                window.location.href = `/shop-profile/${p.shop_owner?.id}`;
-                              }}
-                            >
-                              {p.shop_owner.business_name || p.shop_owner.name || 'Shop'}
-                            </span>
-                          </p>
-                        )}
-                      </div>
-
-                      {/* Distance indicator hidden */}
-                      
-                      <div className="mt-auto flex items-baseline justify-between border-t border-gray-200 pt-2 xl:pt-3">
-                        <div className="flex flex-col gap-0.5">
-                          <div className="text-base font-bold text-black xl:text-lg">₱{p.price.toLocaleString()}</div>
+                  <div key={p.id} data-scroll-reveal className="scroll-reveal h-full">
+                    <div
+                      className="group flex h-full flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[0_12px_28px_-24px_rgba(15,23,42,0.45)] transition-all duration-300 hover:-translate-y-1 hover:border-gray-300 hover:shadow-[0_24px_40px_-24px_rgba(15,23,42,0.55)] xl:rounded-3xl xl:border-gray-300 xl:shadow-[0_16px_35px_-24px_rgba(15,23,42,0.45)]"
+                      onMouseEnter={() => startImageCycle(p)}
+                      onMouseLeave={() => stopImageCycle(p.id)}
+                    >
+                      <div className="relative aspect-3/4 overflow-hidden bg-gray-50 xl:aspect-square">
+                        <Link
+                          href={productHref}
+                          className="absolute inset-0 z-0 block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#16233b]"
+                          aria-label={`View ${p.name}`}
+                        >
                           {p.compare_at_price && p.compare_at_price > p.price && (
-                            <div className="text-xs text-black/40 line-through">₱{p.compare_at_price.toLocaleString()}</div>
+                            <div className="absolute left-4 top-4 z-10 rounded-full bg-red-600 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-white shadow-sm">
+                              SALE
+                            </div>
+                          )}
+                          {p.stock_quantity === 0 && (
+                            <div className="absolute left-4 top-4 z-10 rounded-full bg-black px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-white shadow-sm">
+                              SOLD OUT
+                            </div>
+                          )}
+
+                          {activeImage ? (
+                            <>
+                              {productImages.map((image, imageIndex) => {
+                                const isActiveImage = imageIndex === activeImageIndex;
+
+                                return (
+                                  <img
+                                    key={`${p.id}-${imageIndex}`}
+                                    src={image}
+                                    alt={p.name}
+                                    className={`absolute inset-0 h-full w-full object-cover transition-all duration-700 ease-in-out ${
+                                      isActiveImage
+                                        ? 'opacity-100 scale-100 group-hover:scale-110'
+                                        : 'opacity-0 scale-100 pointer-events-none'
+                                    }`}
+                                    loading="lazy"
+                                    onError={(e) => {
+                                      if (p.main_image) {
+                                        e.currentTarget.src = p.main_image;
+                                      }
+                                    }}
+                                  />
+                                );
+                              })}
+                            </>
+                          ) : (
+                            <div className="flex h-full items-center justify-center text-sm text-gray-400">No Image</div>
+                          )}
+                        </Link>
+
+                        <button
+                          type="button"
+                          aria-label={`Quick view ${p.name}`}
+                          onClick={(event) => openQuickView(p, event)}
+                          className="absolute bottom-3 right-3 z-20 min-h-11 rounded-md bg-[#16233b] px-4 py-2 text-[10px] font-bold uppercase tracking-[0.12em] text-white opacity-100 transition-all hover:bg-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white motion-reduce:transition-none xl:opacity-0 xl:group-hover:opacity-100 xl:group-focus-within:opacity-100"
+                        >
+                          Quick view
+                        </button>
+                      </div>
+
+                      <Link
+                        href={productHref}
+                        className="flex min-h-36 flex-1 flex-col border-t border-gray-200 p-2.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#16233b] xl:min-h-48.5 xl:p-3.5"
+                      >
+                        <div className="mb-1 flex items-start justify-between gap-2">
+                          <h3 className="mb-1 min-h-8 flex-1 line-clamp-2 text-xs font-bold uppercase tracking-[0.06em] text-black xl:mb-1.5 xl:min-h-10 xl:text-sm">{p.name}</h3>
+                          <div className="shrink-0">
+                            {p.average_rating !== undefined && (
+                              <StarRating rating={p.average_rating} size="sm" />
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="mb-1 min-h-4 xl:mb-1.5 xl:min-h-[1.1rem]">
+                          {p.brand && (
+                            <p className="text-[10px] uppercase tracking-[0.12em] text-black/55 xl:text-xs">{p.brand}</p>
                           )}
                         </div>
-                        <div className="text-[10px] uppercase tracking-[0.08em] text-black/55 xl:text-xs">
-                          {p.stock_quantity > 0 ? `${p.stock_quantity} left` : 'Out of stock'}
+
+                        <div className="mb-1 hidden min-h-[1.1rem] xl:mb-1.5 xl:block">
+                          {p.shop_owner && (
+                            <p className="text-xs text-black/60">
+                              Sold by{' '}
+                              <span
+                                className="font-semibold text-black hover:underline"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  window.location.href = `/shop-profile/${p.shop_owner?.id}`;
+                                }}
+                              >
+                                {p.shop_owner.business_name || p.shop_owner.name || 'Shop'}
+                              </span>
+                            </p>
+                          )}
                         </div>
-                      </div>
+
+                        {/* Distance indicator hidden */}
+
+                        <div className="mt-auto flex items-baseline justify-between border-t border-gray-200 pt-2 xl:pt-3">
+                          <div className="flex flex-col gap-0.5">
+                            <div className="text-base font-bold text-black xl:text-lg">₱{p.price.toLocaleString()}</div>
+                            {p.compare_at_price && p.compare_at_price > p.price && (
+                              <div className="text-xs text-black/40 line-through">₱{p.compare_at_price.toLocaleString()}</div>
+                            )}
+                          </div>
+                          <div className="text-[10px] uppercase tracking-[0.08em] text-black/55 xl:text-xs">
+                            {p.stock_quantity > 0 ? `${p.stock_quantity} left` : 'Out of stock'}
+                          </div>
+                        </div>
+                      </Link>
                     </div>
                   </div>
-                </Link>
                 );
               })}
             </div>
@@ -1059,16 +1089,26 @@ const Products: React.FC<Props> = () => {
           )}
 
           {/* Results info */}
-          {!loading && products.length > 0 && (
-            <div className="mt-5 hidden text-center text-xs uppercase tracking-[0.14em] text-black/50 xl:block">
-              {sortBy === 'near_me'
-                ? `Showing ${displayProducts.length} products sorted by distance`
-                : `Showing ${products.length} of ${total} products (Page ${currentPage} of ${lastPage})`}
-            </div>
-          )}
-        </div>
+           {!loading && products.length > 0 && (
+             <div className="mt-5 hidden text-center text-xs uppercase tracking-[0.14em] text-black/50 xl:block">
+               {sortBy === 'near_me'
+                 ? `Showing ${displayProducts.length} products sorted by distance`
+                 : `Showing ${products.length} of ${total} products (Page ${currentPage} of ${lastPage})`}
+             </div>
+           )}
+         </div>
 
-        <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-gray-200 bg-white xl:hidden">
+         {quickViewProduct && (
+           <ProductQuickView
+             key={quickViewProduct.id}
+             product={quickViewProduct}
+             detailsHref={getProductHref(quickViewProduct)}
+             triggerRef={quickViewTriggerRef}
+             onClose={closeQuickView}
+           />
+         )}
+
+         <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-gray-200 bg-white xl:hidden">
           <div className="mx-auto grid w-full max-w-[430px] grid-cols-5 px-2 py-2 text-[11px] text-gray-600 md:max-w-none md:px-4">
             <Link href="/" className={mobileNavItemClasses(activeMobileTab === 'home')}>
               <span className={`absolute -top-2 h-0.5 w-6 rounded-full bg-[#16233b] transition-all duration-300 ${activeMobileTab === 'home' ? 'opacity-100 scale-x-100' : 'opacity-0 scale-x-0'}`} />
@@ -1110,6 +1150,7 @@ const Products: React.FC<Props> = () => {
           </div>
         </div>
       </div>
+      </CustomerFooterReveal>
     </>
   );
 };

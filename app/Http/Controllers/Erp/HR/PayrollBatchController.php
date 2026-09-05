@@ -12,11 +12,13 @@ use App\Models\HR\LeaveRequest;
 use App\Models\HR\AuditLog;
 use App\Models\ShopOwner;
 use App\Services\HR\PayrollService;
+use App\Services\HR\EmployeeOperationalPolicy;
 use App\Traits\HR\LogsHRActivity;
 use App\Notifications\HR\PayslipGenerated;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Carbon\Carbon;
 
@@ -36,10 +38,12 @@ class PayrollBatchController extends Controller
     use LogsHRActivity;
 
     protected PayrollService $payrollService;
+    protected EmployeeOperationalPolicy $employeePolicy;
 
-    public function __construct(PayrollService $payrollService)
+    public function __construct(PayrollService $payrollService, EmployeeOperationalPolicy $employeePolicy)
     {
         $this->payrollService = $payrollService;
+        $this->employeePolicy = $employeePolicy;
     }
 
     // ============================================================
@@ -48,6 +52,11 @@ class PayrollBatchController extends Controller
 
     private function authorizeUser(): ?\Illuminate\Contracts\Auth\Authenticatable
     {
+        $shopOwner = Auth::guard('shop_owner')->user();
+        if ($shopOwner) {
+            return $shopOwner;
+        }
+
         $user = Auth::guard('user')->user();
 
         if (! $user) {
@@ -65,6 +74,13 @@ class PayrollBatchController extends Controller
         }
 
         return $user;
+    }
+
+    private function shopOwnerId(\Illuminate\Contracts\Auth\Authenticatable $actor): int
+    {
+        return $actor instanceof ShopOwner
+            ? (int) $actor->getKey()
+            : (int) ($actor->shop_owner_id ?? 0);
     }
 
     // ============================================================
@@ -101,9 +117,19 @@ class PayrollBatchController extends Controller
 
         foreach ($employeeIds as $employeeId) {
             try {
-                $employee = Employee::forShopOwner($user->shop_owner_id)
-                    ->where('status', 'active')
+                $employee = Employee::forShopOwner($this->shopOwnerId($user))
                     ->findOrFail($employeeId);
+
+                if (! $this->employeePolicy->isEligibleForRoutinePayroll($employee)) {
+                    $errors[] = [
+                        'employee_id' => $employeeId,
+                        'employee_name' => $employee->first_name . ' ' . $employee->last_name,
+                        'message' => 'Employee is not eligible for routine payroll.',
+                        'error_code' => 'EMPLOYEE_NOT_ELIGIBLE_FOR_ROUTINE_PAYROLL',
+                        'severity' => 'error',
+                    ];
+                    continue;
+                }
 
                 // Already generated for this period?
                 $existingPayroll = Payroll::forEmployee($employeeId)
@@ -227,9 +253,18 @@ class PayrollBatchController extends Controller
 
         foreach ($employeeIds as $employeeId) {
             try {
-                $employee = Employee::forShopOwner($user->shop_owner_id)
-                    ->where('status', 'active')
+                $employee = Employee::forShopOwner($this->shopOwnerId($user))
                     ->findOrFail($employeeId);
+
+                if (! $this->employeePolicy->isEligibleForRoutinePayroll($employee)) {
+                    $errors[] = [
+                        'employee_id' => $employeeId,
+                        'employee_name' => $employee->first_name . ' ' . $employee->last_name,
+                        'error' => 'Employee is not eligible for routine payroll.',
+                        'error_code' => 'EMPLOYEE_NOT_ELIGIBLE_FOR_ROUTINE_PAYROLL',
+                    ];
+                    continue;
+                }
 
                 $existingPayroll = Payroll::forEmployee($employeeId)
                     ->forPeriod($payrollPeriod)
@@ -392,18 +427,8 @@ class PayrollBatchController extends Controller
      */
     public function exportBatch(Request $request): mixed
     {
-        $user = Auth::guard('user')->user();
-
-        if (
-            ! $user
-            || (
-                ! $user->hasRole('Shop Owner')
-                && ! $user->can('access-payslip-generation')
-                && ! $user->can('access-view-payslip')
-                && ! $user->can('access-payslip-approval')
-                && ! $user->can('access-approval-workflow')
-            )
-        ) {
+        $user = $this->authorizeUser();
+        if (! $user) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -416,7 +441,7 @@ class PayrollBatchController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        $payrolls = Payroll::forShopOwner($user->shop_owner_id)
+        $payrolls = Payroll::forShopOwner($this->shopOwnerId($user))
             ->forPeriod($request->payrollPeriod)
             ->with(['employee', 'components'])
             ->get();

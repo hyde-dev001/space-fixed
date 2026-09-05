@@ -199,6 +199,7 @@ class RepairOnlineRefundWorkflowTest extends TestCase
             'status' => 'requested',
             'finance_status' => 'pending',
             'repairer_status' => 'pending',
+            'requires_owner_approval' => false,
             'requested_by' => $customer->id,
             'requested_at' => now(),
         ]);
@@ -386,6 +387,63 @@ class RepairOnlineRefundWorkflowTest extends TestCase
     }
 
     #[Test]
+    public function repair_refund_uses_the_submission_snapshot_after_settings_change(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        $customer = User::factory()->create();
+
+        ProcurementSettings::query()->updateOrCreate(
+            ['shop_owner_id' => $shopOwner->id],
+            ['settings_json' => ['approval_pages' => ['refund_approval' => ['enabled' => true]]]],
+        );
+
+        $source = PosTransaction::create([
+            'transaction_no' => 'POS-TDD-SNAPSHOT-RFD-001',
+            'shop_owner_id' => $shopOwner->id,
+            'module_type' => 'repair',
+            'module_reference_id' => 91,
+            'customer_type' => 'registered',
+            'customer_id' => $customer->id,
+            'due_type' => 'full',
+            'subtotal' => 500,
+            'tax_amount' => 0,
+            'discount_amount' => 0,
+            'total_amount' => 500,
+            'paid_amount' => 500,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        $refund = app(\App\Services\RepairPosRefundService::class)->requestRefund(
+            source: $source,
+            payload: [
+                'workflow_source' => 'pos',
+                'request_type' => 'full',
+                'requested_amount' => 500,
+                'reason_code' => 'walk_in_refund',
+                'requires_owner_approval' => false,
+            ],
+            actorId: $customer->id,
+        );
+
+        $this->assertSame(true, $refund->requires_owner_approval);
+
+        ProcurementSettings::query()
+            ->where('shop_owner_id', $shopOwner->id)
+            ->update(['settings_json' => ['approval_pages' => ['refund_approval' => ['enabled' => false]]]]);
+
+        $updated = app(\App\Services\RepairPosRefundService::class)->approve(
+            refund: $refund,
+            actorId: $customer->id,
+            approvedAmount: 500,
+            stage: 'finance',
+        );
+
+        $this->assertSame('approved_initial', (string) $updated->finance_status);
+        $this->assertSame('pending', (string) $updated->shop_owner_status);
+    }
+
+    #[Test]
     public function shop_owner_repair_refund_list_includes_media_urls_from_object_evidence_snapshot(): void
     {
         $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
@@ -408,7 +466,7 @@ class RepairOnlineRefundWorkflowTest extends TestCase
             'paid_at' => now(),
         ]);
 
-        PosRefund::create([
+        $refund = PosRefund::create([
             'refund_no' => 'RFD-TDD-ONLINE-RFD-005',
             'shop_owner_id' => $shopOwner->id,
             'source_transaction_id' => $source->id,
@@ -418,7 +476,7 @@ class RepairOnlineRefundWorkflowTest extends TestCase
             'request_type' => 'full',
             'requested_amount' => 650,
             'reason_code' => 'service_defect',
-            'reason_notes' => 'Evidence attached by customer.',
+            'reason_notes' => "Customer note from refund request.\nUploaded media references: old-photo.png, old-video.mp4",
             'status' => 'requested',
             'finance_status' => 'approved_initial',
             'shop_owner_status' => 'pending',
@@ -428,15 +486,72 @@ class RepairOnlineRefundWorkflowTest extends TestCase
                 ['type' => 'video', 'url' => 'https://example.com/evidence-video.mp4'],
             ],
             'requested_by' => $customer->id,
-            'requested_at' => now(),
+            'requested_at' => '2026-09-04 14:37:00',
         ]);
 
         $response = $this->actingAs($shopOwner, 'shop_owner')
             ->getJson('/api/shop-owner/repair-refunds');
 
         $response->assertOk();
+        $response->assertJsonPath('data.0.reason', 'Customer note from refund request.');
+        $response->assertJsonPath('data.0.refundNote', 'Customer note from refund request.');
+        $response->assertJsonPath('data.0.reasonDetails', 'Customer note from refund request.');
+        $response->assertJsonPath('data.0.approvalStageLabel', 'Waiting for shop owner approval');
         $response->assertJsonPath('data.0.media.0', 'https://example.com/evidence-photo.jpg');
         $response->assertJsonPath('data.0.media.1', 'https://example.com/evidence-video.mp4');
+        $this->assertSame($refund->requested_at->toISOString(), $response->json('data.0.requestDate'));
+    }
+
+    #[Test]
+    public function completed_repair_refund_is_not_projected_as_ready_for_payout(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        $customer = User::factory()->create();
+
+        $source = PosTransaction::create([
+            'transaction_no' => 'POS-TDD-TERMINAL-RFD-001',
+            'shop_owner_id' => $shopOwner->id,
+            'module_type' => 'repair',
+            'module_reference_id' => 52,
+            'customer_type' => 'registered',
+            'customer_id' => $customer->id,
+            'due_type' => 'full',
+            'subtotal' => 300,
+            'tax_amount' => 0,
+            'discount_amount' => 0,
+            'total_amount' => 300,
+            'paid_amount' => 300,
+            'status' => 'refunded',
+            'paid_at' => '2026-09-04 10:00:00',
+        ]);
+
+        PosRefund::create([
+            'refund_no' => 'RFD-TDD-TERMINAL-RFD-001',
+            'shop_owner_id' => $shopOwner->id,
+            'source_transaction_id' => $source->id,
+            'module_type' => 'repair',
+            'module_reference_id' => 52,
+            'workflow_source' => 'pos',
+            'request_type' => 'full',
+            'requested_amount' => 300,
+            'approved_amount' => 300,
+            'reason_code' => 'walk_in_refund',
+            'status' => 'succeeded',
+            'finance_status' => 'approved',
+            'shop_owner_status' => 'approved',
+            'repairer_status' => 'approved',
+            'requested_by' => $customer->id,
+            'requested_at' => '2026-09-04 10:30:00',
+            'executed_at' => '2026-09-04 10:45:00',
+        ]);
+
+        $response = $this->actingAs($shopOwner, 'shop_owner')
+            ->getJson('/api/shop-owner/repair-refunds');
+
+        $response->assertOk();
+        $response->assertJsonPath('data.0.status', 'Refunded');
+        $response->assertJsonPath('data.0.approvalStageLabel', null);
+        $response->assertJsonPath('data.0.canExecutePayout', false);
     }
 
     #[Test]

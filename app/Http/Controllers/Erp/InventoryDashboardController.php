@@ -6,12 +6,19 @@ use App\Http\Controllers\Controller;
 use App\Models\InventoryItem;
 use App\Models\StockMovement;
 use App\Models\SupplierOrder;
+use App\Services\Erp\ShopOwnerInventoryReadService;
+use App\Support\Erp\ErpActorContext;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
 class InventoryDashboardController extends Controller
 {
+    public function __construct(
+        private readonly ShopOwnerInventoryReadService $ownerInventoryRead,
+    ) {}
+
     /**
      * Display inventory dashboard with metrics and overview
      */
@@ -24,31 +31,43 @@ class InventoryDashboardController extends Controller
             ], 403);
         }
         
-        $metrics = $this->getMetrics($shopOwnerId);
-        $chartData = $this->getChartData($shopOwnerId);
-        
-        $products = InventoryItem::with(['sizes', 'colorVariants', 'images'])
-            ->where('shop_owner_id', $shopOwnerId)
-            ->where('is_active', true)
-            ->when($request->search, function ($query, $search) {
-                $query->where(function ($q) use ($search) {
-                    $q->where('name', 'like', "%{$search}%")
-                      ->orWhere('sku', 'like', "%{$search}%");
-                });
-            })
-            ->when($request->category, function ($query, $category) {
-                $query->where('category', $category);
-            })
-            ->when($request->status, function ($query, $status) {
-                if ($status === 'low_stock') {
-                    $query->lowStock();
-                } elseif ($status === 'out_of_stock') {
-                    $query->outOfStock();
-                }
-            })
-            ->orderBy('name')
-            ->paginate($request->per_page ?? 20)
-            ->withQueryString();
+        $ownerMode = $this->ownerMode();
+        $ownerRows = $ownerMode ? $this->ownerInventoryRead->rows($shopOwnerId) : null;
+        $metrics = $this->getMetrics($shopOwnerId, $ownerMode, $ownerRows);
+        $chartData = $this->getChartData($shopOwnerId, $ownerMode, $ownerRows);
+
+        $products = $ownerMode
+            ? $this->ownerInventoryRead->paginateRows($ownerRows ?? collect(), $request->only([
+                'search',
+                'category',
+                'status',
+                'sort_by',
+                'sort_order',
+                'page',
+                'per_page',
+            ]))
+            : InventoryItem::with(['sizes', 'colorVariants', 'images'])
+                ->where('shop_owner_id', $shopOwnerId)
+                ->where('is_active', true)
+                ->when($request->search, function ($query, $search) {
+                    $query->where(function ($q) use ($search) {
+                        $q->where('name', 'like', "%{$search}%")
+                          ->orWhere('sku', 'like', "%{$search}%");
+                    });
+                })
+                ->when($request->category, function ($query, $category) {
+                    $query->where('category', $category);
+                })
+                ->when($request->status, function ($query, $status) {
+                    if ($status === 'low_stock') {
+                        $query->lowStock();
+                    } elseif ($status === 'out_of_stock') {
+                        $query->outOfStock();
+                    }
+                })
+                ->orderBy('name')
+                ->paginate($request->per_page ?? 20)
+                ->withQueryString();
         
         return response()->json([
             'metrics' => $metrics,
@@ -60,7 +79,7 @@ class InventoryDashboardController extends Controller
     /**
      * Get dashboard metrics
      */
-    public function getMetrics($shopOwnerId = null)
+    public function getMetrics($shopOwnerId = null, ?bool $includeCatalogProducts = null, ?Collection $catalogRows = null)
     {
         if (!$shopOwnerId) {
             $shopOwnerId = $this->resolveShopOwnerId();
@@ -78,22 +97,33 @@ class InventoryDashboardController extends Controller
             }
         }
         
-        $totalItems = InventoryItem::where('shop_owner_id', $shopOwnerId)
-            ->where('is_active', true)
-            ->count();
-        
-        $lowStockItems = InventoryItem::where('shop_owner_id', $shopOwnerId)
-            ->lowStock()
-            ->count();
-        
-        $outOfStockItems = InventoryItem::where('shop_owner_id', $shopOwnerId)
-            ->outOfStock()
-            ->count();
-        
-        $totalValue = InventoryItem::where('shop_owner_id', $shopOwnerId)
-            ->where('is_active', true)
-            ->selectRaw('SUM(available_quantity * COALESCE(cost_price, 0)) as total')
-            ->value('total') ?? 0;
+        $includeCatalogProducts ??= $this->ownerMode();
+        if ($includeCatalogProducts) {
+            $catalogMetrics = $this->ownerInventoryRead->metricsForRows(
+                $catalogRows ?? $this->ownerInventoryRead->rows((int) $shopOwnerId),
+            );
+            $totalItems = $catalogMetrics['total_items'];
+            $lowStockItems = $catalogMetrics['low_stock_count'];
+            $outOfStockItems = $catalogMetrics['out_of_stock_count'];
+            $totalValue = $catalogMetrics['total_value'];
+        } else {
+            $totalItems = InventoryItem::where('shop_owner_id', $shopOwnerId)
+                ->where('is_active', true)
+                ->count();
+
+            $lowStockItems = InventoryItem::where('shop_owner_id', $shopOwnerId)
+                ->lowStock()
+                ->count();
+
+            $outOfStockItems = InventoryItem::where('shop_owner_id', $shopOwnerId)
+                ->outOfStock()
+                ->count();
+
+            $totalValue = InventoryItem::where('shop_owner_id', $shopOwnerId)
+                ->where('is_active', true)
+                ->selectRaw('SUM(available_quantity * COALESCE(cost_price, 0)) as total')
+                ->value('total') ?? 0;
+        }
         
         $stockInToday = StockMovement::whereHas('inventoryItem', function ($query) use ($shopOwnerId) {
                 $query->where('shop_owner_id', $shopOwnerId);
@@ -132,7 +162,7 @@ class InventoryDashboardController extends Controller
     /**
      * Get stock levels chart data
      */
-    public function getChartData($shopOwnerId = null)
+    public function getChartData($shopOwnerId = null, ?bool $includeCatalogProducts = null, ?Collection $catalogRows = null)
     {
         if (!$shopOwnerId) {
             $shopOwnerId = $this->resolveShopOwnerId();
@@ -148,6 +178,13 @@ class InventoryDashboardController extends Controller
             }
         }
         
+        $includeCatalogProducts ??= $this->ownerMode();
+        if ($includeCatalogProducts) {
+            return $this->ownerInventoryRead->chartDataForRows(
+                $catalogRows ?? $this->ownerInventoryRead->rows((int) $shopOwnerId),
+            );
+        }
+
         $items = InventoryItem::where('shop_owner_id', $shopOwnerId)
             ->where('is_active', true)
             ->select('name', 'available_quantity', 'reserved_quantity', 'reorder_level')
@@ -197,6 +234,11 @@ class InventoryDashboardController extends Controller
 
     private function resolveShopOwnerId(?Request $request = null): ?int
     {
+        $context = request()->attributes->get('erp.actor_context');
+        if ($context instanceof ErpActorContext && $context->isOwnerMode()) {
+            return (int) $context->tenantOwner()->getKey();
+        }
+
         $user = $request?->user() ?? Auth::guard('user')->user() ?? Auth::user();
         if (!$user) {
             return null;
@@ -207,5 +249,12 @@ class InventoryDashboardController extends Controller
             ?? null;
 
         return $shopOwnerId ? (int) $shopOwnerId : null;
+    }
+
+    private function ownerMode(): bool
+    {
+        $context = request()->attributes->get('erp.actor_context');
+
+        return $context instanceof ErpActorContext && $context->isOwnerMode();
     }
 }

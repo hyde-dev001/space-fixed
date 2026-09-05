@@ -29,3 +29,14 @@ export const clearModalDraft = (key: string): void => {
 		// ignore localStorage failures
 	}
 };
+
+export const scopedModalDraftKey = (base: string, shopId: number | string, userId: number | string): string =>
+	`${base}:${shopId}:${userId}`;
+
+export const isModalDraftSourceAvailable = (
+	stockRequestId: string | number | null | undefined,
+	availableIds: Array<string | number>,
+): boolean => {
+	const sourceId = Number(stockRequestId);
+	return sourceId > 0 && availableIds.some((id) => Number(id) === sourceId);
+};

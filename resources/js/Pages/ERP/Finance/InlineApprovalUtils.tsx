@@ -2,7 +2,7 @@ import React from 'react';
 
 /**
  * Get badge component for approval status
- * Shows visual indicator for transaction status (draft, submitted, approved, posted, rejected)
+ * Shows visual indicator for transaction status (draft, submitted, approved, recorded, rejected)
  */
 export const getApprovalStatusBadge = (
   isInline: boolean = false,
@@ -46,7 +46,9 @@ export const getApprovalStatusBadge = (
     }
   };
 
-  const displayText = status.charAt(0).toUpperCase() + status.slice(1);
+  const displayText = status === 'posted'
+    ? 'Recorded'
+    : status.charAt(0).toUpperCase() + status.slice(1);
 
   return (
     <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap ${getStatusColor(status)}`}>

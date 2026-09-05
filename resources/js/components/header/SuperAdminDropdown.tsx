@@ -1,19 +1,33 @@
 import { useState } from "react";
-import { usePage, router } from "@inertiajs/react";
-import { route } from "ziggy-js";
+import { Link, usePage, router } from "@inertiajs/react";
 import { Dropdown } from "../ui/dropdown/Dropdown";
 import Swal from "sweetalert2";
+import { LogOut, ShieldCheck, UserRound } from "lucide-react";
+import InlineAccountMenu from "./InlineAccountMenu";
 
-export default function SuperAdminDropdown() {
-  const { auth } = usePage().props as any;
+type PrivilegedIdentity = {
+  name: string;
+  email: string;
+  role: 'admin' | 'super_admin';
+};
+
+type SuperAdminDropdownProps = {
+  inline?: boolean;
+  compact?: boolean;
+};
+
+export default function SuperAdminDropdown({ inline = false, compact = false }: SuperAdminDropdownProps = {}) {
+  const { auth } = usePage<{ auth?: { super_admin?: PrivilegedIdentity | null } }>().props;
   const [isOpen, setIsOpen] = useState(false);
+  const [logoutError, setLogoutError] = useState<string | null>(null);
 
   const superAdmin = auth?.super_admin;
   
   if (!superAdmin) return null;
 
-  const userName = superAdmin?.name || "Super Admin";
-  const userEmail = superAdmin?.email || "admin@solespace.com";
+  const userName = superAdmin.name;
+  const userEmail = superAdmin.email;
+  const roleLabel = superAdmin.role === "super_admin" ? "Super Administrator" : "Admin";
 
   function toggleDropdown() {
     setIsOpen(!isOpen);
@@ -25,6 +39,7 @@ export default function SuperAdminDropdown() {
 
   async function handleLogout() {
     closeDropdown();
+    setLogoutError(null);
     
     const result = await Swal.fire({
       title: "Sign Out",
@@ -40,37 +55,67 @@ export default function SuperAdminDropdown() {
     if (result.isConfirmed) {
       router.post('/admin/logout', {}, {
         preserveState: false,
-        onSuccess: () => {
-          setTimeout(() => { router.visit('/admin/login'); }, 200);
-        },
         onError: () => {
-          router.visit('/admin/login');
+          setLogoutError('Sign out failed. Please try again.');
+          setIsOpen(true);
         }
       });
     }
+  }
+
+  if (inline) {
+    return (
+      <InlineAccountMenu
+        name={userName}
+        email={userEmail}
+        role={roleLabel}
+        tone="red"
+        error={logoutError}
+        actions={[
+          {
+            label: "Profile",
+            onClick: () => router.visit('/admin/profile'),
+            icon: <UserRound className="h-5 w-5" aria-hidden="true" />,
+          },
+          {
+            label: "Security",
+            onClick: () => router.visit('/admin/security'),
+            icon: <ShieldCheck className="h-5 w-5" aria-hidden="true" />,
+          },
+          {
+            label: "Sign Out",
+            onClick: handleLogout,
+            icon: <LogOut className="h-5 w-5" aria-hidden="true" />,
+            destructive: true,
+          },
+        ]}
+      />
+    );
   }
 
   return (
     <div className="relative">
       <button
         onClick={toggleDropdown}
-        className="flex items-center gap-2 px-3 py-2 text-gray-700 rounded-lg transition dropdown-toggle dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
+        aria-label={`Open account menu for ${userName}`}
+        className={compact
+          ? "dropdown-toggle inline-flex h-11 w-11 items-center justify-center rounded-full border border-gray-200 bg-white p-1 text-gray-900 transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
+          : "flex items-center gap-2 rounded-lg px-3 py-2 text-gray-700 transition dropdown-toggle dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"}
       >
-        <div className="flex items-center justify-center w-8 h-8 bg-red-100 rounded-full dark:bg-red-900">
+        <div className={`flex items-center justify-center rounded-full ${compact ? 'h-full w-full bg-gray-100 dark:bg-gray-800' : 'h-8 w-8 bg-red-100 dark:bg-red-900'}`}>
           <svg
-            className="w-5 h-5 text-red-600 dark:text-red-300"
+            className={`h-5 w-5 ${compact ? 'text-gray-900 dark:text-gray-100' : 'text-red-600 dark:text-red-300'}`}
             fill="currentColor"
             viewBox="0 0 20 20"
           >
             <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
           </svg>
         </div>
-        <div className="hidden sm:block">
+        <div className={`${compact ? 'hidden' : 'hidden sm:block'}`}>
           <span className="block font-semibold text-sm">{userName}</span>
-          <span className="text-xs text-gray-500 dark:text-gray-400">Super Admin</span>
         </div>
         <svg
-          className={`stroke-gray-500 dark:stroke-gray-400 transition-transform duration-200 ${
+          className={`${compact ? 'hidden' : ''} stroke-gray-500 dark:stroke-gray-400 transition-transform duration-200 ${
             isOpen ? "rotate-180" : ""
           }`}
           width="18"
@@ -113,11 +158,34 @@ export default function SuperAdminDropdown() {
                 {userEmail}
               </p>
               <p className="mt-1 inline-block text-xs font-semibold px-2 py-0.5 bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300 rounded-full">
-                Super Administrator
+                {roleLabel}
               </p>
             </div>
           </div>
         </div>
+
+        <nav className="border-b border-gray-200 px-3 py-2 dark:border-gray-700" aria-label="Administrator account">
+          <Link
+            href="/admin/profile"
+            onClick={closeDropdown}
+            className="block rounded-lg px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
+          >
+            Profile
+          </Link>
+          <Link
+            href="/admin/security"
+            onClick={closeDropdown}
+            className="block rounded-lg px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
+          >
+            Security
+          </Link>
+        </nav>
+
+        {logoutError && (
+          <p role="alert" className="px-4 pt-3 text-sm text-red-600 dark:text-red-400">
+            {logoutError}
+          </p>
+        )}
 
         <button
           onClick={handleLogout}

@@ -137,6 +137,7 @@ export default function CustomersPage() {
   const itemsPerPage = 10;
 
   const { auth, initialCustomers = [], initialStats } = usePage().props as any;
+  const ownerMode = auth?.erpActor?.ownerMode === true;
   const userRole = String(auth?.user?.role || '').toUpperCase();
   const userRoles = Array.isArray(auth?.user?.roles)
     ? auth.user.roles.map((role: string) => String(role).toUpperCase())
@@ -146,6 +147,7 @@ export default function CustomersPage() {
     : [];
 
   const canAccessStaffModule =
+    ownerMode ||
     userPermissions.includes('access-staff-dashboard') ||
     userPermissions.includes('access-staff-customers') ||
     userRole === 'STAFF' ||
@@ -201,8 +203,8 @@ export default function CustomersPage() {
       <Head title="Customers - Solespace ERP" />
       {error && <ErrorModal message={error} onClose={() => setError(null)} />}
 
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
-        <div className="max-w-7xl mx-auto">
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+        <div className="w-full">
           {/* Header */}
           <div className="mb-8">
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
@@ -317,7 +319,7 @@ export default function CustomersPage() {
                       <tr key={customer.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center">
-                            <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-semibold">
+                            <div className="h-10 w-10 rounded-full bg-gray-950 dark:bg-gradient-to-br dark:from-blue-500 dark:to-indigo-600 flex items-center justify-center text-white font-semibold">
                               {getInitials(customer.name)}
                             </div>
                             <div className="ml-4">
@@ -417,7 +419,7 @@ export default function CustomersPage() {
               <div className="p-6 space-y-6">
                 {/* Customer Info */}
                 <div className="flex items-center space-x-4">
-                  <div className="h-20 w-20 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold">
+                  <div className="h-20 w-20 rounded-full bg-gray-950 dark:bg-gradient-to-br dark:from-blue-500 dark:to-indigo-600 flex items-center justify-center text-white font-bold">
                     <span className="text-2xl">{getInitials(selectedCustomer.name)}</span>
                   </div>
                   <div>

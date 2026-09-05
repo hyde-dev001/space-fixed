@@ -1,5 +1,6 @@
-import { Head, router } from "@inertiajs/react";
+import { Head, router, usePage } from "@inertiajs/react";
 import AppLayoutShopOwner from "../../../../layout/AppLayout_shopOwner";
+import AppLayoutERP from "../../../../layout/AppLayout_ERP";
 import { useState, useRef, useEffect } from "react";
 import axios from "axios";
 
@@ -51,6 +52,8 @@ const resolveStorageUrl = (path?: string | null) => {
 };
 
 export default function CustomerSupport() {
+  const erpMode = (usePage().props as any)?.erpMode === true;
+  const Layout = erpMode ? AppLayoutERP : AppLayoutShopOwner;
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [selectedTicketId, setSelectedTicketId] = useState<number | null>(null);
   const [newMessage, setNewMessage] = useState("");
@@ -514,7 +517,7 @@ export default function CustomerSupport() {
   };
 
   return (
-    <AppLayoutShopOwner fullBleed>
+    <Layout fullBleed>
       <Head title="Customer Support" />
       
       {/* Notification Toast */}
@@ -739,7 +742,7 @@ export default function CustomerSupport() {
                         return (
                           <div key={message.id} className={`flex ${message.sender === 'staff' ? 'justify-end' : 'justify-start'} my-4`}>
                             <div className={`w-full max-w-2xl flex items-start gap-3 ${message.sender === 'staff' ? 'flex-row-reverse ml-auto' : ''}`}>
-                              <div className="w-9 h-9 rounded-full overflow-hidden bg-gray-100 shrink-0 flex items-center justify-center">
+                              <div className={`w-9 h-9 rounded-full overflow-hidden shrink-0 flex items-center justify-center ${message.sender !== 'staff' && !customerProfilePhoto ? 'bg-gray-950' : 'bg-gray-100'}`}>
                                 {message.sender === 'staff' ? (
                                   shopProfilePhoto ? (
                                     <img src={shopProfilePhoto} alt={selectedTicket?.shopProfile?.business_name || 'Shop'} className="w-full h-full object-cover" />
@@ -751,7 +754,7 @@ export default function CustomerSupport() {
                                 ) : customerProfilePhoto ? (
                                   <img src={customerProfilePhoto} alt={selectedTicket?.customerName || 'Customer'} className="w-full h-full object-cover" />
                                 ) : (
-                                  <span className="text-xs font-semibold text-gray-600">{selectedTicket?.customerAvatar || 'C'}</span>
+                                  <span className="text-xs font-semibold text-white">{selectedTicket?.customerAvatar || 'C'}</span>
                                 )}
                               </div>
                               <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm w-full">
@@ -885,7 +888,7 @@ export default function CustomerSupport() {
                         return (
                           <div key={message.id} className={`flex ${message.sender === 'staff' ? 'justify-end' : 'justify-start'} my-4`}>
                             <div className={`max-w-lg w-full flex items-start gap-3 ${message.sender === 'staff' ? 'flex-row-reverse ml-auto' : ''}`}>
-                              <div className="w-9 h-9 rounded-full overflow-hidden bg-gray-100 shrink-0 flex items-center justify-center">
+                              <div className={`w-9 h-9 rounded-full overflow-hidden shrink-0 flex items-center justify-center ${message.sender !== 'staff' && !customerProfilePhoto ? 'bg-gray-950' : 'bg-gray-100'}`}>
                                 {message.sender === 'staff' ? (
                                   shopProfilePhoto ? (
                                     <img src={shopProfilePhoto} alt={selectedTicket?.shopProfile?.business_name || 'Shop'} className="w-full h-full object-cover" />
@@ -902,7 +905,7 @@ export default function CustomerSupport() {
                                 ) : customerProfilePhoto ? (
                                   <img src={customerProfilePhoto} alt={selectedTicket?.customerName || 'Customer'} className="w-full h-full object-cover" />
                                 ) : (
-                                  <span className="text-xs font-semibold text-gray-600">{selectedTicket?.customerAvatar || 'C'}</span>
+                                  <span className="text-xs font-semibold text-white">{selectedTicket?.customerAvatar || 'C'}</span>
                                 )}
                               </div>
                               <div className="bg-white border border-gray-200 rounded-xl p-5 max-w-lg w-full shadow-sm hover:shadow-md transition-shadow">
@@ -1044,7 +1047,7 @@ export default function CustomerSupport() {
                               ) : customerProfilePhoto ? (
                                 <img src={customerProfilePhoto} alt={selectedTicket?.customerName || 'Customer'} className="w-full h-full object-cover" />
                               ) : (
-                                <span className="text-[10px] font-semibold text-gray-600">{selectedTicket?.customerAvatar || 'C'}</span>
+                                <span className="text-[10px] font-semibold text-white">{selectedTicket?.customerAvatar || 'C'}</span>
                               )}
                             </div>
                             <div className="relative">
@@ -1132,7 +1135,7 @@ export default function CustomerSupport() {
                               ) : customerProfilePhoto ? (
                                 <img src={customerProfilePhoto} alt={selectedTicket?.customerName || 'Customer'} className="w-full h-full object-cover" />
                               ) : (
-                                <span className="text-[10px] font-semibold text-gray-600">{selectedTicket?.customerAvatar || 'C'}</span>
+                              <span className="text-[10px] font-semibold text-white">{selectedTicket?.customerAvatar || 'C'}</span>
                               )}
                             </div>
                             <div className="relative">
@@ -1441,6 +1444,6 @@ export default function CustomerSupport() {
           </div>
         </div>
       )}
-    </AppLayoutShopOwner>
+    </Layout>
   );
 }

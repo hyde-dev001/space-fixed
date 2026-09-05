@@ -162,7 +162,7 @@ class PayrollService
             DB::rollBack();
             
             // Log error
-            if (Auth::check()) {
+            if (Auth::guard('user')->check() || Auth::guard('shop_owner')->check()) {
                 AuditLog::createLog([
                     'shop_owner_id' => $employee->shop_owner_id,
                     'employee_id' => $employee->id,
@@ -277,7 +277,10 @@ class PayrollService
             'status' => 'pending',
             'payment_date' => $overrides['payment_date'] ?? date('Y-m-d', strtotime($endDate . ' +5 days')),
             'payment_method' => $overrides['payment_method'] ?? 'bank_transfer',
-            'generated_by' => Auth::id(),
+            // Shop owners authenticate through a separate guard and do not
+            // have a users-table id. Keep this nullable user metadata valid
+            // while AuditLog::createLog() records the shop-owner actor.
+            'generated_by' => Auth::guard('user')->id(),
             'generated_at' => now()
         ]);
     }
@@ -1056,11 +1059,11 @@ class PayrollService
             throw new Exception('13th-month release is restricted to December unless explicitly overridden.');
         }
 
-        $employeeQuery = Employee::query()
-            ->forShopOwner($shopOwnerId)
-            ->where('status', 'active');
+        $employeeQuery = Employee::query()->forShopOwner($shopOwnerId);
 
-        if (! empty($employeeIds)) {
+        if (empty($employeeIds)) {
+            $employeeQuery->where('status', 'active');
+        } else {
             $employeeQuery->whereIn('id', $employeeIds);
         }
 
@@ -1452,7 +1455,7 @@ class PayrollService
      */
     protected function logPayrollGeneration(Payroll $payroll, Employee $employee, int $componentCount): void
     {
-        if (!Auth::check()) return;
+        if (!Auth::guard('user')->check() && !Auth::guard('shop_owner')->check()) return;
         
         AuditLog::createLog([
             'shop_owner_id' => $payroll->shop_owner_id,

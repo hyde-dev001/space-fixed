@@ -142,6 +142,32 @@ class ManagerAuthorizationTest extends TestCase
         ]);
     }
 
+    public function test_suspension_queue_read_does_not_grant_manager_decision(): void
+    {
+        \Spatie\Permission\Models\Permission::findOrCreate('access-manager-suspension-approvals', 'user');
+        $readOnlyManager = User::factory()
+            ->for($this->shop)
+            ->create(['role' => 'Staff']);
+        $readOnlyManager->givePermissionTo('access-manager-suspension-approvals');
+
+        $employee = Employee::factory()->for($this->shop)->create();
+        $request = SuspensionRequest::factory()
+            ->for($employee)
+            ->create(['status' => SuspensionStatus::PENDING_MANAGER]);
+
+        $this->actingAs($readOnlyManager, 'user')
+            ->getJson('/api/manager/suspension-requests')
+            ->assertOk();
+
+        $this->actingAs($readOnlyManager, 'user')
+            ->postJson("/api/manager/suspension-requests/{$request->id}/review", [
+                'action' => 'approve',
+            ])
+            ->assertForbidden();
+
+        $this->assertSame(SuspensionStatus::PENDING_MANAGER, $request->fresh()->status);
+    }
+
     /**
      * Test: Manager's shop context is properly resolved from auth
      */
@@ -195,5 +221,35 @@ class ManagerAuthorizationTest extends TestCase
             ->getJson('/api/manager/dashboard/stats');
 
         $this->assertNotEquals(403, $response->status());
+    }
+
+    public function test_repair_only_manager_cannot_access_retail_job_orders(): void
+    {
+        $this->shop->update(['business_type' => 'repair']);
+
+        $this->actingAs($this->manager, 'user')
+            ->get(route('erp.manager.job-orders'))
+            ->assertRedirect(route('erp.profile'));
+
+        $this->actingAs($this->manager, 'user')
+            ->getJson('/api/manager/orders')
+            ->assertForbidden()
+            ->assertJsonPath('business_type', 'repair')
+            ->assertJsonPath('allowed_types', ['retail', 'both']);
+    }
+
+    public function test_retail_and_both_managers_can_access_retail_job_orders(): void
+    {
+        foreach (['retail', 'both'] as $businessType) {
+            $this->shop->update(['business_type' => $businessType]);
+
+            $this->actingAs($this->manager, 'user')
+                ->get(route('erp.manager.job-orders'))
+                ->assertOk();
+
+            $this->actingAs($this->manager, 'user')
+                ->getJson('/api/manager/orders')
+                ->assertOk();
+        }
     }
 }

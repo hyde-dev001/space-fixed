@@ -1,9 +1,12 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Head, Link, usePage } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 import Swal from '@/Pages/UserSide/Shared/UserModal';
 import { buildRepairBreakdown } from '../../../utils/repairPricing';
 import { openTermsPolicyModal } from '../../../utils/termsPolicyModal';
+import { mergeRepairProcessPrefill } from './repairProcessPrefill';
+import CustomerAddressManager, { type CustomerAddress } from '@/components/address/CustomerAddressManager';
+import { resolvePolicySectionsForFlow } from '../../../utils/policySectionResolver';
 
 const REPAIR_VAT_RATE_PERCENT = 12;
 
@@ -57,68 +60,29 @@ interface RepairProcessPageProps {
       id: number;
       name?: string;
       email?: string;
+      phone?: string;
     } | null;
   };
 }
 
-const DEFAULT_SHIPPING_REGION = 'Cavite';
+type IntakeDeliveryMethod = '' | 'walk_in' | 'customer_delivery' | 'shop_pickup';
+type ReturnDeliveryMethod = '' | 'walk_in' | 'customer_pickup' | 'shop_delivery';
+type DeliveryQuote = {
+  status: 'idle' | 'loading' | 'ready' | 'error';
+  available?: boolean;
+  reason?: string | null;
+  distance_km?: number | null;
+  fee?: number | null;
+};
 
-interface CityOption {
-  value: string;
-  label: string;
-  aliases?: string[];
-}
-
-const PH_CITY_OPTIONS: CityOption[] = [
-  { value: 'Bacoor', label: 'Bacoor' },
-  { value: 'Cavite City', label: 'Cavite City', aliases: ['City of Cavite'] },
-  { value: 'Dasmariñas', label: 'Dasmariñas', aliases: ['Dasmarinas'] },
-  { value: 'General Trias', label: 'General Trias' },
-  { value: 'Imus', label: 'Imus' },
-  { value: 'Tagaytay', label: 'Tagaytay' },
-  { value: 'Trece Martires', label: 'Trece Martires' },
-  { value: 'Alfonso', label: 'Alfonso' },
-  { value: 'Amadeo', label: 'Amadeo' },
-  { value: 'Carmona', label: 'Carmona' },
-  { value: 'Gen. Emilio Aguinaldo', label: 'Gen. Emilio Aguinaldo', aliases: ['General Emilio Aguinaldo', 'Gen Emilio Aguinaldo'] },
-  { value: 'Gen. Mariano Alvarez', label: 'Gen. Mariano Alvarez', aliases: ['General Mariano Alvarez', 'Gen Mariano Alvarez', 'GMA'] },
-  { value: 'Indang', label: 'Indang' },
-  { value: 'Kawit', label: 'Kawit' },
-  { value: 'Magallanes', label: 'Magallanes' },
-  { value: 'Maragondon', label: 'Maragondon' },
-  { value: 'Mendez', label: 'Mendez' },
-  { value: 'Naic', label: 'Naic' },
-  { value: 'Noveleta', label: 'Noveleta' },
-  { value: 'Rosario', label: 'Rosario' },
-  { value: 'Silang', label: 'Silang' },
-  { value: 'Tanza', label: 'Tanza' },
-];
-
-const normalizeCityKey = (value: string) => value
-  .normalize('NFD')
-  .replace(/[\u0300-\u036f]/g, '')
-  .replace(/\./g, '')
-  .replace(/\s+/g, ' ')
-  .trim()
-  .toLowerCase();
-
-const CITY_OPTION_LOOKUP = PH_CITY_OPTIONS.reduce<Map<string, string>>((lookup, option) => {
-  const candidates = [option.value, option.label, ...(option.aliases || [])];
-
-  candidates.forEach((candidate) => {
-    const key = normalizeCityKey(candidate);
-    if (key && !lookup.has(key)) {
-      lookup.set(key, option.value);
-    }
-  });
-
-  return lookup;
-}, new Map<string, string>());
-
-const normalizeCitySelection = (city?: string | null): string => {
-  const normalizedCityKey = normalizeCityKey(city || '');
-  if (!normalizedCityKey) return '';
-  return CITY_OPTION_LOOKUP.get(normalizedCityKey) || '';
+const coverageMessage = (quote: DeliveryQuote): string => {
+  if (quote.status === 'loading') return 'Checking coverage...';
+  if (quote.status === 'error') return 'Coverage unavailable. Choose walk-in or third-party courier.';
+  if (quote.status !== 'ready') return 'Select a pinned address to check coverage.';
+  if (quote.available) return `Within coverage${quote.distance_km != null ? ` · ${quote.distance_km} km` : ''}${quote.fee != null ? ` · ₱${Number(quote.fee).toLocaleString('en-PH')}` : ''}`;
+  if (quote.reason === 'address_needs_pin') return 'Pin required';
+  if (quote.reason === 'outside_coverage') return 'Outside coverage';
+  return 'Shop rider delivery unavailable';
 };
 
 const getEffectivePackagePrice = (pkg: RepairPackage): number => {
@@ -183,6 +147,7 @@ const RepairProcess: React.FC = () => {
   const preSelectedIds = urlParams.get('services')?.split(',').map(Number).filter(Boolean) || [];
   const preSelectedPackageId = Number(urlParams.get('package') || 0) || null;
   const shopId = urlParams.get('shop');
+  const initialAddressId = Number(urlParams.get('address_id') || 0) || null;
 
   // Retrieve stored services from localStorage
   const [repairServices, setRepairServices] = useState<RepairService[]>([]);
@@ -277,26 +242,19 @@ const RepairProcess: React.FC = () => {
     shoeType: '',
     brand: '',
     description: '',
-    serviceType: '', // intake: 'pickup' or 'walkin'
-    returnDeliveryMethod: '', // return: 'walk_in' | 'shop_delivery'
-    pickupAddressLine: '',
-    pickupBarangay: '',
-    pickupCity: '',
-    pickupRegion: '',
-    pickupPostalCode: '',
-    returnAddressLine: '',
-    returnBarangay: '',
-    returnCity: '',
-    returnRegion: '',
-    returnPostalCode: '',
+    intakeDeliveryMethod: '' as IntakeDeliveryMethod,
+    returnDeliveryMethod: '' as ReturnDeliveryMethod,
   });
+  const [intakeAddress, setIntakeAddress] = useState<CustomerAddress | null>(null);
+  const [separateReturnAddress, setSeparateReturnAddress] = useState<CustomerAddress | null>(null);
+  const [sameAsIntakeAddress, setSameAsIntakeAddress] = useState(true);
+  const [intakeQuote, setIntakeQuote] = useState<DeliveryQuote>({ status: 'idle' });
+  const [returnQuote, setReturnQuote] = useState<DeliveryQuote>({ status: 'idle' });
   const [selectedServiceIds, setSelectedServiceIds] = useState<number[]>([]);
   const [selectedAddOnServiceIds, setSelectedAddOnServiceIds] = useState<number[]>([]);
   const [isShoeTypeOpen, setIsShoeTypeOpen] = useState(false);
-  const [isReturnCityDropdownOpen, setIsReturnCityDropdownOpen] = useState(false);
   const [saveInfoForCheckout, setSaveInfoForCheckout] = useState(false);
   const shoeTypeDropdownRef = useRef<HTMLDivElement | null>(null);
-  const returnCityDropdownRef = useRef<HTMLDivElement | null>(null);
 
   // Set selected services once repair services are loaded
   useEffect(() => {
@@ -328,9 +286,6 @@ const RepairProcess: React.FC = () => {
         setIsShoeTypeOpen(false);
       }
 
-      if (returnCityDropdownRef.current && !returnCityDropdownRef.current.contains(event.target as Node)) {
-        setIsReturnCityDropdownOpen(false);
-      }
     };
 
     document.addEventListener('mousedown', handleClickOutside);
@@ -353,7 +308,7 @@ const RepairProcess: React.FC = () => {
       setIsLoadingPolicy(true);
 
       try {
-        const activeResponse = await fetch(`/api/policies/shops/${shopId}/active`, {
+        const activeResponse = await fetch(`/api/policies/shops/${shopId}/active?flow=repair`, {
           headers: { Accept: 'application/json' },
         });
 
@@ -368,7 +323,12 @@ const RepairProcess: React.FC = () => {
 
         const activeData = await activeResponse.json();
         const policyVersionId = Number(activeData?.data?.id || 0);
-        const policySections = (activeData?.data?.policy_sections_json || {}) as Record<string, string>;
+        const rawPolicySections = (activeData?.data?.policy_sections_json || {}) as Record<string, string>;
+        const policySections = resolvePolicySectionsForFlow(
+          rawPolicySections,
+          'repair',
+          String(activeData?.data?.business_type_scope || ''),
+        );
 
         if (!cancelled) {
           setActivePolicyVersionId(Number.isFinite(policyVersionId) && policyVersionId > 0 ? policyVersionId : null);
@@ -431,30 +391,98 @@ const RepairProcess: React.FC = () => {
 
     try {
       const parsed = JSON.parse(savedCheckoutInfo) as Partial<typeof formData>;
-      const savedReturnCity = normalizeCitySelection(parsed.returnCity);
       setFormData((prev) => ({
         ...prev,
         customerName: parsed.customerName || '',
         email: parsed.email || '',
-        phone: parsed.phone || '',
+        phone: (parsed.phone || '').replace(/\D/g, '').slice(0, 11),
         shoeType: parsed.shoeType || '',
         brand: parsed.brand || '',
-        pickupAddressLine: parsed.pickupAddressLine || '',
-        pickupBarangay: parsed.pickupBarangay || '',
-        pickupCity: parsed.pickupCity || '',
-        pickupRegion: parsed.pickupRegion || '',
-        pickupPostalCode: (parsed.pickupPostalCode || '').replace(/\D/g, ''),
-        returnAddressLine: parsed.returnAddressLine || '',
-        returnBarangay: parsed.returnBarangay || '',
-        returnCity: savedReturnCity,
-        returnRegion: parsed.returnRegion || (savedReturnCity ? DEFAULT_SHIPPING_REGION : ''),
-        returnPostalCode: (parsed.returnPostalCode || '').replace(/\D/g, ''),
       }));
       setSaveInfoForCheckout(true);
     } catch {
       localStorage.removeItem(CHECKOUT_INFO_STORAGE_KEY);
     }
   }, []);
+
+  useEffect(() => {
+    if (!authUser) return;
+
+    setFormData((current) => mergeRepairProcessPrefill(current, authUser));
+  }, [authUser?.id]);
+
+  const handleIntakeAddressSelect = useCallback((address: CustomerAddress) => {
+    setIntakeAddress(address);
+  }, []);
+  const handleReturnAddressSelect = useCallback((address: CustomerAddress) => {
+    setSeparateReturnAddress(address);
+  }, []);
+  const effectiveReturnAddress = sameAsIntakeAddress ? intakeAddress : separateReturnAddress;
+
+  useEffect(() => {
+    if (!shopId || !intakeAddress) {
+      setIntakeQuote({ status: 'idle' });
+      return;
+    }
+
+    const controller = new AbortController();
+    setIntakeQuote({ status: 'loading' });
+    fetch(`/api/repair/shops/${shopId}/delivery-quote?address_id=${intakeAddress.id}`, {
+      credentials: 'include',
+      headers: { Accept: 'application/json' },
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error('Coverage request failed');
+        return response.json();
+      })
+      .then((quote) => setIntakeQuote({ status: 'ready', ...quote }))
+      .catch((error) => {
+        if ((error as Error).name !== 'AbortError') setIntakeQuote({ status: 'error' });
+      });
+
+    return () => controller.abort();
+  }, [shopId, intakeAddress]);
+
+  useEffect(() => {
+    if (!shopId || !effectiveReturnAddress) {
+      setReturnQuote({ status: 'idle' });
+      return;
+    }
+
+    const controller = new AbortController();
+    setReturnQuote({ status: 'loading' });
+    fetch(`/api/repair/shops/${shopId}/delivery-quote?address_id=${effectiveReturnAddress.id}`, {
+      credentials: 'include',
+      headers: { Accept: 'application/json' },
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error('Coverage request failed');
+        return response.json();
+      })
+      .then((quote) => setReturnQuote({ status: 'ready', ...quote }))
+      .catch((error) => {
+        if ((error as Error).name !== 'AbortError') setReturnQuote({ status: 'error' });
+      });
+
+    return () => controller.abort();
+  }, [shopId, effectiveReturnAddress]);
+
+  const intakeShopOwnedAvailable = Boolean(intakeAddress && intakeQuote.status === 'ready' && intakeQuote.available);
+  const returnShopOwnedAvailable = Boolean(effectiveReturnAddress && returnQuote.status === 'ready' && returnQuote.available);
+
+  useEffect(() => {
+    if (formData.intakeDeliveryMethod === 'shop_pickup' && !intakeShopOwnedAvailable) {
+      setFormData((current) => ({ ...current, intakeDeliveryMethod: '' }));
+    }
+  }, [formData.intakeDeliveryMethod, intakeShopOwnedAvailable]);
+
+  useEffect(() => {
+    if (formData.returnDeliveryMethod === 'shop_delivery' && !returnShopOwnedAvailable) {
+      setFormData((current) => ({ ...current, returnDeliveryMethod: '' }));
+    }
+  }, [formData.returnDeliveryMethod, returnShopOwnedAvailable]);
 
   useEffect(() => {
     if (!saveInfoForCheckout) {
@@ -470,16 +498,6 @@ const RepairProcess: React.FC = () => {
         phone: formData.phone,
         shoeType: formData.shoeType,
         brand: formData.brand,
-        pickupAddressLine: formData.pickupAddressLine,
-        pickupBarangay: formData.pickupBarangay,
-        pickupCity: formData.pickupCity,
-        pickupRegion: formData.pickupRegion,
-        pickupPostalCode: formData.pickupPostalCode,
-        returnAddressLine: formData.returnAddressLine,
-        returnBarangay: formData.returnBarangay,
-        returnCity: formData.returnCity,
-        returnRegion: formData.returnRegion,
-        returnPostalCode: formData.returnPostalCode,
       })
     );
   }, [saveInfoForCheckout, formData]);
@@ -537,6 +555,9 @@ const RepairProcess: React.FC = () => {
   const subtotalBeforeVat = pricingBreakdown.netSubtotal;
   const vatAmount = pricingBreakdown.vatAmount;
   const grandTotalWithVat = pricingBreakdown.grandTotal;
+  const intakeQuotedFee = formData.intakeDeliveryMethod === 'shop_pickup' ? Number(intakeQuote.fee ?? 0) : 0;
+  const returnQuotedFee = formData.returnDeliveryMethod === 'shop_delivery' ? Number(returnQuote.fee ?? 0) : 0;
+  const estimatedOverallTotal = grandTotalWithVat + intakeQuotedFee + returnQuotedFee;
   const hasVisiblePolicyTerms = Object.entries(activePolicySections).some(([key, value]) => {
     if (key.startsWith('__')) return false;
     return String(value || '').trim().length > 0;
@@ -545,6 +566,10 @@ const RepairProcess: React.FC = () => {
   const showPolicyAcceptanceCard = hasVisiblePolicyTerms;
   const isSubmitDisabled = isSubmitting
     || (selectedServiceIds.length === 0 && selectedPackageId === null)
+    || !formData.intakeDeliveryMethod
+    || !formData.returnDeliveryMethod
+    || (formData.intakeDeliveryMethod !== 'walk_in' && !intakeAddress)
+    || (formData.returnDeliveryMethod !== 'walk_in' && !effectiveReturnAddress)
     || (isPolicyAcceptanceRequired && !policyAccepted);
 
   const shopAddressLine = (shopDetails?.shop_address || shopDetails?.business_address || shopDetails?.address || '').trim();
@@ -649,49 +674,36 @@ const RepairProcess: React.FC = () => {
           <span className="text-gray-600">VAT Included ({REPAIR_VAT_RATE_PERCENT}%)</span>
           <span className="text-black font-medium">₱{vatAmount.toLocaleString()}</span>
         </div>
+        <div className="flex justify-between text-sm">
+          <span className="text-gray-600">Intake fee (initial payment)</span>
+          <span className="text-black font-medium">₱{intakeQuotedFee.toLocaleString('en-PH')}</span>
+        </div>
+        <div className="flex justify-between text-sm">
+          <span className="text-gray-600">Return fee (final payment)</span>
+          <span className="text-black font-medium">₱{returnQuotedFee.toLocaleString('en-PH')}</span>
+        </div>
       </div>
 
       <div className="border-t border-gray-200 pt-4">
         <div className="flex justify-between items-baseline">
-          <span className="text-black">Total</span>
+          <span className="text-black">Estimated overall total</span>
           <div className="flex items-baseline gap-1">
             <span className="text-xs text-gray-600">PHP</span>
-            <span className="text-2xl xl:text-3xl font-bold text-black">₱{grandTotalWithVat.toLocaleString()}</span>
+            <span className="text-2xl xl:text-3xl font-bold text-black">₱{estimatedOverallTotal.toLocaleString()}</span>
           </div>
         </div>
       </div>
 
       <div className="mt-4 rounded border border-gray-200 bg-gray-50 px-3 py-3 text-xs text-gray-700">
-        You will not be charged yet. After submission, the shop will review your request and you can track status in Repairs.
+        You will not be charged yet. The intake fee is due with the first payment; the return fee is due when your shoes are ready.
       </div>
     </div>
   );
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    const nextValue =
-      name === 'pickupPostalCode' || name === 'returnPostalCode'
-        ? value.replace(/\D/g, '')
-        : value;
-
+    const nextValue = name === 'phone' ? value.replace(/\D/g, '').slice(0, 11) : value;
     setFormData(prev => ({ ...prev, [name]: nextValue }));
-  };
-
-  const handleReturnCityChange = (city: string) => {
-    const selectedCity = normalizeCitySelection(city);
-    setFormData((prev) => ({
-      ...prev,
-      returnCity: selectedCity,
-      returnRegion: selectedCity ? DEFAULT_SHIPPING_REGION : '',
-    }));
-    setIsReturnCityDropdownOpen(false);
-  };
-
-  const getCityLabel = (city?: string | null): string => {
-    const selectedCity = normalizeCitySelection(city);
-    if (!selectedCity) return '';
-    const option = PH_CITY_OPTIONS.find((cityOption) => cityOption.value === selectedCity);
-    return option?.label || selectedCity;
   };
 
   const handleServiceToggle = (serviceId: number) => {
@@ -935,6 +947,16 @@ const RepairProcess: React.FC = () => {
       return;
     }
 
+    if (!/^[0-9]{11}$/.test(formData.phone)) {
+      Swal.fire({
+        title: 'Invalid Phone Number',
+        text: 'Phone number must be exactly 11 digits.',
+        icon: 'warning',
+        confirmButtonColor: '#000000',
+      });
+      return;
+    }
+
     if (!formData.shoeType) {
       Swal.fire({
         title: 'Shoe Type Required',
@@ -955,7 +977,7 @@ const RepairProcess: React.FC = () => {
       return;
     }
 
-    if (!formData.serviceType) {
+    if (!formData.intakeDeliveryMethod) {
       Swal.fire({
         title: 'Intake Method Required',
         text: 'Please select how you will deliver your shoes to the shop',
@@ -975,33 +997,44 @@ const RepairProcess: React.FC = () => {
       return;
     }
 
-    if (formData.serviceType === 'pickup' && !shopDetails) {
+    if (formData.intakeDeliveryMethod !== 'walk_in' && !intakeAddress) {
       Swal.fire({
-        title: 'Shop Address Unavailable',
-        text: 'Unable to load the shop delivery address right now. Please refresh and try again.',
+        title: 'Address Required',
+        text: 'Choose or add the address where the courier or shop rider should collect your shoes.',
         icon: 'warning',
         confirmButtonColor: '#000000',
       });
       return;
     }
 
-    if (formData.returnDeliveryMethod !== 'walk_in') {
-      const normalizedReturnPostalCode = formData.returnPostalCode.replace(/\D/g, '');
-      const missingReturnFields =
-        !formData.returnAddressLine ||
-        !formData.returnBarangay ||
-        !formData.returnCity ||
-        !normalizedReturnPostalCode;
+    if (formData.intakeDeliveryMethod === 'shop_pickup' && !intakeShopOwnedAvailable) {
+      Swal.fire({
+        title: 'Shop Pickup Unavailable',
+        text: coverageMessage(intakeQuote),
+        icon: 'warning',
+        confirmButtonColor: '#000000',
+      });
+      return;
+    }
 
-      if (missingReturnFields) {
-        Swal.fire({
-          title: 'Return Address Required',
-          text: 'Please complete the return address details.',
-          icon: 'warning',
-          confirmButtonColor: '#000000',
-        });
-        return;
-      }
+    if (formData.returnDeliveryMethod !== 'walk_in' && !effectiveReturnAddress) {
+      Swal.fire({
+        title: 'Return Address Required',
+        text: 'Choose or add the address where your repaired shoes should be returned.',
+        icon: 'warning',
+        confirmButtonColor: '#000000',
+      });
+      return;
+    }
+
+    if (formData.returnDeliveryMethod === 'shop_delivery' && !returnShopOwnedAvailable) {
+      Swal.fire({
+        title: 'Shop Delivery Unavailable',
+        text: coverageMessage(returnQuote),
+        icon: 'warning',
+        confirmButtonColor: '#000000',
+      });
+      return;
     }
 
     const hasImages = imageUploadGroups.some(g => g.file);
@@ -1036,10 +1069,12 @@ const RepairProcess: React.FC = () => {
             <p class="user-swal2-summary-row"><span class="user-swal2-summary-label">Add-ons</span><span class="user-swal2-summary-value">${selectedPackage ? selectedAddOnServiceIds.length : 0}</span></p>
             <p class="user-swal2-summary-row"><span class="user-swal2-summary-label">Subtotal</span><span class="user-swal2-summary-value">₱${pricingBreakdown.netSubtotal.toLocaleString()}</span></p>
             <p class="user-swal2-summary-row"><span class="user-swal2-summary-label">VAT (${REPAIR_VAT_RATE_PERCENT}%)</span><span class="user-swal2-summary-value">₱${vatAmount.toLocaleString()}</span></p>
-            <p class="user-swal2-summary-row"><span class="user-swal2-summary-label">To Shop (Intake)</span><span class="user-swal2-summary-value">${formData.serviceType === 'pickup' ? 'Customer Arranged Courier Delivery' : 'Customer Walk-in Drop-off'}</span></p>
-            <p class="user-swal2-summary-row"><span class="user-swal2-summary-label">To Customer (Return)</span><span class="user-swal2-summary-value">${formData.returnDeliveryMethod === 'walk_in' ? 'Customer Pick-up at Shop' : 'Repairer Arranged Courier Delivery'}</span></p>
+            <p class="user-swal2-summary-row"><span class="user-swal2-summary-label">To Shop (Intake)</span><span class="user-swal2-summary-value">${formData.intakeDeliveryMethod === 'walk_in' ? 'Walk-in drop-off' : formData.intakeDeliveryMethod === 'shop_pickup' ? 'Shop rider pickup' : 'Third-party courier (paid directly)'}</span></p>
+            <p class="user-swal2-summary-row"><span class="user-swal2-summary-label">Intake Delivery Fee</span><span class="user-swal2-summary-value">₱${formData.intakeDeliveryMethod === 'shop_pickup' ? Number(intakeQuote.fee ?? 0).toLocaleString('en-PH') : '0'}</span></p>
+            <p class="user-swal2-summary-row"><span class="user-swal2-summary-label">To Customer (Return)</span><span class="user-swal2-summary-value">${formData.returnDeliveryMethod === 'walk_in' ? 'Walk-in collection' : formData.returnDeliveryMethod === 'shop_delivery' ? 'Shop rider delivery' : 'Third-party courier (paid directly)'}</span></p>
+            <p class="user-swal2-summary-row"><span class="user-swal2-summary-label">Return Delivery Fee</span><span class="user-swal2-summary-value">₱${formData.returnDeliveryMethod === 'shop_delivery' ? Number(returnQuote.fee ?? 0).toLocaleString('en-PH') : '0'}</span></p>
           </div>
-          <p class="user-swal2-summary-total"><span>Total</span><strong>₱${grandTotalWithVat.toLocaleString()}</strong></p>
+          <p class="user-swal2-summary-total"><span>Estimated Overall Total</span><strong>₱${estimatedOverallTotal.toLocaleString()}</strong></p>
         </div>
       `,
       icon: 'question',
@@ -1065,23 +1100,14 @@ const RepairProcess: React.FC = () => {
       submitFormData.append('shoe_type', formData.shoeType);
       submitFormData.append('brand', formData.brand);
       submitFormData.append('description', formData.description);
-      submitFormData.append('service_type', formData.serviceType);
+      submitFormData.append('intake_delivery_method', formData.intakeDeliveryMethod);
       submitFormData.append('return_delivery_method', formData.returnDeliveryMethod);
+      submitFormData.append('same_as_intake_address', sameAsIntakeAddress ? '1' : '0');
+      if (intakeAddress) submitFormData.append('intake_address_id', String(intakeAddress.id));
+      if (effectiveReturnAddress) submitFormData.append('return_address_id', String(effectiveReturnAddress.id));
       submitFormData.append('shop_owner_id', shopId || '');
       if (selectedPackageId) {
         submitFormData.append('repair_package_id', selectedPackageId.toString());
-      }
-      
-      if (formData.returnDeliveryMethod !== 'walk_in') {
-        const selectedReturnCity = normalizeCitySelection(formData.returnCity);
-        const returnRegion = formData.returnRegion || (selectedReturnCity ? DEFAULT_SHIPPING_REGION : '');
-        const normalizedReturnPostalCode = formData.returnPostalCode.replace(/\D/g, '');
-
-        submitFormData.append('return_address_line', formData.returnAddressLine);
-        submitFormData.append('return_barangay', formData.returnBarangay);
-        submitFormData.append('return_city', selectedReturnCity || formData.returnCity);
-        submitFormData.append('return_region', returnRegion);
-        submitFormData.append('return_postal_code', normalizedReturnPostalCode);
       }
       
       // Add selected service IDs
@@ -1138,7 +1164,7 @@ const RepairProcess: React.FC = () => {
         
         await Swal.fire({
           title: 'Request Submitted!',
-          text: `Your repair request has been submitted successfully. Total: ₱${grandTotalWithVat.toLocaleString()} (VAT included). We will contact you shortly.`,
+          text: `Your repair request has been submitted successfully. Estimated overall total: ₱${estimatedOverallTotal.toLocaleString()}. We will contact you shortly.`,
           icon: 'success',
           confirmButtonColor: '#000000',
         });
@@ -1156,18 +1182,8 @@ const RepairProcess: React.FC = () => {
             shoeType: '',
             brand: '',
             description: '',
-            serviceType: '',
+            intakeDeliveryMethod: '',
             returnDeliveryMethod: '',
-            pickupAddressLine: '',
-            pickupBarangay: '',
-            pickupCity: '',
-            pickupRegion: '',
-            pickupPostalCode: '',
-            returnAddressLine: '',
-            returnBarangay: '',
-            returnCity: '',
-            returnRegion: '',
-            returnPostalCode: '',
           });
         }
         setSelectedServiceIds([]);
@@ -1288,8 +1304,12 @@ const RepairProcess: React.FC = () => {
                         name="phone"
                         value={formData.phone}
                         onChange={handleInputChange}
+                        inputMode="numeric"
+                        maxLength={11}
+                        pattern="[0-9]{11}"
+                        autoComplete="tel"
                         className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
-                        placeholder="+63 912 345 6789"
+                        placeholder="09XXXXXXXXX"
                         required
                       />
                     </div>
@@ -1371,194 +1391,93 @@ const RepairProcess: React.FC = () => {
                       />
                     </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-black mb-2">How will you deliver your shoes to the shop? *</label>
-                      <p className="text-xs text-gray-600 mb-3">This determines how we'll receive your shoes for repair.</p>
-                      <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
-                        <label className="flex items-start gap-3 p-3 border border-gray-300 rounded cursor-pointer h-full">
-                          <input
-                            type="radio"
-                            name="serviceType"
-                            value="pickup"
-                            checked={formData.serviceType === 'pickup'}
-                            onChange={(e) => setFormData(prev => ({ ...prev, serviceType: e.target.value }))}
-                            className="w-4 h-4 mt-1"
-                          />
-                          <div>
-                            <span className="text-sm font-medium text-black">I'll Arrange Delivery (e.g., Lalamove)</span>
-                            <p className="text-xs text-gray-600">I'll use a courier service to deliver my shoes to the shop.</p>
-                          </div>
-                        </label>
-                        <label className="flex items-start gap-3 p-3 border border-gray-300 rounded cursor-pointer h-full">
-                          <input
-                            type="radio"
-                            name="serviceType"
-                            value="walkin"
-                            checked={formData.serviceType === 'walkin'}
-                            onChange={(e) => setFormData(prev => ({ ...prev, serviceType: e.target.value }))}
-                            className="w-4 h-4 mt-1"
-                          />
-                          <div>
-                            <span className="text-sm font-medium text-black">I'll Visit the Shop</span>
-                            <p className="text-xs text-gray-600">
-                              {shopDetails
-                                ? `I'll bring my shoes to ${shopDetails.name}`
-                                : 'I will bring my shoes to the shop in person'}
-                            </p>
-                          </div>
-                        </label>
-                      </div>
-                    </div>
-
-                    {formData.serviceType === 'pickup' && (
-                      <div className="space-y-4 border border-gray-300 rounded p-4">
-                        <p className="text-sm font-medium text-black">Courier should deliver your shoes to this shop address:</p>
-                        <div className="rounded border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-800">
-                          {exactShopAddress || (shopDetails?.location?.trim() ? shopDetails.location : 'Shop address unavailable')}
-                        </div>
-                        {hasCoordinates && (
-                          <div className="rounded border border-gray-200 bg-white px-4 py-3 text-xs text-gray-700">
-                            <span className="font-medium text-gray-900">Geo Location:</span>{' '}
-                            {lat.toFixed(6)}, {lng.toFixed(6)}
-                          </div>
-                        )}
-                        {!!shopMapsUrl && (
-                          <a
-                            href={shopMapsUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center gap-1 text-xs font-medium text-blue-700 hover:text-blue-800 underline"
-                          >
-                            Open shop location in map
-                          </a>
-                        )}
-                        <p className="text-xs text-gray-600">
-                          This address is set by the shop profile and cannot be edited here.
-                        </p>
-                      </div>
-                    )}
-
-                    <div>
-                      <label className="block text-sm font-medium text-black mb-2">How should we return your repaired shoes? *</label>
-                      <p className="text-xs text-gray-600 mb-3">This is separate from how you initially deliver the shoes to the shop.</p>
-                      <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
-                        <label className="flex items-start gap-3 p-3 border border-gray-300 rounded cursor-pointer h-full">
-                          <input
-                            type="radio"
-                            name="returnDeliveryMethod"
-                            value="walk_in"
-                            checked={formData.returnDeliveryMethod === 'walk_in'}
-                            onChange={handleInputChange}
-                            className="w-4 h-4 mt-1"
-                          />
-                          <div>
-                            <span className="text-sm font-medium text-black">Customer Pick-up at Shop</span>
-                            <p className="text-xs text-gray-600">I will personally pick up my repaired shoes at the shop.</p>
-                          </div>
-                        </label>
-
-                        <label className="flex items-start gap-3 p-3 border border-gray-300 rounded cursor-pointer h-full">
-                          <input
-                            type="radio"
-                            name="returnDeliveryMethod"
-                            value="shop_delivery"
-                            checked={formData.returnDeliveryMethod === 'shop_delivery'}
-                            onChange={handleInputChange}
-                            className="w-4 h-4 mt-1"
-                          />
-                          <div>
-                            <span className="text-sm font-medium text-black">Repairer Arranged Courier Delivery</span>
-                            <p className="text-xs text-gray-600">The repair shop will arrange a courier to deliver your repaired shoes to your address.</p>
-                          </div>
-                        </label>
-                      </div>
-                    </div>
-
-                    {formData.returnDeliveryMethod !== '' && formData.returnDeliveryMethod !== 'walk_in' && (
-                      <div className="space-y-4 border border-gray-300 rounded p-4">
-                        <p className="text-sm font-medium text-black">Return Address</p>
+                    <section className="space-y-4 rounded-2xl border border-gray-200 bg-gray-50/70 p-4 xl:p-5" aria-labelledby="repair-intake-heading">
+                      <div className="flex items-start gap-3">
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-black text-sm font-bold text-white">1</span>
                         <div>
-                          <label className="block text-sm font-medium text-black mb-2">Address line</label>
-                          <input
-                            type="text"
-                            name="returnAddressLine"
-                            value={formData.returnAddressLine}
-                            onChange={handleInputChange}
-                            className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
-                            placeholder="House no., street, building"
-                            required
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-black mb-2">Barangay</label>
-                          <input
-                            type="text"
-                            name="returnBarangay"
-                            value={formData.returnBarangay}
-                            onChange={handleInputChange}
-                            className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
-                            placeholder="Barangay"
-                            required
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-black mb-2">City</label>
-                          <div ref={returnCityDropdownRef} className="relative">
-                            <button
-                              type="button"
-                              onClick={() => setIsReturnCityDropdownOpen((prev) => !prev)}
-                              className="flex w-full items-center justify-between rounded border border-gray-300 bg-white px-4 py-3 text-left"
-                              title="City"
-                              aria-label="City"
-                              aria-haspopup="listbox"
-                            >
-                              <span className={formData.returnCity ? 'text-black' : 'text-gray-500'}>
-                                {getCityLabel(formData.returnCity) || 'Select City'}
-                              </span>
-                              <svg className={`h-4 w-4 text-gray-500 transition-transform ${isReturnCityDropdownOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                              </svg>
-                            </button>
-
-                            {isReturnCityDropdownOpen && (
-                              <div className="hide-scrollbar absolute left-0 right-0 top-full z-30 mt-1 max-h-56 overflow-y-auto rounded border border-gray-300 bg-white shadow-lg">
-                                <button
-                                  type="button"
-                                  onClick={() => handleReturnCityChange('')}
-                                  className="w-full border-b border-gray-100 px-4 py-2 text-left text-sm text-gray-600 hover:bg-gray-50"
-                                >
-                                  Select City
-                                </button>
-                                {PH_CITY_OPTIONS.map((cityOption) => (
-                                  <button
-                                    key={cityOption.value}
-                                    type="button"
-                                    onClick={() => handleReturnCityChange(cityOption.value)}
-                                    className={`w-full border-b border-gray-100 px-4 py-2 text-left text-sm hover:bg-gray-50 last:border-b-0 ${formData.returnCity === cityOption.value ? 'bg-gray-50 font-medium text-black' : 'text-black'}`}
-                                  >
-                                    {cityOption.label}
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-black mb-2">Postal code</label>
-                          <input
-                            type="text"
-                            name="returnPostalCode"
-                            value={formData.returnPostalCode}
-                            onChange={handleInputChange}
-                            inputMode="numeric"
-                            pattern="[0-9]*"
-                            className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
-                            placeholder="Postal code"
-                            required
-                          />
+                          <h3 id="repair-intake-heading" className="text-lg font-semibold text-black">Send shoes to shop</h3>
+                          <p className="text-sm text-gray-600">Choose who will bring your shoes before repair starts.</p>
                         </div>
                       </div>
-                    )}
+
+                      <CustomerAddressManager
+                        title="Pickup / courier address"
+                        description="Choose or pin your address once. Coverage only affects the shop rider option."
+                        onSelect={handleIntakeAddressSelect}
+                        onSelectionCleared={() => setIntakeAddress(null)}
+                        initialAddressId={initialAddressId}
+                        allowIncompleteMapAddress
+                        embeddedInForm
+                      />
+
+                      <div className="grid gap-3 xl:grid-cols-3">
+                        <label className={`flex min-h-28 items-start gap-3 rounded-xl border p-3 ${formData.intakeDeliveryMethod === 'walk_in' ? 'border-black bg-white ring-1 ring-black' : 'border-gray-300 bg-white'}`}>
+                          <input type="radio" name="intakeDeliveryMethod" value="walk_in" checked={formData.intakeDeliveryMethod === 'walk_in'} onChange={handleInputChange} className="mt-1 h-4 w-4" />
+                          <span><span className="block text-sm font-semibold text-black">Bring it myself</span><span className="mt-1 block text-xs text-gray-600">Walk in and hand your shoes to the shop.</span></span>
+                        </label>
+                        <label className={`flex min-h-28 items-start gap-3 rounded-xl border p-3 ${intakeShopOwnedAvailable ? 'cursor-pointer bg-white' : 'cursor-not-allowed bg-gray-100 opacity-70'} ${formData.intakeDeliveryMethod === 'shop_pickup' ? 'border-black ring-1 ring-black' : 'border-gray-300'}`}>
+                          <input type="radio" name="intakeDeliveryMethod" value="shop_pickup" checked={formData.intakeDeliveryMethod === 'shop_pickup'} onChange={handleInputChange} disabled={!intakeShopOwnedAvailable} className="mt-1 h-4 w-4" />
+                          <span><span className="block text-sm font-semibold text-black">Shop rider pickup</span><span className="mt-1 block text-xs text-gray-600">The shop's Logistics rider collects from your pinned address.</span><span className={`mt-2 block text-xs font-semibold ${intakeQuote.available ? 'text-green-700' : 'text-amber-700'}`}>{coverageMessage(intakeQuote)}</span></span>
+                        </label>
+                        <label className={`flex min-h-28 items-start gap-3 rounded-xl border bg-white p-3 ${formData.intakeDeliveryMethod === 'customer_delivery' ? 'border-black ring-1 ring-black' : 'border-gray-300'}`}>
+                          <input type="radio" name="intakeDeliveryMethod" value="customer_delivery" checked={formData.intakeDeliveryMethod === 'customer_delivery'} onChange={handleInputChange} className="mt-1 h-4 w-4" />
+                          <span><span className="block text-sm font-semibold text-black">Third-party courier</span><span className="mt-1 block text-xs text-gray-600">You arrange and pay the courier directly. This remains available outside shop coverage.</span></span>
+                        </label>
+                      </div>
+
+                      {formData.intakeDeliveryMethod === 'customer_delivery' && (
+                        <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+                          Courier destination: <strong>{exactShopAddress || shopDetails?.location || 'Shop address unavailable'}</strong>
+                          {!!shopMapsUrl && <a href={shopMapsUrl} target="_blank" rel="noreferrer" className="ml-2 font-semibold underline">Open map</a>}
+                        </div>
+                      )}
+                    </section>
+
+                    <section className="space-y-4 rounded-2xl border border-gray-200 bg-gray-50/70 p-4 xl:p-5" aria-labelledby="repair-return-heading">
+                      <div className="flex items-start gap-3">
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-black text-sm font-bold text-white">2</span>
+                        <div>
+                          <h3 id="repair-return-heading" className="text-lg font-semibold text-black">Return repaired shoes</h3>
+                          <p className="text-sm text-gray-600">Choose how you want your shoes back after repair.</p>
+                        </div>
+                      </div>
+
+                      <label className="flex min-h-11 items-center gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-black">
+                        <input type="checkbox" checked={sameAsIntakeAddress} onChange={(event) => setSameAsIntakeAddress(event.target.checked)} className="h-4 w-4" />
+                        Same as intake address
+                      </label>
+
+                      {sameAsIntakeAddress ? (
+                        <div className="rounded-xl border border-gray-200 bg-white p-3 text-sm text-gray-700">
+                          {intakeAddress ? `Using ${intakeAddress.address_line}, ${intakeAddress.city}` : 'Choose an intake address above to use it for return.'}
+                        </div>
+                      ) : (
+                        <CustomerAddressManager
+                          title="Separate return address"
+                          description="Choose a different pinned address for the repaired-shoe return."
+                          onSelect={handleReturnAddressSelect}
+                          onSelectionCleared={() => setSeparateReturnAddress(null)}
+                          initialAddressId={initialAddressId}
+                          allowIncompleteMapAddress
+                          embeddedInForm
+                        />
+                      )}
+
+                      <div className="grid gap-3 xl:grid-cols-3">
+                        <label className={`flex min-h-28 items-start gap-3 rounded-xl border bg-white p-3 ${formData.returnDeliveryMethod === 'walk_in' ? 'border-black ring-1 ring-black' : 'border-gray-300'}`}>
+                          <input type="radio" name="returnDeliveryMethod" value="walk_in" checked={formData.returnDeliveryMethod === 'walk_in'} onChange={handleInputChange} className="mt-1 h-4 w-4" />
+                          <span><span className="block text-sm font-semibold text-black">Collect at shop</span><span className="mt-1 block text-xs text-gray-600">Pick up the repaired shoes yourself.</span></span>
+                        </label>
+                        <label className={`flex min-h-28 items-start gap-3 rounded-xl border p-3 ${returnShopOwnedAvailable ? 'cursor-pointer bg-white' : 'cursor-not-allowed bg-gray-100 opacity-70'} ${formData.returnDeliveryMethod === 'shop_delivery' ? 'border-black ring-1 ring-black' : 'border-gray-300'}`}>
+                          <input type="radio" name="returnDeliveryMethod" value="shop_delivery" checked={formData.returnDeliveryMethod === 'shop_delivery'} onChange={handleInputChange} disabled={!returnShopOwnedAvailable} className="mt-1 h-4 w-4" />
+                          <span><span className="block text-sm font-semibold text-black">Shop rider delivery</span><span className="mt-1 block text-xs text-gray-600">The shop's Logistics rider delivers to the selected address.</span><span className={`mt-2 block text-xs font-semibold ${returnQuote.available ? 'text-green-700' : 'text-amber-700'}`}>{coverageMessage(returnQuote)}</span></span>
+                        </label>
+                        <label className={`flex min-h-28 items-start gap-3 rounded-xl border bg-white p-3 ${formData.returnDeliveryMethod === 'customer_pickup' ? 'border-black ring-1 ring-black' : 'border-gray-300'}`}>
+                          <input type="radio" name="returnDeliveryMethod" value="customer_pickup" checked={formData.returnDeliveryMethod === 'customer_pickup'} onChange={handleInputChange} className="mt-1 h-4 w-4" />
+                          <span><span className="block text-sm font-semibold text-black">Third-party courier</span><span className="mt-1 block text-xs text-gray-600">You arrange and pay the courier directly. This remains available outside shop coverage.</span></span>
+                        </label>
+                      </div>
+                    </section>
 
                     <div>
                       <label className="block text-sm font-medium text-black mb-2">Select Repair Package</label>
@@ -1801,8 +1720,8 @@ const RepairProcess: React.FC = () => {
               <div className="mx-auto max-w-7xl px-4 sm:px-6 py-3 flex items-end justify-between gap-3">
                 <div>
                   <p className="text-xs text-gray-600">Total</p>
-                  <p className="text-4xl font-bold text-black leading-none">₱{grandTotalWithVat.toLocaleString()}</p>
-                  <p className="text-[10px] text-gray-500 mt-1">Includes VAT ({REPAIR_VAT_RATE_PERCENT}%)</p>
+                  <p className="text-4xl font-bold text-black leading-none">₱{estimatedOverallTotal.toLocaleString()}</p>
+                  <p className="text-[10px] text-gray-500 mt-1">Service, VAT, and selected shop delivery fees</p>
                 </div>
                 <button
                   type="submit"

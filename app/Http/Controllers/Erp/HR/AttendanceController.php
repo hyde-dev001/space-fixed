@@ -304,7 +304,9 @@ class AttendanceController extends Controller
 
         // Determine status based on check-in time
         $standardTime = $shopOpenTime;
-        $status = $now->gt($standardTime) ? 'late' : 'present';
+        $status = $now->copy()->startOfMinute()->gt($standardTime->copy()->startOfMinute())
+            ? 'late'
+            : 'present';
 
         if ($existingRecord) {
             // Update existing record
@@ -659,7 +661,9 @@ class AttendanceController extends Controller
             ? Carbon::now($shopTimezone)->startOfDay()->setTimeFromTimeString($shopOpenTimeValue)
             : Carbon::parse('08:00:00', $shopTimezone);
         
-        $status = $now->gt($standardTime) ? 'late' : 'present';
+        $status = $now->copy()->startOfMinute()->gt($standardTime->copy()->startOfMinute())
+            ? 'late'
+            : 'present';
 
         if ($existingRecord) {
             // Update existing record
@@ -1012,7 +1016,11 @@ class AttendanceController extends Controller
             return response()->json(['error' => 'You have already checked out today'], 422);
         }
 
-        if ($attendance->lunch_break_start && !$attendance->lunch_break_end) {
+        if ($attendance->lunch_break_end) {
+            return response()->json(['error' => 'Lunch break already ended'], 422);
+        }
+
+        if ($attendance->lunch_break_start) {
             return response()->json(['error' => 'Lunch break already started'], 422);
         }
 
@@ -1399,14 +1407,28 @@ class AttendanceController extends Controller
     public function getByEmployee(Request $request, $employeeId): JsonResponse
     {
         $user = Auth::guard('user')->user();
-        
+        $shopOwner = Auth::guard('shop_owner')->user();
+        $shopOwnerId = $shopOwner?->getKey() ?? $user?->shop_owner_id;
+
         // Check if user is Manager or has any HR-related permissions
-        if (!$user->hasRole('Manager') && !$user->can('access-employee-directory') && !$user->can('access-attendance-records') && !$user->can('access-payslip-generation') && !$user->can('access-view-payslip')) {
+        if (
+            ! $shopOwner
+            && (
+                ! $user
+                || (
+                    ! $user->hasRole('Manager')
+                    && ! $user->can('access-employee-directory')
+                    && ! $user->can('access-attendance-records')
+                    && ! $user->can('access-payslip-generation')
+                    && ! $user->can('access-view-payslip')
+                )
+            )
+        ) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
         // Check if employee belongs to the same shop owner
-        $employee = Employee::forShopOwner($user->shop_owner_id)
+        $employee = Employee::forShopOwner((int) $shopOwnerId)
             ->findOrFail($employeeId);
 
         $validator = Validator::make($request->all(), [
@@ -1477,14 +1499,14 @@ class AttendanceController extends Controller
             }
         }
 
-        $holidays = HolidayCalendar::where('shop_owner_id', $user->shop_owner_id)
+        $holidays = HolidayCalendar::where('shop_owner_id', $shopOwnerId)
             ->where('is_active', true)
             ->whereBetween('holiday_date', [$startDate, $endDate])
             ->get()
             ->keyBy(fn ($holiday) => $holiday->holiday_date->toDateString());
-        $shopOwner = ShopOwner::find($user->shop_owner_id);
+        $shopOwner = ShopOwner::find($shopOwnerId);
 
-        $branchSetting = BranchPayrollSetting::where('shop_owner_id', $user->shop_owner_id)
+        $branchSetting = BranchPayrollSetting::where('shop_owner_id', $shopOwnerId)
             ->where('is_active', true)
             ->first();
         $ndStart = $branchSetting?->night_differential_start ?? '22:00:00';

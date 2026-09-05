@@ -24,6 +24,8 @@ class RolesAndPermissionsSeeder extends Seeder
             'access-finance-dashboard',
             'access-finance-expenses',
             'access-finance-invoices',
+            'manage-finance-tax',
+            'disburse-payroll',
             'access-purchase-request-approval',
             'access-approval-workflow',
             'access-payslip-approval',
@@ -39,6 +41,9 @@ class RolesAndPermissionsSeeder extends Seeder
             'access-overtime-approvals',
             'access-payslip-generation',
             'access-view-payslip',
+            'request-employee-suspensions',
+            'request-employee-terminations',
+            'request-employee-rehires',
             
             // ===== CRM MODULE =====
             'access-crm-dashboard',
@@ -49,9 +54,24 @@ class RolesAndPermissionsSeeder extends Seeder
             
             // ===== MANAGER MODULE =====
             'access-manager-dashboard',
+            'access-manager-job-orders',
+            'access-manager-repair-jobs',
+            'access-manager-staff-workload',
+            'access-manager-leave-approvals',
+            'access-manager-suspension-approvals',
+            'access-manager-termination-approvals',
+            'access-manager-rehire-approvals',
             'access-audit-logs',
             'access-manager-reports',
             'access-inventory-overview',
+            'reassign-manager-job-orders',
+            'review-manager-repair-jobs',
+            'decide-manager-leave-approvals',
+            'decide-manager-suspension-approvals',
+            'decide-manager-termination-approvals',
+            'decide-manager-rehire-approvals',
+            'generate-manager-reports',
+            'review-manager-reports',
             'access-product-upload-manager',
             'access-repair-reject-review',
             'access-suspend-account',
@@ -79,6 +99,18 @@ class RolesAndPermissionsSeeder extends Seeder
             'access-suppliers-management',
             'access-supplier-order-monitoring',
             'view-procurement', // Required for erp/procurement route group
+            'procurement.view',
+            'procurement.create_purchase_requests',
+            'procurement.submit_purchase_requests',
+            'procurement.review_purchase_requests',
+            'procurement.create_purchase_orders',
+            'procurement.manage_purchase_orders',
+            'procurement.receive_purchase_orders',
+            'procurement.complete_purchase_orders',
+            'procurement.cancel_purchase_orders',
+            'procurement.void_purchase_order_receipts',
+            'procurement.manage_suppliers',
+            'procurement.review_stock_requests',
             
             // ===== STAFF MODULE =====
             'access-staff-dashboard',
@@ -99,6 +131,22 @@ class RolesAndPermissionsSeeder extends Seeder
             // ===== RBAC & ADMIN MANAGEMENT =====
             'manage-employee-permissions',
             'access-unified-pos',
+            'access-logistics-dashboard',
+            'view-logistics-shipments',
+            'assign-logistics-deliveries',
+            'manage-logistics-riders',
+            'update-logistics-status',
+            'record-logistics-proof',
+            'approve-proof-of-delivery',
+            'view-proof-of-delivery',
+            'manage-logistics-deliveries',
+            'operate-logistics-deliveries',
+            'manage-logistics-courier-providers',
+            'manage-logistics-shipping-methods',
+            'configure-logistics-settings',
+            'manage-logistics-batches',
+            'operate-assigned-batches',
+            'resolve-logistics-exceptions',
 
             // ===== COMMON/GLOBAL =====
             'access-global-search',
@@ -118,17 +166,30 @@ class RolesAndPermissionsSeeder extends Seeder
 
         $this->command->info('Assigning simplified permissions to roles...');
 
-        // 1. Manager Role - Full System Access & User Management
+        // 1. Manager Role - Manager operations and global header access
         $manager = Role::firstOrCreate(['name' => 'Manager', 'guard_name' => 'user']);
         $manager->syncPermissions([
             // Manager Pages
             'access-manager-dashboard',
+            'access-manager-job-orders',
+            'access-manager-repair-jobs',
+            'access-manager-staff-workload',
+            'access-manager-leave-approvals',
+            'access-manager-suspension-approvals',
+            'access-manager-termination-approvals',
+            'access-manager-rehire-approvals',
             'access-audit-logs',
             'access-manager-reports',
+            'generate-manager-reports',
+            'review-manager-reports',
             'access-inventory-overview',
-            'access-product-upload-manager',
-            'access-repair-reject-review',
-            'access-suspend-account',
+            // Manager mutations
+            'reassign-manager-job-orders',
+            'review-manager-repair-jobs',
+            'decide-manager-leave-approvals',
+            'decide-manager-suspension-approvals',
+            'decide-manager-termination-approvals',
+            'decide-manager-rehire-approvals',
             // Global Access
             'access-global-search',
             'access-notification-center',
@@ -143,12 +204,14 @@ class RolesAndPermissionsSeeder extends Seeder
             'access-finance-dashboard',
             'access-finance-expenses',
             'access-finance-invoices',
+            'manage-finance-tax',
             'access-purchase-request-approval',
             'access-approval-workflow',
             'access-payslip-approval',
             'access-refund-approval',
             'access-repair-price-approval',
             'access-shoe-price-approval',
+            'procurement.review_purchase_requests',
             // Global Access
             'access-global-search',
             'access-notification-center',
@@ -167,6 +230,9 @@ class RolesAndPermissionsSeeder extends Seeder
             'access-overtime-approvals',
             'access-payslip-generation',
             'access-view-payslip',
+            'request-employee-suspensions',
+            'request-employee-terminations',
+            'request-employee-rehires',
             // Salary Change Workflow
             'manage-salary-changes',
             // RBAC & Permissions Management
@@ -222,7 +288,10 @@ class RolesAndPermissionsSeeder extends Seeder
             'access-stock-movement',
             'access-upload-inventory',
             'access-inventory-overview',
+            'access-supplier-order-monitoring',
             'view-inventory', // Required for erp/inventory route group
+            'procurement.view',
+            'procurement.receive_purchase_orders',
             // Global Access
             'access-global-search',
             'access-notification-center',
@@ -241,6 +310,15 @@ class RolesAndPermissionsSeeder extends Seeder
             'access-suppliers-management',
             'access-supplier-order-monitoring',
             'view-procurement', // Required for erp/procurement route group
+            'procurement.view',
+            'procurement.create_purchase_requests',
+            'procurement.submit_purchase_requests',
+            'procurement.create_purchase_orders',
+            'procurement.manage_purchase_orders',
+            'procurement.complete_purchase_orders',
+            'procurement.cancel_purchase_orders',
+            'procurement.manage_suppliers',
+            'procurement.review_stock_requests',
             // Global Access
             'access-global-search',
             'access-notification-center',
@@ -278,6 +356,36 @@ class RolesAndPermissionsSeeder extends Seeder
         ]);
         $this->command->info('✓ Cashier role: ' . $cashier->permissions->count() . ' permissions (Unified POS access)');
 
+        $logisticsDispatcher = Role::firstOrCreate(['name' => 'Logistics Dispatcher', 'guard_name' => 'user']);
+        $logisticsDispatcher->syncPermissions([
+            'access-logistics-dashboard',
+            'view-logistics-shipments',
+            'assign-logistics-deliveries',
+            'manage-logistics-riders',
+            'update-logistics-status',
+            'record-logistics-proof',
+            'configure-logistics-settings',
+            'manage-logistics-batches',
+            'resolve-logistics-exceptions',
+            'access-global-search',
+            'access-notification-center',
+            'access-profile',
+        ]);
+
+        $logisticsRider = Role::firstOrCreate(['name' => 'Logistics Rider', 'guard_name' => 'user']);
+        $logisticsRider->syncPermissions([
+            'access-logistics-dashboard',
+            'view-logistics-shipments',
+            'update-logistics-status',
+            'record-logistics-proof',
+            'operate-logistics-deliveries',
+            'operate-assigned-batches',
+            'access-notification-center',
+            'access-profile',
+        ]);
+
+        $this->seedShippingMethods();
+
         // ===== SHOP OWNER GUARD =====
         
         $this->command->info('Creating Shop Owner role...');
@@ -312,5 +420,23 @@ class RolesAndPermissionsSeeder extends Seeder
         $this->command->info('');
         $this->command->info('💡 HR/Shop Owner can grant additional permissions on top of role!');
         $this->command->info('========================================');
+    }
+
+    private function seedShippingMethods(): void
+    {
+        $methods = [
+            ['code' => 'shop_owned_delivery', 'name' => 'Shop Owned Delivery', 'carrier_type' => 'internal', 'requires_assignment' => true, 'requires_tracking' => false, 'requires_pickup_proof' => true, 'requires_delivery_proof' => true],
+            ['code' => 'third_party_courier', 'name' => 'Third Party Courier', 'carrier_type' => 'external', 'requires_assignment' => false, 'requires_tracking' => true, 'requires_pickup_proof' => false, 'requires_delivery_proof' => true],
+            ['code' => 'customer_pickup', 'name' => 'Customer Pickup', 'carrier_type' => 'customer_controlled', 'requires_assignment' => false, 'requires_tracking' => false, 'requires_pickup_proof' => false, 'requires_delivery_proof' => true],
+            ['code' => 'customer_arranged_courier', 'name' => 'Customer Arranged Courier', 'carrier_type' => 'customer_controlled', 'requires_assignment' => false, 'requires_tracking' => true, 'requires_pickup_proof' => false, 'requires_delivery_proof' => true],
+            ['code' => 'walk_in_dropoff', 'name' => 'Walk-in Dropoff', 'carrier_type' => 'customer_controlled', 'requires_assignment' => false, 'requires_tracking' => false, 'requires_pickup_proof' => false, 'requires_delivery_proof' => true],
+        ];
+
+        foreach ($methods as $method) {
+            \App\Models\Logistics\ShippingMethod::firstOrCreate(
+                ['shop_owner_id' => null, 'code' => $method['code']],
+                [...$method, 'active' => true]
+            );
+        }
     }
 }

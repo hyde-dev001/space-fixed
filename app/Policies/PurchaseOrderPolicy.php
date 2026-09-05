@@ -30,7 +30,7 @@ class PurchaseOrderPolicy
             'access-purchase-orders',
             'access-procurement-dashboard',
             'view-procurement',
-            'procurement.view_purchase_orders',
+            'procurement.view',
         ]);
     }
 
@@ -43,7 +43,7 @@ class PurchaseOrderPolicy
             'access-purchase-orders',
             'access-procurement-dashboard',
             'view-procurement',
-            'procurement.view_purchase_orders',
+            'procurement.view',
         ])
             && $user->shop_owner_id === $purchaseOrder->shop_owner_id;
     }
@@ -53,11 +53,7 @@ class PurchaseOrderPolicy
      */
     public function create(User $user): bool
     {
-        return $this->canWithFallback($user, [
-            'access-purchase-orders',
-            'access-procurement-dashboard',
-            'procurement.create_purchase_orders',
-        ]);
+        return $user->can('procurement.create_purchase_orders');
     }
 
     /**
@@ -65,11 +61,7 @@ class PurchaseOrderPolicy
      */
     public function update(User $user, PurchaseOrder $purchaseOrder): bool
     {
-        return $this->canWithFallback($user, [
-            'access-purchase-orders',
-            'access-procurement-dashboard',
-            'procurement.edit_purchase_orders',
-        ])
+        return $user->can('procurement.manage_purchase_orders')
             && $user->shop_owner_id === $purchaseOrder->shop_owner_id
             && $purchaseOrder->status === 'draft';
     }
@@ -79,11 +71,7 @@ class PurchaseOrderPolicy
      */
     public function delete(User $user, PurchaseOrder $purchaseOrder): bool
     {
-        return $this->canWithFallback($user, [
-            'access-purchase-orders',
-            'access-procurement-dashboard',
-            'procurement.delete_purchase_orders',
-        ])
+        return $user->can('procurement.cancel_purchase_orders')
             && $user->shop_owner_id === $purchaseOrder->shop_owner_id
             && $purchaseOrder->status === 'draft';
     }
@@ -93,11 +81,7 @@ class PurchaseOrderPolicy
      */
     public function updateStatus(User $user, PurchaseOrder $purchaseOrder): bool
     {
-        return $this->canWithFallback($user, [
-            'access-purchase-orders',
-            'access-procurement-dashboard',
-            'procurement.manage_purchase_orders',
-        ])
+        return $user->can('procurement.manage_purchase_orders')
             && $user->shop_owner_id === $purchaseOrder->shop_owner_id
             && !in_array($purchaseOrder->status, ['completed', 'cancelled']);
     }
@@ -107,13 +91,31 @@ class PurchaseOrderPolicy
      */
     public function cancel(User $user, PurchaseOrder $purchaseOrder): bool
     {
-        return $this->canWithFallback($user, [
-            'access-purchase-orders',
-            'access-procurement-dashboard',
-            'procurement.cancel_purchase_orders',
-        ])
+        return $user->can('procurement.cancel_purchase_orders')
             && $user->shop_owner_id === $purchaseOrder->shop_owner_id
-            && !in_array($purchaseOrder->status, ['delivered', 'completed', 'cancelled']);
+            && $purchaseOrder->isCancellableState();
+    }
+
+    public function complete(User $user, PurchaseOrder $purchaseOrder): bool
+    {
+        return $user->can('procurement.complete_purchase_orders')
+            && $user->shop_owner_id === $purchaseOrder->shop_owner_id
+            && $purchaseOrder->isAwaitingClosure();
+    }
+
+    public function receive(User $user, PurchaseOrder $purchaseOrder): bool
+    {
+        return $user->can('procurement.receive_purchase_orders')
+            && $user->can('view-inventory')
+            && $user->shop_owner_id === $purchaseOrder->shop_owner_id
+            && !$purchaseOrder->is_historical
+            && $purchaseOrder->isReceiving();
+    }
+
+    public function voidReceipt(User $user, PurchaseOrder $purchaseOrder): bool
+    {
+        return $user->can('procurement.void_purchase_order_receipts')
+            && $user->shop_owner_id === $purchaseOrder->shop_owner_id;
     }
 
     /**
@@ -121,11 +123,7 @@ class PurchaseOrderPolicy
      */
     public function restore(User $user, PurchaseOrder $purchaseOrder): bool
     {
-        return $this->canWithFallback($user, [
-            'access-purchase-orders',
-            'access-procurement-dashboard',
-            'procurement.delete_purchase_orders',
-        ])
+        return $user->can('procurement.cancel_purchase_orders')
             && $user->shop_owner_id === $purchaseOrder->shop_owner_id;
     }
 
@@ -134,11 +132,7 @@ class PurchaseOrderPolicy
      */
     public function forceDelete(User $user, PurchaseOrder $purchaseOrder): bool
     {
-        return $this->canWithFallback($user, [
-            'access-purchase-orders',
-            'access-procurement-dashboard',
-            'procurement.delete_purchase_orders',
-        ])
+        return $user->can('procurement.cancel_purchase_orders')
             && $user->shop_owner_id === $purchaseOrder->shop_owner_id;
     }
 }

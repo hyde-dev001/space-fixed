@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect, useCallback } from "react";
+import { usePage } from "@inertiajs/react";
 import { createPortal } from "react-dom";
 import Swal from "sweetalert2";
 
@@ -215,8 +216,11 @@ const transformOvertimeFromApi = (apiOvertime: any): OvertimeRequest => {
 };
 
 export function OvertimeRequests() {
-  const [overtimeRequestsState, setOvertimeRequestsState] = useState<OvertimeRequest[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { auth, initialOvertimeRequests } = usePage().props as any;
+  const ownerMode = auth?.erpActor?.ownerMode === true;
+  const seededRequests = initialOvertimeRequests?.data?.map(transformOvertimeFromApi) ?? [];
+  const [overtimeRequestsState, setOvertimeRequestsState] = useState<OvertimeRequest[]>(seededRequests);
+  const [isLoading, setIsLoading] = useState(!ownerMode && !initialOvertimeRequests);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedStatus, setSelectedStatus] = useState<OvertimeStatus | "">("");
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
@@ -242,6 +246,8 @@ export function OvertimeRequests() {
   const [paginationMeta, setPaginationMeta] = useState<any>(null);
 
   const fetchOvertimeRequests = useCallback(async () => {
+    if (ownerMode || initialOvertimeRequests) return;
+
     setIsLoading(true);
     try {
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
@@ -292,7 +298,7 @@ export function OvertimeRequests() {
     } finally {
       setIsLoading(false);
     }
-  }, [searchTerm, selectedStatus, currentPage, itemsPerPage]);
+  }, [searchTerm, selectedStatus, currentPage, itemsPerPage, ownerMode, initialOvertimeRequests]);
 
   // Fetch overtime requests from API
   useEffect(() => {
@@ -335,7 +341,7 @@ export function OvertimeRequests() {
   };
 
   const handleApprove = async (request: OvertimeRequest) => {
-    if (processingAction) return;
+    if (ownerMode || processingAction) return;
 
     const result = await Swal.fire({
       title: "Approve Overtime Request?",
@@ -408,6 +414,8 @@ export function OvertimeRequests() {
   };
 
   const handleReject = (request: OvertimeRequest) => {
+    if (ownerMode) return;
+
     setRequestToReject(request);
     setRejectionReason("");
     setOtherRejectionReason("");
@@ -415,7 +423,7 @@ export function OvertimeRequests() {
   };
 
   const handleConfirmReject = async () => {
-    if (processingAction) return;
+    if (ownerMode || processingAction) return;
 
     const finalRejectionReason =
       rejectionReason === "Other" ? otherRejectionReason.trim() : rejectionReason.trim();
@@ -486,6 +494,8 @@ export function OvertimeRequests() {
 
   // Fetch employees when assign modal opens
   useEffect(() => {
+    if (ownerMode) return;
+
     if (isAssignModalOpen && employees.length === 0) {
       const fetchEmployees = async () => {
         try {
@@ -521,9 +531,11 @@ export function OvertimeRequests() {
       };
       fetchEmployees();
     }
-  }, [isAssignModalOpen, employees.length]);
+  }, [isAssignModalOpen, employees.length, ownerMode]);
 
   const handleAssignOvertime = async () => {
+    if (ownerMode) return;
+
     if (!assignData.employee_id || !assignData.overtime_date || !assignData.start_time || 
         !assignData.end_time || !assignData.reason.trim()) {
       Swal.fire({
@@ -621,15 +633,17 @@ export function OvertimeRequests() {
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Overtime Requests</h1>
           <p className="text-gray-600 dark:text-gray-400 mt-2">Manage and review employee overtime requests</p>
         </div>
-        <button
-          onClick={() => setIsAssignModalOpen(true)}
-          className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl transition-colors duration-200 shadow-md hover:shadow-lg flex items-center gap-2"
-        >
-          <svg className="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-          </svg>
-          Assign Overtime
-        </button>
+        {!ownerMode && (
+          <button
+            onClick={() => setIsAssignModalOpen(true)}
+            className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl transition-colors duration-200 shadow-md hover:shadow-lg flex items-center gap-2"
+          >
+            <svg className="size-5" fill="none" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+            </svg>
+            Assign Overtime
+          </button>
+        )}
       </div>
 
       {/* Metrics */}
@@ -1017,7 +1031,7 @@ export function OvertimeRequests() {
                   {/* Modal Actions */}
                   <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
                     <div className="flex justify-end gap-3">
-                      {selectedRequest.status === "pending" && (
+                      {!ownerMode && selectedRequest.status === "pending" && (
                         <>
                           <button
                             onClick={() => handleApprove(selectedRequest)}

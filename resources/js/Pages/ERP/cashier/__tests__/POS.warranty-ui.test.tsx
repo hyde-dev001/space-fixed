@@ -52,6 +52,7 @@ const buildRepairHistoryRow = (overrides: Record<string, unknown> = {}) => ({
   total_amount: 500,
   payment_lines: [{ tender_type: "cash" }],
   refunds: [],
+  repair_request: { status: "picked_up" },
   receipt: {
     receipt_no: "RCP-TEST-001",
     issued_at: "2026-04-12T10:00:00.000Z",
@@ -138,6 +139,55 @@ describe("Cashier POS warranty UI", () => {
     });
 
     expect(screen.queryByRole("button", { name: "Warranty" })).not.toBeInTheDocument();
+  });
+
+  it("offers a manual POS refund for a rejected no-account repair", async () => {
+    historyRows = [
+      buildRepairHistoryRow({
+        repair_request: { status: "rejected" },
+      }),
+    ];
+    swalFireMock.mockImplementation(async (config: any) => {
+      if (config?.title === "Confirm Manual POS Refund") {
+        return { isConfirmed: true };
+      }
+
+      return { isConfirmed: false };
+    });
+    axiosPostMock.mockImplementation((url: string) => {
+      if (url === "/api/repair-pos/refunds/manual-rejected-no-account") {
+        return Promise.resolve({
+          data: {
+            success: true,
+            refund_id: 77,
+            data: {
+              status: "succeeded",
+              approved_amount: 500,
+            },
+          },
+        });
+      }
+
+      return Promise.resolve({ data: {} });
+    });
+
+    render(<CashierPOS />);
+
+    fireEvent.click(screen.getByRole("button", { name: /history/i }));
+
+    const refundButton = await screen.findByRole("button", { name: "Manual POS Refund" });
+    fireEvent.click(refundButton);
+
+    await waitFor(() => {
+      expect(axiosPostMock).toHaveBeenCalledWith(
+        "/api/repair-pos/refunds/manual-rejected-no-account",
+        {
+          source_transaction_id: 10,
+          receipt_no: "RCP-TEST-001",
+        },
+        { withCredentials: true },
+      );
+    });
   });
 
   it("validates warranty modal and requires at least one evidence image", async () => {

@@ -10,6 +10,8 @@ use App\Models\HR\LeavePolicy;
 use App\Models\HR\LeaveApprovalHierarchy;
 use App\Models\HR\AuditLog;
 use App\Services\HR\LeaveApprovalService;
+use App\Services\Manager\ManagerAuthorizationService;
+use App\Models\User;
 use App\Traits\HR\LogsHRActivity;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -23,65 +25,195 @@ class LeaveController extends Controller
     use LogsHRActivity;
 
     public function __construct(
-        private LeaveApprovalService $leaveApprovalService
+        private LeaveApprovalService $leaveApprovalService,
+        private ManagerAuthorizationService $managerAuthorization
     ) {}
+
+    private function resolveShopOwnerId(?User $user): ?int
+    {
+        if (!$user) {
+            return null;
+        }
+
+        $role = strtoupper(str_replace(['_', '-'], ' ', trim((string) $user->role)));
+
+        return $role === 'SHOP OWNER'
+            ? (int) $user->id
+            : ($this->managerAuthorization->shopOwnerId($user) ?? null);
+    }
+
+    private function isHrActor(User $user): bool
+    {
+        if (strtoupper(trim((string) $user->role)) === 'HR') {
+            return true;
+        }
+
+        return method_exists($user, 'hasAnyRole') && $user->hasAnyRole(['HR']);
+    }
+
+    private function isShopOwnerActor(User $user): bool
+    {
+        return strtoupper(str_replace(['_', '-'], ' ', trim((string) $user->role))) === 'SHOP OWNER';
+    }
+
+    private function canReadLeave(User $user, int $shopOwnerId): bool
+    {
+        if ($this->managerAuthorization->allows(
+            $user,
+            ManagerAuthorizationService::LEAVE_APPROVALS_READ,
+            $shopOwnerId,
+        )) {
+            return true;
+        }
+
+        // HR may read the HR queue with its explicit leave permission or
+        // employee-directory access; neither grants decision authority.
+        return ($this->isHrActor($user) || $this->isShopOwnerActor($user))
+            && ($user->can('access-leave-approvals') || $user->can('access-employee-directory'));
+    }
+
+    private function canDecideLeave(User $user, int $shopOwnerId): bool
+    {
+        if ($this->managerAuthorization->allows(
+            $user,
+            ManagerAuthorizationService::LEAVE_DECISION,
+            $shopOwnerId,
+        )) {
+            return true;
+        }
+
+        // Legacy HR/Owner actors must have the explicit leave approval
+        // permission. Directory, attendance, and payslip access is not enough.
+        return ($this->isHrActor($user) || $this->isShopOwnerActor($user))
+            && $user->can('access-leave-approvals');
+    }
+
+    private function mapLeaveRequest(LeaveRequest $leaveRequest): array
+    {
+        $createdAt = $leaveRequest->created_at;
+        $ageDays = $createdAt ? (int) $createdAt->diffInDays(now()) : 0;
+        $slaMinutes = config('manager.leave_sla_minutes');
+        $overdue = is_numeric($slaMinutes) && (int) $slaMinutes > 0
+            ? $createdAt?->lte(now()->subMinutes((int) $slaMinutes))
+            : false;
+        $employee = $leaveRequest->employee;
+        $employeeName = trim((string) ($employee?->name ?: (($employee?->first_name ?? '') . ' ' . ($employee?->last_name ?? ''))));
+
+        return [
+            'id' => (int) $leaveRequest->id,
+            'employee_id' => (int) $leaveRequest->employee_id,
+            'shop_owner_id' => (int) $leaveRequest->shop_owner_id,
+            'employee' => [
+                'id' => $employee?->id,
+                'name' => $employeeName !== '' ? $employeeName : 'Unknown employee',
+                'email' => (string) ($employee?->email ?? ''),
+                'position' => (string) ($employee?->position ?? ''),
+                'department' => (string) ($employee?->department ?? ''),
+            ],
+            'leave_type' => (string) $leaveRequest->leave_type,
+            'leave_type_label' => LeaveRequest::LEAVE_TYPES[$leaveRequest->leave_type] ?? $leaveRequest->leave_type,
+            'start_date' => optional($leaveRequest->start_date)->toDateString(),
+            'end_date' => optional($leaveRequest->end_date)->toDateString(),
+            'no_of_days' => (float) $leaveRequest->no_of_days,
+            'reason' => (string) $leaveRequest->reason,
+            'status' => (string) $leaveRequest->status,
+            'approval_stage' => $leaveRequest->status === 'pending' ? 'manager_review' : 'terminal',
+            'created_at' => optional($createdAt)->toIso8601String(),
+            'age_days' => $ageDays,
+            'overdue' => (bool) $overdue,
+            'sla' => [
+                'configured' => is_numeric($slaMinutes) && (int) $slaMinutes > 0,
+                'minutes' => is_numeric($slaMinutes) && (int) $slaMinutes > 0 ? (int) $slaMinutes : null,
+            ],
+            'coverage_status' => 'not_assessed',
+            'next_action' => $leaveRequest->status === 'pending' ? 'Manager decision required' : 'No action required',
+            'approved_by' => $leaveRequest->approved_by,
+            'approval_date' => optional($leaveRequest->approval_date)->toIso8601String(),
+            'rejection_reason' => $leaveRequest->rejection_reason,
+            'approver_comments' => $leaveRequest->approver_comments,
+            'history' => array_values(array_filter([
+                $leaveRequest->approved_by ? [
+                    'actor_id' => (int) $leaveRequest->approved_by,
+                    'action' => $leaveRequest->status === 'approved' ? 'approved' : 'rejected',
+                    'at' => optional($leaveRequest->approval_date)->toIso8601String(),
+                    'reason' => $leaveRequest->rejection_reason ?: $leaveRequest->approver_comments,
+                ] : null,
+            ])),
+        ];
+    }
+
     /**
      * Display a listing of leave requests.
      */
     public function index(Request $request): JsonResponse
     {
         $user = Auth::guard('user')->user();
-        
-        if (!$user->can('access-employee-directory') && !$user->can('access-leave-approvals')) {
+
+        $shopOwnerId = $this->resolveShopOwnerId($user);
+        if (!$user || !$shopOwnerId || !$this->canReadLeave($user, $shopOwnerId)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
-        $query = LeaveRequest::forShopOwner($user->shop_owner_id)
-            ->with(['employee:id,first_name,last_name,department', 'approver:id,name']);
+        $validated = $request->validate([
+            'search' => ['nullable', 'string', 'max:100'],
+            'status' => ['nullable', 'in:pending,approved,rejected'],
+            'employee_id' => ['nullable', 'integer'],
+            'leave_type' => ['nullable', 'in:' . implode(',', array_keys(LeaveRequest::LEAVE_TYPES))],
+            'start_date' => ['nullable', 'date'],
+            'end_date' => ['nullable', 'date'],
+            'date_from' => ['nullable', 'date'],
+            'date_to' => ['nullable', 'date'],
+            'per_page' => ['nullable', 'integer', 'min:5', 'max:100'],
+        ]);
+
+        $query = LeaveRequest::forShopOwner($shopOwnerId)
+            ->with(['employee:id,first_name,last_name,name,email,position,department', 'approver:id,name']);
 
         // Apply search filter
-        if ($request->filled('search')) {
-            $searchTerm = $request->search;
+        if (!empty($validated['search'])) {
+            $searchTerm = $validated['search'];
             $query->where(function ($q) use ($searchTerm) {
                 $q->where('reason', 'like', "%{$searchTerm}%")
                   ->orWhereHas('employee', function ($empQuery) use ($searchTerm) {
-                      $empQuery->where('first_name', 'like', "%{$searchTerm}%")
+                      $empQuery->where('name', 'like', "%{$searchTerm}%")
+                               ->orWhere('first_name', 'like', "%{$searchTerm}%")
                                ->orWhere('last_name', 'like', "%{$searchTerm}%")
+                               ->orWhere('email', 'like', "%{$searchTerm}%")
                                ->orWhere('department', 'like', "%{$searchTerm}%");
                   });
             });
         }
 
         // Apply filters
-        if ($request->filled('employee_id')) {
-            $query->forEmployee($request->employee_id);
+        if (isset($validated['employee_id'])) {
+            $query->forEmployee($validated['employee_id']);
         }
 
-        if ($request->filled('status')) {
-            $query->withStatus($request->status);
+        if (!empty($validated['status'])) {
+            $query->byStatus($validated['status']);
         }
 
-        if ($request->filled('leave_type')) {
-            $query->ofType($request->leave_type);
+        if (!empty($validated['leave_type'])) {
+            $query->where('leave_type', $validated['leave_type']);
         }
 
-        if ($request->filled('department')) {
-            $query->whereHas('employee', function ($q) use ($request) {
-                $q->where('department', $request->department);
-            });
+        $dateFrom = $validated['date_from'] ?? $validated['start_date'] ?? null;
+        $dateTo = $validated['date_to'] ?? $validated['end_date'] ?? null;
+        if ($dateFrom) {
+            $query->whereDate('end_date', '>=', $dateFrom);
+        }
+        if ($dateTo) {
+            $query->whereDate('start_date', '<=', $dateTo);
         }
 
-        if ($request->filled('date_from') && $request->filled('date_to')) {
-            $query->where(function ($q) use ($request) {
-                $q->whereBetween('startDate', [$request->date_from, $request->date_to])
-                  ->orWhereBetween('endDate', [$request->date_from, $request->date_to]);
-            });
-        }
+        $leaves = $query->orderBy('created_at', 'asc')
+            ->paginate((int) ($validated['per_page'] ?? 20))
+            ->withQueryString();
+        $leaves->setCollection($leaves->getCollection()->map(function (LeaveRequest $leaveRequest): array {
+            return $this->mapLeaveRequest($leaveRequest);
+        }));
 
-        $leaveRequests = $query->orderBy('created_at', 'desc')
-            ->paginate($request->get('per_page', 20));
-
-        return response()->json($leaveRequests);
+        return response()->json($leaves);
     }
 
     /**
@@ -368,16 +500,17 @@ class LeaveController extends Controller
     public function approve(Request $request, $id): JsonResponse
     {
         $user = Auth::guard('user')->user();
-        
-        $leaveRequest = LeaveRequest::forShopOwner($user->shop_owner_id)
+
+        $shopOwnerId = $this->resolveShopOwnerId($user);
+        if (!$user || !$shopOwnerId) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        $leaveRequest = LeaveRequest::forShopOwner($shopOwnerId)
             ->with('employee')
             ->findOrFail($id);
 
-        // Security Check 1: Shop Isolation (already enforced by forShopOwner scope)
-        
-        // Security Check 2: Role Validation
-        // Check if user is Manager or has any HR-related permissions
-        if (!$user->hasRole('Manager') && !$user->can('access-employee-directory') && !$user->can('access-attendance-records') && !$user->can('access-payslip-generation') && !$user->can('access-view-payslip')) {
+        if (!$this->canDecideLeave($user, $shopOwnerId)) {
             \Log::warning('Unauthorized leave approval attempt', [
                 'user_id' => $user->id,
                 'user_role' => $user->getRoleNames()->first(),
@@ -388,44 +521,34 @@ class LeaveController extends Controller
             ], 403);
         }
 
-        // Security Check 3: Manager Authority Validation
-        if ($user->hasRole('Manager')) {
-            if (!$this->canManagerApprove($user, $leaveRequest->employee_id)) {
-                \Log::warning('Manager attempted to approve leave for non-direct report', [
-                    'manager_id' => $user->id,
-                    'employee_id' => $leaveRequest->employee_id,
-                    'leave_request_id' => $id
-                ]);
-                return response()->json([
-                    'error' => 'You can only approve leave requests for your direct reports.'
-                ], 403);
-            }
-        }
-
-        // Security Check 4: Status Validation
-        if ($leaveRequest->status !== 'pending') {
-            return response()->json([
-                'error' => 'Leave request is not pending'
-            ], 422);
-        }
-
         // Service-level transition handles state update, balance mutation, and notifications.
         try {
-            $leaveRequest = $this->leaveApprovalService->approveLeaveRequest($leaveRequest, $user);
-        } catch (\Throwable $e) {
-            return response()->json([
-                'error' => 'Failed to approve leave request: ' . $e->getMessage()
-            ], 500);
-        }
-
-        // Audit log (if trait is available)
-        if (method_exists($this, 'auditApproved')) {
-            $this->auditApproved(
-                AuditLog::MODULE_LEAVE,
+            $leaveRequest = $this->leaveApprovalService->approveLeaveRequest(
                 $leaveRequest,
-                "Leave request approved: {$leaveRequest->employee->first_name} {$leaveRequest->employee->last_name} - {$leaveRequest->leave_type} leave for {$leaveRequest->no_of_days} days",
-                ['workflow', 'approval']
+                $user,
+                $request->string('reason')->toString() ?: null,
             );
+        } catch (\Throwable $e) {
+            if ((int) $e->getCode() === 409) {
+                return response()->json([
+                    'error' => 'Leave request has already been decided.',
+                    'code' => 'LEAVE_REQUEST_ALREADY_DECIDED',
+                    'leaveRequest' => $leaveRequest->fresh(['employee', 'approver']),
+                ], 409);
+            }
+
+            if ((int) $e->getCode() === 422) {
+                return response()->json(['error' => $e->getMessage()], 422);
+            }
+
+            \Log::error('Failed to approve leave request', [
+                'leave_request_id' => $id,
+                'user_id' => $user->id,
+                'exception' => $e,
+            ]);
+            return response()->json([
+                'error' => 'Failed to approve leave request.'
+            ], 500);
         }
 
         return response()->json([
@@ -478,7 +601,7 @@ class LeaveController extends Controller
     public function reject(Request $request, $id): JsonResponse
     {
         $user = Auth::guard('user')->user();
-        
+
         $validator = Validator::make($request->all(), [
             'reason' => 'required|string|max:500',
         ]);
@@ -487,15 +610,16 @@ class LeaveController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        $leaveRequest = LeaveRequest::forShopOwner($user->shop_owner_id)
+        $shopOwnerId = $this->resolveShopOwnerId($user);
+        if (!$user || !$shopOwnerId) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        $leaveRequest = LeaveRequest::forShopOwner($shopOwnerId)
             ->with('employee')
             ->findOrFail($id);
 
-        // Security Check 1: Shop Isolation (already enforced by forShopOwner scope)
-        
-        // Security Check 2: Role Validation
-        // Check if user is Manager or has any HR-related permissions
-        if (!$user->hasRole('Manager') && !$user->can('access-employee-directory') && !$user->can('access-attendance-records') && !$user->can('access-payslip-generation') && !$user->can('access-view-payslip')) {
+        if (!$this->canDecideLeave($user, $shopOwnerId)) {
             \Log::warning('Unauthorized leave rejection attempt', [
                 'user_id' => $user->id,
                 'user_role' => $user->getRoleNames()->first(),
@@ -506,27 +630,6 @@ class LeaveController extends Controller
             ], 403);
         }
 
-        // Security Check 3: Manager Authority Validation
-        if ($user->hasRole('Manager')) {
-            if (!$this->canManagerApprove($user, $leaveRequest->employee_id)) {
-                \Log::warning('Manager attempted to reject leave for non-direct report', [
-                    'manager_id' => $user->id,
-                    'employee_id' => $leaveRequest->employee_id,
-                    'leave_request_id' => $id
-                ]);
-                return response()->json([
-                    'error' => 'You can only reject leave requests for your direct reports.'
-                ], 403);
-            }
-        }
-
-        // Security Check 4: Status Validation
-        if ($leaveRequest->status !== 'pending') {
-            return response()->json([
-                'error' => 'Leave request is not pending'
-            ], 422);
-        }
-
         try {
             $leaveRequest = $this->leaveApprovalService->rejectLeaveRequest(
                 $leaveRequest,
@@ -534,8 +637,21 @@ class LeaveController extends Controller
                 (string) $request->reason
             );
         } catch (\Throwable $e) {
+            if ((int) $e->getCode() === 409) {
+                return response()->json([
+                    'error' => 'Leave request has already been decided.',
+                    'code' => 'LEAVE_REQUEST_ALREADY_DECIDED',
+                    'leaveRequest' => $leaveRequest->fresh(['employee', 'approver']),
+                ], 409);
+            }
+
+            \Log::error('Failed to reject leave request', [
+                'leave_request_id' => $id,
+                'user_id' => $user->id,
+                'exception' => $e,
+            ]);
             return response()->json([
-                'error' => 'Failed to reject leave request: ' . $e->getMessage()
+                'error' => 'Failed to reject leave request.'
             ], 500);
         }
 
@@ -552,17 +668,14 @@ class LeaveController extends Controller
     {
         $user = Auth::guard('user')->user();
 
-        if (!$user->hasRole('Manager') && !$user->can('access-employee-directory') && !$user->can('access-leave-approvals')) {
+        $shopOwnerId = $this->resolveShopOwnerId($user);
+        if (!$user || !$shopOwnerId || !$this->canReadLeave($user, $shopOwnerId)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
-        $requests = LeaveRequest::forShopOwner($user->shop_owner_id)
-            ->with(['employee:id,first_name,last_name,department'])
-            ->pending()
-            ->orderBy('created_at', 'desc')
-            ->paginate($request->get('per_page', 20));
+        $request->merge(['status' => 'pending']);
 
-        return response()->json($requests);
+        return $this->index($request);
     }
 
     /**
@@ -621,6 +734,10 @@ class LeaveController extends Controller
     {
         $user = Auth::guard('user')->user();
 
+        if (!$user) {
+            return response()->json(['error' => 'Unauthorized'], 401);
+        }
+
         $employee = Employee::where('shop_owner_id', $user->shop_owner_id)
             ->where('email', $user->email)
             ->first();
@@ -629,15 +746,54 @@ class LeaveController extends Controller
             return response()->json(['error' => 'Employee record not found'], 404);
         }
 
-        $leaveRequest = LeaveRequest::where('employee_id', $employee->id)
-            ->where('shop_owner_id', $user->shop_owner_id)
-            ->findOrFail($id);
+        try {
+            $leaveRequest = \DB::transaction(function () use ($employee, $user, $id): LeaveRequest {
+                $leaveRequest = LeaveRequest::where('employee_id', $employee->id)
+                    ->where('shop_owner_id', $user->shop_owner_id)
+                    ->lockForUpdate()
+                    ->findOrFail($id);
 
-        if ($leaveRequest->status !== 'pending') {
-            return response()->json(['error' => 'Only pending leave requests can be cancelled'], 422);
+                if ($leaveRequest->status !== 'pending') {
+                    throw new \RuntimeException('Only pending leave requests can be cancelled', 422);
+                }
+
+                $leaveRequest->update([
+                    'status' => 'rejected',
+                    'rejection_reason' => 'Cancelled by employee',
+                ]);
+
+                AuditLog::createLog([
+                    'shop_owner_id' => $user->shop_owner_id,
+                    'user_id' => $user->id,
+                    'employee_id' => $employee->id,
+                    'module' => AuditLog::MODULE_LEAVE,
+                    'action' => 'cancelled',
+                    'entity_type' => LeaveRequest::class,
+                    'entity_id' => $leaveRequest->id,
+                    'description' => 'Leave request cancelled by employee',
+                    'old_values' => ['status' => 'pending'],
+                    'new_values' => ['status' => 'rejected', 'reason' => 'Cancelled by employee'],
+                    'severity' => AuditLog::SEVERITY_INFO,
+                    'tags' => ['leave', 'self_service', 'cancellation'],
+                ]);
+
+                return $leaveRequest;
+            });
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            if ((int) $e->getCode() === 422) {
+                return response()->json(['error' => $e->getMessage()], 422);
+            }
+
+            \Log::error('Failed to cancel own leave request', [
+                'leave_request_id' => $id,
+                'user_id' => $user->id,
+                'exception' => $e,
+            ]);
+
+            return response()->json(['error' => 'Failed to cancel leave request.'], 500);
         }
-
-        $leaveRequest->update(['status' => 'rejected', 'rejection_reason' => 'Cancelled by employee']);
 
         return response()->json(['message' => 'Leave request cancelled successfully']);
     }

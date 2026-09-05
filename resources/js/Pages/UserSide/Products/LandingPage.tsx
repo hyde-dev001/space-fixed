@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, Head } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
+import { useScrollReveal } from '../Shared/useScrollReveal';
 
 interface Product {
   id: number;
@@ -8,27 +9,36 @@ interface Product {
   slug: string;
   description: string;
   price: number;
-  compare_at_price: number | null;
   main_image: string;
-  hover_image?: string | null;
-  gallery_images?: string[];
   stock_quantity: number;
-  shop_owner: {
-    id: number;
-    business_name: string;
-  };
 }
 
 interface Props {
   products: Product[];
-  stats?: {
-    products_count?: number;
-    customers_count?: number;
-    satisfaction_rate?: number;
-  };
 }
 
-const LandingPage: React.FC<Props> = ({ products = [], stats }) => {
+const categoryCards = [
+  {
+    title: 'Shoes',
+    routeName: 'products',
+    image: '/images/shop/p1.jpg',
+    alt: 'SoleSpace footwear collection',
+  },
+  {
+    title: 'Repair',
+    routeName: 'repair',
+    image: '/images/shop/p2.jpg',
+    alt: 'SoleSpace shoe repair service',
+  },
+  {
+    title: 'Services',
+    routeName: 'services',
+    image: '/images/shop/p3.jpg',
+    alt: 'SoleSpace footwear care services',
+  },
+] as const;
+
+const LandingPage: React.FC<Props> = ({ products = [] }) => {
   const heroSlides = [
     {
       src: '/images/shop/p1.jpg',
@@ -53,54 +63,13 @@ const LandingPage: React.FC<Props> = ({ products = [], stats }) => {
 
   ];
 
-  const [activeImageIndexes, setActiveImageIndexes] = useState<Record<number, number>>({});
   const [activeHeroSlide, setActiveHeroSlide] = useState(0);
-  const [statsValues, setStatsValues] = useState([0, 0, 0]);
-  const hoverTimersRef = useRef<Record<number, number>>({});
+  const [footerIsInteractive, setFooterIsInteractive] = useState(false);
+  const landingRootRef = useRef<HTMLDivElement | null>(null);
   const revealRootRef = useRef<HTMLDivElement | null>(null);
-  const statsSectionRef = useRef<HTMLElement | null>(null);
-  const statsAnimationRef = useRef<number | null>(null);
-  const statsHasAnimatedRef = useRef(false);
-  const prefersReducedMotionRef = useRef(false);
-
-  const statsTargets = [
-    Math.max(0, Number(stats?.products_count ?? 0)),
-    Math.max(0, Number(stats?.customers_count ?? 0)),
-    Math.min(100, Math.max(0, Number(stats?.satisfaction_rate ?? 0))),
-  ];
-
-  const formatCompactNumber = (value: number) => {
-    if (value >= 1000000) {
-      const normalized = value >= 10000000 ? (value / 1000000).toFixed(0) : (value / 1000000).toFixed(1);
-      return `${normalized.replace(/\.0$/, '')}M`;
-    }
-
-    if (value >= 1000) {
-      const normalized = value >= 10000 ? (value / 1000).toFixed(0) : (value / 1000).toFixed(1);
-      return `${normalized.replace(/\.0$/, '')}K`;
-    }
-
-    return `${Math.floor(value)}`;
-  };
-
-  const formatStatValue = (value: number, index: number) => {
-    if (index === 2) {
-      return `${Math.min(Math.round(value), 100)}%`;
-    }
-
-    return `${formatCompactNumber(value)}+`;
-  };
-
-  useEffect(() => {
-    prefersReducedMotionRef.current = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      Object.values(hoverTimersRef.current).forEach((timerId) => window.clearInterval(timerId));
-      hoverTimersRef.current = {};
-    };
-  }, []);
+  const footerRef = useRef<HTMLElement | null>(null);
+  const footerRevealSpacerRef = useRef<HTMLDivElement | null>(null);
+  useScrollReveal(revealRootRef);
 
   useEffect(() => {
     const heroTimer = window.setInterval(() => {
@@ -111,176 +80,58 @@ const LandingPage: React.FC<Props> = ({ products = [], stats }) => {
   }, [heroSlides.length]);
 
   useEffect(() => {
-    const root = revealRootRef.current;
-    if (!root) {
+    const landingRoot = landingRootRef.current;
+    const footer = footerRef.current;
+    const spacer = footerRevealSpacerRef.current;
+
+    if (!landingRoot || !footer || !spacer) {
       return;
     }
 
-    const revealElements = Array.from(root.querySelectorAll<HTMLElement>('[data-scroll-reveal]'));
+    const updateFooterHeight = () => {
+      const footerHeight = Math.ceil(footer.getBoundingClientRect().height);
+      landingRoot.style.setProperty('--landing-footer-height', `${footerHeight}px`);
+    };
 
-    revealElements.forEach((element) => {
-      const delay = Number(element.dataset.scrollDelay ?? 0);
-      if (delay > 0) {
-        element.style.transitionDelay = `${delay}ms`;
-      }
-    });
+    updateFooterHeight();
 
-    if (prefersReducedMotionRef.current) {
-      revealElements.forEach((element) => element.classList.add('is-visible'));
-      return;
+    const resizeObserver = typeof ResizeObserver === 'undefined'
+      ? null
+      : new ResizeObserver(updateFooterHeight);
+
+    resizeObserver?.observe(footer);
+
+    if (typeof IntersectionObserver === 'undefined') {
+      setFooterIsInteractive(true);
+
+      return () => {
+        resizeObserver?.disconnect();
+        landingRoot.style.removeProperty('--landing-footer-height');
+      };
     }
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (!entry.isIntersecting) {
-            return;
-          }
-
-          entry.target.classList.add('is-visible');
-          observer.unobserve(entry.target);
-        });
-      },
-      {
-        threshold: 0.16,
-        rootMargin: '0px 0px -10% 0px',
-      }
+    const revealObserver = new IntersectionObserver(
+      ([entry]) => setFooterIsInteractive(entry?.isIntersecting ?? false),
+      { threshold: 0 },
     );
 
-    revealElements.forEach((element) => observer.observe(element));
+    revealObserver.observe(spacer);
 
-    return () => observer.disconnect();
+    return () => {
+      revealObserver.disconnect();
+      resizeObserver?.disconnect();
+      landingRoot.style.removeProperty('--landing-footer-height');
+    };
   }, []);
 
   useEffect(() => {
-    const statsSection = statsSectionRef.current;
-    if (!statsSection) {
-      return;
-    }
-
-    const targets = statsTargets;
-
-    statsHasAnimatedRef.current = false;
-    setStatsValues([0, 0, 0]);
-
-    if (statsAnimationRef.current !== null) {
-      window.clearInterval(statsAnimationRef.current);
-      statsAnimationRef.current = null;
-    }
-
-    const startAnimation = () => {
-      if (statsHasAnimatedRef.current) {
-        return;
-      }
-
-      statsHasAnimatedRef.current = true;
-
-      if (prefersReducedMotionRef.current) {
-        setStatsValues(targets);
-        return;
-      }
-
-      const increments = targets.map((target, index) => {
-        if (target <= 0) {
-          return 0;
-        }
-
-        if (index === 2) {
-          return Math.max(1, Math.ceil(target / 60));
-        }
-
-        return Math.max(1, Math.ceil(target / 75));
-      });
-
-      statsAnimationRef.current = window.setInterval(() => {
-        setStatsValues((currentValues) => {
-          const nextValues = currentValues.map((value, index) => {
-            const nextValue = value + increments[index];
-            return nextValue >= targets[index] ? targets[index] : nextValue;
-          });
-
-          if (nextValues.every((value, index) => value === targets[index])) {
-            window.clearInterval(statsAnimationRef.current ?? undefined);
-            statsAnimationRef.current = null;
-          }
-
-          return nextValues;
-        });
-      }, 28);
-    };
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          window.setTimeout(startAnimation, 220);
-          observer.disconnect();
-        }
-      },
-      {
-        threshold: 0.2,
-      }
-    );
-
-    observer.observe(statsSection);
-
-    const fallbackTimer = window.setTimeout(() => {
-      startAnimation();
-      observer.disconnect();
-    }, 650);
-
-    return () => {
-      observer.disconnect();
-      window.clearTimeout(fallbackTimer);
-      if (statsAnimationRef.current !== null) {
-        window.clearInterval(statsAnimationRef.current);
-      }
-    };
-  }, [statsTargets[0], statsTargets[1], statsTargets[2]]);
-
-  const getProductImages = (product: Product) => {
-    const images = [
-      product.main_image,
-      product.hover_image,
-      ...(product.gallery_images ?? []),
-    ].filter(Boolean) as string[];
-
-    return Array.from(new Set(images));
-  };
-
-  const startImageCycle = (product: Product) => {
-    const images = getProductImages(product);
-    if (images.length <= 1) return;
-
-    setActiveImageIndexes((prev) => ({ ...prev, [product.id]: 1 }));
-
-    if (hoverTimersRef.current[product.id]) {
-      window.clearInterval(hoverTimersRef.current[product.id]);
-    }
-
-    hoverTimersRef.current[product.id] = window.setInterval(() => {
-      setActiveImageIndexes((prev) => {
-        const currentIndex = prev[product.id] ?? 1;
-        return {
-          ...prev,
-          [product.id]: (currentIndex + 1) % images.length,
-        };
-      });
-    }, 800);
-  };
-
-  const stopImageCycle = (productId: number) => {
-    if (hoverTimersRef.current[productId]) {
-      window.clearInterval(hoverTimersRef.current[productId]);
-      delete hoverTimersRef.current[productId];
-    }
-
-    setActiveImageIndexes((prev) => ({ ...prev, [productId]: 0 }));
-  };
+    footerRef.current?.toggleAttribute('inert', !footerIsInteractive);
+  }, [footerIsInteractive]);
 
   const buttonBaseClass =
     'group inline-flex w-full max-w-full items-center justify-center gap-3 rounded-full px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.14em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 sm:w-auto sm:px-10 sm:py-4 sm:text-sm sm:tracking-[0.18em]';
   const buttonLightClass =
-    'border border-white/60 bg-white/78 text-slate-900 backdrop-blur-md shadow-[0_18px_35px_-18px_rgba(0,0,0,0.55)] hover:-translate-y-0.5 hover:border-[#16233b] hover:bg-[#16233b] hover:text-white hover:shadow-[0_24px_38px_-18px_rgba(0,0,0,0.55)] focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black';
+    'landing-primary-cta border border-white bg-[#ffffff] text-[#0f172a] backdrop-blur-md shadow-[0_18px_35px_-18px_rgba(0,0,0,0.55)] hover:-translate-y-0.5 hover:border-[#f8fafc] hover:bg-[#f8fafc] hover:text-[#0f172a] hover:shadow-[0_24px_38px_-18px_rgba(0,0,0,0.55)] dark:border-[#334155] dark:bg-[#16233b] dark:text-white dark:hover:border-[#475569] dark:hover:bg-[#213257] dark:hover:text-white focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black';
   const buttonDarkClass =
     'border border-white/55 bg-black/45 text-white backdrop-blur-sm shadow-[0_14px_28px_-18px_rgba(0,0,0,0.95)] hover:-translate-y-0.5 hover:border-[#16233b] hover:bg-[#16233b] hover:text-white hover:shadow-[0_22px_40px_-18px_rgba(0,0,0,0.95)] focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black';
   const sectionContainerClass = 'mx-auto w-full max-w-screen-2xl px-4 sm:px-6 lg:px-12';
@@ -289,9 +140,12 @@ const LandingPage: React.FC<Props> = ({ products = [], stats }) => {
   return (
     <>
       <Head title="SoleSpace - Premium Footwear & Expert Repairs" />
-      <div ref={revealRootRef} className="min-h-screen overflow-x-hidden bg-white font-outfit antialiased">
-        <Navigation mobileMenuTriggerIcon="hamburger" />
+      <div ref={landingRootRef} className="landing-page relative min-h-screen overflow-x-hidden font-outfit antialiased">
+        <div ref={revealRootRef} className="landing-curtain relative z-10 bg-white">
+          <Navigation mobileMenuTriggerIcon="hamburger" landingSidebar />
 
+       <main>
+       <div>
       {/* Hero Section - Full-bleed Background Carousel */}
       <section className="relative flex min-h-[84svh] w-full items-center overflow-hidden sm:min-h-svh">
         <div className="absolute inset-0 z-0">
@@ -313,14 +167,14 @@ const LandingPage: React.FC<Props> = ({ products = [], stats }) => {
         <div className={`${heroContainerClass} flex min-h-[84svh] items-center pb-12 pt-20 sm:min-h-svh sm:py-24 lg:py-32`}>
           <div className="relative z-10 w-full max-w-[24rem] text-left sm:max-w-152 lg:max-w-4xl">
             <h1 className="hero-headline mb-4 text-[2.35rem] font-bold leading-[0.9] tracking-tight text-white/90 xsm:text-[2.75rem] sm:mb-8 sm:text-[4.4rem] md:text-7xl lg:text-8xl xl:text-9xl">
-              <span className="hero-headline-line hero-line-1">ELEVATE YOUR</span>
-              <span className="hero-headline-line hero-line-2">SIGNATURE</span>
-              <span className="hero-headline-line hero-line-3">STYLE</span>
+              <span className="hero-headline-line hero-line-1 landing-hero-motion">ELEVATE YOUR</span>
+              <span className="hero-headline-line hero-line-2 landing-hero-motion">SIGNATURE</span>
+              <span className="hero-headline-line hero-line-3 landing-hero-motion">STYLE</span>
             </h1>
-            <p className="hero-description mb-7 max-w-xl text-base font-light leading-relaxed text-white/90 sm:mb-12 sm:max-w-2xl sm:text-lg md:text-xl lg:text-2xl">
+            <p className="hero-description landing-hero-motion mb-7 max-w-xl text-base font-light leading-relaxed text-white/90 sm:mb-12 sm:max-w-2xl sm:text-lg md:text-xl lg:text-2xl">
               Discover refined footwear and atelier-grade repair services, curated for people who wear confidence with every step.
             </p>
-            <div data-scroll-reveal data-scroll-delay={220} className="scroll-reveal flex w-full max-w-sm flex-col gap-3 sm:max-w-none sm:flex-row sm:gap-4">
+            <div className="landing-hero-motion hero-actions flex w-full max-w-sm flex-col gap-3 sm:max-w-none sm:flex-row sm:gap-4">
               <Link
                 href={route("products")}
                 className={`${buttonBaseClass} ${buttonLightClass}`}
@@ -356,319 +210,389 @@ const LandingPage: React.FC<Props> = ({ products = [], stats }) => {
           </div>
         </div>
       </section>
+      </div>
 
-      {/* Stats Section - Adidas Style: Clean, Bold Numbers */}
-      <section ref={statsSectionRef} data-scroll-reveal className="scroll-reveal w-full bg-gray-100 py-14 text-black sm:py-20">
+      <section id="landing-new-releases" data-scroll-reveal className="scroll-reveal w-full bg-white py-16 text-black sm:py-24 lg:py-32">
         <div className={sectionContainerClass}>
-          <div className="grid grid-cols-3 gap-4 text-center sm:gap-10 lg:gap-20">
-            <div>
-              <div className="mb-2 text-3xl font-bold sm:mb-4 sm:text-5xl lg:text-7xl">{formatStatValue(statsValues[0], 0)}</div>
-              <div className="text-sm uppercase tracking-wider text-black/70">Products</div>
-            </div>
-            <div>
-              <div className="mb-2 text-3xl font-bold sm:mb-4 sm:text-5xl lg:text-7xl">{formatStatValue(statsValues[1], 1)}</div>
-              <div className="text-sm uppercase tracking-wider text-black/70">Customers</div>
-            </div>
-            <div>
-              <div className="mb-2 text-3xl font-bold sm:mb-4 sm:text-5xl lg:text-7xl">{formatStatValue(statsValues[2], 2)}</div>
-              <div className="text-sm uppercase tracking-wider text-black/70">Satisfaction</div>
+          <div data-scroll-reveal className="scroll-reveal mb-10 flex flex-col gap-6 sm:mb-16 sm:flex-row sm:items-end sm:justify-between">
+            <h2 className="text-5xl font-normal tracking-[-0.06em] sm:text-7xl lg:text-8xl">New releases</h2>
+            <div className="flex flex-wrap gap-x-7 gap-y-3 text-sm font-semibold sm:gap-x-10 sm:text-base">
+              <Link href={route("products")} className="group inline-flex items-center gap-4 transition-opacity hover:opacity-60">
+                Men's products
+                <span aria-hidden="true" className="text-2xl font-normal leading-none transition-transform duration-300 group-hover:translate-x-1">→</span>
+              </Link>
+              <Link href={route("products")} className="group inline-flex items-center gap-4 transition-opacity hover:opacity-60">
+                Women's products
+                <span aria-hidden="true" className="text-2xl font-normal leading-none transition-transform duration-300 group-hover:translate-x-1">→</span>
+              </Link>
             </div>
           </div>
-        </div>
-      </section>
 
-      {/* Features Section - Adidas Style: Minimal, Clean */}
-      <section data-scroll-reveal className="scroll-reveal w-full bg-white py-16 sm:py-24 lg:py-32">
-        <div className={sectionContainerClass}>
-          <div className="grid grid-cols-1 gap-8 text-center sm:grid-cols-2 sm:gap-10 lg:grid-cols-3 lg:gap-24">
-            <div className="text-center">
-              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full border-2 border-black sm:mb-8 sm:h-20 sm:w-20">
-                <svg className="h-7 w-7 text-black sm:h-10 sm:w-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 13l4 4L19 7" />
-                </svg>
-              </div>
-              <h3 className="mb-2 text-lg font-bold uppercase tracking-wide text-black sm:mb-4 sm:text-2xl">Quality Assured</h3>
-              <p className="text-sm leading-relaxed text-black/70 sm:text-base">Premium materials and craftsmanship guaranteed</p>
-            </div>
-            <div className="text-center">
-              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full border-2 border-black sm:mb-8 sm:h-20 sm:w-20">
-                <svg className="h-7 w-7 text-black sm:h-10 sm:w-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-              <h3 className="mb-2 text-lg font-bold uppercase tracking-wide text-black sm:mb-4 sm:text-2xl">Fast Delivery</h3>
-              <p className="text-sm leading-relaxed text-black/70 sm:text-base">Quick and reliable shipping to your doorstep</p>
-            </div>
-            <div className="text-center">
-              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full border-2 border-black sm:mb-8 sm:h-20 sm:w-20">
-                <svg className="h-7 w-7 text-black sm:h-10 sm:w-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                </svg>
-              </div>
-              <h3 className="mb-2 text-lg font-bold uppercase tracking-wide text-black sm:mb-4 sm:text-2xl">Secure Payment</h3>
-              <p className="text-sm leading-relaxed text-black/70 sm:text-base">Safe and encrypted transaction processing</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Featured Products Section - Adidas Style: Large, Bold */}
-      <section className="w-full bg-white py-16 sm:py-24 lg:py-32">
-        <div className={sectionContainerClass}>
-          <div data-scroll-reveal className="scroll-reveal mb-12 text-center sm:mb-20">
-            <h2 className="mb-4 text-3xl font-bold tracking-tight text-black sm:mb-6 sm:text-5xl lg:text-7xl">
-              PREMIUM FOOTWEAR
-            </h2>
-            <p className="mx-auto max-w-2xl text-base font-light leading-relaxed text-black/70 sm:text-xl">
-              Discover our handpicked selection of high-quality shoes designed for comfort, style, and performance.
-            </p>
-          </div>
-          <div className="flex snap-x snap-mandatory gap-4 overflow-x-auto pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:grid md:grid-cols-2 md:gap-8 md:overflow-visible md:pb-0 lg:grid-cols-3">
+          <div className="flex snap-x snap-mandatory gap-4 overflow-x-auto pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:grid md:grid-cols-3 md:gap-7 md:overflow-visible md:pb-0">
             {products.length > 0 ? (
-              products.map((product, index) => {
-                const productImages = getProductImages(product);
-                const imageIndex = activeImageIndexes[product.id] ?? 0;
-                const currentImage = productImages[imageIndex] || product.main_image || './images/product/default.jpg';
-
-                return (
+              products.map((product, index) => (
                 <Link
                   key={product.id}
                   href={route('products.show', product.slug)}
                   data-scroll-reveal
-                  data-scroll-delay={Math.min(index * 90, 320)}
-                  className="scroll-reveal group min-w-[84%] snap-start overflow-hidden rounded-3xl border border-slate-300 bg-white shadow-[0_16px_35px_-24px_rgba(15,23,42,0.45)] transition-all duration-300 hover:-translate-y-1 hover:border-slate-400 hover:shadow-[0_28px_48px_-24px_rgba(15,23,42,0.55)] sm:min-w-[58%] md:min-w-0"
-                  onMouseEnter={() => startImageCycle(product)}
-                  onMouseLeave={() => stopImageCycle(product.id)}
+                  data-scroll-delay={Math.min(index * 90, 270)}
+                  className="scroll-reveal group min-w-[84%] snap-start sm:min-w-[58%] md:min-w-0"
                 >
-                  <div className="relative bg-white overflow-hidden aspect-square">
+                  <div className="relative aspect-[4/5] overflow-hidden bg-[#f3f3f1]">
                     <img
-                      src={currentImage}
+                      src={product.main_image || '/images/product/product-01.jpg'}
                       alt={product.name}
-                      className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
+                      className="h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
                       loading="lazy"
                       decoding="async"
-                      sizes="(max-width: 767px) 100vw, (max-width: 1279px) 50vw, 33vw"
+                      sizes="(max-width: 767px) 84vw, (max-width: 1279px) 33vw, 30vw"
                     />
                     {index === 0 && (
-                      <div className="absolute right-4 top-4 bg-black px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-white sm:right-6 sm:top-6 sm:px-4 sm:py-2 sm:text-xs">
+                      <span className="absolute right-4 top-4 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-black sm:right-5 sm:top-5">
                         New
-                      </div>
+                      </span>
                     )}
                     {product.stock_quantity === 0 && (
-                      <div className="absolute inset-0 bg-black/70 flex items-center justify-center">
-                        <span className="text-xl font-bold uppercase tracking-wider text-white sm:text-2xl">Out of Stock</span>
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/65">
+                        <span className="text-sm font-semibold uppercase tracking-[0.12em] text-white sm:text-base">Out of stock</span>
                       </div>
                     )}
                   </div>
-                  <div className="border-t border-slate-200 p-5 sm:p-8">
-                    <h3 className="mb-2 line-clamp-1 text-lg font-bold uppercase tracking-wide text-black sm:mb-3 sm:text-2xl">{product.name}</h3>
-                    <p className="mb-4 line-clamp-2 text-sm leading-relaxed text-black/70 sm:mb-6">
-                      {product.description || 'Premium footwear designed for comfort and style.'}
-                    </p>
-                    <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
-                      <div className="flex flex-col">
-                        <span className="text-2xl font-bold text-black sm:text-3xl">₱{product.price.toLocaleString()}</span>
-                        {product.compare_at_price && product.compare_at_price > product.price && (
-                          <span className="text-sm text-black/50 line-through">₱{product.compare_at_price.toLocaleString()}</span>
-                        )}
-                      </div>
-                      <div className="inline-flex items-center justify-center rounded-full border border-[#16233b] bg-[#16233b] px-5 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white shadow-[0_10px_24px_-18px_rgba(22,35,59,0.9)] transition-all duration-300 group-hover:-translate-y-0.5 group-hover:bg-black">
-                        View
-                      </div>
+                  <div className="flex items-start justify-between gap-4 border-b border-black/15 py-4 sm:py-5">
+                    <div className="min-w-0">
+                      <h3 className="truncate text-sm font-semibold sm:text-base">{product.name}</h3>
+                      <p className="mt-1 line-clamp-1 text-xs text-black/55 sm:text-sm">
+                        {product.description || 'Premium footwear for every step.'}
+                      </p>
                     </div>
+                    <span className="shrink-0 text-sm font-medium sm:text-base">₱{product.price.toLocaleString()}</span>
                   </div>
                 </Link>
-                );
-              })
+              ))
             ) : (
               <div className="w-full py-12 text-center md:col-span-full">
-                <p className="text-black/50 text-lg">No products available at the moment.</p>
+                <p className="text-lg text-black/50">No products available at the moment.</p>
               </div>
             )}
           </div>
-          <div data-scroll-reveal className="scroll-reveal mt-12 text-center sm:mt-16">
-            <Link
-              href={route("products")}
-              className={`${buttonBaseClass} ${buttonDarkClass}`}
-            >
-              View All Products
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
-              </svg>
+
+          <div data-scroll-reveal className="scroll-reveal mt-10 sm:mt-14">
+            <Link href={route("products")} className="group inline-flex items-center gap-4 border-b border-black pb-2 text-sm font-semibold uppercase tracking-[0.14em] transition-opacity hover:opacity-60">
+              View all products
+              <span aria-hidden="true" className="text-xl font-normal leading-none transition-transform duration-300 group-hover:translate-x-1">→</span>
             </Link>
           </div>
         </div>
       </section>
 
-      {/* Services Section - Adidas Style: Full Width Split */}
-      <section data-scroll-reveal className="scroll-reveal w-full bg-gray-100 py-16 text-black sm:py-24 lg:py-32">
+      <section id="landing-categories" data-scroll-reveal className="scroll-reveal w-full bg-white pb-16 text-black sm:pb-24 lg:pb-32">
         <div className={sectionContainerClass}>
-          <div className="mb-12 text-center sm:mb-20">
-            <h2 className="mb-4 text-3xl font-bold tracking-tight text-black sm:mb-6 sm:text-5xl lg:text-7xl">
-              COMPLETE SHOE SOLUTIONS
-            </h2>
-            <p className="mx-auto max-w-2xl text-base font-light leading-relaxed text-black/70 sm:text-xl">
-              From retail excellence to expert repairs, we provide comprehensive footwear services tailored to your needs.
-            </p>
+          <div data-scroll-reveal className="scroll-reveal mb-10 flex flex-col gap-5 sm:mb-16 sm:flex-row sm:items-end sm:justify-between">
+            <h2 className="text-5xl font-normal tracking-[-0.06em] sm:text-7xl lg:text-8xl">Shop by category</h2>
+            <Link href={route("products")} className="group inline-flex items-center gap-4 text-sm font-semibold transition-opacity hover:opacity-60 sm:text-base">
+              Explore the collection
+              <span aria-hidden="true" className="text-2xl font-normal leading-none transition-transform duration-300 group-hover:translate-x-1">→</span>
+            </Link>
           </div>
-          <div className="flex snap-x snap-mandatory gap-4 overflow-x-auto pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:grid md:grid-cols-2 md:gap-8 md:overflow-visible md:pb-0 lg:gap-16">
-            <div className="min-w-[84%] snap-start border-2 border-gray-300 bg-white p-7 text-black sm:min-w-[58%] sm:p-10 md:min-w-0 lg:p-12">
-              <div className="w-16 h-16 border-2 border-black rounded-full flex items-center justify-center mb-8">
-                <svg className="w-8 h-8 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
-                </svg>
-              </div>
-              <h3 className="mb-4 text-2xl font-bold uppercase tracking-wide text-black sm:mb-6 sm:text-3xl">Premium Retail</h3>
-              <p className="mb-6 text-base leading-relaxed text-black/70 sm:mb-8 sm:text-lg">
-                Discover an extensive collection of high-quality footwear from renowned brands. Our integrated platform offers personalized recommendations, competitive pricing, and seamless shopping experiences.
-              </p>
-                <Link
-                  href={route("products")}
-                  className={`${buttonBaseClass} ${buttonDarkClass}`}
-                >
-                Explore Collection
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
-                </svg>
+
+          <div className="landing-category-carousel flex snap-x snap-mandatory gap-4 overflow-x-auto pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:grid lg:grid-cols-3 lg:gap-7 lg:overflow-visible lg:pb-0">
+            {categoryCards.map((card, index) => (
+              <Link
+                key={card.title}
+                href={route(card.routeName)}
+                data-scroll-reveal
+                data-scroll-delay={Math.min(index * 100, 200)}
+                className="scroll-reveal group relative min-w-[84%] snap-start aspect-[4/3] overflow-hidden bg-[#e7e7e3] sm:min-w-[58%] sm:aspect-[16/10] lg:min-w-0 lg:aspect-auto lg:min-h-[38rem]"
+              >
+                <img
+                  src={card.image}
+                  alt={card.alt}
+                  className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
+                  loading="lazy"
+                  decoding="async"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
+                <div className="absolute inset-x-6 bottom-6 flex items-center justify-between gap-4 text-white sm:inset-x-8 sm:bottom-8">
+                  <h3 className="text-xl font-semibold sm:text-2xl">{card.title}</h3>
+                  <span aria-hidden="true" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/20 text-2xl font-light backdrop-blur-sm transition-transform duration-300 group-hover:translate-x-1">→</span>
+                </div>
               </Link>
-            </div>
-            <div className="min-w-[84%] snap-start border-2 border-gray-300 bg-white p-7 text-black sm:min-w-[58%] sm:p-10 md:min-w-0 lg:p-12">
-              <div className="w-16 h-16 border-2 border-black rounded-full flex items-center justify-center mb-8">
-                <svg className="w-8 h-8 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-              </div>
-              <h3 className="mb-4 text-2xl font-bold uppercase tracking-wide text-black sm:mb-6 sm:text-3xl">Expert Repairs</h3>
-              <p className="mb-6 text-base leading-relaxed text-black/70 sm:mb-8 sm:text-lg">
-                Professional shoe repair services powered by intelligent decision support systems. Get expert recommendations for the best repair options that extend the life of your favorite footwear.
-              </p>
-                <Link
-                  href={route("repair")}
-                  className={`${buttonBaseClass} ${buttonDarkClass}`}
-                >
-                Learn More
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
-                </svg>
+            ))}
+          </div>
+        </div>
+      </section>
+
+
+      <section id="landing-story" data-scroll-reveal className="scroll-reveal w-full bg-black text-white">
+        <div className="relative min-h-[34rem] overflow-hidden sm:min-h-[44rem]">
+          <img src="/images/shop/p4.jpg" alt="SoleSpace craftsmanship in motion" className="absolute inset-0 h-full w-full object-cover opacity-75" loading="lazy" decoding="async" />
+          <div className="absolute inset-0 bg-gradient-to-r from-black/80 via-black/35 to-black/25" />
+          <div className={`${sectionContainerClass} relative flex min-h-[34rem] items-end pb-10 pt-24 sm:min-h-[44rem] sm:pb-16 lg:pb-20`}>
+            <div data-scroll-reveal className="scroll-reveal scroll-reveal--side max-w-3xl">
+              <p className="mb-5 text-xs font-semibold uppercase tracking-[0.2em] text-white/70">KEEP EVERY STEP GOING</p>
+              <h2 className="max-w-3xl text-4xl font-normal leading-[0.95] tracking-[-0.05em] sm:text-6xl lg:text-8xl">Find a pair worth keeping.</h2>
+              <Link href={route("products")} className="group mt-9 inline-flex items-center gap-4 text-sm font-semibold uppercase tracking-[0.14em] transition-opacity hover:opacity-60 sm:mt-12">
+                Discover SoleSpace
+                <span aria-hidden="true" className="text-2xl font-normal leading-none transition-transform duration-300 group-hover:translate-x-1">→</span>
               </Link>
             </div>
           </div>
         </div>
       </section>
 
-      {/* CTA Section - Adidas Style: Bold, Full Width */}
-      <section data-scroll-reveal className="scroll-reveal w-full bg-white py-16 sm:py-24 lg:py-32">
-        <div className={`${sectionContainerClass} text-center`}>
-          <h2 className="mb-6 text-3xl font-bold tracking-tight text-black sm:mb-8 sm:text-5xl lg:text-7xl">
-            READY TO STEP INTO STYLE?
-          </h2>
-          <p className="mx-auto mb-10 max-w-2xl text-base font-light leading-relaxed text-black/70 sm:mb-12 sm:text-xl">
-            Join thousands of satisfied customers and discover the perfect pair today.
-          </p>
-          <div className="flex flex-col justify-center gap-3 sm:flex-row sm:gap-4">
-            <Link
-              href={route("products")}
-              className={`${buttonBaseClass} ${buttonLightClass} w-full sm:w-auto`}
-            >
-              Shop Now
-            </Link>
-            <Link
-              href={route("repair")}
-              className={`${buttonBaseClass} ${buttonDarkClass} w-full sm:w-auto`}
-            >
-              Book Repair
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      {/* Footer - Adidas Style: Clean, Minimal */}
-      <footer data-scroll-reveal className="scroll-reveal hidden w-full bg-gray-100 py-8 text-black md:block md:py-12">
+      <section id="landing-benefits" data-scroll-reveal className="scroll-reveal w-full bg-white py-20 text-black sm:py-28 lg:py-36">
         <div className={sectionContainerClass}>
-          <div className="mb-6 grid grid-cols-2 gap-5 sm:mb-8 sm:gap-8 lg:grid-cols-4 lg:gap-10">
-            <div className="col-span-2 lg:col-span-1">
-              <Link href={route("landing")} className="mb-3 inline-block text-xl font-bold text-black sm:text-2xl">
-                SoleSpace
-              </Link>
-              <p className="mb-4 max-w-md text-sm leading-relaxed text-black/60 sm:mb-6 sm:text-base">
-                Your premier destination for premium footwear and expert repair services. Experience the perfect blend of style, comfort, and craftsmanship.
-              </p>
-              <div className="flex gap-4">
-                <a href="#" className="flex h-9 w-9 items-center justify-center border border-black/20 transition-colors hover:border-black sm:h-10 sm:w-10" aria-label="Facebook">
-                  <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
-                  </svg>
-                </a>
-                <a href="#" className="flex h-9 w-9 items-center justify-center border border-black/20 transition-colors hover:border-black sm:h-10 sm:w-10" aria-label="Twitter">
-                  <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M23.953 4.57a10 10 0 01-2.825.775 4.958 4.958 0 002.163-2.723c-.951.555-2.005.959-3.127 1.184a4.92 4.92 0 00-8.384 4.482C7.69 8.095 4.067 6.13 1.64 3.162a4.822 4.822 0 00-.666 2.475c0 1.71.87 3.213 2.188 4.096a4.904 4.904 0 01-2.228-.616v.06a4.923 4.923 0 003.946 4.827 4.996 4.996 0 01-2.212.085 4.936 4.936 0 004.604 3.417 9.867 9.867 0 01-6.102 2.105c-.39 0-.779-.023-1.17-.067a13.995 13.995 0 007.557 2.209c9.053 0 13.998-7.496 13.998-13.985 0-.21 0-.42-.015-.63A9.935 9.935 0 0024 4.59z" />
-                  </svg>
-                </a>
-                <a href="#" className="flex h-9 w-9 items-center justify-center border border-black/20 transition-colors hover:border-black sm:h-10 sm:w-10" aria-label="Instagram">
-                  <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M12 0C8.74 0 8.333.015 7.053.072 5.775.132 4.905.333 4.14.63c-.789.306-1.459.717-2.126 1.384S.935 3.35.63 4.14C.333 4.905.131 5.775.072 7.053.012 8.333 0 8.74 0 12s.015 3.667.072 4.947c.06 1.277.261 2.148.558 2.913.306.788.717 1.459 1.384 2.126.667.666 1.336 1.079 2.126 1.384.766.296 1.636.499 2.913.558C8.333 23.988 8.74 24 12 24s3.667-.015 4.947-.072c1.277-.06 2.148-.262 2.913-.558.788-.306 1.459-.718 2.126-1.384.666-.667 1.079-1.335 1.384-2.126.296-.765.499-1.636.558-2.913.06-1.28.072-1.687.072-4.947s-.015-3.667-.072-4.947c-.06-1.277-.262-2.149-.558-2.913-.306-.789-.718-1.459-1.384-2.126C21.319 1.347 20.651.935 19.86.63c-.765-.297-1.636-.499-2.913-.558C15.667.012 15.26 0 12 0zm0 2.16c3.203 0 3.585.016 4.85.071 1.17.055 1.805.249 2.227.415.562.217.96.477 1.382.896.419.42.679.819.896 1.381.164.422.36 1.057.413 2.227.057 1.266.07 1.646.07 4.85s-.015 3.585-.074 4.85c-.061 1.17-.256 1.805-.413 2.227-.217.562-.477.96-.896 1.382-.42.419-.824.679-1.38.896-.42.164-1.065.36-2.235.413-1.274.057-1.649.07-4.859.07-3.211 0-3.586-.015-4.859-.074-1.171-.061-1.816-.256-2.236-.413-.569-.217-.96-.477-1.379-.896-.421-.419-.69-.824-.9-1.38-.165-.42-.359-1.065-.42-2.235-.045-1.26-.061-1.649-.061-4.844 0-3.196.016-3.586.061-4.861.061-1.17.255-1.816.42-2.236.21-.57.479-.96.9-1.381.419-.419.81-.689 1.379-.9.42-.166 1.051-.361 2.221-.421 1.275-.045 1.65-.06 4.859-.06l.045.03zm0 3.678c-3.405 0-6.162 2.76-6.162 6.162 0 3.405 2.76 6.162 6.162 6.162 3.405 0 6.162-2.76 6.162-6.162 0-3.405-2.76-6.162-6.162-6.162zM12 16c-2.21 0-4-1.79-4-4s1.79-4 4-4 4 1.79 4 4-1.79 4-4 4zm7.846-10.405c0 .795-.646 1.44-1.44 1.44-.795 0-1.44-.646-1.44-1.44 0-.794.646-1.439 1.44-1.439.793-.001 1.44.645 1.44 1.439z" />
-                  </svg>
-                </a>
+          <div className="grid grid-cols-1 gap-14 text-center sm:grid-cols-3 sm:gap-8 lg:gap-20">
+            <div data-scroll-reveal data-scroll-delay="0" className="scroll-reveal">
+              <div className="mx-auto mb-7 flex h-12 w-12 items-center justify-center sm:mb-9 sm:h-16 sm:w-16">
+                <svg className="h-10 w-10" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.25} d="M3 7h11v10H3zM14 10h3l4 4v3h-7zM6 17a2 2 0 104 0M17 17a2 2 0 104 0" />
+                </svg>
               </div>
+              <h3 className="mb-3 text-xl font-semibold tracking-tight sm:text-2xl">Curated footwear</h3>
+              <p className="mx-auto max-w-xs text-base leading-relaxed text-black/60">Pieces chosen for comfort, character, and the way you move.</p>
             </div>
-            <div>
-              <h4 className="mb-3 text-xs font-bold uppercase tracking-wider sm:text-sm">Quick Links</h4>
-              <ul className="space-y-4 text-center sm:text-left">
-                <li><Link href={route("products")} className="text-xs text-black/60 transition-colors hover:text-black sm:text-sm">Products</Link></li>
-                <li><Link href={route("repair")} className="text-xs text-black/60 transition-colors hover:text-black sm:text-sm">Repair Services</Link></li>
-                <li><Link href={route("services")} className="text-xs text-black/60 transition-colors hover:text-black sm:text-sm">Services</Link></li>
-              </ul>
-            </div>
-            <div>
-              <h4 className="mb-3 text-xs font-bold uppercase tracking-wider sm:text-sm">Services</h4>
-              <ul className="space-y-2 text-center sm:space-y-3 sm:text-left">
-                <li><a href="#" className="text-xs text-black/60 transition-colors hover:text-black sm:text-sm">Shoe Repair</a></li>
-                <li><a href="#" className="text-xs text-black/60 transition-colors hover:text-black sm:text-sm">Custom Fitting</a></li>
-                <li><a href="#" className="text-xs text-black/60 transition-colors hover:text-black sm:text-sm">Maintenance</a></li>
-                <li><a href="#" className="text-xs text-black/60 transition-colors hover:text-black sm:text-sm">Consultation</a></li>
-              </ul>
-            </div>
-            <div>
-              <h4 className="mb-3 text-xs font-bold uppercase tracking-wider sm:text-sm">Support</h4>
-              <ul className="space-y-2 text-center sm:space-y-3 sm:text-left">
-                <li><a href="#" className="text-xs text-black/60 transition-colors hover:text-black sm:text-sm">Help Center</a></li>
-                <li><a href="#" className="text-xs text-black/60 transition-colors hover:text-black sm:text-sm">FAQ</a></li>
-                <li><a href="#" className="text-xs text-black/60 transition-colors hover:text-black sm:text-sm">Privacy Policy</a></li>
-                <li><a href="#" className="text-xs text-black/60 transition-colors hover:text-black sm:text-sm">Terms of Service</a></li>
-              </ul>
-            </div>
-          </div>
-          <div className="border-t border-black/10 pt-4 sm:pt-6">
-            <div className="flex flex-col items-start justify-between gap-2 sm:flex-row sm:items-center sm:gap-4">
-              <p className="text-xs text-black/60 sm:text-sm">&copy; 2024 SoleSpace. All rights reserved.</p>
-              <div className="flex flex-wrap items-center gap-4 text-xs text-black/60 sm:gap-6 sm:text-sm">
-                <a href="#" className="hover:text-black transition-colors">Privacy</a>
-                <a href="#" className="hover:text-black transition-colors">Terms</a>
-                <a href="#" className="hover:text-black transition-colors">Cookies</a>
+            <div data-scroll-reveal data-scroll-delay="100" className="scroll-reveal">
+              <div className="mx-auto mb-7 flex h-12 w-12 items-center justify-center sm:mb-9 sm:h-16 sm:w-16">
+                <svg className="h-10 w-10" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.25} d="M4 5h16v14H4zM8 9h8M8 13h5M8 17h3" />
+                </svg>
               </div>
+              <h3 className="mb-3 text-xl font-semibold tracking-tight sm:text-2xl">Expert repairs</h3>
+              <p className="mx-auto max-w-xs text-base leading-relaxed text-black/60">Thoughtful care that helps your favorite pairs go further.</p>
+            </div>
+            <div data-scroll-reveal data-scroll-delay="200" className="scroll-reveal">
+              <div className="mx-auto mb-7 flex h-12 w-12 items-center justify-center sm:mb-9 sm:h-16 sm:w-16">
+                <svg className="h-10 w-10" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.25} d="M12 3l7 4v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V7zM9 12l2 2 4-4" />
+                </svg>
+              </div>
+              <h3 className="mb-3 text-xl font-semibold tracking-tight sm:text-2xl">One space for every step</h3>
+              <p className="mx-auto max-w-xs text-base leading-relaxed text-black/60">Shop, repair, and care for footwear in one considered place.</p>
             </div>
           </div>
         </div>
-        </footer>
+      </section>
+
+      <section id="landing-community" data-scroll-reveal className="scroll-reveal w-full bg-black text-white">
+        <div className={`${sectionContainerClass} grid min-h-[34rem] grid-cols-1 gap-10 py-12 sm:min-h-[42rem] sm:py-16 lg:grid-cols-[minmax(0,1.25fr)_minmax(18rem,0.75fr)] lg:gap-16 lg:py-20`}>
+          <div className="flex flex-col justify-between">
+            <div data-scroll-reveal className="scroll-reveal">
+              <p className="mb-8 text-xs font-semibold uppercase tracking-[0.2em] text-white/65">JOIN THE SOLESPACE COMMUNITY</p>
+              <h2 className="max-w-5xl text-[3.4rem] font-normal leading-[0.82] tracking-[-0.07em] sm:text-7xl lg:text-[8.5rem]">STEP INTO SOLESPACE</h2>
+            </div>
+            <div data-scroll-reveal data-scroll-delay="120" className="scroll-reveal mt-12 flex flex-col gap-5 sm:flex-row sm:items-center sm:gap-8">
+              <Link href={route("products")} className="group inline-flex items-center gap-4 text-sm font-semibold uppercase tracking-[0.14em] transition-opacity hover:opacity-60">
+                Shop products
+                <span aria-hidden="true" className="text-2xl font-normal leading-none transition-transform duration-300 group-hover:translate-x-1">→</span>
+              </Link>
+              <Link href={route("repair")} className="group inline-flex items-center gap-4 text-sm font-semibold uppercase tracking-[0.14em] transition-opacity hover:opacity-60">
+                Book a repair
+                <span aria-hidden="true" className="text-2xl font-normal leading-none transition-transform duration-300 group-hover:translate-x-1">→</span>
+              </Link>
+            </div>
+          </div>
+          <div data-scroll-reveal className="scroll-reveal scroll-reveal--scale relative min-h-[18rem] overflow-hidden bg-[#1b1b1b] lg:min-h-0">
+            <img src="/images/shop/p2.jpg" alt="SoleSpace community on the move" className="absolute inset-0 h-full w-full object-cover opacity-75 transition-transform duration-700 ease-out hover:scale-105" loading="lazy" decoding="async" />
+            <div className="absolute inset-0 bg-black/20" />
+          </div>
+        </div>
+       </section>
+
+       </main>
+        </div>
+
+        <div
+          ref={footerRevealSpacerRef}
+          aria-hidden="true"
+          className="footer-curtain-spacer pointer-events-none relative z-0"
+        />
+
+         <footer
+           ref={footerRef}
+           id="landing-footer"
+           aria-hidden={!footerIsInteractive}
+           className={`landing-footer fixed inset-x-0 bottom-0 z-0 w-full max-h-[100svh] min-h-[min(30rem,100svh)] overflow-x-hidden overflow-y-auto overscroll-auto bg-white text-black sm:min-h-[min(34rem,100svh)] ${footerIsInteractive ? 'pointer-events-auto' : 'pointer-events-none'}`}
+         >
+          <div className={`${sectionContainerClass} relative z-10 pt-8 sm:pt-10`}>
+           <div className="hidden grid-cols-4 gap-8 lg:grid">
+             <div>
+               <Link href={route("landing")} className="text-sm font-semibold uppercase tracking-[0.08em]">
+                 SOLESPACE
+               </Link>
+             </div>
+             <div>
+               <h2 className="mb-4 text-xs font-semibold uppercase tracking-[0.14em]">Explore</h2>
+               <ul className="space-y-2 text-xs font-medium uppercase tracking-[0.08em]">
+                 <li><a href="#landing-new-releases" className="footer-link">New releases</a></li>
+                 <li><a href="#landing-categories" className="footer-link">Shop by category</a></li>
+                 <li><Link href={route("repair")} className="footer-link">Book a repair</Link></li>
+               </ul>
+             </div>
+             <div>
+               <h2 className="mb-4 text-xs font-semibold uppercase tracking-[0.14em]">Support</h2>
+               <ul className="space-y-2 text-xs font-medium uppercase tracking-[0.08em]">
+                 <li><a href="#landing-story" className="footer-link">Our story</a></li>
+                 <li><Link href={route("services")} className="footer-link">Care services</Link></li>
+                 <li><Link href={route("services")} className="footer-link">Contact support</Link></li>
+               </ul>
+             </div>
+             <div>
+               <h2 className="mb-4 text-xs font-semibold uppercase tracking-[0.14em]">Community</h2>
+               <ul className="space-y-2 text-xs font-medium uppercase tracking-[0.08em]">
+                 <li><a href="#landing-community" className="footer-link">Join the community</a></li>
+                 <li><Link href={route("products")} className="footer-link">Shop SoleSpace</Link></li>
+                 <li><Link href={route("services")} className="footer-link">Step in with us</Link></li>
+               </ul>
+             </div>
+           </div>
+
+           <div className="lg:hidden">
+             <p className="mb-7 text-sm font-semibold uppercase tracking-[0.08em]">SOLESPACE</p>
+             <details className="footer-disclosure">
+               <summary>Explore <span aria-hidden="true">+</span></summary>
+               <div className="footer-disclosure__links">
+                 <a href="#landing-new-releases" className="footer-link">New releases</a>
+                 <a href="#landing-categories" className="footer-link">Shop by category</a>
+                 <Link href={route("repair")} className="footer-link">Book a repair</Link>
+               </div>
+             </details>
+             <details className="footer-disclosure">
+               <summary>Support <span aria-hidden="true">+</span></summary>
+               <div className="footer-disclosure__links">
+                 <a href="#landing-story" className="footer-link">Our story</a>
+                 <Link href={route("services")} className="footer-link">Care services</Link>
+                 <Link href={route("services")} className="footer-link">Contact support</Link>
+               </div>
+             </details>
+             <details className="footer-disclosure">
+               <summary>Community <span aria-hidden="true">+</span></summary>
+               <div className="footer-disclosure__links">
+                 <a href="#landing-community" className="footer-link">Join the community</a>
+                 <Link href={route("products")} className="footer-link">Shop SoleSpace</Link>
+                 <Link href={route("services")} className="footer-link">Step in with us</Link>
+               </div>
+             </details>
+           </div>
+
+           <div className="mt-12 grid grid-cols-1 gap-4 border-t border-black/15 py-5 text-[11px] font-medium uppercase tracking-[0.08em] sm:grid-cols-3 sm:gap-8">
+             <p>Copyright &copy; 2024 SoleSpace</p>
+             <p>Shipping to <span aria-hidden="true">&rsaquo;</span> Philippines</p>
+             <p>Language <span aria-hidden="true">&rsaquo;</span> English</p>
+           </div>
+         </div>
+
+         <div aria-hidden="true" className="footer-wordmark">
+           SOLESPACE
+         </div>
+         </footer>
+      </div>
         <style>{`
-          .scroll-reveal {
-            opacity: 0;
-            transform: translate3d(0, 40px, 0);
-            transition: opacity 700ms ease, transform 800ms cubic-bezier(0.22, 1, 0.36, 1);
-          }
+           .landing-page {
+             --landing-footer-height: min(30rem, 100svh);
+           }
 
-          .scroll-reveal.is-visible {
-            opacity: 1;
-            transform: translate3d(0, 0, 0);
-          }
+           .footer-curtain-spacer {
+             height: var(--landing-footer-height);
+           }
 
-          .hero-headline-line {
+           @media (min-width: 640px) {
+             .landing-page {
+               --landing-footer-height: min(34rem, 100svh);
+             }
+           }
+
+           .footer-link {
+             display: inline-block;
+             transition: opacity 180ms ease, transform 180ms ease;
+           }
+
+           .footer-link:hover {
+             opacity: 0.55;
+             transform: translateX(3px);
+           }
+
+           .footer-link:focus-visible,
+           .footer-disclosure summary:focus-visible {
+             outline: 2px solid currentColor;
+             outline-offset: 4px;
+           }
+
+           .footer-disclosure {
+             border-top: 1px solid rgb(0 0 0 / 15%);
+           }
+
+           .footer-disclosure:last-of-type {
+             border-bottom: 1px solid rgb(0 0 0 / 15%);
+           }
+
+           .footer-disclosure summary {
+             display: flex;
+             min-height: 44px;
+             cursor: pointer;
+             list-style: none;
+             align-items: center;
+             justify-content: space-between;
+             padding: 14px 0;
+             font-size: 0.75rem;
+             font-weight: 600;
+             letter-spacing: 0.12em;
+             text-transform: uppercase;
+           }
+
+           .footer-disclosure summary::-webkit-details-marker {
+             display: none;
+           }
+
+           .footer-disclosure[open] summary span {
+             transform: rotate(45deg);
+           }
+
+           .footer-disclosure summary span {
+             font-size: 1.25rem;
+             font-weight: 400;
+             line-height: 1;
+             transition: transform 180ms ease;
+           }
+
+           .footer-disclosure__links {
+             display: grid;
+             gap: 10px;
+             padding: 0 0 18px;
+             font-size: 0.7rem;
+             font-weight: 500;
+             letter-spacing: 0.08em;
+             text-transform: uppercase;
+           }
+
+           .footer-wordmark {
+             position: relative;
+             z-index: 0;
+             width: max-content;
+             min-width: 100%;
+             padding: 2.2rem 0 0;
+             overflow: hidden;
+             white-space: nowrap;
+             font-size: clamp(7rem, 25vw, 26rem);
+             font-weight: 700;
+             line-height: 0.68;
+             letter-spacing: -0.105em;
+           }
+
+           @media (prefers-reduced-motion: reduce) {
+             .footer-link,
+             .footer-disclosure summary span {
+               transition: none;
+             }
+           }
+
+           .hero-headline-line {
             display: block;
             opacity: 0;
-            transform: translate3d(0, 28px, 0);
-            animation: hero-line-rise 600ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
-            will-change: transform, opacity;
+            transform: translate3d(0, 36px, 0) scale(1.02);
+            filter: blur(8px);
+            animation: hero-line-rise 1400ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            will-change: transform, opacity, filter;
           }
 
           .hero-line-1 {
@@ -676,54 +600,84 @@ const LandingPage: React.FC<Props> = ({ products = [], stats }) => {
           }
 
           .hero-line-2 {
-            animation-delay: 600ms;
+            animation-delay: 300ms;
           }
 
           .hero-line-3 {
-            animation-delay: 1200ms;
+            animation-delay: 600ms;
           }
 
           .hero-description {
             opacity: 0;
-            transform: translate3d(0, 20px, 0);
-            animation: hero-copy-fade 650ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
-            animation-delay: 1900ms;
-            will-change: transform, opacity;
+            transform: translate3d(0, 24px, 0) scale(0.985);
+            filter: blur(6px);
+            animation: hero-copy-fade 1200ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            animation-delay: 1050ms;
+            will-change: transform, opacity, filter;
           }
 
-          @keyframes hero-line-rise {
-            from {
-              opacity: 0;
-              transform: translate3d(0, 28px, 0);
-            }
-            to {
-              opacity: 1;
-              transform: translate3d(0, 0, 0);
-            }
+          .hero-actions {
+            opacity: 0;
+            transform: translate3d(0, 24px, 0) scale(0.985);
+            filter: blur(6px);
+            animation: hero-copy-fade 1200ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            animation-delay: 1450ms;
+            will-change: transform, opacity, filter;
           }
 
-          @keyframes hero-copy-fade {
-            from {
-              opacity: 0;
-              transform: translate3d(0, 20px, 0);
-            }
-            to {
-              opacity: 1;
-              transform: translate3d(0, 0, 0);
-            }
+          html.solespace-first-load:not(.solespace-app-ready) .landing-hero-motion {
+            animation-play-state: paused !important;
+          }
+
+           @keyframes hero-line-rise {
+             0% {
+               opacity: 0;
+               transform: translate3d(0, 36px, 0) scale(1.02);
+               filter: blur(8px);
+             }
+             68% {
+               opacity: 0.92;
+               transform: translate3d(0, -2px, 0) scale(1.005);
+               filter: blur(1px);
+             }
+             100% {
+               opacity: 1;
+               transform: translate3d(0, 0, 0);
+               filter: blur(0);
+             }
+           }
+
+           @keyframes hero-copy-fade {
+             0% {
+               opacity: 0;
+               transform: translate3d(0, 24px, 0) scale(0.985);
+               filter: blur(6px);
+             }
+             72% {
+               opacity: 0.94;
+               transform: translate3d(0, -1px, 0) scale(1.002);
+               filter: blur(1px);
+             }
+             100% {
+               opacity: 1;
+               transform: translate3d(0, 0, 0);
+               filter: blur(0);
+             }
           }
 
           @media (prefers-reduced-motion: reduce) {
-            .scroll-reveal,
-            .scroll-reveal.is-visible {
-              transition: none !important;
-              transform: none !important;
-              opacity: 1 !important;
-            }
+            .landing-hero-motion,
+            .landing-hero-motion.hero-headline-line,
+            .landing-hero-motion.hero-description,
+            .landing-hero-motion.hero-actions {
+               animation: none !important;
+               transform: none !important;
+               opacity: 1 !important;
+               filter: none !important;
+             }
 
           }
         `}</style>
-      </div>
     </>
   );
 };

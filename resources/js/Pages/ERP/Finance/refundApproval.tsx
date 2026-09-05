@@ -266,6 +266,9 @@ const ReceiptIcon = ({ className }: { className?: string }) => (
 interface RefundRequest {
 	id: number;
 	refundType?: "order" | "repair";
+	sourceType?: string;
+	repairNumber?: string | null;
+	receiptNumber?: string | null;
 	workflowSource?: string;
 	repairerStatus?: string;
 	preferredReturnChannel?: string;
@@ -279,19 +282,28 @@ interface RefundRequest {
 	customerName: string;
 	orderTotal?: string;
 	refundAmount: string;
+	refundAmountValue?: number;
+	payoutAmount?: string;
+	payoutAmountValue?: number;
+	canAdjustRefundAmount?: boolean;
+	refundAmountWithoutShipping?: number;
+	shippingFee?: number;
 	refundMethod: string;
 	requestedBy: string;
 	requestDate: string;
 	refundReason?: string;
 	refundNote?: string;
+	reasonDetails?: string;
 	reason: string;
-	status: "Pending" | "Approved" | "Rejected";
+	status: "Pending" | "Approved" | "Processing" | "Refunded" | "Rejected";
 	rawStatus?: string;
 	shopOwnerStatus?: string;
 	financeStatus?: string;
 	requiresOwnerApproval?: boolean;
 	approvalStage?: string;
-	returnStatus?: string;
+	approvalStageLabel?: string | null;
+	returnStatus?: string | null;
+	canExecutePayout?: boolean;
 	refundExecutedAt?: string | null;
 	refundedAt?: string | null;
 	rejectionReason?: string;
@@ -302,6 +314,19 @@ interface RefundRequest {
 		execution_amount?: number;
 		execution_proof_urls?: string[];
 	};
+}
+
+interface DeliveryReconciliation {
+	repair_id: number;
+	request_id: string;
+	customer_name: string;
+	compensation_key: string;
+	phase: "intake" | "return";
+	reason: string;
+	amount: number;
+	status: "pending" | "processing";
+	can_credit_balance: boolean;
+	created_at?: string | null;
 }
 
 const isSameRefundRequest = (left: RefundRequest, right: RefundRequest): boolean => {
@@ -319,8 +344,13 @@ const parseCurrencyToNumber = (value: string): number => {
 
 const normalizeReasonDetails = (reason: unknown, otherReasonNote?: unknown): string => {
 	const raw = String(reason ?? "").trim();
-	const stripped = raw.replace(/\bRefund scope:\s*(?:full|partial)\b[\s\S]*$/i, "").trim();
-	const base = stripped !== "" ? stripped : raw;
+	const withoutMedia = raw
+		.split(/\r?\n/)
+		.filter((line) => !/^\s*Uploaded media references\s*:/i.test(line))
+		.join("\n")
+		.trim();
+	const stripped = withoutMedia.replace(/\bRefund scope:\s*(?:full|partial)\b[\s\S]*$/i, "").trim();
+	const base = stripped !== "" ? stripped : withoutMedia;
 	const other = String(otherReasonNote ?? "").trim();
 
 	if (other !== "" && !base.toLowerCase().includes(other.toLowerCase())) {
@@ -331,15 +361,43 @@ const normalizeReasonDetails = (reason: unknown, otherReasonNote?: unknown): str
 };
 
 const normalizeRefundRequestForDisplay = (item: RefundRequest): RefundRequest => {
-	const normalizedReason = normalizeReasonDetails(item.reason, (item as any).otherReasonNote ?? (item as any).other_reason_note);
+	const otherReasonNote = (item as any).otherReasonNote ?? (item as any).other_reason_note;
+	const normalizedReason = normalizeReasonDetails(item.reasonDetails || item.reason, otherReasonNote);
+	const normalizedNote = normalizeReasonDetails(item.refundNote, otherReasonNote);
 	return {
 		...item,
 		reason: normalizedReason,
-		refundNote: normalizeReasonDetails(item.refundNote, (item as any).otherReasonNote ?? (item as any).other_reason_note),
+		reasonDetails: normalizedReason,
+		refundNote: normalizedNote,
 	};
 };
 
-const resolveFinanceDisplayStatus = (item: RefundRequest): RefundRequest["status"] => {
+export const getApprovalStageLabel = (
+	request: Pick<RefundRequest, "refundType" | "approvalStageLabel" | "approvalStage" | "financeStatus" | "shopOwnerStatus">,
+): string | null => {
+	const explicitLabel = String(request.approvalStageLabel || "").trim();
+	if (explicitLabel) return explicitLabel;
+	if (request.refundType !== "repair") return null;
+
+	const approvalStage = String(request.approvalStage || "").toLowerCase();
+	const financeStatus = String(request.financeStatus || "").toLowerCase();
+	const shopOwnerStatus = String(request.shopOwnerStatus || "").toLowerCase();
+
+	if (approvalStage === "shop_owner" || (
+		financeStatus === "approved_initial"
+		&& !["approved", "skipped"].includes(shopOwnerStatus)
+	)) {
+		return "Waiting for shop owner approval";
+	}
+
+	if (approvalStage === "finance_initial" || financeStatus === "pending") {
+		return "Waiting for Finance approval";
+	}
+
+	return null;
+};
+
+export const resolveFinanceDisplayStatus = (item: RefundRequest): RefundRequest["status"] => {
 	const rawStatus = String(item.rawStatus || "").toLowerCase();
 	const financeStatus = String(item.financeStatus || "").toLowerCase();
 	const shopOwnerStatus = String(item.shopOwnerStatus || "").toLowerCase();
@@ -348,8 +406,12 @@ const resolveFinanceDisplayStatus = (item: RefundRequest): RefundRequest["status
 		return "Rejected";
 	}
 
-	if (["processing", "succeeded", "completed", "paid"].includes(rawStatus)) {
-		return "Approved";
+	if (item.refundType === "repair" && rawStatus === "processing") {
+		return "Processing";
+	}
+
+	if (item.refundType === "repair" && ["succeeded", "completed", "paid", "refunded"].includes(rawStatus)) {
+		return "Refunded";
 	}
 
 	if (financeStatus === "approved") {
@@ -377,7 +439,56 @@ const normalizeFinanceRefundRequest = (item: RefundRequest): RefundRequest => {
 	return {
 		...normalized,
 		status: resolveFinanceDisplayStatus(normalized),
+		approvalStageLabel: getApprovalStageLabel(normalized),
 	};
+};
+
+export const canFinanceAuthorizeRefund = (request: RefundRequest): boolean => {
+	const rawStatus = String(request.rawStatus || "").toLowerCase();
+	const financeStatus = String(request.financeStatus || "").toLowerCase();
+	const shopOwnerStatus = String(request.shopOwnerStatus || "").toLowerCase();
+	const requiresOwnerApproval = request.requiresOwnerApproval !== false;
+
+	if (request.refundType === "repair") {
+		return financeStatus === "pending"
+			&& !["rejected", "failed", "succeeded", "completed", "paid"].includes(rawStatus);
+	}
+
+	return shopOwnerStatus === "approved"
+		&& (financeStatus === "pending"
+			|| (requiresOwnerApproval && financeStatus === "approved_initial"))
+		&& !["rejected", "failed", "succeeded", "completed", "paid"].includes(rawStatus);
+};
+
+export const getFinanceApprovalNotice = (
+	request: Pick<RefundRequest, "refundType">,
+): string => {
+	if (request.refundType === "repair") {
+		return "No retail item return or Staff inspection is required for this repair-service refund. Finance approval authorizes the refund; payout follows the existing repair payout stage.";
+	}
+
+	return "Money can be released only after Staff receives and inspects every returned item.";
+};
+
+export const canExecuteRefundPayout = (request: RefundRequest): boolean => {
+	if (typeof request.canExecutePayout === "boolean") {
+		return request.canExecutePayout;
+	}
+
+	const rawStatus = String(request.rawStatus || "").toLowerCase();
+	const financeStatus = String(request.financeStatus || "").toLowerCase();
+	const shopOwnerStatus = String(request.shopOwnerStatus || "").toLowerCase();
+
+	if (request.refundType === "repair") {
+		return financeStatus === "approved"
+			&& ["approved", "skipped"].includes(shopOwnerStatus)
+			&& !["processing", "succeeded", "completed", "paid", "refunded", "failed", "rejected"].includes(rawStatus);
+	}
+
+	return financeStatus === "approved"
+		&& shopOwnerStatus === "approved"
+		&& String(request.returnStatus || "").toLowerCase() === "received"
+		&& !["processing", "succeeded", "completed", "paid", "refunded", "failed", "rejected"].includes(rawStatus);
 };
 
 const formatPayoutChannelLabel = (channel?: string): string => {
@@ -445,6 +556,11 @@ const resolveExecutionChannel = (request: RefundRequest): RepairExecutionChannel
 };
 
 const resolveFixedExecutionAmount = (request: RefundRequest): number => {
+	const payoutAmount = Number(request.payoutAmountValue);
+	if (Number.isFinite(payoutAmount) && payoutAmount > 0) {
+		return Math.round(payoutAmount * 100) / 100;
+	}
+
 	const fromExecution = Number(request.financeExecution?.execution_amount);
 	if (Number.isFinite(fromExecution) && fromExecution > 0) {
 		return Math.round(fromExecution * 100) / 100;
@@ -452,6 +568,17 @@ const resolveFixedExecutionAmount = (request: RefundRequest): number => {
 
 	const parsed = parseCurrencyToNumber(request.refundAmount);
 	return Math.round(parsed * 100) / 100;
+};
+
+const getPayoutAmountDisplay = (request: RefundRequest): string => {
+	if (String(request.payoutAmount || "").trim() !== "") {
+		return String(request.payoutAmount);
+	}
+
+	const amount = resolveFixedExecutionAmount(request);
+	return amount > 0
+		? `₱${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+		: request.refundAmount;
 };
 
 const shouldShowRepairRefundInFinanceQueue = (request: RefundRequest): boolean => {
@@ -487,8 +614,8 @@ type ChangeType = "increase" | "decrease";
 interface MetricCardProps {
 	title: string;
 	value: number | string;
-	change: number;
-	changeType: ChangeType;
+	change?: number;
+	changeType?: ChangeType;
 	icon: ComponentType<{ className?: string }>;
 	color: MetricColor;
 	description: string;
@@ -516,16 +643,18 @@ const MetricCard = ({ title, value, change, changeType, icon: Icon, color, descr
 					<div className={`flex items-center justify-center w-14 h-14 bg-gradient-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
 						<Icon className="text-white size-7 drop-shadow-sm" />
 					</div>
-					<div
-						className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${
-							changeType === "increase"
-								? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-								: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-						}`}
-					>
-						{changeType === "increase" ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" />}
-						{Math.abs(change)}%
-					</div>
+					{typeof change === "number" && changeType && (
+						<div
+							className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${
+								changeType === "increase"
+									? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+									: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+								}`}
+						>
+							{changeType === "increase" ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" />}
+							{Math.abs(change)}%
+						</div>
+					)}
 				</div>
 				<div className="space-y-2">
 					<p className="text-sm font-medium text-gray-600 dark:text-gray-400">{title}</p>
@@ -542,6 +671,7 @@ export default function RefundApproval() {
 	const userRole = auth?.user?.role;
 
 	const [requests, setRequests] = useState<RefundRequest[]>([]);
+	const [deliveryReconciliations, setDeliveryReconciliations] = useState<DeliveryReconciliation[]>([]);
 	const [currentPage, setCurrentPage] = useState(1);
 	const [viewModalOpen, setViewModalOpen] = useState(false);
 	const [selectedRequest, setSelectedRequest] = useState<RefundRequest | null>(null);
@@ -612,14 +742,29 @@ export default function RefundApproval() {
 					Accept: "application/json",
 				},
 			});
+			const deliveryParams = new URLSearchParams();
+			if (searchQuery.trim()) {
+				deliveryParams.append("search", searchQuery.trim());
+			}
+			const deliveryResponse = await fetch(
+				`/api/finance/repair-delivery-reconciliations?${deliveryParams.toString()}`,
+				{
+					credentials: "include",
+					headers: { Accept: "application/json" },
+				},
+			);
 
 			const orderData = await orderResponse.json();
 			const repairData = repairResponse.status === 404 ? { data: [] } : await repairResponse.json();
+			const deliveryData = deliveryResponse.status === 404 ? { data: [] } : await deliveryResponse.json();
 			if (!orderResponse.ok) {
 				throw new Error(orderData?.message || "Failed to load refund requests");
 			}
 			if (!repairResponse.ok && repairResponse.status !== 404) {
 				throw new Error(repairData?.message || "Failed to load repair refund requests");
+			}
+			if (!deliveryResponse.ok && deliveryResponse.status !== 404) {
+				throw new Error(deliveryData?.message || "Failed to load delivery fee adjustments");
 			}
 			if (repairResponse.status === 404) {
 				console.warn("Finance repair refund endpoint unavailable: /api/finance/repair-refunds");
@@ -643,6 +788,9 @@ export default function RefundApproval() {
 					new Date(b.requestDate).getTime() - new Date(a.requestDate).getTime(),
 				),
 			);
+			setDeliveryReconciliations(
+				Array.isArray(deliveryData?.data) ? deliveryData.data : [],
+			);
 		} catch (error) {
 			Swal.fire({
 				icon: "error",
@@ -652,6 +800,65 @@ export default function RefundApproval() {
 			});
 		} finally {
 			setIsLoading(false);
+		}
+	};
+
+	const handleResolveDeliveryReconciliation = async (
+		item: DeliveryReconciliation,
+		action: "credit_balance" | "refund_original",
+	) => {
+		const actionLabel = action === "credit_balance" ? "credit the service balance" : "refund the original channel";
+		const result = await Swal.fire({
+			title: action === "credit_balance" ? "Credit service balance?" : "Refund original channel?",
+			text: `This will ${actionLabel} by ₱${item.amount.toFixed(2)} and then unlock the ${item.phase} delivery plan.`,
+			icon: "question",
+			showCancelButton: true,
+			confirmButtonColor: "#2563eb",
+			confirmButtonText: "Confirm",
+		});
+		if (!result.isConfirmed) {
+			return;
+		}
+
+		setIsActionProcessing(true);
+		try {
+			const response = await fetch(
+				`/api/finance/repair-delivery-reconciliations/${item.repair_id}/resolve`,
+				{
+					method: "POST",
+					credentials: "include",
+					headers: {
+						"Content-Type": "application/json",
+						Accept: "application/json",
+						"X-CSRF-TOKEN": document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "",
+					},
+					body: JSON.stringify({
+						compensation_key: item.compensation_key,
+						action,
+					}),
+				},
+			);
+			const data = await response.json();
+			if (!response.ok) {
+				throw new Error(data?.message || "Unable to resolve the delivery fee adjustment.");
+			}
+
+			await Swal.fire({
+				title: data?.data?.status === "processing" ? "Refund processing" : "Adjustment completed",
+				text: data?.message || "The delivery fee adjustment was recorded.",
+				icon: "success",
+				confirmButtonColor: "#2563eb",
+			});
+			await fetchRefundRequests();
+		} catch (error) {
+			await Swal.fire({
+				title: "Adjustment failed",
+				text: error instanceof Error ? error.message : "Unable to resolve the delivery fee adjustment.",
+				icon: "error",
+				confirmButtonColor: "#2563eb",
+			});
+		} finally {
+			setIsActionProcessing(false);
 		}
 	};
 
@@ -677,6 +884,7 @@ export default function RefundApproval() {
 
 	const pendingCount = requests.filter((r) => r.status === "Pending").length;
 	const approvedCount = requests.filter((r) => r.status === "Approved").length;
+	const executablePayoutCount = requests.filter(canExecuteRefundPayout).length;
 	const rejectedCount = requests.filter((r) => r.status === "Rejected").length;
 
 	const handleViewClick = (request: RefundRequest) => {
@@ -691,28 +899,15 @@ export default function RefundApproval() {
 	};
 
 	const canFinanceApprove = (request: RefundRequest): boolean => {
-		const rawStatus = String(request.rawStatus || "").toLowerCase();
-		const financeStatus = String(request.financeStatus || "").toLowerCase();
-		const shopOwnerStatus = String(request.shopOwnerStatus || "").toLowerCase();
-		const requiresOwnerApproval = (request as any).requiresOwnerApproval !== false;
-
-		if (request.refundType === "repair") {
-			return financeStatus === "pending"
-				&& !["rejected", "failed", "succeeded", "completed", "paid"].includes(rawStatus);
-		}
-
-		return (
-				financeStatus === "pending"
-				|| (requiresOwnerApproval && financeStatus === "approved_initial" && shopOwnerStatus === "approved")
-			)
-			&& !["rejected", "failed", "succeeded", "completed", "paid"].includes(rawStatus);
+		return canFinanceAuthorizeRefund(request);
 	};
 
 	const canFinanceReject = (request: RefundRequest): boolean => {
 		const financeStatus = String(request.financeStatus || "").toLowerCase();
 		const rawStatus = String(request.rawStatus || "").toLowerCase();
 		
-		return financeStatus === "pending"
+		return (request.refundType === "repair" || String(request.shopOwnerStatus || "").toLowerCase() === "approved")
+			&& financeStatus === "pending"
 			&& !["rejected", "failed", "succeeded", "completed", "paid"].includes(rawStatus);
 	};
 
@@ -731,17 +926,43 @@ export default function RefundApproval() {
 		setSelectedRequest(null);
 		setActiveImage(null);
 
+		const needsShippingDecision = request.refundType !== "repair" && request.canAdjustRefundAmount === true;
+		const fullRefundAmount = Number(request.refundAmountValue || 0);
+		const productsOnlyAmount = Number(request.refundAmountWithoutShipping || 0);
+		const shippingFee = Number(request.shippingFee || 0);
+		const shippingDecisionHtml = needsShippingDecision
+			? `
+				<label for="retail-refund-scope" style="display:block;margin:1rem 0 0.35rem;font-weight:600;">
+					Refund scope
+				</label>
+				<select id="retail-refund-scope" class="swal2-select" style="display:block;width:100%;margin:0;">
+					<option value="">Choose refund scope</option>
+					<option value="${productsOnlyAmount}">Products only - retain PHP ${shippingFee.toFixed(2)} shipping</option>
+					<option value="${fullRefundAmount}">Full refund - include PHP ${shippingFee.toFixed(2)} shipping</option>
+				</select>
+			`
+			: "";
+		const repairSourceHtml = request.refundType === "repair"
+			? `
+				<p style="margin-bottom: 0.5rem;"><strong>Source:</strong> Repair service</p>
+				<p style="margin-bottom: 0.5rem;"><strong>Repair #:</strong> ${request.repairNumber || "Not available"}</p>
+				<p style="margin-bottom: 0.5rem;"><strong>Receipt #:</strong> ${request.receiptNumber || request.orderNumber || "Not available"}</p>
+			`
+			: "";
 		const result = await Swal.fire({
 			title: (request as any).approvalStage === "finance_final" ? "Finalize Refund Approval?" : "Approve Refund?",
 			html: `
 				<div style="text-align: left; margin-top: 1rem;">
 					<p style="margin-bottom: 0.5rem;"><strong>Order:</strong> ${request.orderNumber}</p>
+					${repairSourceHtml}
 					<p style="margin-bottom: 0.5rem;"><strong>Customer:</strong> ${request.customerName}</p>
-					<p style="margin-bottom: 0.5rem;"><strong>Amount:</strong> ${request.refundAmount}</p>
+					<p style="margin-bottom: 0.5rem;"><strong>Amount:</strong> ${getPayoutAmountDisplay(request)}</p>
 					<p style="margin-bottom: 0.5rem;"><strong>Method:</strong> ${request.refundMethod}</p>
 					<p style="margin-bottom: 0.5rem;"><strong>Requested by:</strong> ${request.requestedBy}</p>
 					<p style="margin-bottom: 0.5rem;"><strong>Reason:</strong> ${request.reason}</p>
-					<p style="margin-bottom: 0.5rem;"><strong>Action:</strong> ${(request as any).approvalStage === "finance_final" ? "Finance final approval" : "Finance initial approval"}</p>
+					<p style="margin-bottom: 0.5rem;"><strong>Action:</strong> Finance authorization only</p>
+					<p style="margin-bottom: 0;color:#92400e;"><strong>${request.refundType === "repair" ? "Repair refund:" : "No payout yet."}</strong> ${getFinanceApprovalNotice(request)}</p>
+					${shippingDecisionHtml}
 				</div>
 			`,
 			icon: "question",
@@ -750,9 +971,23 @@ export default function RefundApproval() {
 			cancelButtonColor: "#6b7280",
 			confirmButtonText: "Approve",
 			cancelButtonText: "Cancel",
+			preConfirm: needsShippingDecision
+				? () => {
+					const scope = (document.getElementById("retail-refund-scope") as HTMLSelectElement | null)?.value;
+					if (!scope) {
+						Swal.showValidationMessage("Choose products only or full refund.");
+						return false;
+					}
+
+					return { approvedAmount: Number(scope) };
+				}
+				: undefined,
 		});
 
 		if (result.isConfirmed) {
+			const approvedAmount = needsShippingDecision
+				? (result.value as { approvedAmount: number }).approvedAmount
+				: undefined;
 			setIsActionProcessing(true);
 			try {
 				const response = await fetch(`${getFinanceActionBase(request)}/${request.id}/approve`, {
@@ -764,7 +999,7 @@ export default function RefundApproval() {
 						"X-CSRF-TOKEN":
 							document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "",
 					},
-					body: JSON.stringify({}),
+					body: JSON.stringify(approvedAmount === undefined ? {} : { approved_amount: approvedAmount }),
 				});
 
 				const data = await response.json();
@@ -821,7 +1056,7 @@ export default function RefundApproval() {
 			html: `
 				<div style="text-align: left; margin-bottom: 1rem;">
 					<p style="margin-bottom: 0.5rem;"><strong>Order:</strong> ${request.orderNumber}</p>
-					<p style="margin-bottom: 0.5rem;"><strong>Amount:</strong> ${request.refundAmount}</p>
+					<p style="margin-bottom: 0.5rem;"><strong>Amount:</strong> ${getPayoutAmountDisplay(request)}</p>
 				</div>
 			`,
 			input: "textarea",
@@ -890,21 +1125,7 @@ export default function RefundApproval() {
 	};
 
 	const canExecuteGatewayRefund = (request: RefundRequest): boolean => {
-		const rawStatus = String(request.rawStatus || "").toLowerCase();
-		const financeStatus = String(request.financeStatus || "").toLowerCase();
-		const shopOwnerStatus = String(request.shopOwnerStatus || "").toLowerCase();
-		const returnStatus = String(request.returnStatus || "").toLowerCase();
-
-		if (request.refundType === "repair") {
-			return financeStatus === "approved"
-				&& ["approved", "skipped"].includes(shopOwnerStatus)
-				&& !["processing", "succeeded", "failed", "rejected"].includes(rawStatus);
-		}
-
-		return financeStatus === "approved"
-			&& shopOwnerStatus === "approved"
-			&& ["in_transit", "received"].includes(returnStatus)
-			&& !["processing", "succeeded", "failed", "rejected"].includes(rawStatus);
+		return canExecuteRefundPayout(request);
 	};
 
 	const getExecuteActionLabel = (request: RefundRequest): string => {
@@ -1077,7 +1298,7 @@ export default function RefundApproval() {
 				<div style="text-align: left; margin-top: 1rem;">
 					<p style="margin-bottom: 0.5rem;"><strong>Order:</strong> ${request.orderNumber}</p>
 					<p style="margin-bottom: 0.5rem;"><strong>Customer:</strong> ${request.customerName}</p>
-					<p style="margin-bottom: 0.5rem;"><strong>Amount:</strong> ${request.refundAmount}</p>
+					<p style="margin-bottom: 0.5rem;"><strong>Amount:</strong> ${getPayoutAmountDisplay(request)}</p>
 					<p style="margin-bottom: 0.5rem;"><strong>Method:</strong> ${request.refundMethod}</p>
 				</div>
 			`,
@@ -1157,7 +1378,7 @@ export default function RefundApproval() {
 					</div>
 				</div>
 
-				<div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+				<div className="grid grid-cols-1 md:grid-cols-4 gap-6">
 					<MetricCard
 						title="Pending Approvals"
 						value={pendingCount}
@@ -1177,6 +1398,13 @@ export default function RefundApproval() {
 						description="This month"
 					/>
 					<MetricCard
+						title="Executable Payouts"
+						value={executablePayoutCount}
+						icon={ArrowUpIcon}
+						color="info"
+						description="Ready for Finance to release"
+					/>
+					<MetricCard
 						title="Rejected"
 						value={rejectedCount}
 						change={2}
@@ -1186,6 +1414,83 @@ export default function RefundApproval() {
 						description="This month"
 					/>
 				</div>
+
+				<section
+					aria-labelledby="delivery-fee-adjustments-heading"
+					className="bg-white dark:bg-gray-900 border border-amber-200 dark:border-amber-900/60 rounded-2xl p-6 shadow-sm"
+				>
+					<div className="mb-4">
+						<h2 id="delivery-fee-adjustments-heading" className="text-lg font-semibold text-gray-900 dark:text-white">
+							Delivery fee adjustments
+						</h2>
+						<p className="text-sm text-gray-500 dark:text-gray-400">
+							Resolve cancelled or unavailable shop-owned repair deliveries before the customer selects a new plan.
+						</p>
+					</div>
+
+					{deliveryReconciliations.length === 0 ? (
+						<p className="rounded-xl bg-gray-50 dark:bg-gray-800 px-4 py-5 text-sm text-gray-500 dark:text-gray-400">
+							{isLoading ? "Loading delivery fee adjustments..." : "No delivery fee adjustments need Finance action."}
+						</p>
+					) : (
+						<div className="space-y-3">
+							{deliveryReconciliations.map((item) => (
+								<article
+									key={item.compensation_key}
+									className="rounded-xl border border-gray-200 dark:border-gray-700 p-4"
+								>
+									<div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+										<div className="min-w-0">
+											<div className="flex flex-wrap items-center gap-2">
+												<span className="font-semibold text-gray-900 dark:text-white">{item.request_id}</span>
+												<span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
+													{item.phase === "return" ? "Return delivery" : "Pickup delivery"}
+												</span>
+												{item.status === "processing" && (
+													<span className="rounded-full bg-blue-100 px-2 py-1 text-xs font-semibold text-blue-700 dark:bg-blue-900/40 dark:text-blue-200">
+														Refund processing
+													</span>
+												)}
+											</div>
+											<p className="mt-1 text-sm text-gray-700 dark:text-gray-300">{item.customer_name}</p>
+											<p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+												{item.reason.replaceAll("_", " ")}
+											</p>
+										</div>
+										<div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+											<span className="mr-2 text-lg font-semibold text-gray-900 dark:text-white">
+												₱{Number(item.amount).toFixed(2)}
+											</span>
+											<div>
+												<button
+													type="button"
+													onClick={() => void handleResolveDeliveryReconciliation(item, "credit_balance")}
+													disabled={isActionProcessing || item.status === "processing" || !item.can_credit_balance}
+													className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+												>
+													Credit balance
+												</button>
+												{!item.can_credit_balance && (
+													<p className="mt-1 max-w-56 text-xs text-amber-700 dark:text-amber-300">
+														The remaining service balance is lower than this fee.
+													</p>
+												)}
+											</div>
+											<button
+												type="button"
+												onClick={() => void handleResolveDeliveryReconciliation(item, "refund_original")}
+												disabled={isActionProcessing || item.status === "processing"}
+												className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800 sm:w-auto"
+											>
+												Refund original channel
+											</button>
+										</div>
+									</div>
+								</article>
+							))}
+						</div>
+					)}
+				</section>
 
 				<div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-6 shadow-sm">
 					<div className="mb-4">
@@ -1244,21 +1549,35 @@ export default function RefundApproval() {
 											<p className="font-medium text-gray-900 dark:text-white">{request.orderNumber}</p>
 										</td>
 										<td className="py-4 text-gray-700 dark:text-gray-300">{request.customerName}</td>
-										<td className="py-4 text-gray-700 dark:text-gray-300">{request.refundAmount}</td>
+										<td className="py-4 text-gray-700 dark:text-gray-300">{getPayoutAmountDisplay(request)}</td>
 										<td className="py-4 text-gray-700 dark:text-gray-300">{request.refundMethod}</td>
 										<td className="py-4 text-gray-700 dark:text-gray-300">{request.requestedBy}</td>
 										<td className="py-4">
-											<span
-												className={`px-2 py-1 rounded-full text-xs font-semibold ${
-													request.status === "Pending"
-														? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300"
-														: request.status === "Approved"
-														? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300"
-														: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
-												}`}
-											>
-												{request.status}
-											</span>
+											<div className="flex flex-wrap items-center gap-2">
+												<span
+													className={`px-2 py-1 rounded-full text-xs font-semibold ${
+														request.approvalStageLabel?.startsWith('Waiting') === true
+															? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300"
+															: ["Approved", "Refunded"].includes(request.status)
+															? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300"
+															: request.status === "Processing"
+															? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
+															: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
+													}`}
+												>
+													{request.approvalStageLabel?.startsWith('Waiting') ? request.approvalStageLabel : request.status}
+												</span>
+												{canExecuteRefundPayout(request) && (
+													<span className="px-2 py-1 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300">
+														Payout Ready
+													</span>
+												)}
+												{request.approvalStageLabel && !request.approvalStageLabel.startsWith('Waiting') && (
+													<span className="px-2 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+														{request.approvalStageLabel}
+													</span>
+												)}
+											</div>
 										</td>
 										<td className="py-4 text-right">
 											<div className="inline-flex items-center gap-2">
@@ -1374,6 +1693,33 @@ export default function RefundApproval() {
 
 						<div className="px-8 py-6 overflow-y-auto max-h-[70vh]">
 							<div className="space-y-6">
+								{selectedRequest.refundType === "repair" && (
+									<div>
+										<p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Refund source</p>
+										<div className="border border-gray-200 dark:border-gray-800 rounded-lg p-4 text-sm text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-900 grid grid-cols-1 sm:grid-cols-3 gap-3">
+											<div>
+												<p className="text-xs uppercase tracking-wide text-gray-500">Source</p>
+												<p className="font-semibold text-gray-900 dark:text-gray-100">Repair service</p>
+											</div>
+											<div>
+												<p className="text-xs uppercase tracking-wide text-gray-500">Repair #</p>
+												<p className="font-semibold text-gray-900 dark:text-gray-100">{selectedRequest.repairNumber || "Not available"}</p>
+											</div>
+											<div>
+												<p className="text-xs uppercase tracking-wide text-gray-500">Receipt #</p>
+												<p className="font-semibold text-gray-900 dark:text-gray-100">{selectedRequest.receiptNumber || selectedRequest.orderNumber || "Not available"}</p>
+											</div>
+										</div>
+									</div>
+								)}
+
+								{selectedRequest.approvalStageLabel && (
+									<div className="border border-blue-200 dark:border-blue-900/60 rounded-lg p-4 bg-blue-50 dark:bg-blue-900/20">
+										<p className="text-xs uppercase tracking-wide text-blue-700 dark:text-blue-300">Next workflow stage</p>
+										<p className="mt-1 text-sm font-semibold text-blue-900 dark:text-blue-100">{selectedRequest.approvalStageLabel}</p>
+									</div>
+								)}
+
 								<div>
 									<p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Reason for Refund</p>
 									<div className="border border-gray-200 dark:border-gray-800 rounded-lg p-4 text-sm text-gray-900 dark:text-gray-100 bg-gray-50 dark:bg-gray-800/40">
@@ -1384,7 +1730,7 @@ export default function RefundApproval() {
 								<div>
 									<p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Reason Details</p>
 									<div className="border border-gray-200 dark:border-gray-800 rounded-lg p-4 text-sm text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-900">
-										{selectedRequest.reason}
+										{selectedRequest.reasonDetails || selectedRequest.refundNote || selectedRequest.reason || "No additional details provided."}
 									</div>
 								</div>
 
@@ -1392,7 +1738,7 @@ export default function RefundApproval() {
 									<div>
 										<p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Refund Amount</p>
 										<div className="border border-gray-200 dark:border-gray-800 rounded-lg p-4 text-sm font-semibold text-gray-900 dark:text-gray-100 bg-gray-50 dark:bg-gray-800/40">
-											{selectedRequest.refundAmount}
+											{getPayoutAmountDisplay(selectedRequest)}
 										</div>
 									</div>
 									<div>

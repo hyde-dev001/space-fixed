@@ -1,11 +1,15 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Head, Link } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 import Swal from '@/Pages/UserSide/Shared/UserModal';
 import axios from 'axios';
+import CustomerAddressManager, { type CustomerAddress } from '@/components/address/CustomerAddressManager';
+import type { TrackingShipment } from '@/types/logistics';
 import { refundStageLabel } from './refundWorkflow';
 import { buildRepairBreakdown, type RepairTaxMode } from '../../../utils/repairPricing';
 import type { PreferredReturnChannel } from './refundPayloadBuilder';
+import { CustomerFooterReveal } from '../../../components/common/CustomerFooter';
+import { useScrollReveal } from '../Shared/useScrollReveal';
 
 const MAX_REFUND_IMAGE_SIZE_BYTES = 20 * 1024 * 1024;
 const MAX_REFUND_VIDEO_SIZE_BYTES = 256 * 1024 * 1024;
@@ -67,10 +71,53 @@ const REPAIR_TABS: RepairTab[] = [
   'rejected',
 ];
 
+type RepairServiceSummary = {
+  id: number;
+  name: string;
+  category?: string;
+  price: number | string;
+  duration?: string;
+};
+
+type RepairAddressSnapshot = {
+  address_id?: number | null;
+  name?: string;
+  phone?: string;
+  address_line?: string;
+  barangay?: string;
+  city?: string;
+  province?: string;
+  region?: string;
+  postal_code?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  delivery_instructions?: string | null;
+  method?: string;
+  version?: string | null;
+  external_tracking?: {
+    carrier?: string | null;
+    tracking_number?: string | null;
+    tracking_url?: string | null;
+    updated_at?: string | null;
+  } | null;
+};
+
+type DeliveryQuote = {
+  available: boolean;
+  reason?: string | null;
+  distance_km?: number | null;
+  coverage_radius_km?: number | null;
+  fee?: number | null;
+  estimate?: number | null;
+  address_version?: string | null;
+  method?: string | null;
+};
+
 type RepairOrder = {
   id: number;
   order_number: string;
   repair_type: string;
+  services?: RepairServiceSummary[];
   description: string;
   status: RepairStatus;
   total_amount: number;
@@ -79,28 +126,45 @@ type RepairOrder = {
   estimated_delivery_date?: string | null;
   duration?: string;
   completed_at?: string;
+  received_at?: string | null;
   shop_id?: number | null;
   shop_name: string;
   shop_address: string;
   image?: string;
   conversation_id?: number | null;
   delivery_method?: string;
-  intake_delivery_method?: 'walk_in' | 'customer_delivery' | string;
-  intake_address?: {
-    address_line?: string;
-    barangay?: string;
-    city?: string;
-    region?: string;
-    postal_code?: string;
-  } | null;
+  intake_delivery_method?: 'walk_in' | 'customer_delivery' | 'shop_pickup' | string;
+  intake_address?: RepairAddressSnapshot | null;
+  intake_delivery_fee?: number | null;
+  intake_logistics_quote?: DeliveryQuote | null;
+  intake_logistics_locked_at?: string | null;
   return_delivery_method?: 'walk_in' | 'customer_pickup' | 'shop_delivery' | string;
-  return_address?: {
-    address_line?: string;
-    barangay?: string;
-    city?: string;
-    region?: string;
-    postal_code?: string;
+  return_address?: RepairAddressSnapshot | null;
+  return_delivery_fee?: number | null;
+  return_logistics_quote?: DeliveryQuote | null;
+  return_logistics_locked_at?: string | null;
+  return_address_confirmed_at?: string | null;
+  return_address_confirmed_version?: string | null;
+  pickup_recovery?: {
+    state: 'awaiting_arrangement' | 'awaiting_payment' | 'resolved' | 'ready_for_dispatch';
+    status?: string;
+    action?: IntakeDeliveryMethod;
+    scheduled_delivery_date?: string | null;
+    delivery_window?: 'morning' | 'afternoon' | null;
   } | null;
+  pickup_retry_payment_due?: boolean;
+  return_recovery?: {
+    code: string;
+    label: string;
+    state: 'returning_to_shop' | 'awaiting_arrangement' | 'awaiting_payment' | 'shop_pickup' | 'ready_for_dispatch';
+    message?: string | null;
+    actions_available?: boolean;
+    shop?: { name?: string | null; address?: string | null } | null;
+    scheduled_delivery_date?: string | null;
+    delivery_window?: 'morning' | 'afternoon' | null;
+  } | null;
+  redelivery_payment_due?: boolean;
+  same_as_intake_address?: boolean;
   pickup_address?: string | {
     address_line?: string;
     barangay?: string;
@@ -120,10 +184,29 @@ type RepairOrder = {
   carrier_name?: string | null;
   carrier_phone?: string | null;
   tracking_link?: string | null;
+  logistics_shipments?: Array<{ id: number; purpose: string }>;
   shipped_at?: string | null;
   assigned_repairer_id?: number | null;
   repairer_name?: string | null;
   payment_policy?: 'deposit_50' | 'full_upfront';
+  collection_summary?: {
+    collectible?: boolean;
+    due_type?: string | null;
+    phase?: string | null;
+    collectible_amount?: number | null;
+    outstanding_balance?: number | null;
+    service_amount?: number | null;
+    delivery_amount?: number | null;
+    total_paid_amount?: number | null;
+    grand_total?: number | null;
+    fully_paid?: boolean;
+  } | null;
+  collectible?: boolean;
+  collectible_amount?: number | null;
+  outstanding_balance?: number | null;
+  due_type?: string | null;
+  phase?: string | null;
+  fully_paid?: boolean;
   is_warranty_job?: boolean;
   parent_repair_request_id?: number | null;
   billing_mode?: string | null;
@@ -210,12 +293,8 @@ type ConversationShop = {
   unreadCount?: number;
 };
 
-type WarrantyReceiveAddressForm = {
-  address_line: string;
-  barangay: string;
-  city: string;
-  postal_code: string;
-};
+type WarrantyIntakeMethod = 'walk_in' | 'customer_delivery' | 'shop_pickup';
+type WarrantyReceiveMethod = 'walk_in' | 'customer_pickup' | 'shop_delivery';
 
 const getMonthKey = (date: Date): string => {
   const year = date.getFullYear();
@@ -223,66 +302,39 @@ const getMonthKey = (date: Date): string => {
   return `${year}-${month}`;
 };
 
-const DELIVERY_METHOD_OVERRIDES_KEY = 'repair_delivery_method_overrides';
 const REPAIR_TAB_NOTIFICATION_STORAGE_KEY = 'my_repairs_seen_tab_item_ids_v1';
-const EMPTY_WARRANTY_RECEIVE_ADDRESS: WarrantyReceiveAddressForm = {
-  address_line: '',
-  barangay: '',
-  city: '',
-  postal_code: '',
-};
-
-const extractAddressFromUnknown = (value: unknown): WarrantyReceiveAddressForm | null => {
-  if (!value || typeof value !== 'object') {
-    return null;
-  }
-
-  const source = value as Record<string, unknown>;
-  const parsed: WarrantyReceiveAddressForm = {
-    address_line: String(source.address_line ?? '').trim(),
-    barangay: String(source.barangay ?? '').trim(),
-    city: String(source.city ?? '').trim(),
-    postal_code: String(source.postal_code ?? '').trim(),
-  };
-
-  const hasAnyValue = Object.values(parsed).some((entry) => entry !== '');
-  return hasAnyValue ? parsed : null;
-};
-
-const resolveWarrantyReceiveAddressSeed = (order: RepairOrder): WarrantyReceiveAddressForm => {
-  const fromReturnAddress = extractAddressFromUnknown(order.return_address);
-  if (fromReturnAddress) {
-    return fromReturnAddress;
-  }
-
-  const fromPickupAddress = extractAddressFromUnknown(order.pickup_address);
-  if (fromPickupAddress) {
-    return fromPickupAddress;
-  }
-
-  const fromIntakeAddress = extractAddressFromUnknown(order.intake_address);
-  if (fromIntakeAddress) {
-    return fromIntakeAddress;
-  }
-
-  return { ...EMPTY_WARRANTY_RECEIVE_ADDRESS };
-};
-
-const saveDeliveryMethodOverride = (repairId: number, deliveryMethod: 'walk_in' | 'customer_pickup' | 'shop_delivery') => {
-  try {
-    const raw = localStorage.getItem(DELIVERY_METHOD_OVERRIDES_KEY);
-    const parsed = raw ? JSON.parse(raw) : {};
-    const overrides = parsed && typeof parsed === 'object' ? parsed : {};
-
-    overrides[String(repairId)] = deliveryMethod;
-
-    localStorage.setItem(DELIVERY_METHOD_OVERRIDES_KEY, JSON.stringify(overrides));
-  } catch (error) {
-    console.warn('Failed to store delivery method override:', error);
-  }
-};
 
 const formatCurrency = (value?: number | null) => `₱${Number(value || 0).toLocaleString()}`;
+
+const getReturnCoverageReasonLabel = (reason?: string | null): string => {
+  const normalized = String(reason ?? '').trim();
+  const key = normalized.toLowerCase().replace(/[.!?]+$/, '');
+
+  if (key === 'outside_coverage' || key === 'outside shop rider coverage') {
+    return 'Outside coverage';
+  }
+
+  if (key === 'address_needs_pin') {
+    return 'Pin required';
+  }
+
+  if (/^[a-z0-9]+(?:_[a-z0-9]+)+$/.test(key)) {
+    return key
+      .split('_')
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
+  }
+
+  return normalized || 'Shop rider delivery unavailable';
+};
+
+const getReturnCoverageReasonMessage = (reason?: string | null): string => {
+  if (getReturnCoverageReasonLabel(reason) === 'Outside coverage') {
+    return "Shop rider delivery isn't available for this address. Select another return method or choose an address within coverage.";
+  }
+
+  return 'Shop rider delivery is not available for this address.';
+};
 
 const resolveOrderTaxMode = (order: RepairOrder): RepairTaxMode => {
   const value = String(order.tax_mode ?? order.pricing_breakdown?.tax_mode ?? '').toLowerCase();
@@ -329,48 +381,38 @@ const getOrderGrandTotal = (order: RepairOrder) => {
 };
 
 const getOrderDisplayedPaidAmount = (order: RepairOrder) => {
-  const displayPaid = Number(order.display_total_paid_amount ?? 0);
-  const safeDisplayPaid = Number.isFinite(displayPaid) && displayPaid > 0 ? displayPaid : 0;
-  if (safeDisplayPaid > 0) {
-    return safeDisplayPaid;
+  const paid = Number(
+    order.collection_summary?.total_paid_amount
+      ?? order.display_total_paid_amount
+      ?? order.total_paid_amount
+      ?? 0,
+  );
+
+  return Number.isFinite(paid) && paid > 0 ? paid : 0;
+};
+
+const getOrderOutstandingBalance = (order: RepairOrder): number => {
+  const outstanding = Number(
+    order.collection_summary?.outstanding_balance
+      ?? order.outstanding_balance
+      ?? 0,
+  );
+
+  return Number.isFinite(outstanding) && outstanding > 0 ? outstanding : 0;
+};
+
+const isInitialPaymentDue = (order: RepairOrder): boolean => {
+  if (order.collection_summary !== undefined) {
+    return order.collection_summary?.phase === 'initial'
+      && Boolean(order.collection_summary?.collectible)
+      && Number(order.collection_summary?.collectible_amount ?? 0) > 0;
   }
 
-  const recordedPaid = Number(order.total_paid_amount ?? 0);
-  const safeRecordedPaid = Number.isFinite(recordedPaid) && recordedPaid > 0 ? recordedPaid : 0;
-  const paymentStatus = String(order.payment_status ?? '').toLowerCase();
-  const paymentPolicy = order.payment_policy ?? 'deposit_50';
-  const grandTotal = getOrderGrandTotal(order);
-
-  if (safeRecordedPaid > 0) {
-    return safeRecordedPaid;
-  }
-
-  if (paymentStatus === 'completed') {
-    return grandTotal;
-  }
-
-  if (paymentStatus === 'paid') {
-    if (paymentPolicy === 'full_upfront') {
-      return grandTotal;
-    }
-
-    return Math.round(grandTotal * 0.5 * 100) / 100;
-  }
-
-  return 0;
+  return !['paid', 'completed'].includes(String(order.payment_status ?? '').toLowerCase());
 };
 
 const isWarrantyNoChargeOrder = (order: RepairOrder): boolean => {
   return Boolean(order.is_warranty_job) || String(order.billing_mode || '').toLowerCase() === 'warranty_no_charge';
-};
-
-const escapeSwalText = (value?: string | null): string => {
-  return (value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
 };
 
 const normalizeProofUrlForBrowser = (value: string): string => {
@@ -401,8 +443,12 @@ const normalizeProofUrlForBrowser = (value: string): string => {
 
 const isProofImageUrl = (value: string): boolean => /\.(png|jpe?g|webp|gif|bmp|svg)(\?.*)?$/i.test(value);
 
-const getIntakeMethod = (order: RepairOrder): 'walk_in' | 'customer_delivery' => {
-  if (order.intake_delivery_method === 'walk_in' || order.intake_delivery_method === 'customer_delivery') {
+const getIntakeMethod = (order: RepairOrder): 'walk_in' | 'customer_delivery' | 'shop_pickup' => {
+  if (
+    order.intake_delivery_method === 'walk_in'
+    || order.intake_delivery_method === 'customer_delivery'
+    || order.intake_delivery_method === 'shop_pickup'
+  ) {
     return order.intake_delivery_method;
   }
 
@@ -418,21 +464,20 @@ const getReturnMethod = (order: RepairOrder): 'walk_in' | 'customer_pickup' | 's
     return order.return_delivery_method;
   }
 
-  return order.delivery_method === 'walk_in' ? 'walk_in' : 'shop_delivery';
+  // The legacy delivery_method describes intake only. A missing return method
+  // must never silently opt a repair into shop rider delivery.
+  return order.delivery_method === 'walk_in' ? 'walk_in' : 'customer_pickup';
 };
 
 const isOnlineIntakeFlow = (order: RepairOrder): boolean => {
-  return getIntakeMethod(order) === 'customer_delivery';
-};
-
-const isOnlineReturnFlow = (order: RepairOrder): boolean => {
-  return getReturnMethod(order) === 'shop_delivery';
+  return getIntakeMethod(order) !== 'walk_in';
 };
 
 const getIntakeMethodLabel = (order: RepairOrder): string => {
-  return getIntakeMethod(order) === 'walk_in'
-    ? 'Walk-in Delivery to Shop'
-    : 'Customer Arranges Delivery to Shop';
+  const method = getIntakeMethod(order);
+  if (method === 'walk_in') return 'Walk-in Delivery to Shop';
+  if (method === 'shop_pickup') return 'Shop rider pickup';
+  return 'Customer-arranged delivery';
 };
 
 const getReturnMethodLabel = (order: RepairOrder): string => {
@@ -442,31 +487,1211 @@ const getReturnMethodLabel = (order: RepairOrder): string => {
     return 'Customer Pick-up at Shop';
   }
 
-  return 'Repairer Arranged Courier Delivery';
+  return returnMethod === 'customer_pickup'
+    ? 'Customer-arranged courier'
+    : 'Shop rider delivery';
 };
 
-const shouldShowCourierShippingInfo = (order: RepairOrder): boolean => {
-  if (getReturnMethod(order) !== 'shop_delivery') {
-    return false;
+type IntakeDeliveryMethod = 'walk_in' | 'customer_delivery' | 'shop_pickup';
+type ReturnDeliveryMethod = 'walk_in' | 'customer_pickup' | 'shop_delivery';
+
+type CoverageAddress = {
+  id?: number | null;
+  address_id?: number | null;
+  version?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  address_line?: string | null;
+  barangay?: string | null;
+  city?: string | null;
+  province?: string | null;
+  region?: string | null;
+  postal_code?: string | null;
+};
+
+const getCoverageAddressKey = (
+  address?: CoverageAddress | null,
+  fallbackId?: number | null,
+): string => [
+  Number(fallbackId ?? address?.id ?? address?.address_id ?? 0),
+  address?.version ?? '',
+  address?.latitude ?? '',
+  address?.longitude ?? '',
+  address?.address_line ?? '',
+  address?.barangay ?? '',
+  address?.city ?? '',
+  address?.province ?? address?.region ?? '',
+  address?.postal_code ?? '',
+].join('|');
+
+const formatRepairAddress = (address?: RepairAddressSnapshot | null): string => {
+  return [
+    address?.address_line,
+    address?.barangay,
+    address?.city,
+    address?.province ?? address?.region,
+    address?.postal_code,
+  ].filter(Boolean).join(', ');
+};
+
+const getWarrantyAddress = (
+  order: RepairOrder | undefined,
+  leg: 'intake' | 'return',
+): RepairAddressSnapshot | null => {
+  if (!order) return null;
+  const candidates = leg === 'intake'
+    ? [order.intake_address, order.pickup_address, order.return_address]
+    : [order.return_address, order.intake_address, order.pickup_address];
+
+  return candidates.find((address) => Number(address?.address_id || 0) > 0) ?? null;
+};
+
+const getRequestErrorMessage = (error: unknown, fallback: string): string => {
+  const data = (error as {
+    response?: {
+      data?: {
+        message?: unknown;
+        errors?: Record<string, unknown>;
+      };
+    };
+  })?.response?.data;
+
+  if (typeof data?.message === 'string' && data.message.trim()) {
+    return data.message;
   }
 
-  if (order.status === 'shipped' || order.status === 'picked_up') {
-    return true;
+  const firstValidationError = Object.values(data?.errors ?? {}).flat().find(
+    (entry) => typeof entry === 'string' && entry.trim(),
+  );
+
+  return typeof firstValidationError === 'string' ? firstValidationError : fallback;
+};
+
+const SponsoredIntakeReplanCard: React.FC<{
+  order: RepairOrder;
+  onRefresh: () => Promise<unknown>;
+  onPay: () => void;
+}> = ({ order, onRefresh, onPay }) => {
+  const currentAddressId = order.intake_address?.address_id
+    ? Number(order.intake_address.address_id)
+    : null;
+  const [method, setMethod] = useState<IntakeDeliveryMethod>(() => getIntakeMethod(order));
+  const [selectedAddress, setSelectedAddress] = useState<CustomerAddress | null>(null);
+  const [coverage, setCoverage] = useState<DeliveryQuote | null>(null);
+  const [coverageLoading, setCoverageLoading] = useState(false);
+  const [coverageError, setCoverageError] = useState<string | null>(null);
+  const [deliveryDate, setDeliveryDate] = useState('');
+  const [deliveryWindow, setDeliveryWindow] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const effectiveAddressId = selectedAddress?.id ?? currentAddressId;
+  const shopId = order.shop_owner_id ?? order.shop_id;
+  const addressRequired = method !== 'walk_in';
+  const shopPickupUnavailable = method === 'shop_pickup'
+    && (coverageLoading || !coverage?.available || !deliveryDate || !deliveryWindow);
+
+  useEffect(() => {
+    if (!shopId || !effectiveAddressId) {
+      return;
+    }
+
+    let active = true;
+    setCoverageLoading(true);
+    setCoverageError(null);
+
+    fetch(`/api/repair/shops/${shopId}/delivery-quote?address_id=${effectiveAddressId}`, {
+      headers: { Accept: 'application/json' },
+      credentials: 'include',
+    })
+      .then(async (response) => {
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload?.message || 'Unable to check shop rider coverage.');
+        }
+        return (payload?.data ?? payload) as DeliveryQuote;
+      })
+      .then((quote) => {
+        if (!active) return;
+        setCoverage(quote);
+      })
+      .catch((reason: Error) => {
+        if (!active) return;
+        setCoverage(null);
+        setCoverageError(reason.message || 'Unable to check shop rider coverage.');
+      })
+      .finally(() => {
+        if (active) setCoverageLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [effectiveAddressId, shopId]);
+
+  const handleAddressSelect = useCallback((address: CustomerAddress) => {
+    setSelectedAddress(address);
+    setCoverage(null);
+    setCoverageError(null);
+    setError(null);
+    setSuccess(null);
+  }, []);
+
+  const handleRebook = async () => {
+    if (addressRequired && !effectiveAddressId) {
+      setError('Choose one of your saved addresses.');
+      return;
+    }
+
+    if (method === 'shop_pickup' && !coverage?.available) {
+      setError(coverage?.reason || 'Choose an address within shop rider coverage.');
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const response = await axios.post(`/api/customer/repairs/${order.id}/pickup-recovery`, {
+        method,
+        ...(addressRequired ? { address_id: effectiveAddressId } : {}),
+        ...(method === 'shop_pickup' ? {
+          delivery_date: deliveryDate,
+          delivery_window: deliveryWindow,
+        } : {}),
+      });
+      setSuccess(response.data?.message || 'Intake plan updated.');
+      await onRefresh();
+    } catch (reason) {
+      setError(getRequestErrorMessage(reason, 'Unable to update the intake plan.'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (order.pickup_recovery?.state === 'awaiting_payment') {
+    const scheduledDate = order.pickup_recovery.scheduled_delivery_date
+      ? new Date(`${order.pickup_recovery.scheduled_delivery_date}T00:00:00`).toLocaleDateString('en-US', {
+          month: 'short', day: 'numeric', year: 'numeric',
+        })
+      : 'Schedule pending';
+    const scheduledWindow = order.pickup_recovery.delivery_window
+      ? order.pickup_recovery.delivery_window[0].toUpperCase() + order.pickup_recovery.delivery_window.slice(1)
+      : 'Window pending';
+
+    return (
+      <section aria-label="Warranty pickup recovery" className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 sm:p-6">
+        <h4 className="text-lg font-bold text-black">Pickup scheduled—payment required</h4>
+        <p className="mt-2 text-sm font-semibold text-gray-800">{scheduledDate} · {scheduledWindow}</p>
+        <p className="mt-1 text-sm text-gray-700">{formatRepairAddress(order.intake_address)}</p>
+        <div className="mt-4 flex items-center justify-between gap-4 rounded-xl border border-amber-200 bg-white p-3 text-sm">
+          <span className="font-semibold text-gray-700">Pickup shipping fee</span>
+          <span className="font-bold text-black">{formatCurrency(order.intake_delivery_fee)}</span>
+        </div>
+        <button
+          type="button"
+          onClick={onPay}
+          disabled={!order.pickup_retry_payment_due || !order.payment_enabled}
+          className="mt-4 min-h-12 w-full rounded-xl bg-[#16233b] px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-gray-300 sm:w-auto"
+        >
+          Pay pickup shipping fee
+        </button>
+      </section>
+    );
   }
 
-  return Boolean(
-    order.estimated_delivery_date ||
-    order.estimated_completion ||
-    order.carrier_company ||
-    order.carrier_name ||
-    order.carrier_phone ||
-    order.tracking_number ||
-    order.tracking_link
+  if (order.pickup_recovery?.state === 'resolved' || order.pickup_recovery?.state === 'ready_for_dispatch') {
+    return (
+      <section aria-label="Warranty pickup recovery" className="mt-6 rounded-2xl border border-green-200 bg-green-50 p-4 text-sm text-green-800">
+        Pickup arrangement confirmed. Watch this page for the next rider update.
+      </section>
+    );
+  }
+
+  return (
+    <section aria-label="Warranty pickup recovery" className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 sm:p-6">
+      <h4 className="text-lg font-bold text-black">Pickup failed—action required</h4>
+      <p className="mt-1 text-sm text-gray-600">
+        Choose how to get the shoes back to the shop.
+      </p>
+
+      <fieldset className="mt-4 space-y-3">
+        <legend className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">
+          Intake method
+        </legend>
+        <label className="flex items-start gap-3 text-sm text-gray-800">
+          <input
+            type="radio"
+            name={`sponsored-intake-method-${order.id}`}
+            checked={method === 'walk_in'}
+            disabled={saving}
+            onChange={() => {
+              setMethod('walk_in');
+              setError(null);
+              setSuccess(null);
+            }}
+          />
+          <span>
+            <span className="block font-semibold">Walk-in delivery to shop</span>
+            <span className="text-xs text-gray-500">Bring the shoes directly to the shop.</span>
+          </span>
+        </label>
+        <label className="flex items-start gap-3 text-sm text-gray-800">
+          <input
+            type="radio"
+            name={`sponsored-intake-method-${order.id}`}
+            checked={method === 'customer_delivery'}
+            disabled={saving}
+            onChange={() => {
+              setMethod('customer_delivery');
+              setError(null);
+              setSuccess(null);
+            }}
+          />
+          <span>
+            <span className="block font-semibold">Customer-arranged delivery</span>
+            <span className="text-xs text-gray-500">Use your own third-party courier.</span>
+          </span>
+        </label>
+        <label className="flex items-start gap-3 text-sm text-gray-800">
+          <input
+            type="radio"
+            name={`sponsored-intake-method-${order.id}`}
+            checked={method === 'shop_pickup'}
+            disabled={saving || coverageLoading || !coverage?.available}
+            onChange={() => {
+              setMethod('shop_pickup');
+              setError(null);
+              setSuccess(null);
+            }}
+          />
+          <span>
+            <span className="block font-semibold">Shop rider pickup</span>
+            <span className="text-xs text-gray-500">Schedule and pay for a new pickup from a supported address.</span>
+          </span>
+        </label>
+      </fieldset>
+
+      {addressRequired && (
+        <div className="mt-4">
+          <CustomerAddressManager
+            onSelect={handleAddressSelect}
+            onSelectionCleared={() => setSelectedAddress(null)}
+            initialAddressId={currentAddressId}
+            disabled={saving}
+            title="Saved pickup address"
+            description="Choose or pin the address for this intake plan."
+          />
+        </div>
+      )}
+
+      {method === 'shop_pickup' && (
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <label className="text-sm font-semibold text-gray-800">
+            Pickup date
+            <input
+              type="date"
+              value={deliveryDate}
+              onChange={(event) => setDeliveryDate(event.target.value)}
+              className="mt-1 min-h-12 w-full rounded-xl border border-gray-300 bg-white px-3 text-base text-gray-900"
+            />
+          </label>
+          <label className="text-sm font-semibold text-gray-800">
+            Pickup window
+            <select
+              value={deliveryWindow}
+              onChange={(event) => setDeliveryWindow(event.target.value)}
+              className="mt-1 min-h-12 w-full rounded-xl border border-gray-300 bg-white px-3 text-base text-gray-900"
+            >
+              <option value="">Choose a time</option>
+              <option value="morning">Morning</option>
+              <option value="afternoon">Afternoon</option>
+            </select>
+          </label>
+        </div>
+      )}
+
+      <div className="mt-4 rounded-xl border border-gray-200 bg-white p-3 text-sm">
+        {coverageLoading ? (
+          <p className="font-semibold text-gray-600">Checking coverage...</p>
+        ) : coverage?.available ? (
+          <p className="font-semibold text-green-700">Within coverage · Pickup fee {formatCurrency(coverage.fee)}</p>
+        ) : (
+          <p className="font-semibold text-amber-700">
+            {coverage?.reason || 'Shop rider coverage is not available for this address.'}
+          </p>
+        )}
+        {coverageError && <p className="mt-1 text-red-700">{coverageError}</p>}
+      </div>
+
+      {error && (
+        <p role="alert" className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {error}
+        </p>
+      )}
+      {success && (
+        <p role="status" className="mt-4 rounded-xl border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
+          {success}
+        </p>
+      )}
+
+      <button
+        type="button"
+        onClick={handleRebook}
+        disabled={saving || (addressRequired && !effectiveAddressId) || shopPickupUnavailable}
+        className="mt-4 inline-flex w-full items-center justify-center rounded-full bg-[#16233b] px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-gray-300 sm:w-auto"
+      >
+        {saving ? 'Saving...' : 'Save intake plan'}
+      </button>
+    </section>
   );
 };
 
-const getCourierEstimatedDelivery = (order: RepairOrder): string => {
-  return order.estimated_delivery_date || order.estimated_completion || '-';
+const CustomerReturnRecoveryActions: React.FC<{
+  order: RepairOrder;
+  onRefresh: () => Promise<unknown>;
+}> = ({ order, onRefresh }) => {
+  const [deliveryDate, setDeliveryDate] = useState('');
+  const [deliveryWindow, setDeliveryWindow] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const tomorrowDate = new Date();
+  tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+  const tomorrow = [
+    tomorrowDate.getFullYear(),
+    String(tomorrowDate.getMonth() + 1).padStart(2, '0'),
+    String(tomorrowDate.getDate()).padStart(2, '0'),
+  ].join('-');
+
+  const chooseRecovery = async (action: 'schedule_redelivery' | 'shop_pickup') => {
+    if (action === 'schedule_redelivery' && (!deliveryDate || !deliveryWindow)) {
+      setError('Choose a delivery date and time window.');
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const response = await axios.post(
+        `/api/customer/repairs/${order.id}/return-recovery`,
+        action === 'schedule_redelivery'
+          ? {
+              action,
+              scheduled_delivery_date: deliveryDate,
+              delivery_window: deliveryWindow,
+            }
+          : { action },
+      );
+      setSuccess(response.data?.message || 'Return arrangement saved.');
+      await onRefresh();
+    } catch (reason) {
+      setError(getRequestErrorMessage(reason, 'Unable to save your return arrangement.'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="mt-4 space-y-4">
+      {(order.return_recovery?.shop?.name || order.return_recovery?.shop?.address) && (
+        <div className="rounded-xl border border-amber-200 bg-white p-3 text-sm text-gray-700">
+          <p className="font-semibold text-black">{order.return_recovery.shop.name}</p>
+          <p className="mt-1">{order.return_recovery.shop.address}</p>
+        </div>
+      )}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="text-sm font-semibold text-gray-800">
+          Re-delivery date
+          <input
+            type="date"
+            min={tomorrow}
+            value={deliveryDate}
+            onChange={(event) => setDeliveryDate(event.target.value)}
+            className="mt-1 min-h-12 w-full rounded-xl border border-gray-300 bg-white px-3 text-base text-gray-900"
+          />
+        </label>
+        <label className="text-sm font-semibold text-gray-800">
+          Delivery window
+          <select
+            value={deliveryWindow}
+            onChange={(event) => setDeliveryWindow(event.target.value)}
+            className="mt-1 min-h-12 w-full rounded-xl border border-gray-300 bg-white px-3 text-base text-gray-900"
+          >
+            <option value="">Choose a time</option>
+            <option value="morning">Morning</option>
+            <option value="afternoon">Afternoon</option>
+          </select>
+        </label>
+      </div>
+
+      {error && (
+        <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {error}
+        </p>
+      )}
+      {success && (
+        <p role="status" className="rounded-xl border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
+          {success}
+        </p>
+      )}
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <button
+          type="button"
+          onClick={() => chooseRecovery('schedule_redelivery')}
+          disabled={saving || !deliveryDate || !deliveryWindow}
+          className="min-h-12 rounded-xl bg-[#16233b] px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-gray-300"
+        >
+          {saving ? 'Saving...' : 'Schedule re-delivery'}
+        </button>
+        <button
+          type="button"
+          onClick={() => chooseRecovery('shop_pickup')}
+          disabled={saving}
+          className="min-h-12 rounded-xl border border-[#16233b] bg-white px-4 py-3 text-sm font-semibold text-[#16233b] disabled:cursor-not-allowed disabled:border-gray-300 disabled:text-gray-400"
+        >
+          Set for shop pickup
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const ReturnDeliveryPlanCard: React.FC<{
+  order: RepairOrder;
+  onRefresh: () => Promise<unknown>;
+}> = ({ order, onRefresh }) => {
+  const initialMethod = getReturnMethod(order);
+  const initialSameAsIntake = order.same_as_intake_address ?? true;
+  const initialAddress = initialSameAsIntake ? order.intake_address : order.return_address;
+  const initialAddressId = initialSameAsIntake
+    ? order.intake_address?.address_id
+      ? Number(order.intake_address.address_id)
+      : null
+    : order.return_address?.address_id
+      ? Number(order.return_address.address_id)
+      : null;
+  const initialQuote = order.return_logistics_quote;
+  const initialCoverageKey = initialMethod === 'shop_delivery'
+    && initialQuote
+    && initialAddressId
+    && (!initialQuote.method || initialQuote.method === 'shop_delivery')
+    && (!initialQuote.address_version
+      || !initialAddress?.version
+      || initialQuote.address_version === initialAddress.version)
+    ? ['shop_delivery', getCoverageAddressKey(initialAddress, initialAddressId)].join(':')
+    : null;
+  const [method, setMethod] = useState<ReturnDeliveryMethod>(initialMethod);
+  const [sameAsIntake, setSameAsIntake] = useState(initialSameAsIntake);
+  const [selectedAddress, setSelectedAddress] = useState<CustomerAddress | null>(null);
+  const [coverage, setCoverage] = useState<DeliveryQuote | null>(
+    initialCoverageKey ? initialQuote : null,
+  );
+  const [coverageKey, setCoverageKey] = useState<string | null>(initialCoverageKey);
+  const [coverageLoading, setCoverageLoading] = useState(false);
+  const [coverageError, setCoverageError] = useState<string | null>(null);
+  const [acceptedFee, setAcceptedFee] = useState(
+    initialMethod === 'shop_delivery' ? Number(order.return_delivery_fee ?? 0) : 0,
+  );
+  const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [planSavedLocally, setPlanSavedLocally] = useState(false);
+  const [confirmedLocally, setConfirmedLocally] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const coverageRequestKeyRef = useRef<string | null>(null);
+
+  const locked = Boolean(order.return_logistics_locked_at);
+  const returnAddressId = order.return_address?.address_id
+    ? Number(order.return_address.address_id)
+    : null;
+  const intakeAddressId = order.intake_address?.address_id
+    ? Number(order.intake_address.address_id)
+    : null;
+  const effectiveAddressId = sameAsIntake
+    ? intakeAddressId
+    : selectedAddress?.id ?? returnAddressId;
+  const effectiveAddress = sameAsIntake
+    ? order.intake_address
+    : selectedAddress ?? order.return_address;
+  const shopId = order.shop_owner_id ?? order.shop_id;
+  const currentCoverageKey = method === 'shop_delivery' && shopId && effectiveAddressId
+    ? ['shop_delivery', getCoverageAddressKey(effectiveAddress, effectiveAddressId)].join(':')
+    : null;
+  const serverConfirmationIsCurrent = Boolean(
+    order.return_address_confirmed_at
+    && order.return_address_confirmed_version
+    && order.return_address_confirmed_version === order.return_address?.version,
+  );
+  const isConfirmed = confirmedLocally || (!dirty && !planSavedLocally && serverConfirmationIsCurrent);
+  const serverOutstandingBalance = getOrderOutstandingBalance(order);
+  const serverDeliveryAmount = Number(order.collection_summary?.delivery_amount ?? 0);
+  const serviceOutstandingBalance = Math.max(0, serverOutstandingBalance - serverDeliveryAmount);
+  const displayedFee = method === 'shop_delivery'
+    ? (dirty ? Number(coverage?.fee ?? 0) : acceptedFee)
+    : 0;
+  const finalAmount = order.redelivery_payment_due
+    ? displayedFee
+    : dirty
+      ? serviceOutstandingBalance + displayedFee
+      : serverOutstandingBalance;
+  const shopDeliveryQuoteUnavailable = method === 'shop_delivery'
+    && !coverageLoading
+    && !coverage?.available;
+
+  useEffect(() => {
+    coverageRequestKeyRef.current = currentCoverageKey;
+
+    if (!currentCoverageKey || !effectiveAddressId) {
+      setCoverage(null);
+      setCoverageKey(null);
+      setCoverageError(null);
+      setCoverageLoading(false);
+      setAcceptedFee(0);
+      return;
+    }
+
+    if (coverageKey === currentCoverageKey && coverage) {
+      setCoverageLoading(false);
+      return;
+    }
+
+    let active = true;
+    const requestKey = currentCoverageKey;
+    setCoverageLoading(true);
+    setCoverage(null);
+    setCoverageKey(null);
+    setCoverageError(null);
+    setAcceptedFee(0);
+
+    fetch(`/api/repair/shops/${shopId}/delivery-quote?address_id=${effectiveAddressId}`, {
+      headers: { Accept: 'application/json' },
+      credentials: 'include',
+    })
+      .then(async (response) => {
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload?.message || 'Unable to check shop rider coverage.');
+        }
+        return (payload?.data ?? payload) as DeliveryQuote;
+      })
+      .then((quote) => {
+        if (!active || coverageRequestKeyRef.current !== requestKey) return;
+        setCoverage(quote);
+        setCoverageKey(requestKey);
+      })
+      .catch((reason: Error) => {
+        if (!active || coverageRequestKeyRef.current !== requestKey) return;
+        setCoverage(null);
+        setCoverageKey(null);
+        setCoverageError(reason.message || 'Unable to check shop rider coverage.');
+      })
+      .finally(() => {
+        if (active && coverageRequestKeyRef.current === requestKey) setCoverageLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [currentCoverageKey, effectiveAddressId, shopId]);
+
+  const markEdited = () => {
+    setDirty(true);
+    setPlanSavedLocally(false);
+    setConfirmedLocally(false);
+    setError(null);
+    setSuccess(null);
+  };
+
+  const invalidateCoverage = useCallback(() => {
+    coverageRequestKeyRef.current = null;
+    setCoverage(null);
+    setCoverageKey(null);
+    setCoverageLoading(false);
+    setCoverageError(null);
+    setAcceptedFee(0);
+  }, []);
+
+  const handleAddressSelect = useCallback((address: CustomerAddress) => {
+    setSelectedAddress(address);
+    invalidateCoverage();
+    setDirty(true);
+    setPlanSavedLocally(false);
+    setConfirmedLocally(false);
+    setError(null);
+    setSuccess(null);
+  }, [invalidateCoverage]);
+
+  const handleSameAsIntakeChange = (checked: boolean) => {
+    setSameAsIntake(checked);
+    setSelectedAddress(null);
+    invalidateCoverage();
+    markEdited();
+  };
+
+  const handleAddressCleared = () => {
+    setSelectedAddress(null);
+    invalidateCoverage();
+    markEdited();
+  };
+
+  const handleConfirm = async () => {
+    setError(null);
+    setSuccess(null);
+
+    if (method !== 'walk_in' && !effectiveAddressId) {
+      setError('Select a saved return address before confirming delivery.');
+      return;
+    }
+
+    if (method === 'shop_delivery' && !coverage?.available) {
+      setError(getReturnCoverageReasonMessage(coverage?.reason));
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      if (!locked && dirty) {
+        const response = await axios.patch(`/api/customer/repairs/${order.id}/delivery-method`, {
+          return_delivery_method: method,
+          ...(method !== 'walk_in' && effectiveAddressId
+            ? { return_address_id: effectiveAddressId }
+            : {}),
+          same_as_intake_address: sameAsIntake,
+        });
+        const updated = response.data ?? {};
+        const nextMethod: ReturnDeliveryMethod = [
+          'walk_in',
+          'customer_pickup',
+          'shop_delivery',
+        ].includes(updated.return_delivery_method)
+          ? updated.return_delivery_method
+          : method;
+        const nextAddress = updated.return_address ?? effectiveAddress;
+        const nextAddressId = Number(
+          nextAddress?.address_id ?? effectiveAddressId ?? 0,
+        ) || null;
+        const nextCoverageKey = nextMethod === 'shop_delivery' && nextAddressId
+          ? ['shop_delivery', getCoverageAddressKey(nextAddress, nextAddressId)].join(':')
+          : null;
+
+        setMethod(nextMethod);
+        if (nextMethod === 'shop_delivery') {
+          const nextQuote = updated.return_logistics_quote ?? null;
+          setCoverage(nextQuote);
+          setCoverageKey(nextQuote && nextCoverageKey ? nextCoverageKey : null);
+          setAcceptedFee(Number(updated.return_delivery_fee ?? 0));
+        } else {
+          invalidateCoverage();
+        }
+        setDirty(false);
+        setPlanSavedLocally(true);
+        setSuccess('Delivery plan updated. Review the new fee, then confirm.');
+        await onRefresh();
+        return;
+      }
+
+      const confirmation = await axios.post(
+        `/api/customer/repairs/${order.id}/confirm-return-address`,
+      );
+      setDirty(false);
+      setPlanSavedLocally(false);
+      setConfirmedLocally(true);
+      setSuccess(confirmation.data?.message || 'Return address and delivery confirmed.');
+      await onRefresh();
+    } catch (reason) {
+      setError(getRequestErrorMessage(reason, 'Unable to confirm the return delivery plan.'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <section className="mt-6 rounded-2xl border border-gray-200 bg-gray-50 p-4 sm:p-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h4 className="text-lg font-bold text-black">Return delivery plan</h4>
+          <p className="mt-1 text-sm text-gray-600">
+            {order.redelivery_payment_due
+              ? 'Confirm your return address, then pay the new delivery fee.'
+              : 'Review the exact return address and method before final payment and dispatch.'}
+          </p>
+        </div>
+        {locked && (
+          <span className="rounded-full bg-gray-200 px-3 py-1 text-xs font-semibold text-gray-700">
+            Locked after payment
+          </span>
+        )}
+      </div>
+
+      <fieldset className="mt-5 space-y-3">
+        <legend className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">
+          Return method
+        </legend>
+        <label className="flex items-start gap-3 text-sm text-gray-800">
+          <input
+            type="radio"
+            name={`return-method-${order.id}`}
+            value="walk_in"
+            checked={method === 'walk_in'}
+            disabled={locked || saving}
+            onChange={() => {
+              setMethod('walk_in');
+              invalidateCoverage();
+              markEdited();
+            }}
+          />
+          <span>
+            <span className="block font-semibold">Customer pickup at shop</span>
+            <span className="text-xs text-gray-500">Collect the repaired shoes directly from the shop.</span>
+          </span>
+        </label>
+        <label className="flex items-start gap-3 text-sm text-gray-800">
+          <input
+            type="radio"
+            name={`return-method-${order.id}`}
+            value="customer_pickup"
+            checked={method === 'customer_pickup'}
+            disabled={locked || saving}
+            onChange={() => {
+              setMethod('customer_pickup');
+              invalidateCoverage();
+              markEdited();
+            }}
+          />
+          <span>
+            <span className="block font-semibold">Customer-arranged courier</span>
+            <span className="text-xs text-gray-500">Arrange and pay for your own third-party courier.</span>
+          </span>
+        </label>
+        {(coverage?.available || method === 'shop_delivery' || Boolean(effectiveAddressId)) && (
+          <label className="flex items-start gap-3 text-sm text-gray-800">
+            <input
+              type="radio"
+              name={`return-method-${order.id}`}
+              value="shop_delivery"
+              checked={method === 'shop_delivery'}
+              disabled={locked || saving || !effectiveAddressId}
+              onChange={() => {
+                setMethod('shop_delivery');
+                invalidateCoverage();
+                markEdited();
+              }}
+            />
+            <span>
+              <span className="block font-semibold">Shop rider delivery</span>
+              <span className="text-xs text-gray-500">The shop handles this return with its own rider after coverage is confirmed.</span>
+            </span>
+          </label>
+        )}
+      </fieldset>
+
+      <label className="mt-5 flex items-center gap-3 text-sm font-semibold text-gray-800">
+        <input
+          type="checkbox"
+          checked={sameAsIntake}
+          disabled={locked || saving}
+          onChange={(event) => handleSameAsIntakeChange(event.target.checked)}
+        />
+        Same as intake address
+      </label>
+
+      {sameAsIntake ? (
+        <div className="mt-3 rounded-xl border border-gray-200 bg-white p-3 text-sm text-gray-700">
+          {formatRepairAddress(order.intake_address) || 'No intake address is available.'}
+        </div>
+      ) : (
+        <div className="mt-4">
+          <CustomerAddressManager
+            onSelect={handleAddressSelect}
+            onSelectionCleared={handleAddressCleared}
+            initialAddressId={returnAddressId}
+            disabled={locked || saving}
+            title="Saved return address"
+            description="Choose or pin the address to use for this repair return."
+          />
+        </div>
+      )}
+
+      <div
+        role="group"
+        aria-label="Return plan summary"
+        className="mt-5 grid gap-4 rounded-xl border border-gray-200 bg-white p-4 text-sm sm:grid-cols-[minmax(0,1fr)_minmax(15rem,auto)]"
+      >
+        <div role="status" aria-label="Return coverage status">
+          {method !== 'shop_delivery' ? (
+            <>
+              <p className="font-semibold text-gray-800">
+                {method === 'customer_pickup' ? 'Customer-arranged courier selected' : 'Customer pickup selected'}
+              </p>
+              <p className="mt-1 text-sm text-gray-600">
+                {method === 'customer_pickup'
+                  ? 'Arrange and pay for your own third-party courier.'
+                  : 'Collect your repaired shoes directly from the shop.'}
+              </p>
+            </>
+          ) : coverageLoading ? (
+            <p className="font-semibold text-gray-600">Checking coverage…</p>
+          ) : coverage?.available ? (
+            <>
+              <p className="font-semibold text-green-700">Within coverage</p>
+              {Number.isFinite(Number(coverage.distance_km)) && (
+                <p className="mt-1 text-gray-600">Distance: {Number(coverage.distance_km)} km</p>
+              )}
+            </>
+          ) : (
+            <>
+              <p className="font-semibold text-amber-700">
+                {getReturnCoverageReasonLabel(coverage?.reason)}
+              </p>
+              <p className="mt-1 text-sm text-gray-600">
+                {getReturnCoverageReasonMessage(coverage?.reason)}
+              </p>
+            </>
+          )}
+          {method === 'shop_delivery' && coverageError && (
+            <p className="mt-1 text-sm text-red-700">{coverageError}</p>
+          )}
+        </div>
+        <dl className="space-y-3 sm:min-w-60">
+          <div className="flex items-center justify-between gap-4 border-b border-gray-100 pb-3">
+            <dt className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+              {shopDeliveryQuoteUnavailable
+                ? 'Return fee unavailable'
+                : method === 'shop_delivery'
+                ? (dirty ? 'Estimated return fee' : 'Accepted return fee')
+                : 'Return delivery fee'}
+            </dt>
+            <dd className="text-right font-semibold tabular-nums text-gray-900">
+              {method !== 'shop_delivery'
+                ? 'No shop rider fee'
+                : shopDeliveryQuoteUnavailable
+                  ? 'Unavailable'
+                  : coverageLoading
+                    ? 'Checking…'
+                    : formatCurrency(displayedFee)}
+            </dd>
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <dt className="text-sm font-semibold text-gray-700">Final amount</dt>
+            <dd className="text-right text-lg font-bold tabular-nums text-gray-950">
+              {shopDeliveryQuoteUnavailable ? 'Unavailable' : formatCurrency(finalAmount)}
+            </dd>
+          </div>
+        </dl>
+      </div>
+
+      {error && (
+        <p role="alert" className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {error}
+        </p>
+      )}
+      {success && (
+        <p role="status" className="mt-4 rounded-xl border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
+          {success}
+        </p>
+      )}
+
+      <button
+        type="button"
+        onClick={handleConfirm}
+        disabled={saving || isConfirmed}
+        className="mt-5 inline-flex w-full items-center justify-center rounded-full bg-[#16233b] px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-gray-300 sm:w-auto"
+      >
+        {saving
+          ? dirty
+            ? 'Saving…'
+            : 'Confirming…'
+          : isConfirmed
+            ? 'Address & delivery confirmed'
+            : dirty
+              ? 'Save & review delivery plan'
+              : 'Confirm address & delivery'}
+      </button>
+    </section>
+  );
+};
+
+const CustomerExternalTrackingCard: React.FC<{
+  order: RepairOrder;
+  leg: 'intake' | 'return';
+  onRefresh: () => Promise<unknown>;
+}> = ({ order, leg, onRefresh }) => {
+  const isIntake = leg === 'intake';
+  const enabled = isIntake
+    ? order.intake_delivery_method === 'customer_delivery'
+    : getReturnMethod(order) === 'customer_pickup';
+  const snapshot = isIntake ? order.intake_address : order.return_address;
+  const tracking = snapshot?.external_tracking;
+  const locked = Boolean(isIntake
+    ? order.intake_logistics_locked_at
+      && (!isWarrantyNoChargeOrder(order) || order.received_at)
+    : order.pickup_enabled);
+  const unpaidThirdPartyReturn = !isIntake
+    && getReturnMethod(order) === 'customer_pickup'
+    && getOrderOutstandingBalance(order) > 0;
+  const trackingGuidance = isIntake
+    ? 'Add the details from the courier you arranged. The shop can view them but cannot edit them.'
+    : unpaidThirdPartyReturn
+      ? 'Complete the remaining payment first. Then enter the courier details below.'
+      : 'Enter the courier carrier and tracking number before the shop records the return handoff.';
+  const title = `${isIntake ? 'Intake' : 'Return'} courier tracking`;
+  const fieldPrefix = isIntake ? 'Intake' : 'Return';
+  const [carrier, setCarrier] = useState(tracking?.carrier ?? '');
+  const [trackingNumber, setTrackingNumber] = useState(tracking?.tracking_number ?? '');
+  const [trackingUrl, setTrackingUrl] = useState(tracking?.tracking_url ?? '');
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setCarrier(tracking?.carrier ?? '');
+    setTrackingNumber(tracking?.tracking_number ?? '');
+    setTrackingUrl(tracking?.tracking_url ?? '');
+  }, [tracking?.carrier, tracking?.tracking_number, tracking?.tracking_url]);
+
+  if (!enabled) return null;
+
+  const save = async () => {
+    if (unpaidThirdPartyReturn) {
+      setError('Complete the remaining payment before arranging the return courier.');
+      return;
+    }
+
+    setSaving(true);
+    setMessage(null);
+    setError(null);
+    try {
+      const response = await axios.post(`/api/customer/repairs/${order.id}/external-tracking`, {
+        leg,
+        carrier: carrier.trim(),
+        tracking_number: trackingNumber.trim(),
+        tracking_url: trackingUrl.trim() || null,
+      });
+      setMessage(response.data?.message || 'Tracking details saved.');
+      await onRefresh();
+    } catch (reason) {
+      setError(getRequestErrorMessage(reason, 'Unable to save tracking details.'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <section
+      aria-label={title}
+      className="mt-6 rounded-2xl border border-gray-200 bg-white p-4 sm:p-5"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h4 className="font-bold text-black">{title}</h4>
+          <p className="mt-1 text-xs text-gray-500">
+            {trackingGuidance}
+          </p>
+        </div>
+        {locked && (
+          <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-600">
+            Locked after handoff
+          </span>
+        )}
+      </div>
+
+      {unpaidThirdPartyReturn ? (
+        <p role="alert" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800">
+          Complete the remaining payment first. After payment, enter the courier carrier and tracking number here.
+        </p>
+      ) : locked ? (
+        tracking?.tracking_number ? (
+          <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+            <div>
+              <dt className="text-xs font-semibold uppercase tracking-wider text-gray-500">Carrier</dt>
+              <dd className="mt-1 font-semibold text-gray-900">{tracking.carrier || 'Not provided'}</dd>
+            </div>
+            <div>
+              <dt className="text-xs font-semibold uppercase tracking-wider text-gray-500">Tracking number</dt>
+              <dd className="mt-1 font-semibold text-gray-900">{tracking.tracking_number}</dd>
+            </div>
+            {tracking.tracking_url && (
+              <div className="sm:col-span-2">
+                <a
+                  href={tracking.tracking_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-semibold text-[#16233b] underline"
+                >
+                  Open courier tracking
+                </a>
+              </div>
+            )}
+          </dl>
+        ) : (
+          <p className="mt-4 text-sm text-gray-600">No third-party tracking details were provided before handoff.</p>
+        )
+      ) : (
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <label className="text-sm font-semibold text-gray-700">
+            Carrier
+            <input
+              aria-label={`${fieldPrefix} carrier`}
+              value={carrier}
+              onChange={(event) => setCarrier(event.target.value)}
+              className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2 font-normal text-gray-900"
+            />
+          </label>
+          <label className="text-sm font-semibold text-gray-700">
+            Tracking number
+            <input
+              aria-label={`${fieldPrefix} tracking number`}
+              value={trackingNumber}
+              onChange={(event) => setTrackingNumber(event.target.value)}
+              className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2 font-normal text-gray-900"
+            />
+          </label>
+          <label className="text-sm font-semibold text-gray-700 sm:col-span-2">
+            Tracking link <span className="font-normal text-gray-500">(optional)</span>
+            <input
+              type="url"
+              aria-label={`${fieldPrefix} tracking link`}
+              value={trackingUrl}
+              onChange={(event) => setTrackingUrl(event.target.value)}
+              className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2 font-normal text-gray-900"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={save}
+            disabled={saving || !carrier.trim() || !trackingNumber.trim()}
+            className="rounded-full bg-[#16233b] px-5 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-gray-300 sm:w-fit"
+          >
+            {saving ? 'Savingâ€¦' : `Save ${leg} tracking`}
+          </button>
+        </div>
+      )}
+
+      {message && <p role="status" className="mt-3 text-sm font-semibold text-green-700">{message}</p>}
+      {error && <p role="alert" className="mt-3 text-sm font-semibold text-red-700">{error}</p>}
+    </section>
+  );
+};
+
+const RepairLogisticsTracking: React.FC<{
+  shipments?: Array<{ id: number; purpose: string }>;
+}> = ({ shipments = [] }) => {
+  const intakeReference = shipments.find((shipment) => shipment.purpose === 'repair_pickup');
+  const returnReference = shipments.find((shipment) => shipment.purpose === 'repair_return');
+  const references = useMemo(
+    () => [intakeReference, returnReference].filter(
+      (shipment): shipment is { id: number; purpose: string } => Boolean(shipment),
+    ),
+    [intakeReference?.id, returnReference?.id],
+  );
+  const referenceKey = references.map((shipment) => `${shipment.purpose}:${shipment.id}`).join('|');
+  const [trackingByPurpose, setTrackingByPurpose] = useState<Record<
+    string,
+    { shipment?: TrackingShipment; error?: string }
+  > | null>(null);
+
+  useEffect(() => {
+    if (references.length === 0) {
+      setTrackingByPurpose(null);
+      return;
+    }
+
+    let active = true;
+    setTrackingByPurpose(null);
+
+    Promise.all(references.map(async (reference) => {
+      try {
+        const response = await axios.get(`/tracking/shipments/${reference.id}`, {
+          headers: {
+            Accept: 'application/json',
+          },
+        });
+        const shipment = response.data?.props?.shipment ?? response.data?.shipment;
+        return [reference.purpose, { shipment }] as const;
+      } catch (reason) {
+        return [
+          reference.purpose,
+          { error: getRequestErrorMessage(reason, 'Unable to load tracking updates.') },
+        ] as const;
+      }
+    })).then((entries) => {
+      if (active) {
+        setTrackingByPurpose(Object.fromEntries(entries));
+      }
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [referenceKey]);
+
+  if (references.length === 0) {
+    return null;
+  }
+
+  if (!trackingByPurpose) {
+    return <p className="mt-5 text-sm text-gray-500">Loading logistics tracking…</p>;
+  }
+
+  const renderTimeline = (
+    reference: { id: number; purpose: string } | undefined,
+    heading: string,
+    label: string,
+  ) => {
+    if (!reference) return null;
+
+    const tracking = trackingByPurpose[reference.purpose];
+    const events = tracking?.shipment?.events ?? [];
+
+    return (
+      <section
+        aria-label={label}
+        className="rounded-2xl border border-gray-200 bg-white p-4 sm:p-5"
+      >
+        <div className="flex items-center justify-between gap-3">
+          <h4 className="font-bold text-black">{heading}</h4>
+          <Link
+            href={`/tracking/shipments/${reference.id}`}
+            className="text-xs font-semibold text-gray-700 underline"
+          >
+            Open tracking
+          </Link>
+        </div>
+        {tracking?.error ? (
+          <p className="mt-3 text-sm text-red-700">{tracking.error}</p>
+        ) : events.length > 0 ? (
+          <ol className="mt-4 space-y-3 border-l border-gray-300 pl-4">
+            {events.map((event) => (
+              <li key={event.id}>
+                <p className="text-sm font-medium text-gray-800">
+                  {event.message || event.event_type.replace(/_/g, ' ')}
+                </p>
+                {event.created_at && (
+                  <p className="mt-0.5 text-xs text-gray-500">
+                    {new Date(event.created_at).toLocaleString()}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <p className="mt-3 text-sm text-gray-500">No tracking events yet.</p>
+        )}
+      </section>
+    );
+  };
+
+  return (
+    <div className="mt-6 grid gap-4 lg:grid-cols-2">
+      {renderTimeline(intakeReference, 'Intake pickup tracking', 'Intake pickup tracking')}
+      {renderTimeline(returnReference, 'Return delivery tracking', 'Return delivery tracking')}
+    </div>
+  );
 };
 
 // Static mock data for testing
@@ -573,6 +1798,8 @@ const getStaticRepairOrders = (): RepairOrder[] => {
 
 const MyRepairs: React.FC = () => {
   const isPollingRepairsRef = useRef(false);
+  const revealRootRef = useRef<HTMLDivElement | null>(null);
+  useScrollReveal(revealRootRef);
   const [orders, setOrders] = useState<RepairOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedTab, setSelectedTab] = useState<RepairTab>('new_request');
@@ -582,6 +1809,12 @@ const MyRepairs: React.FC = () => {
   const [cancelTargetOrderId, setCancelTargetOrderId] = useState<number | null>(null);
   const [selectedReason, setSelectedReason] = useState<string>('');
   const [cancelNote, setCancelNote] = useState<string>('');
+  const [modifyOrder, setModifyOrder] = useState<RepairOrder | null>(null);
+  const [availableModifyServices, setAvailableModifyServices] = useState<RepairServiceSummary[]>([]);
+  const [selectedModifyServiceIds, setSelectedModifyServiceIds] = useState<number[]>([]);
+  const [packageRemovalConfirmed, setPackageRemovalConfirmed] = useState(false);
+  const [isLoadingModifyServices, setIsLoadingModifyServices] = useState(false);
+  const [isSavingModifyServices, setIsSavingModifyServices] = useState(false);
 
   // Shop capacity cache: shopOwnerId → { active_count, limit, is_full }
   const [shopCapacityCache, setShopCapacityCache] = useState<Record<number, { active_count: number; limit: number; is_full: boolean }>>({});
@@ -603,9 +1836,8 @@ const MyRepairs: React.FC = () => {
   const [warrantyOrderId, setWarrantyOrderId] = useState<number | null>(null);
   const [warrantyReasonCode, setWarrantyReasonCode] = useState<string>('issue_returned');
   const [warrantyReasonDetails, setWarrantyReasonDetails] = useState<string>('');
-  const [warrantyIntakeMethod, setWarrantyIntakeMethod] = useState<'walk_in' | 'customer_delivery'>('walk_in');
-  const [warrantyReceiveMethod, setWarrantyReceiveMethod] = useState<'walk_in' | 'shop_delivery'>('walk_in');
-  const [warrantyReceiveAddress, setWarrantyReceiveAddress] = useState<WarrantyReceiveAddressForm>({ ...EMPTY_WARRANTY_RECEIVE_ADDRESS });
+  const [warrantyIntakeMethod, setWarrantyIntakeMethod] = useState<WarrantyIntakeMethod>('walk_in');
+  const [warrantyReceiveMethod, setWarrantyReceiveMethod] = useState<WarrantyReceiveMethod>('walk_in');
   const [warrantyImages, setWarrantyImages] = useState<File[]>([]);
   const [isSubmittingWarrantyClaim, setIsSubmittingWarrantyClaim] = useState(false);
   const [latestRefundByRepairId, setLatestRefundByRepairId] = useState<Record<number, RepairRefundStatus>>({});
@@ -827,6 +2059,11 @@ const MyRepairs: React.FC = () => {
 
   const getLatestRefundForOrder = (order: RepairOrder): RepairRefundStatus | undefined => {
     return latestRefundByRepairId[getRefundAnchorRepairId(order)];
+  };
+
+  const hasActiveWarrantyClaim = (order: RepairOrder): boolean => {
+    const status = latestWarrantyClaimByRepairId[getRefundAnchorRepairId(order)]?.status;
+    return ['pending_repairer', 'approved'].includes(String(status || '').toLowerCase());
   };
 
   const hasReviewForOrder = (order: RepairOrder): boolean => {
@@ -1090,7 +2327,7 @@ const MyRepairs: React.FC = () => {
           return;
         }
 
-        fetchRepairs({ reconcilePayments: true });
+        fetchRepairs();
         const retryResult = await Swal.fire({
           icon: 'error',
           title: 'Payment Not Completed',
@@ -1105,7 +2342,7 @@ const MyRepairs: React.FC = () => {
           await handlePayNow(parsedPendingRepairId);
         }
 
-        fetchRepairs({ reconcilePayments: true });
+        fetchRepairs();
         return;
       }
 
@@ -1158,7 +2395,7 @@ const MyRepairs: React.FC = () => {
           }
 
           if (!usedQueryFallback) {
-            await fetchRepairs({ reconcilePayments: true });
+            void fetchRepairs();
           }
 
           if (result?.success && result?.payment_verified) {
@@ -1175,6 +2412,8 @@ const MyRepairs: React.FC = () => {
 
             if (usedQueryFallback) {
               window.location.href = '/';
+            } else {
+              window.location.reload();
             }
           } else if (result?.expired) {
             if (usedQueryFallback) {
@@ -1216,7 +2455,7 @@ const MyRepairs: React.FC = () => {
         } catch (error) {
           console.error('Payment verification error:', error);
           if (!usedQueryFallback) {
-            await fetchRepairs({ reconcilePayments: true });
+            void fetchRepairs();
           }
           await Swal.fire({
             icon: 'error',
@@ -1294,8 +2533,8 @@ const MyRepairs: React.FC = () => {
     setLatestWarrantyClaimByRepairId(nextClaims);
   };
 
-  const fetchRepairs = async (options: { silent?: boolean; lightweight?: boolean; reconcilePayments?: boolean } = {}) => {
-    const { silent = false, lightweight = false, reconcilePayments = false } = options;
+  const fetchRepairs = async (options: { silent?: boolean; lightweight?: boolean } = {}) => {
+    const { silent = false, lightweight = false } = options;
 
     try {
       if (!silent) {
@@ -1303,11 +2542,14 @@ const MyRepairs: React.FC = () => {
       }
 
       const response = await axios.get('/api/customer/repairs', {
-        params: reconcilePayments ? { reconcile_payments: 1 } : undefined,
+        params: undefined,
       });
       if (response.data.success) {
         const repairList: RepairOrder[] = response.data.data;
         setOrders(repairList);
+        if (!silent) {
+          setLoading(false);
+        }
 
         if (lightweight) {
           return;
@@ -1414,6 +2656,110 @@ const MyRepairs: React.FC = () => {
     }
   };
 
+  const closeModifyModal = () => {
+    if (isSavingModifyServices) return;
+
+    setModifyOrder(null);
+    setAvailableModifyServices([]);
+    setSelectedModifyServiceIds([]);
+    setPackageRemovalConfirmed(false);
+  };
+
+  const openModifyModal = async (order: RepairOrder) => {
+    if (!order.shop_owner_id) return;
+
+    setModifyOrder(order);
+    setPackageRemovalConfirmed(!order.repair_package_id);
+    setIsLoadingModifyServices(true);
+
+    try {
+      const response = await axios.get(`/api/repair-services?shop_id=${order.shop_owner_id}`);
+      const services: RepairServiceSummary[] = Array.isArray(response.data?.data)
+        ? response.data.data
+        : [];
+      const activeServiceIds = new Set(services.map((service) => service.id));
+
+      setAvailableModifyServices(services);
+      setSelectedModifyServiceIds(
+        (order.services ?? [])
+          .map((service) => service.id)
+          .filter((serviceId) => activeServiceIds.has(serviceId)),
+      );
+    } catch {
+      setModifyOrder(null);
+      Swal.fire({
+        icon: 'error',
+        title: 'Unable to Load Services',
+        text: 'Please try again.',
+        confirmButtonColor: '#000000',
+      });
+    } finally {
+      setIsLoadingModifyServices(false);
+    }
+  };
+
+  const toggleModifyService = (serviceId: number) => {
+    if (!packageRemovalConfirmed) return;
+
+    setSelectedModifyServiceIds((current) =>
+      current.includes(serviceId)
+        ? current.filter((id) => id !== serviceId)
+        : [...current, serviceId],
+    );
+  };
+
+  const saveModifiedServices = async () => {
+    if (!modifyOrder || selectedModifyServiceIds.length === 0) return;
+
+    setIsSavingModifyServices(true);
+
+    try {
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+      const response = await fetch(`/api/customer/repairs/${modifyOrder.id}/services`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-TOKEN': csrfToken || '',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          service_ids: selectedModifyServiceIds,
+          remove_package: Boolean(modifyOrder.repair_package_id),
+        }),
+      });
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Unable to update services.');
+      }
+
+      setModifyOrder(null);
+      setAvailableModifyServices([]);
+      setSelectedModifyServiceIds([]);
+      setPackageRemovalConfirmed(false);
+      await fetchRepairs();
+      Swal.fire({
+        icon: 'success',
+        title: 'Services Updated',
+        text: 'Your repair total and chat were updated.',
+        confirmButtonColor: '#000000',
+      });
+    } catch (error: any) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Update Failed',
+        text: error?.message || 'Please try again.',
+        confirmButtonColor: '#000000',
+      });
+    } finally {
+      setIsSavingModifyServices(false);
+    }
+  };
+
+  const selectedModifyTotal = availableModifyServices
+    .filter((service) => selectedModifyServiceIds.includes(service.id))
+    .reduce((sum, service) => sum + Number(service.price || 0), 0);
+
   useEffect(() => {
     const intervalId = window.setInterval(async () => {
       if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
@@ -1439,11 +2785,11 @@ const MyRepairs: React.FC = () => {
 
   const confirmPickup = async (orderId: number) => {
     const result = await Swal.fire({
-      title: 'Confirm Pickup?',
-      text: 'Please confirm that you have picked up your repaired item.',
+      title: 'Confirm receipt?',
+      text: 'Confirm only after your repaired shoes are in your hands.',
       icon: 'question',
       showCancelButton: true,
-      confirmButtonText: 'Yes, I picked it up',
+      confirmButtonText: 'Yes, I received them',
       cancelButtonText: 'Not yet',
       confirmButtonColor: '#000000',
       cancelButtonColor: '#6b7280',
@@ -1466,8 +2812,8 @@ const MyRepairs: React.FC = () => {
         );
 
         await Swal.fire({
-          title: 'Pickup Confirmed!',
-          text: 'Thank you for confirming your pickup.',
+          title: 'Receipt confirmed',
+          text: 'Thank you for confirming that you received your repaired shoes.',
           icon: 'success',
           confirmButtonText: 'OK',
           confirmButtonColor: '#000000',
@@ -1477,8 +2823,8 @@ const MyRepairs: React.FC = () => {
       console.error('Failed to confirm pickup:', error);
       await Swal.fire({
         icon: 'error',
-        title: 'Failed to confirm pickup',
-        text: 'Please try again',
+        title: 'Unable to confirm receipt',
+        text: getRequestErrorMessage(error, 'Please refresh and try again.'),
         confirmButtonColor: '#000000',
       });
     }
@@ -1538,7 +2884,6 @@ const MyRepairs: React.FC = () => {
     setWarrantyReasonDetails('');
     setWarrantyIntakeMethod('walk_in');
     setWarrantyReceiveMethod('walk_in');
-    setWarrantyReceiveAddress({ ...EMPTY_WARRANTY_RECEIVE_ADDRESS });
     setWarrantyImages([]);
   };
 
@@ -1565,26 +2910,16 @@ const MyRepairs: React.FC = () => {
     setWarrantyOrderId(order.id);
     setWarrantyReasonCode('issue_returned');
     setWarrantyReasonDetails('');
-    setWarrantyIntakeMethod('walk_in');
-    setWarrantyReceiveMethod('walk_in');
-    setWarrantyReceiveAddress(resolveWarrantyReceiveAddressSeed(order));
+    setWarrantyIntakeMethod(getIntakeMethod(order));
+    setWarrantyReceiveMethod(getReturnMethod(order));
     setWarrantyImages([]);
     setShowWarrantyModal(true);
   };
 
-  const isWarrantyReceiveAddressComplete = () => {
-    if (warrantyReceiveMethod !== 'shop_delivery') {
-      return true;
-    }
-
-    return Object.values(warrantyReceiveAddress).every((entry) => String(entry).trim().length > 0);
-  };
-
-  const updateWarrantyReceiveAddressField = (field: keyof WarrantyReceiveAddressForm, value: string) => {
-    setWarrantyReceiveAddress((prev) => ({
-      ...prev,
-      [field]: value,
-    }));
+  const hasWarrantyDeliveryAddresses = () => {
+    const order = orders.find((entry) => entry.id === warrantyOrderId);
+    return (warrantyIntakeMethod === 'walk_in' || Boolean(getWarrantyAddress(order, 'intake')))
+      && (warrantyReceiveMethod === 'walk_in' || Boolean(getWarrantyAddress(order, 'return')));
   };
 
   const handleWarrantyImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1651,7 +2986,7 @@ const MyRepairs: React.FC = () => {
       return false;
     }
 
-    if (!isWarrantyReceiveAddressComplete()) {
+    if (!hasWarrantyDeliveryAddresses()) {
       return false;
     }
 
@@ -1682,11 +3017,11 @@ const MyRepairs: React.FC = () => {
       return;
     }
 
-    if (!isWarrantyReceiveAddressComplete()) {
+    if (!hasWarrantyDeliveryAddresses()) {
       Swal.fire({
         icon: 'warning',
-        title: 'Delivery Address Required',
-        text: 'Please provide the full delivery address when choosing Repairer Delivery.',
+        title: 'Pinned Address Required',
+        text: 'This repair has no saved pinned address to reuse. Choose walk-in or update the repair delivery address first.',
         confirmButtonColor: '#000000',
       });
       return;
@@ -1737,13 +3072,6 @@ const MyRepairs: React.FC = () => {
     payload.append('preferred_return_method', warrantyIntakeMethod);
     payload.append('preferred_receive_method', warrantyReceiveMethod);
 
-    if (warrantyReceiveMethod === 'shop_delivery') {
-      payload.append('receive_address_line', warrantyReceiveAddress.address_line.trim());
-      payload.append('receive_barangay', warrantyReceiveAddress.barangay.trim());
-      payload.append('receive_city', warrantyReceiveAddress.city.trim());
-      payload.append('receive_postal_code', warrantyReceiveAddress.postal_code.trim());
-    }
-
     warrantyImages.forEach((file: File, index: number) => {
       payload.append(`images[${index}]`, file);
     });
@@ -1768,7 +3096,11 @@ const MyRepairs: React.FC = () => {
       }
 
       if (!response.ok) {
-        const errorMessage = data?.message
+        const validationMessage = Object.values(data?.errors ?? {}).flat().find(
+          (message): message is string => typeof message === 'string' && message.trim().length > 0,
+        );
+        const errorMessage = validationMessage
+          || data?.message
           || data?.errors?.repair?.[0]
           || data?.errors?.images?.[0]
           || 'Unable to file warranty claim right now.';
@@ -1832,11 +3164,21 @@ const MyRepairs: React.FC = () => {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json().catch(() => ({}));
         if (errorData.error === 'shop_payment_not_configured') {
           throw new Error('This shop has not set up online payments yet. Please contact the shop directly to arrange payment.');
         }
-        throw new Error(errorData.error || 'Failed to create payment link');
+        const firstValidationError = Object.values(errorData.errors ?? {}).flat().find(
+          (entry) => typeof entry === 'string' && entry.trim(),
+        );
+        const message = typeof firstValidationError === 'string'
+          ? firstValidationError
+          : typeof errorData.error === 'string'
+            ? errorData.error
+            : typeof errorData.message === 'string'
+              ? errorData.message
+              : 'Failed to create payment link';
+        throw new Error(message);
       }
 
       const paymentData = await response.json();
@@ -1905,6 +3247,16 @@ const MyRepairs: React.FC = () => {
     const targetOrder = orders.find((entry) => entry.id === refundOrderId);
     if (!targetOrder) {
       Swal.fire({ icon: 'error', title: 'Repair Not Found', text: 'Unable to locate the selected repair request.', confirmButtonColor: '#000000' });
+      return;
+    }
+
+    if (hasActiveWarrantyClaim(targetOrder)) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Refund Not Allowed',
+        text: 'Refund cannot be requested while a warranty claim is active for this repair.',
+        confirmButtonColor: '#000000',
+      });
       return;
     }
 
@@ -2006,10 +3358,7 @@ const MyRepairs: React.FC = () => {
       const otherReasonSummary = refundReason === 'Other' && refundOtherReason.trim().length > 0
         ? `Other reason details: ${refundOtherReason.trim()}`
         : '';
-      const mediaSummary = refundMedia.length > 0
-        ? `Uploaded media references: ${refundMedia.map((file) => file.name).join(', ')}`
-        : '';
-      const reasonNotes = [otherReasonSummary, refundNote.trim(), mediaSummary].filter(Boolean).join('\n').slice(0, 2000);
+      const reasonNotes = [otherReasonSummary, refundNote.trim()].filter(Boolean).join('\n').slice(0, 2000);
 
       const preferredReturnChannel: PreferredReturnChannel =
         originalMethodOnly
@@ -2330,184 +3679,6 @@ const MyRepairs: React.FC = () => {
     setReviewImages(prev => prev.filter((_, i) => i !== index));
   };
 
-  const canSwitchDeliveryMethod = (order: RepairOrder) => {
-    return order.status === 'ready_for_pickup' && !order.pickup_enabled;
-  };
-
-  const handleSwitchDeliveryMethod = async (order: RepairOrder, nextMethod: 'walk_in' | 'shop_delivery') => {
-    const switchingToWalkIn = nextMethod === 'walk_in';
-    const currentMethod = getReturnMethod(order);
-
-    if (currentMethod === nextMethod) {
-      return;
-    }
-
-    const result = await Swal.fire({
-      title: switchingToWalkIn ? 'Change to Pick-up at Shop?' : 'Switch to Repairer Arranged Courier Delivery?',
-      html: `
-        <div class="text-left rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-          <p class="text-[13px] uppercase tracking-[0.18em] text-slate-500 font-semibold mb-2">Return Method Change</p>
-          <p class="text-sm text-slate-700 leading-6 mb-2">You are changing this order from <strong class="text-slate-900">${escapeSwalText(getReturnMethodLabel(order))}</strong> to <strong class="text-slate-900">${switchingToWalkIn ? 'Customer Pick-up at Shop' : 'Repairer Arranged Courier Delivery'}</strong>.</p>
-          <p class="text-sm text-slate-600 leading-6">${switchingToWalkIn ? 'You will pick up your repaired shoes from the shop once it is ready.' : 'The repairer will arrange courier delivery and send your tracking details once shipped.'}</p>
-        </div>
-      `,
-      icon: 'question',
-      showCancelButton: true,
-      confirmButtonText: switchingToWalkIn ? 'Yes, change to pick-up at shop' : 'Yes, switch to repairer-arranged courier delivery',
-      cancelButtonText: 'Cancel',
-      confirmButtonColor: '#000000',
-      cancelButtonColor: '#6b7280',
-      reverseButtons: true,
-      customClass: {
-        popup: '!rounded-3xl !px-6 !py-6 !shadow-[0_30px_80px_-40px_rgba(15,23,42,0.55)] !border !border-slate-200',
-        title: '!text-3xl !font-black !text-slate-900 !leading-[1.2] !tracking-[-0.015em] !mb-2',
-        htmlContainer: '!mx-0 !mb-0 !mt-2 !p-0',
-        actions: '!mt-6 !w-full !flex !items-stretch !gap-3',
-        confirmButton: '!m-0 !flex-1 !basis-0 !h-14 !inline-flex !items-center !justify-center !text-center !rounded-xl !px-4 !text-sm !font-semibold !leading-tight !tracking-[0.01em] !whitespace-normal !bg-slate-950 hover:!bg-black focus:!ring-2 focus:!ring-slate-400',
-        cancelButton: '!m-0 !flex-1 !basis-0 !h-14 !inline-flex !items-center !justify-center !text-center !rounded-xl !px-4 !text-sm !font-semibold !leading-tight !tracking-[0.01em] !whitespace-normal !text-slate-700 !bg-slate-100 hover:!bg-slate-200 focus:!ring-2 focus:!ring-slate-300',
-      },
-    });
-
-    if (!result.isConfirmed) return;
-
-    let returnAddressPayload: Record<string, string> = {};
-
-    if (!switchingToWalkIn) {
-      const fallbackAddress =
-        (order.return_address && typeof order.return_address === 'object' ? order.return_address : null)
-        ?? (order.pickup_address && typeof order.pickup_address === 'object' ? order.pickup_address : null);
-
-      const addressModal = await Swal.fire({
-        title: 'Delivery Address for Repairer Courier Delivery',
-        html: `
-          <div class="text-left mb-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <p class="text-[13px] uppercase tracking-[0.18em] text-slate-500 font-semibold mb-1">Delivery Address</p>
-            <p class="text-sm text-slate-600 leading-6">This address will be used by the repairer-arranged courier for return delivery.</p>
-          </div>
-          <div class="space-y-3 text-left">
-            <div>
-              <label for="return_address_line" class="mb-1 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Address Line</label>
-              <input id="return_address_line" class="swal2-input myrepairs-swal-input" placeholder="House no., street, building" value="${escapeSwalText(fallbackAddress?.address_line)}" />
-            </div>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label for="return_barangay" class="mb-1 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Barangay</label>
-                <input id="return_barangay" class="swal2-input myrepairs-swal-input" placeholder="Barangay" value="${escapeSwalText(fallbackAddress?.barangay)}" />
-              </div>
-              <div>
-                <label for="return_city" class="mb-1 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">City</label>
-                <input id="return_city" class="swal2-input myrepairs-swal-input" placeholder="City" value="${escapeSwalText(fallbackAddress?.city)}" />
-              </div>
-            </div>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label for="return_postal_code" class="mb-1 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Postal Code</label>
-                <input id="return_postal_code" class="swal2-input myrepairs-swal-input" placeholder="Postal code" value="${escapeSwalText(fallbackAddress?.postal_code)}" inputmode="numeric" pattern="[0-9]*" maxlength="10" />
-              </div>
-            </div>
-          </div>
-        `,
-        showCancelButton: true,
-        confirmButtonText: 'Save address and continue',
-        cancelButtonText: 'Cancel',
-        confirmButtonColor: '#000000',
-        cancelButtonColor: '#6b7280',
-        focusConfirm: false,
-        customClass: {
-          popup: '!rounded-3xl !px-6 !py-6 !shadow-[0_30px_80px_-40px_rgba(15,23,42,0.55)] !border !border-slate-200',
-          title: '!text-3xl !font-black !text-slate-900 !leading-[1.2] !tracking-[-0.015em] !mb-2',
-          htmlContainer: '!mx-0 !mb-0 !mt-2 !p-0 !overflow-visible',
-          actions: '!mt-6 !w-full !gap-3 !justify-end',
-          confirmButton: '!m-0 !h-11 !rounded-xl !px-5 !text-sm !font-semibold !tracking-[0.01em] !bg-slate-950 hover:!bg-black focus:!ring-2 focus:!ring-slate-400',
-          cancelButton: '!m-0 !h-11 !rounded-xl !px-5 !text-sm !font-semibold !text-slate-700 !bg-slate-100 hover:!bg-slate-200 focus:!ring-2 focus:!ring-slate-300',
-          validationMessage: '!rounded-xl !bg-rose-50 !text-rose-700 !border !border-rose-200 !px-3 !py-2 !mt-3 !mx-0',
-        },
-        didOpen: () => {
-          ['return_address_line', 'return_barangay', 'return_city', 'return_postal_code'].forEach((id) => {
-            const el = document.getElementById(id) as HTMLInputElement | null;
-            if (!el) return;
-            el.classList.add('!m-0', '!w-full', '!h-11', '!rounded-xl', '!border', '!border-slate-200', '!bg-white', '!px-3', '!text-sm', '!text-slate-900', 'focus:!border-slate-400', 'focus:!ring-2', 'focus:!ring-slate-200');
-          });
-
-          const postalCodeInput = document.getElementById('return_postal_code') as HTMLInputElement | null;
-          if (postalCodeInput) {
-            postalCodeInput.addEventListener('input', () => {
-              postalCodeInput.value = postalCodeInput.value.replace(/\D/g, '');
-            });
-          }
-        },
-        preConfirm: () => {
-          const addressLine = (document.getElementById('return_address_line') as HTMLInputElement | null)?.value?.trim() ?? '';
-          const barangay = (document.getElementById('return_barangay') as HTMLInputElement | null)?.value?.trim() ?? '';
-          const city = (document.getElementById('return_city') as HTMLInputElement | null)?.value?.trim() ?? '';
-          const postalCode = (document.getElementById('return_postal_code') as HTMLInputElement | null)?.value?.trim() ?? '';
-
-          if (!addressLine || !barangay || !city || !postalCode) {
-            Swal.showValidationMessage('Please complete all delivery address fields.');
-            return null;
-          }
-
-          if (!/^\d+$/.test(postalCode)) {
-            Swal.showValidationMessage('Postal code must contain numbers only.');
-            return null;
-          }
-
-          return {
-            return_address_line: addressLine,
-            return_barangay: barangay,
-            return_city: city,
-            return_postal_code: postalCode,
-          };
-        },
-      });
-
-      if (!addressModal.isConfirmed || !addressModal.value) return;
-      returnAddressPayload = addressModal.value;
-    }
-
-    try {
-      const response = await axios.patch(`/api/customer/repairs/${order.id}/delivery-method`, {
-        return_delivery_method: nextMethod,
-        ...returnAddressPayload,
-      });
-
-      const updatedMethod = response.data?.return_delivery_method ?? nextMethod;
-      const updatedReturnAddress = response.data?.return_address;
-
-      setOrders(prev =>
-        prev.map(item =>
-          item.id === order.id
-            ? {
-                ...item,
-                return_delivery_method: updatedMethod,
-                return_address: updatedReturnAddress,
-              }
-            : item
-        )
-      );
-
-      saveDeliveryMethodOverride(order.id, updatedMethod);
-
-      await Swal.fire({
-        icon: 'success',
-        title: 'Return Method Updated',
-        text: response.data?.message || (updatedMethod === 'walk_in'
-          ? 'Your order is now set to customer pick-up at the shop.'
-          : updatedMethod === 'shop_delivery'
-            ? 'Your order is now set to repairer-arranged courier delivery.'
-            : 'Your order is now set to repairer-arranged courier delivery.'),
-        confirmButtonColor: '#000000',
-      });
-    } catch (error: any) {
-      await Swal.fire({
-        icon: 'error',
-        title: 'Unable to Update Return Method',
-        text: error?.response?.data?.message || 'Failed to update the return method.',
-        confirmButtonColor: '#000000',
-      });
-    }
-  };
-
   const getStatusColor = (order: RepairOrder) => {
     const activeRefund = latestRefundByRepairId[order.id];
     const refundStatus = String(activeRefund?.status || '').toLowerCase();
@@ -2582,7 +3753,12 @@ const MyRepairs: React.FC = () => {
       return 'Refund Failed';
     }
 
-    const isPaymentSettled = order.payment_status === 'paid' || order.payment_status === 'completed';
+    const hasCollectionSummary = order.collection_summary !== undefined
+      || order.outstanding_balance !== undefined;
+    const hasOutstandingBalance = getOrderOutstandingBalance(order) > 0;
+    const isPaymentSettled = hasCollectionSummary
+      ? !hasOutstandingBalance
+      : order.payment_status === 'paid' || order.payment_status === 'completed';
 
     if (
       order.status === 'repairer_accepted' &&
@@ -2591,9 +3767,14 @@ const MyRepairs: React.FC = () => {
       order.payment_status !== 'paid' &&
       order.payment_status !== 'completed' &&
       Boolean(order.payment_enabled) &&
+      !isWarrantyNoChargeOrder(order) &&
       !processingPayment
     ) {
       return 'PAY NOW';
+    }
+
+    if (order.status === 'ready_for_pickup' && hasOutstandingBalance) {
+      return '📦 Ready for Pickup · Waiting for Payment';
     }
 
     switch (order.status) {
@@ -2793,6 +3974,9 @@ const MyRepairs: React.FC = () => {
   };
 
   const refundOrder = refundOrderId ? orders.find((o) => o.id === refundOrderId) : null;
+  const warrantyOrder = warrantyOrderId ? orders.find((order) => order.id === warrantyOrderId) : undefined;
+  const warrantyIntakeAddress = getWarrantyAddress(warrantyOrder, 'intake');
+  const warrantyReturnAddress = getWarrantyAddress(warrantyOrder, 'return');
   const refundTotal = refundOrder ? getOrderGrandTotal(refundOrder) : 0;
   const refundPaidAmount = Number(refundOrder?.total_paid_amount ?? 0);
   const refundRefundedAmount = Number(refundOrder?.total_refunded_amount ?? 0);
@@ -2889,28 +4073,15 @@ const MyRepairs: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#f3f4f6] xl:bg-white">
-      <Head title="My Repairs" />
+    <CustomerFooterReveal>
+    <div ref={revealRootRef} className="min-h-screen flex flex-col bg-[#f3f4f6] xl:bg-white">
+      <Head title="Repairs" />
       <Navigation />
 
       <main className="flex-1">
         <div className="w-full pb-16 pt-24 sm:px-6 xl:pt-32 xl:px-10 2xl:px-14">
-          <div className="mx-auto mb-10 hidden max-w-6xl select-none rounded-3xl border border-gray-200 bg-white px-4 py-5 text-center shadow-[0_14px_40px_-30px_rgba(15,23,42,0.35)] sm:mb-8 sm:px-6 sm:py-7 xl:block xl:rounded-none xl:border-0 xl:bg-transparent xl:px-0 xl:py-0 xl:shadow-none">
-            <h1 className="text-3xl font-extrabold tracking-tight text-[#16233b] sm:text-5xl xl:text-center xl:text-5xl xl:font-bold">My Repairs</h1>
-            <p className="mx-auto mt-2 max-w-2xl text-xs text-black/55 sm:text-base xl:text-center">
-              Track every request, payment, and pickup update in one place.
-            </p>
-          </div>
-
-          <div className="px-4 pb-2 xl:hidden">
-            <h1 className="mb-1 text-xl font-extrabold tracking-tight text-[#16233b]">My Repairs</h1>
-            <p className="text-xs text-black/55">
-              Track every request, payment, and pickup update in one place.
-            </p>
-          </div>
-
           {/* Mobile Tabs */}
-          <div className="flex w-full gap-2 overflow-x-auto pb-3 pl-4 pr-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden xl:hidden">
+          <div data-scroll-reveal className="scroll-reveal flex w-full gap-2 overflow-x-auto pb-3 pl-4 pr-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden xl:hidden">
             {REPAIR_TABS.map((tab) => (
               <button
                 key={tab}
@@ -2929,7 +4100,7 @@ const MyRepairs: React.FC = () => {
           </div>
 
           {/* Desktop Tabs */}
-          <div className="mb-6 hidden w-full gap-2 overflow-x-auto pb-2 pt-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden xl:mb-12 xl:flex xl:gap-3 xl:pt-2">
+          <div data-scroll-reveal className="scroll-reveal mb-6 hidden w-full gap-2 overflow-x-auto pb-2 pt-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden xl:mb-12 xl:flex xl:gap-3 xl:pt-2">
             <button
               onClick={() => setSelectedTab('new_request')}
               className={`${tabButtonBaseClass} ${
@@ -3071,7 +4242,7 @@ const MyRepairs: React.FC = () => {
 
           {/* Loading State */}
           {loading && (
-            <div className="text-center py-32">
+            <div data-scroll-reveal className="scroll-reveal text-center py-32">
               <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-black"></div>
               <p className="mt-6 text-gray-500 text-sm">Loading your repairs...</p>
             </div>
@@ -3079,7 +4250,7 @@ const MyRepairs: React.FC = () => {
 
           {/* Empty State */}
           {!loading && filteredOrders.length === 0 && (
-            <div className="rounded-3xl border border-gray-200 bg-white px-5 py-14 text-center shadow-[0_20px_40px_-36px_rgba(15,23,42,0.7)] xl:rounded-none xl:border-0 xl:bg-gray-50 xl:py-20 xl:shadow-none">
+            <div data-scroll-reveal className="scroll-reveal rounded-3xl border border-gray-200 bg-white px-5 py-14 text-center shadow-[0_20px_40px_-36px_rgba(15,23,42,0.7)] xl:rounded-none xl:border-0 xl:bg-gray-50 xl:py-20 xl:shadow-none">
               <div className="mb-6">
                 <svg className="w-24 h-24 mx-auto text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
@@ -3103,12 +4274,13 @@ const MyRepairs: React.FC = () => {
                 <div
                   key={order.id}
                   data-repair-id={order.id}
-                  className={`border overflow-hidden transition-shadow duration-300 rounded-3xl bg-white shadow-[0_12px_35px_-32px_rgba(15,23,42,0.75)] hover:shadow-[0_18px_45px_-30px_rgba(15,23,42,0.65)] xl:rounded-none xl:shadow-none xl:hover:shadow-lg ${
+                  data-scroll-reveal
+                  className={`scroll-reveal border overflow-hidden transition-shadow duration-300 rounded-3xl bg-white shadow-[0_12px_35px_-32px_rgba(15,23,42,0.75)] hover:shadow-[0_18px_45px_-30px_rgba(15,23,42,0.65)] xl:rounded-none xl:shadow-none xl:hover:shadow-lg ${
                     highlightRepairId === order.id ? 'border-black bg-gray-50/40 xl:bg-gray-50/30' : 'border-gray-200'
                   }`}
                 >
                   {/* Order Header */}
-                  <div className="border-b border-gray-100 bg-linear-to-r from-white via-white to-gray-50 px-3 py-3 sm:px-8 sm:py-5 xl:border-gray-200 xl:bg-white">
+                  <div className="userside-order-date-header border-b border-gray-100 bg-linear-to-r from-white via-white to-gray-50 px-3 py-3 sm:px-8 sm:py-5 xl:border-gray-200 xl:bg-white">
                     <div className="flex items-start justify-between gap-3 sm:flex-wrap sm:items-center sm:gap-4">
                       <div className="flex items-center gap-3 sm:gap-8">
                         <div>
@@ -3175,41 +4347,6 @@ const MyRepairs: React.FC = () => {
                           </Link>
                         )}
 
-                        {canSwitchDeliveryMethod(order) && getReturnMethod(order) !== 'walk_in' && (
-                          <button
-                            onClick={() => handleSwitchDeliveryMethod(order, 'walk_in')}
-                            disabled={processingPayment}
-                            className={`w-9 h-9 inline-flex items-center justify-center rounded-md transition-colors ${
-                              processingPayment
-                                ? 'border border-gray-300 bg-gray-100 text-gray-400 cursor-not-allowed'
-                                : 'border border-gray-300 bg-white text-black hover:-translate-y-0.5 hover:border-gray-400 hover:bg-gray-50'
-                            }`}
-                            title="Change to Pick-up at Shop"
-                            aria-label="Change to Pick-up at Shop"
-                          >
-                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 7h10m0 0l-3-3m3 3l-3 3M16 17H6m0 0l3 3m-3-3l3-3" />
-                            </svg>
-                          </button>
-                        )}
-
-                        {canSwitchDeliveryMethod(order) && getReturnMethod(order) === 'walk_in' && (
-                          <button
-                            onClick={() => handleSwitchDeliveryMethod(order, 'shop_delivery')}
-                            disabled={processingPayment}
-                            className={`w-9 h-9 inline-flex items-center justify-center rounded-md transition-colors ${
-                              processingPayment
-                                ? 'border border-gray-300 bg-gray-100 text-gray-400 cursor-not-allowed'
-                                : 'border border-gray-300 bg-white text-black hover:-translate-y-0.5 hover:border-gray-400 hover:bg-gray-50'
-                            }`}
-                            title="Switch to Repairer Courier Delivery"
-                            aria-label="Switch to Repairer Courier Delivery"
-                          >
-                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 7h10m0 0l-3-3m3 3l-3 3M16 17H6m0 0l3 3m-3-3l3-3" />
-                            </svg>
-                          </button>
-                        )}
                         </div>
                       </div>
                     </div>
@@ -3217,6 +4354,16 @@ const MyRepairs: React.FC = () => {
 
                   {/* Order Details */}
                   <div className="p-3 sm:p-8">
+                    {order.status === 'repairer_accepted' && getIntakeMethod(order) === 'walk_in' && (
+                      <div className="mb-5 rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+                        <p className="font-semibold">Accepted — Bring Item to Shop</p>
+                        <p className="mt-1">
+                          {isInitialPaymentDue(order)
+                            ? 'Repair request accepted. Bring your shoes to the shop and complete the required payment so the shop can receive the item.'
+                            : 'Repair request accepted. Bring your shoes to the shop so the shop can receive the item.'}
+                        </p>
+                      </div>
+                    )}
                     <div className="rounded-2xl border border-gray-200 bg-gray-50 p-3 xl:hidden">
                       <div className="flex items-start gap-3">
                         <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-gray-200 bg-white">
@@ -3376,48 +4523,6 @@ const MyRepairs: React.FC = () => {
                           )}
                         </div>
 
-                        {shouldShowCourierShippingInfo(order) && (
-                          <div className="mt-6 border-t border-gray-200 pt-6">
-                            <p className="text-sm text-gray-500 uppercase tracking-wider mb-3">Shipping Information</p>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              <div>
-                                <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Estimated Delivery Date</p>
-                                <p className="text-sm text-black font-medium">{getCourierEstimatedDelivery(order)}</p>
-                              </div>
-                              <div>
-                                <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Shipping Business</p>
-                                <p className="text-sm text-black font-medium">{order.carrier_company || '-'}</p>
-                              </div>
-                              <div>
-                                <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Rider Name</p>
-                                <p className="text-sm text-black font-medium">{order.carrier_name || '-'}</p>
-                              </div>
-                              <div>
-                                <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Rider Phone</p>
-                                <p className="text-sm text-black font-medium">{order.carrier_phone || '-'}</p>
-                              </div>
-                              <div>
-                                <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Tracking Number</p>
-                                <p className="text-sm text-black font-medium">{order.tracking_number || '-'}</p>
-                              </div>
-                              <div className="md:col-span-2">
-                                <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Tracking Link</p>
-                                {order.tracking_link ? (
-                                  <a
-                                    href={order.tracking_link}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="text-sm text-black underline break-all"
-                                  >
-                                    {order.tracking_link}
-                                  </a>
-                                ) : (
-                                  <p className="text-sm text-black font-medium">-</p>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        )}
                       </div>
 
                     </div>
@@ -3484,49 +4589,80 @@ const MyRepairs: React.FC = () => {
                         </div>
                       )}
 
-                      {shouldShowCourierShippingInfo(order) && (
-                        <div className="border-t border-gray-200 pt-5">
-                          <p className="mb-3 text-sm text-gray-500 uppercase tracking-wider">Shipping Information</p>
-                          <div className="space-y-3">
-                            <div className="flex items-start justify-between gap-3">
-                              <p className="text-xs text-gray-400 uppercase tracking-wider">Estimated Delivery Date</p>
-                              <p className="text-right text-sm font-medium text-black">{getCourierEstimatedDelivery(order)}</p>
-                            </div>
-                            <div className="flex items-start justify-between gap-3">
-                              <p className="text-xs text-gray-400 uppercase tracking-wider">Shipping Business</p>
-                              <p className="text-right text-sm font-medium text-black">{order.carrier_company || '-'}</p>
-                            </div>
-                            <div className="flex items-start justify-between gap-3">
-                              <p className="text-xs text-gray-400 uppercase tracking-wider">Rider Name</p>
-                              <p className="text-right text-sm font-medium text-black">{order.carrier_name || '-'}</p>
-                            </div>
-                            <div className="flex items-start justify-between gap-3">
-                              <p className="text-xs text-gray-400 uppercase tracking-wider">Rider Phone</p>
-                              <p className="text-right text-sm font-medium text-black">{order.carrier_phone || '-'}</p>
-                            </div>
-                            <div className="flex items-start justify-between gap-3">
-                              <p className="text-xs text-gray-400 uppercase tracking-wider">Tracking Number</p>
-                              <p className="text-right text-sm font-medium text-black">{order.tracking_number || '-'}</p>
-                            </div>
-                            <div className="flex items-start justify-between gap-3">
-                              <p className="text-xs text-gray-400 uppercase tracking-wider">Tracking Link</p>
-                              {order.tracking_link ? (
-                                <a
-                                  href={order.tracking_link}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="max-w-[58%] break-all text-right text-sm text-black underline"
-                                >
-                                  {order.tracking_link}
-                                </a>
-                              ) : (
-                                <p className="text-right text-sm font-medium text-black">-</p>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      )}
                     </div>
+
+                    <CustomerExternalTrackingCard
+                      order={order}
+                      leg="intake"
+                      onRefresh={() => fetchRepairs({ silent: true })}
+                    />
+
+                    {order.pickup_recovery && (
+                        <SponsoredIntakeReplanCard
+                          order={order}
+                          onRefresh={() => fetchRepairs({ silent: true })}
+                          onPay={() => handlePayNow(order.id)}
+                        />
+                      )}
+
+                    {order.return_recovery && (
+                      <section
+                        aria-label="Repair return recovery"
+                        className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 sm:p-6"
+                      >
+                        <h4 className="text-lg font-bold text-black">
+                          {order.return_recovery.state === 'shop_pickup'
+                            ? 'Ready for pickup at shop'
+                            : order.return_recovery.label}
+                        </h4>
+                        <p className="mt-2 text-sm text-gray-700">
+                          {order.return_recovery.message
+                            || (order.return_recovery.state === 'awaiting_arrangement'
+                              ? 'Your repaired shoes are safely at the shop. Choose re-delivery or free shop pickup.'
+                              : order.return_recovery.state === 'awaiting_payment'
+                                ? 'Confirm your return address, then pay the new delivery fee.'
+                                : order.return_recovery.state === 'shop_pickup'
+                                  ? 'Shop pickup is free. Wait for the shop to record the handoff before confirming receipt.'
+                                  : 'Re-delivery payment received. Waiting for rider assignment.')}
+                        </p>
+                        {order.return_recovery.state === 'awaiting_arrangement'
+                          && order.return_recovery.actions_available !== false && (
+                          <CustomerReturnRecoveryActions
+                            order={order}
+                            onRefresh={() => fetchRepairs({ silent: true })}
+                          />
+                        )}
+                        {order.return_recovery.state === 'shop_pickup' && (
+                          <div className="mt-3 rounded-xl border border-amber-200 bg-white p-3 text-sm text-gray-700">
+                            <p className="font-semibold text-black">{order.return_recovery.shop?.name || order.shop_name}</p>
+                            <p className="mt-1">{order.return_recovery.shop?.address || order.shop_address}</p>
+                          </div>
+                        )}
+                      </section>
+                    )}
+
+                    {(['completed', 'ready_for_pickup', 'shipped'] as RepairStatus[]).includes(order.status)
+                      && (!order.return_recovery || order.return_recovery.state === 'awaiting_payment') && (
+                      <ReturnDeliveryPlanCard
+                        order={order}
+                        onRefresh={() => fetchRepairs({ silent: true })}
+                      />
+                    )}
+
+                    {(['completed', 'ready_for_pickup', 'shipped'] as RepairStatus[]).includes(order.status)
+                      && !order.return_recovery && (
+                      <CustomerExternalTrackingCard
+                        order={order}
+                        leg="return"
+                        onRefresh={() => fetchRepairs({ silent: true })}
+                      />
+                    )}
+
+                    <RepairLogisticsTracking
+                      shipments={order.return_recovery
+                        ? order.logistics_shipments?.filter((shipment) => shipment.purpose !== 'repair_return')
+                        : order.logistics_shipments}
+                    />
 
                     {(() => {
                       const latestRefund = getLatestRefundForOrder(order);
@@ -3628,7 +4764,21 @@ const MyRepairs: React.FC = () => {
                         </div>
                         <div className="text-right">
                           {isWarrantyNoChargeOrder(order) ? (
-                            <p className="mb-2 text-xs text-amber-700">Warranty rework has no additional charge.</p>
+                            <div className="mb-2 space-y-1 text-xs text-gray-600">
+                              <p className="font-semibold text-emerald-700">Warranty repair: Free</p>
+                              {Number(order.intake_delivery_fee || 0) > 0 && (
+                                <div className="flex items-center justify-end gap-3">
+                                  <span>Pickup shipping fee</span>
+                                  <span className="text-gray-800">{formatCurrency(order.intake_delivery_fee)}</span>
+                                </div>
+                              )}
+                              {Number(order.return_delivery_fee || 0) > 0 && (
+                                <div className="flex items-center justify-end gap-3">
+                                  <span>{order.redelivery_payment_due ? 'New shipping fee' : 'Return shipping fee'}</span>
+                                  <span className="text-gray-800">{formatCurrency(order.return_delivery_fee)}</span>
+                                </div>
+                              )}
+                            </div>
                           ) : (
                             <div className="space-y-1 mb-2 text-xs text-gray-500">
                               <div className="flex items-center justify-end gap-3">
@@ -3668,9 +4818,35 @@ const MyRepairs: React.FC = () => {
                         </div>
                       )}
                       {/* Chat with Repairer actions */}
+                      {order.status === 'repairer_accepted' &&
+                        order.conversation_id &&
+                        order.shop_owner_id &&
+                        ![
+                          'paid',
+                          'completed',
+                          'down_payment_paid',
+                          'partially_paid',
+                          'partially_refunded',
+                          'refunded',
+                        ].includes(String(order.payment_status || '').toLowerCase()) &&
+                        !order.payment_completed_at &&
+                        Number(order.total_paid_amount || 0) === 0 && (
+                          <button
+                            type="button"
+                            onClick={() => openModifyModal(order)}
+                            disabled={processingPayment}
+                            className={`${actionButtonBaseClass} ${
+                              processingPayment
+                                ? actionButtonDisabledClass
+                                : 'border border-[#16233b] bg-white text-[#16233b] hover:bg-slate-50'
+                            }`}
+                          >
+                            MODIFY
+                          </button>
+                        )}
                       {order.status === 'repairer_accepted' && order.conversation_id && order.payment_status !== 'paid' && order.payment_status !== 'completed' && (
                         <>
-                          {isOnlineIntakeFlow(order) && (
+                          {isOnlineIntakeFlow(order) && order.payment_enabled && (
                             <button
                               onClick={() => handlePayNow(order.id)}
                               disabled={!order.payment_enabled || processingPayment}
@@ -3680,7 +4856,7 @@ const MyRepairs: React.FC = () => {
                                   : actionButtonDisabledClass
                               }`}
                             >
-                              {processingPayment ? 'PROCESSING...' : 'PAY NOW'}
+                              {processingPayment ? 'PROCESSING...' : (isWarrantyNoChargeOrder(order) ? 'Pay pickup shipping fee' : 'PAY NOW')}
                             </button>
                           )}
                           <button
@@ -3712,7 +4888,7 @@ const MyRepairs: React.FC = () => {
                       
                       {order.status === 'pending' && order.payment_status !== 'paid' && order.payment_status !== 'completed' && (
                         <>
-                          {isOnlineIntakeFlow(order) && (
+                          {isOnlineIntakeFlow(order) && order.payment_enabled && (
                             <button
                               onClick={() => handlePayNow(order.id)}
                               disabled={!order.payment_enabled || processingPayment}
@@ -3722,7 +4898,7 @@ const MyRepairs: React.FC = () => {
                                   : actionButtonDisabledClass
                               }`}
                             >
-                              {processingPayment ? 'PROCESSING...' : 'PAY NOW'}
+                              {processingPayment ? 'PROCESSING...' : (isWarrantyNoChargeOrder(order) ? 'Pay pickup shipping fee' : 'PAY NOW')}
                             </button>
                           )}
                           <button
@@ -3742,7 +4918,7 @@ const MyRepairs: React.FC = () => {
                       {(order.status === 'ready_for_pickup' || order.status === 'shipped') && (
                         <>
                           {/* For deposit_50 only — full_upfront is already paid */}
-                          {order.status === 'ready_for_pickup' && isOnlineReturnFlow(order) && (order.payment_policy ?? 'deposit_50') !== 'full_upfront' && order.payment_status !== 'completed' && (
+                          {order.redelivery_payment_due && (
                             <button
                               onClick={() => handlePayNow(order.id)}
                               disabled={!order.payment_enabled || processingPayment}
@@ -3752,17 +4928,34 @@ const MyRepairs: React.FC = () => {
                                   : actionButtonDisabledClass
                               }`}
                             >
-                              {processingPayment ? 'PROCESSING...' : 'PAY NOW'}
+                              {processingPayment ? 'PROCESSING...' : 'Pay new shipping fee'}
                             </button>
                           )}
-                          {(() => {
-                            const canConfirmReceive = Boolean(order.pickup_enabled);
+                          {!order.redelivery_payment_due
+                            && order.status === 'ready_for_pickup'
+                            && getOrderOutstandingBalance(order) > 0 && (
+                            <button
+                              onClick={() => handlePayNow(order.id)}
+                              disabled={!order.payment_enabled || processingPayment}
+                              className={`${actionButtonBaseClass} ${
+                                order.payment_enabled && !processingPayment
+                                  ? actionButtonPrimaryClass
+                                  : actionButtonDisabledClass
+                              }`}
+                            >
+                              {processingPayment ? 'PROCESSING...' : (isWarrantyNoChargeOrder(order) ? 'Pay return shipping fee' : 'Pay Remaining Balance')}
+                            </button>
+                          )}
+                          {(!order.return_recovery || order.return_recovery.state === 'shop_pickup') && (() => {
+                            const canConfirmReceive = Boolean(
+                              order.pickup_enabled && order.return_logistics_locked_at,
+                            );
                             const receiveTitle = canConfirmReceive
-                              ? 'Confirm you have received your item'
-                              : 'Waiting for shop to activate pickup';
+                              ? 'Confirm only after your repaired shoes are in your hands'
+                              : 'Waiting for the shop to record the return handoff';
                             const receiveLabel = canConfirmReceive
-                              ? 'Confirm Received'
-                              : 'Received';
+                              ? 'Confirm I received my repaired shoes'
+                              : 'Awaiting handoff';
 
                             return (
                           <button
@@ -3809,13 +5002,15 @@ const MyRepairs: React.FC = () => {
                               setRefundNote('');
                               setShowRefundModal(true);
                             }}
-                            disabled={hasReviewForOrder(order) || isRefundFlowLocked(getLatestRefundForOrder(order)?.status) || isRefundInProgress(getLatestRefundForOrder(order)?.status)}
+                            disabled={hasActiveWarrantyClaim(order) || hasReviewForOrder(order) || isRefundFlowLocked(getLatestRefundForOrder(order)?.status) || isRefundInProgress(getLatestRefundForOrder(order)?.status)}
                             title={hasReviewForOrder(order)
                               ? 'Refund is not allowed after a review has been submitted.'
-                              : isRefundFlowLocked(getLatestRefundForOrder(order)?.status)
-                                ? 'Refund is already filed or completed for this repair.'
-                                : undefined}
-                            className={`${actionButtonBaseClass} ${(hasReviewForOrder(order) || isRefundFlowLocked(getLatestRefundForOrder(order)?.status) || isRefundInProgress(getLatestRefundForOrder(order)?.status)) ? actionButtonDisabledClass : actionButtonSecondaryClass}`}
+                              : hasActiveWarrantyClaim(order)
+                                ? 'Refund is unavailable while a warranty claim is active.'
+                                : isRefundFlowLocked(getLatestRefundForOrder(order)?.status)
+                                  ? 'Refund is already filed or completed for this repair.'
+                                  : undefined}
+                            className={`${actionButtonBaseClass} ${(hasActiveWarrantyClaim(order) || hasReviewForOrder(order) || isRefundFlowLocked(getLatestRefundForOrder(order)?.status) || isRefundInProgress(getLatestRefundForOrder(order)?.status)) ? actionButtonDisabledClass : actionButtonSecondaryClass}`}
                           >
                             REFUND
                           </button>
@@ -3841,6 +5036,123 @@ const MyRepairs: React.FC = () => {
           )}
           </div>
         </div>
+        {modifyOrder && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="modify-repair-services-title"
+          >
+            <div className="max-h-[85vh] w-full max-w-xl overflow-y-auto rounded-2xl bg-white p-5 shadow-xl sm:p-7">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 id="modify-repair-services-title" className="text-xl font-semibold text-slate-950">
+                    Modify Repair Services
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Choose at least one active service from {modifyOrder.shop_name}.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeModifyModal}
+                  disabled={isSavingModifyServices}
+                  aria-label="Close modify services"
+                  className="text-2xl leading-none text-slate-500 hover:text-black disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  &times;
+                </button>
+              </div>
+
+              {modifyOrder.repair_package_id && !packageRemovalConfirmed && (
+                <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4">
+                  <p className="text-sm text-amber-900">
+                    This repair uses a package. Remove it to switch to individually priced services.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setPackageRemovalConfirmed(true)}
+                    className="mt-3 text-sm font-semibold text-amber-950 underline"
+                  >
+                    Remove Package
+                  </button>
+                </div>
+              )}
+
+              <div className="mt-5 space-y-2">
+                {isLoadingModifyServices ? (
+                  <p className="py-8 text-center text-sm text-slate-500">Loading services...</p>
+                ) : availableModifyServices.length === 0 ? (
+                  <p className="py-8 text-center text-sm text-slate-500">No active services are available.</p>
+                ) : availableModifyServices.map((service) => {
+                  const checked = selectedModifyServiceIds.includes(service.id);
+
+                  return (
+                    <label
+                      key={service.id}
+                      className={`flex items-center justify-between gap-4 rounded-xl border p-4 ${
+                        packageRemovalConfirmed ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'
+                      }`}
+                    >
+                      <span className="flex items-center gap-3">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={!packageRemovalConfirmed}
+                          onChange={() => toggleModifyService(service.id)}
+                        />
+                        <span>
+                          <span className="block text-sm font-semibold text-slate-950">{service.name}</span>
+                          {service.duration && (
+                            <span className="block text-xs text-slate-500">{service.duration}</span>
+                          )}
+                        </span>
+                      </span>
+                      <span className="text-sm font-semibold text-slate-950">
+                        {formatCurrency(Number(service.price || 0))}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+
+              <div className="mt-6 flex flex-col gap-4 border-t border-slate-200 pt-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-xs uppercase tracking-wider text-slate-500">Updated total</p>
+                  <p className="text-xl font-bold text-slate-950">{formatCurrency(selectedModifyTotal)}</p>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={closeModifyModal}
+                    disabled={isSavingModifyServices}
+                    className={`${actionButtonBaseClass} border border-slate-300 bg-white text-slate-700`}
+                  >
+                    CANCEL
+                  </button>
+                  <button
+                    type="button"
+                    onClick={saveModifiedServices}
+                    disabled={
+                      !packageRemovalConfirmed
+                      || selectedModifyServiceIds.length === 0
+                      || isSavingModifyServices
+                    }
+                    className={`${actionButtonBaseClass} ${
+                      !packageRemovalConfirmed
+                      || selectedModifyServiceIds.length === 0
+                      || isSavingModifyServices
+                        ? actionButtonDisabledClass
+                        : actionButtonPrimaryClass
+                    }`}
+                  >
+                    {isSavingModifyServices ? 'SAVING...' : 'SAVE CHANGES'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         {showCancelModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center">
             <div className="absolute inset-0 bg-black opacity-40" onClick={() => setShowCancelModal(false)}></div>
@@ -4361,17 +5673,21 @@ const MyRepairs: React.FC = () => {
                     <label className="block text-sm font-medium text-gray-700 mb-3">
                       How Will You Send The Item To The Shop? <span className="text-red-500">*</span>
                     </label>
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                       {[
                         { value: 'walk_in', label: 'Walk-in', hint: 'Bring the item to the shop yourself.' },
-                        { value: 'customer_delivery', label: 'Customer Delivery', hint: 'Arrange your own courier to the shop.' },
+                        { value: 'customer_delivery', label: 'Third-party courier', hint: 'You arrange and pay the courier directly.' },
+                        { value: 'shop_pickup', label: 'Shop rider pickup', hint: 'Coverage and the delivery fee are checked before approval.' },
                       ].map((method) => (
                         <label
                           key={method.value}
-                          className={`flex items-start gap-3 p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                          className={`flex items-start gap-3 p-4 border-2 rounded-lg transition-all ${
+                            method.value !== 'walk_in' && !warrantyIntakeAddress
+                              ? 'cursor-not-allowed border-gray-200 bg-gray-100 opacity-60'
+                              :
                             warrantyIntakeMethod === method.value
-                              ? 'border-black bg-gray-50'
-                              : 'border-gray-200 hover:border-gray-400'
+                                ? 'cursor-pointer border-black bg-gray-50'
+                                : 'cursor-pointer border-gray-200 hover:border-gray-400'
                           }`}
                         >
                           <input
@@ -4379,7 +5695,8 @@ const MyRepairs: React.FC = () => {
                             name="warranty_intake_method"
                             value={method.value}
                             checked={warrantyIntakeMethod === method.value}
-                            onChange={(e) => setWarrantyIntakeMethod(e.target.value as 'walk_in' | 'customer_delivery')}
+                            disabled={method.value !== 'walk_in' && !warrantyIntakeAddress}
+                            onChange={(e) => setWarrantyIntakeMethod(e.target.value as WarrantyIntakeMethod)}
                             className="form-radio h-4 w-4 text-black shrink-0 mt-0.5"
                           />
                           <span>
@@ -4389,23 +5706,32 @@ const MyRepairs: React.FC = () => {
                         </label>
                       ))}
                     </div>
+                    {warrantyIntakeMethod !== 'walk_in' && warrantyIntakeAddress && (
+                      <p className="mt-2 rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-800">
+                        Pinned intake address: {formatRepairAddress(warrantyIntakeAddress)}
+                      </p>
+                    )}
                   </div>
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-3">
                       How Do You Want To Receive The Reworked Shoes? <span className="text-red-500">*</span>
                     </label>
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                       {[
                         { value: 'walk_in', label: 'Pick Up At Shop', hint: 'Pick up your repaired item at the shop once ready.' },
-                        { value: 'shop_delivery', label: 'Repairer Delivery', hint: 'Have the repairer arrange courier delivery to your address.' },
+                        { value: 'customer_pickup', label: 'Third-party courier', hint: 'You arrange and pay the courier directly.' },
+                        { value: 'shop_delivery', label: 'Shop rider delivery', hint: 'Coverage and the delivery fee are checked before approval.' },
                       ].map((method) => (
                         <label
                           key={method.value}
-                          className={`flex items-start gap-3 p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                          className={`flex items-start gap-3 p-4 border-2 rounded-lg transition-all ${
+                            method.value !== 'walk_in' && !warrantyReturnAddress
+                              ? 'cursor-not-allowed border-gray-200 bg-gray-100 opacity-60'
+                              :
                             warrantyReceiveMethod === method.value
-                              ? 'border-black bg-gray-50'
-                              : 'border-gray-200 hover:border-gray-400'
+                                ? 'cursor-pointer border-black bg-gray-50'
+                                : 'cursor-pointer border-gray-200 hover:border-gray-400'
                           }`}
                         >
                           <input
@@ -4413,7 +5739,8 @@ const MyRepairs: React.FC = () => {
                             name="warranty_receive_method"
                             value={method.value}
                             checked={warrantyReceiveMethod === method.value}
-                            onChange={(e) => setWarrantyReceiveMethod(e.target.value as 'walk_in' | 'shop_delivery')}
+                            disabled={method.value !== 'walk_in' && !warrantyReturnAddress}
+                            onChange={(e) => setWarrantyReceiveMethod(e.target.value as WarrantyReceiveMethod)}
                             className="form-radio h-4 w-4 text-black shrink-0 mt-0.5"
                           />
                           <span>
@@ -4423,57 +5750,17 @@ const MyRepairs: React.FC = () => {
                         </label>
                       ))}
                     </div>
+                    {warrantyReceiveMethod !== 'walk_in' && warrantyReturnAddress && (
+                      <p className="mt-2 rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-800">
+                        Pinned return address: {formatRepairAddress(warrantyReturnAddress)}
+                      </p>
+                    )}
+                    {(!warrantyIntakeAddress || !warrantyReturnAddress) && (
+                      <p className="mt-2 text-xs text-amber-700">
+                        Delivery choices without a pinned address are unavailable. Walk-in remains available.
+                      </p>
+                    )}
                   </div>
-
-                  {warrantyReceiveMethod === 'shop_delivery' && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-3">
-                        Delivery Address For Return Shipping <span className="text-red-500">*</span>
-                      </label>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div className="sm:col-span-2">
-                          <label className="block text-xs font-medium text-gray-600 mb-1">Address Line</label>
-                          <input
-                            type="text"
-                            value={warrantyReceiveAddress.address_line}
-                            onChange={(e) => updateWarrantyReceiveAddressField('address_line', e.target.value)}
-                            className="w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-gray-400 focus:outline-none"
-                            placeholder="House no., street, building"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">Barangay</label>
-                          <input
-                            type="text"
-                            value={warrantyReceiveAddress.barangay}
-                            onChange={(e) => updateWarrantyReceiveAddressField('barangay', e.target.value)}
-                            className="w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-gray-400 focus:outline-none"
-                            placeholder="Barangay"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">City</label>
-                          <input
-                            type="text"
-                            value={warrantyReceiveAddress.city}
-                            onChange={(e) => updateWarrantyReceiveAddressField('city', e.target.value)}
-                            className="w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-gray-400 focus:outline-none"
-                            placeholder="City"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">Postal Code</label>
-                          <input
-                            type="text"
-                            value={warrantyReceiveAddress.postal_code}
-                            onChange={(e) => updateWarrantyReceiveAddressField('postal_code', e.target.value)}
-                            className="w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-gray-400 focus:outline-none"
-                            placeholder="Postal code"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  )}
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -4833,6 +6120,7 @@ const MyRepairs: React.FC = () => {
         )}
       </main>
     </div>
+    </CustomerFooterReveal>
   );
 };
 

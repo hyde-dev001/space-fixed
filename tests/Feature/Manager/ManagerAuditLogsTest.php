@@ -2,22 +2,16 @@
 
 namespace Tests\Feature\Manager;
 
-use App\Models\ActivityLog;
 use App\Models\ShopOwner;
 use App\Models\User;
+use App\Models\AuditLog as ConsolidatedAuditLog;
+use App\Models\HR\AuditLog as HrAuditLog;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Spatie\Activitylog\Models\Activity;
+use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
-/**
- * P4: Audit Log Filter & Pagination Tests
- *
- * Tests verify the useFilteredPagination hook integration on AuditLogs.tsx:
- * - URL persistence of filter state
- * - Auto-page-reset on filter change
- * - Event/subject_type filters work
- * - Date range filters work
- * - Pagination metadata correct
- */
 class ManagerAuditLogsTest extends TestCase
 {
     use RefreshDatabase;
@@ -30,346 +24,401 @@ class ManagerAuditLogsTest extends TestCase
         parent::setUp();
 
         $this->shop = ShopOwner::factory()->create();
-
-        $this->manager = User::factory()
-            ->for($this->shop)
-            ->create(['role' => 'Manager']);
+        $this->manager = User::factory()->for($this->shop)->create(['role' => 'Manager']);
+        Role::findOrCreate('Manager', 'user');
+        $this->manager->assignRole('Manager');
     }
 
-    /**
-     * Test: Audit logs list accessible by manager
-     */
+    private function createActivity(array $attributes = []): Activity
+    {
+        return Activity::query()->create(array_merge([
+            'log_name' => 'default',
+            'description' => 'Record created',
+            'event' => 'created',
+            'subject_type' => ShopOwner::class,
+            'subject_id' => $this->shop->id,
+            'causer_type' => User::class,
+            'causer_id' => $this->manager->id,
+            'properties' => [],
+        ], $attributes));
+    }
+
     public function test_manager_can_access_audit_logs(): void
     {
-        $response = $this->actingAs($this->manager, 'user')
-            ->getJson('/api/manager/audit-logs');
+        $response = $this->actingAs($this->manager, 'user')->getJson('/api/activity-logs');
 
-        $response->assertStatus(200);
-        $response->assertJsonStructure([
-            'data' => [
-                '*' => ['id', 'event', 'subject_type', 'subject_id', 'caused_by', 'created_at']
+        $response->assertOk()->assertJsonStructure([
+            'logs' => [
+                'data' => [
+                    '*' => ['id', 'event', 'subject_type', 'subject_id', 'causer', 'created_at'],
+                ],
+                'per_page', 'current_page', 'total', 'last_page',
             ],
-            'meta' => ['per_page', 'current_page', 'total', 'last_page']
+            'stats' => ['total_logs', 'logs_last_24h', 'event_counts', 'subject_type_counts'],
         ]);
     }
 
-    /**
-     * Test: Non-manager cannot access audit logs
-     */
     public function test_non_manager_cannot_access_audit_logs(): void
     {
-        $staff = User::factory()
-            ->for($this->shop)
-            ->create(['role' => 'Staff']);
+        $staff = User::factory()->for($this->shop)->create(['role' => 'Staff']);
 
-        $response = $this->actingAs($staff, 'user')
-            ->getJson('/api/manager/audit-logs');
-
-        $response->assertStatus(403);
+        $this->actingAs($staff, 'user')
+            ->getJson('/api/activity-logs')
+            ->assertForbidden();
     }
 
-    /**
-     * Test: URL includes filter state parameter (event filter)
-     */
-    public function test_url_includes_event_filter_parameter(): void
+    public function test_event_filter_is_applied(): void
     {
-        // Simulates useFilteredPagination: filters persistable in URL
-        $response = $this->actingAs($this->manager, 'user')
-            ->getJson('/api/manager/audit-logs?event=created');
+        $this->createActivity(['event' => 'created']);
+        $this->createActivity(['event' => 'updated', 'description' => 'Record updated']);
 
-        $response->assertStatus(200);
-        // Verify the API respects the event parameter in returned data
-        $data = $response->json('data');
+        $data = $this->actingAs($this->manager, 'user')
+            ->getJson('/api/activity-logs?event=created')
+            ->assertOk()
+            ->json('logs.data');
+
+        $this->assertNotEmpty($data);
+        $this->assertSame(['created'], array_values(array_unique(array_column($data, 'event'))));
+    }
+
+    public function test_subject_type_filter_is_applied(): void
+    {
+        $this->createActivity(['subject_type' => ShopOwner::class]);
+        $this->createActivity(['subject_type' => User::class, 'subject_id' => $this->manager->id]);
+
+        $data = $this->actingAs($this->manager, 'user')
+            ->getJson('/api/activity-logs?subject_type=User')
+            ->assertOk()
+            ->json('logs.data');
+
+        $this->assertNotEmpty($data);
         foreach ($data as $log) {
-            // If filtering, all should match
-            // (or endpoint returns all if filtering not implemented client-side)
+            $this->assertStringContainsString('User', $log['subject_type']);
         }
     }
 
-    /**
-     * Test: URL includes subject_type filter parameter
-     */
-    public function test_url_includes_subject_type_filter(): void
+    public function test_page_and_per_page_parameters_are_respected(): void
     {
-        $response = $this->actingAs($this->manager, 'user')
-            ->getJson('/api/manager/audit-logs?subject_type=SuspensionRequest');
-
-        $response->assertStatus(200);
-        $data = $response->json('data');
-        
-        // May return filtered or unfiltered depending on implementation
-        if (count($data) > 0) {
-            // All should be SuspensionRequest logs
-            foreach ($data as $log) {
-                $this->assertIn($log['subject_type'], ['SuspensionRequest', 'RepairRequest', 'Employee']);
-            }
+        foreach (range(1, 25) as $index) {
+            $this->createActivity(['description' => "Record {$index} created"]);
         }
-    }
 
-    /**
-     * Test: Page parameter is respected (URL persistence)
-     */
-    public function test_page_parameter_respected_in_url(): void
-    {
-        // Create 25 audit logs
-        ActivityLog::factory(25)
-            ->for($this->shop, 'subject')
-            ->create(['caused_by' => $this->manager->id]);
-
-        // Request page 2 with per_page=10
         $response = $this->actingAs($this->manager, 'user')
-            ->getJson('/api/manager/audit-logs?page=2&per_page=10');
+            ->getJson('/api/activity-logs?page=2&per_page=10')
+            ->assertOk();
 
-        $response->assertStatus(200);
-        $this->assertEquals(2, $response->json('meta.current_page'));
-        $this->assertEquals(10, $response->json('meta.per_page'));
+        $this->assertSame(2, $response->json('logs.current_page'));
+        $this->assertSame(10, $response->json('logs.per_page'));
+        $this->assertCount(10, $response->json('logs.data'));
     }
 
-    /**
-     * Test: Changing filter resets to page 1 (auto-page-reset)
-     */
-    public function test_filter_change_should_reset_page(): void
-    {
-        // Simulate: Initially on page 2, then filter changes → page=1
-        // This is a client-side behavior, but backend should return page 1 when requested
-        
-        $response = $this->actingAs($this->manager, 'user')
-            ->getJson('/api/manager/audit-logs?event=updated&page=1');
-
-        $response->assertStatus(200);
-        // If page=1 in URL, current_page should be 1
-        $this->assertEquals(1, $response->json('meta.current_page'));
-    }
-
-    /**
-     * Test: Multiple filters compose (event + subject_type)
-     */
     public function test_multiple_filters_compose(): void
     {
-        $response = $this->actingAs($this->manager, 'user')
-            ->getJson('/api/manager/audit-logs?event=updated&subject_type=SuspensionRequest');
+        $this->createActivity(['event' => 'updated', 'subject_type' => User::class, 'subject_id' => $this->manager->id]);
+        $this->createActivity(['event' => 'created']);
 
-        $response->assertStatus(200);
-        $response->assertJsonStructure([
-            'data' => [
-                '*' => ['event', 'subject_type']
-            ]
-        ]);
+        $data = $this->actingAs($this->manager, 'user')
+            ->getJson('/api/activity-logs?event=updated&subject_type=User')
+            ->assertOk()
+            ->json('logs.data');
+
+        $this->assertCount(1, $data);
+        $this->assertSame('updated', $data[0]['event']);
+        $this->assertSame(User::class, $data[0]['subject_type']);
     }
 
-    /**
-     * Test: Search by user name (caused_by filter)
-     */
-    public function test_search_by_caused_by_user(): void
+    public function test_causer_filter_is_applied(): void
     {
-        $response = $this->actingAs($this->manager, 'user')
-            ->getJson('/api/manager/audit-logs?caused_by_name=' . urlencode($this->manager->name));
+        $otherManager = User::factory()->for($this->shop)->create(['role' => 'Manager']);
+        $this->createActivity();
+        $this->createActivity(['causer_id' => $otherManager->id]);
 
-        $response->assertStatus(200);
+        $data = $this->actingAs($this->manager, 'user')
+            ->getJson('/api/activity-logs?causer_id=' . $this->manager->id)
+            ->assertOk()
+            ->json('logs.data');
+
+        $this->assertCount(1, $data);
+        $this->assertSame($this->manager->id, $data[0]['causer']['id']);
     }
 
-    /**
-     * Test: Date range filtering (created_at)
-     */
-    public function test_date_range_filter_start_date(): void
+    public function test_date_range_filters_are_applied(): void
     {
-        $startDate = now()->subDays(7)->toDateString();
+        $this->createActivity(['created_at' => now()->subDays(10), 'updated_at' => now()->subDays(10)]);
+        $this->createActivity(['created_at' => now()->subDay(), 'updated_at' => now()->subDay()]);
 
-        $response = $this->actingAs($this->manager, 'user')
-            ->getJson("/api/manager/audit-logs?start_date={$startDate}");
+        $data = $this->actingAs($this->manager, 'user')
+            ->getJson('/api/activity-logs?date_from=' . now()->subDays(7)->toDateString() . '&date_to=' . now()->toDateString())
+            ->assertOk()
+            ->json('logs.data');
 
-        $response->assertStatus(200);
-        $data = $response->json('data');
-        
-        // All logs should be >= start_date
-        foreach ($data as $log) {
-            $logDate = \Carbon\Carbon::parse($log['created_at'])->toDateString();
-            $this->assertGreaterThanOrEqual($startDate, $logDate);
-        }
+        $this->assertCount(1, $data);
     }
 
-    /**
-     * Test: Date range filtering (end_date)
-     */
-    public function test_date_range_filter_end_date(): void
+    public function test_default_sorting_is_recent_first(): void
     {
-        $endDate = now()->toDateString();
+        $older = $this->createActivity(['created_at' => now()->subHour(), 'updated_at' => now()->subHour()]);
+        $newer = $this->createActivity(['created_at' => now(), 'updated_at' => now()]);
 
-        $response = $this->actingAs($this->manager, 'user')
-            ->getJson("/api/manager/audit-logs?end_date={$endDate}");
+        $data = $this->actingAs($this->manager, 'user')
+            ->getJson('/api/activity-logs')
+            ->assertOk()
+            ->json('logs.data');
 
-        $response->assertStatus(200);
-        $data = $response->json('data');
-        
-        // All logs should be <= end_date
-        foreach ($data as $log) {
-            $logDate = \Carbon\Carbon::parse($log['created_at'])->toDateString();
-            $this->assertLessThanOrEqual($endDate, $logDate);
-        }
+        $this->assertSame([$newer->id, $older->id], array_column($data, 'id'));
     }
 
-    /**
-     * Test: Default sorting is by recent first (created_at DESC)
-     */
-    public function test_default_sorting_recent_first(): void
+    public function test_invalid_filter_parameter_is_ignored(): void
     {
-        // Create logs with specific timestamps
-        $log1 = ActivityLog::factory()
-            ->for($this->shop, 'subject')
-            ->create(['created_at' => now()->subHours(1)]);
-
-        $log2 = ActivityLog::factory()
-            ->for($this->shop, 'subject')
-            ->create(['created_at' => now()]);
-
-        $response = $this->actingAs($this->manager, 'user')
-            ->getJson('/api/manager/audit-logs');
-
-        $data = $response->json('data');
-        
-        if (count($data) >= 2) {
-            // First item should be most recent
-            $first = \Carbon\Carbon::parse($data[0]['created_at']);
-            $second = \Carbon\Carbon::parse($data[1]['created_at']);
-            $this->assertTrue($first->gte($second), 'Should be sorted by recent first');
-        }
+        $this->actingAs($this->manager, 'user')
+            ->getJson('/api/activity-logs?invalid_param=value')
+            ->assertOk();
     }
 
-    /**
-     * Test: Pagination with filter preserves filter in metadata
-     */
-    public function test_pagination_metadata_includes_filter_context(): void
+    public function test_empty_filter_result_returns_empty_data(): void
     {
-        $response = $this->actingAs($this->manager, 'user')
-            ->getJson('/api/manager/audit-logs?event=created&per_page=5');
+        $data = $this->actingAs($this->manager, 'user')
+            ->getJson('/api/activity-logs?event=nonexistent_event')
+            ->assertOk()
+            ->json('logs.data');
 
-        $response->assertStatus(200);
-        
-        // Verify pagination metadata
-        $meta = $response->json('meta');
-        $this->assertArrayHasKey('per_page', $meta);
-        $this->assertEquals(5, $meta['per_page']);
+        $this->assertSame([], $data);
     }
 
-    /**
-     * Test: Invalid filter parameter doesn't break pagination
-     */
-    public function test_invalid_filter_parameter_graceful(): void
-    {
-        $response = $this->actingAs($this->manager, 'user')
-            ->getJson('/api/manager/audit-logs?invalid_param=value');
-
-        // Should either return 422 or ignore invalid param
-        $this->assertIn($response->status(), [200, 422]);
-    }
-
-    /**
-     * Test: Empty filter result returns empty data array
-     */
-    public function test_empty_search_result(): void
-    {
-        $response = $this->actingAs($this->manager, 'user')
-            ->getJson('/api/manager/audit-logs?event=nonexistent_event');
-
-        $response->assertStatus(200);
-        $data = $response->json('data');
-        
-        // Should return empty array (or all if filtering not implemented)
-        $this->assertIsArray($data);
-    }
-
-    /**
-     * Test: Manager sees only their shop's audit logs
-     */
-    public function test_audit_logs_respects_shop_scoping(): void
+    public function test_manager_sees_only_their_shops_audit_logs(): void
     {
         $otherShop = ShopOwner::factory()->create();
+        $otherManager = User::factory()->for($otherShop)->create(['role' => 'Manager']);
 
-        // Create logs in other shop
-        ActivityLog::factory(5)
-            ->for($otherShop, 'subject')
-            ->create(['caused_by' => $this->manager->id]);
+        $this->createActivity();
+        $this->createActivity([
+            'subject_id' => $otherShop->id,
+            'causer_id' => $otherManager->id,
+        ]);
 
-        // Create logs in this shop
-        ActivityLog::factory(3)
-            ->for($this->shop, 'subject')
-            ->create(['caused_by' => $this->manager->id]);
+        $data = $this->actingAs($this->manager, 'user')
+            ->getJson('/api/activity-logs')
+            ->assertOk()
+            ->json('logs.data');
 
-        $response = $this->actingAs($this->manager, 'user')
-            ->getJson('/api/manager/audit-logs');
-
-        $data = $response->json('data');
-        
-        // Should only see own shop's ~3 logs, not other shop's 5
-        $this->assertLessThanOrEqual(3, count($data));
+        $this->assertCount(1, $data);
+        $this->assertSame($this->shop->id, $data[0]['subject_id']);
     }
 
-    /**
-     * Test: Per_page parameter respected in audit logs
-     */
-    public function test_per_page_parameter_respected(): void
+    public function test_explicit_audit_read_capability_can_access_the_canonical_manager_endpoint(): void
     {
-        ActivityLog::factory(15)
-            ->for($this->shop, 'subject')
-            ->create(['caused_by' => $this->manager->id]);
+        $auditReader = User::factory()->for($this->shop)->create(['role' => 'Staff']);
+        Permission::findOrCreate('access-audit-logs', 'user');
+        $auditReader->givePermissionTo('access-audit-logs');
 
-        $response = $this->actingAs($this->manager, 'user')
-            ->getJson('/api/manager/audit-logs?per_page=5');
+        $this->actingAs($auditReader, 'user')
+            ->getJson('/api/activity-logs')
+            ->assertOk();
 
-        $response->assertStatus(200);
-        $this->assertEquals(5, $response->json('meta.per_page'));
-        $this->assertCount(5, $response->json('data'));
+        $this->actingAs($auditReader, 'user')
+            ->getJson('/api/manager/audit-logs')
+            ->assertOk()
+            ->assertJsonStructure([
+                'data' => [
+                    '*' => [
+                        'id',
+                        'action',
+                        'actor',
+                        'target',
+                        'created_at',
+                        'previous_state',
+                        'new_state',
+                        'reason',
+                        'reference_id',
+                        'correlation_id',
+                    ],
+                ],
+                'meta' => ['current_page', 'per_page', 'total', 'last_page'],
+                'stats' => ['total_logs', 'logs_last_24h', 'action_counts'],
+                'last_updated_at',
+            ]);
     }
 
-    /**
-     * Test: URL query string preserves all parameters on navigation
-     */
-    public function test_url_query_string_preserved_on_pagination(): void
+    public function test_canonical_manager_audit_logs_merge_operational_and_hr_events_with_readable_context(): void
     {
-        // Client-side test would verify links include ?event=X&subject_type=Y
-        // Server should accept and respect all parameters
+        $orderAudit = ConsolidatedAuditLog::query()->create([
+            'shop_owner_id' => $this->shop->id,
+            'user_id' => $this->manager->id,
+            'actor_user_id' => $this->manager->id,
+            'action' => 'order_reassigned',
+            'object_type' => 'order',
+            'object_id' => 101,
+            'target_type' => 'order',
+            'target_id' => 101,
+            'metadata' => [
+                'previous_state' => ['assigned_staff_id' => 4],
+                'new_state' => ['assigned_staff_id' => 8],
+                'reason' => 'Handler is no longer available.',
+                'reference_id' => 'ORD-101',
+                'correlation_id' => 'corr-order-101',
+            ],
+        ]);
 
-        $response = $this->actingAs($this->manager, 'user')
-            ->getJson('/api/manager/audit-logs?event=updated&subject_type=SuspensionRequest&page=1&per_page=10');
+        $leaveAudit = HrAuditLog::query()->create([
+            'shop_owner_id' => $this->shop->id,
+            'user_id' => $this->manager->id,
+            'module' => 'leave',
+            'action' => 'approved',
+            'entity_type' => 'App\\Models\\HR\\LeaveRequest',
+            'entity_id' => 202,
+            'description' => 'Leave request approved by Manager',
+            'old_values' => ['status' => 'pending'],
+            'new_values' => ['status' => 'approved', 'reason' => 'Coverage confirmed.'],
+            'severity' => HrAuditLog::SEVERITY_WARNING,
+            'tags' => ['leave', 'approval'],
+        ]);
 
-        $response->assertStatus(200);
-        
-        // API should handle all parameters correctly
-        $this->assertEquals(1, $response->json('meta.current_page'));
-        $this->assertEquals(10, $response->json('meta.per_page'));
+        $data = $this->actingAs($this->manager, 'user')
+            ->getJson('/api/manager/audit-logs')
+            ->assertOk()
+            ->json('data');
+
+        $this->assertCount(2, $data);
+        $orderRow = collect($data)->firstWhere('id', 'central:' . $orderAudit->id);
+        $leaveRow = collect($data)->firstWhere('id', 'hr:' . $leaveAudit->id);
+
+        $this->assertNotNull($orderRow);
+        $this->assertSame('order_reassigned', $orderRow['action']);
+        $this->assertSame($this->manager->id, $orderRow['actor']['id']);
+        $this->assertSame('order', $orderRow['target']['type']);
+        $this->assertSame(101, $orderRow['target']['id']);
+        $this->assertSame(['assigned_staff_id' => 4], $orderRow['previous_state']);
+        $this->assertSame(['assigned_staff_id' => 8], $orderRow['new_state']);
+        $this->assertSame('Handler is no longer available.', $orderRow['reason']);
+        $this->assertSame('ORD-101', $orderRow['reference_id']);
+        $this->assertSame('corr-order-101', $orderRow['correlation_id']);
+
+        $this->assertNotNull($leaveRow);
+        $this->assertSame('approved', $leaveRow['action']);
+        $this->assertSame(['status' => 'pending'], $leaveRow['previous_state']);
+        $this->assertSame('Coverage confirmed.', $leaveRow['reason']);
     }
 
-    /**
-     * Test: Links in pagination metadata include filters
-     */
-    public function test_pagination_links_include_filters(): void
+    public function test_canonical_manager_audit_logs_normalize_legacy_activity_state_changes(): void
     {
-        ActivityLog::factory(25)
-            ->for($this->shop, 'subject')
-            ->create(['caused_by' => $this->manager->id]);
+        $activity = $this->createActivity([
+            'event' => 'updated',
+            'description' => 'Order status updated',
+            'subject_type' => 'App\\Models\\Order',
+            'subject_id' => 303,
+            'properties' => [
+                'old_status' => 'pending',
+                'new_status' => 'processing',
+                'reference_id' => 'ORD-303',
+            ],
+        ]);
+
+        $row = $this->actingAs($this->manager, 'user')
+            ->getJson('/api/manager/audit-logs')
+            ->assertOk()
+            ->json('data.0');
+
+        $this->assertSame('activity:' . $activity->id, $row['id']);
+        $this->assertSame('updated', $row['action']);
+        $this->assertSame(['status' => 'pending'], $row['previous_state']);
+        $this->assertSame(['status' => 'processing'], $row['new_state']);
+        $this->assertSame('ORD-303', $row['reference_id']);
+    }
+
+    public function test_canonical_manager_audit_logs_include_business_friendly_presentation_fields(): void
+    {
+        $activity = $this->createActivity([
+            'event' => 'subscription_cancelled',
+            'description' => 'subscription_cancelled',
+            'subject_type' => 'App\\Models\\ShopOwnerSubscription',
+            'subject_id' => 2,
+        ]);
+
+        $row = $this->actingAs($this->manager, 'user')
+            ->getJson('/api/manager/audit-logs')
+            ->assertOk()
+            ->json('data.0');
+
+        $this->assertSame('activity:' . $activity->id, $row['id']);
+        $this->assertSame('Subscription Cancelled', $row['action_label']);
+        $this->assertSame('Subscription', $row['target']['type_label']);
+        $this->assertSame('Subscription', $row['target']['label']);
+        $this->assertSame('Subscription Cancelled', $row['display_description']);
+        $this->assertStringNotContainsString('App\\Models\\', $row['display_description']);
+        $this->assertStringNotContainsString('#2', $row['target']['label']);
+    }
+
+    public function test_canonical_manager_audit_target_filter_accepts_business_reference(): void
+    {
+        $activity = $this->createActivity([
+            'event' => 'updated',
+            'description' => 'Order status updated',
+            'subject_type' => 'App\\Models\\Order',
+            'subject_id' => 303,
+            'properties' => [
+                'reference_id' => 'ORD-303',
+            ],
+        ]);
 
         $response = $this->actingAs($this->manager, 'user')
-            ->getJson('/api/manager/audit-logs?event=created&page=1&per_page=10');
+            ->getJson('/api/manager/audit-logs?target=ORD-303')
+            ->assertOk();
 
-        $response->assertStatus(200);
-        
-        // Check if links (if present) include filter params
-        $links = $response->json('links');
-        if (!empty($links) && isset($links['next'])) {
-            // Next link should include event=created parameter
-            $this->assertStringContainsString('event=created', $links['next']);
+        $this->assertSame(1, $response->json('meta.total'));
+        $this->assertSame('activity:' . $activity->id, $response->json('data.0.id'));
+    }
+
+    public function test_canonical_manager_audit_logs_are_tenant_scoped_and_support_filters_and_pagination(): void
+    {
+        $otherShop = ShopOwner::factory()->create();
+        $otherManager = User::factory()->for($otherShop)->create(['role' => 'Manager']);
+
+        foreach (range(1, 12) as $index) {
+            ConsolidatedAuditLog::query()->create([
+                'shop_owner_id' => $this->shop->id,
+                'user_id' => $this->manager->id,
+                'actor_user_id' => $this->manager->id,
+                'action' => 'repair_reassigned',
+                'object_type' => 'repair_request',
+                'object_id' => $index,
+                'target_type' => 'repair_request',
+                'target_id' => $index,
+                'metadata' => ['reason' => "Repair handoff {$index}"],
+            ]);
         }
-    }
 
-    /**
-     * Test: Can still access audit logs without any filters
-     */
-    public function test_audit_logs_works_without_filters(): void
-    {
+        ConsolidatedAuditLog::query()->create([
+            'shop_owner_id' => $this->shop->id,
+            'user_id' => $this->manager->id,
+            'actor_user_id' => $this->manager->id,
+            'action' => 'order_reassigned',
+            'object_type' => 'order',
+            'object_id' => 900,
+            'target_type' => 'order',
+            'target_id' => 900,
+            'metadata' => ['reason' => 'Different event'],
+        ]);
+
+        ConsolidatedAuditLog::query()->create([
+            'shop_owner_id' => $otherShop->id,
+            'user_id' => $otherManager->id,
+            'actor_user_id' => $otherManager->id,
+            'action' => 'repair_reassigned',
+            'object_type' => 'repair_request',
+            'object_id' => 999,
+            'target_type' => 'repair_request',
+            'target_id' => 999,
+            'metadata' => ['reason' => 'Other tenant'],
+        ]);
+
         $response = $this->actingAs($this->manager, 'user')
-            ->getJson('/api/manager/audit-logs');
+            ->getJson('/api/manager/audit-logs?action=repair_reassigned&target_id=6&page=1&per_page=5')
+            ->assertOk();
 
-        $response->assertStatus(200);
-        $response->assertJsonStructure(['data', 'meta']);
+        $this->assertSame(1, $response->json('meta.total'));
+        $this->assertSame(1, $response->json('meta.last_page'));
+        $this->assertSame(6, $response->json('data.0.target.id'));
+        $this->assertSame(1, $response->json('stats.total_logs'));
+        $this->assertFalse(collect($response->json('data'))->contains(fn (array $row): bool => $row['target']['id'] === 999));
     }
 }

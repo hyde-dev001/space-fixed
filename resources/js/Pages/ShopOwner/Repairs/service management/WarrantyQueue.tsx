@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { Head } from "@inertiajs/react";
+import { Head, usePage } from "@inertiajs/react";
 import Swal from "sweetalert2";
 import axios from "axios";
 import AppLayoutShopOwner from "../../../../layout/AppLayout_shopOwner";
+import AppLayoutERP from "../../../../layout/AppLayout_ERP";
 import ErrorModal from "../../../../components/common/ErrorModal";
 
 type WarrantyStatusFilter = "all" | "pending_repairer" | "approved" | "rejected" | "expired";
@@ -211,6 +212,8 @@ const formatWarrantyDateTime = (value: string | null | undefined): string => {
 };
 
 export default function WarrantyQueue() {
+  const erpMode = (usePage().props as any)?.erpMode === true;
+  const Layout = erpMode ? AppLayoutERP : AppLayoutShopOwner;
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<WarrantyStatusFilter>("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -446,7 +449,7 @@ export default function WarrantyQueue() {
   }, [statusFilter, searchQuery]);
 
   return (
-    <AppLayoutShopOwner hideHeader={isClaimDetailsOpen}>
+    <Layout hideHeader={isClaimDetailsOpen}>
       <Head title="Warranty Queue" />
       {error && <ErrorModal message={error} onClose={() => setError(null)} />}
 
@@ -772,6 +775,6 @@ export default function WarrantyQueue() {
           </div>
         )}
       </div>
-    </AppLayoutShopOwner>
+    </Layout>
   );
 }

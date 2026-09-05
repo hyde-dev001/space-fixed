@@ -58,7 +58,7 @@ export default function MonthlyTarget({ thisMonth = 0, lastMonth = 0 }: MonthlyT
         track: {
           background: "#E4E7EC",
           strokeWidth: "100%",
-          margin: 5, // margin is in pixels
+          margin: 5,
         },
         dataLabels: {
           name: {

@@ -3,15 +3,647 @@ layer(base);
 
 @import "tailwindcss";
 
+/* Super Admin light mode uses white page surfaces; keep this scoped away from the user side. */
+html:not(.dark) #app .super-admin-shell [class~="bg-gray-50"] {
+  background-color: #ffffff !important;
+}
+
 /* Flatpickr CSS */
 @import 'flatpickr/dist/flatpickr.min.css';
 
-/* Hide viewport scrollbar UI on UserSide pages while keeping scroll behavior */
-.userside-hide-scrollbar {
-  -ms-overflow-style: none;
+/* Shared user-side promo ticker. The duplicated message set loops cleanly at -50%. */
+.landing-marquee {
+  animation: landing-marquee 26s linear infinite;
+  will-change: transform;
 }
 
-.userside-hide-scrollbar::-webkit-scrollbar {
+.landing-marquee:hover,
+.landing-marquee:focus-within {
+  animation-play-state: paused;
+}
+
+@keyframes landing-marquee {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+
+  to {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-marquee {
+    animation: none;
+  }
+}
+
+/* Shared customer-page entrance motion. Pages opt in with data-scroll-reveal. */
+.scroll-reveal {
+  opacity: 0;
+  transform: translate3d(0, 40px, 0);
+  transition: opacity 700ms ease, transform 800ms cubic-bezier(.22, 1, .36, 1);
+}
+
+.scroll-reveal.is-visible {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+}
+
+.scroll-reveal--side {
+  transform: translate3d(32px, 0, 0);
+}
+
+.scroll-reveal--scale {
+  transform: scale(1.04);
+}
+
+.scroll-reveal--scale.is-visible {
+  transform: scale(1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scroll-reveal,
+  .scroll-reveal.is-visible {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+}
+
+/* Shared customer footer for non-landing pages. The landing page keeps its
+   fixed curtain footer because it needs a different stacking context. */
+.customer-footer {
+  overflow: hidden;
+  background: #fff;
+  color: #000;
+  opacity: 0;
+  transform: translateY(2rem);
+  transition: opacity 700ms ease, transform 900ms cubic-bezier(.22, 1, .36, 1);
+}
+
+.customer-footer--visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.customer-footer-page {
+  position: relative;
+  min-height: 100%;
+  overflow-x: hidden;
+  --customer-footer-height: min(30rem, 100svh);
+}
+
+.customer-footer-page__curtain {
+  position: relative;
+  z-index: 10;
+  background: #fff;
+}
+
+.customer-footer-page__spacer {
+  position: relative;
+  z-index: 0;
+  height: var(--customer-footer-height);
+  pointer-events: none;
+}
+
+.customer-footer--fixed {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 0;
+  width: 100%;
+  max-height: 100svh;
+  min-height: min(30rem, 100svh);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: auto;
+  pointer-events: none;
+}
+
+.customer-footer--fixed.customer-footer--interactive {
+  pointer-events: auto;
+}
+
+@media (min-width: 640px) {
+  .customer-footer-page {
+    --customer-footer-height: min(34rem, 100svh);
+  }
+
+  .customer-footer--fixed {
+    min-height: min(34rem, 100svh);
+  }
+}
+
+.customer-footer__content {
+  position: relative;
+  z-index: 1;
+  max-width: 1800px;
+  margin: 0 auto;
+  padding: 2rem 1rem 0;
+}
+
+.customer-footer__desktop-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 2rem;
+}
+
+.customer-footer__brand,
+.customer-footer__desktop-grid h2,
+.customer-footer__desktop-grid ul,
+.customer-footer__meta,
+.customer-footer__mobile-links summary {
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+
+.customer-footer__brand {
+  display: inline-block;
+  font-size: .875rem;
+  font-weight: 700;
+}
+
+.customer-footer__desktop-grid h2 {
+  margin: 0 0 1rem;
+  font-size: .75rem;
+  font-weight: 600;
+}
+
+.customer-footer__desktop-grid ul {
+  display: grid;
+  gap: .5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: .75rem;
+  font-weight: 500;
+}
+
+.customer-footer__desktop-grid a,
+.customer-footer__mobile-links a {
+  display: inline-block;
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.customer-footer__desktop-grid a:hover,
+.customer-footer__desktop-grid a:focus-visible,
+.customer-footer__mobile-links a:hover,
+.customer-footer__mobile-links a:focus-visible {
+  opacity: .55;
+  transform: translateX(.2rem);
+}
+
+.customer-footer__meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 3rem;
+  padding: 1.25rem 0;
+  border-top: 1px solid rgb(0 0 0 / 15%);
+  font-size: .6875rem;
+  font-weight: 500;
+}
+
+.customer-footer__wordmark {
+  width: max-content;
+  min-width: 100%;
+  padding-top: 2.2rem;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: clamp(7rem, 25vw, 26rem);
+  font-weight: 700;
+  line-height: .68;
+  letter-spacing: -.105em;
+}
+
+.customer-footer__mobile-links {
+  display: none;
+}
+
+@media (max-width: 1023px) {
+  .customer-footer {
+    padding-bottom: 5rem;
+  }
+
+  .customer-footer__desktop-grid {
+    display: none;
+  }
+
+  .customer-footer__mobile-links {
+    display: block;
+  }
+
+  .customer-footer__mobile-links .customer-footer__brand {
+    margin-bottom: 1rem;
+  }
+
+  .customer-footer__mobile-links details {
+    border-top: 1px solid rgb(0 0 0 / 15%);
+  }
+
+  .customer-footer__mobile-links summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 0;
+    cursor: pointer;
+    font-size: .75rem;
+    font-weight: 600;
+    list-style: none;
+  }
+
+  .customer-footer__mobile-links summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .customer-footer__mobile-links details > div {
+    display: grid;
+    gap: .65rem;
+    padding: 0 0 1rem;
+    font-size: .75rem;
+  }
+
+  .customer-footer__meta {
+    grid-template-columns: 1fr;
+    gap: .65rem;
+    margin-top: 1.5rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .customer-footer,
+  .customer-footer__desktop-grid a,
+  .customer-footer__mobile-links a {
+    transition: none;
+  }
+}
+
+/* Shared metrics-card treatment. EcommerceMetrics is the canonical source;
+   these selectors keep legacy, page-local metric cards visually consistent. */
+html:not(.dark) #app .metrics-card,
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"],
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"] {
+  border-color: #e2e8f0 !important;
+  border-radius: 1rem !important;
+  box-shadow: none !important;
+  transition: border-color 180ms ease, box-shadow 180ms ease !important;
+}
+
+html:not(.dark) #app .metrics-card:hover,
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"]:hover,
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"]:hover {
+  border-color: #cbd5e1 !important;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06) !important;
+  transform: none !important;
+}
+
+html:not(.dark) #app .metrics-card > div:first-child,
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"] > div:first-child,
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"] > div:first-child {
+  background-image: none !important;
+}
+
+html:not(.dark) #app .metrics-card [class*="bg-gradient-to-br"],
+html:not(.dark) #app .metrics-card [class*="bg-linear-to-br"],
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"] [class*="bg-gradient-to-br"],
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"] [class*="bg-linear-to-br"],
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"] [class*="bg-gradient-to-br"],
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"] [class*="bg-linear-to-br"] {
+  background-image: none !important;
+  background-color: #f1f5f9 !important;
+  box-shadow: none !important;
+  color: #1e293b !important;
+  transform: none !important;
+}
+
+/* Legacy cards set text-white directly on the SVG, so the container color
+   alone cannot override it. Keep the icon itself dark on the light tile. */
+html:not(.dark) #app .metrics-card :is([class*="bg-gradient-to-br"], [class*="bg-linear-to-br"]) > svg,
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"] :is([class*="bg-gradient-to-br"], [class*="bg-linear-to-br"]) > svg,
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"] :is([class*="bg-gradient-to-br"], [class*="bg-linear-to-br"]) > svg {
+  color: #1e293b !important;
+}
+
+/* Match legacy primary metric icon tiles to the dashboard dimensions. */
+html:not(.dark) #app .metrics-card :is([class*="bg-gradient-to-br"], [class*="bg-linear-to-br"]):not([class*="absolute"]),
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"] :is([class*="bg-gradient-to-br"], [class*="bg-linear-to-br"]):not([class*="absolute"]),
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"] :is([class*="bg-gradient-to-br"], [class*="bg-linear-to-br"]):not([class*="absolute"]) {
+  width: 3rem !important;
+  height: 3rem !important;
+  border-radius: 0.75rem !important;
+}
+
+/* Keep the main metric icon outlines as light as the dashboard icons. */
+html:not(.dark) #app .metrics-card > div:first-child > svg,
+html:not(.dark) #app .metrics-card :is([class*="bg-gradient-to-br"], [class*="bg-linear-to-br"]) > svg,
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"] :is([class*="bg-gradient-to-br"], [class*="bg-linear-to-br"]) > svg,
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"] :is([class*="bg-gradient-to-br"], [class*="bg-linear-to-br"]) > svg {
+  width: 1.5rem !important;
+  height: 1.5rem !important;
+  stroke-width: 1.5 !important;
+}
+
+html:not(.dark) #app .metrics-card > [class*="absolute"][class*="inset-0"],
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"] > [class*="absolute"][class*="inset-0"],
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"] > [class*="absolute"][class*="inset-0"] {
+  display: none !important;
+}
+
+.dark .metrics-card [class*="bg-gradient-to-br"],
+.dark .metrics-card [class*="bg-linear-to-br"],
+.dark [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"] [class*="bg-gradient-to-br"],
+.dark [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"] [class*="bg-linear-to-br"] {
+  background-color: #1e293b !important;
+  color: #f8fafc !important;
+}
+
+/* All ERP role pages use the same dashboard metric surface, including older
+   page-local cards that do not yet carry the metrics-card marker. Keep this
+   selector inside .erp-theme so the customer/user side is unaffected. */
+.dark #app .erp-theme :is(
+  .metrics-card,
+  [class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"],
+  [class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"]
+) {
+  background-color: #111827 !important;
+  border-color: #1f2937 !important;
+  box-shadow: none !important;
+}
+
+.dark #app .erp-theme :is(
+  .metrics-card,
+  [class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"],
+  [class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"]
+) :is([class*="bg-gradient-to-br"], [class*="bg-linear-to-br"]):not([class*="absolute"]) {
+  background-image: none !important;
+  background-color: #1f2937 !important;
+  color: #e5e7eb !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+/* Cashier POS predates the shared ERP dark tokens and uses light-only slate
+   utilities throughout both modes. Keep the compatibility palette scoped to
+   this page so other ERP surfaces keep their existing design. */
+@media screen {
+  .dark #app .erp-theme .cashier-pos-page {
+    color: #f8fafc;
+    color-scheme: dark;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="bg-white"] {
+    background-color: #111827 !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="bg-slate-50"] {
+    background-color: #172033 !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="bg-slate-100"] {
+    background-color: #1f2a3d !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="bg-slate-200"] {
+    background-color: #293852 !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="bg-slate-300"],
+  .dark #app .erp-theme .cashier-pos-page [class~="disabled:bg-slate-300"]:disabled {
+    background-color: #475569 !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="bg-slate-800"],
+  .dark #app .erp-theme .cashier-pos-page [class~="bg-slate-900"] {
+    background-color: #e2e8f0 !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="bg-slate-800"][class~="text-white"],
+  .dark #app .erp-theme .cashier-pos-page [class~="bg-slate-900"][class~="text-white"] {
+    color: #0f172a !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="bg-blue-50"],
+  .dark #app .erp-theme .cashier-pos-page [class*="bg-blue-50/"] {
+    background-color: #172c47 !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="bg-blue-100"] {
+    background-color: #1e3a5f !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="bg-emerald-50"],
+  .dark #app .erp-theme .cashier-pos-page [class~="bg-emerald-100"] {
+    background-color: #123b2b !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="bg-red-50"],
+  .dark #app .erp-theme .cashier-pos-page [class~="bg-red-100"] {
+    background-color: #451a1a !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="bg-amber-50"],
+  .dark #app .erp-theme .cashier-pos-page [class~="bg-amber-100"] {
+    background-color: #3b2a12 !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="bg-indigo-50"] {
+    background-color: #25204a !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="bg-violet-50"],
+  .dark #app .erp-theme .cashier-pos-page [class~="bg-violet-100"] {
+    background-color: #2c1e48 !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="text-slate-950"],
+  .dark #app .erp-theme .cashier-pos-page [class~="text-slate-900"] {
+    color: #f8fafc !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="text-slate-800"] {
+    color: #e2e8f0 !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="text-slate-700"],
+  .dark #app .erp-theme .cashier-pos-page [class~="text-slate-600"] {
+    color: #cbd5e1 !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="text-slate-500"] {
+    color: #94a3b8 !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="text-blue-600"],
+  .dark #app .erp-theme .cashier-pos-page [class~="text-blue-700"] {
+    color: #93c5fd !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="text-emerald-700"],
+  .dark #app .erp-theme .cashier-pos-page [class~="text-green-700"] {
+    color: #86efac !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="text-amber-600"],
+  .dark #app .erp-theme .cashier-pos-page [class~="text-amber-700"] {
+    color: #fcd34d !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="text-red-500"],
+  .dark #app .erp-theme .cashier-pos-page [class~="text-red-600"],
+  .dark #app .erp-theme .cashier-pos-page [class~="text-red-700"] {
+    color: #fca5a5 !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="text-indigo-700"],
+  .dark #app .erp-theme .cashier-pos-page [class~="text-violet-700"] {
+    color: #c4b5fd !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="border-slate-200"] {
+    border-color: #334155 !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="border-slate-300"] {
+    border-color: #475569 !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="border-slate-400"],
+  .dark #app .erp-theme .cashier-pos-page [class~="border-slate-900"] {
+    border-color: #94a3b8 !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="border-blue-200"] {
+    border-color: #385070 !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="border-blue-500"] {
+    border-color: #60a5fa !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="border-red-200"] {
+    border-color: #7f1d1d !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="border-amber-200"] {
+    border-color: #92400e !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="border-emerald-300"] {
+    border-color: #047857 !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="border-indigo-300"],
+  .dark #app .erp-theme .cashier-pos-page [class~="border-violet-300"] {
+    border-color: #7c3aed !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page :is(input, select, textarea) {
+    background-color: #0f172a !important;
+    border-color: #475569 !important;
+    color: #f8fafc !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page :is(input, select, textarea):disabled,
+  .dark #app .erp-theme .cashier-pos-page [class~="disabled:bg-slate-100"]:disabled {
+    background-color: #1f2937 !important;
+    color: #94a3b8 !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page :is(input, textarea)::placeholder {
+    color: #94a3b8 !important;
+    opacity: 1;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page option {
+    background-color: #0f172a;
+    color: #f8fafc;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="hover:bg-white"]:hover {
+    background-color: #1f2937 !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="hover:bg-slate-50"]:hover {
+    background-color: #25344b !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="hover:bg-slate-100"]:hover {
+    background-color: #2b3b55 !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="hover:bg-slate-700"]:hover {
+    background-color: #cbd5e1 !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="hover:bg-slate-700"][class~="text-white"]:hover {
+    color: #0f172a !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="hover:bg-red-50"]:hover {
+    background-color: #5b2020 !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="hover:bg-indigo-50"]:hover,
+  .dark #app .erp-theme .cashier-pos-page [class~="hover:bg-violet-50"]:hover {
+    background-color: #342b5a !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="hover:bg-emerald-50"]:hover {
+    background-color: #174936 !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="hover:text-slate-900"]:hover {
+    color: #ffffff !important;
+  }
+}
+
+/* ApexCharts renders series colors as SVG attributes. Override those
+   attributes only in Light Mode so every account uses one monochrome chart
+   language while Dark Mode keeps each chart's original palette. */
+html:not(.dark) #app .erp-theme .apexcharts-series[rel="1"] path:not(.apexcharts-radialbar-area) {
+  stroke: #111111 !important;
+  fill: #111111 !important;
+}
+
+/* Preserve ApexCharts' radial-bar geometry and only recolor the progress arc
+   in light mode. Changing its fill/stroke path creates a diagonal wedge. */
+html:not(.dark) #app .erp-theme .apexcharts-series[rel="1"] .apexcharts-radialbar-area {
+  fill: none !important;
+  filter: grayscale(1) brightness(0);
+}
+
+html:not(.dark) #app .erp-theme .apexcharts-series[rel="2"] path {
+  stroke: #6b7280 !important;
+  fill: #6b7280 !important;
+}
+
+html:not(.dark) #app .erp-theme .apexcharts-series[rel="3"] path {
+  stroke: #9ca3af !important;
+  fill: #9ca3af !important;
+}
+
+html:not(.dark) #app .erp-theme .apexcharts-legend-marker[rel="1"] {
+  background: #111111 !important;
+}
+
+html:not(.dark) #app .erp-theme .apexcharts-legend-marker[rel="2"] {
+  background: #6b7280 !important;
+}
+
+html:not(.dark) #app .erp-theme .apexcharts-legend-marker[rel="3"] {
+  background: #9ca3af !important;
+}
+
+/* Hide viewport scrollbar UI on UserSide pages while keeping scroll behavior */
+html.userside-hide-scrollbar,
+body.userside-hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+html.userside-hide-scrollbar::-webkit-scrollbar,
+body.userside-hide-scrollbar::-webkit-scrollbar {
   display: none;
   width: 0;
   height: 0;
@@ -94,6 +726,10 @@ layer(base);
 .flatpickr-day.selected {
   background: #465fff !important;
   color: white !important;
+}
+
+html:not(.dark) .flatpickr-day.selected {
+  background: #111111 !important;
 }
 
 .flatpickr-day.today {
@@ -308,6 +944,686 @@ body {
 #app {
   background-color: inherit;
   color: inherit;
+}
+
+/* Customer-facing pages share one scoped dark surface. ERP and shop-owner pages
+   keep their existing theme rules because this class is only set for UserSide. */
+html.userside-dark {
+  color-scheme: dark;
+}
+
+html.userside-dark body,
+html.userside-dark #app,
+html.userside-dark #app > div {
+  background-color: #0b1220;
+  color: #f8fafc;
+}
+
+html.userside-dark #app [class~="bg-white"],
+html.userside-dark #app [class*="bg-white/"] {
+  background-color: #111827;
+}
+
+html.userside-dark #app [class~="bg-gray-50"],
+html.userside-dark #app [class*="bg-gray-50/"],
+html.userside-dark #app [class~="bg-[#f3f4f6]"] {
+  background-color: #0f172a;
+}
+
+html.userside-dark #app [class~="bg-gray-100"] {
+  background-color: #1f2937;
+}
+
+html.userside-dark #app [class~="text-black"],
+html.userside-dark #app [class~="text-gray-900"],
+html.userside-dark #app [class~="text-[#16233b]"] {
+  color: #f8fafc;
+}
+
+html.userside-dark #app [class~="text-gray-700"] {
+  color: #e5e7eb;
+}
+
+html.userside-dark #app [class~="text-gray-600"],
+html.userside-dark #app [class~="text-gray-500"],
+html.userside-dark #app [class~="text-black/55"],
+html.userside-dark #app [class~="text-black/60"],
+html.userside-dark #app [class~="text-black/70"] {
+  color: #cbd5e1;
+}
+
+html.userside-dark #app [class~="border-gray-200"],
+html.userside-dark #app [class*="border-gray-200/"],
+html.userside-dark #app [class~="border-gray-300"],
+html.userside-dark #app [class*="border-gray-300/"],
+html.userside-dark #app [class~="border-gray-100"],
+html.userside-dark #app [class~="border-white"],
+html.userside-dark #app [class*="border-white/"],
+html.userside-dark #app [class~="border-black"] {
+  border-color: #334155;
+}
+
+html.userside-dark #app [class~="divide-gray-100"] {
+  --tw-divide-color: #1e293b;
+}
+
+html.userside-dark #app [class~="hover:bg-gray-50"]:hover,
+html.userside-dark #app [class~="hover:bg-gray-100"]:hover,
+html.userside-dark #app [class~="hover:bg-white"]:hover {
+  background-color: #1f2937;
+}
+
+html.userside-dark #app [class~="hover:text-black"]:hover,
+html.userside-dark #app [class~="hover:text-gray-700"]:hover {
+  color: #f8fafc;
+}
+
+html.userside-dark #app .userside-order-date-header {
+  border-color: #334155;
+  background: linear-gradient(90deg, #111827 0%, #111827 58%, #0f172a 100%);
+}
+
+html.userside-dark #app .userside-order-date-header [class~="text-black"] {
+  color: #f8fafc;
+}
+
+html.userside-dark #app input,
+html.userside-dark #app select,
+html.userside-dark #app textarea {
+  border-color: #334155;
+  background-color: #111827;
+  color: #f8fafc;
+}
+
+html.userside-dark #app input::placeholder,
+html.userside-dark #app textarea::placeholder {
+  color: #94a3b8;
+}
+
+/* Keep the saved-address and shipment-tracking surfaces aligned with the
+   customer dark theme. These overrides are scoped so ERP/shop-owner panels
+   and the existing light mode keep their original styling. */
+html.userside-dark #app .userside-address-card,
+html.userside-dark #app .userside-address-modal {
+  background-color: #111827 !important;
+  border-color: #2f405a !important;
+  color: #f8fafc;
+}
+
+html.userside-dark #app .userside-address-card--selected {
+  background-color: #1b2f50 !important;
+  border-color: #7da2ff !important;
+  box-shadow: 0 12px 28px -24px rgba(125, 162, 255, 0.85);
+}
+
+html.userside-dark #app .userside-address-modal__header {
+  border-color: #26364d !important;
+}
+
+html.userside-dark #app .userside-address-modal__content {
+  background-color: #111827;
+}
+
+html.userside-dark #app .userside-address-modal [class~="text-gray-950"],
+html.userside-dark #app .userside-address-card [class~="text-gray-950"] {
+  color: #f8fafc !important;
+}
+
+html.userside-dark #app .userside-address-modal [class~="text-gray-800"],
+html.userside-dark #app .userside-address-card [class~="text-gray-800"] {
+  color: #e2e8f0 !important;
+}
+
+html.userside-dark #app .userside-address-modal [class~="text-gray-700"],
+html.userside-dark #app .userside-address-card [class~="text-gray-700"] {
+  color: #cbd5e1 !important;
+}
+
+html.userside-dark #app .userside-address-modal [class~="text-gray-600"],
+html.userside-dark #app .userside-address-modal [class~="text-gray-500"],
+html.userside-dark #app .userside-address-card [class~="text-gray-600"],
+html.userside-dark #app .userside-address-card [class~="text-gray-500"] {
+  color: #a8b6ca !important;
+}
+
+html.userside-dark #app .userside-address-modal [class~="text-blue-700"],
+html.userside-dark #app .userside-address-card [class~="text-blue-700"] {
+  color: #a9c1ff !important;
+}
+
+html.userside-dark #app .userside-address-modal [class~="text-blue-900"],
+html.userside-dark #app .userside-address-card [class~="text-blue-900"] {
+  color: #d5e0ff !important;
+}
+
+html.userside-dark #app .userside-address-modal [class~="text-green-700"],
+html.userside-dark #app .userside-address-card [class~="text-green-700"] {
+  color: #67d391 !important;
+}
+
+html.userside-dark #app .userside-address-modal [class~="text-amber-700"],
+html.userside-dark #app .userside-address-card [class~="text-amber-700"] {
+  color: #f5c66d !important;
+}
+
+html.userside-dark #app .userside-address-modal [class~="border-gray-200"],
+html.userside-dark #app .userside-address-modal [class~="border-gray-300"],
+html.userside-dark #app .userside-address-card [class~="border-gray-200"],
+html.userside-dark #app .userside-address-card [class~="border-gray-300"],
+html.userside-dark #app .userside-address-modal [class*="border-dashed"] {
+  border-color: #2f405a !important;
+}
+
+html.userside-dark #app .userside-address-modal [class~="bg-gray-50"] {
+  background-color: #151f32 !important;
+}
+
+html.userside-dark #app .userside-address-icon-button {
+  background-color: #142238 !important;
+  box-shadow: none;
+}
+
+html.userside-dark #app .userside-address-icon-button--edit {
+  border-color: #496da4 !important;
+  color: #a9c1ff !important;
+}
+
+html.userside-dark #app .userside-address-icon-button--default {
+  border-color: #385070 !important;
+  color: #b6c3d5 !important;
+}
+
+html.userside-dark #app .userside-address-icon-button--delete {
+  border-color: #795163 !important;
+  color: #ff9bb0 !important;
+}
+
+html.userside-dark #app .userside-address-icon-button--edit:hover,
+html.userside-dark #app .userside-address-icon-button--default:hover {
+  background-color: #20385e !important;
+  border-color: #7da2ff !important;
+  color: #e0e8ff !important;
+}
+
+html.userside-dark #app .userside-address-icon-button--delete:hover {
+  background-color: #3c1e2b !important;
+  border-color: #c97991 !important;
+  color: #ffc2cf !important;
+}
+
+html.userside-dark #app .userside-address-modal-close:hover {
+  background-color: #1f2d43 !important;
+  color: #f8fafc !important;
+}
+
+html.userside-dark #app .userside-address-modal input,
+html.userside-dark #app .userside-address-modal select,
+html.userside-dark #app .userside-address-modal textarea {
+  background-color: #111827 !important;
+  border-color: #3a4b64 !important;
+  color: #f8fafc !important;
+}
+
+html.userside-dark #app .userside-address-modal input:focus,
+html.userside-dark #app .userside-address-modal select:focus,
+html.userside-dark #app .userside-address-modal textarea:focus {
+  border-color: #111111 !important;
+  box-shadow: 0 0 0 3px rgba(17, 17, 17, 0.18) !important;
+}
+
+html.userside-dark #app .userside-tracking-modal__surface {
+  background-color: #0f172a !important;
+  border: 1px solid #2f405a;
+  color: #f8fafc;
+}
+
+html.userside-dark #app .userside-tracking-modal__surface > header {
+  background-color: #111827 !important;
+  border-color: #26364d !important;
+}
+
+html.userside-dark #app .userside-tracking-modal__surface [class~="text-[#16233b]"],
+html.userside-dark #app .userside-tracking-panel [class~="text-[#16233b]"],
+html.userside-dark #app .userside-tracking-panel [class~="text-gray-950"],
+html.userside-dark #app .userside-tracking-panel [class~="text-gray-900"] {
+  color: #f8fafc !important;
+}
+
+html.userside-dark #app .userside-tracking-modal__surface [class~="text-gray-800"],
+html.userside-dark #app .userside-tracking-panel [class~="text-gray-800"] {
+  color: #e2e8f0 !important;
+}
+
+html.userside-dark #app .userside-tracking-modal__surface [class~="text-gray-700"],
+html.userside-dark #app .userside-tracking-panel [class~="text-gray-700"] {
+  color: #cbd5e1 !important;
+}
+
+html.userside-dark #app .userside-tracking-modal__surface [class~="text-gray-600"],
+html.userside-dark #app .userside-tracking-modal__surface [class~="text-gray-500"],
+html.userside-dark #app .userside-tracking-panel [class~="text-gray-600"],
+html.userside-dark #app .userside-tracking-panel [class~="text-gray-500"] {
+  color: #a8b6ca !important;
+}
+
+html.userside-dark #app .userside-tracking-panel a[class~="text-[#16233b]"] {
+  color: #b8cdff !important;
+}
+
+html.userside-dark #app .userside-tracking-modal__surface [class~="border-gray-200"],
+html.userside-dark #app .userside-tracking-panel [class~="border-gray-200"] {
+  border-color: #2b3a52 !important;
+}
+
+html.userside-dark #app .userside-tracking-modal__surface [class~="border-gray-300"],
+html.userside-dark #app .userside-tracking-panel [class~="border-gray-300"],
+html.userside-dark #app .userside-tracking-panel [class~="border-gray-900"] {
+  border-color: #3a4b64 !important;
+}
+
+html.userside-dark #app .userside-tracking-modal__surface [class~="bg-white"],
+html.userside-dark #app .userside-tracking-panel [class~="bg-white"] {
+  background-color: #111827 !important;
+}
+
+html.userside-dark #app .userside-tracking-modal__surface [class~="bg-gray-50"],
+html.userside-dark #app .userside-tracking-panel [class~="bg-gray-50"] {
+  background-color: #151f32 !important;
+}
+
+html.userside-dark #app .userside-tracking-panel .userside-tracking-section {
+  background-color: #111827 !important;
+  border-color: #2b3a52 !important;
+}
+
+html.userside-dark #app .userside-tracking-panel [class~="divide-gray-100"] {
+  --tw-divide-color: #26364d !important;
+}
+
+html.userside-dark #app .userside-tracking-modal__surface [class~="border-red-200"] {
+  border-color: #704054 !important;
+}
+
+html.userside-dark #app .userside-tracking-modal__surface [class~="bg-red-50"] {
+  background-color: #2a1820 !important;
+}
+
+html.userside-dark #app .userside-tracking-modal__surface [class~="text-red-950"],
+html.userside-dark #app .userside-tracking-modal__surface [class~="text-red-900"] {
+  color: #ffc2cf !important;
+}
+
+html.userside-dark #app .userside-tracking-modal__surface [class~="hover:bg-gray-50"]:hover,
+html.userside-dark #app .userside-tracking-panel [class~="hover:bg-gray-50"]:hover {
+  background-color: #1f2d43 !important;
+}
+
+/* User authentication pages use a dedicated dark surface so their light-mode
+   form utilities cannot leak a white canvas into customer dark mode. */
+.userside-auth-page {
+  color: #0f172a;
+}
+
+.userside-auth-card {
+  border: 1px solid #e2e8f0;
+}
+
+.userside-auth-input {
+  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+
+html.userside-dark #app .userside-auth-page {
+  background: radial-gradient(circle at top, #18243a 0%, #0b1220 52%, #080e19 100%) !important;
+  color: #f8fafc;
+}
+
+html.userside-dark #app .userside-auth-title {
+  color: #f8fafc !important;
+}
+
+html.userside-dark #app .userside-auth-subtitle {
+  color: #a8b6ca !important;
+}
+
+html.userside-dark #app .userside-auth-card {
+  background: #111827 !important;
+  border-style: solid !important;
+  border-color: #334155 !important;
+  box-shadow: 0 22px 50px -28px rgba(0, 0, 0, 0.9) !important;
+}
+
+html.userside-dark #app .userside-auth-page label {
+  color: #e2e8f0 !important;
+}
+
+html.userside-dark #app .userside-auth-page input:not([type="checkbox"]),
+html.userside-dark #app .userside-auth-page select,
+html.userside-dark #app .userside-auth-page textarea,
+html.userside-dark #app .userside-auth-input {
+  background: #1b273d !important;
+  border-color: #41516a !important;
+  color: #f8fafc !important;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.025) !important;
+}
+
+html.userside-dark #app .userside-auth-page input:not([type="checkbox"])::placeholder,
+html.userside-dark #app .userside-auth-page textarea::placeholder,
+html.userside-dark #app .userside-auth-input::placeholder {
+  color: #94a3b8 !important;
+}
+
+html.userside-dark #app .userside-auth-page input:not([type="checkbox"]):focus,
+html.userside-dark #app .userside-auth-page select:focus,
+html.userside-dark #app .userside-auth-page textarea:focus,
+html.userside-dark #app .userside-auth-input:focus {
+  border-color: #111111 !important;
+  box-shadow: 0 0 0 3px rgba(17, 17, 17, 0.2) !important;
+}
+
+html.userside-dark #app .userside-auth-page input[type="checkbox"] {
+  accent-color: #6d8dff;
+}
+
+html.userside-dark #app .userside-auth-link {
+  color: #a9c1ff !important;
+}
+
+html.userside-dark #app .userside-auth-link:hover {
+  color: #d5e0ff !important;
+}
+
+html.userside-dark #app .userside-auth-primary {
+  background: #f8fafc !important;
+  color: #0b1220 !important;
+  border-color: #f8fafc !important;
+}
+
+html.userside-dark #app .userside-auth-primary:hover {
+  background: #dbe5f5 !important;
+  color: #0b1220 !important;
+}
+
+html.userside-dark #app .userside-auth-secondary {
+  background: #1f2937 !important;
+  border-color: #475569 !important;
+  color: #e2e8f0 !important;
+}
+
+html.userside-dark #app .userside-auth-secondary:hover {
+  background: #27364d !important;
+}
+
+html.userside-dark #app .userside-auth-ghost {
+  border-color: #8aa8ff !important;
+  color: #b8cdff !important;
+}
+
+html.userside-dark #app .userside-auth-ghost:hover {
+  background: #1e3a8a !important;
+  color: #ffffff !important;
+}
+
+/* Fast curtain for eligible customer-side Inertia navigation. */
+.customer-page-transition {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  background: #ffffff;
+  color: #000000;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(100%);
+  transition: opacity 220ms ease, transform 220ms ease, visibility 0s linear 220ms;
+  will-change: opacity, transform;
+}
+
+.customer-page-transition[data-state="visible"] {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateY(0);
+  transition-delay: 0s;
+}
+
+.customer-page-transition[data-state="leaving"] {
+  opacity: 0;
+  visibility: visible;
+  transform: translateY(-8%);
+  transition-delay: 0s;
+  transition-duration: 260ms;
+}
+
+.customer-page-transition__wordmark {
+  font-size: clamp(2.5rem, 10vw, 9rem);
+  font-weight: 800;
+  letter-spacing: -0.08em;
+  line-height: 0.8;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .customer-page-transition {
+    transition-duration: 1ms;
+    transition-delay: 0s;
+  }
+}
+
+/* Server-rendered first-open experience. React removes it after its first render. */
+.solespace-app-loader {
+  position: fixed;
+  inset: 0;
+  z-index: 999999;
+  display: none;
+  place-items: center;
+  overflow: hidden;
+  isolation: isolate;
+  contain: layout paint;
+  background: #ffffff;
+  color: #667085;
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 280ms ease, visibility 280ms ease;
+}
+
+.solespace-first-load .solespace-app-loader {
+  display: grid;
+}
+
+@media (min-width: 1280px) {
+  .solespace-first-load .solespace-app-loader {
+    display: none !important;
+  }
+}
+
+.solespace-app-loader::before {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at center, rgba(22, 35, 59, 0.08), transparent min(34rem, 68vw)),
+    radial-gradient(circle, rgba(22, 35, 59, 0.24) 0 1px, transparent 1.4px) 0 0 / 10rem 10rem;
+  content: "";
+  pointer-events: none;
+}
+
+.solespace-app-loader.is-leaving {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.solespace-app-loader__content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  width: min(23rem, calc(100vw - 2rem));
+  flex-direction: column;
+  align-items: center;
+  gap: 0.9rem;
+  contain: layout paint;
+}
+
+.solespace-app-loader__wordmark {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: clamp(0.08rem, 0.8vw, 0.2rem);
+  color: #667085;
+  font-family: inherit;
+  font-size: clamp(1.8rem, 7vw, 3.2rem);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  white-space: nowrap;
+  text-shadow: none;
+}
+
+.solespace-app-loader__wordmark span {
+  display: inline-block;
+  min-width: 0.5em;
+  --loader-origin-x: 0rem;
+  --loader-origin-y: 0rem;
+  animation: solespace-loader-letter 720ms cubic-bezier(0.22, 1, 0.36, 1) 1 both;
+  backface-visibility: hidden;
+  transform: translate3d(0, 0, 0);
+  transform-origin: center;
+}
+
+.solespace-app-loader__wordmark span:nth-child(1) {
+  --loader-origin-x: -1.8rem;
+  --loader-origin-y: -1.2rem;
+}
+
+.solespace-app-loader__wordmark span:nth-child(2) {
+  --loader-origin-x: -0.8rem;
+  --loader-origin-y: 1.3rem;
+}
+
+.solespace-app-loader__wordmark span:nth-child(3) {
+  --loader-origin-x: -0.4rem;
+  --loader-origin-y: -1.5rem;
+}
+
+.solespace-app-loader__wordmark span:nth-child(4) {
+  --loader-origin-x: -1.9rem;
+  --loader-origin-y: 0.5rem;
+}
+
+.solespace-app-loader__wordmark span:nth-child(5) {
+  --loader-origin-x: 1.4rem;
+  --loader-origin-y: -1.5rem;
+}
+
+.solespace-app-loader__wordmark span:nth-child(6) {
+  --loader-origin-x: 1.9rem;
+  --loader-origin-y: 0.6rem;
+}
+
+.solespace-app-loader__wordmark span:nth-child(7) {
+  --loader-origin-x: 1rem;
+  --loader-origin-y: 1.3rem;
+}
+
+.solespace-app-loader__wordmark span:nth-child(8) {
+  --loader-origin-x: 0.4rem;
+  --loader-origin-y: -1.2rem;
+}
+
+.solespace-app-loader__wordmark span:nth-child(9) {
+  --loader-origin-x: 1.7rem;
+  --loader-origin-y: 1.1rem;
+}
+
+.solespace-app-loader__line {
+  position: relative;
+  width: 6rem;
+  height: 2px;
+  overflow: hidden;
+  background: rgba(15, 23, 42, 0.12);
+}
+
+.solespace-app-loader__line::after {
+  position: absolute;
+  inset: 0 auto 0 -45%;
+  width: 45%;
+  background: #9ca3af;
+  content: "";
+  animation: solespace-loader-line 1.4s ease-in-out infinite;
+}
+
+.solespace-app-loader__caption {
+  margin: 0;
+  color: #737373;
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+}
+
+.solespace-app-loader__sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@keyframes solespace-loader-letter {
+  0% {
+    transform: translate3d(var(--loader-origin-x), var(--loader-origin-y), 0);
+    will-change: transform;
+  }
+
+  100% {
+    transform: translate3d(0, 0, 0);
+    will-change: auto;
+  }
+}
+
+@keyframes solespace-loader-line {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(325%);
+  }
+}
+
+@keyframes solespace-loader-wordmark {
+  0% {
+    transform: translate3d(0, 0.6rem, 0);
+    will-change: transform;
+  }
+
+  100% {
+    transform: translate3d(0, 0, 0);
+    will-change: auto;
+  }
+}
+
+@media (max-width: 640px) and (pointer: coarse) {
+  .solespace-app-loader__wordmark {
+    animation: solespace-loader-wordmark 560ms cubic-bezier(0.22, 1, 0.36, 1) 1 both;
+  }
+
+  .solespace-app-loader__wordmark span {
+    animation: none;
+    transform: none;
+    will-change: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .solespace-app-loader,
+  .solespace-app-loader::before,
+  .solespace-app-loader__wordmark,
+  .solespace-app-loader__wordmark span,
+  .solespace-app-loader__line::after {
+    animation: none;
+    transition: none;
+  }
 }
 
 @layer base {
@@ -775,6 +2091,236 @@ body {
   @apply bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400;
 }
 
+/* Shared light navigation and controls use black as the primary accent. */
+html:not(.dark) {
+  --color-black: #111111;
+  --color-brand-25: #fafafa;
+  --color-brand-50: #f5f5f5;
+  --color-brand-100: #e5e5e5;
+  --color-brand-200: #d4d4d4;
+  --color-brand-300: #a3a3a3;
+  --color-brand-400: #737373;
+  --color-brand-500: #111111;
+  --color-brand-600: #000000;
+  --color-brand-700: #000000;
+  --color-brand-800: #171717;
+  --color-brand-900: #262626;
+  --color-brand-950: #0a0a0a;
+}
+
+html:not(.dark) .erp-sidebar {
+  background: #ffffff;
+  border-color: #e5e7eb;
+  color: #111827;
+}
+
+html:not(.dark) .erp-sidebar .menu-item-active,
+html:not(.dark) .erp-sidebar .menu-dropdown-item-active {
+  background: #111111;
+  color: #ffffff;
+}
+
+html:not(.dark) .erp-sidebar .menu-item-inactive,
+html:not(.dark) .erp-sidebar .menu-dropdown-item-inactive {
+  color: #111827;
+}
+
+html:not(.dark) .erp-sidebar .menu-item-inactive:hover,
+html:not(.dark) .erp-sidebar .menu-dropdown-item-inactive:hover,
+html:not(.dark) .erp-sidebar .menu-item-inactive.group:hover {
+  background: #f3f4f6;
+  color: #111111;
+}
+
+html:not(.dark) .erp-sidebar .menu-item-icon-active,
+html:not(.dark) .erp-sidebar .menu-item-icon-inactive,
+html:not(.dark) .erp-sidebar .menu-item-inactive.group:hover .menu-item-icon-inactive {
+  color: currentColor;
+}
+
+html:not(.dark) .erp-sidebar .menu-dropdown-badge-active {
+  background: #e5e7eb;
+  color: #111111;
+}
+
+html:not(.dark) .erp-sidebar .menu-dropdown-badge-inactive {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+html:not(.dark) .erp-sidebar [class*='text-brand-'] {
+  color: currentColor !important;
+}
+
+html:not(.dark) .erp-sidebar [class*='border-brand-'] {
+  border-color: #111111 !important;
+}
+
+/* Legacy primary controls are normalized without touching status badges or charts. */
+html:not(.dark) .erp-theme :is(button, a, [role='button'])[class~='bg-blue-500'],
+html:not(.dark) .erp-theme :is(button, a, [role='button'])[class~='bg-blue-600'],
+html:not(.dark) .erp-theme :is(button, a, [role='button'])[class~='bg-indigo-500'],
+html:not(.dark) .erp-theme :is(button, a, [role='button'])[class~='bg-indigo-600'],
+html:not(.dark) .erp-theme :is(button, a, [role='button'])[class~='bg-purple-500'],
+html:not(.dark) .erp-theme :is(button, a, [role='button'])[class~='bg-purple-600'] {
+  background-color: #111111 !important;
+  color: #ffffff !important;
+  border-color: #111111 !important;
+}
+
+html:not(.dark) .erp-theme :is(button, a, [role='button'])[class~='bg-brand-500'] {
+  background-color: #111111 !important;
+  color: #ffffff !important;
+  border-color: #111111 !important;
+}
+
+html:not(.dark) .erp-theme :is(button, a, [role='button']):is(:hover, :focus-visible)[class~='bg-brand-500'] {
+  background-color: #000000 !important;
+  border-color: #000000 !important;
+}
+
+html:not(.dark) .erp-theme :is(button, a, [role='button']):is(:hover, :focus-visible)[class~='bg-blue-500'],
+html:not(.dark) .erp-theme :is(button, a, [role='button']):is(:hover, :focus-visible)[class~='bg-blue-600'],
+html:not(.dark) .erp-theme :is(button, a, [role='button']):is(:hover, :focus-visible)[class~='bg-indigo-500'],
+html:not(.dark) .erp-theme :is(button, a, [role='button']):is(:hover, :focus-visible)[class~='bg-indigo-600'],
+html:not(.dark) .erp-theme :is(button, a, [role='button']):is(:hover, :focus-visible)[class~='bg-purple-500'],
+html:not(.dark) .erp-theme :is(button, a, [role='button']):is(:hover, :focus-visible)[class~='bg-purple-600'] {
+  background-color: #000000 !important;
+  border-color: #000000 !important;
+}
+
+html:not(.dark) .erp-theme :is(button, a, [role='button'])[class~='border-blue-500'],
+html:not(.dark) .erp-theme :is(button, a, [role='button'])[class~='border-blue-600'],
+html:not(.dark) .erp-theme :is(button, a, [role='button'])[class~='border-indigo-500'],
+html:not(.dark) .erp-theme :is(button, a, [role='button'])[class~='border-indigo-600'],
+html:not(.dark) .erp-theme :is(button, a, [role='button'])[class~='border-purple-500'],
+html:not(.dark) .erp-theme :is(button, a, [role='button'])[class~='border-purple-600'] {
+  border-color: #111111 !important;
+}
+
+html:not(.dark) .erp-theme :is(input, select, textarea)[class*='focus:ring-blue-']:focus,
+html:not(.dark) .erp-theme :is(input, select, textarea)[class*='focus:ring-indigo-']:focus,
+html:not(.dark) .erp-theme :is(input, select, textarea)[class*='focus:ring-purple-']:focus,
+html:not(.dark) .erp-theme :is(input, select, textarea)[class*='focus:ring-brand-']:focus {
+  --tw-ring-color: rgb(17 17 17 / 0.16) !important;
+  border-color: #111111 !important;
+}
+
+html:not(.dark) .erp-theme :is(input, select, textarea, button, a, [role='button'], [role='tab'])[class*='focus:ring-blue-']:focus,
+html:not(.dark) .erp-theme :is(input, select, textarea, button, a, [role='button'], [role='tab'])[class*='focus:ring-indigo-']:focus,
+html:not(.dark) .erp-theme :is(input, select, textarea, button, a, [role='button'], [role='tab'])[class*='focus:ring-purple-']:focus {
+  --tw-ring-color: rgb(17 17 17 / 0.16) !important;
+  border-color: #111111 !important;
+}
+
+html:not(.dark) .erp-theme :is(input[type='checkbox'], input[type='radio']) {
+  accent-color: #111111;
+}
+
+html:not(.dark) .erp-theme :is(a, [role='tab']):is(
+  [class~='text-blue-50'], [class~='text-blue-100'], [class~='text-blue-200'],
+  [class~='text-blue-300'], [class~='text-blue-400'], [class~='text-blue-500'],
+  [class~='text-blue-600'], [class~='text-blue-700'], [class~='text-blue-800'],
+  [class~='text-blue-900'], [class~='text-blue-950'],
+  [class~='text-indigo-50'], [class~='text-indigo-100'], [class~='text-indigo-200'],
+  [class~='text-indigo-300'], [class~='text-indigo-400'], [class~='text-indigo-500'],
+  [class~='text-indigo-600'], [class~='text-indigo-700'], [class~='text-indigo-800'],
+  [class~='text-indigo-900'], [class~='text-indigo-950'],
+  [class~='text-purple-50'], [class~='text-purple-100'], [class~='text-purple-200'],
+  [class~='text-purple-300'], [class~='text-purple-400'], [class~='text-purple-500'],
+  [class~='text-purple-600'], [class~='text-purple-700'], [class~='text-purple-800'],
+  [class~='text-purple-900'], [class~='text-purple-950']
+) {
+  color: #111111 !important;
+}
+
+/* Keep native select interaction states neutral across browsers. Native
+   option popovers remain OS-controlled in some browsers, but these styles
+   cover the selected option and field focus where the browser allows it. */
+html:not(.dark) #app .erp-theme select {
+  color-scheme: light;
+}
+
+html.dark #app .erp-theme select {
+  color-scheme: dark;
+}
+
+html:not(.dark) #app .erp-theme select:focus {
+  border-color: #111111 !important;
+  outline-color: #111111 !important;
+  --tw-ring-color: rgb(17 17 17 / 0.16) !important;
+}
+
+html:not(.dark) #app .erp-theme select option {
+  background-color: #ffffff !important;
+  color: #111111 !important;
+}
+
+html:not(.dark) #app .erp-theme select option:checked,
+html:not(.dark) #app .erp-theme select option:checked:hover {
+  background-color: #f3f4f6 !important;
+  color: #111111 !important;
+}
+
+html:not(.dark) #app .erp-theme select option:hover {
+  background-color: #e5e7eb !important;
+  color: #111111 !important;
+}
+
+html.dark #app .erp-theme select option {
+  background-color: #111827 !important;
+  color: #f8fafc !important;
+}
+
+html.dark #app .erp-theme select option:checked,
+html.dark #app .erp-theme select option:checked:hover {
+  background-color: #334155 !important;
+  color: #f8fafc !important;
+}
+
+html.dark #app .erp-theme select option:hover {
+  background-color: #475569 !important;
+  color: #ffffff !important;
+}
+
+/* Apply the same selection language to accessible custom dropdowns. */
+html:not(.dark) #app .erp-theme [role='combobox']:focus-within > div {
+  border-color: #111111 !important;
+  --tw-ring-color: rgb(17 17 17 / 0.16) !important;
+}
+
+html:not(.dark) #app .erp-theme [role='option'] {
+  background-color: #ffffff !important;
+  color: #111111 !important;
+}
+
+html:not(.dark) #app .erp-theme [role='option'][aria-selected='true'] {
+  background-color: #f3f4f6 !important;
+  color: #111111 !important;
+}
+
+html:not(.dark) #app .erp-theme [role='option']:not([aria-selected='true']):hover,
+html:not(.dark) #app .erp-theme [role='option'][data-highlighted='true']:not([aria-selected='true']) {
+  background-color: #e5e7eb !important;
+  color: #111111 !important;
+}
+
+html.dark #app .erp-theme [role='option'] {
+  background-color: #111827 !important;
+  color: #f8fafc !important;
+}
+
+html.dark #app .erp-theme [role='option'][aria-selected='true'] {
+  background-color: #334155 !important;
+  color: #f8fafc !important;
+}
+
+html.dark #app .erp-theme [role='option']:not([aria-selected='true']):hover,
+html.dark #app .erp-theme [role='option'][data-highlighted='true']:not([aria-selected='true']) {
+  background-color: #475569 !important;
+  color: #ffffff !important;
+}
+
 @utility no-scrollbar {
   &::-webkit-scrollbar {
     display: none;
@@ -858,4 +2404,600 @@ body {
   to {
     opacity: 0;
   }
+}
+
+/* Dark-mode polish for customer review, product, repair, and registration
+   surfaces. These selectors intentionally stay inside the customer theme so
+   ERP and shop-owner dashboard colors remain independent. */
+html.userside-dark #app [class~="text-gray-800"] {
+  color: #e2e8f0;
+}
+
+html.userside-dark #app [class~="text-gray-400"] {
+  color: #94a3b8;
+}
+
+html.userside-dark #app [class~="text-black/35"] {
+  color: #64748b;
+}
+
+html.userside-dark #app [class~="text-black/75"],
+html.userside-dark #app [class~="text-black/80"] {
+  color: #e2e8f0;
+}
+
+html.userside-dark #app [class~="text-slate-900"] {
+  color: #f8fafc;
+}
+
+html.userside-dark #app [class~="text-slate-800"] {
+  color: #e2e8f0;
+}
+
+html.userside-dark #app [class~="text-slate-700"],
+html.userside-dark #app [class~="text-slate-600"] {
+  color: #cbd5e1;
+}
+
+html.userside-dark #app [class~="text-slate-500"],
+html.userside-dark #app [class~="text-slate-400"] {
+  color: #94a3b8;
+}
+
+html.userside-dark #app [class~="text-slate-300"] {
+  color: #cbd5e1;
+}
+
+html.userside-dark #app [class~="bg-slate-50"] {
+  background-color: #151f32;
+}
+
+html.userside-dark #app [class~="bg-slate-100"] {
+  background-color: #1b2a41;
+}
+
+html.userside-dark #app [class~="bg-slate-200"] {
+  background-color: #253550;
+}
+
+html.userside-dark #app [class~="bg-slate-950"] {
+  background-color: #050b17;
+}
+
+html.userside-dark #app [class~="border-slate-100"],
+html.userside-dark #app [class~="border-slate-200"],
+html.userside-dark #app [class~="border-slate-300"],
+html.userside-dark #app [class*="border-slate-200/"] {
+  border-color: #2f405a;
+}
+
+html.userside-dark #app [class~="divide-slate-100"],
+html.userside-dark #app [class~="divide-slate-200"] {
+  --tw-divide-color: #26364d;
+}
+
+html.userside-dark #app [class~="bg-blue-50"],
+html.userside-dark #app [class*="bg-blue-50/"] {
+  background-color: #172c47;
+}
+
+html.userside-dark #app [class~="bg-green-50"],
+html.userside-dark #app [class*="bg-green-50/"] {
+  background-color: #102b1f;
+}
+
+html.userside-dark #app [class~="bg-amber-50"],
+html.userside-dark #app [class*="bg-amber-50/"] {
+  background-color: #302613;
+}
+
+html.userside-dark #app [class~="bg-yellow-50"],
+html.userside-dark #app [class*="bg-yellow-50/"] {
+  background-color: #2a2514;
+}
+
+html.userside-dark #app [class~="text-blue-900"] {
+  color: #d5e0ff;
+}
+
+html.userside-dark #app [class~="text-blue-800"],
+html.userside-dark #app [class~="text-blue-700"] {
+  color: #a9c1ff;
+}
+
+html.userside-dark #app [class~="text-green-900"],
+html.userside-dark #app [class~="text-green-800"],
+html.userside-dark #app [class~="text-green-700"] {
+  color: #76d69b;
+}
+
+html.userside-dark #app [class~="text-amber-900"],
+html.userside-dark #app [class~="text-amber-800"],
+html.userside-dark #app [class~="text-amber-700"] {
+  color: #f5c66d;
+}
+
+html.userside-dark #app [class~="border-blue-100"],
+html.userside-dark #app [class~="border-blue-200"],
+html.userside-dark #app [class~="border-green-100"],
+html.userside-dark #app [class~="border-green-200"],
+html.userside-dark #app [class~="border-amber-100"],
+html.userside-dark #app [class~="border-amber-200"],
+html.userside-dark #app [class~="border-yellow-100"] {
+  border-color: #385070;
+}
+
+html.userside-dark #app [class~="hover:bg-slate-50"]:hover,
+html.userside-dark #app [class~="hover:bg-slate-100"]:hover {
+  background-color: #1f2d43;
+}
+
+html.userside-dark #app [class~="hover:text-slate-800"]:hover,
+html.userside-dark #app [class~="hover:text-black"]:hover,
+html.userside-dark #app [class~="hover:text-[#16233b]"]:hover {
+  color: #f8fafc;
+}
+
+html.userside-dark #app .userside-repair-shop-page,
+html.userside-dark #app .userside-product-show-page,
+html.userside-dark #app .userside-products-page,
+html.userside-dark #app .userside-repair-list-page,
+html.userside-dark #app .userside-shop-owner-registration-page {
+  background-color: #0b1220 !important;
+  color: #f8fafc;
+}
+
+html.userside-dark #app .userside-repair-shop-page [class~="bg-linear-to-br"],
+html.userside-dark #app .userside-product-show-page [class~="bg-linear-to-br"] {
+  background-image: linear-gradient(135deg, #111827 0%, #0f172a 100%) !important;
+}
+
+html.userside-dark #app .userside-repair-shop-page [class*="from-yellow-50"] {
+  background-image: linear-gradient(135deg, #2a2514 0%, #111827 100%) !important;
+  border-color: #4b4224 !important;
+}
+
+html.userside-dark #app .userside-repair-shop-page [class*="from-slate-50"],
+html.userside-dark #app .userside-product-show-page [class*="from-slate-50"] {
+  background-image: linear-gradient(90deg, #151f32 0%, #111827 50%, #151f32 100%) !important;
+}
+
+html.userside-dark #app .userside-repair-shop-page [class~="bg-white/80"],
+html.userside-dark #app .userside-repair-shop-page [class~="bg-blue-50/70"] {
+  background-color: #142238 !important;
+}
+
+html.userside-dark #app .userside-repair-shop-page [class~="bg-gray-50/70"] {
+  background-color: #151f32 !important;
+}
+
+html.userside-dark #app .userside-repair-shop-page [class~="text-gray-600"],
+html.userside-dark #app .userside-product-show-page [class~="text-gray-600"] {
+  color: #cbd5e1 !important;
+}
+
+html.userside-dark #app .userside-repair-shop-page [class~="text-gray-500"],
+html.userside-dark #app .userside-product-show-page [class~="text-gray-500"] {
+  color: #94a3b8 !important;
+}
+
+html.userside-dark #app .userside-repair-shop-page [class~="border-gray-100"],
+html.userside-dark #app .userside-product-show-page [class~="border-gray-100"] {
+  border-color: #2b3a52 !important;
+}
+
+html.userside-dark #app .userside-repair-shop-page [class~="bg-gray-200"] {
+  background-color: #253550 !important;
+}
+
+html.userside-dark #app .userside-repair-shop-page [class~="bg-green-100"] {
+  background-color: #163b2a !important;
+}
+
+html.userside-dark #app .userside-repair-shop-page [class~="bg-gray-100"] {
+  background-color: #1b2a41 !important;
+}
+
+html.userside-dark #app .userside-repair-shop-page [class~="text-gray-700"] {
+  color: #e2e8f0 !important;
+}
+
+html.userside-dark #app .userside-repair-shop-page [role="menu"] button > span > span:last-child,
+html.userside-dark #app .userside-products-page [role="menu"] button > span > span:last-child,
+html.userside-dark #app .userside-repair-list-page [role="menu"] button > span > span:last-child {
+  background-color: #b8cdff;
+}
+
+html.userside-dark #app .userside-shop-owner-registration-page {
+  background: radial-gradient(circle at top, #18243a 0%, #0b1220 54%, #080e19 100%) !important;
+}
+
+html.userside-dark #app .userside-shop-owner-registration-page [class~="bg-gradient-to-br"] {
+  background-image: none !important;
+}
+
+html.userside-dark #app .userside-shop-owner-registration-page [class~="text-gray-900"] {
+  color: #f8fafc !important;
+}
+
+html.userside-dark #app .userside-shop-owner-registration-page [class~="text-gray-700"],
+html.userside-dark #app .userside-shop-owner-registration-page [class~="text-gray-800"] {
+  color: #e2e8f0 !important;
+}
+
+html.userside-dark #app .userside-shop-owner-registration-page [class~="text-gray-500"] {
+  color: #a8b6ca !important;
+}
+
+/* The shop-owner theme is driven by the shared .dark class rather than the
+   customer userside-dark marker. Keep its premium and voucher pages scoped. */
+.dark #app .shopowner-premium-page,
+.dark #app .shopowner-vouchers-page {
+  color: #f8fafc;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) {
+  background-color: #0f172a !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="bg-white"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class*="bg-white/"] {
+  background-color: #111827 !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="bg-slate-50"] {
+  background-color: #151f32 !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="bg-slate-100"] {
+  background-color: #1b2a41 !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="bg-gray-50"] {
+  background-color: #151f32 !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="bg-gray-100"] {
+  background-color: #1b2a41 !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="bg-blue-50"] {
+  background-color: #172c47 !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="bg-amber-50"] {
+  background-color: #302613 !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="bg-red-50"] {
+  background-color: #2a1820 !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-black"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-slate-900"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-gray-900"] {
+  color: #f8fafc !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-slate-800"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-gray-800"] {
+  color: #e2e8f0 !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-slate-700"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-slate-600"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-gray-700"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-gray-600"] {
+  color: #cbd5e1 !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-slate-500"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-slate-400"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-black/55"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-black/60"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-black/65"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-black/70"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-black/75"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-black/80"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-black/40"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-black/45"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-gray-400"] {
+  color: #94a3b8 !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-blue-700"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-blue-600"] {
+  color: #a9c1ff !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-amber-700"] {
+  color: #f5c66d !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-red-700"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-red-600"] {
+  color: #ff9bb0 !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="border-gray-200"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="border-gray-300"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="border-slate-200"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="border-slate-300"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="border-gray-400"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="border-red-200"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class*="border-white/"] {
+  border-color: #2f405a !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="divide-slate-100"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="divide-slate-200"] {
+  --tw-divide-color: #26364d !important;
+}
+
+.dark #app .shopowner-vouchers-page > section:first-child {
+  background: radial-gradient(circle at top left, rgba(70, 116, 210, 0.2), transparent 34%), linear-gradient(135deg, #142238 0%, #111827 56%, #17203a 100%) !important;
+}
+
+.dark #app .shopowner-vouchers-page input,
+.dark #app .shopowner-vouchers-page select,
+.dark #app .shopowner-vouchers-page textarea,
+.dark #app .shopowner-premium-page input,
+.dark #app .shopowner-premium-page select,
+.dark #app .shopowner-premium-page textarea {
+  background-color: #111827 !important;
+  border-color: #3a4b64 !important;
+  color: #f8fafc !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) option {
+  background-color: #111827;
+  color: #f8fafc;
+}
+
+.dark #app .shopowner-premium-page [class~="text-[#0f1b33]"],
+.dark #app .shopowner-premium-page [class~="text-[#16233b]"],
+.dark #app .shopowner-premium-page [class~="text-[#16233b]/75"] {
+  color: #d5e0ff !important;
+}
+
+.dark #app .shopowner-premium-page [class~="bg-linear-to-r"] {
+  background-image: linear-gradient(135deg, #172c47 0%, #111827 100%) !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="hover:bg-slate-50"]:hover,
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="hover:bg-gray-50"]:hover {
+  background-color: #1f2d43 !important;
+}
+
+/* Services and article surfaces use the same restrained customer dark palette
+   without changing the light-mode layout or the ERP theme. */
+html.userside-dark #app .userside-services-page {
+  background-color: #0b1220 !important;
+  color: #f8fafc;
+}
+
+html.userside-dark #app .userside-services-page [class~="text-black/40"],
+html.userside-dark #app .userside-services-page [class~="text-black/45"],
+html.userside-dark #app .userside-services-page [class~="text-black/50"],
+html.userside-dark #app .userside-services-page [class~="text-black/65"] {
+  color: #cbd5e1 !important;
+}
+
+html.userside-dark #app .userside-services-page [class~="text-[#16233b]"] {
+  color: #d5e0ff !important;
+}
+
+html.userside-dark #app .userside-services-page [class~="bg-[#f4f5f8]"] {
+  background-color: #0b1220 !important;
+}
+
+html.userside-dark #app .userside-services-page [class~="bg-gray-50/60"] {
+  background-color: #111827 !important;
+}
+
+html.userside-dark #app .userside-services-page [class~="border-gray-200"],
+html.userside-dark #app .userside-services-page [class~="border-gray-300"],
+html.userside-dark #app .userside-services-page [class~="border-gray-400"] {
+  border-color: #2f405a !important;
+}
+
+html.userside-dark #app .userside-shoe-guide-page {
+  background-color: #0b1220 !important;
+  color: #f8fafc;
+}
+
+html.userside-dark #app .userside-shoe-guide-page [class~="text-black/45"],
+html.userside-dark #app .userside-shoe-guide-page [class~="text-black/60"],
+html.userside-dark #app .userside-shoe-guide-page [class~="text-black/65"],
+html.userside-dark #app .userside-shoe-guide-page [class~="text-black/75"],
+html.userside-dark #app .userside-shoe-guide-page [class~="text-black/80"] {
+  color: #e2e8f0 !important;
+}
+
+html.userside-dark #app .userside-shoe-guide-page [class~="text-emerald-900"],
+html.userside-dark #app .userside-shoe-guide-page [class~="text-emerald-800"] {
+  color: #9ae6b4 !important;
+}
+
+html.userside-dark #app .userside-shoe-guide-page [class~="bg-emerald-50"],
+html.userside-dark #app .userside-shoe-guide-page [class*="bg-emerald-50/"] {
+  background-color: #102b1f !important;
+}
+
+html.userside-dark #app .userside-shoe-guide-page [class*="border-emerald-200"] {
+  border-color: #2f624a !important;
+}
+
+html.userside-dark #app .userside-shoe-guide-page [class*="bg-gray-50/"] {
+  background-color: #111827 !important;
+}
+
+html.userside-dark #app .userside-shoe-guide-page [class~="bg-gray-300"] {
+  background-color: #334155 !important;
+}
+
+html.userside-dark #app .userside-shoe-guide-page [class~="bg-linear-to-br"] {
+  background-image: linear-gradient(135deg, #102b1f 0%, #111827 100%) !important;
+}
+
+html.userside-dark #app .userside-shoe-guide-page [class~="bg-linear-to-b"] {
+  background-image: linear-gradient(180deg, #111827 0%, #151f32 100%) !important;
+}
+
+html.userside-dark #app .userside-shoe-guide-page [class~="border-gray-200"],
+html.userside-dark #app .userside-shoe-guide-page [class~="border-gray-300"] {
+  border-color: #2f405a !important;
+}
+
+/* The premium shop-owner page has a few brand/arbitrary utilities that are
+   intentionally outside the shared gray token mappings above. */
+.dark #app .shopowner-premium-page [class~="text-black/35"],
+.dark #app .shopowner-premium-page [class~="text-black/50"] {
+  color: #94a3b8 !important;
+}
+
+.dark #app .shopowner-premium-page [class*="bg-[#16233b]/"] {
+  background-color: #172c47 !important;
+}
+
+.dark #app .shopowner-premium-page [class*="border-[#16233b]/"] {
+  border-color: #385070 !important;
+}
+
+.dark #app .shopowner-premium-page [class~="text-emerald-700"],
+.dark #app .shopowner-premium-page [class~="text-emerald-800"],
+.dark #app .shopowner-premium-page [class~="text-emerald-900"] {
+  color: #72d8a0 !important;
+}
+
+/* Keep the Repair Dashboard's updated card/table UI in dark mode. */
+.dark #app .repair-dashboard [class~="bg-white"] {
+  background-color: #111827 !important;
+}
+
+.dark #app .repair-dashboard [class~="bg-gray-50"] {
+  background-color: #0f172a !important;
+}
+
+.dark #app .repair-dashboard [class~="border-gray-200"],
+.dark #app .repair-dashboard [class~="border-gray-100"],
+.dark #app .repair-dashboard [class~="divide-gray-100"] {
+  border-color: #1f2937 !important;
+}
+
+.dark #app .repair-dashboard [class~="text-gray-900"] {
+  color: #f9fafb !important;
+}
+
+.dark #app .repair-dashboard [class~="text-gray-700"],
+.dark #app .repair-dashboard [class~="text-gray-600"] {
+  color: #d1d5db !important;
+}
+
+.dark #app .repair-dashboard [class~="text-gray-500"] {
+  color: #9ca3af !important;
+}
+
+.dark #app .repair-dashboard [class~="bg-blue-50"] {
+  background-color: rgb(30 58 138 / 0.3) !important;
+}
+
+.dark #app .repair-dashboard [class~="bg-green-50"] {
+  background-color: rgb(6 78 59 / 0.3) !important;
+}
+
+.dark #app .repair-dashboard [class~="text-blue-600"] {
+  color: #93c5fd !important;
+}
+
+.dark #app .repair-dashboard [class~="text-green-600"] {
+  color: #86efac !important;
+}
+
+/* Keep customer-side drawers readable when their light-mode arbitrary utilities
+   are rendered inside the userside dark theme. */
+html.userside-dark #app .userside-customer-drawer {
+  background-color: rgb(15 23 42 / 0.96) !important;
+  border-color: #334155 !important;
+  color: #f8fafc !important;
+}
+
+html.userside-dark #app .userside-customer-drawer [class~="text-[#555555]"],
+html.userside-dark #app .userside-customer-drawer [class~="text-[#777777]"],
+html.userside-dark #app .userside-customer-drawer [class~="text-[#707072]"],
+html.userside-dark #app .userside-customer-drawer [class~="text-[#999999]"] {
+  color: #94a3b8 !important;
+}
+
+html.userside-dark #app .userside-customer-drawer [class~="border-[#dedede]"],
+html.userside-dark #app .userside-customer-drawer [class~="border-[#ededed]"],
+html.userside-dark #app .userside-customer-drawer [class~="border-[#e5e5e5]"],
+html.userside-dark #app .userside-customer-drawer [class~="border-[#cacacb]"] {
+  border-color: #334155 !important;
+}
+
+html.userside-dark #app .userside-customer-drawer [class~="bg-[#f3f3f3]"],
+html.userside-dark #app .userside-customer-drawer [class~="bg-[#f5f5f5]"] {
+  background-color: #1f2937 !important;
+}
+
+html.userside-dark #app .userside-customer-drawer [class~="bg-[#111111]"] {
+  background-color: #f8fafc !important;
+  color: #0b1220 !important;
+}
+
+/* Checkout contains a few light-only gradients and arbitrary text utilities
+   that are intentionally kept local to the customer checkout surface. */
+html.userside-dark #app .userside-checkout-page {
+  background-color: #0b1220 !important;
+  color: #f8fafc;
+}
+
+html.userside-dark #app .userside-checkout-page [class~="bg-white"] {
+  background-color: #111827 !important;
+}
+
+html.userside-dark #app .userside-checkout-page [class~="bg-gray-50"],
+html.userside-dark #app .userside-checkout-page [class*="bg-gray-50/"] {
+  background-color: #151f32 !important;
+}
+
+html.userside-dark #app .userside-checkout-page [class~="bg-linear-to-b"][class~="from-white"][class~="to-slate-50"] {
+  background-image: linear-gradient(180deg, #111827 0%, #0f172a 100%) !important;
+}
+
+html.userside-dark #app .userside-checkout-page [class~="bg-linear-to-br"][class~="from-slate-100"][class~="to-slate-200"] {
+  background-image: linear-gradient(135deg, #1b2a41 0%, #253550 100%) !important;
+}
+
+html.userside-dark #app .userside-checkout-page [class~="text-black"] {
+  color: #f8fafc !important;
+}
+
+html.userside-dark #app .userside-checkout-page [class~="text-gray-600"] {
+  color: #cbd5e1 !important;
+}
+
+html.userside-dark #app .userside-checkout-page [class~="text-gray-500"] {
+  color: #94a3b8 !important;
+}
+
+html.userside-dark #app .userside-checkout-page [class~="border-gray-100"],
+html.userside-dark #app .userside-checkout-page [class~="border-gray-200"],
+html.userside-dark #app .userside-checkout-page [class~="border-gray-300"],
+html.userside-dark #app .userside-checkout-page [class~="border-slate-200"] {
+  border-color: #2f405a !important;
+}
+
+/* Preserve a clear selected state for repair packages after the shared
+   dark-mode mappings neutralize their light-mode black/white utilities. */
+html.userside-dark #app .userside-repair-shop-page .repair-package-card--selected {
+  background-color: #1b2f50 !important;
+  border-color: #7da2ff !important;
+  box-shadow: 0 12px 28px -24px rgba(125, 162, 255, 0.9);
+}
+
+html.userside-dark #app .userside-repair-shop-page .repair-package-selection-indicator--selected {
+  background-color: #b8cdff !important;
+  border-color: #b8cdff !important;
 }

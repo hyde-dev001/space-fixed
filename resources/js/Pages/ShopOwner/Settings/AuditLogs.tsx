@@ -12,9 +12,12 @@ interface ActivityLog {
   subject_type: string | null;
   subject_id: number | null;
   subject_label?: string;
+  subject_type_label?: string;
   causer_type: string | null;
   causer_id: number | null;
   event: string;
+  event_label?: string;
+  display_description?: string;
   properties: Record<string, any>;
   changes: Record<string, { old: any; new: any; label?: string }>;
   created_at: string;
@@ -177,7 +180,7 @@ const MetricCard: React.FC<MetricData> = ({
 export default function ShopOwnerAuditLogs() {
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
-  const { escapeHtml, formatSubjectType, formatValue, parseUserAgent, formatDetailedDescription } = useActivityLogFormatters();
+  const { escapeHtml, formatSubjectType, formatValue, parseUserAgent, formatDetailedDescription, formatActivityLabel, humanizeFieldName } = useActivityLogFormatters();
   const { props } = usePage<any>();
   const shopOwner = props.auth?.shop_owner;
   const canManageStaff: boolean = shopOwner?.can_manage_staff ?? false;
@@ -238,7 +241,7 @@ export default function ShopOwnerAuditLogs() {
       log.changes && typeof log.changes === 'object' ? log.changes : {};
     
     // Build formatted description
-    const formattedDescription = formatDetailedDescription(log);
+    const formattedDescription = log.display_description || formatDetailedDescription(log);
     
     // Build diff view HTML
     let diffHtml = '';
@@ -275,7 +278,12 @@ export default function ShopOwnerAuditLogs() {
       if (Object.keys(attributes).length > 0) {
         diffHtml = '<div class="mt-4"><h3 class="font-semibold text-lg mb-3">Created With:</h3><div class="bg-green-50 p-3 rounded-lg"><div class="space-y-1">';
         for (const [key, value] of Object.entries(attributes)) {
-          diffHtml += `<div class="text-sm"><span class="text-green-700 font-semibold">${escapeHtml(key.replace(/_/g, ' '))}:</span> ${escapeHtml(formatValue(value, key))}</div>`;
+          const normalizedKey = key.trim().toLowerCase();
+          if (normalizedKey === 'id' || normalizedKey.endsWith('_id') || normalizedKey.endsWith('_uuid')) {
+            continue;
+          }
+
+          diffHtml += `<div class="text-sm"><span class="text-green-700 font-semibold">${escapeHtml(humanizeFieldName(key))}:</span> ${escapeHtml(formatValue(value, key))}</div>`;
         }
         diffHtml += '</div></div></div>';
       }
@@ -306,7 +314,7 @@ export default function ShopOwnerAuditLogs() {
         <div class="text-left">
           ${causerHtml}
           <p class="mb-2 text-sm"><strong>Date:</strong> ${escapeHtml(new Date(log.created_at).toLocaleString())}</p>
-          <p class="mb-4 text-sm"><strong>Subject Type:</strong> ${escapeHtml(formatSubjectType(log.subject_type))}</p>
+          <p class="mb-4 text-sm"><strong>Record:</strong> ${escapeHtml(log.subject_type_label || formatSubjectType(log.subject_type, log.subject_type_label))}</p>
           ${diffHtml}
           ${metadataHtml}
         </div>
@@ -433,7 +441,7 @@ export default function ShopOwnerAuditLogs() {
               </div>
 
               <div>
-                <label htmlFor="shop-audit-event-filter" className="block text-sm font-medium text-gray-700 mb-1">Event</label>
+                <label htmlFor="shop-audit-event-filter" className="block text-sm font-medium text-gray-700 mb-1">Activity</label>
                 <select
                   id="shop-audit-event-filter"
                   value={String(filters.event || "")}
@@ -442,7 +450,7 @@ export default function ShopOwnerAuditLogs() {
                   title="Filter by event type"
                   aria-label="Filter by event type"
                 >
-                  <option value="">All Events</option>
+                  <option value="">All activities</option>
                   <option value="created">Created</option>
                   <option value="updated">Updated</option>
                   <option value="deleted">Deleted</option>
@@ -450,7 +458,7 @@ export default function ShopOwnerAuditLogs() {
               </div>
 
               <div>
-                <label htmlFor="shop-audit-subject-filter" className="block text-sm font-medium text-gray-700 mb-1">Activity Type</label>
+                <label htmlFor="shop-audit-subject-filter" className="block text-sm font-medium text-gray-700 mb-1">Record type</label>
                 <select
                   id="shop-audit-subject-filter"
                   value={String(filters.subject_type || "")}
@@ -459,7 +467,7 @@ export default function ShopOwnerAuditLogs() {
                   title="Filter by activity type"
                   aria-label="Filter by activity type"
                 >
-                  <option value="">All Types</option>
+                  <option value="">All record types</option>
                   <option value="Product">Products</option>
                   <option value="Expense">Expenses</option>
                   <option value="Order">Orders</option>
@@ -527,11 +535,11 @@ export default function ShopOwnerAuditLogs() {
                         <tr key={log.id} className="hover:bg-gray-50 transition">
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getEventBadgeColor(eventLabel)}`}>
-                              {eventLabel}
+                               {log.event_label || formatActivityLabel(eventLabel)}
                             </span>
                           </td>
                           <td className="px-6 py-4">
-                            <p className="text-sm text-gray-900 font-medium">{formattedDesc}</p>
+                             <p className="text-sm text-gray-900 font-medium">{log.display_description || formattedDesc}</p>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             {log.causer ? (
@@ -544,7 +552,7 @@ export default function ShopOwnerAuditLogs() {
                             )}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <p className="text-sm text-gray-900">{formatSubjectType(log.subject_type)}</p>
+                             <p className="text-sm text-gray-900">{log.subject_type_label || formatSubjectType(log.subject_type)}</p>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <p className="text-sm text-gray-900">{new Date(log.created_at).toLocaleDateString()}</p>

@@ -143,15 +143,15 @@ export default function ShopOwnerTwoFactor() {
     <>
       <Head title="Shop Owner Two-Factor Verification" />
 
-      <div className="min-h-screen bg-white font-outfit antialiased">
+      <div className="userside-auth-page min-h-screen bg-white font-outfit antialiased">
         <Navigation />
 
         <div className="max-w-480 mx-auto px-6 lg:px-12 py-24">
           <div className="text-center mb-12">
-            <h1 className="text-4xl lg:text-6xl font-bold text-gray-900 mb-6 tracking-tight">
+            <h1 className="userside-auth-title text-4xl lg:text-6xl font-bold text-gray-900 mb-6 tracking-tight">
               VERIFY LOGIN
             </h1>
-            <p className="text-xl text-gray-600 max-w-2xl mx-auto leading-relaxed font-light">
+            <p className="userside-auth-subtitle text-xl text-gray-600 max-w-2xl mx-auto leading-relaxed font-light">
               Enter the 6-digit code sent to {emailLabel}.
             </p>
             {props.status === 'otp-sent' && (
@@ -163,7 +163,7 @@ export default function ShopOwnerTwoFactor() {
           </div>
 
           <div className="max-w-lg mx-auto">
-            <div className="bg-white rounded-2xl shadow-xl p-8">
+            <div className="userside-auth-card bg-white rounded-2xl shadow-xl p-8">
               <Form onSubmit={handleSubmit} className="space-y-6">
                 <div>
                   <label htmlFor="shop-owner-otp-0" className="block text-sm font-medium text-gray-900 mb-3">
@@ -211,7 +211,7 @@ export default function ShopOwnerTwoFactor() {
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="w-full px-10 py-4 bg-black text-white font-semibold uppercase tracking-wider text-sm hover:bg-black/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="userside-auth-primary w-full px-10 py-4 bg-black text-white font-semibold uppercase tracking-wider text-sm hover:bg-black/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isLoading ? 'Verifying code...' : 'Verify code'}
                 </button>
@@ -219,7 +219,7 @@ export default function ShopOwnerTwoFactor() {
 
               <div className="mt-6 text-center">
                 <Link
-                  href="/shop-owner/login"
+                  href="/login"
                   className="text-black hover:text-black/80 font-semibold uppercase tracking-wider text-sm transition-colors"
                 >
                   Back to sign in

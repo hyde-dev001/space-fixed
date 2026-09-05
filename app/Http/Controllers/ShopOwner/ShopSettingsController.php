@@ -5,9 +5,15 @@ namespace App\Http\Controllers\ShopOwner;
 use App\Http\Controllers\Controller;
 use App\Models\HR\BranchPayrollSetting;
 use App\Models\ProcurementSettings;
-use App\Models\ShopPolicyVersion;
+use App\Models\ShopDocument;
+use App\Models\ShopOwner;
 use App\Models\ShopOwnerSubscription;
+use App\Models\ShopOwnerUpgradeRequest;
+use App\Models\ShopPolicyVersion;
 use App\Services\CaviteLocationPolicyService;
+use App\Services\ShopModuleAccessService;
+use App\Services\ShopOwnerDocumentRequirementService;
+use App\Services\ShopDocumentValidityService;
 use App\Services\ShopPolicyTemplateService;
 use App\Services\ShopPolicyVersionService;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -23,16 +29,38 @@ use Inertia\Response;
 
 class ShopSettingsController extends Controller
 {
+    private const APPROVAL_PAGE_KEYS = [
+        'refund_approval',
+        'price_approval',
+        'payslip_approval',
+        'salary_adjustment_approval',
+        'purchase_request_approval',
+        'expense_approval',
+        'repair_reject_approval',
+    ];
+
+    private const INITIAL_SECTION_KEYS = [
+        'profile',
+        'modules-team',
+        'payments-approvals',
+        'operations',
+        'policies-compliance',
+        'subscription',
+    ];
+
+    public function __construct(
+        private readonly ShopOwnerDocumentRequirementService $documentRequirements,
+        private readonly ShopDocumentValidityService $documentValidity,
+        private readonly ShopModuleAccessService $shopModuleAccess,
+    ) {}
+
     /**
      * Display the shop settings page for the authenticated shop owner.
      */
-    public function index(): Response
+    public function index(Request $request): Response
     {
         $shopOwner = Auth::guard('shop_owner')->user();
-        $rawRepairPaymentPolicy = (string) ($shopOwner->repair_payment_policy ?? 'deposit_50');
-        $normalizedRepairPaymentPolicy = $rawRepairPaymentPolicy === 'deposit_50'
-            ? 'deposit_50'
-            : 'full_upfront';
+        $normalizedRepairPaymentPolicy = 'full_upfront';
         $shopOwner->load('documents');
         $entitledPremiumSubscription = ShopOwnerSubscription::with('premiumPlan')
             ->where('shop_owner_id', $shopOwner->id)
@@ -51,7 +79,7 @@ class ShopSettingsController extends Controller
             && (!$latestPremiumSubscription->starts_at || $latestPremiumSubscription->starts_at->lte(now()))
             && (!$latestPremiumSubscription->ends_at || $latestPremiumSubscription->ends_at->gte(now())));
         $procurementSettings = ProcurementSettings::getForShopOwner($shopOwner->id);
-        $approvalPages = $this->normalizeApprovalPages($procurementSettings->settings_json['approval_pages'] ?? []);
+        $approvalPages = $this->normalizeApprovalPagesForRead($procurementSettings->settings_json['approval_pages'] ?? []);
         $branchPayrollSetting = null;
         if (Schema::hasTable('hr_branch_payroll_settings')) {
             $branchPayrollSetting = BranchPayrollSetting::query()
@@ -63,46 +91,9 @@ class ShopSettingsController extends Controller
         $businessType = $this->normalizeBusinessType((string) $shopOwner->business_type);
         $isRetailCapable = in_array($businessType, ['retail', 'both'], true);
 
-        $requiredDocumentTypes = [
-            'dti_registration' => [
-                'title' => 'Business Registration (DTI)',
-                'description' => 'Official DTI or SEC registration certificate for your business.',
-            ],
-            'mayors_permit' => [
-                'title' => "Mayor's Permit / Business Permit",
-                'description' => 'Current local business permit issued by your city or municipality.',
-            ],
-            'bir_certificate' => [
-                'title' => 'BIR Certificate of Registration (COR)',
-                'description' => 'BIR-issued certificate proving your business is tax-registered.',
-            ],
-            'valid_id' => [
-                'title' => 'Valid ID of Owner',
-                'description' => 'Government-issued valid ID of the registered owner.',
-            ],
-        ];
-
-        $requiredDocuments = [];
-        $documentsByType = $shopOwner->documents
-            ->sortByDesc('created_at')
-            ->groupBy(fn ($document) => $this->normalizeShopDocumentType((string) $document->document_type));
-
-        foreach ($requiredDocumentTypes as $type => $meta) {
-            $document = $documentsByType->get($type)?->first();
-            $filePath = $document?->file_path;
-            $extension = $filePath ? strtolower(pathinfo($filePath, PATHINFO_EXTENSION)) : '';
-            $isImage = in_array($extension, ['jpg', 'jpeg', 'png', 'gif', 'webp']);
-
-            $requiredDocuments[] = [
-                'key' => $type,
-                'title' => $meta['title'],
-                'description' => $meta['description'],
-                'status' => $document?->status ?? 'missing',
-                'is_uploaded' => (bool) $document,
-                'is_image' => $isImage,
-                'file_url' => $filePath ? asset('storage/' . ltrim($filePath, '/')) : null,
-            ];
-        }
+        $requiredDocuments = $this->documentRequirements->settingsPayload($shopOwner->documents);
+        $documentCompliance = $this->documentCompliancePayload($shopOwner);
+        $businessScaling = $this->businessScalingPayload($shopOwner, $businessType);
 
         return Inertia::render('ShopOwner/Settings/shopSetting', [
             'shop_settings' => [
@@ -113,6 +104,8 @@ class ShopSettingsController extends Controller
                 'business_name'          => $shopOwner->business_name,
                 'approval_pages'         => $approvalPages,
                 'required_documents'     => $requiredDocuments,
+                'document_compliance'    => $documentCompliance,
+                'business_scaling'       => $businessScaling,
                 'repair_payment_policy'  => $normalizedRepairPaymentPolicy,
                 'repair_workload_limit'  => (int) ($shopOwner->repair_workload_limit ?? 20),
                 'order_refund_deadline_days' => (int) ($shopOwner->order_refund_deadline_days ?? 7),
@@ -140,32 +133,322 @@ class ShopSettingsController extends Controller
                     'ends_at' => $latestPremiumSubscription?->ends_at?->toIso8601String(),
                 ],
             ],
+            'initialSection' => $this->initialSection($request),
         ]);
     }
 
-    /**
-     * Normalize shop document type values across legacy and current formats.
-     */
-    private function normalizeShopDocumentType(string $type): string
+    private function initialSection(Request $request): string
     {
-        $normalized = strtolower(trim($type));
+        $section = $request->route('initial_section');
 
-        $aliases = [
-            'dti_registration' => 'dti_registration',
-            'dti registration' => 'dti_registration',
-            'business registration (dti/sec)' => 'dti_registration',
-            'mayors_permit' => 'mayors_permit',
-            "mayor's permit" => 'mayors_permit',
-            "mayor's permit / business permit" => 'mayors_permit',
-            'bir_certificate' => 'bir_certificate',
-            'bir certificate' => 'bir_certificate',
-            'bir certificate of registration (cor)' => 'bir_certificate',
-            'valid_id' => 'valid_id',
-            'valid id' => 'valid_id',
-            'valid id of owner' => 'valid_id',
+        return is_string($section) && in_array($section, self::INITIAL_SECTION_KEYS, true)
+            ? $section
+            : 'profile';
+    }
+
+    /**
+     * Return the owner-facing lifecycle view without exposing storage details.
+     * The legacy business-registration fallback remains visibly ambiguous.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function documentCompliancePayload(ShopOwner $shopOwner): array
+    {
+        $rows = $shopOwner->documents->sortByDesc('id')->values();
+        $slots = [
+            'business_registration' => 'Business Registration (DTI or SEC)',
+            'mayors_permit' => "Mayor's Permit / Business Permit",
+            'bir_certificate' => 'BIR Certificate of Registration',
+            'valid_id' => 'Valid ID of Owner',
         ];
 
-        return $aliases[$normalized] ?? str_replace('-', '_', $normalized);
+        foreach ($rows as $document) {
+            $slot = trim((string) $document->logical_slot);
+            $type = $this->documentRequirements->normalizeType((string) $document->document_type);
+
+            if ($slot === '' && $this->documentRequirements->isLegacyBusinessDocument($document)) {
+                $slot = 'business_registration';
+            }
+
+            if ($slot !== '' && str_starts_with($slot, 'supporting_document:')) {
+                $slots[$slot] ??= 'Supporting Document';
+            }
+        }
+
+        $payload = [];
+        foreach ($slots as $slot => $title) {
+            $slotRows = $rows->filter(function ($document) use ($slot): bool {
+                $documentSlot = trim((string) $document->logical_slot);
+                if ($documentSlot === $slot) {
+                    return true;
+                }
+
+                return $slot === 'business_registration'
+                    && $documentSlot === ''
+                    && in_array($this->documentRequirements->normalizeType((string) $document->document_type), ['dti_registration', 'sec_registration'], true);
+            })->sortByDesc('id')->values();
+            $current = $slotRows->first(function ($document): bool {
+                return (string) $document->status === 'approved' && (bool) $document->is_current;
+            });
+            $legacyCurrent = $current === null && $slot === 'business_registration'
+                ? $slotRows->first(fn ($document): bool => (string) $document->status === 'approved'
+                    && $this->documentRequirements->hasPrivateStoredFile($document)
+                    && $this->isUnreconciledLegacyDocument($document))
+                : null;
+            $current ??= $legacyCurrent;
+            $pending = $slotRows->first(function ($document): bool {
+                return (string) $document->status === 'pending' && ! (bool) $document->is_current;
+            });
+
+            $payload[] = [
+                'logical_slot' => $slot,
+                'title' => $title,
+                'current' => $current ? $this->serializeComplianceDocument(
+                    $current,
+                    $shopOwner,
+                    $legacyCurrent !== null || $this->documentRequirements->isLegacyBusinessDocument($current),
+                ) : null,
+                'pending' => $pending ? $this->serializeComplianceDocument($pending, $shopOwner, false) : null,
+                'history' => $slotRows->map(fn ($document): array => $this->serializeComplianceDocument(
+                    $document,
+                    $shopOwner,
+                    ($legacyCurrent !== null && $document->getKey() === $legacyCurrent->getKey())
+                        || $this->documentRequirements->isLegacyBusinessDocument($document),
+                ))->values()->all(),
+            ];
+        }
+
+        return $payload;
+    }
+
+    /** @return array<string, mixed> */
+    private function serializeComplianceDocument(ShopDocument $document, ShopOwner $shopOwner, bool $legacy): array
+    {
+        $logicalSlot = trim((string) $document->logical_slot);
+        $documentType = str_starts_with($logicalSlot, 'supporting_document:')
+            ? 'supporting_document'
+            : (string) $document->document_type;
+
+        return [
+            'id' => (int) $document->getKey(),
+            'document_type' => $documentType,
+            'logical_slot' => $logicalSlot !== ''
+                ? $logicalSlot
+                : 'business_registration',
+            'version_number' => $document->version_number !== null ? (int) $document->version_number : null,
+            'status' => (string) $document->status,
+            'issued_on' => $document->issued_on?->toDateString(),
+            'expiration_mode' => $document->expiration_mode,
+            'expires_on' => $document->expires_on?->toDateString(),
+            'validity' => $this->documentValidity->classify($document),
+            'legacy_label' => $legacy ? 'Legacy DTI/SEC — classification pending' : null,
+            'url' => route('shop-owner.documents.show', [
+                'shopOwner' => $shopOwner->getKey(),
+                'document' => $document->getKey(),
+            ]),
+        ];
+    }
+
+    /**
+     * Build the owner-facing business scaling payload without exposing private
+     * evidence storage details or full upgrade request records.
+     *
+     * @return array<string, mixed>
+     */
+    private function businessScalingPayload(ShopOwner $shopOwner, string $businessType): array
+    {
+        $registrationType = strtolower(trim((string) $shopOwner->registration_type));
+        $businessType = $this->normalizeBusinessType($businessType);
+        $accountTransitions = [];
+        $capabilityTransitions = [];
+        $combinedTransitions = [];
+
+        if ($registrationType === 'individual') {
+            $accountTransitions[] = [
+                'key' => 'individual_to_company',
+                'label' => 'Business account',
+                'requested_registration_type' => 'company',
+                'requested_business_type' => $businessType,
+            ];
+        }
+
+        if (in_array($businessType, ['retail', 'repair'], true)) {
+            $capabilityTransitions[] = [
+                'key' => $businessType.'_to_both',
+                'label' => $businessType === 'retail' ? 'Retail + Repair' : 'Repair + Retail',
+                'requested_registration_type' => $registrationType,
+                'requested_business_type' => 'both',
+            ];
+
+            if ($registrationType === 'individual') {
+                $combinedTransitions[] = [
+                    'key' => 'individual_'.$businessType.'_to_company_both',
+                    'label' => 'Business account + both capabilities',
+                    'requested_registration_type' => 'company',
+                    'requested_business_type' => 'both',
+                ];
+            }
+        }
+
+        $pendingRequest = null;
+        $latestTerminalRequest = null;
+        if (Schema::hasTable('shop_owner_upgrade_requests')) {
+            $pendingRequest = $shopOwner->upgradeRequests()
+                ->with('documents')
+                ->where('status', ShopOwnerUpgradeRequest::STATUS_PENDING)
+                ->latest('id')
+                ->first();
+            $latestTerminalRequest = $shopOwner->upgradeRequests()
+                ->with('documents')
+                ->whereIn('status', [
+                    ShopOwnerUpgradeRequest::STATUS_APPROVED,
+                    ShopOwnerUpgradeRequest::STATUS_REJECTED,
+                    ShopOwnerUpgradeRequest::STATUS_SUPERSEDED,
+                ])
+                ->latest('id')
+                ->first();
+        }
+
+        $requiredEvidence = [];
+        foreach ($this->documentRequirements->requirementSnapshot() as $key => $definition) {
+            $document = $this->selectUpgradeEvidenceDocument($shopOwner, $key);
+            $requiredEvidence[] = [
+                'key' => $key,
+                'title' => $definition['title'],
+                'description' => $definition['description'],
+                'required' => true,
+                'existing_document_id' => $document?->status === 'approved' ? (int) $document->id : null,
+                'existing_status' => $document?->status,
+                'legacy_label' => $document && $this->documentRequirements->isLegacyBusinessDocument($document)
+                    ? 'Legacy DTI/SEC — classification pending'
+                    : null,
+            ];
+        }
+
+        $moduleCatalog = [];
+        foreach (config('shop_modules.modules', []) as $moduleKey => $module) {
+            $moduleCatalog[] = [
+                'key' => (string) $moduleKey,
+                'label' => (string) ($module['label'] ?? $moduleKey),
+                'registration_types' => array_values($module['registration_types'] ?? []),
+                'business_types' => array_values($module['business_types'] ?? []),
+            ];
+        }
+
+        $modules = Schema::hasTable('shop_owner_modules')
+            ? $this->shopModuleAccess->statesFor($shopOwner)
+            : $this->fallbackModuleStates($shopOwner, $registrationType, $businessType);
+
+        return [
+            'current' => [
+                'registration_type' => $registrationType,
+                'business_type' => $businessType,
+            ],
+            'available_account_transitions' => $accountTransitions,
+            'available_capability_transitions' => $capabilityTransitions,
+            'available_combined_transitions' => $combinedTransitions,
+            'pending_request' => $this->serializeUpgradeRequest($pendingRequest),
+            'latest_terminal_request' => $this->serializeUpgradeRequest($latestTerminalRequest),
+            'required_evidence' => $requiredEvidence,
+            'module_catalog' => $moduleCatalog,
+            'modules' => $modules,
+        ];
+    }
+
+    private function selectUpgradeEvidenceDocument(ShopOwner $shopOwner, string $documentType): ?ShopDocument
+    {
+        $candidates = $shopOwner->documents
+            ->filter(function (ShopDocument $document) use ($documentType): bool {
+                if ((string) $document->status !== 'approved'
+                    || ! $this->documentRequirements->hasPrivateStoredFile($document)) {
+                    return false;
+                }
+
+                if ($documentType === 'dti_registration' && $this->documentRequirements->isLegacyBusinessDocument($document)) {
+                    return true;
+                }
+
+                return (bool) $document->is_current
+                    && (string) $document->logical_slot === $documentType
+                    && $this->documentRequirements->normalizeType((string) $document->document_type) === $documentType;
+            })
+            ->sortByDesc(fn (ShopDocument $document): array => [
+                $document->created_at?->getTimestamp() ?? 0,
+                (int) $document->getKey(),
+            ]);
+
+        if ($documentType !== 'dti_registration') {
+            return $candidates->first();
+        }
+
+        $current = $candidates->first(fn (ShopDocument $document): bool => (bool) $document->is_current);
+        if ($current) {
+            return $current;
+        }
+
+        return $shopOwner->status?->value === 'approved' ? $candidates->first() : null;
+    }
+
+    private function isUnreconciledLegacyDocument(ShopDocument $document): bool
+    {
+        return $this->documentRequirements->isLegacyBusinessDocument($document)
+            && $document->logical_slot === null
+            && $document->version_number === null
+            && $document->expiration_mode === null
+            && $document->is_current === null;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function serializeUpgradeRequest(?ShopOwnerUpgradeRequest $request): ?array
+    {
+        if (! $request) {
+            return null;
+        }
+
+        return [
+            'id' => (int) $request->id,
+            'status' => (string) $request->status,
+            'current_registration_type' => (string) $request->current_registration_type,
+            'current_business_type' => (string) $request->current_business_type,
+            'requested_registration_type' => (string) $request->requested_registration_type,
+            'requested_business_type' => (string) $request->requested_business_type,
+            'decision_reason' => $request->decision_reason,
+            'submitted_at' => $request->created_at?->toIso8601String(),
+            'reviewed_at' => $request->reviewed_at?->toIso8601String(),
+            'documents' => $request->documents->map(static fn ($document): array => [
+                'document_type' => (string) $document->document_type,
+                'status' => (string) ($document->source_status ?? ''),
+                'source_status' => (string) ($document->source_status ?? ''),
+            ])->values()->all(),
+        ];
+    }
+
+    /**
+     * Keep the settings page renderable during a deployment where the module
+     * tables have not yet been migrated. Access remains fail-closed.
+     *
+     * @return array<string, array<string, bool|string|null>>
+     */
+    private function fallbackModuleStates(ShopOwner $shopOwner, string $registrationType, string $businessType): array
+    {
+        $status = strtolower(trim((string) $shopOwner->status));
+        $states = [];
+        foreach (config('shop_modules.modules', []) as $moduleKey => $module) {
+            $eligible = $status === 'approved'
+                && in_array($registrationType, $module['registration_types'] ?? [], true)
+                && in_array($businessType, $module['business_types'] ?? [], true);
+            $states[$moduleKey] = [
+                'eligible' => $eligible,
+                'enabled' => false,
+                'accessible' => false,
+                'code' => 'MODULE_STATE_MISSING',
+                'reason' => 'This module has not been initialized for the shop.',
+            ];
+        }
+
+        return $states;
     }
 
     private function normalizeBusinessType(?string $value): string
@@ -223,6 +506,7 @@ class ShopSettingsController extends Controller
         }
 
         $encoded = json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
         return $encoded === false ? '' : $encoded;
     }
 
@@ -239,11 +523,14 @@ class ShopSettingsController extends Controller
             'approval_pages.refund_approval.enabled' => ['required_with:approval_pages', 'boolean'],
             'approval_pages.refund_approval.limit' => ['nullable', 'numeric', 'min:0', 'max:9999999.99'],
             'approval_pages.price_approval.enabled' => ['required_with:approval_pages', 'boolean'],
+            'approval_pages.payslip_approval.enabled' => ['required_with:approval_pages', 'boolean'],
+            'approval_pages.salary_adjustment_approval.enabled' => ['required_with:approval_pages', 'boolean'],
             'approval_pages.purchase_request_approval.enabled' => ['required_with:approval_pages', 'boolean'],
             'approval_pages.purchase_request_approval.limit' => ['nullable', 'numeric', 'min:0', 'max:9999999.99'],
+            'approval_pages.expense_approval.enabled' => ['required_with:approval_pages', 'boolean'],
             'approval_pages.repair_reject_approval.enabled' => ['required_with:approval_pages', 'boolean'],
             'approval_pages.repair_reject_approval.limit' => ['nullable', 'numeric', 'min:0', 'max:9999999.99'],
-            'repair_payment_policy' => ['sometimes', 'string', 'in:deposit_50,full_upfront'],
+            'repair_payment_policy' => ['sometimes', 'string', 'in:full_upfront'],
             'repair_workload_limit' => ['sometimes', 'integer', 'min:1', 'max:500'],
             'order_refund_deadline_days' => ['sometimes', 'integer', 'min:1', 'max:30'],
             'two_factor_email_enabled' => ['sometimes', 'boolean'],
@@ -253,10 +540,11 @@ class ShopSettingsController extends Controller
         ]);
 
         if (array_key_exists('approval_pages', $validated)) {
-            $normalizedApprovalPages = $this->normalizeApprovalPages($validated['approval_pages']);
-
             $settingsJson = $procurementSettings->settings_json ?? [];
-            $settingsJson['approval_pages'] = $normalizedApprovalPages;
+            $settingsJson['approval_pages'] = $this->mergeApprovalPagesForStorage(
+                $validated['approval_pages'],
+                is_array($settingsJson['approval_pages'] ?? null) ? $settingsJson['approval_pages'] : [],
+            );
 
             $procurementSettings->update([
                 'settings_json' => $settingsJson,
@@ -264,10 +552,7 @@ class ShopSettingsController extends Controller
         }
 
         // Save payment policy and workload limit directly on the shop owner record
-        $shopOwnerUpdates = [];
-        if (isset($validated['repair_payment_policy'])) {
-            $shopOwnerUpdates['repair_payment_policy'] = $validated['repair_payment_policy'];
-        }
+        $shopOwnerUpdates = ['repair_payment_policy' => 'full_upfront'];
         if (isset($validated['repair_workload_limit'])) {
             $shopOwnerUpdates['repair_workload_limit'] = $validated['repair_workload_limit'];
         }
@@ -576,35 +861,40 @@ class ShopSettingsController extends Controller
     }
 
     /**
-     * Build a complete approval-page settings payload with defaults.
+     * Expose only the active binary controls. Legacy limits stay in storage.
+     *
+     * @return array<string, array{enabled: bool}>
      */
-    private function normalizeApprovalPages(array $input): array
+    private function normalizeApprovalPagesForRead(array $input): array
     {
-        $defaults = [
-            'refund_approval' => ['enabled' => false, 'limit' => null],
-            'price_approval' => ['enabled' => false, 'limit' => null],
-            'purchase_request_approval' => ['enabled' => false, 'limit' => null],
-            'repair_reject_approval' => ['enabled' => false, 'limit' => null],
-        ];
-
         $normalized = [];
-
-        foreach ($defaults as $key => $defaultValues) {
+        foreach (self::APPROVAL_PAGE_KEYS as $key) {
             $record = is_array($input[$key] ?? null) ? $input[$key] : [];
-            $enabled = (bool) ($record['enabled'] ?? $defaultValues['enabled']);
-            $limitValue = $record['limit'] ?? $defaultValues['limit'];
-
-            // Price approval is toggle-only; threshold is not used.
-            if ($key === 'price_approval') {
-                $limitValue = null;
-            }
-
             $normalized[$key] = [
-                'enabled' => $enabled,
-                'limit' => $enabled && $limitValue !== null && $limitValue !== '' ? (float) $limitValue : null,
+                'enabled' => is_bool($record['enabled'] ?? null) ? $record['enabled'] : true,
             ];
         }
 
         return $normalized;
+    }
+
+    /**
+     * Merge only the seven validated booleans into existing settings.
+     * Unknown JSON and legacy limits remain intact for compatibility.
+     *
+     * @return array<string, mixed>
+     */
+    private function mergeApprovalPagesForStorage(array $input, array $existing): array
+    {
+        $merged = $existing;
+
+        foreach (self::APPROVAL_PAGE_KEYS as $key) {
+            $record = is_array($merged[$key] ?? null) ? $merged[$key] : [];
+            $incoming = is_array($input[$key] ?? null) ? $input[$key] : [];
+            $record['enabled'] = (bool) ($incoming['enabled'] ?? true);
+            $merged[$key] = $record;
+        }
+
+        return $merged;
     }
 }

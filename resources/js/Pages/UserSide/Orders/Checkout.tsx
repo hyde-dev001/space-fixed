@@ -1,9 +1,12 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Head, Link, usePage, router } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 import Swal from '@/Pages/UserSide/Shared/UserModal';
 import axios from 'axios';
 import { dispatchCartAddedEvent } from '../../../types/cart-events';
+import CustomerAddressMapPicker from '@/components/address/CustomerAddressMapPicker';
+import { CustomerFooterReveal } from '../../../components/common/CustomerFooter';
 
 type CartItem = {
   id: string;
@@ -60,6 +63,7 @@ const Checkout: React.FC = () => {
   const [showAddAddressModal, setShowAddAddressModal] = useState(false);
   const [addressesLoading, setAddressesLoading] = useState(false);
   const [addressSaving, setAddressSaving] = useState(false);
+  const addressMapRef = useRef<HTMLDivElement | null>(null);
   const [newAddressData, setNewAddressData] = useState({
     name: '',
     phone: '',
@@ -69,6 +73,8 @@ const Checkout: React.FC = () => {
     barangay: '',
     postal_code: '',
     address: '',
+    latitude: null as number | null,
+    longitude: null as number | null,
     is_default: false
   });
   const parseOptions = (rawOptions: any) => {
@@ -95,6 +101,15 @@ const Checkout: React.FC = () => {
   };
 
   const subtotal = items.filter(item => selectedItems.has(item.id)).reduce((s, it) => s + it.price * it.qty, 0);
+  const selectedCheckoutAddress = addresses.find((address) => address.id === selectedAddressId);
+  const selectedCheckoutAddressText = selectedCheckoutAddress
+    ? selectedCheckoutAddress.full_address || selectedCheckoutAddress.address || [
+        selectedCheckoutAddress.address_line,
+        selectedCheckoutAddress.barangay,
+        selectedCheckoutAddress.city,
+        selectedCheckoutAddress.province,
+      ].filter(Boolean).join(', ')
+    : '';
 
   const shopGroups = useMemo<ShopGroup[]>(() => {
     const groups = new Map<string, ShopGroup>();
@@ -602,10 +617,11 @@ const Checkout: React.FC = () => {
         }));
         setAddresses(formattedAddresses);
         
-        // Auto-select default address
+        // Preserve the current selection when edits refresh the address list.
+        const selectedAddress = formattedAddresses.find((address: any) => address.id === selectedAddressId);
         const defaultAddress = formattedAddresses.find((a: any) => a.is_default);
-        if (defaultAddress) {
-          handleSelectAddress(defaultAddress);
+        if (selectedAddress || defaultAddress) {
+          handleSelectAddress(selectedAddress || defaultAddress);
         }
       }
     } catch (error) {
@@ -635,10 +651,20 @@ const Checkout: React.FC = () => {
     setCustomerEmail(user?.email || '');
   };
 
-  const handleEditAddress = (address: any) => {
+  const handleEditAddress = (address: any, focusMap = false) => {
     setEditingAddressId(address.id);
-    setEditingAddressData({ ...address });
+    setEditingAddressData({
+      ...address,
+      latitude: address.latitude ?? null,
+      longitude: address.longitude ?? null,
+    });
     setShowAddressSelector(false);
+    if (focusMap) {
+      requestAnimationFrame(() => {
+        addressMapRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        addressMapRef.current?.querySelector<HTMLInputElement>('input')?.focus();
+      });
+    }
   };
 
   const handleSaveEditAddress = async () => {
@@ -726,6 +752,8 @@ const Checkout: React.FC = () => {
           barangay: editingAddressData.barangay,
           postal_code: editingAddressData.postal_code?.trim() || '',
           address_line: editingAddressData.address_line.trim(),
+          latitude: editingAddressData.latitude,
+          longitude: editingAddressData.longitude,
           is_default: editingAddressData.is_default || false,
         }),
       });
@@ -856,6 +884,8 @@ const Checkout: React.FC = () => {
       barangay: '', 
       postal_code: '', 
       address: '', 
+      latitude: null,
+      longitude: null,
       is_default: addresses.length === 0 // First address is default
     });
     
@@ -973,6 +1003,8 @@ const Checkout: React.FC = () => {
         postal_code: newAddressData.postal_code.trim(),
         address: `${newAddressData.address.trim()}, ${newAddressData.barangay}, ${newAddressData.city}, ${newAddressData.province}, ${newAddressData.region}`,
         address_line: newAddressData.address.trim(),
+        latitude: newAddressData.latitude,
+        longitude: newAddressData.longitude,
         is_default: newAddressData.is_default,
       };
       setAddresses(prev => [...prev, newAddress]);
@@ -1001,6 +1033,8 @@ const Checkout: React.FC = () => {
           barangay: newAddressData.barangay,
           postal_code: newAddressData.postal_code.trim(),
           address_line: newAddressData.address.trim(),
+          latitude: newAddressData.latitude,
+          longitude: newAddressData.longitude,
           is_default: newAddressData.is_default,
         }),
       });
@@ -1141,7 +1175,7 @@ const Checkout: React.FC = () => {
       shipping_city: selectedAddress?.city || null,
       shipping_barangay: selectedAddress?.barangay || null,
       shipping_postal_code: selectedAddress?.postal_code || null,
-      shipping_address_line: selectedAddress?.address || null,
+      shipping_address_line: selectedAddress?.address_line || null,
       order_note: orderNote,
       payment_method: 'paymongo',
       // Store selected item IDs so we know which items to remove after successful payment
@@ -1157,7 +1191,8 @@ const Checkout: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-white">
+    <CustomerFooterReveal>
+    <div className="userside-checkout-page min-h-screen flex flex-col bg-white">
       <style>{`
         select {
           position: relative;
@@ -1206,6 +1241,25 @@ const Checkout: React.FC = () => {
               className={`inline-flex items-center rounded-md px-4 py-2 text-sm font-semibold text-white ${isCreatingRecoverySession ? 'bg-gray-400 cursor-not-allowed' : 'bg-gray-900 hover:bg-black'}`}
             >
               {isCreatingRecoverySession ? 'Creating...' : 'Create New Payment'}
+            </button>
+          </div>
+        )}
+
+        {items.length > 0 && (
+          <div className="mb-6 flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-black">Delivery address</p>
+              <p className="mt-1 truncate text-sm text-gray-600">
+                {selectedCheckoutAddressText || 'Choose or add a pinned address for delivery coverage.'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowAddressSelector(true)}
+              disabled={addressesLoading}
+              className="shrink-0 rounded-md border border-gray-300 px-4 py-2 text-sm font-semibold text-black transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {addressesLoading ? 'Loading addresses...' : 'Manage delivery address'}
             </button>
           </div>
         )}
@@ -1453,7 +1507,7 @@ const Checkout: React.FC = () => {
             <aside>
 
             {/* Address Selection Modal */}
-            {showAddressSelector && (
+            {showAddressSelector && createPortal((
               <>
                 {/* Backdrop */}
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100000] pointer-events-auto" onClick={() => setShowAddressSelector(false)} />
@@ -1489,7 +1543,7 @@ const Checkout: React.FC = () => {
                           }}
                           className={`w-full p-4 border rounded-lg text-left transition-all ${
                             selectedAddressId === address.id
-                              ? 'border-blue-600 bg-blue-50 dark:border-blue-500 dark:bg-blue-500/10'
+                              ? 'border-gray-950 bg-white dark:border-gray-300 dark:bg-gray-900'
                               : 'border-gray-300 dark:border-gray-700 hover:border-gray-400 dark:hover:border-gray-600'
                           }`}
                         >
@@ -1501,18 +1555,32 @@ const Checkout: React.FC = () => {
                             </div>
                             <div className="flex items-center gap-2 flex-shrink-0">
                               <button
+                                type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handleEditAddress(address);
                                 }}
-                                className="p-2 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded transition-colors"
+                                className="p-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors"
                                 title="Edit address"
                               >
                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                                 </svg>
                               </button>
+                              {(address.latitude == null || address.longitude == null) && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleEditAddress(address, true);
+                                  }}
+                                  className="px-2 py-1 text-sm font-semibold text-gray-700 hover:text-gray-950 hover:underline dark:text-gray-300 dark:hover:text-white"
+                                >
+                                  Repin address
+                                </button>
+                              )}
                               <button
+                                type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handleDeleteAddress(address.id);
@@ -1524,9 +1592,9 @@ const Checkout: React.FC = () => {
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                 </svg>
                               </button>
-                              <div className={`mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${selectedAddressId === address.id ? 'border-blue-600' : 'border-gray-300'} bg-white dark:bg-gray-800`}>
+                              <div className={`mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${selectedAddressId === address.id ? 'border-gray-950' : 'border-gray-300'} bg-white dark:bg-gray-800`}>
                                 {selectedAddressId === address.id && (
-                                  <div className="h-3 w-3 rounded-full bg-blue-600" />
+                                  <div className="h-3 w-3 rounded-full bg-gray-950 dark:bg-white" />
                                 )}
                               </div>
                             </div>
@@ -1555,14 +1623,14 @@ const Checkout: React.FC = () => {
                   </div>
                 </div>
               </>
-            )}
+            ), document.body)}
 
             {/* Add Address Modal */}
-            {showAddAddressModal && (
+            {showAddAddressModal && createPortal((
               <>
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100000] pointer-events-auto" onClick={() => setShowAddAddressModal(false)} />
                 <div className="fixed inset-0 z-[100001] flex items-center justify-center p-4">
-                  <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl max-w-5xl w-full border border-gray-200 dark:border-gray-800 overflow-visible flex flex-col">
+                  <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl max-w-5xl w-full max-h-[90vh] border border-gray-200 dark:border-gray-800 flex flex-col">
                     <div className="border-b border-gray-200 dark:border-gray-800 px-4 py-3 flex items-center justify-between flex-shrink-0 sticky top-0 bg-white dark:bg-gray-900 z-10">
                       <h3 className="text-xl font-bold text-gray-900 dark:text-white">Add New Address</h3>
                       <button
@@ -1577,7 +1645,7 @@ const Checkout: React.FC = () => {
                       </button>
                     </div>
 
-                    <div className="overflow-visible flex-1 p-4">
+                    <div className="overflow-y-auto flex-1 p-4">
                       
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 overflow-visible form-content">
                       <div>
@@ -1724,6 +1792,27 @@ const Checkout: React.FC = () => {
                         )}
                       </div>
 
+                      <div ref={addressMapRef} className="mt-4">
+                        <p className="mb-2 text-sm text-gray-600 dark:text-gray-300">
+                          Pin the exact delivery entrance, then check the address details above.
+                        </p>
+                        <CustomerAddressMapPicker
+                          value={newAddressData.latitude !== null && newAddressData.longitude !== null
+                            ? { latitude: newAddressData.latitude, longitude: newAddressData.longitude }
+                            : null}
+                          onChange={(location) => setNewAddressData((prev) => ({
+                            ...prev,
+                            latitude: location.latitude,
+                            longitude: location.longitude,
+                            region: location.region,
+                            province: location.province,
+                            city: location.city,
+                            barangay: location.barangay,
+                            postal_code: location.postalCode,
+                          }))}
+                        />
+                      </div>
+
                       <div className="flex items-center justify-between pt-2 mt-2">
                         <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Set as default address</label>
                         <button
@@ -1760,10 +1849,10 @@ const Checkout: React.FC = () => {
                   </div>
                 </div>
               </>
-            )}
+            ), document.body)}
 
             {/* Edit Address Modal */}
-            {editingAddressId !== null && editingAddressData && (
+            {editingAddressId !== null && editingAddressData && createPortal((
               <>
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100000] pointer-events-auto" onClick={() => setEditingAddressId(null)} />
                 <div className="fixed inset-0 z-[100001] flex items-center justify-center p-4">
@@ -1934,6 +2023,27 @@ const Checkout: React.FC = () => {
                           </p>
                         )}
                       </div>
+
+                      <div ref={addressMapRef} className="mt-4">
+                        <p className="mb-2 text-sm text-gray-600 dark:text-gray-300">
+                          Pin the exact delivery entrance, then check the address details above.
+                        </p>
+                        <CustomerAddressMapPicker
+                          value={editingAddressData.latitude != null && editingAddressData.longitude != null
+                            ? { latitude: editingAddressData.latitude, longitude: editingAddressData.longitude }
+                            : null}
+                          onChange={(location) => setEditingAddressData((prev: any) => ({
+                            ...prev,
+                            latitude: location.latitude,
+                            longitude: location.longitude,
+                            region: location.region,
+                            province: location.province,
+                            city: location.city,
+                            barangay: location.barangay,
+                            postal_code: location.postalCode,
+                          }))}
+                        />
+                      </div>
                       
                       {/* Set as Default */}
                       <div className="flex items-center justify-between pt-2 mt-2 border-t border-gray-200 dark:border-gray-700">
@@ -1984,7 +2094,7 @@ const Checkout: React.FC = () => {
                   </div>
                 </div>
               </>
-            )}
+            ), document.body)}
             
             <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm sticky top-32">
               <div className="flex items-baseline justify-between mb-4">
@@ -2022,63 +2132,9 @@ const Checkout: React.FC = () => {
         </div>
       </main>
 
-      <div className="hidden xl:block">
-        <CheckoutFooter />
-      </div>
     </div>
+    </CustomerFooterReveal>
   );
 };
 
 export default Checkout;
-
-// Footer: replicated SoleSpace footer used across the site
-// If a shared footer component exists later, replace this markup with that component.
-export const CheckoutFooter: React.FC = () => {
-  return (
-    <footer className="mt-48 bg-gray-100 text-slate-900">
-      <div className="max-w-7xl mx-auto px-6 py-16">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          <div>
-            <div className="text-2xl font-bold mb-4">SoleSpace</div>
-            <p className="text-sm text-slate-700 max-w-sm">Your premier destination for premium footwear and expert repair services. Experience the perfect blend of style, comfort, and craftsmanship.</p>
-
-            <div className="flex gap-3 mt-6">
-              <button className="w-10 h-10 border border-slate-300 rounded flex items-center justify-center text-slate-700">f</button>
-              <button className="w-10 h-10 border border-slate-300 rounded flex items-center justify-center text-slate-700">t</button>
-              <button className="w-10 h-10 border border-slate-300 rounded flex items-center justify-center text-slate-700">ig</button>
-            </div>
-          </div>
-
-          <div className="flex flex-col">
-            <h3 className="text-sm uppercase text-slate-700 font-semibold mb-4">Quick Links</h3>
-            <nav className="flex flex-col gap-3 text-sm text-slate-700">
-              <a href="/products">Products</a>
-              <a href="/repair-services">Repair Services</a>
-              <a href="/services">Services</a>
-              <a href="/contact">Contact</a>
-            </nav>
-          </div>
-
-          <div className="flex flex-col">
-            <h3 className="text-sm uppercase text-slate-700 font-semibold mb-4">Services</h3>
-            <nav className="flex flex-col gap-3 text-sm text-slate-700">
-              <a href="#">Shoe Repair</a>
-              <a href="#">Custom Fitting</a>
-              <a href="#">Maintenance</a>
-              <a href="#">Consultation</a>
-            </nav>
-          </div>
-        </div>
-
-        <div className="border-t border-slate-300 mt-10 pt-6 text-sm text-slate-700 flex items-center justify-between">
-          <div>© 2024 SoleSpace. All rights reserved.</div>
-          <div className="flex gap-6">
-            <a href="#" className="hover:underline">Privacy</a>
-            <a href="#" className="hover:underline">Terms</a>
-            <a href="#" className="hover:underline">Cookies</a>
-          </div>
-        </div>
-      </div>
-    </footer>
-  );
-};

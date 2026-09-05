@@ -47,6 +47,20 @@ const InfoIcon = ({ className }) => (
   </svg>
 );
 
+const readLifecycleResponse = async (response) => {
+  const contentType = response.headers?.get?.('content-type') || '';
+  if (response.redirected || (contentType && !contentType.includes('application/json'))) {
+    throw new Error('Recent reauthentication is required. Please reauthenticate and try again.');
+  }
+
+  const payload = await response.json().catch(() => null);
+  if (!payload || typeof payload !== 'object') {
+    throw new Error('The account lifecycle operation could not be completed.');
+  }
+
+  return payload;
+};
+
 const ArrowUpIcon = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
@@ -68,30 +82,32 @@ interface User {
   address: string;
   phone: string;
   age: number;
-  role?: string | null;
-  status: 'pending' | 'approved' | 'rejected' | 'active' | 'deactivated' | 'suspended';
+  status: 'pending' | 'approved' | 'rejected' | 'active' | 'deactivated' | 'suspended' | 'archived';
+  accountStatus?: 'pending' | 'approved' | 'rejected' | 'active' | 'deactivated' | 'suspended';
+  archived?: boolean;
   createdAt: string;
   lastLogin?: string;
-  validIdPath?: string;
-  employee?: {
-    id?: number;
-    name?: string | null;
-    phone?: string | null;
-    position?: string | null;
-    department?: string | null;
-    branch?: string | null;
-    functionalRole?: string | null;
-    salary?: number | null;
-    hireDate?: string | null;
-    status?: string | null;
-  } | null;
+  validIdUrl?: string;
+  validIdBackUrl?: string;
+  identityVerification?: IdentityVerification | null;
+}
+
+interface IdentityVerification {
+  id: number;
+  documentType: string | null;
+  screeningStatus: 'pending' | 'processing' | 'automated_check_passed' | 'manual_review_required' | 'rejected';
+  reviewStatus: 'not_required' | 'pending' | 'approved' | 'rejected';
+  failureReason?: string | null;
+  rejectionReason?: string | null;
+  rejectionNotes?: string | null;
+  reviewedAt?: string | null;
 }
 
 interface MetricData {
   title: string;
   value: number;
   change: number;
-  changeType: 'increase' | 'decrease';
+  changeType: 'increase' | 'decrease' | 'neutral';
   icon: React.ComponentType<{ className?: string }>;
   color: 'success' | 'error' | 'warning' | 'info';
   description: string;
@@ -132,9 +148,15 @@ const MetricCard: React.FC<MetricData> = ({
           <div className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${
             changeType === 'increase'
               ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-              : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-          }`}>
-            {changeType === 'increase' ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" />}
+              : changeType === 'decrease'
+                ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+          }`} title="Compared with previous 30 days">
+            {changeType === 'increase'
+              ? <ArrowUpIcon className="size-3" />
+              : changeType === 'decrease'
+                ? <ArrowDownIcon className="size-3" />
+                : <span aria-hidden="true">-</span>}
             {Math.abs(change)}%
           </div>
         </div>
@@ -159,15 +181,57 @@ const MetricCard: React.FC<MetricData> = ({
 
 
 
-interface PageProps {
-  users: User[] | { data?: User[]; meta?: any; links?: any } | null;
+interface PaginationMeta {
+  current_page: number;
+  from: number | null;
+  last_page: number;
+  per_page: number;
+  to: number | null;
+  total: number;
 }
 
-const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) => {
+interface UserPage {
+  data?: User[];
+  meta?: Partial<PaginationMeta>;
+  links?: Record<string, string | null>;
+}
+
+type UserMetricKey = 'total' | 'pending' | 'active' | 'archived';
+
+interface UserStats {
+  total?: number;
+  pending?: number;
+  active?: number;
+  archived?: number;
+  changes?: Partial<Record<UserMetricKey, number>>;
+}
+
+interface PageProps {
+  users: User[] | UserPage | null;
+  stats?: UserStats;
+  filters?: {
+    q?: string | null;
+    status?: User['status'] | 'all' | null;
+    lifecycle?: 'active' | 'archived' | 'all' | null;
+  };
+}
+
+const emptyPagination: PaginationMeta = {
+  current_page: 1,
+  from: null,
+  last_page: 1,
+  per_page: 15,
+  to: null,
+  total: 0,
+};
+
+const metricChangeType = (change: number): MetricData['changeType'] => (
+  change > 0 ? 'increase' : change < 0 ? 'decrease' : 'neutral'
+);
+
+const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, stats = {}, filters = {} }) => {
   // Modal refs for focus trapping
-  const passwordModalRef = useRef<HTMLDivElement | null>(null);
   const viewModalRef = useRef<HTMLDivElement | null>(null);
-  const deactivateModalRef = useRef<HTMLDivElement | null>(null);
   const suspendModalRef = useRef<HTMLDivElement | null>(null);
   const detailsModalRef = useRef<HTMLDivElement | null>(null);
 
@@ -226,62 +290,53 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
       };
     }, [isOpen, modalRef.current]);
   };
-  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
-  const [isDeactivateModalOpen, setIsDeactivateModalOpen] = useState(false);
   const [isSuspendModalOpen, setIsSuspendModalOpen] = useState(false);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [expandedDocuments, setExpandedDocuments] = useState<Set<number>>(new Set());
   const [imageLoadErrors, setImageLoadErrors] = useState<Set<number>>(new Set());
 
-  // Build a browser-accessible URL for files stored on Laravel's public disk
-  // - Prefixes with "/storage/" when needed
-  // - Encodes spaces and special characters
-  // - Works with absolute URLs without modification
-  const buildDocumentUrl = (rawPath: string): string => {
-    if (!rawPath) return '';
-    const trimmed = rawPath.trim();
-    if (/^https?:\/\//i.test(trimmed)) return trimmed;
-    // Normalize separators and remove leading slashes
-    let p = trimmed.replace(/\\/g, '/').replace(/^\/+/, '');
-    // If path already includes storage/, keep it; otherwise prefix it
-    if (!p.toLowerCase().startsWith('storage/')) {
-      p = `storage/${p}`;
-    }
-    // Encode segments but keep slashes
-    const encoded = encodeURI(p);
-    return `${window.location.origin}/${encoded}`;
-  };
-
-  const [filterStatus, setFilterStatus] = useState<'pending' | 'approved' | 'rejected' | 'active' | 'deactivated' | 'suspended'>('active');
-  const [searchTerm, setSearchTerm] = useState<string>('');
-  const [deactivateReason, setDeactivateReason] = useState<string>('');
+  const initialServerPaginated = !!initialUsers && !Array.isArray(initialUsers);
+  type UserStatusFilter = 'all' | 'pending' | 'approved' | 'rejected' | 'active' | 'deactivated' | 'suspended' | 'archived';
+  const [filterStatus, setFilterStatus] = useState<UserStatusFilter>(
+    initialServerPaginated ? (filters.status || 'all') : 'active',
+  );
+  const [filterLifecycle, setFilterLifecycle] = useState(filters.lifecycle || 'all');
+  const [searchTerm, setSearchTerm] = useState<string>(initialServerPaginated ? (filters.q || '') : '');
   const [suspendReason, setSuspendReason] = useState<string>('');
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(7);
   // UI state for disabling buttons and showing API errors
   const [isProcessingId, setIsProcessingId] = useState<number | null>(null);
   const [apiError, setApiError] = useState<string | null>(null);
-  const pollingRef = useRef<number | null>(null);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Initialize with data from backend (accept paginated payload or raw array)
   const normalizeUsers = (u: PageProps['users']): User[] => {
     if (!u) return [];
     if (Array.isArray(u)) return u as User[];
-    if ((u as any).data && Array.isArray((u as any).data)) return (u as any).data as User[];
+    if (u.data && Array.isArray(u.data)) return u.data;
     return [];
   };
 
   const [users, setUsers] = useState<User[]>(normalizeUsers(initialUsers));
 
-  // preserve pagination metadata when available
-  const [pagination, setPagination] = useState<any>((initialUsers && (initialUsers as any).meta) || null);
+  const isServerPaginated = initialServerPaginated;
+  const [pagination, setPagination] = useState<PaginationMeta>({
+    ...emptyPagination,
+    ...(!Array.isArray(initialUsers) ? (initialUsers?.meta || {}) : {}),
+  });
+
+  React.useEffect(() => {
+    setUsers(normalizeUsers(initialUsers));
+    setPagination({
+      ...emptyPagination,
+      ...(!Array.isArray(initialUsers) ? (initialUsers?.meta || {}) : {}),
+    });
+  }, [initialUsers]);
 
   // attach focus traps for each modal
-  useFocusTrap(passwordModalRef, isPasswordModalOpen, () => setIsPasswordModalOpen(false));
   useFocusTrap(viewModalRef, isViewModalOpen, () => setIsViewModalOpen(false));
-  useFocusTrap(deactivateModalRef, isDeactivateModalOpen, () => setIsDeactivateModalOpen(false));
   useFocusTrap(suspendModalRef, isSuspendModalOpen, () => setIsSuspendModalOpen(false));
   useFocusTrap(detailsModalRef, isDetailsModalOpen, () => {
     setIsDetailsModalOpen(false);
@@ -289,203 +344,129 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
     setImageLoadErrors(new Set());
   });
 
-  // Filter users based on status, and search term
+  const visitUserPage = (
+    nextSearch = searchTerm,
+    nextStatus = filterStatus,
+    page = 1,
+    nextLifecycle = filterLifecycle,
+  ) => {
+    const params: Record<string, string | number> = { page };
+    if (nextSearch.trim()) params.q = nextSearch.trim();
+    if (nextStatus !== 'all') params.status = nextStatus;
+    if (nextLifecycle !== 'all') params.lifecycle = nextLifecycle;
+
+    router.get('/admin/users', params, {
+      preserveState: true,
+      preserveScroll: true,
+      replace: true,
+    });
+  };
+
+  // Arrays remain supported for focused legacy component tests; live Inertia pages use server pagination.
   const filteredUsers = users.filter(user => {
-    const statusMatch = user.status === filterStatus;
+    const isArchived = user.archived === true || user.status === 'archived';
+    const statusMatch = filterStatus === 'all'
+      ? true
+      : filterStatus === 'archived'
+      ? isArchived
+      : !isArchived && user.status === filterStatus;
+    const lifecycleMatch = filterLifecycle === 'all'
+      || (filterLifecycle === 'archived' ? isArchived : !isArchived);
     const searchMatch = searchTerm === '' ||
       user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       user.email.toLowerCase().includes(searchTerm.toLowerCase());
-    return statusMatch && searchMatch;
+    return statusMatch && lifecycleMatch && searchMatch;
   });
 
-  // Pagination calculations
-  const totalPages = Math.ceil(filteredUsers.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = startIndex + itemsPerPage;
-  const paginatedUsers = filteredUsers.slice(startIndex, endIndex);
+  const effectivePage = isServerPaginated ? pagination.current_page : currentPage;
+  const totalPages = isServerPaginated ? pagination.last_page : Math.ceil(filteredUsers.length / 7);
+  const startIndex = isServerPaginated ? Math.max((pagination.from || 1) - 1, 0) : (currentPage - 1) * 7;
+  const endIndex = isServerPaginated ? (pagination.to || 0) : startIndex + 7;
+  const paginatedUsers = isServerPaginated ? users : filteredUsers.slice(startIndex, endIndex);
 
   // Reset to page 1 when filters change
   React.useEffect(() => {
-    setCurrentPage(1);
-  }, [searchTerm, filterStatus]);
+    if (!isServerPaginated) setCurrentPage(1);
+  }, [isServerPaginated, searchTerm, filterStatus]);
 
-  // Handle approve/reject user
-  const handleApproval = async (userId: number, action: 'approve' | 'reject') => {
-    let rejectionReason = '';
-    
-    if (action === 'reject') {
-      const { value } = await Swal.fire({
-        title: 'Reject User?',
-        text: 'Are you sure you want to reject this user registration?',
-        input: 'textarea',
-        inputPlaceholder: 'Enter reason for rejection (optional)',
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#ef4444',
-        cancelButtonColor: '#6b7280',
-        confirmButtonText: 'Yes, reject',
-        cancelButtonText: 'Cancel'
-      });
+  const requestLifecycleReason = async (title: string, text: string, confirmButtonText: string) => {
+    const result = await Swal.fire({
+      title,
+      text,
+      input: 'textarea',
+      inputPlaceholder: 'Enter a reason',
+      inputValidator: (value) => value?.trim() ? undefined : 'A reason is required.',
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonColor: '#10b981',
+      cancelButtonColor: '#6b7280',
+      confirmButtonText,
+      cancelButtonText: 'Cancel',
+    });
 
-      if (value === undefined) return; // User cancelled
-      rejectionReason = value || '';
-    } else {
-      const result = await Swal.fire({
-        title: 'Approve User?',
-        text: 'Are you sure you want to approve this user registration?',
-        icon: 'question',
-        showCancelButton: true,
-        confirmButtonColor: '#10b981',
-        cancelButtonColor: '#6b7280',
-        confirmButtonText: 'Yes, approve',
-        cancelButtonText: 'Cancel'
-      });
-
-      if (!result.isConfirmed) return;
+    if (!result.isConfirmed || typeof result.value !== 'string' || !result.value.trim()) {
+      return null;
     }
 
+    return result.value.trim();
+  };
+
+  const performLifecycleAction = async (
+    user: User,
+    endpoint: string,
+    body: Record<string, string>,
+    successTitle: string,
+    successText: string,
+    update: Partial<User>,
+  ) => {
     try {
-      setIsProcessingId(userId);
+      setIsProcessingId(user.id);
       setApiError(null);
-      const formData = new FormData();
-      if (rejectionReason) {
-        formData.append('reason', rejectionReason);
-      }
-
-      const response = await fetch(`/superAdmin/users/${userId}/${action}`, {
+      const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+      const response = await fetch(endpoint, {
         method: 'POST',
+        credentials: 'same-origin',
         headers: {
-          'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+          'Content-Type': 'application/json',
           'Accept': 'application/json',
+          'X-CSRF-TOKEN': csrf,
+          'X-Requested-With': 'XMLHttpRequest',
         },
-        body: formData,
+        body: JSON.stringify(body),
       });
+      const payload = await readLifecycleResponse(response);
 
-      if (response.ok) {
-        setUsers(users.map(user =>
-          user.id === userId
-            ? { ...user, status: action === 'approve' ? 'active' : 'rejected' }
-            : user
-        ));
-        Swal.fire({
-          icon: 'success',
-          title: action === 'approve' ? 'Approved!' : 'Rejected!',
-          text: `User has been ${action}d successfully.`,
-          timer: 2000,
-          showConfirmButton: false
-        });
-      } else {
-        const data = await response.json();
-        Swal.fire({
-          icon: 'error',
-          title: 'Error',
-          text: data.message || `Failed to ${action} user`,
-        });
+      if (!response.ok) {
+        throw new Error(payload?.message || 'The account lifecycle operation could not be completed.');
       }
-    } catch (error: any) {
-      console.error('Error:', error);
-      setApiError(error?.message || 'An error occurred while processing your request');
+
+      setUsers((currentUsers) => currentUsers.map((currentUser) =>
+        currentUser.id === user.id ? { ...currentUser, ...update } : currentUser
+      ));
+
+      if (isServerPaginated) {
+        visitUserPage(searchTerm, filterStatus, effectivePage, filterLifecycle);
+      }
+
       Swal.fire({
-        icon: 'error',
-        title: 'Error',
-        text: error?.message || 'An error occurred while processing your request',
+        icon: 'success',
+        title: successTitle,
+        text: payload?.message || successText,
+        timer: 2000,
+        showConfirmButton: false,
       });
+    } catch (error) {
+      const message = error instanceof Error
+        ? error.message
+        : 'The account lifecycle operation could not be completed.';
+      setApiError(message);
+      Swal.fire({ icon: 'error', title: 'Error', text: message });
     } finally {
       setIsProcessingId(null);
     }
   };
 
-  // Polling: fetch latest users periodically so Shop Owner changes appear without reload
-  const fetchUsersList = async () => {
-    try {
-      const res = await fetch(`/admin/users/list?status=${filterStatus}`, {
-        headers: { 'Accept': 'application/json' }
-      });
-      if (!res.ok) return;
-      const data = await res.json();
-      if (data && Array.isArray(data.data)) {
-        setUsers(data.data as User[]);
-      }
-    } catch (e) {
-      // ignore polling errors
-    }
-  };
-
-  useEffect(() => {
-    // start polling every 10 seconds
-    fetchUsersList();
-    pollingRef.current = window.setInterval(fetchUsersList, 10000);
-    return () => {
-      if (pollingRef.current) clearInterval(pollingRef.current);
-    };
-  }, [filterStatus]);
-
-  // Handle deactivate account
-  const handleDeactivate = async () => {
-    if (!selectedUser) return;
-
-    const userToDeactivate = selectedUser; // Capture user before closing modal
-
-    // Close modal first to prevent z-index issues
-    setIsDeactivateModalOpen(false);
-    setSelectedUser(null);
-    setDeactivateReason('');
-
-    // Wait for modal to close before showing SweetAlert
-    setTimeout(async () => {
-      const result = await Swal.fire({
-        title: 'Deactivate Account?',
-        text: `Are you sure you want to deactivate ${userToDeactivate.name}'s account? This action can be reversed later.`,
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#ef4444',
-        cancelButtonColor: '#6b7280',
-        confirmButtonText: 'Yes, deactivate',
-        cancelButtonText: 'Cancel',
-        customClass: {
-          popup: 'z-[10000]'
-        }
-      });
-
-      if (result.isConfirmed) {
-        try {
-          setIsProcessingId(userToDeactivate.id);
-          setApiError(null);
-          // simulate server processing if needed (replace with real request)
-          await new Promise((r) => setTimeout(r, 300));
-          setUsers(users.map(user =>
-            user.id === userToDeactivate.id
-              ? { ...user, status: 'deactivated' }
-              : user
-          ));
-
-          // Show success message
-          Swal.fire({
-            icon: 'success',
-            title: 'Account Deactivated!',
-            text: `${userToDeactivate.name}'s account has been deactivated successfully.`,
-            timer: 2000,
-            showConfirmButton: false,
-            customClass: {
-              popup: 'z-[10000]'
-            }
-          });
-        } catch (e: any) {
-          setApiError(e?.message || 'Failed to deactivate account');
-          Swal.fire({ icon: 'error', title: 'Error', text: e?.message || 'Failed to deactivate account' });
-        } finally {
-          setIsProcessingId(null);
-        }
-      }
-    }, 100); // Small delay to ensure modal closes
-  };
-
-  const openDeactivateModal = (user: User) => {
-    setSelectedUser(user);
-    setIsDeactivateModalOpen(true);
-  };
-
-  // Handle suspend/activate account
+  // Handle suspend account
   const handleSuspend = async () => {
     if (!selectedUser) return;
 
@@ -498,9 +479,6 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
       try {
         setIsProcessingId(userToSuspend.id);
         setApiError(null);
-        const formData = new FormData();
-        formData.append('reason', suspendReason);
-
         // Use fetch for a straightforward AJAX request with CSRF token
         const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
         try {
@@ -513,15 +491,15 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
               'X-CSRF-TOKEN': csrf,
               'X-Requested-With': 'XMLHttpRequest',
             },
-            body: JSON.stringify({ reason: suspendReason }),
+            body: JSON.stringify({ suspension_reason: suspendReason }),
           });
 
-          const data = await res.json().catch(() => ({}));
+          const data = await readLifecycleResponse(res);
 
           if (res.ok) {
-            setUsers(users.map(user =>
+            setUsers((currentUsers) => currentUsers.map(user =>
               user.id === userToSuspend.id
-                ? { ...user, status: 'suspended' }
+                ? { ...user, status: 'suspended', accountStatus: 'suspended', archived: false }
                 : user
             ));
 
@@ -559,89 +537,182 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
   };
 
   // Handle reactivate account
-  const handleReactivate = async (userId: number, userName: string) => {
-    const result = await Swal.fire({
-      title: 'Reactivate Account?',
-      text: `Are you sure you want to reactivate ${userName}'s account?`,
-      icon: 'question',
-      showCancelButton: true,
-      confirmButtonColor: '#10b981',
-      cancelButtonColor: '#6b7280',
-      confirmButtonText: 'Yes, reactivate',
-      cancelButtonText: 'Cancel'
-    });
+  const handleReactivate = async (user: User) => {
+    const reason = await requestLifecycleReason(
+      'Reactivate Account',
+      `Provide a reason for reactivating ${user.name}'s account.`,
+      'Reactivate account',
+    );
+    if (!reason) return;
 
-    if (!result.isConfirmed) return;
+    await performLifecycleAction(
+      user,
+      `/admin/users/${user.id}/reactivate`,
+      { reactivation_reason: reason },
+      'Account Reactivated!',
+      `${user.name}'s account has been reactivated successfully.`,
+      { status: 'active', accountStatus: 'active', archived: false },
+    );
+  };
+
+  const handleArchive = async (user: User) => {
+    const reason = await requestLifecycleReason(
+      'Archive Account',
+      `Provide a reason for archiving ${user.name}'s account.`,
+      'Archive account',
+    );
+    if (!reason) return;
+
+    await performLifecycleAction(
+      user,
+      `/admin/users/${user.id}/archive`,
+      { archive_reason: reason },
+      'Account Archived!',
+      `${user.name}'s account has been archived successfully.`,
+      { status: 'archived', archived: true },
+    );
+  };
+
+  const handleRestore = async (user: User) => {
+    const reason = await requestLifecycleReason(
+      'Restore Account',
+      `Provide a reason for restoring ${user.name}'s account.`,
+      'Restore account',
+    );
+    if (!reason) return;
+
+    const restoredStatus = user.accountStatus || 'active';
+    await performLifecycleAction(
+      user,
+      `/admin/users/${user.id}/restore`,
+      { restore_reason: reason },
+      'Account Restored!',
+      `${user.name}'s account has been restored successfully.`,
+      { status: restoredStatus, accountStatus: restoredStatus, archived: false },
+    );
+  };
+
+  const performIdentityReview = async (
+    user: User,
+    decision: 'approve' | 'reject',
+    reviewData: Record<string, string> = {},
+  ) => {
+    const verification = user.identityVerification;
+    if (!verification) return;
 
     try {
-      setIsProcessingId(userId);
+      setIsProcessingId(user.id);
       setApiError(null);
-      // Use fetch to call admin activate endpoint and handle JSON response
       const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
-      try {
-        const res = await fetch(`/admin/users/${userId}/activate`, {
+      const response = await fetch(
+        `/admin/users/${user.id}/identity-verifications/${verification.id}/${decision}`,
+        {
           method: 'POST',
           credentials: 'same-origin',
           headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
+            Accept: 'application/json',
             'X-CSRF-TOKEN': csrf,
             'X-Requested-With': 'XMLHttpRequest',
+            'Content-Type': 'application/json',
           },
-          body: JSON.stringify({}),
-        });
+          body: JSON.stringify(reviewData),
+        },
+      );
+      const payload = await readLifecycleResponse(response);
 
-        const data = await res.json().catch(() => ({}));
-
-        if (res.ok) {
-          setUsers(users.map(user =>
-            user.id === userId
-              ? { ...user, status: 'active' }
-              : user
-          ));
-
-          Swal.fire({
-            icon: 'success',
-            title: 'Account Reactivated!',
-            text: `${userName}'s account has been reactivated successfully.`,
-            timer: 2000,
-            showConfirmButton: false
-          });
-        } else {
-          const msg = data?.message || 'Failed to reactivate user';
-          Swal.fire({ icon: 'error', title: 'Error', text: msg });
-        }
-      } catch (err: any) {
-        console.error(err);
-        Swal.fire({ icon: 'error', title: 'Error', text: err?.message || 'Failed to reactivate user' });
-      } finally {
-        setIsProcessingId(null);
+      if (!response.ok) {
+        throw new Error(payload?.message || 'The identity verification review could not be completed.');
       }
-    } catch (error) {
-      console.error('Error:', error);
+
+      const reviewed = payload?.identity_verification;
+      const update = reviewed ? {
+        identityVerification: {
+          ...verification,
+          documentType: reviewed.document_type,
+          screeningStatus: reviewed.screening_status,
+          reviewStatus: reviewed.review_status,
+          failureReason: reviewed.failure_reason,
+          rejectionReason: reviewed.rejection_reason,
+          rejectionNotes: reviewed.rejection_notes,
+          reviewedAt: reviewed.reviewed_at,
+        },
+      } : {};
+
+      setUsers((currentUsers) => currentUsers.map((currentUser) =>
+        currentUser.id === user.id ? { ...currentUser, ...update } : currentUser,
+      ));
+      setSelectedUser((currentUser) => currentUser?.id === user.id
+        ? { ...currentUser, ...update }
+        : currentUser);
+
       Swal.fire({
-        icon: 'error',
-        title: 'Error',
-        text: 'An error occurred while reactivating the account',
+        icon: 'success',
+        title: decision === 'approve' ? 'Review Approved' : 'Review Rejected',
+        text: payload?.message || 'Identity verification review recorded.',
+        timer: 2000,
+        showConfirmButton: false,
       });
+    } catch (error) {
+      const message = error instanceof Error
+        ? error.message
+        : 'The identity verification review could not be completed.';
+      setApiError(message);
+      Swal.fire({ icon: 'error', title: 'Error', text: message });
     } finally {
       setIsProcessingId(null);
     }
   };
 
-  // Handle reset password
-  const handleResetPassword = () => {
-    // In real app, this would send a reset email
-    Swal.fire({
-      icon: 'info',
-      title: 'Password Reset',
-      text: 'A password reset link has been sent to the user\'s email.',
-      timer: 3000,
-      showConfirmButton: false
-    });
+  const confirmIdentityReview = async (user: User, decision: 'approve' | 'reject') => {
+    const result = decision === 'reject'
+      ? await Swal.fire({
+          title: 'Reject identity verification',
+          html: [
+            '<label for="user-identity-rejection-reason" style="display:block;text-align:left;margin-bottom:6px;font-weight:600">Reason</label>',
+            '<select id="user-identity-rejection-reason" class="swal2-select" style="width:100%;margin:0 0 14px">',
+            '<option value="">Select a reason</option>',
+            '<option value="id_unreadable">ID is unreadable</option>',
+            '<option value="wrong_document">Wrong document submitted</option>',
+            '<option value="incomplete_details">ID details are incomplete</option>',
+            '<option value="suspected_altered">Suspected altered/fake document</option>',
+            '<option value="front_back_mismatch">Front/back do not match</option>',
+            '<option value="other">Other</option>',
+            '</select>',
+            '<label for="user-identity-rejection-notes" style="display:block;text-align:left;margin-bottom:6px;font-weight:600">Notes</label>',
+            '<textarea id="user-identity-rejection-notes" class="swal2-textarea" style="width:100%;margin:0" rows="3" placeholder="Add helpful detail for the customer"></textarea>',
+          ].join(''),
+          showCancelButton: true,
+          confirmButtonText: 'Reject verification',
+          confirmButtonColor: '#dc2626',
+          cancelButtonText: 'Cancel',
+          preConfirm: () => {
+            const reason = (document.getElementById('user-identity-rejection-reason') as HTMLSelectElement | null)?.value || '';
+            const notes = (document.getElementById('user-identity-rejection-notes') as HTMLTextAreaElement | null)?.value.trim() || '';
+            if (!reason) {
+              Swal.showValidationMessage('Select a rejection reason.');
+              return null;
+            }
+            if (reason === 'other' && !notes) {
+              Swal.showValidationMessage('Add a note when selecting Other.');
+              return null;
+            }
+            return { rejection_reason: reason, rejection_notes: notes };
+          },
+        })
+      : await Swal.fire({
+          title: 'Approve identity review?',
+          text: 'This records a human review decision. It does not establish government authenticity.',
+          icon: 'question',
+          showCancelButton: true,
+          confirmButtonText: 'Approve',
+          confirmButtonColor: '#10b981',
+          cancelButtonText: 'Cancel',
+        });
+
+    if (result.isConfirmed) {
+      await performIdentityReview(user, decision, decision === 'reject' ? result.value : {});
+    }
   };
-
-
 
   return (
     <AppLayout>
@@ -658,51 +729,59 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
               Manage user registrations, approvals, and account controls
             </p>
           </div>
-          <Link
-            href="/superAdmin/flagged-accounts"
-            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200"
-          >
-            View Flagged Accounts
-          </Link>
+          <div className="flex flex-wrap gap-3">
+            <Link
+              href="/admin/identity-verification-reviews"
+              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-gray-900 hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-colors duration-200"
+            >
+              Identity Review Queue
+            </Link>
+            <Link
+              href="/admin/flagged-accounts"
+              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-gray-900 hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-colors duration-200"
+            >
+              View Flagged Accounts
+            </Link>
+          </div>
         </div>
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           <MetricCard
             title="Total Users"
-            value={users.length}
-            change={12}
-            changeType="increase"
+            value={stats.total ?? (isServerPaginated ? pagination.total : users.length)}
+            change={stats.changes?.total ?? 0}
+            changeType={metricChangeType(stats.changes?.total ?? 0)}
             icon={UserCircleIcon}
             color="info"
             description="Total registered users"
           />
           <MetricCard
             title="Pending Approvals"
-            value={users.filter(u => u.status === 'pending').length}
-            change={-5}
-            changeType="decrease"
+            value={stats.pending ?? users.filter(u => u.status === 'pending').length}
+            change={stats.changes?.pending ?? 0}
+            changeType={metricChangeType(stats.changes?.pending ?? 0)}
             icon={AlertIcon}
             color="warning"
             description="Users awaiting approval"
           />
           <MetricCard
             title="Active Users"
-            value={users.filter(u => u.status === 'active' || u.status === 'approved').length}
-            change={8}
-            changeType="increase"
+            value={stats.active ?? users.filter(u => u.status === 'active' || u.status === 'approved').length}
+            change={stats.changes?.active ?? 0}
+            changeType={metricChangeType(stats.changes?.active ?? 0)}
             icon={CheckCircleIcon}
             color="success"
             description="Currently active users"
           />
           <MetricCard
-            title="Deactivated"
-            value={users.filter(u => u.status === 'deactivated').length}
-            change={2}
-            changeType="increase"
+            title="Archived"
+            value={stats.archived ?? users.filter(u => u.archived === true || u.status === 'archived').length}
+            change={stats.changes?.archived ?? 0}
+            changeType={metricChangeType(stats.changes?.archived ?? 0)}
             icon={TrashBinIcon}
             color="error"
-            description="Deactivated accounts"
+            description="Reversible archived accounts"
           />
         </div>
 
@@ -716,7 +795,11 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
               <input
                 type="text"
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  if (searchTimer.current) clearTimeout(searchTimer.current);
+                  searchTimer.current = setTimeout(() => visitUserPage(e.target.value, filterStatus, 1, filterLifecycle), 250);
+                }}
                 placeholder="Search by name or email..."
                 aria-label="Search Users"
                 className="px-9 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
@@ -729,18 +812,44 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
               </label>
               <select
                 value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value as 'pending' | 'approved' | 'rejected' | 'active' | 'deactivated' | 'suspended')}
+                onChange={(e) => {
+                  const value = e.target.value as UserStatusFilter;
+                  setFilterStatus(value);
+                  visitUserPage(searchTerm, value, 1, filterLifecycle);
+                }}
                 aria-label="Filter by Status"
                 className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
               >
+                <option value="all">All Statuses</option>
                 <option value="pending">Pending</option>
                 <option value="active">Active</option>
                 <option value="approved">Approved</option>
                 <option value="rejected">Rejected</option>
                 <option value="suspended">Suspended</option>
                 <option value="deactivated">Deactivated</option>
+                <option value="archived">Archived</option>
               </select>
             </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2" htmlFor="filter-user-lifecycle">
+                Filter by Lifecycle
+              </label>
+              <select
+                id="filter-user-lifecycle"
+                value={filterLifecycle}
+                onChange={(e) => {
+                  setFilterLifecycle(e.target.value);
+                  visitUserPage(searchTerm, filterStatus, 1, e.target.value);
+                }}
+                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+              >
+                <option value="all">All Lifecycles</option>
+                <option value="active">Active</option>
+                <option value="archived">Archived</option>
+              </select>
+            </div>
+
           </div>
         </div>
 
@@ -748,7 +857,7 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
           <div className="p-6 border-b border-gray-200 dark:border-gray-700">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-              New Register Users ({filteredUsers.length})
+              Customer Accounts ({isServerPaginated ? pagination.total : filteredUsers.length})
             </h3>
           </div>
           <div className="overflow-auto">
@@ -758,14 +867,16 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">User</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Created</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Created By</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Employee</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Last Login</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
               <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                {paginatedUsers.map((user) => (
+                {paginatedUsers.map((user) => {
+                  const isArchived = user.archived === true || user.status === 'archived';
+                  const accountStatus = user.accountStatus || user.status;
+
+                  return (
                   <tr key={user.id}>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center">
@@ -785,109 +896,112 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
                         user.status === 'pending' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
                         user.status === 'approved' || user.status === 'active' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
                         user.status === 'rejected' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
+                        user.status === 'archived' ? 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200' :
                         'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200'
                       }`}>
                         {user.status}
                       </span>
+                      {isArchived && accountStatus === 'suspended' && (
+                        <span className="ml-2 inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200">
+                          suspended
+                        </span>
+                      )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                       {new Date(user.createdAt).toLocaleDateString()}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                      {(user as any).createdBy || 'Direct Registration'}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                      {user.employee ? (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">Linked</span>
-                      ) : (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300">No Link</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                       {user.lastLogin ? new Date(user.lastLogin).toLocaleDateString() : 'Never'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <div className="flex space-x-2 items-center">
-                        {user.status === 'pending' ? (
-                          <>
-                            <button
-                              onClick={() => handleApproval(user.id, 'approve')}
-                              disabled={isProcessingId === user.id}
-                              className={`inline-flex items-center justify-center w-8 h-8 rounded-md text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300 transition-colors ${isProcessingId === user.id ? 'opacity-50 cursor-not-allowed' : ''}`}
-                              title="Approve User"
-                            >
-                              <CheckCircleIcon className="h-4 w-4" />
-                            </button>
-                            <button
-                              onClick={() => handleApproval(user.id, 'reject')}
-                              disabled={isProcessingId === user.id}
-                              className={`inline-flex items-center justify-center w-8 h-8 rounded-md text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 transition-colors ${isProcessingId === user.id ? 'opacity-50 cursor-not-allowed' : ''}`}
-                              title="Reject User"
-                            >
-                              <AlertIcon className="h-4 w-4" />
-                            </button>
-                          </>
-                        ) : (
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            setSelectedUser(user);
+                            setIsDetailsModalOpen(true);
+                          }}
+                          disabled={isProcessingId === user.id}
+                          className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-950 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white ${isProcessingId === user.id ? 'cursor-not-allowed opacity-50' : ''}`}
+                          title="View Registration Details"
+                        >
+                          <InfoIcon className="h-5 w-5" />
+                        </button>
+
+                        {isArchived ? (
+                          <button
+                            onClick={() => handleRestore(user)}
+                            disabled={isProcessingId === user.id}
+                            className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-950 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white ${isProcessingId === user.id ? 'cursor-not-allowed opacity-50' : ''}`}
+                            title="Restore Account"
+                          >
+                            <CheckCircleIcon className="h-4 w-4" />
+                          </button>
+                        ) : accountStatus === 'active' || accountStatus === 'approved' ? (
                           <>
                             <button
                               onClick={() => {
                                 setSelectedUser(user);
-                                setIsDetailsModalOpen(true);
+                                setIsSuspendModalOpen(true);
                               }}
                               disabled={isProcessingId === user.id}
-                              className={`inline-flex items-center justify-center w-8 h-8 rounded-md text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 transition-colors ${isProcessingId === user.id ? 'opacity-50 cursor-not-allowed' : ''}`}
-                              title="View Registration Details"
+                            className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-950 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white ${isProcessingId === user.id ? 'cursor-not-allowed opacity-50' : ''}`}
+                              title="Suspend Account"
                             >
-                              <InfoIcon className="h-5 w-5" />
+                              <AlertIcon className="h-5 w-5" />
                             </button>
-
-                            {user.status !== 'suspended' && user.status !== 'deactivated' && (
-                              <button
-                                onClick={() => {
-                                    setSelectedUser(user);
-                                    setIsSuspendModalOpen(true);
-                                  }}
-                                  disabled={isProcessingId === user.id}
-                                  className={`inline-flex items-center justify-center w-8 h-8 rounded-md text-orange-600 hover:text-orange-800 dark:text-orange-400 dark:hover:text-orange-300 transition-colors ${isProcessingId === user.id ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                  title="Suspend Account"
-                                >
-                                  <AlertIcon className="h-5 w-5" />
-                                </button>
-                            )}
-
-                            {user.status === 'suspended' && (
-                              <button
-                                  onClick={() => handleReactivate(user.id, user.name)}
-                                  disabled={isProcessingId === user.id}
-                                  className={`inline-flex items-center justify-center w-8 h-8 rounded-md text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300 transition-colors ${isProcessingId === user.id ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                  title="Reactivate Account"
-                                >
-                                  <CheckCircleIcon className="h-4 w-4" />
-                                </button>
-                            )}
+                            <button
+                              onClick={() => handleArchive(user)}
+                              disabled={isProcessingId === user.id}
+                              className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-950 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white ${isProcessingId === user.id ? 'cursor-not-allowed opacity-50' : ''}`}
+                              title="Archive Account"
+                            >
+                              <TrashBinIcon className="h-4 w-4" />
+                            </button>
                           </>
-                        )}
+                        ) : accountStatus === 'suspended' ? (
+                          <>
+                            <button
+                              onClick={() => handleReactivate(user)}
+                              disabled={isProcessingId === user.id}
+                              className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-950 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white ${isProcessingId === user.id ? 'cursor-not-allowed opacity-50' : ''}`}
+                              title="Reactivate Account"
+                            >
+                              <CheckCircleIcon className="h-4 w-4" />
+                            </button>
+                            <button
+                              onClick={() => handleArchive(user)}
+                              disabled={isProcessingId === user.id}
+                              className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-950 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white ${isProcessingId === user.id ? 'cursor-not-allowed opacity-50' : ''}`}
+                              title="Archive Account"
+                            >
+                              <TrashBinIcon className="h-4 w-4" />
+                            </button>
+                          </>
+                        ) : null}
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
 
           {/* Pagination */}
-          {filteredUsers.length > 0 && (
+          {paginatedUsers.length > 0 && (
             <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700">
               <div className="flex items-center justify-between">
                 <div className="text-sm text-gray-700 dark:text-gray-300">
-                  Showing <span className="font-medium">{startIndex + 1}</span> to{" "}
-                  <span className="font-medium">{Math.min(endIndex, filteredUsers.length)}</span> of{" "}
-                  <span className="font-medium">{filteredUsers.length}</span>
+                  Showing <span className="font-medium">{isServerPaginated ? (pagination.from || 0) : startIndex + 1}</span> to{" "}
+                  <span className="font-medium">{isServerPaginated ? (pagination.to || 0) : Math.min(endIndex, filteredUsers.length)}</span> of{" "}
+                  <span className="font-medium">{isServerPaginated ? pagination.total : filteredUsers.length}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-                    disabled={currentPage === 1}
+                    onClick={() => isServerPaginated
+                      ? visitUserPage(searchTerm, filterStatus, effectivePage - 1, filterLifecycle)
+                      : setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                    disabled={effectivePage === 1}
                     className="p-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     title="Previous page"
                   >
@@ -901,14 +1015,16 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
                     if (
                       page === 1 ||
                       page === totalPages ||
-                      (page >= currentPage - 1 && page <= currentPage + 1)
+                      (page >= effectivePage - 1 && page <= effectivePage + 1)
                     ) {
                       return (
                         <button
                           key={page}
-                          onClick={() => setCurrentPage(page)}
+                          onClick={() => isServerPaginated
+                            ? visitUserPage(searchTerm, filterStatus, page, filterLifecycle)
+                            : setCurrentPage(page)}
                           className={`min-w-[40px] h-10 px-3 rounded-lg font-medium transition-colors ${
-                            currentPage === page
+                            effectivePage === page
                               ? "bg-blue-600 text-white"
                               : "border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
                           }`}
@@ -916,7 +1032,7 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
                           {page}
                         </button>
                       );
-                    } else if (page === currentPage - 2 || page === currentPage + 2) {
+                    } else if (page === effectivePage - 2 || page === effectivePage + 2) {
                       return (
                         <span key={page} className="px-2 text-gray-500 dark:text-gray-400">
                           ...
@@ -927,8 +1043,10 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
                   })}
 
                   <button
-                    onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
-                    disabled={currentPage === totalPages}
+                    onClick={() => isServerPaginated
+                      ? visitUserPage(searchTerm, filterStatus, effectivePage + 1, filterLifecycle)
+                      : setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                    disabled={effectivePage === totalPages}
                     className="p-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     title="Next page"
                   >
@@ -941,64 +1059,6 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
             </div>
           )}
         </div>
-
-
-
-        {/* Password Reset Modal */}
-        {isPasswordModalOpen && (
-          <>
-              {/* Backdrop */}
-              <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100000] pointer-events-auto" />
-              {/* Modal */}
-              <div ref={passwordModalRef} tabIndex={-1} className="fixed inset-0 flex items-center justify-center z-[100001] p-4 pointer-events-auto">
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
-                <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
-                  Reset Password
-                </h3>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      User: {selectedUser?.name}
-                    </label>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Email: {selectedUser?.email}
-                    </label>
-                  </div>
-                  <div className="bg-yellow-50 dark:bg-yellow-900 border border-yellow-200 dark:border-yellow-700 rounded-md p-4">
-                    <div className="flex">
-                      <AlertIcon className="h-5 w-5 text-yellow-400" />
-                      <div className="ml-3">
-                        <h3 className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
-                          Password Reset Confirmation
-                        </h3>
-                        <div className="mt-2 text-sm text-yellow-700 dark:text-yellow-300">
-                          <p>
-                            This will send a password reset link to the user's email address.
-                            The user will be able to set a new password using the link.
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="mt-6 flex justify-end space-x-3">
-                  <Button variant="outline" onClick={() => setIsPasswordModalOpen(false)}>
-                    Cancel
-                  </Button>
-                  <Button onClick={() => {
-                    if (selectedUser) {
-                      handleResetPassword();
-                      setIsPasswordModalOpen(false);
-                      setSelectedUser(null);
-                    }
-                  }}>
-                    Send Reset Link
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </>
-        )}
 
         {/* View User Details Modal */}
         {isViewModalOpen && (
@@ -1046,12 +1106,6 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                          Created By
-                        </label>
-                        <p className="text-sm text-gray-900 dark:text-white">{(selectedUser as any).createdBy || 'Direct Registration'}</p>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                           Status
                         </label>
                         <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
@@ -1077,37 +1131,7 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
                       </div>
                     </div>
                     <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
-                      {selectedUser.status === 'pending' && (
-                        <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
-                          Approval Actions
-                        </h4>
-                      )}
                       <div className="flex justify-between items-center">
-                        {selectedUser.status === 'pending' && (
-                          <div className="flex space-x-3">
-                            <Button
-                              onClick={() => {
-                                handleApproval(selectedUser.id, 'approve');
-                                setIsViewModalOpen(false);
-                              }}
-                              className="bg-green-600 hover:bg-green-700 text-white"
-                            >
-                              <CheckCircleIcon className="h-4 w-4 mr-2" />
-                              Approve
-                            </Button>
-                            <Button
-                              onClick={() => {
-                                handleApproval(selectedUser.id, 'reject');
-                                setIsViewModalOpen(false);
-                              }}
-                              variant="outline"
-                              className="border-red-300 text-red-600 hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900"
-                            >
-                              <AlertIcon className="h-4 w-4 mr-2" />
-                              Reject
-                            </Button>
-                          </div>
-                        )}
                         <Button variant="outline" onClick={() => setIsViewModalOpen(false)}>
                           Close
                         </Button>
@@ -1115,75 +1139,6 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
                     </div>
                   </div>
                 )}
-              </div>
-            </div>
-          </>
-        )}
-
-        {/* Deactivate Account Modal */}
-        {isDeactivateModalOpen && (
-          <>
-            {/* Backdrop */}
-            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100000] pointer-events-auto" />
-            {/* Modal */}
-            <div ref={deactivateModalRef} tabIndex={-1} className="fixed inset-0 flex items-center justify-center z-[100001] p-4 pointer-events-auto">
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
-                <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
-                  Deactivate Account
-                </h3>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      User: {selectedUser?.name}
-                    </label>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Reason for Deactivation
-                    </label>
-                    <select
-                      value={deactivateReason}
-                      onChange={(e) => setDeactivateReason(e.target.value)}
-                      aria-label="Select Reason"
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-red-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
-                    >
-                      <option value="">Select a reason</option>
-                      <option value="Violation of Terms">Violation of Terms</option>
-                      <option value="Suspicious Activity">Suspicious Activity</option>
-                      <option value="Request by User">Request by User</option>
-                      <option value="Inactivity">Inactivity</option>
-                      <option value="Other">Other</option>
-                    </select>
-                  </div>
-                  <div className="bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-700 rounded-md p-4">
-                    <div className="flex">
-                      <AlertIcon className="h-5 w-5 text-red-400" />
-                      <div className="ml-3">
-                        <h3 className="text-sm font-medium text-red-800 dark:text-red-200">
-                          Account Deactivation Warning
-                        </h3>
-                        <div className="mt-2 text-sm text-red-700 dark:text-red-300">
-                          <p>
-                            This action will deactivate the user's account. The user will no longer be able to access the system.
-                            This action can be reversed by reactivating the account.
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="mt-6 flex justify-end space-x-3">
-                  <Button variant="outline" onClick={() => setIsDeactivateModalOpen(false)}>
-                    Cancel
-                  </Button>
-                  <Button
-                    onClick={handleDeactivate}
-                    disabled={!deactivateReason}
-                    className="bg-red-600 hover:bg-red-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Deactivate Account
-                  </Button>
-                </div>
               </div>
             </div>
           </>
@@ -1304,7 +1259,7 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
                 <div className="p-8">
                   <div className="flex justify-between items-center mb-6">
                     <h3 className="text-3xl font-bold text-gray-900 dark:text-white">
-                      User Registration Details
+                      Customer Account Details
                     </h3>
                     <button
                       onClick={() => {
@@ -1329,13 +1284,13 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
                           <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
                             First Name
                           </label>
-                          <p className="text-base text-gray-900 dark:text-white font-medium">{selectedUser.firstName || (selectedUser.employee?.name ? (selectedUser.employee.name.split(' ')[0]) : '')}</p>
+                          <p className="text-base text-gray-900 dark:text-white font-medium">{selectedUser.firstName}</p>
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
                             Last Name
                           </label>
-                          <p className="text-base text-gray-900 dark:text-white font-medium">{selectedUser.lastName || (selectedUser.employee?.name ? (selectedUser.employee.name.split(' ').slice(1).join(' ')) : '')}</p>
+                          <p className="text-base text-gray-900 dark:text-white font-medium">{selectedUser.lastName}</p>
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
@@ -1347,7 +1302,7 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
                           <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
                             Phone Number
                           </label>
-                          <p className="text-base text-gray-900 dark:text-white">{selectedUser.phone || selectedUser.employee?.phone || 'Not provided'}</p>
+                          <p className="text-base text-gray-900 dark:text-white">{selectedUser.phone || 'Not provided'}</p>
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
@@ -1371,41 +1326,84 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
                       </div>
                     </div>
 
-                    {/* HR Information (fallback from employee record) */}
-                    {selectedUser.employee && (
+                    {/* Identity Screening */}
+                    {selectedUser.identityVerification && (
                       <div>
                         <h4 className="text-xl font-bold text-gray-900 dark:text-white mb-4 pb-3 border-b-2 border-gray-200 dark:border-gray-700">
-                          HR Information
+                          Identity Screening
                         </h4>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                          <div>
-                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">Position</label>
-                            <p className="text-base text-gray-900 dark:text-white">{selectedUser.employee.position || 'N/A'}</p>
+                        <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700 p-4 space-y-3">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+                                Document Type
+                              </label>
+                              <p className="text-sm text-gray-900 dark:text-white">
+                                {selectedUser.identityVerification.documentType || 'Not classified'}
+                              </p>
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+                                Automated Screening
+                              </label>
+                              <p className="text-sm text-gray-900 dark:text-white">
+                                {selectedUser.identityVerification.screeningStatus.replaceAll('_', ' ')}
+                              </p>
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+                                Human Review
+                              </label>
+                              <p className="text-sm text-gray-900 dark:text-white">
+                                {selectedUser.identityVerification.reviewStatus.replaceAll('_', ' ')}
+                              </p>
+                            </div>
+                            {selectedUser.identityVerification.failureReason && (
+                              <div>
+                                <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+                                  Screening Note
+                                </label>
+                                <p className="text-sm text-gray-900 dark:text-white">
+                                  {selectedUser.identityVerification.failureReason.replaceAll('_', ' ')}
+                                </p>
+                              </div>
+                            )}
                           </div>
-                          <div>
-                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">Department</label>
-                            <p className="text-base text-gray-900 dark:text-white">{selectedUser.employee.department || 'N/A'}</p>
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">Functional Role</label>
-                            <p className="text-base text-gray-900 dark:text-white">{selectedUser.employee.functionalRole || 'N/A'}</p>
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">Branch</label>
-                            <p className="text-base text-gray-900 dark:text-white">{selectedUser.employee.branch || 'N/A'}</p>
-                          </div>
+                          {['automated_check_passed', 'manual_review_required'].includes(selectedUser.identityVerification.screeningStatus)
+                            && ['not_required', 'pending'].includes(selectedUser.identityVerification.reviewStatus) && (
+                              <div className="flex flex-wrap gap-3 pt-3 border-t border-gray-200 dark:border-gray-600">
+                                <Button
+                                  onClick={() => confirmIdentityReview(selectedUser, 'approve')}
+                                  disabled={isProcessingId === selectedUser.id}
+                                  className="bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50"
+                                >
+                                  Approve Review
+                                </Button>
+                                <Button
+                                  onClick={() => confirmIdentityReview(selectedUser, 'reject')}
+                                  disabled={isProcessingId === selectedUser.id}
+                                  className="bg-red-600 hover:bg-red-700 text-white disabled:opacity-50"
+                                >
+                                  Reject Review
+                                </Button>
+                              </div>
+                            )}
+                          <p className="text-xs text-gray-600 dark:text-gray-300">
+                            Automated screening indicates document consistency only. Human review decisions do not by themselves establish government authenticity.
+                          </p>
                         </div>
                       </div>
                     )}
 
                     {/* Document Information */}
-                    {selectedUser.validIdPath && (
+                    {(selectedUser.validIdUrl || selectedUser.validIdBackUrl) && (
                       <div>
                         <h4 className="text-xl font-bold text-gray-900 dark:text-white mb-4 pb-3 border-b-2 border-gray-200 dark:border-gray-700">
                           Submitted Documents
                         </h4>
                         <div className="space-y-3 bg-gray-50 dark:bg-gray-700 p-4 rounded-lg max-h-96 overflow-y-auto">
-                          <div className="border border-gray-200 dark:border-gray-600 rounded-lg p-3 bg-white dark:bg-gray-800">
+                          {selectedUser.validIdUrl && (
+                            <div className="border border-gray-200 dark:border-gray-600 rounded-lg p-3 bg-white dark:bg-gray-800">
                             <div className="flex items-center justify-between mb-2">
                               <div className="flex items-center space-x-2">
                                 <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900 rounded flex items-center justify-center">
@@ -1440,7 +1438,7 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
                                 <div className="bg-gray-100 dark:bg-gray-900 rounded border border-gray-300 dark:border-gray-600 flex items-center justify-center" style={{ minHeight: '200px' }}>
                                   {!imageLoadErrors.has(0) ? (
                                     <img
-                                      src={buildDocumentUrl(selectedUser.validIdPath || '')}
+                                      src={selectedUser.validIdUrl}
                                       alt="Valid ID Document"
                                       className="max-w-full max-h-96 rounded object-contain"
                                       onError={(e) => {
@@ -1457,7 +1455,63 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
                                 </div>
                               </div>
                             )}
-                          </div>
+                            </div>
+                          )}
+                          {selectedUser.validIdBackUrl && (
+                            <div className="border border-gray-200 dark:border-gray-600 rounded-lg p-3 bg-white dark:bg-gray-800">
+                              <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center space-x-2">
+                                  <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900 rounded flex items-center justify-center">
+                                    <span className="text-blue-600 dark:text-blue-400 text-sm">📄</span>
+                                  </div>
+                                  <div>
+                                    <p className="text-xs font-semibold text-gray-900 dark:text-white">
+                                      Valid Identification — Back
+                                    </p>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                                      Government-issued ID
+                                    </p>
+                                  </div>
+                                </div>
+                                <button
+                                  onClick={() => {
+                                    const newExpanded = new Set(expandedDocuments);
+                                    if (newExpanded.has(1)) {
+                                      newExpanded.delete(1);
+                                    } else {
+                                      newExpanded.add(1);
+                                    }
+                                    setExpandedDocuments(newExpanded);
+                                  }}
+                                  className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 text-xs font-medium px-2 py-1 rounded transition-colors"
+                                >
+                                  {expandedDocuments.has(1) ? 'Hide' : 'View'}
+                                </button>
+                              </div>
+                              {expandedDocuments.has(1) && (
+                                <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-600">
+                                  <div className="bg-gray-100 dark:bg-gray-900 rounded border border-gray-300 dark:border-gray-600 flex items-center justify-center" style={{ minHeight: '200px' }}>
+                                    {!imageLoadErrors.has(1) ? (
+                                      <img
+                                        src={selectedUser.validIdBackUrl}
+                                        alt="Back of valid ID document"
+                                        className="max-w-full max-h-96 rounded object-contain"
+                                        onError={(e) => {
+                                          setImageLoadErrors(prev => new Set(prev).add(1));
+                                          e.currentTarget.style.display = 'none';
+                                        }}
+                                      />
+                                    ) : null}
+                                    {imageLoadErrors.has(1) && (
+                                      <p className="text-sm text-gray-500 dark:text-gray-400 text-center p-6">
+                                        Unable to load image
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
                     )}

@@ -4,10 +4,13 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Builder;
 use App\Enums\EmployeeStatus;
+use App\Casts\EmployeeStatusCast;
+use App\Models\EmployeeEmploymentPeriod;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Activitylog\LogOptions;
 
@@ -19,7 +22,7 @@ use Spatie\Activitylog\LogOptions;
  */
 class Employee extends Model
 {
-    use HasFactory, LogsActivity;
+    use HasFactory, LogsActivity, SoftDeletes;
 
     /**
      * The table associated with the model.
@@ -59,7 +62,12 @@ class Employee extends Model
         'other_allowances',
         'hire_date',
         'status',
+        'terminated_at',
         'suspension_reason',
+    ];
+
+    protected $hidden = [
+        'privileged_suspension_id',
     ];
 
     /**
@@ -69,13 +77,14 @@ class Employee extends Model
      */
     protected $casts = [
         'hire_date' => 'date',
+        'terminated_at' => 'datetime',
         'salary' => 'decimal:2',
         'sales_commission_rate' => 'decimal:4',
         'performance_bonus_rate' => 'decimal:4',
         'other_allowances' => 'decimal:2',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
-        'status' => EmployeeStatus::class,
+        'status' => EmployeeStatusCast::class,
     ];
 
     /**
@@ -91,7 +100,12 @@ class Employee extends Model
      */
     public function suspend(): void
     {
-        $this->update(['status' => 'suspended']);
+        $this->assertNotTerminated();
+
+        $this->forceFill([
+            'status' => 'suspended',
+            'privileged_suspension_id' => null,
+        ])->save();
     }
 
     /**
@@ -99,7 +113,19 @@ class Employee extends Model
      */
     public function activate(): void
     {
-        $this->update(['status' => 'active']);
+        $this->assertNotTerminated();
+
+        $this->forceFill([
+            'status' => 'active',
+            'privileged_suspension_id' => null,
+        ])->save();
+    }
+
+    private function assertNotTerminated(): void
+    {
+        if ($this->status === EmployeeStatus::TERMINATED) {
+            throw new \LogicException('Terminated employees must use the Rehire / Reinstate Employee workflow.');
+        }
     }
 
     /**
@@ -119,6 +145,15 @@ class Employee extends Model
     }
 
     /**
+     * Retain each employment period when the employee is terminated and later
+     * rehired. The Employee row represents the latest employment state.
+     */
+    public function employmentPeriods(): HasMany
+    {
+        return $this->hasMany(EmployeeEmploymentPeriod::class);
+    }
+
+    /**
      * Get the department this employee belongs to
      */
     public function department(): BelongsTo
@@ -132,6 +167,11 @@ class Employee extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class, 'email', 'email');
+    }
+
+    public function privilegedSuspension(): BelongsTo
+    {
+        return $this->belongsTo(AccountSuspension::class, 'privileged_suspension_id');
     }
 
     /**
@@ -244,6 +284,11 @@ class Employee extends Model
     public function belongsToShop($shopOwnerId): bool
     {
         return $this->shop_owner_id === $shopOwnerId;
+    }
+
+    public function isOffboarded(): bool
+    {
+        return $this->trashed();
     }
 
     /**

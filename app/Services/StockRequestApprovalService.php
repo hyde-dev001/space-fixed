@@ -160,6 +160,10 @@ class StockRequestApprovalService
             if ($stockRequest->status !== 'accepted') {
                 throw new \Exception('Only accepted stock requests can be converted to purchase requests.');
             }
+            if ($stockRequest->request_source === 'repair' && !$stockRequest->inventory_approved_date) {
+                throw new \Exception('Repair material request must be approved by Inventory first before procurement processing.');
+            }
+
 
             // Create PR data from stock request
             $prData = [
@@ -255,7 +259,7 @@ class StockRequestApprovalService
             title: 'New Stock Request Submitted',
             message: "Stock request {$payload['request_number']} for {$payload['product_name']} (Qty: {$payload['quantity_needed']}) needs review.",
             data: $payload,
-            actionUrl: '/erp/procurement/stock-request-approval',
+            actionUrl: "/erp/inventory/request-material-approval?stock_request={$stockRequest->id}",
             priority: $stockRequest->priority === 'high' ? 'high' : 'medium'
         );
     }
@@ -270,7 +274,7 @@ class StockRequestApprovalService
             title: 'Repair Material Request Forwarded',
             message: "Repair material request {$payload['request_number']} for {$payload['product_name']} is now ready for procurement approval.",
             data: $payload,
-            actionUrl: '/erp/procurement/stock-request-approval',
+            actionUrl: "/erp/inventory/request-material-approval?stock_request={$stockRequest->id}",
             priority: $stockRequest->priority === 'high' ? 'high' : 'medium'
         );
     }
@@ -290,7 +294,7 @@ class StockRequestApprovalService
             title: 'Stock Request Approved',
             message: "Your stock request {$payload['request_number']} for {$payload['product_name']} was approved.",
             data: $payload,
-            actionUrl: '/erp/procurement/stock-request-approval',
+            actionUrl: "/erp/inventory/stock-request?stock_request={$stockRequest->id}",
             shopId: (int) $stockRequest->shop_owner_id,
             priority: 'medium'
         );
@@ -311,7 +315,7 @@ class StockRequestApprovalService
             title: 'Stock Request Rejected',
             message: "Your stock request {$payload['request_number']} was rejected. Reason: {$reason}",
             data: $payload,
-            actionUrl: '/erp/procurement/stock-request-approval',
+            actionUrl: "/erp/inventory/stock-request?stock_request={$stockRequest->id}",
             shopId: (int) $stockRequest->shop_owner_id,
             priority: 'medium'
         );
@@ -332,7 +336,7 @@ class StockRequestApprovalService
             title: 'Stock Request Needs Details',
             message: "More details were requested for {$payload['request_number']}.",
             data: $payload,
-            actionUrl: '/erp/procurement/stock-request-approval',
+            actionUrl: "/erp/inventory/stock-request?stock_request={$stockRequest->id}",
             shopId: (int) $stockRequest->shop_owner_id,
             priority: 'medium'
         );
@@ -345,17 +349,18 @@ class StockRequestApprovalService
         string $message,
         array $data,
         string $actionUrl,
-        string $priority
+        string $priority,
+        bool $requiresAction = true
     ): void {
         $recipients = User::query()
             ->where('shop_owner_id', $shopOwnerId)
-            ->whereHas('roles', fn ($q) => $q->where('name', 'Procurement Manager'))
+            ->whereHas('roles', fn ($q) => $q->whereRaw('LOWER(name) = ?', ['procurement manager']))
             ->get();
 
         if ($recipients->isEmpty()) {
             $recipients = User::query()
                 ->where('shop_owner_id', $shopOwnerId)
-                ->whereHas('roles', fn ($q) => $q->where('name', 'Finance'))
+                ->whereHas('roles', fn ($q) => $q->whereRaw('LOWER(name) = ?', ['finance']))
                 ->get();
         }
 
@@ -368,7 +373,8 @@ class StockRequestApprovalService
                 data: $data,
                 actionUrl: $actionUrl,
                 shopId: $shopOwnerId,
-                priority: $priority
+                priority: $priority,
+                requiresAction: $requiresAction,
             );
         }
     }

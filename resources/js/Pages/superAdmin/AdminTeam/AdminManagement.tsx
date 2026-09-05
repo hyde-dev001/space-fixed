@@ -1,680 +1,337 @@
-import React, { useState } from 'react';
-import { Link, router, usePage } from '@inertiajs/react';
+import { Head, Link, router } from '@inertiajs/react';
+import { useRef, useState } from 'react';
 import Swal from 'sweetalert2';
 import AppLayout from '../../../layout/AppLayout';
 
-// Icon Components
-const UserCircleIcon = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-  </svg>
-);
+interface Administrator {
+  id: number;
+  firstName: string;
+  lastName: string;
+  email: string;
+  role: string;
+  status: string;
+  mfa_complete?: boolean;
+  recovery_code_count?: number;
+  createdAt?: string;
+  lastLogin?: string | null;
+}
 
-const LockIcon = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-  </svg>
-);
+interface PaginationMeta {
+  current_page: number;
+  from: number | null;
+  last_page: number;
+  per_page: number;
+  to: number | null;
+  total: number;
+}
 
-const CheckCircleIcon = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-  </svg>
-);
+interface AdministratorPage {
+  data: Administrator[];
+  meta?: Partial<PaginationMeta>;
+  links?: Record<string, string | null>;
+}
 
-const AlertIcon = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-  </svg>
-);
+interface AdminManagementProps {
+  admins?: Administrator[] | AdministratorPage;
+  stats?: Record<string, number>;
+  filters?: { search?: string | null; role?: string | null; status?: string | null };
+}
 
-const TrashBinIcon = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-  </svg>
-);
+type ActionState = { key: string; error?: string } | null;
 
-const InfoIcon = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-  </svg>
-);
+function statusLabel(status: string): string {
+  return status.replace(/_/g, ' ').replace(/\b\w/g, (character) => character.toUpperCase());
+}
 
-// Button Component
-const Button = ({ children, variant = 'primary', onClick, className = '', disabled = false }) => {
-  const baseClasses = "px-4 py-2 rounded-lg transition-colors duration-200 font-medium";
-  const variantClasses = {
-    primary: "bg-blue-600 text-white hover:bg-blue-700 disabled:bg-blue-400",
-    secondary: "bg-gray-600 text-white hover:bg-gray-700 disabled:bg-gray-400",
-    success: "bg-green-600 text-white hover:bg-green-700 disabled:bg-green-400",
-    danger: "bg-red-600 text-white hover:bg-red-700 disabled:bg-red-400",
-  };
-  
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className={`${baseClasses} ${variantClasses[variant]} ${className}`}
-    >
-      {children}
-    </button>
-  );
+const MetricIcon = ({ kind }: { kind: 'users' | 'active' | 'suspended' | 'inactive' }) => {
+  const paths = {
+    users: 'M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2m7-10a4 4 0 100-8 4 4 0 000 8zm9 10v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75',
+    active: 'M5 13l4 4L19 7',
+    suspended: 'M12 9v4m0 4h.01M10.3 3.2L2.6 17a2 2 0 001.75 3h15.3a2 2 0 001.75-3L13.7 3.2a2 2 0 00-3.5 0z',
+    inactive: 'M6 6l12 12M6 18L18 6',
+  } as const;
+
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6" aria-hidden="true"><path d={paths[kind]} /></svg>;
 };
 
-const ArrowUpIcon = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-  </svg>
-);
+const ActionIcon = ({ kind }: { kind: 'send' | 'suspend' | 'deactivate' | 'activate' | 'reset' }) => {
+  const paths = {
+    send: 'M22 2L11 13m0 0l-4 9 4-9 9-4m-9 4L2 7l20-5-5 20-6-9z',
+    suspend: 'M12 9v4m0 4h.01M10.3 3.2L2.6 17a2 2 0 001.75 3h15.3a2 2 0 001.75-3L13.7 3.2a2 2 0 00-3.5 0z',
+    deactivate: 'M6 6l12 12M6 18L18 6',
+    activate: 'M5 13l4 4L19 7',
+    reset: 'M3 12a9 9 0 109-9c-2.4 0-4.6.95-6.2 2.5L3 8m0 0V3m0 5h5',
+  } as const;
 
-const ArrowDownIcon = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-  </svg>
-);
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5" aria-hidden="true"><path d={paths[kind]} /></svg>;
+};
 
-const MetricCard = ({
-  title,
-  value,
-  change,
-  changeType,
-  icon: Icon,
-  color,
-  description
-}) => {
-  const getColorClasses = () => {
-    switch (color) {
-      case 'success': return 'from-green-500 to-emerald-600';
-      case 'error': return 'from-red-500 to-rose-600';
-      case 'warning': return 'from-yellow-500 to-orange-600';
-      case 'info': return 'from-blue-500 to-indigo-600';
-      default: return 'from-gray-500 to-gray-600';
-    }
+const actionIconClass = 'inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-800 transition hover:bg-gray-100 hover:text-black focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700 dark:hover:text-white';
+
+function roleLabel(role: string): string {
+  return role === 'super_admin' ? 'Super Admin' : 'Admin';
+}
+
+function errorMessage(errors: unknown): string {
+  if (!errors || typeof errors !== 'object') return 'The administrator action could not be completed.';
+  const values = Object.values(errors as Record<string, unknown>);
+  const first = values.find((value) => typeof value === 'string' || (Array.isArray(value) && typeof value[0] === 'string'));
+  if (Array.isArray(first)) return first[0] as string;
+  return typeof first === 'string' ? first : 'The administrator action could not be completed.';
+}
+
+const emptyPage: AdministratorPage = {
+  data: [],
+  meta: { current_page: 1, from: null, last_page: 1, per_page: 25, to: null, total: 0 },
+  links: {},
+};
+
+export default function AdminManagement({ admins = [], stats = {}, filters = {} }: AdminManagementProps) {
+  const [filter, setFilter] = useState(filters.status || 'all');
+  const [roleFilter, setRoleFilter] = useState(filters.role || 'all');
+  const [search, setSearch] = useState(filters.search || '');
+  const [action, setAction] = useState<ActionState>(null);
+  const [actionError, setActionError] = useState<string>();
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const isServerPaginated = !Array.isArray(admins);
+  const adminPage: AdministratorPage = isServerPaginated
+    ? (admins as AdministratorPage)
+    : { ...emptyPage, data: admins as Administrator[] };
+  const pageMeta = {
+    ...emptyPage.meta,
+    ...(adminPage.meta ?? {}),
+  } as PaginationMeta;
+  const visibleAdmins = isServerPaginated
+    ? adminPage.data
+    : (admins as Administrator[]).filter((admin) => {
+      const normalizedSearch = search.trim().toLowerCase();
+      return (!normalizedSearch
+        || `${admin.firstName} ${admin.lastName}`.toLowerCase().includes(normalizedSearch)
+        || admin.email.toLowerCase().includes(normalizedSearch))
+        && (filter === 'all' || admin.status === filter);
+    });
+
+  const visitAdminPage = (nextSearch = search, nextFilter = filter, page = 1, nextRole = roleFilter) => {
+    const params: Record<string, string | number> = { page };
+    if (nextSearch.trim()) params.search = nextSearch.trim();
+    if (nextFilter !== 'all') params.status = nextFilter;
+    if (nextRole !== 'all') params.role = nextRole;
+
+    router.get('/admin/administrators', params, {
+      preserveState: true,
+      preserveScroll: true,
+      replace: true,
+    });
+  };
+
+  const runPostAction = (admin: Administrator, actionName: string, path: string) => {
+    const key = `${admin.id}:${actionName}`;
+    if (action?.key === key) return;
+    setActionError(undefined);
+    setAction({ key });
+    router.post(path, {}, {
+      preserveScroll: true,
+      onError: (errors) => {
+        setActionError(errorMessage(errors));
+        setAction({ key, error: errorMessage(errors) });
+      },
+      onFinish: () => setAction(null),
+    });
+  };
+
+  const runPatchAction = (admin: Administrator, role: string) => {
+    const key = `${admin.id}:role`;
+    setActionError(undefined);
+    setAction({ key });
+    router.patch(`/admin/administrators/${admin.id}/role`, { role }, {
+      preserveScroll: true,
+      onError: (errors) => {
+        setActionError(errorMessage(errors));
+        setAction({ key, error: errorMessage(errors) });
+      },
+      onFinish: () => setAction(null),
+    });
+  };
+
+  const confirmAction = async (message: string, callback: () => void) => {
+    const result = await Swal.fire({
+      title: 'Confirm action', text: message, icon: 'warning', showCancelButton: true,
+      confirmButtonColor: '#111827', cancelButtonColor: '#6b7280',
+      confirmButtonText: 'Continue', cancelButtonText: 'Cancel',
+    });
+    if (result.isConfirmed) callback();
   };
 
   return (
-    <div className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-500 hover:shadow-xl hover:border-gray-300 hover:-translate-y-1 dark:border-gray-800 dark:bg-white/[0.03] dark:hover:border-gray-700">
-      {/* Animated background gradient */}
-      <div className={`absolute inset-0 bg-gradient-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
-
-      <div className="relative">
-        <div className="flex items-center justify-between mb-4">
-          <div className={`flex items-center justify-center w-14 h-14 bg-gradient-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
-            <Icon className="text-white size-7 drop-shadow-sm" />
-          </div>
-
-          {change !== undefined && (
-            <div className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${
-              changeType === 'increase'
-                ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-            }`}>
-              {changeType === 'increase' ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" />}
-              {Math.abs(change)}%
+    <AppLayout>
+      <Head title="Administrator management" />
+      <main className="min-h-screen bg-white p-6 text-gray-900 dark:bg-gray-900 dark:text-white md:p-8">
+        <div className="mx-auto max-w-7xl space-y-8">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.2em] text-gray-500">Privileged identity lifecycle</p>
+              <h1 className="mt-2 text-3xl font-bold">Admin Management</h1>
+              <p className="mt-2 text-gray-600 dark:text-gray-400">Manage administrator status, role, setup, and MFA state.</p>
             </div>
-          )}
-        </div>
-
-        <div className="space-y-2">
-          <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
-            {title}
-          </p>
-          <h3 className="text-3xl font-bold text-gray-900 dark:text-white transition-colors duration-300">
-            {value.toLocaleString()}
-          </h3>
-          {description && (
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              {description}
-            </p>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const AdminManagement = ({ admins = [], stats = {} }) => {
-  const { props } = usePage();
-  const auth = (props as any).auth;
-  const isSuperAdmin = auth?.user?.role === 'super_admin';
-  
-  const [filterStatus, setFilterStatus] = useState('all');
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedAdmin, setSelectedAdmin] = useState(null);
-  const [isViewModalOpen, setIsViewModalOpen] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(7);
-
-  const formatRoleLabel = (role?: string) => {
-    if (role === 'super_admin') return 'Super Admin';
-    if (role === 'admin') return 'Admin';
-    return role ? role.replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase()) : 'Admin';
-  };
-
-  // Transform admins data to include name field for compatibility
-  const transformedAdmins = admins.map(admin => ({
-    ...admin,
-    name: `${admin.firstName} ${admin.lastName}`,
-    role: formatRoleLabel(admin.role),
-    last_login_at: admin.lastLogin,
-    created_at: admin.createdAt
-  }));
-
-  // Filter admins based on status and search
-  const filteredAdmins = transformedAdmins.filter(admin => {
-    const matchesSearch = admin.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         admin.email.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    let statusMatch = true;
-    if (filterStatus === 'active') {
-      statusMatch = admin.status === 'active' || admin.status === 'approved';
-    } else if (filterStatus === 'suspended') {
-      statusMatch = admin.status === 'suspended';
-    } else if (filterStatus === 'inactive') {
-      statusMatch = admin.status === 'inactive';
-    }
-    
-    return matchesSearch && statusMatch;
-  });
-
-  // Pagination calculations
-  const totalPages = Math.ceil(filteredAdmins.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = startIndex + itemsPerPage;
-  const paginatedAdmins = filteredAdmins.slice(startIndex, endIndex);
-
-  // Reset to page 1 when filters change
-  React.useEffect(() => {
-    setCurrentPage(1);
-  }, [searchTerm, filterStatus]);
-
-  const openViewModal = (admin) => {
-    setSelectedAdmin(admin);
-    setIsViewModalOpen(true);
-  };
-
-  const handleSuspendAdmin = (adminId, adminName) => {
-    Swal.fire({
-      title: 'Suspend Admin?',
-      text: `Are you sure you want to suspend "${adminName}"?`,
-      icon: 'warning',
-      showCancelButton: true,
-      confirmButtonColor: '#f59e0b',
-      cancelButtonColor: '#6b7280',
-      confirmButtonText: 'Yes, suspend',
-      cancelButtonText: 'Cancel',
-    }).then((result) => {
-      if (result.isConfirmed) {
-        router.post(`/admin/admins/${adminId}/suspend`, {}, {
-          preserveState: false,
-          onSuccess: () => {
-            Swal.fire({
-              title: 'Suspended!',
-              text: 'Admin has been suspended successfully.',
-              icon: 'success',
-              confirmButtonColor: '#10b981',
-              timer: 1500,
-              showConfirmButton: false,
-            });
-          },
-          onError: () => {
-            Swal.fire({
-              title: 'Error',
-              text: 'Failed to suspend admin. Please try again.',
-              icon: 'error',
-              confirmButtonColor: '#ef4444',
-            });
-          },
-        });
-      }
-    });
-  };
-
-  const handleActivateAdmin = (adminId, adminName) => {
-    Swal.fire({
-      title: 'Activate Admin?',
-      text: `Are you sure you want to activate "${adminName}"?`,
-      icon: 'question',
-      showCancelButton: true,
-      confirmButtonColor: '#10b981',
-      cancelButtonColor: '#6b7280',
-      confirmButtonText: 'Yes, activate',
-      cancelButtonText: 'Cancel',
-    }).then((result) => {
-      if (result.isConfirmed) {
-        router.post(`/admin/admins/${adminId}/activate`, {}, {
-          preserveState: false,
-          onSuccess: () => {
-            Swal.fire({
-              title: 'Activated!',
-              text: 'Admin has been activated successfully.',
-              icon: 'success',
-              confirmButtonColor: '#10b981',
-              timer: 1500,
-              showConfirmButton: false,
-            });
-          },
-          onError: () => {
-            Swal.fire({
-              title: 'Error',
-              text: 'Failed to activate admin. Please try again.',
-              icon: 'error',
-              confirmButtonColor: '#ef4444',
-            });
-          },
-        });
-      }
-    });
-  };
-
-  const handleDeleteAdmin = (adminId, adminName) => {
-    Swal.fire({
-      title: 'Delete Admin?',
-      html: `Are you sure you want to permanently delete "<strong>${adminName}</strong>"?<br><br><span class="text-red-600">This action cannot be undone!</span>`,
-      icon: 'warning',
-      showCancelButton: true,
-      confirmButtonColor: '#ef4444',
-      cancelButtonColor: '#6b7280',
-      confirmButtonText: 'Yes, delete permanently',
-      cancelButtonText: 'Cancel',
-    }).then((result) => {
-      if (result.isConfirmed) {
-        router.delete(`/admin/admins/${adminId}`, {
-          preserveState: false,
-          onSuccess: () => {
-            Swal.fire({
-              title: 'Deleted!',
-              text: 'Admin has been permanently deleted.',
-              icon: 'success',
-              confirmButtonColor: '#10b981',
-              timer: 1500,
-              showConfirmButton: false,
-            });
-          },
-          onError: () => {
-            Swal.fire({
-              title: 'Error',
-              text: 'Failed to delete admin. Please try again.',
-              icon: 'error',
-              confirmButtonColor: '#ef4444',
-            });
-          },
-        });
-      }
-    });
-  };
-
-  return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
-      <div className="max-w-7xl mx-auto">
-        <div className="flex justify-between items-start mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-              Admin Management
-            </h1>
-            <p className="text-gray-600 dark:text-gray-400">
-              Manage administrator accounts and permissions
-            </p>
-          </div>
-          <div className="flex gap-3">
-            <Link
-              href="/admin/create-admin"
-              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors duration-200"
-            >
-              <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              Create Admin
+            <Link href="/admin/administrators/create" className="inline-flex items-center justify-center rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700">
+              Invite Administrator
             </Link>
           </div>
-        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <MetricCard
-            title="Total Admins"
-            value={stats.total || transformedAdmins.length}
-            icon={UserCircleIcon}
-            color="info"
-            description="Total administrator accounts"
-          />
-          <MetricCard
-            title="Active Admins"
-            value={stats.active || transformedAdmins.filter(a => a.status === 'active' || a.status === 'approved').length}
-            icon={CheckCircleIcon}
-            color="success"
-            description="Currently active administrators"
-          />
-          <MetricCard
-            title="Suspended"
-            value={stats.suspended || transformedAdmins.filter(a => a.status === 'suspended').length}
-            icon={LockIcon}
-            color="warning"
-            description="Suspended admin accounts"
-          />
-          <MetricCard
-            title="Inactive"
-            value={stats.inactive || transformedAdmins.filter(a => a.status === 'inactive').length}
-            icon={AlertIcon}
-            color="error"
-            description="Inactive admin accounts"
-          />
-        </div>
-
-        <div className="bg-white dark:bg-gray-800 shadow-md rounded-lg">
-          <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-              <div className="flex-1 w-full sm:w-auto">
-                <input
-                  type="text"
-                  placeholder="Search by name or email..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
-                />
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {[
+              ['Total administrators', stats.total ?? pageMeta.total, 'users'],
+              ['Active', stats.active ?? visibleAdmins.filter((admin) => admin.status === 'active').length, 'active'],
+              ['Suspended', stats.suspended ?? visibleAdmins.filter((admin) => admin.status === 'suspended').length, 'suspended'],
+              ['Inactive', stats.inactive ?? visibleAdmins.filter((admin) => admin.status === 'inactive').length, 'inactive'],
+            ].map(([label, value, kind]) => (
+              <div key={label as string} className="metrics-card rounded-2xl border border-gray-200 bg-white p-5 shadow-sm transition hover:border-gray-300 hover:shadow-md dark:border-gray-800 dark:bg-gray-800 dark:hover:border-gray-700">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-gray-200 bg-gray-100 text-gray-900 dark:border-gray-700 dark:bg-gray-700 dark:text-gray-100">
+                    <MetricIcon kind={kind as 'users' | 'active' | 'suspended' | 'inactive'} />
+                  </div>
+                  <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-600 dark:bg-gray-700 dark:text-gray-300">Snapshot</span>
+                </div>
+                <p className="mt-5 text-sm font-medium text-gray-500 dark:text-gray-400">{label}</p>
+                <p className="mt-1 text-3xl font-bold text-gray-900 dark:text-white">{value}</p>
               </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setFilterStatus('all')}
-                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                    filterStatus === 'all'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
-                  }`}
-                >
-                  All Admins
-                </button>
-                <button
-                  onClick={() => setFilterStatus('active')}
-                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                    filterStatus === 'active'
-                      ? 'bg-green-600 text-white'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
-                  }`}
-                >
-                  Active
-                </button>
-                <button
-                  onClick={() => setFilterStatus('suspended')}
-                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                    filterStatus === 'suspended'
-                      ? 'bg-yellow-600 text-white'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
-                  }`}
-                >
-                  Suspended
-                </button>
-                <button
-                  onClick={() => setFilterStatus('inactive')}
-                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                    filterStatus === 'inactive'
-                      ? 'bg-red-600 text-white'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
-                  }`}
-                >
-                  Inactive
-                </button>
+            ))}
+          </div>
+
+          <div className="rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-800">
+            <div className="flex flex-col gap-4 border-b border-gray-200 p-5 dark:border-gray-700 lg:flex-row lg:items-center lg:justify-between">
+              <label className="sr-only" htmlFor="admin-search">Search administrators</label>
+              <input id="admin-search" type="search" value={search} onChange={(event) => {
+                const value = event.target.value;
+                setSearch(value);
+                if (searchTimer.current) clearTimeout(searchTimer.current);
+                searchTimer.current = setTimeout(() => visitAdminPage(value, filter, 1, roleFilter), 250);
+              }} placeholder="Search by name or email" className="w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-gray-900 outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10 lg:max-w-sm" />
+              <label className="sr-only" htmlFor="admin-role-filter">Filter administrators by role</label>
+              <select id="admin-role-filter" value={roleFilter} onChange={(event) => {
+                setRoleFilter(event.target.value);
+                visitAdminPage(search, filter, 1, event.target.value);
+              }} className="rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-white">
+                <option value="all">All roles</option>
+                <option value="admin">Admin</option>
+                <option value="super_admin">Super Admin</option>
+              </select>
+              <div className="flex flex-wrap gap-2" aria-label="Filter administrators">
+                {['all', 'active', 'pending_setup', 'suspended', 'inactive'].map((value) => (
+                  <button key={value} type="button" onClick={() => {
+                    setFilter(value);
+                    visitAdminPage(search, value, 1, roleFilter);
+                  }} className={`rounded-lg px-3 py-2 text-sm font-semibold ${filter === value ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900' : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-200'}`}>
+                    {value === 'all' ? 'All' : statusLabel(value)}
+                  </button>
+                ))}
               </div>
             </div>
-          </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50 dark:bg-gray-700">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                    Name
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                    Email
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                    Role
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                    Status
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                    Last Login
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                {filteredAdmins.length === 0 ? (
+            {actionError && <div className="m-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800" role="alert">{actionError}</div>}
+
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[960px] text-left text-sm">
+                <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500 dark:bg-gray-900/50 dark:text-gray-400">
                   <tr>
-                    <td colSpan="6" className="px-6 py-12 text-center">
-                      <div className="flex flex-col items-center justify-center text-gray-500 dark:text-gray-400">
-                        <UserCircleIcon className="h-12 w-12 mb-2" />
-                        <p className="text-lg font-medium">No admins found</p>
-                        <p className="text-sm">Try adjusting your filters or search term</p>
-                      </div>
-                    </td>
+                    <th className="px-5 py-4">Administrator</th>
+                    <th className="px-5 py-4">Status</th>
+                    <th className="px-5 py-4">Role</th>
+                    <th className="px-5 py-4">MFA and recovery</th>
+                    <th className="px-5 py-4">Lifecycle actions</th>
                   </tr>
-                ) : (
-                  paginatedAdmins.map((admin) => (
-                    <tr key={admin.id} className="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center">
-                          <div className="flex-shrink-0 h-10 w-10">
-                            <div className="h-10 w-10 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
-                              <span className="text-blue-600 dark:text-blue-300 font-medium text-sm">
-                                {admin.name.split(' ').map(n => n[0]).join('').toUpperCase()}
-                              </span>
-                            </div>
-                          </div>
-                          <div className="ml-4">
-                            <div className="text-sm font-medium text-gray-900 dark:text-white">{admin.name}</div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900 dark:text-white">{admin.email}</div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900 dark:text-white">{admin.role}</div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                          admin.status === 'pending' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
-                          admin.status === 'approved' || admin.status === 'active' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
-                          admin.status === 'suspended' ? 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200' :
-                          admin.status === 'rejected' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
-                          'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200'
-                        }`}>
-                          {admin.status}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                        {admin.last_login_at ? new Date(admin.last_login_at).toLocaleDateString() : 'Never'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <div className="flex justify-end space-x-2">
-                          <button
-                            onClick={() => openViewModal(admin)}
-                            className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300"
-                            title="View Details"
-                          >
-                            <InfoIcon className="h-5 w-5" />
-                          </button>
-                          {admin.status === 'active' || admin.status === 'approved' ? (
-                            <button
-                              onClick={() => handleSuspendAdmin(admin.id, admin.name)}
-                              className="text-yellow-600 hover:text-yellow-900 dark:text-yellow-400 dark:hover:text-yellow-300"
-                              title="Suspend Admin"
-                            >
-                              <LockIcon className="h-5 w-5" />
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => handleActivateAdmin(admin.id, admin.name)}
-                              className="text-green-600 hover:text-green-900 dark:text-green-400 dark:hover:text-green-300"
-                              title="Activate Admin"
-                            >
-                              <CheckCircleIcon className="h-5 w-5" />
-                            </button>
-                          )}
-                          {isSuperAdmin && (
-                            <button
-                              onClick={() => handleDeleteAdmin(admin.id, admin.name)}
-                              className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
-                              title="Delete Admin (Super Admin Only)"
-                            >
-                              <TrashBinIcon className="h-5 w-5" />
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                  {visibleAdmins.map((admin) => {
+                    const actionBusy = action?.key.startsWith(`${admin.id}:`);
+                    const mfaComplete = admin.mfa_complete === true;
+                    const recoveryCount = Number.isFinite(admin.recovery_code_count) ? admin.recovery_code_count : 0;
 
-          {/* Pagination */}
-          {filteredAdmins.length > 0 && (
-            <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700">
-              <div className="flex items-center justify-between">
-                <div className="text-sm text-gray-700 dark:text-gray-300">
-                  Showing <span className="font-medium">{startIndex + 1}</span> to{" "}
-                  <span className="font-medium">{Math.min(endIndex, filteredAdmins.length)}</span> of{" "}
-                  <span className="font-medium">{filteredAdmins.length}</span>
-                </div>
+                    return (
+                      <tr key={admin.id}>
+                        <td className="px-5 py-5 align-top">
+                          <p className="font-semibold">{admin.firstName} {admin.lastName}</p>
+                          <p className="mt-1 text-gray-500 dark:text-gray-400">{admin.email}</p>
+                        </td>
+                        <td className="px-5 py-5 align-top">
+                          <span className="inline-flex rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-700 dark:bg-gray-700 dark:text-gray-200">{statusLabel(admin.status)}</span>
+                        </td>
+                        <td className="px-5 py-5 align-top">
+                          <label className="sr-only" htmlFor={`admin-role-${admin.id}`}>Role for {admin.email}</label>
+                          <select id={`admin-role-${admin.id}`} value={admin.role} onChange={(event) => runPatchAction(admin, event.target.value)} disabled={actionBusy} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-white">
+                            <option value="admin">Admin</option>
+                            <option value="super_admin">Super Admin</option>
+                          </select>
+                          <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">Current: {roleLabel(admin.role)}</p>
+                        </td>
+                        <td className="px-5 py-5 align-top">
+                          <p className={mfaComplete ? 'font-semibold text-emerald-700' : 'font-semibold text-amber-700'}>{mfaComplete ? 'MFA enabled' : 'MFA setup required'}</p>
+                          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{recoveryCount} recovery codes remaining</p>
+                        </td>
+                        <td className="px-5 py-5 align-top">
+                          <div className="flex max-w-xs flex-wrap gap-2">
+                            {admin.status === 'pending_setup' && (
+                              <button type="button" aria-label={`Resend setup for ${admin.firstName} ${admin.lastName}`} title="Resend setup" disabled={actionBusy} onClick={() => runPostAction(admin, 'resend', `/admin/administrators/${admin.id}/setup/resend`)} className={actionIconClass}>
+                                <ActionIcon kind="send" />
+                              </button>
+                            )}
+                            {admin.status === 'active' && (
+                              <>
+                                <button type="button" aria-label={`Suspend ${admin.firstName} ${admin.lastName}`} title="Suspend Admin" disabled={actionBusy} onClick={() => void confirmAction(`Suspend ${admin.firstName} ${admin.lastName}?`, () => runPostAction(admin, 'suspend', `/admin/administrators/${admin.id}/suspend`))} className={actionIconClass}><ActionIcon kind="suspend" /></button>
+                                <button type="button" aria-label={`Deactivate ${admin.firstName} ${admin.lastName}`} title="Deactivate administrator" disabled={actionBusy} onClick={() => void confirmAction(`Deactivate ${admin.firstName} ${admin.lastName}?`, () => runPostAction(admin, 'deactivate', `/admin/administrators/${admin.id}/deactivate`))} className={actionIconClass}><ActionIcon kind="deactivate" /></button>
+                              </>
+                            )}
+                            {(admin.status === 'suspended' || admin.status === 'inactive') && (
+                              <button type="button" aria-label={`${admin.status === 'inactive' ? 'Return to setup' : 'Activate'} ${admin.firstName} ${admin.lastName}`} title={admin.status === 'inactive' ? 'Return to setup' : 'Activate'} disabled={actionBusy} onClick={() => runPostAction(admin, 'activate', `/admin/administrators/${admin.id}/activate`)} className={actionIconClass}><ActionIcon kind="activate" /></button>
+                            )}
+                            {admin.status !== 'pending_setup' && (
+                              <button type="button" aria-label={`Reset MFA for ${admin.firstName} ${admin.lastName}`} title="Reset MFA" disabled={actionBusy} onClick={() => void confirmAction(`Reset MFA for ${admin.firstName} ${admin.lastName}? They will need to enroll again.`, () => runPostAction(admin, 'mfa-reset', `/admin/administrators/${admin.id}/mfa/reset`))} className={actionIconClass}><ActionIcon kind="reset" /></button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {visibleAdmins.length === 0 && <p className="p-8 text-center text-sm text-gray-500">No administrators match this filter.</p>}
+            </div>
+            {pageMeta.total > 0 && (
+              <div className="flex items-center justify-between border-t border-gray-200 px-5 py-4 text-sm dark:border-gray-700">
+                <span className="text-gray-500 dark:text-gray-400">
+                  Showing {pageMeta.from ?? 0} to {pageMeta.to ?? 0} of {pageMeta.total}
+                </span>
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-                    disabled={currentPage === 1}
-                    className="p-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    title="Previous page"
+                    type="button"
+                    aria-label="Previous page"
+                    disabled={pageMeta.current_page <= 1}
+                    onClick={() => visitAdminPage(search, filter, pageMeta.current_page - 1, roleFilter)}
+                    className="rounded-lg border border-gray-300 px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    <svg className="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                    </svg>
+                    Previous
                   </button>
-
-                  {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
-                    if (
-                      page === 1 ||
-                      page === totalPages ||
-                      (page >= currentPage - 1 && page <= currentPage + 1)
-                    ) {
-                      return (
-                        <button
-                          key={page}
-                          onClick={() => setCurrentPage(page)}
-                          className={`min-w-[40px] h-10 px-3 rounded-lg font-medium transition-colors ${
-                            currentPage === page
-                              ? "bg-blue-600 text-white"
-                              : "border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
-                          }`}
-                        >
-                          {page}
-                        </button>
-                      );
-                    } else if (page === currentPage - 2 || page === currentPage + 2) {
-                      return (
-                        <span key={page} className="px-2 text-gray-500 dark:text-gray-400">
-                          ...
-                        </span>
-                      );
-                    }
-                    return null;
-                  })}
-
+                  <span aria-label="Current page">Page {pageMeta.current_page} of {pageMeta.last_page}</span>
                   <button
-                    onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
-                    disabled={currentPage === totalPages}
-                    className="p-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    title="Next page"
+                    type="button"
+                    aria-label="Next page"
+                    disabled={pageMeta.current_page >= pageMeta.last_page}
+                    onClick={() => visitAdminPage(search, filter, pageMeta.current_page + 1, roleFilter)}
+                    className="rounded-lg border border-gray-300 px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    <svg className="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                    </svg>
+                    Next
                   </button>
                 </div>
               </div>
-            </div>
-          )}
-        </div>
-
-        {isViewModalOpen && (
-          <div className="fixed inset-0 h-full w-full bg-black/10 backdrop-blur-sm flex items-center justify-center z-50">
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-auto">
-              <div className="p-6">
-                <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
-                  Admin Details
-                </h3>
-                {selectedAdmin && (
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                          Name
-                        </label>
-                        <p className="text-sm text-gray-900 dark:text-white">{selectedAdmin.name}</p>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                          Email
-                        </label>
-                        <p className="text-sm text-gray-900 dark:text-white">{selectedAdmin.email}</p>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                          Phone
-                        </label>
-                        <p className="text-sm text-gray-900 dark:text-white">{selectedAdmin.phone || 'N/A'}</p>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                          Role
-                        </label>
-                        <p className="text-sm text-gray-900 dark:text-white">{selectedAdmin.role}</p>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                          Status
-                        </label>
-                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                          selectedAdmin.status === 'pending' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
-                          selectedAdmin.status === 'approved' || selectedAdmin.status === 'active' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
-                          selectedAdmin.status === 'rejected' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
-                          'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200'
-                        }`}>{selectedAdmin.status}</span>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                          Created At
-                        </label>
-                        <p className="text-sm text-gray-900 dark:text-white">{new Date(selectedAdmin.created_at).toLocaleDateString()}</p>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                          Last Login
-                        </label>
-                        <p className="text-sm text-gray-900 dark:text-white">{selectedAdmin.last_login_at ? new Date(selectedAdmin.last_login_at).toLocaleDateString() : 'Never'}</p>
-                      </div>
-                    </div>
-                    <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
-                      <div className="flex justify-end">
-                        <Button variant="secondary" onClick={() => setIsViewModalOpen(false)}>
-                          Close
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
+            )}
           </div>
-        )}
-      </div>
-    </div>
+
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            High-risk changes may ask for fresh reauthentication. Finish that step, then deliberately retry the action; no lifecycle mutation is replayed automatically.
+          </p>
+        </div>
+      </main>
+    </AppLayout>
   );
-};
-
-AdminManagement.layout = (page) => <AppLayout>{page}</AppLayout>;
-
-export default AdminManagement;
+}

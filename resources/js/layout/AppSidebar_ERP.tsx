@@ -6,9 +6,13 @@ import { route } from "ziggy-js";
 import {
   CheckLineIcon,
   HorizontaLDots,
-  CurrencyDollarIcon,
 } from "../icons";
 import { useSidebar } from "../context/SidebarContext";
+import { isRegularStaffViewer } from "../data/staffArticleAccess";
+import type { ShopModuleKey } from "../types/shopModules";
+import { getManagerBusinessCapabilities } from "../utils/managerBusinessCapabilities";
+import { canRenderShopModule } from "../utils/shopModuleAccess";
+import AppSidebar_shopOwner from "./AppSidebar_shopOwner";
 
 type NavItem = {
   name: string;
@@ -16,7 +20,9 @@ type NavItem = {
   route?: string;
   params?: Record<string, any>;
   extraPaths?: string[];
-  subItems?: { name: string; route: string; params?: Record<string, any>; icon?: React.ReactNode; pro?: boolean; new?: boolean }[];
+  moduleKey?: ShopModuleKey;
+  managerSection?: "operations" | "people" | "review";
+  subItems?: { name: string; route: string; params?: Record<string, any>; icon?: React.ReactNode; moduleKey?: ShopModuleKey; pro?: boolean; new?: boolean }[];
 };
 
 const attendanceItem: NavItem = {
@@ -37,6 +43,83 @@ const myPayslipsItem: NavItem = {
   ),
   name: "My Payslips",
   route: "erp.my-payslips",
+  moduleKey: "finance",
+};
+
+const managerMyPayslipsItem: NavItem = {
+  icon: myPayslipsItem.icon,
+  name: myPayslipsItem.name,
+  route: myPayslipsItem.route,
+};
+
+const managerSelfServiceItems: NavItem[] = [attendanceItem, managerMyPayslipsItem];
+
+const articlesIcon = (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M5 4h10l4 4v12H5z" />
+    <path d="M15 4v4h4" />
+    <path d="M8 13h8M8 17h6" />
+  </svg>
+);
+
+const staffArticlesItem: NavItem = {
+  icon: articlesIcon,
+  name: "Articles",
+  route: "erp.articles.index",
+};
+
+const managerArticlesItem: NavItem = {
+  icon: articlesIcon,
+  name: "Articles",
+  route: "erp.manager.articles.index",
+};
+
+const financeArticlesItem: NavItem = {
+  icon: articlesIcon,
+  name: "Articles",
+  route: "finance.articles.index",
+};
+
+const hrArticlesItem: NavItem = {
+  icon: articlesIcon,
+  name: "Articles",
+  route: "erp.hr.articles.index",
+};
+
+const crmArticlesItem: NavItem = {
+  icon: articlesIcon,
+  name: "Articles",
+  route: "crm.articles.index",
+};
+
+const cashierArticlesItem: NavItem = {
+  icon: articlesIcon,
+  name: "Articles",
+  route: "erp.cashier.articles.index",
+};
+
+const repairerArticlesItem: NavItem = {
+  icon: articlesIcon,
+  name: "Articles",
+  route: "erp.repairer.articles.index",
+};
+
+const inventoryArticlesItem: NavItem = {
+  icon: articlesIcon,
+  name: "Articles",
+  route: "erp.inventory.articles.index",
+};
+
+const procurementArticlesItem: NavItem = {
+  icon: articlesIcon,
+  name: "Articles",
+  route: "erp.procurement.articles.index",
+};
+
+const logisticsArticlesItem: NavItem = {
+  icon: articlesIcon,
+  name: "Articles",
+  route: "erp.logistics.articles.index",
 };
 
 const navItems: NavItem[] = [
@@ -75,11 +158,13 @@ const navItems: NavItem[] = [
       </svg>
     ),
     name: "Attendance Monitoring",
+    moduleKey: "hr_employees",
     subItems: [
       {
         name: "View Attendance",
         route: "erp.hr",
         params: { section: "attendance" },
+        moduleKey: "hr_employees",
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
@@ -92,6 +177,7 @@ const navItems: NavItem[] = [
         name: "Leave Requests",
         route: "erp.hr",
         params: { section: "leaves" },
+        moduleKey: "hr_employees",
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5 7.67 11 8.5 11zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z"></path>
@@ -103,6 +189,7 @@ const navItems: NavItem[] = [
         name: "Overtime Requests",
         route: "erp.hr",
         params: { section: "overtime" },
+        moduleKey: "hr_employees",
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -128,6 +215,7 @@ const navItems: NavItem[] = [
         name: "View Slip",
         route: "erp.hr",
         params: { section: "payroll-view" },
+        moduleKey: "finance",
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M6 4h11a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"></path>
@@ -141,6 +229,7 @@ const navItems: NavItem[] = [
         name: "Generate Slip",
         route: "erp.hr",
         params: { section: "payroll-generate" },
+        moduleKey: "finance",
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M4 4h16v6H4z"></path>
@@ -154,6 +243,7 @@ const navItems: NavItem[] = [
         name: "Salary Changes",
         route: "erp.hr",
         params: { section: "salary-changes" },
+        moduleKey: "finance",
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <line x1="12" y1="1" x2="12" y2="23"></line>
@@ -177,6 +267,7 @@ const financeItems: NavItem[] = [
     ),
     name: "Dashboard",
     route: "finance.dashboard",
+    moduleKey: "finance",
   },
   {
     icon: (
@@ -190,6 +281,7 @@ const financeItems: NavItem[] = [
     ),
     name: "Invoices",
     route: "finance.index",
+    moduleKey: "finance",
     params: { section: "invoice-generation" },
     extraPaths: ["/create-invoice"],
   },
@@ -200,11 +292,13 @@ const financeItems: NavItem[] = [
       </svg>
     ),
     name: "Approvals",
+    moduleKey: "finance",
     subItems: [
       {
         name: "Repair Pricing Approval",
         route: "finance.index",
         params: { section: "repair-pricing" },
+        moduleKey: "finance",
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path>
@@ -215,6 +309,7 @@ const financeItems: NavItem[] = [
         name: "Shoe Pricing Approval",
         route: "finance.index",
         params: { section: "shoe-pricing" },
+        moduleKey: "finance",
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M2 17s.5-3.5 4-3.5 4 3.5 4 3.5m6 0s.5-3.5 4-3.5 4 3.5 4 3.5M2 17h20v4H2z"></path>
@@ -225,6 +320,7 @@ const financeItems: NavItem[] = [
         name: "Purchase Request Review",
         route: "finance.index",
         params: { section: "purchase-request-approval" },
+        moduleKey: "finance",
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <rect x="4" y="4" width="16" height="16" rx="2"></rect>
@@ -238,6 +334,7 @@ const financeItems: NavItem[] = [
         name: "Refund Approval",
         route: "finance.index",
         params: { section: "refund-approvals" },
+        moduleKey: "finance",
         extraPaths: ["/finance?refund-approvals", "/finance?section=refund-approvals"],
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -249,6 +346,7 @@ const financeItems: NavItem[] = [
         name: "Payslip Approvals",
         route: "finance.index",
         params: { section: "payslip-approvals" },
+        moduleKey: "finance",
         extraPaths: ["/finance?payslip-approvals", "/finance?section=payslip-approvals"],
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -270,6 +368,7 @@ const financeItems: NavItem[] = [
     ),
     name: "Expenses",
     route: "finance.index",
+    moduleKey: "finance",
     params: { section: "expense-tracking" },
   },
   // REMOVED: Enterprise features not needed for SMEs
@@ -290,6 +389,7 @@ const crmItems: NavItem[] = [
     ),
     name: "CRM Dashboard",
     route: "crm.dashboard",
+    moduleKey: "crm",
   },
   {
     icon: (
@@ -300,6 +400,7 @@ const crmItems: NavItem[] = [
     ),
     name: "Customers",
     route: "crm.customers",
+    moduleKey: "crm",
   },
   {
     icon: (
@@ -311,6 +412,7 @@ const crmItems: NavItem[] = [
     ),
     name: "Customer Support",
     route: "crm.customer-support",
+    moduleKey: "crm",
   },
   {
     icon: (
@@ -320,6 +422,7 @@ const crmItems: NavItem[] = [
     ),
     name: "Customer Reviews",
     route: "crm.customer-reviews",
+    moduleKey: "crm",
   },
 ];
 
@@ -339,54 +442,120 @@ const managerItems: NavItem[] = [
     ),
     name: "Manager Dashboard",
     route: "erp.manager.dashboard",
+    managerSection: "operations",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 7h18"></path>
+        <path d="M5 7l1 13h12l1-13"></path>
+        <path d="M9 7V5a3 3 0 016 0v2"></path>
+        <path d="M9 11v5m6-5v5"></path>
+      </svg>
+    ),
+    name: "Job Orders",
+    route: "erp.manager.job-orders",
+    managerSection: "operations",
   },
   {
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M6 4h12v16H6z"></path>
+        <path d="M9 8h6M9 12h6M9 16h3"></path>
+      </svg>
+    ),
+    name: "Repair Jobs",
+    route: "erp.manager.repair-jobs",
+    managerSection: "operations",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M4 7h16v13H4z"></path>
+        <path d="M8 7V4h8v3M8 11h8M8 15h5"></path>
+      </svg>
+    ),
+    name: "Inventory Overview",
+    route: "erp.manager.inventory-overview",
+    managerSection: "operations",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="9" cy="7" r="3"></circle>
+        <path d="M3 21v-2a6 6 0 0112 0v2"></path>
+        <circle cx="17" cy="8" r="2"></circle>
+        <path d="M16 14a5 5 0 015 5v2"></path>
+      </svg>
+    ),
+    name: "Staff & Workload",
+    route: "erp.manager.staff-workload",
+    managerSection: "people",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3" y="4" width="18" height="17" rx="2"></rect>
+        <path d="M16 2v4M8 2v4M3 10h18"></path>
+        <path d="M8 14h3m2 0h3m-8 3h3m2 0h3"></path>
+      </svg>
+    ),
+    name: "Leave Approvals",
+    route: "erp.manager.leave-approvals",
+    managerSection: "people",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 15v2"></path>
+        <path d="M6 21h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"></path>
+        <path d="M8 11V7a4 4 0 018 0v4"></path>
+      </svg>
+    ),
+    name: "Suspension Approvals",
+    route: "erp.manager.suspension-approvals",
+    managerSection: "people",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 3v18M3 12h18"></path>
+      </svg>
+    ),
+    name: "Termination Approvals",
+    route: "erp.manager.termination-approvals",
+    managerSection: "people",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 3v18M3 12h18"></path>
+      </svg>
+    ),
+    name: "Rehire Approvals",
+    route: "erp.manager.rehire-approvals",
+    managerSection: "people",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 3v18h18"></path>
+        <path d="M7 15l3-3 3 2 4-6"></path>
+      </svg>
+    ),
+    name: "Reports & Analytics",
+    route: "erp.manager.reports",
+    managerSection: "review",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
       </svg>
     ),
     name: "Audit Logs",
     route: "erp.manager.audit-logs",
-  },
-  {
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
-      </svg>
-    ),
-    name: "Suspend Approval",
-    route: "erp.manager.suspend-approval",
-  },
-  {
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-      </svg>
-    ),
-    name: "Repair Rejection Review",
-    route: "erp.manager.repair-rejection-review",
-  },
-  {
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M21 16V8a2 2 0 0 0-1-1.73L12 3 4 6.27A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73L12 21l8-4.27A2 2 0 0 0 21 16z"></path>
-        <path d="M12 12v9"></path>
-      </svg>
-    ),
-    name: "Inventory Overview",
-    route: "erp.manager.inventory-overview",
-  },
-  {
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="2" y="3" width="20" height="14" rx="2"></rect>
-        <path d="M8 21h8m-4-4v4"></path>
-        <path d="M7 8h.01M11 8h6M7 12h4m2 0h3"></path>
-      </svg>
-    ),
-    name: "Assist Center",
-    route: "erp.manager.dss-insights",
+    managerSection: "review",
   },
 ];
 
@@ -402,6 +571,7 @@ const managerInventoryItems: NavItem[] = [
     ),
     name: "Inventory Dashboard",
     route: "erp.inventory.inventory-dashboard",
+    moduleKey: "inventory",
   },
   {
     icon: (
@@ -413,6 +583,7 @@ const managerInventoryItems: NavItem[] = [
     ),
     name: "Manage Stock Items",
     route: "erp.inventory.upload-stocks",
+    moduleKey: "inventory",
   },
   {
     icon: (
@@ -424,6 +595,7 @@ const managerInventoryItems: NavItem[] = [
     ),
     name: "Stock Movement",
     route: "erp.inventory.stock-movement",
+    moduleKey: "inventory",
   },
   {
     icon: (
@@ -436,6 +608,7 @@ const managerInventoryItems: NavItem[] = [
     ),
     name: "Stock Requests",
     route: "erp.inventory.stock-request",
+    moduleKey: "inventory",
   },
   {
     icon: (
@@ -448,6 +621,7 @@ const managerInventoryItems: NavItem[] = [
     ),
     name: "Material Request Queue",
     route: "erp.inventory.request-material-approval",
+    moduleKey: "inventory",
   },
   {
     icon: (
@@ -462,10 +636,22 @@ const managerInventoryItems: NavItem[] = [
     ),
     name: "Supplier Orders",
     route: "erp.inventory.supplier-order-monitoring",
+    moduleKey: "inventory",
   },
 ];
 
 const procurementItems: NavItem[] = [
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M3 3v18h18"></path>
+        <path d="M7 16l3-4 3 2 4-6"></path>
+      </svg>
+    ),
+    name: "Dashboard",
+    route: "erp.procurement.dashboard",
+    moduleKey: "procurement",
+  },
   {
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -476,6 +662,7 @@ const procurementItems: NavItem[] = [
     ),
     name: "Purchase Requests",
     route: "erp.procurement.purchase-request",
+    moduleKey: "procurement",
   },
   {
     icon: (
@@ -489,6 +676,7 @@ const procurementItems: NavItem[] = [
     ),
     name: "Stock Request Approval",
     route: "erp.procurement.stock-request-approval",
+    moduleKey: "inventory",
   },
   {
     icon: (
@@ -502,6 +690,7 @@ const procurementItems: NavItem[] = [
     ),
     name: "Purchase Orders",
     route: "erp.procurement.purchase-orders",
+    moduleKey: "procurement",
   },
   {
     icon: (
@@ -514,6 +703,7 @@ const procurementItems: NavItem[] = [
     ),
     name: "Suppliers Management",
     route: "erp.procurement.suppliers-management",
+    moduleKey: "procurement",
   },
 ];
 
@@ -540,6 +730,7 @@ const staffItems: NavItem[] = [
     ),
     name: "Retail Job Orders",
     route: "erp.staff.job-orders",
+    moduleKey: "retail_operations",
   },
   {
     icon: (
@@ -551,6 +742,7 @@ const staffItems: NavItem[] = [
     ),
     name: "Product Management",
     route: "erp.staff.products",
+    moduleKey: "retail_operations",
   },
   {
     icon: (
@@ -561,6 +753,7 @@ const staffItems: NavItem[] = [
     ),
     name: "Shoe Pricing Requests",
     route: "erp.staff.shoe-pricing",
+    moduleKey: "repair_operations",
   },
   {
     icon: (
@@ -571,8 +764,82 @@ const staffItems: NavItem[] = [
     ),
     name: "Inventory Overview",
     route: "erp.staff.inventory-overview",
+    moduleKey: "inventory",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 7h11v10H3z"></path>
+        <path d="M14 10h4l3 3v4h-7z"></path>
+        <circle cx="7" cy="19" r="2"></circle>
+        <circle cx="17" cy="19" r="2"></circle>
+      </svg>
+    ),
+    name: "Logistics Dashboard",
+    route: "erp.logistics.dashboard",
+    moduleKey: "logistics",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 7h11v10H3z"></path>
+        <path d="M14 10h4l3 3v4h-7z"></path>
+        <circle cx="7" cy="19" r="2"></circle>
+        <circle cx="17" cy="19" r="2"></circle>
+      </svg>
+    ),
+    name: "Logistics",
+    route: "erp.logistics.shipments",
+    moduleKey: "logistics",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 2 3 7l9 5 9-5-9-5Z"></path>
+        <path d="m3 12 9 5 9-5"></path>
+        <path d="m3 17 9 5 9-5"></path>
+      </svg>
+    ),
+    name: "Batches",
+    route: "erp.logistics.batches",
+    moduleKey: "logistics",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+      </svg>
+    ),
+    name: "My Deliveries",
+    route: "erp.logistics.deliveries",
+    moduleKey: "logistics",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
+        <circle cx="9" cy="7" r="4"></circle>
+        <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
+        <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+      </svg>
+    ),
+    name: "Riders",
+    route: "erp.logistics.riders",
+    moduleKey: "logistics",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="3"></circle>
+        <path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42m0-14.14-1.42 1.42M6.35 17.65l-1.42 1.42"></path>
+      </svg>
+    ),
+    name: "Settings",
+    route: "erp.logistics.settings",
   },
 ];
+
+const logisticsItems: NavItem[] = staffItems.filter((item) => item.route?.startsWith("erp.logistics."));
 
 const repairItems: NavItem[] = [
   {
@@ -586,6 +853,7 @@ const repairItems: NavItem[] = [
     ),
     name: "Repair Dashboard",
     route: "erp.staff.repair-dashboard",
+    moduleKey: "repair_operations",
   },
   {
     icon: (
@@ -596,6 +864,7 @@ const repairItems: NavItem[] = [
     ),
     name: "Job Orders Repair",
     route: "erp.staff.job-orders-repair",
+    moduleKey: "repair_operations",
   },
   {
     icon: (
@@ -607,6 +876,7 @@ const repairItems: NavItem[] = [
     ),
     name: "Warranty Queue",
     route: "erp.staff.warranty-queue",
+    moduleKey: "repair_operations",
   },
   {
     icon: (
@@ -616,6 +886,7 @@ const repairItems: NavItem[] = [
     ),
     name: "Upload Services",
     route: "erp.staff.upload-services",
+    moduleKey: "repair_operations",
   },
   {
     icon: (
@@ -626,6 +897,7 @@ const repairItems: NavItem[] = [
     ),
     name: "Repair Pricing Requests",
     route: "erp.repairer.pricing-services",
+    moduleKey: "repair_operations",
   },
   {
     icon: (
@@ -636,6 +908,7 @@ const repairItems: NavItem[] = [
     ),
     name: "Stocks Overview",
     route: "erp.staff.stocks-overview",
+    moduleKey: "inventory",
   },
   {
     icon: (
@@ -648,6 +921,7 @@ const repairItems: NavItem[] = [
     ),
     name: "Request Material",
     route: "erp.staff.request-material",
+    moduleKey: "inventory",
   },
   {
     icon: (
@@ -657,6 +931,7 @@ const repairItems: NavItem[] = [
     ),
     name: "Chat",
     route: "erp.repairer.support",
+    moduleKey: "repair_operations",
   },
   {
     icon: (
@@ -666,10 +941,23 @@ const repairItems: NavItem[] = [
     ),
     name: "Repair Reject Approval",
     route: "erp.user.repair-reject-approval",
+    moduleKey: "repair_operations",
   },
 ];
 
 const cashierItems: NavItem[] = [
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
+        <path d="M4 19V5"></path>
+        <path d="M4 19h16"></path>
+        <path d="m7 15 3-4 3 2 5-6"></path>
+      </svg>
+    ),
+    name: "Dashboard",
+    route: "erp.cashier.dashboard",
+    moduleKey: "retail_operations",
+  },
   {
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
@@ -680,13 +968,22 @@ const cashierItems: NavItem[] = [
     ),
     name: "Cashier",
     route: "erp.cashier.point-of-sale",
+    moduleKey: "retail_operations",
   },
 ];
 
-const AppSidebar_ERP: React.FC = () => {
+const EmployeeSidebarERP: React.FC = () => {
   const { isExpanded, isMobileOpen, isHovered, setIsHovered, openSubmenu, toggleSubmenu, setOpenSubmenu } = useSidebar();
   const { url, props } = usePage();
   const auth = (props as any)?.auth;
+  const authModuleStates = auth?.shopModules;
+  const sharedModuleStates = (props as any)?.moduleStates;
+  const shopModules = authModuleStates && typeof authModuleStates === 'object' && Object.keys(authModuleStates).length > 0
+    ? authModuleStates
+    : sharedModuleStates;
+  const moduleEnforcementEnabled = auth?.shopModuleEnforcementEnabled
+    ?? (props as any)?.shopModuleEnforcementEnabled
+    ?? Boolean(shopModules);
   const role = (props as any)?.auth?.user?.role;
   const roles = (props as any)?.auth?.user?.roles || [];
   const permissions = (props as any)?.auth?.permissions || [];
@@ -694,22 +991,43 @@ const AppSidebar_ERP: React.FC = () => {
     auth?.shop_owner?.business_type
     ?? auth?.user?.shop_owner?.business_type
     ?? ''
-  ).toLowerCase().trim();
-  const normalizedBusinessType = rawBusinessType.includes('both') ? 'both' : rawBusinessType;
-  const isRepairCapableBusiness = normalizedBusinessType === 'repair' || normalizedBusinessType === 'both';
+  );
+  const managerBusinessCapabilities = getManagerBusinessCapabilities(rawBusinessType);
+  const normalizedBusinessType = managerBusinessCapabilities.businessType;
+  const isRetailCapableBusiness = managerBusinessCapabilities.canRetail;
+  const isRepairCapableBusiness = managerBusinessCapabilities.canRepair;
   const isRetailOnlyBusiness = normalizedBusinessType === 'retail';
   const isRepairOnlyBusiness = normalizedBusinessType === 'repair';
-  const normalizedRole = String(role || '').toUpperCase();
+  const normalizeRoleName = (value: unknown) => String(value || '').trim().toUpperCase().replace(/_/g, ' ');
+  const normalizedRole = normalizeRoleName(role);
   const normalizedRoles = Array.isArray(roles)
-    ? roles.map((value: string) => String(value).toUpperCase())
+    ? roles.map((value: string) => normalizeRoleName(value))
     : [];
   const hasRolesArray = normalizedRoles.length > 0;
   const hasCashierRole = normalizedRoles.includes('CASHIER') || (!hasRolesArray && normalizedRole === 'CASHIER');
   const isCashierOnly = hasCashierRole && normalizedRoles.filter((value) => value !== 'CASHIER').length === 0;
-  const hasManagerRole = normalizedRoles.includes('MANAGER') || (!hasRolesArray && normalizedRole === 'MANAGER');
+  // Match ManagerAuthorizationService: the legacy role remains a valid
+  // compatibility source even when a non-empty Spatie roles array is present.
+  const hasManagerRole = normalizedRoles.includes('MANAGER') || normalizedRole === 'MANAGER';
   const hasInventoryManagerRole = normalizedRoles.includes('INVENTORY MANAGER');
   const hasProcurementManagerRole = normalizedRoles.includes('PROCUREMENT MANAGER');
   const hasExplicitStaffRole = normalizedRoles.includes('STAFF') || (!hasRolesArray && normalizedRole === 'STAFF');
+  const hasLogisticsDispatcherRole = normalizedRoles.includes('LOGISTICS DISPATCHER') || normalizedRole === 'LOGISTICS DISPATCHER';
+  const hasLogisticsRiderRole = normalizedRoles.includes('LOGISTICS RIDER') || normalizedRole === 'LOGISTICS RIDER';
+  const isDedicatedLogisticsAccount = hasLogisticsDispatcherRole || hasLogisticsRiderRole;
+  const logisticsPermissions = [
+    'access-logistics-dashboard',
+    'view-logistics-shipments',
+    'assign-logistics-deliveries',
+    'manage-logistics-riders',
+    'update-logistics-status',
+    'record-logistics-proof',
+    'operate-logistics-deliveries',
+    'operate-assigned-batches',
+    'configure-logistics-settings',
+    'manage-logistics-batches',
+    'resolve-logistics-exceptions',
+  ];
 
   const [subMenuHeight, setSubMenuHeight] = useState<Record<string, number>>({});
   const subMenuRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -719,6 +1037,10 @@ const AppSidebar_ERP: React.FC = () => {
   const getNavItemKey = (item: NavItem): string => {
     return `${item.route || ""}|${JSON.stringify(item.params || {})}|${item.name}`;
   };
+
+  const isModuleVisible = useCallback((item: { moduleKey?: ShopModuleKey }) => {
+    return canRenderShopModule(shopModules, item.moduleKey, moduleEnforcementEnabled);
+  }, [shopModules, moduleEnforcementEnabled]);
 
   // Helper function to deduplicate items based on route and track what's been rendered
   const deduplicateItems = (items: NavItem[]): NavItem[] => {
@@ -792,11 +1114,27 @@ const AppSidebar_ERP: React.FC = () => {
     "erp.staff.products": "/erp/staff/products",
     "erp.staff.shoe-pricing": "/erp/staff/shoe-pricing",
     "erp.staff.inventory-overview": "/erp/staff/inventory-overview",
+    "erp.logistics.dashboard": "/erp/logistics",
+    "erp.logistics.shipments": "/erp/logistics/shipments",
+    "erp.logistics.batches": "/erp/logistics/batches",
+    "erp.logistics.deliveries": "/erp/logistics/deliveries",
+    "erp.logistics.riders": "/erp/logistics/riders",
+    "erp.logistics.settings": "/erp/logistics/settings",
     "erp.staff.stocks-overview": "/erp/staff/stocks-overview",
     "erp.staff.request-material": "/erp/staff/request-material",
     "erp.staff.attendance": "/erp/staff/attendance",
     "erp.staff.customers": "/erp/staff/customers",
     "erp.time-in": "/erp/time-in",
+    "erp.articles.index": "/erp/articles",
+    "erp.manager.articles.index": "/erp/manager/articles",
+    "finance.articles.index": "/finance/articles",
+    "erp.hr.articles.index": "/erp/hr/articles",
+    "crm.articles.index": "/crm/articles",
+    "erp.cashier.articles.index": "/erp/cashier/articles",
+    "erp.repairer.articles.index": "/erp/repairer/articles",
+    "erp.inventory.articles.index": "/erp/inventory/articles",
+    "erp.procurement.articles.index": "/erp/procurement/articles",
+    "erp.logistics.articles.index": "/erp/logistics/articles",
   };
 
   // Map all route names to their paths for comprehensive active state matching
@@ -810,7 +1148,6 @@ const AppSidebar_ERP: React.FC = () => {
     "finance.index": "/finance",
     "finance.dashboard": "/finance/dashboard",
     "finance.create-invoice": "/create-invoice",
-    "erp.manager.repair-rejection-review": "/erp/manager/repair-rejection-review",
     "erp.finance.audit-logs": "/erp/finance/audit-logs",
     // CRM section routes
     "crm.dashboard": "/crm",
@@ -819,10 +1156,16 @@ const AppSidebar_ERP: React.FC = () => {
     "crm.customer-reviews": "/crm/customer-reviews",
     // Manager section routes
     "erp.manager.dashboard": "/erp/manager/dashboard",
+    "erp.manager.job-orders": "/erp/manager/job-orders",
+    "erp.manager.repair-jobs": "/erp/manager/repair-jobs",
+    "erp.manager.inventory-overview": "/erp/manager/inventory-overview",
+    "erp.manager.staff-workload": "/erp/manager/staff-workload",
+    "erp.manager.leave-approvals": "/erp/manager/leave-approvals",
+    "erp.manager.suspension-approvals": "/erp/manager/suspension-approvals",
+    "erp.manager.termination-approvals": "/erp/manager/termination-approvals",
+    "erp.manager.rehire-approvals": "/erp/manager/rehire-approvals",
     "erp.manager.reports": "/erp/manager/reports",
     "erp.manager.shoe-pricing": "/erp/manager/shoe-pricing",
-    "erp.manager.products": "/erp/manager/products",
-    "erp.manager.inventory-overview": "/erp/manager/inventory-overview",
     "erp.manager.inventory-dashboard": "/erp/manager/inventory-dashboard",
     "erp.manager.upload-stocks": "/erp/manager/upload-stocks",
     "erp.manager.stock-movement": "/erp/manager/stock-movement",
@@ -839,18 +1182,17 @@ const AppSidebar_ERP: React.FC = () => {
     "erp.inventory.purchase-orders": "/erp/inventory/purchase-orders",
     "erp.inventory.suppliers-management": "/erp/inventory/suppliers-management",
     // Procurement module routes
+    "erp.procurement.dashboard": "/erp/procurement/dashboard",
     "erp.procurement.purchase-request": "/erp/procurement/purchase-request",
     "erp.procurement.purchase-orders": "/erp/procurement/purchase-orders",
     "erp.procurement.stock-request-approval": "/erp/procurement/stock-request-approval",
     "erp.procurement.suppliers-management": "/erp/procurement/suppliers-management",
-    "erp.manager.user-management": "/erp/manager/user-management",
     "erp.manager.audit-logs": "/erp/manager/audit-logs",
-    "erp.manager.suspend-approval": "/erp/manager/suspend-approval",
-    "erp.manager.dss-insights": "/erp/manager/dss-insights",
     // User section routes
     "erp.user.repair-reject-approval": "/erp/user/repair-reject-approval",
     "erp.repairer.support": "/erp/staff/repairer-support",
     "erp.cashier.point-of-sale": "/erp/cashier/point-of-sale",
+    "erp.cashier.dashboard": "/erp/cashier/dashboard",
     "erp.repairer.point-of-sale": "/erp/repairer/point-of-sale",
     // Staff section routes
     "erp.staff.dashboard": "/erp/staff/dashboard",
@@ -865,10 +1207,26 @@ const AppSidebar_ERP: React.FC = () => {
     "erp.staff.products": "/erp/staff/products",
     "erp.staff.shoe-pricing": "/erp/staff/shoe-pricing",
     "erp.staff.inventory-overview": "/erp/staff/inventory-overview",
+    "erp.logistics.dashboard": "/erp/logistics",
+    "erp.logistics.shipments": "/erp/logistics/shipments",
+    "erp.logistics.batches": "/erp/logistics/batches",
+    "erp.logistics.deliveries": "/erp/logistics/deliveries",
+    "erp.logistics.riders": "/erp/logistics/riders",
+    "erp.logistics.settings": "/erp/logistics/settings",
     "erp.staff.stocks-overview": "/erp/staff/stocks-overview",
     "erp.staff.request-material": "/erp/staff/request-material",
     "erp.staff.attendance": "/erp/staff/attendance",
     "erp.staff.customers": "/erp/staff/customers",
+    "erp.articles.index": "/erp/articles",
+    "erp.manager.articles.index": "/erp/manager/articles",
+    "finance.articles.index": "/finance/articles",
+    "erp.hr.articles.index": "/erp/hr/articles",
+    "crm.articles.index": "/crm/articles",
+    "erp.cashier.articles.index": "/erp/cashier/articles",
+    "erp.repairer.articles.index": "/erp/repairer/articles",
+    "erp.inventory.articles.index": "/erp/inventory/articles",
+    "erp.procurement.articles.index": "/erp/procurement/articles",
+    "erp.logistics.articles.index": "/erp/logistics/articles",
     "erp.my-payslips": "/erp/my-payslips",
   };
 
@@ -892,6 +1250,10 @@ const AppSidebar_ERP: React.FC = () => {
             if (extraPaths && extraPaths.some((path) => baseUrl.startsWith(path))) return true;
             return false;
           }
+        }
+
+        if (routeName === "erp.logistics.dashboard") {
+          return baseUrl === "/erp/logistics";
         }
 
         if (allRoutePaths[routeName]) {
@@ -990,11 +1352,13 @@ const AppSidebar_ERP: React.FC = () => {
     [isActive]
   );
 
-  type AttendanceSectionKey = "staff" | "repair" | "cashier" | "manager" | "inventory" | "procurement" | "hr" | "finance" | "crm" | null;
+  type AttendanceSectionKey = "staff" | "logistics" | "repair" | "cashier" | "manager" | "inventory" | "procurement" | "hr" | "finance" | "crm" | null;
 
   const getAttendanceSection = (): AttendanceSectionKey => {
+    if (hasLogisticsAccess() && !hasStaffAccess()) return "logistics";
     if (hasStaffAccess()) return "staff";
-    if (hasRepairerAccess()) return "repair";
+    if (hasLogisticsAccess()) return "logistics";
+    if (hasRepairerAccess()) return null;
     if (hasCashierAccess()) return "cashier";
     if (hasManagerAccess()) return "manager";
     if (hasInventoryAccess()) return "inventory";
@@ -1018,7 +1382,11 @@ const AppSidebar_ERP: React.FC = () => {
   };
 
   useEffect(() => {
-    const menuGroups: Array<{ menuType: "attendance" | "staff" | "repair" | "cashier" | "manager" | "hr" | "finance" | "crm" | "main" | "others"; items: NavItem[] }> = [];
+    const menuGroups: Array<{ menuType: "attendance" | "staff" | "logistics" | "repair" | "cashier" | "manager" | "hr" | "finance" | "crm" | "main" | "others"; items: NavItem[] }> = [];
+
+    if (hasLogisticsAccess()) {
+      menuGroups.push({ menuType: "logistics", items: withAttendanceForSection("logistics", [...getFilteredLogisticsItems(), myPayslipsItem]) });
+    }
 
     if (hasStaffAccess()) {
       menuGroups.push({ menuType: "staff", items: withAttendanceForSection("staff", [...getFilteredStaffItems(), myPayslipsItem]) });
@@ -1036,7 +1404,7 @@ const AppSidebar_ERP: React.FC = () => {
       const filteredManagerItems = getFilteredManagerItems();
       menuGroups.push({
         menuType: "manager",
-        items: withAttendanceForSection("manager", [...filteredManagerItems, myPayslipsItem]),
+        items: [...managerSelfServiceItems, ...filteredManagerItems],
       });
     }
 
@@ -1120,7 +1488,7 @@ const AppSidebar_ERP: React.FC = () => {
     }
   }, [openSubmenu]);
 
-  const handleSubmenuToggle = (index: number, menuType: "attendance" | "staff" | "repair" | "cashier" | "manager" | "hr" | "finance" | "crm" | "main" | "others") => {
+  const handleSubmenuToggle = (index: number, menuType: "attendance" | "staff" | "logistics" | "repair" | "cashier" | "manager" | "hr" | "finance" | "crm" | "main" | "others") => {
     const key = `${menuType}-${index}`;
     toggleSubmenu(key);
   };
@@ -1187,7 +1555,16 @@ const AppSidebar_ERP: React.FC = () => {
 
   // Check if user has any finance permissions
   const hasFinanceAccess = () => {
-    if (normalizedRoles.includes('SHOP OWNER') || normalizedRole === 'SHOP OWNER') {
+    if (
+      normalizedRoles.includes('SHOP OWNER')
+      || normalizedRole === 'SHOP OWNER'
+      || normalizedRoles.includes('FINANCE')
+      || normalizedRoles.includes('FINANCE STAFF')
+      || normalizedRoles.includes('FINANCE MANAGER')
+      || normalizedRole === 'FINANCE'
+      || normalizedRole === 'FINANCE STAFF'
+      || normalizedRole === 'FINANCE MANAGER'
+    ) {
       return true;
     }
 
@@ -1225,6 +1602,8 @@ const AppSidebar_ERP: React.FC = () => {
 
   // Check if user has any CRM permissions
   const hasCRMAccess = () => {
+    if (normalizedRoles.includes('CRM') || normalizedRole === 'CRM') return true;
+
     const crmPermissions = [
       'access-crm-dashboard',
       'access-crm-customers',
@@ -1249,6 +1628,13 @@ const AppSidebar_ERP: React.FC = () => {
     // should not elevate inventory-only users into the manager section.
     const managerPermissions = [
       'access-manager-dashboard',
+      'access-manager-job-orders',
+      'access-manager-repair-jobs',
+      'access-manager-staff-workload',
+      'access-manager-leave-approvals',
+      'access-manager-suspension-approvals',
+      'access-manager-termination-approvals',
+      'access-manager-rehire-approvals',
       'access-audit-logs',
       'access-manager-reports',
       'access-repair-reject-review',
@@ -1261,6 +1647,8 @@ const AppSidebar_ERP: React.FC = () => {
   // Check if user has Staff role or staff-specific permissions
   const hasStaffAccess = () => {
     if (isCashierOnly) return false;
+
+    if (isDedicatedLogisticsAccount) return false;
 
     if (hasExplicitStaffRole) return true;
 
@@ -1289,6 +1677,10 @@ const AppSidebar_ERP: React.FC = () => {
     return staffPermissions.some((perm) => permissions.includes(perm));
   };
 
+  const hasLogisticsAccess = () => {
+    return isDedicatedLogisticsAccount || logisticsPermissions.some((perm) => permissions.includes(perm));
+  };
+
   // Check if user has Repairer role or repairer-specific permissions
   const hasRepairerAccess = () => {
     if (normalizedRoles.includes('REPAIRER') || normalizedRole === 'REPAIRER') return true;
@@ -1306,35 +1698,198 @@ const AppSidebar_ERP: React.FC = () => {
   };
 
   const hasCashierAccess = () => {
-    return permissions.includes('access-unified-pos');
+    return normalizedRoles.includes('CASHIER')
+      || normalizedRole === 'CASHIER'
+      || permissions.includes('access-unified-pos');
   };
 
+  const hasArticleRoleOrPermission = (allowedRoles: string[], allowedPermissions: string[]) => (
+    allowedRoles.some((allowedRole) => normalizedRoles.includes(allowedRole) || normalizedRole === allowedRole)
+    || allowedPermissions.some((permission) => permissions.includes(permission))
+  );
+
+  const hasStaffArticlesAccess = () => isRegularStaffViewer({
+    permissions: Array.isArray(permissions)
+      ? permissions.filter((value: unknown): value is string => typeof value === 'string')
+      : [],
+    roles: Array.isArray(roles)
+      ? roles.filter((value: unknown): value is string => typeof value === 'string')
+      : [],
+    legacyRole: typeof role === 'string' ? role : null,
+    businessType: rawBusinessType,
+  });
+
+  const hasManagerArticlesAccess = () => hasArticleRoleOrPermission(
+    ['MANAGER'],
+    [
+      'access-manager-dashboard',
+      'access-manager-job-orders',
+      'access-manager-repair-jobs',
+      'access-manager-staff-workload',
+      'access-manager-leave-approvals',
+      'access-manager-suspension-approvals',
+      'access-manager-termination-approvals',
+      'access-manager-rehire-approvals',
+      'access-manager-reports',
+      'access-manager-audit-logs',
+      'access-inventory-overview',
+    ],
+  );
+
+  const hasFinanceArticlesAccess = () => hasArticleRoleOrPermission(
+    ['FINANCE', 'FINANCE STAFF', 'FINANCE MANAGER'],
+    [
+      'access-finance-dashboard',
+      'access-finance-expenses',
+      'access-finance-invoices',
+      'access-repair-price-approval',
+      'access-shoe-price-approval',
+      'access-approval-workflow',
+      'access-purchase-request-approval',
+      'access-payslip-approval',
+      'access-refund-approval',
+    ],
+  );
+
+  const hasHRArticlesAccess = () => hasArticleRoleOrPermission(
+    ['HR'],
+    [
+      'access-hr-dashboard',
+      'access-employee-directory',
+      'access-user-access-control',
+      'access-attendance-records',
+      'access-leave-approvals',
+      'access-overtime-approvals',
+      'access-payslip-generation',
+      'access-view-payslip',
+      'access-salary-changes',
+      'access-suspend-accounts',
+    ],
+  );
+
+  const hasCRMArticlesAccess = () => hasArticleRoleOrPermission(
+    ['CRM'],
+    [
+      'access-crm-dashboard',
+      'access-crm-customers',
+      'access-customer-support',
+      'access-customer-reviews',
+      'access-crm-messages',
+    ],
+  );
+
+  const hasCashierArticlesAccess = () => hasArticleRoleOrPermission(
+    ['CASHIER'],
+    ['access-unified-pos'],
+  );
+
+  const hasRepairerArticlesAccess = () => isRepairCapableBusiness && hasArticleRoleOrPermission(
+    ['REPAIRER'],
+    [
+      'access-repairer-dashboard',
+      'access-repair-job-orders',
+      'access-upload-service',
+      'access-pricing-services',
+      'access-repair-stocks',
+      'access-repairer-support',
+      'access-unified-pos',
+    ],
+  );
+
+  const hasInventoryArticlesAccess = () => hasArticleRoleOrPermission(
+    ['INVENTORY', 'INVENTORY MANAGER'],
+    [
+      'view-inventory',
+      'access-inventory-dashboard',
+      'access-product-inventory',
+      'access-stock-movement',
+      'access-upload-inventory',
+      'access-request-material-approval',
+      'access-inventory-request-material-approval',
+    ],
+  );
+
+  const hasProcurementArticlesAccess = () => hasArticleRoleOrPermission(
+    ['PROCUREMENT', 'PROCUREMENT MANAGER'],
+    [
+      'view-procurement',
+      'access-procurement-dashboard',
+      'access-purchase-requests',
+      'access-purchase-orders',
+      'access-stock-request-approval',
+      'access-suppliers-management',
+    ],
+  );
+
+  const hasLogisticsDispatcherArticlesAccess = () => !hasLogisticsRiderRole && hasArticleRoleOrPermission(
+    ['LOGISTICS DISPATCHER'],
+    [
+      'view-logistics-dashboard',
+      'view-logistics-shipments',
+      'view-logistics-deliveries',
+      'view-logistics-batches',
+      'manage-logistics-settings',
+      'configure-logistics-settings',
+    ],
+  );
+
   // Filter manager items based on user permissions
+  const hasManagerPageReadAccess = (permission: string, legacyPermission?: string) => {
+    // ManagerAuthorizationService treats a recognized Manager role as authorized
+    // for Manager page reads. Keep the sidebar aligned when deployed permission
+    // payloads are stale or were created before the Manager page permissions.
+    return hasManagerRole
+      || permissions.includes(permission)
+      || (legacyPermission ? permissions.includes(legacyPermission) : false);
+  };
+
   const getFilteredManagerItems = () => {
     return managerItems.filter((item) => {
       if (item.route === 'erp.manager.dashboard') {
-        return permissions.includes('access-manager-dashboard');
+        return hasManagerPageReadAccess('access-manager-dashboard');
       }
 
-      if (item.route === 'erp.manager.audit-logs') {
-        return permissions.includes('access-audit-logs');
+      if (item.route === 'erp.manager.job-orders') {
+        return isRetailCapableBusiness && hasManagerPageReadAccess('access-manager-job-orders');
       }
 
-      if (item.route === 'erp.manager.suspend-approval') {
-        return permissions.includes('access-suspend-account');
-      }
-
-      if (item.route === 'erp.manager.repair-rejection-review') {
-        // Repair rejection review is only relevant for repair-capable shops.
-        return isRepairCapableBusiness && permissions.includes('access-repair-reject-review');
+      if (item.route === 'erp.manager.repair-jobs') {
+        return isRepairCapableBusiness && hasManagerPageReadAccess(
+          'access-manager-repair-jobs',
+          'access-repair-reject-review',
+        );
       }
 
       if (item.route === 'erp.manager.inventory-overview') {
-        return permissions.includes('access-inventory-overview');
+        return hasManagerPageReadAccess('access-inventory-overview');
       }
 
-      if (item.route === 'erp.manager.dss-insights') {
-        return permissions.includes('access-manager-reports') || permissions.includes('access-manager-dashboard');
+      if (item.route === 'erp.manager.staff-workload') {
+        return hasManagerPageReadAccess('access-manager-staff-workload');
+      }
+
+      if (item.route === 'erp.manager.leave-approvals') {
+        return hasManagerPageReadAccess('access-manager-leave-approvals', 'access-leave-approvals');
+      }
+
+      if (item.route === 'erp.manager.suspension-approvals') {
+        return hasManagerPageReadAccess('access-manager-suspension-approvals', 'access-suspend-account');
+      }
+
+      if (item.route === 'erp.manager.termination-approvals') {
+        return hasManagerPageReadAccess('access-manager-termination-approvals');
+      }
+
+      if (item.route === 'erp.manager.rehire-approvals') {
+        return hasManagerPageReadAccess('access-manager-rehire-approvals');
+      }
+
+      if (item.route === 'erp.manager.reports') {
+        return hasManagerPageReadAccess('access-manager-reports');
+      }
+
+      if (item.route === 'erp.manager.audit-logs') {
+        return hasManagerPageReadAccess('access-audit-logs');
       }
 
       return false;
@@ -1345,7 +1900,12 @@ const AppSidebar_ERP: React.FC = () => {
   // NOTE: 'access-inventory-overview' is intentionally excluded — it belongs to the Manager's
   // own overview page inside the Manager module, NOT the full Inventory module.
   const hasInventoryAccess = () => {
-    if (normalizedRoles.includes('INVENTORY MANAGER')) return true;
+    if (
+      normalizedRoles.includes('INVENTORY')
+      || normalizedRoles.includes('INVENTORY MANAGER')
+      || normalizedRole === 'INVENTORY'
+      || normalizedRole === 'INVENTORY MANAGER'
+    ) return true;
     if (permissions.includes('view-inventory')) return true;
     // Only individual inventory module page permissions grant sidebar access
     const inventoryPagePermissions = [
@@ -1361,7 +1921,12 @@ const AppSidebar_ERP: React.FC = () => {
 
   // Check if user has Procurement Manager role or explicit procurement gate permission
   const hasProcurementAccess = () => {
-    if (normalizedRoles.includes('PROCUREMENT MANAGER')) return true;
+    if (
+      normalizedRoles.includes('PROCUREMENT')
+      || normalizedRoles.includes('PROCUREMENT MANAGER')
+      || normalizedRole === 'PROCUREMENT'
+      || normalizedRole === 'PROCUREMENT MANAGER'
+    ) return true;
     if (permissions.includes('view-procurement')) return true;
     // Also grant access if user has any individual procurement page permission
     const procurementPagePermissions = [
@@ -1370,7 +1935,6 @@ const AppSidebar_ERP: React.FC = () => {
       'access-purchase-orders',
       'access-stock-request-approval',
       'access-suppliers-management',
-      'access-supplier-order-monitoring',
     ];
     return procurementPagePermissions.some(p => permissions.includes(p));
   };
@@ -1464,6 +2028,10 @@ const AppSidebar_ERP: React.FC = () => {
     if (isCashierOnly) return [];
 
     return staffItems.filter((item) => {
+      if (item.route?.startsWith("erp.logistics.")) {
+        return false;
+      }
+
       // Dashboard - check simplified permission
       if (item.route === "erp.staff.dashboard") {
         return permissions.includes('access-staff-dashboard');
@@ -1488,8 +2056,62 @@ const AppSidebar_ERP: React.FC = () => {
       if (item.route === "erp.staff.inventory-overview") {
         return permissions.includes('access-staff-dashboard') || permissions.includes('access-product-management') || permissions.includes('access-product-upload-staff');
       }
+
+      if (item.route === "erp.logistics.shipments") {
+        return permissions.includes('assign-logistics-deliveries');
+      }
+
+      if (item.route === "erp.logistics.dashboard") {
+        return permissions.includes('access-logistics-dashboard');
+      }
+
+      if (item.route === "erp.logistics.batches") {
+        return permissions.includes('manage-logistics-batches');
+      }
+
+      if (item.route === "erp.logistics.deliveries") {
+        return permissions.includes('operate-logistics-deliveries');
+      }
+
+      if (item.route === "erp.logistics.riders") {
+        return permissions.includes('manage-logistics-riders');
+      }
+
+      if (item.route === "erp.logistics.settings") {
+        return permissions.includes('configure-logistics-settings');
+      }
       
       // Hide other items by default (no permissions)
+      return false;
+    });
+  };
+
+  const getFilteredLogisticsItems = () => {
+    return logisticsItems.filter((item) => {
+      if (item.route === "erp.logistics.dashboard") {
+        return !hasLogisticsRiderRole && permissions.includes('access-logistics-dashboard');
+      }
+
+      if (item.route === "erp.logistics.shipments") {
+        return permissions.includes('assign-logistics-deliveries');
+      }
+
+      if (item.route === "erp.logistics.batches") {
+        return permissions.includes('manage-logistics-batches');
+      }
+
+      if (item.route === "erp.logistics.deliveries") {
+        return hasLogisticsRiderRole || permissions.includes('operate-logistics-deliveries');
+      }
+
+      if (item.route === "erp.logistics.riders") {
+        return permissions.includes('manage-logistics-riders');
+      }
+
+      if (item.route === "erp.logistics.settings") {
+        return permissions.includes('configure-logistics-settings');
+      }
+
       return false;
     });
   };
@@ -1541,10 +2163,17 @@ const AppSidebar_ERP: React.FC = () => {
     });
   }
 
-  const renderMenuItems = (items: NavItem[], menuType: "attendance" | "staff" | "repair" | "cashier" | "manager" | "hr" | "finance" | "crm" | "main" | "others") => {
+  const renderMenuItems = (items: NavItem[], menuType: "attendance" | "staff" | "logistics" | "repair" | "cashier" | "manager" | "hr" | "finance" | "crm" | "main" | "others") => {
+    const visibleItems = items
+      .map((item) => ({
+        ...item,
+        subItems: item.subItems?.filter(isModuleVisible),
+      }))
+      .filter((item) => isModuleVisible(item) && (!item.subItems || item.subItems.length > 0));
+
     return (
       <ul className="flex flex-col gap-4">
-        {items.map((nav, index) => {
+        {visibleItems.map((nav, index) => {
           const subItems = nav.subItems?.filter((s) => s.name !== "Create Admin") || nav.subItems;
           if (nav.subItems && (!subItems || subItems.length === 0)) {
             return null;
@@ -1561,8 +2190,8 @@ const AppSidebar_ERP: React.FC = () => {
                       : "menu-item-inactive"
                   } cursor-pointer ${
                     !isExpanded && !isHovered
-                      ? "lg:justify-center"
-                      : "lg:justify-start"
+                      ? "xl:justify-center"
+                      : "xl:justify-start"
                   }`}
                 >
                   <span
@@ -1685,9 +2314,34 @@ const AppSidebar_ERP: React.FC = () => {
     );
   };
 
+  const filteredManagerItems = getFilteredManagerItems();
+  const renderManagerSection = (
+    label: string,
+    section: NonNullable<NavItem["managerSection"]>,
+  ) => {
+    const items = filteredManagerItems.filter((item) => item.managerSection === section);
+
+    if (items.length === 0) {
+      return null;
+    }
+
+    return (
+      <div className="space-y-3">
+        <h3 className="px-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-400 dark:text-gray-500">
+          {label}
+        </h3>
+        {renderMenuItems(deduplicateItems(items), "manager")}
+      </div>
+    );
+  };
+
+  const logoHref = hasRepairerAccess() && !hasStaffAccess() && !hasLogisticsAccess()
+    ? getHrefByRoute("erp.repairer.articles.index")
+    : route("erp.time-in");
+
   return (
     <aside
-      className={`fixed mt-16 flex flex-col lg:mt-0 top-0 px-5 left-0 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-900 h-screen transition-all duration-300 ease-in-out z-50 border-r border-gray-200 
+      className={`erp-sidebar fixed mt-16 flex flex-col xl:mt-0 top-0 px-5 left-0 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-900 h-screen transition-all duration-300 ease-in-out z-50 border-r border-gray-200
         ${
           isExpanded || isMobileOpen
             ? "w-[290px]"
@@ -1696,22 +2350,22 @@ const AppSidebar_ERP: React.FC = () => {
             : "w-[90px]"
         }
         ${isMobileOpen ? "translate-x-0" : "-translate-x-full"}
-        lg:translate-x-0`}
+        xl:translate-x-0`}
       onMouseEnter={() => !isExpanded && setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
       <div
         className={`py-8 flex ${
-          !isExpanded && !isHovered ? "lg:justify-center" : "justify-start"
+          !isExpanded && !isHovered ? "xl:justify-center" : "justify-start"
         }`}
       >
-        <Link href={route("landing")} className="flex items-center gap-2 hover:scale-105 transition-transform duration-200">
+        <Link href={logoHref} className="flex items-center gap-2 hover:scale-105 transition-transform duration-200">
           {isExpanded || isHovered || isMobileOpen ? (
-            <span className="text-xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+            <span className="text-xl font-bold tracking-tight text-gray-900 dark:text-gray-100">
               SoleSpace
             </span>
           ) : (
-            <span className="text-lg font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">SS</span>
+            <span className="text-lg font-bold tracking-tight text-gray-900 dark:text-gray-100">SS</span>
           )}
         </Link>
       </div>
@@ -1719,6 +2373,30 @@ const AppSidebar_ERP: React.FC = () => {
         ref={sidebarScrollRef}
         className="flex flex-col overflow-y-auto duration-300 ease-linear no-scrollbar"
       >
+        <>
+        {/* LOGISTICS section - Keep dispatcher and rider navigation separate from generic staff */}
+        {hasLogisticsAccess() && (
+          <nav className="mb-6">
+            <div className="flex flex-col gap-4">
+              <div>
+                <h2
+                  className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${
+                    !isExpanded && !isHovered
+                      ? "xl:justify-center"
+                      : "justify-start"
+                  }`}
+                >
+                  {isExpanded || isHovered || isMobileOpen ? (
+                    "LOGISTICS"
+                  ) : (
+                    <HorizontaLDots className="size-6" />
+                  )}
+                </h2>
+                {renderMenuItems(deduplicateItems(withAttendanceForSection("logistics", [...getFilteredLogisticsItems(), myPayslipsItem, ...(hasLogisticsDispatcherArticlesAccess() ? [logisticsArticlesItem] : [])])), "logistics")}
+              </div>
+            </div>
+          </nav>
+        )}
         {/* STAFF section - Show if user has Staff role or staff permissions */}
         {hasStaffAccess() && (
           <nav className="mb-6">
@@ -1727,7 +2405,7 @@ const AppSidebar_ERP: React.FC = () => {
                 <h2
                   className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${
                     !isExpanded && !isHovered
-                      ? "lg:justify-center"
+                      ? "xl:justify-center"
                       : "justify-start"
                   }`}
                 >
@@ -1737,7 +2415,7 @@ const AppSidebar_ERP: React.FC = () => {
                     <HorizontaLDots className="size-6" />
                   )}
                 </h2>
-                {renderMenuItems(deduplicateItems(withAttendanceForSection("staff", [...getFilteredStaffItems(), myPayslipsItem])), "staff")}
+                {renderMenuItems(deduplicateItems(withAttendanceForSection("staff", [...getFilteredStaffItems(), myPayslipsItem, ...(hasStaffArticlesAccess() ? [staffArticlesItem] : [])])), "staff")}
               </div>
             </div>
           </nav>
@@ -1750,7 +2428,7 @@ const AppSidebar_ERP: React.FC = () => {
                 <h2
                   className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${
                     !isExpanded && !isHovered
-                      ? "lg:justify-center"
+                      ? "xl:justify-center"
                       : "justify-start"
                   }`}
                 >
@@ -1760,7 +2438,7 @@ const AppSidebar_ERP: React.FC = () => {
                     <HorizontaLDots className="size-6" />
                   )}
                 </h2>
-                {renderMenuItems(deduplicateItems(withAttendanceForSection("repair", [...getFilteredRepairItems(), myPayslipsItem])), "repair")}
+                {renderMenuItems(deduplicateItems(withAttendanceForSection("repair", [...getFilteredRepairItems(), myPayslipsItem, ...(hasRepairerArticlesAccess() ? [repairerArticlesItem] : [])])), "repair")}
               </div>
             </div>
           </nav>
@@ -1772,7 +2450,7 @@ const AppSidebar_ERP: React.FC = () => {
                 <h2
                   className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${
                     !isExpanded && !isHovered
-                      ? "lg:justify-center"
+                      ? "xl:justify-center"
                       : "justify-start"
                   }`}
                 >
@@ -1783,14 +2461,14 @@ const AppSidebar_ERP: React.FC = () => {
                   )}
                 </h2>
                 {renderMenuItems(
-                  deduplicateItems(withAttendanceForSection("cashier", [...cashierItems, myPayslipsItem])),
+                  deduplicateItems(withAttendanceForSection("cashier", [...cashierItems, myPayslipsItem, ...(hasCashierArticlesAccess() ? [cashierArticlesItem] : [])])),
                   "cashier"
                 )}
               </div>
             </div>
           </nav>
         )}
-        {hasManagerAccess() && (
+        {hasManagerAccess() && filteredManagerItems.length > 0 && (
           <>
             <nav className="mb-6">
               <div className="flex flex-col gap-4">
@@ -1798,7 +2476,7 @@ const AppSidebar_ERP: React.FC = () => {
                   <h2
                     className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${
                       !isExpanded && !isHovered
-                        ? "lg:justify-center"
+                        ? "xl:justify-center"
                         : "justify-start"
                     }`}
                   >
@@ -1808,10 +2486,13 @@ const AppSidebar_ERP: React.FC = () => {
                       <HorizontaLDots className="size-6" />
                     )}
                   </h2>
-                  {renderMenuItems(
-                    deduplicateItems(withAttendanceForSection("manager", [...getFilteredManagerItems(), myPayslipsItem])),
-                    "manager"
-                  )}
+                  <div className="space-y-6">
+                    {renderMenuItems(deduplicateItems(managerSelfServiceItems), "manager")}
+                    {renderManagerSection("OPERATIONS", "operations")}
+                    {renderManagerSection("PEOPLE & APPROVALS", "people")}
+                    {renderManagerSection("REVIEW", "review")}
+                    {hasManagerArticlesAccess() && renderMenuItems([managerArticlesItem], "manager")}
+                  </div>
                 </div>
               </div>
             </nav>
@@ -1824,7 +2505,7 @@ const AppSidebar_ERP: React.FC = () => {
                   <h2
                     className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${
                       !isExpanded && !isHovered
-                        ? "lg:justify-center"
+                        ? "xl:justify-center"
                         : "justify-start"
                     }`}
                   >
@@ -1834,7 +2515,7 @@ const AppSidebar_ERP: React.FC = () => {
                       <HorizontaLDots className="size-6" />
                     )}
                   </h2>
-                  {renderMenuItems(deduplicateItems(withAttendanceForSection("inventory", [...getFilteredInventoryItems(), myPayslipsItem])), "manager")}
+                  {renderMenuItems(deduplicateItems(withAttendanceForSection("inventory", [...getFilteredInventoryItems(), myPayslipsItem, ...(hasInventoryArticlesAccess() ? [inventoryArticlesItem] : [])])), "manager")}
                 </div>
               </div>
             </nav>
@@ -1846,7 +2527,7 @@ const AppSidebar_ERP: React.FC = () => {
                   <h2
                     className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${
                       !isExpanded && !isHovered
-                        ? "lg:justify-center"
+                        ? "xl:justify-center"
                         : "justify-start"
                     }`}
                   >
@@ -1856,7 +2537,7 @@ const AppSidebar_ERP: React.FC = () => {
                       <HorizontaLDots />
                     )}
                   </h2>
-                  {renderMenuItems(deduplicateItems(withAttendanceForSection("procurement", [...procurementItems, myPayslipsItem])), "manager")}
+                  {renderMenuItems(deduplicateItems(withAttendanceForSection("procurement", [...procurementItems, myPayslipsItem, ...(hasProcurementArticlesAccess() ? [procurementArticlesItem] : [])])), "manager")}
                 </div>
               </div>
             </nav>
@@ -1868,7 +2549,7 @@ const AppSidebar_ERP: React.FC = () => {
                 <h2
                   className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${
                     !isExpanded && !isHovered
-                      ? "lg:justify-center"
+                      ? "xl:justify-center"
                       : "justify-start"
                   }`}
                 >
@@ -1879,7 +2560,7 @@ const AppSidebar_ERP: React.FC = () => {
                   )}
                 </h2>
                 {renderMenuItems(
-                  deduplicateItems(withAttendanceForSection("hr", [...getFilteredHRItems(), myPayslipsItem])),
+                  deduplicateItems(withAttendanceForSection("hr", [...getFilteredHRItems(), myPayslipsItem, ...(hasHRArticlesAccess() ? [hrArticlesItem] : [])])),
                   "hr"
                 )}
               </div>
@@ -1893,7 +2574,7 @@ const AppSidebar_ERP: React.FC = () => {
                 <h2
                   className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${
                     !isExpanded && !isHovered
-                      ? "lg:justify-center"
+                      ? "xl:justify-center"
                       : "justify-start"
                   }`}
                 >
@@ -1903,7 +2584,7 @@ const AppSidebar_ERP: React.FC = () => {
                     <HorizontaLDots className="size-6" />
                   )}
                 </h2>
-                {renderMenuItems(deduplicateItems(withAttendanceForSection("finance", [...getFilteredFinanceItems(), myPayslipsItem])), "finance")}
+                {renderMenuItems(deduplicateItems(withAttendanceForSection("finance", [...getFilteredFinanceItems(), myPayslipsItem, ...(hasFinanceArticlesAccess() ? [financeArticlesItem] : [])])), "finance")}
               </div>
             </div>
           </nav>
@@ -1915,7 +2596,7 @@ const AppSidebar_ERP: React.FC = () => {
                 <h2
                   className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${
                     !isExpanded && !isHovered
-                      ? "lg:justify-center"
+                      ? "xl:justify-center"
                       : "justify-start"
                   }`}
                 >
@@ -1925,7 +2606,7 @@ const AppSidebar_ERP: React.FC = () => {
                     <HorizontaLDots className="size-6" />
                   )}
                 </h2>
-                {renderMenuItems(deduplicateItems(withAttendanceForSection("crm", [...crmItems, myPayslipsItem])), "crm")}
+                {renderMenuItems(deduplicateItems(withAttendanceForSection("crm", [...crmItems, myPayslipsItem, ...(hasCRMArticlesAccess() ? [crmArticlesItem] : [])])), "crm")}
               </div>
             </div>
           </nav>
@@ -1937,7 +2618,7 @@ const AppSidebar_ERP: React.FC = () => {
                 <h2
                   className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${
                     !isExpanded && !isHovered
-                      ? "lg:justify-center"
+                      ? "xl:justify-center"
                       : "justify-start"
                   }`}
                 >
@@ -1952,9 +2633,22 @@ const AppSidebar_ERP: React.FC = () => {
             </div>
           </nav>
         )}
+          </>
       </div>
     </aside>
   );
+};
+
+const AppSidebar_ERP: React.FC = () => {
+  const { props } = usePage();
+  const auth = (props as any)?.auth;
+  const erpActor = auth?.erpActor ?? (props as any)?.erpActor;
+  const ownerMode = erpActor?.type === 'shop_owner' && erpActor?.ownerMode === true;
+  const activeModule = (props as any)?.activeModule ?? null;
+
+  return ownerMode
+    ? <AppSidebar_shopOwner activeModule={activeModule} />
+    : <EmployeeSidebarERP />;
 };
 
 export default AppSidebar_ERP;

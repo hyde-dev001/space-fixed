@@ -3,10 +3,16 @@ import { Link, usePage, router } from '@inertiajs/react';
 import Swal from './UserModal';
 import { route } from 'ziggy-js';
 import { useCart } from '../../../contexts/CartContext';
-import { dispatchCartAddedEvent } from '../../../types/cart-events';
+import {
+  addCartAddedListener,
+  dispatchCartAddedEvent,
+  removeCartAddedListener,
+  type CartAddedEvent,
+} from '../../../types/cart-events';
 import NotificationCenter from '../../../components/header/NotificationCenter';
-import NotificationBell from '../../../Components/common/NotificationBell';
+import NotificationBell from '../../../components/common/NotificationBell';
 import { useBadgeCounts } from '../../../hooks/useBadgeCounts';
+import { getCustomerNavItems } from './navigationItems';
 
 type SearchSuggestionProduct = {
   id: number;
@@ -15,6 +21,8 @@ type SearchSuggestionProduct = {
   category?: string | null;
   main_image?: string | null;
   shop_name?: string | null;
+  price?: number | string | null;
+  compare_at_price?: number | string | null;
   url: string;
 };
 
@@ -52,6 +60,17 @@ const resolveCategoryFromSearchQuery = (value: string): string | null => {
 
 type NavigationProps = {
   mobileMenuTriggerIcon?: 'people' | 'hamburger';
+  landingSidebar?: boolean;
+};
+
+type QuickCartItem = {
+  id: string;
+  name: string;
+  price: number;
+  qty: number;
+  image?: string;
+  size?: string;
+  color?: string;
 };
 
 type HeaderSeenCounts = {
@@ -70,10 +89,23 @@ const toSafeCount = (value: unknown): number => {
   return Math.floor(parsed);
 };
 
-const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people' }) => {
+const PROMO_MESSAGES = [
+  'SoleSpace summer edit',
+  'Premium footwear',
+  'Expert repairs',
+  'Shop the latest drops',
+] as const;
+
+const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people', landingSidebar = true }) => {
   const { cartCount, isLoading: cartLoading } = useCart();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+  const [landingSidebarOpen, setLandingSidebarOpen] = useState(false);
+  const [landingSidebarExpanded, setLandingSidebarExpanded] = useState<string | null>(null);
+  const [cartDrawerOpen, setCartDrawerOpen] = useState(false);
+  const [quickCartItems, setQuickCartItems] = useState<QuickCartItem[]>([]);
+  const [quickCartLoading, setQuickCartLoading] = useState(false);
+  const [cartRefreshKey, setCartRefreshKey] = useState(0);
+  const [accountDrawerOpen, setAccountDrawerOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchProducts, setSearchProducts] = useState<SearchSuggestionProduct[]>([]);
   const [searchShops, setSearchShops] = useState<SearchSuggestionShop[]>([]);
@@ -86,6 +118,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [isHovering, setIsHovering] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
+  const [isPromoTickerAtTop, setIsPromoTickerAtTop] = useState(true);
   const page = usePage();
   const { url } = page;
   const { auth } = page.props as any;
@@ -154,6 +187,24 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
   }, []);
 
   useEffect(() => {
+    if (!landingSidebarOpen) return;
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setLandingSidebarOpen(false);
+        setAccountDrawerOpen(false);
+      }
+    };
+
+    document.addEventListener('keydown', handleEscape);
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', handleEscape);
+      document.body.style.overflow = '';
+    };
+  }, [landingSidebarOpen]);
+
+  useEffect(() => {
     if (!isAuthenticated) {
       return;
     }
@@ -175,6 +226,20 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
       return next;
     });
   }, [isAuthenticated, orderStatusCount, repairStatusCount]);
+
+  useEffect(() => {
+    const handleCartAdded = (event: CartAddedEvent) => {
+      if (!event.detail?.openDrawer) return;
+
+      setLandingSidebarOpen(false);
+      setAccountDrawerOpen(false);
+      setCartDrawerOpen(true);
+      setCartRefreshKey((key) => key + 1);
+    };
+
+    addCartAddedListener(handleCartAdded);
+    return () => removeCartAddedListener(handleCartAdded);
+  }, []);
 
   // Shoe categories for dropdown
   const shoeCategories = [
@@ -263,29 +328,16 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
     }
   };
   const navRef = useRef<HTMLDivElement>(null);
-  const dropdownRef = useRef<HTMLDivElement>(null);
   const mobileUserMenuRef = useRef<HTMLDivElement>(null);
   const mobileMenuPanelRef = useRef<HTMLDivElement>(null);
   const searchContainerRef = useRef<HTMLDivElement>(null);
-  const hoverCloseTimeoutRef = useRef<number | null>(null);
   const searchAbortRef = useRef<AbortController | null>(null);
   const megaMenuBaseClasses =
     'absolute top-full left-1/2 -translate-x-1/2 mt-0 bg-white text-black shadow-2xl rounded-none w-auto min-w-[700px] max-w-[900px] py-8 px-10 border-t border-gray-200 transition-all duration-200 ease-out';
   const megaMenuHiddenClasses = 'opacity-0 translate-y-2 pointer-events-none';
   const megaMenuVisibleClasses = 'opacity-100 translate-y-0 pointer-events-auto';
 
-  const navItems = [
-    { route: 'landing', label: 'Home' },
-    { route: 'products', label: 'Products', dropdownKey: 'shoes' },
-    { route: 'products', label: 'Men', params: { category: 'men' }, dropdownKey: 'men' },
-    { route: 'products', label: 'Women', params: { category: 'women' }, dropdownKey: 'women' },
-    { route: 'products', label: 'Kids', params: { category: 'kids' }, dropdownKey: 'kids' },
-    { route: 'products', label: 'Sports', params: { category: 'sports' }, dropdownKey: 'sports' },
-    { route: 'repair', label: 'Repair' },
-    { route: 'download', label: 'Download' },
-    ...(isAuthenticated ? [] : [{ route: 'services', label: 'Services' }]),
-    ...(isAuthenticated ? [] : [{ route: 'login', label: 'ACCOUNT' }])
-  ];
+  const navItems = getCustomerNavItems(isAuthenticated);
 
   let activeIndex = -1;
 
@@ -300,14 +352,13 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
     '/register': 'login', // Register page should highlight ACCOUNT
     '/user/register': 'login', // User register page should highlight ACCOUNT
     '/login': 'login', // Login page should highlight ACCOUNT
-    '/user/login': 'login', // User login page should highlight ACCOUNT
+    '/user/login': 'login', // Compatibility login URL should highlight ACCOUNT
     '/forgot-password': 'login', // Forgot password page should highlight ACCOUNT
     '/otp': 'login', // OTP page should highlight ACCOUNT
     '/new-password': 'login', // New password page should highlight ACCOUNT
-    '/shop-owner/login': 'login', // Shop Owner Login should highlight ACCOUNT
+    '/shop-owner/login': 'login', // Compatibility login URL should highlight ACCOUNT
     '/shop-owner/two-factor': 'login', // Shop Owner 2FA challenge should highlight ACCOUNT
     '/shop-owner-register': 'services', // Shop Owner Registration should highlight Services
-    '/shop/register': 'services', // Alternative Shop Owner Registration URL
     '/shop-owner/register': 'services' // Another possible URL
   };
 
@@ -368,7 +419,6 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
       isActive ? 'font-semibold text-gray-900' : 'font-medium text-gray-500 hover:text-gray-700'
     }`;
 
-  const isMobileHomeActive = currentRoute === 'landing';
   const isMobileProductsActive = currentRoute === 'products' && !currentCategory;
   const isMobileMenActive = currentRoute === 'products' && currentCategory === 'men';
   const isMobileWomenActive = currentRoute === 'products' && currentCategory === 'women';
@@ -378,8 +428,6 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
   const isMobileServicesActive = currentRoute === 'services';
   const isMobileAccountActive = currentRoute === 'login';
 
-  const isMyOrdersActive = cleanUrl.startsWith('/my-orders');
-  const isMyRepairsActive = cleanUrl.startsWith('/my-repairs');
   const isMyProfileActive = cleanUrl.startsWith('/customer-profile');
 
   useEffect(() => {
@@ -463,7 +511,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
   useEffect(() => {
     const query = searchQuery.trim();
 
-    if (query.length < 2) {
+    if (!isSearchFocused || query.length === 1) {
       setSearchProducts([]);
       setSearchShops([]);
       setIsSearchingSuggestions(false);
@@ -474,15 +522,17 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
       return;
     }
 
+    setIsSearchingSuggestions(true);
+
     const timeoutId = window.setTimeout(async () => {
+      const controller = new AbortController();
+
       try {
         if (searchAbortRef.current) {
           searchAbortRef.current.abort();
         }
 
-        const controller = new AbortController();
         searchAbortRef.current = controller;
-        setIsSearchingSuggestions(true);
 
         const response = await fetch(`/api/search/suggestions?query=${encodeURIComponent(query)}`, {
           headers: { Accept: 'application/json' },
@@ -496,20 +546,35 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
         const data = await response.json();
         setSearchProducts(Array.isArray(data.products) ? data.products : []);
         setSearchShops(Array.isArray(data.shops) ? data.shops : []);
-      } catch (error: any) {
-        if (error?.name !== 'AbortError') {
+      } catch (error: unknown) {
+        const errorName = error && typeof error === 'object' && 'name' in error
+          ? String(error.name)
+          : undefined;
+
+        if (errorName !== 'AbortError') {
           setSearchProducts([]);
           setSearchShops([]);
         }
       } finally {
-        setIsSearchingSuggestions(false);
+        if (searchAbortRef.current === controller) {
+          searchAbortRef.current = null;
+          setIsSearchingSuggestions(false);
+        }
       }
     }, 220);
 
-    return () => window.clearTimeout(timeoutId);
-  }, [searchQuery]);
+    return () => {
+      window.clearTimeout(timeoutId);
+      if (searchAbortRef.current) {
+        searchAbortRef.current.abort();
+        searchAbortRef.current = null;
+      }
+    };
+  }, [searchQuery, isSearchFocused]);
 
   useEffect(() => {
+    if (landingSidebar) return;
+
     const handleDocumentClick = (event: MouseEvent) => {
       if (!searchContainerRef.current) return;
       if (!searchContainerRef.current.contains(event.target as Node)) {
@@ -519,11 +584,54 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
 
     document.addEventListener('mousedown', handleDocumentClick);
     return () => document.removeEventListener('mousedown', handleDocumentClick);
-  }, []);
+  }, [landingSidebar]);
+
+  useEffect(() => {
+    if (!cartDrawerOpen) return;
+
+    const loadQuickCart = async () => {
+      setQuickCartLoading(true);
+      try {
+        if (!isAuthenticated) {
+          const raw = localStorage.getItem('ss_cart');
+          const localItems = raw ? JSON.parse(raw) : [];
+          setQuickCartItems(Array.isArray(localItems) ? localItems.map((item: any) => ({
+            id: String(item.id),
+            name: item.name || 'Product',
+            price: Number(item.price) || 0,
+            qty: Math.max(1, Number(item.qty) || 1),
+            image: item.image || item.main_image,
+            size: item.size,
+            color: item.color,
+          })) : []);
+          return;
+        }
+
+        const response = await fetch('/api/cart', { headers: { Accept: 'application/json' }, credentials: 'include' });
+        if (!response.ok) throw new Error('Unable to load cart');
+        const data = await response.json();
+        setQuickCartItems((Array.isArray(data.items) ? data.items : []).map((item: any) => ({
+          id: String(item.id ?? item.product_id),
+          name: item.name || item.product?.name || 'Product',
+          price: Number(item.price ?? item.product?.price) || 0,
+          qty: Math.max(1, Number(item.qty ?? item.quantity) || 1),
+          image: item.image || item.main_image || item.product?.main_image,
+          size: item.size,
+          color: item.color,
+        })));
+      } catch {
+        setQuickCartItems([]);
+      } finally {
+        setQuickCartLoading(false);
+      }
+    };
+
+    loadQuickCart();
+  }, [cartDrawerOpen, isAuthenticated, cartRefreshKey]);
 
   const shouldShowSearchDropdown =
     isSearchFocused &&
-    searchQuery.trim().length >= 2 &&
+    (searchQuery.trim().length === 0 || searchQuery.trim().length >= 2) &&
     (isSearchingSuggestions || searchProducts.length > 0 || searchShops.length > 0);
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
   const isShowroomSearch = normalizedSearchQuery.includes('showroom');
@@ -543,20 +651,11 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
     setOpenDropdownKey(null);
   };
 
-  // Close dropdown when clicking outside
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setUserDropdownOpen(false);
-      }
+    const onScroll = () => {
+      setIsScrolled(window.scrollY > 80);
+      setIsPromoTickerAtTop(window.scrollY < 40);
     };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  useEffect(() => {
-    const onScroll = () => setIsScrolled(window.scrollY > 80);
     onScroll();
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
@@ -601,29 +700,72 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
   }, []);
 
   return (
-    <nav
-      className={`fixed top-0 left-0 right-0 w-full z-50 transition-all duration-300 ${
-        isTransparentNav
-          ? 'bg-transparent'
-          : 'border-b border-gray-200/70 bg-white/95 backdrop-blur'
-      }`}
-    >
-      <div className="mx-auto h-16 w-full max-w-[1920px] px-4 sm:h-20 sm:px-6 lg:px-10 2xl:px-12">
-        <div className="relative flex h-16 items-center justify-center pr-20 sm:h-20 sm:pr-24 2xl:pr-0">
+    <>
+      <div className="relative z-[40] h-10 overflow-hidden border-b border-white/15 bg-[#111111] text-white" aria-label="Latest offers">
+        <div className="landing-marquee flex h-full min-w-max items-center gap-12 py-3 text-[11px] font-semibold uppercase tracking-[0.22em] motion-reduce:animate-none sm:gap-20 sm:text-xs">
+          {[...PROMO_MESSAGES, ...PROMO_MESSAGES].map((message, index) => (
+            <span key={`${message}-${index}`} className="inline-flex items-center gap-12 whitespace-nowrap sm:gap-20">
+              {message}<span aria-hidden="true">•</span>
+            </span>
+          ))}
+        </div>
+      </div>
+      <nav
+        className={`fixed left-0 right-0 z-50 w-full transition-[top,background-color,border-color] duration-300 ${isPromoTickerAtTop ? 'top-10' : 'top-0'} ${
+          landingSidebar || isTransparentNav
+            ? 'bg-transparent'
+            : 'border-b border-gray-200/70 bg-white/95 backdrop-blur'
+        }`}
+      >
+      <div className={`mx-auto w-full max-w-[1920px] px-4 sm:px-6 lg:px-10 2xl:px-12 ${landingSidebar ? 'h-0' : 'h-16 sm:h-20'}`}>
+        <div className={`relative flex items-center justify-center pr-20 sm:pr-24 ${landingSidebar ? 'h-0' : 'h-16 sm:h-20'} ${landingSidebar ? '' : '2xl:pr-0'}`}>
           <Link
             href={route("landing")}
-            className={`absolute left-0 text-xl font-bold tracking-tight transition-opacity hover:opacity-70 sm:text-2xl ${
+            className={`absolute top-3 text-xl font-bold leading-none tracking-tight transition-opacity hover:opacity-70 sm:top-5 sm:text-2xl ${
+              landingSidebar ? 'left-1/2 -translate-x-1/2' : 'left-0'
+            } ${
               isTransparentNav ? 'text-white' : 'text-gray-900'
             }`}
           >
             SoleSpace
           </Link>
 
-          <div className="absolute right-0 flex items-center gap-1.5 2xl:hidden" ref={mobileUserMenuRef}>
+          {landingSidebar && (
+            <button
+              type="button"
+              onClick={() => {
+                setLandingSidebarOpen((open) => !open);
+                setAccountDrawerOpen(false);
+              }}
+              className={`absolute left-0 top-3 inline-flex h-10 w-10 -translate-y-px items-center justify-center p-0 transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 sm:top-5 ${isTransparentNav ? 'text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.7)] focus-visible:ring-white' : 'text-gray-900 focus-visible:ring-gray-900'}`}
+              aria-label={landingSidebarOpen ? 'Close menu' : 'Toggle menu'}
+            >
+              <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                {landingSidebarOpen ? (
+                  <path strokeLinecap="round" strokeWidth={2} d="M6 6l12 12M18 6L6 18" />
+                ) : (
+                  <path strokeLinecap="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                )}
+              </svg>
+            </button>
+          )}
+
+          <div className={`absolute right-0 flex items-center gap-3 ${landingSidebar ? 'top-3 sm:top-5 2xl:hidden' : '2xl:hidden'}`} ref={mobileUserMenuRef}>
+            {landingSidebar && (
+              <button type="button" onClick={() => setIsSearchFocused(true)} className={headerIconButtonClasses} aria-label="Open search">
+                <svg className={headerIconSvgClasses} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35m1.6-5.4a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+              </button>
+            )}
             <Link
               href="/checkout"
-              className={headerIconButtonClasses}
+              className={`${headerIconButtonClasses} ${landingSidebar ? 'order-3' : ''}`}
               aria-label="Shopping cart"
+              onClick={landingSidebar ? (event) => {
+                event.preventDefault();
+                setLandingSidebarOpen(false);
+                setAccountDrawerOpen(false);
+                setCartDrawerOpen(true);
+              } : undefined}
             >
               <svg className={headerIconSvgClasses} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h2l2.2 10.2a2 2 0 001.96 1.58h7.68a2 2 0 001.95-1.56L21 7H8" />
@@ -640,38 +782,37 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
               <NotificationBell
                 basePath="/api/notifications"
                 iconSize={24}
-                className={isTransparentNav
-                  ? 'text-white hover:opacity-70'
-                  : 'text-gray-900 hover:opacity-70'
-                }
+                className={`${isTransparentNav ? 'text-white hover:opacity-70' : 'text-gray-900 hover:opacity-70'} ${landingSidebar ? 'order-2' : ''}`}
               />
             )}
-            <button
-              type="button"
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className={headerIconButtonClasses}
-              aria-label={mobileMenuTriggerIcon === 'hamburger' ? 'Toggle menu' : 'User account menu'}
-            >
-              <svg className={headerIconSvgClasses} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                {mobileMenuTriggerIcon === 'hamburger' ? (
-                  mobileMenuOpen ? (
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            {!landingSidebar && (
+              <button
+                type="button"
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                className={headerIconButtonClasses}
+                aria-label={mobileMenuTriggerIcon === 'hamburger' ? 'Toggle menu' : 'User account menu'}
+              >
+                <svg className={headerIconSvgClasses} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  {mobileMenuTriggerIcon === 'hamburger' ? (
+                    mobileMenuOpen ? (
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    ) : (
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                    )
                   ) : (
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                  )
-                ) : (
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  )}
+                </svg>
+                {mobileMenuTriggerIcon === 'people' && isAuthenticated && visibleUserIconCount > 0 && (
+                  <span className="absolute top-0 right-0 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white transform translate-x-1/2 -translate-y-1/2 bg-red-500 rounded-full">
+                    {visibleUserIconCount}
+                  </span>
                 )}
-              </svg>
-              {mobileMenuTriggerIcon === 'people' && isAuthenticated && visibleUserIconCount > 0 && (
-                <span className="absolute top-0 right-0 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white transform translate-x-1/2 -translate-y-1/2 bg-red-500 rounded-full">
-                  {visibleUserIconCount}
-                </span>
-              )}
-            </button>
+              </button>
+            )}
           </div>
           <div
-            className="relative mt-2 hidden items-center space-x-8 2xl:flex"
+            className={`relative mt-2 hidden items-center space-x-8 ${landingSidebar ? '' : '2xl:flex'}`}
             ref={navRef}
             onMouseLeave={handleNavAreaMouseLeave}
           >
@@ -909,25 +1050,41 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
               );
             })}
           </div>
-          <div className="absolute right-0 hidden items-center gap-3 2xl:flex 2xl:gap-4">
-            <div className="relative w-[17rem]" ref={searchContainerRef}>
-            <form onSubmit={handleSearch} className="relative w-full">
-              <span className={`absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none transition-colors duration-300 ${searchIconClasses}`}>
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35m1.6-5.4a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-              </span>
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onFocus={() => setIsSearchFocused(true)}
-                placeholder="Search"
-                className={desktopSearchInputClasses}
-                aria-label="Search"
-              />
-            </form>
-            {shouldShowSearchDropdown && (
+          <div className={`absolute right-0 hidden items-center 2xl:flex ${landingSidebar ? 'top-3 gap-3 sm:top-5' : 'gap-3 2xl:gap-4'}`}>
+            <div className={`relative ${landingSidebar ? 'w-10' : 'w-[17rem]'}`} ref={searchContainerRef}>
+            {landingSidebar ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setIsSearchFocused((focused) => !focused)}
+                  className={headerIconButtonClasses}
+                  aria-label="Open search"
+                  aria-expanded={isSearchFocused}
+                >
+                  <svg className={headerIconSvgClasses} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35m1.6-5.4a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </button>
+              </>
+            ) : (
+              <form onSubmit={handleSearch} className="relative w-full">
+                <span className={`absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none transition-colors duration-300 ${searchIconClasses}`}>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35m1.6-5.4a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </span>
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onFocus={() => setIsSearchFocused(true)}
+                  placeholder="Search"
+                  className={desktopSearchInputClasses}
+                  aria-label="Search"
+                />
+              </form>
+            )}
+            {shouldShowSearchDropdown && !landingSidebar && (
               <div className="absolute right-0 top-[calc(100%+10px)] z-50 w-[min(92vw,40rem)] overflow-hidden rounded-2xl border border-gray-200 bg-linear-to-b from-white to-gray-50 shadow-2xl">
                 {isSearchingSuggestions ? (
                   <div className="px-5 py-4 text-sm text-gray-500">Searching suggestions...</div>
@@ -1035,7 +1192,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
               </div>
             )}
             </div>
-            <div className="flex items-center gap-2 leading-none">
+            <div className="flex items-center gap-3 leading-none">
             {isAuthenticated && (
               <NotificationBell 
                 basePath="/api/notifications"
@@ -1046,125 +1203,6 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                 }
               />
             )}
-            {/* User Icon with Dropdown */}
-            <div
-              className="relative flex shrink-0 items-center justify-center"
-              ref={dropdownRef}
-              onMouseEnter={() => {
-                if (hoverCloseTimeoutRef.current) {
-                  window.clearTimeout(hoverCloseTimeoutRef.current);
-                  hoverCloseTimeoutRef.current = null;
-                }
-                setUserDropdownOpen(true);
-              }}
-              onMouseLeave={() => {
-                // delay closing slightly so clicks can register when moving to the menu
-                if (hoverCloseTimeoutRef.current) window.clearTimeout(hoverCloseTimeoutRef.current);
-                hoverCloseTimeoutRef.current = window.setTimeout(() => {
-                  setUserDropdownOpen(false);
-                  hoverCloseTimeoutRef.current = null;
-                }, 220);
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => setUserDropdownOpen(!userDropdownOpen)}
-                className={headerIconButtonClasses}
-                aria-label="User account"
-              >
-                <svg className={headerIconSvgClasses} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                </svg>
-                {isAuthenticated && visibleUserIconCount > 0 && (
-                  <span className="absolute top-0 right-0 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white transform translate-x-1/2 -translate-y-1/2 bg-red-500 rounded-full">
-                    {visibleUserIconCount}
-                  </span>
-                )}
-              </button>
-
-              {/* Dropdown Menu */}
-              {userDropdownOpen && (
-                <div
-                  className="absolute right-0 top-full z-50 mt-1 w-52 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[0_18px_35px_-20px_rgba(15,23,42,0.45)]"
-                  onMouseEnter={() => {
-                    if (hoverCloseTimeoutRef.current) {
-                      window.clearTimeout(hoverCloseTimeoutRef.current);
-                      hoverCloseTimeoutRef.current = null;
-                    }
-                  }}
-                  onMouseLeave={() => {
-                    if (hoverCloseTimeoutRef.current) window.clearTimeout(hoverCloseTimeoutRef.current);
-                    hoverCloseTimeoutRef.current = window.setTimeout(() => {
-                      setUserDropdownOpen(false);
-                      hoverCloseTimeoutRef.current = null;
-                    }, 220);
-                  }}
-                >
-                  {isAuthenticated ? (
-                    <>
-                      <Link
-                        href="/my-orders"
-                        className="flex items-center justify-between gap-3 border-b border-gray-100 px-4 py-3 text-sm font-medium text-gray-900 transition-colors hover:bg-gray-50"
-                        onClick={() => setUserDropdownOpen(false)}
-                      >
-                        <span className="inline-flex items-center gap-3">
-                          <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                          </svg>
-                          <span>Orders</span>
-                        </span>
-                        {visibleOrderStatusCount > 0 && <span className="text-xs font-semibold leading-none text-gray-600">{visibleOrderStatusCount}</span>}
-                      </Link>
-                      <Link
-                        href="/my-repairs"
-                        className="flex items-center justify-between gap-3 border-b border-gray-100 px-4 py-3 text-sm font-medium text-gray-900 transition-colors hover:bg-gray-50"
-                        onClick={() => setUserDropdownOpen(false)}
-                      >
-                        <span className="inline-flex items-center gap-3">
-                          <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                          </svg>
-                          <span>Repair</span>
-                        </span>
-                        {visibleRepairStatusCount > 0 && <span className="text-xs font-semibold leading-none text-gray-600">{visibleRepairStatusCount}</span>}
-                      </Link>
-                      <Link
-                        href="/customer-profile"
-                        className="flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-sm font-medium text-gray-900 transition-colors hover:bg-gray-50"
-                        onClick={() => setUserDropdownOpen(false)}
-                      >
-                        <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                        </svg>
-                        <span>Edit Profile</span>
-                      </Link>
-                      <button
-                        className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
-                        onClick={() => { setUserDropdownOpen(false); handleLogout(); }}
-                      >
-                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                        </svg>
-                        <span>Log out</span>
-                      </button>
-                    </>
-                  ) : (
-                    <Link
-                      href="/user/login"
-                      className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-gray-900 transition-colors hover:bg-gray-50"
-                      onClick={() => setUserDropdownOpen(false)}
-                    >
-                      <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
-                      </svg>
-                      <span>Customer Login</span>
-                    </Link>
-                  )}
-                </div>
-              )}
-            </div>
-
             {/* Messages Icon - Only visible for authenticated customers */}
             {isAuthenticated && (
               <Link href="/messages" className={headerIconButtonClasses} aria-label="Messages">
@@ -1185,7 +1223,18 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
             )}
 
             {/* Shopping Cart Icon */}
-            <Link id="cart-icon" href="/checkout" className={headerIconButtonClasses} aria-label="Shopping cart">
+            <Link
+              id="cart-icon"
+              href="/checkout"
+              className={`${headerIconButtonClasses} ${landingSidebar ? 'order-3' : ''}`}
+              aria-label="Shopping cart"
+              onClick={landingSidebar ? (event) => {
+                event.preventDefault();
+                setLandingSidebarOpen(false);
+                setAccountDrawerOpen(false);
+                setCartDrawerOpen(true);
+              } : undefined}
+            >
               <svg className={headerIconSvgClasses} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h2l2.2 10.2a2 2 0 001.96 1.58h7.68a2 2 0 001.95-1.56L21 7H8" />
                 <circle cx="10" cy="19" r="1.5" strokeWidth={2} />
@@ -1202,7 +1251,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
             </div>
           </div>
         </div>
-        {mobileMenuOpen && (
+        {mobileMenuOpen && !landingSidebar && (
           <div className="2xl:hidden">
             {mobileMenuTriggerIcon === 'hamburger' ? (
               <div id="mobile-nav-menu" ref={mobileMenuPanelRef} className="mx-auto mt-3 w-full max-w-[430px] rounded-[28px] border border-gray-200 bg-white px-4 py-4 text-center shadow-[0_24px_45px_-28px_rgba(15,23,42,0.45)]">
@@ -1223,14 +1272,15 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                   />
                 </form>
                 <div className="mt-4 space-y-3.5 pb-1">
-                  <Link href={route('landing')} onClick={() => setMobileMenuOpen(false)} className={mobileNavLinkClasses(isMobileHomeActive)}>Home</Link>
                   <Link href={route('products')} onClick={() => setMobileMenuOpen(false)} className={mobileNavLinkClasses(isMobileProductsActive)}>Products</Link>
                   <Link href={route('products', { category: 'men' })} onClick={() => setMobileMenuOpen(false)} className={mobileNavLinkClasses(isMobileMenActive)}>Men</Link>
                   <Link href={route('products', { category: 'women' })} onClick={() => setMobileMenuOpen(false)} className={mobileNavLinkClasses(isMobileWomenActive)}>Women</Link>
                   <Link href={route('products', { category: 'kids' })} onClick={() => setMobileMenuOpen(false)} className={mobileNavLinkClasses(isMobileKidsActive)}>Kids</Link>
                   <Link href={route('products', { category: 'sports' })} onClick={() => setMobileMenuOpen(false)} className={mobileNavLinkClasses(isMobileSportsActive)}>Sports</Link>
                   <Link href={route('repair')} onClick={() => setMobileMenuOpen(false)} className={mobileNavLinkClasses(isMobileRepairActive)}>Repair</Link>
-                  <Link href={route('services')} onClick={() => setMobileMenuOpen(false)} className={mobileNavLinkClasses(isMobileServicesActive)}>Services</Link>
+                  {!isAuthenticated && (
+                    <Link href={route('services')} onClick={() => setMobileMenuOpen(false)} className={mobileNavLinkClasses(isMobileServicesActive)}>Services</Link>
+                  )}
                   {isAuthenticated ? (
                     <button
                       type="button"
@@ -1255,31 +1305,6 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                 {isAuthenticated ? (
                   <>
                     <Link
-                      href="/my-orders"
-                      className={`flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-sm font-medium transition-colors ${
-                        isMyOrdersActive ? 'bg-gray-50 text-gray-900' : 'text-gray-900 hover:bg-gray-50'
-                      }`}
-                      onClick={() => setMobileMenuOpen(false)}
-                    >
-                      <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                      </svg>
-                      <span>Orders</span>
-                    </Link>
-                    <Link
-                      href="/my-repairs"
-                      className={`flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-sm font-medium transition-colors ${
-                        isMyRepairsActive ? 'bg-gray-50 text-gray-900' : 'text-gray-900 hover:bg-gray-50'
-                      }`}
-                      onClick={() => setMobileMenuOpen(false)}
-                    >
-                      <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                      </svg>
-                      <span>Repair</span>
-                    </Link>
-                    <Link
                       href="/customer-profile"
                       className={`flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-sm font-medium transition-colors ${
                         isMyProfileActive ? 'bg-gray-50 text-gray-900' : 'text-gray-900 hover:bg-gray-50'
@@ -1290,6 +1315,18 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                       </svg>
                       <span>Edit Profile</span>
+                    </Link>
+                    <Link
+                      href={route('shop-owner-register')}
+                      className={`flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-sm font-medium transition-colors ${
+                        isMobileServicesActive ? 'bg-gray-50 text-gray-900' : 'text-gray-900 hover:bg-gray-50'
+                      }`}
+                      onClick={() => setMobileMenuOpen(false)}
+                    >
+                      <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2m8-8a4 4 0 100-8 4 4 0 000 8zm6-3v6m3-3h-6" />
+                      </svg>
+                      <span>Join Our Team</span>
                     </Link>
                     <button
                       type="button"
@@ -1307,7 +1344,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                   </>
                 ) : (
                   <Link
-                    href="/user/login"
+                    href="/login"
                     className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-gray-900 transition-colors hover:bg-gray-50"
                     onClick={() => setMobileMenuOpen(false)}
                   >
@@ -1321,8 +1358,258 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
             )}
           </div>
         )}
-      </div>
-    </nav>
+        </div>
+        {landingSidebar && (
+        <>
+          {isSearchFocused && (
+            <>
+              <button
+                type="button"
+                aria-label="Close search"
+                onClick={() => setIsSearchFocused(false)}
+                className="fixed inset-0 z-[120] bg-black/55 opacity-100 backdrop-blur-[2px] transition-opacity duration-300 motion-reduce:transition-none"
+              />
+              <div role="dialog" aria-modal="true" aria-label="Search products and shops" className="fixed left-1/2 top-1/2 z-[121] w-[min(92vw,42rem)] -translate-x-1/2 -translate-y-1/2 overflow-hidden bg-white text-[#111111] shadow-2xl transition-all duration-300 ease-out motion-reduce:transition-none">
+                <form onSubmit={handleSearch} className="flex items-center gap-3 border-b border-[#dedede] px-5 py-4 sm:px-7">
+                  <svg className="h-5 w-5 shrink-0 text-[#555555]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M21 21l-4.35-4.35m1.6-5.4a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                  <input
+                    autoFocus
+                    type="text"
+                    value={searchQuery}
+                    onChange={(event) => setSearchQuery(event.target.value)}
+                    placeholder="Search products or shops"
+                    className="min-w-0 flex-1 border-0 bg-transparent text-base outline-none placeholder:text-[#777777]"
+                    aria-label="Search products or shops"
+                  />
+                  <button type="button" onClick={() => setIsSearchFocused(false)} className="inline-flex h-10 w-10 items-center justify-center" aria-label="Close search">
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={1.8} d="M6 6l12 12M18 6L6 18" /></svg>
+                  </button>
+                </form>
+                <div className="max-h-[55vh] overflow-y-auto no-scrollbar px-5 py-5 sm:px-7">
+                  <p className="mb-4 text-xs font-semibold uppercase tracking-[0.18em] text-[#555555]">Products</p>
+                  {isSearchingSuggestions && <p className="text-sm text-[#777777]">Searching...</p>}
+                  {!isSearchingSuggestions && searchQuery.trim().length >= 2 && searchProducts.length === 0 && searchShops.length === 0 && <p className="text-sm text-[#777777]">No results found.</p>}
+                  {searchProducts.length > 0 && <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                    {searchProducts.map((product) => (
+                      <Link key={`modal-product-${product.id}`} href={product.url} onClick={() => setIsSearchFocused(false)} className="group">
+                        <div className="aspect-square overflow-hidden bg-[#f3f3f3]">
+                          {product.main_image ? <img src={product.main_image} alt={product.name} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" /> : <div className="flex h-full items-center justify-center text-sm text-[#777777]">No image</div>}
+                        </div>
+                        <p className="mt-2 line-clamp-2 text-sm font-medium">{product.name}</p>
+                        {product.shop_name && <p className="mt-1 text-xs text-[#777777]">{product.shop_name}</p>}
+                        {product.price !== null && product.price !== undefined && Number.isFinite(Number(product.price)) && (
+                          <p className="mt-2 text-sm font-semibold">
+                            ₱{Number(product.price).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                            {product.compare_at_price !== null && product.compare_at_price !== undefined && Number(product.compare_at_price) > Number(product.price) && (
+                              <span className="ml-2 text-xs font-normal text-[#999999] line-through">
+                                ₱{Number(product.compare_at_price).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                              </span>
+                            )}
+                          </p>
+                        )}
+                      </Link>
+                    ))}
+                  </div>}
+                  {searchShops.length > 0 && (
+                    <section data-testid="landing-search-shops" className="mt-8 border-t border-[#dedede] pt-5">
+                      <p className="mb-4 text-xs font-semibold uppercase tracking-[0.18em] text-[#555555]">{shopSuggestionLabel}</p>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {searchShops.map((shop) => (
+                          <div
+                            key={`modal-shop-${shop.id}`}
+                            data-testid="landing-search-shop-card"
+                            className="rounded-2xl border border-[#dedede] bg-white p-3.5 transition-colors hover:bg-[#f7f7f7]"
+                          >
+                            <Link href={shop.url} onClick={() => setIsSearchFocused(false)} className="flex items-center gap-3">
+                              <div className="h-12 w-12 shrink-0 overflow-hidden rounded-xl border border-[#dedede] bg-[#f3f3f3]">
+                                {shop.image ? (
+                                  <img src={shop.image} alt={shop.name} className="h-full w-full object-cover" />
+                                ) : (
+                                  <div className="flex h-full w-full items-center justify-center text-sm font-semibold text-[#777777]">S</div>
+                                )}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-semibold uppercase tracking-[0.06em]">{shop.name}</p>
+                                {shop.location && <p className="mt-1 truncate text-xs text-[#777777]">{shop.location}</p>}
+                              </div>
+                            </Link>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              <Link
+                                href={shop.url}
+                                onClick={() => setIsSearchFocused(false)}
+                                className={`${suggestionActionBaseClass} ${suggestionActionLightClass}`}
+                              >
+                                View profile
+                              </Link>
+                              {isShowroomSearch && shop.virtual_showroom_url && (
+                                <Link
+                                  href={shop.virtual_showroom_url}
+                                  onClick={() => setIsSearchFocused(false)}
+                                  className={`${suggestionActionBaseClass} ${suggestionActionDarkClass}`}
+                                >
+                                  Virtual showroom
+                                </Link>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+          <>
+            <aside
+              role="dialog"
+              aria-modal="true"
+              aria-label="Account submenu"
+              aria-hidden={!accountDrawerOpen}
+              className={`userside-customer-drawer fixed left-[min(88vw,31rem)] top-0 z-[110] flex h-dvh w-[min(88vw,26rem)] max-w-[26rem] flex-col border-l border-white/60 bg-white/60 text-[#111111] dark:border-slate-700 dark:bg-slate-900/95 dark:text-white shadow-2xl backdrop-blur-2xl transition-[transform,opacity] duration-300 ease-out motion-reduce:transition-none ${accountDrawerOpen ? 'visible translate-x-0 opacity-100' : 'invisible translate-x-full opacity-0 pointer-events-none'}`}
+            >
+              <div className="flex items-center justify-between border-b border-white/50 bg-white/10 px-5 py-5 sm:px-7 dark:border-slate-700 dark:bg-slate-800/50">
+                <div>
+                  <p className="text-lg font-semibold">Account</p>
+                  <p className="mt-1 text-xs uppercase tracking-[0.16em] text-[#777777] dark:text-slate-400">Profile &amp; access</p>
+                </div>
+                <button type="button" onClick={() => setAccountDrawerOpen(false)} className="inline-flex h-10 w-10 items-center justify-center rounded-full hover:bg-white/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111]" aria-label="Close account">
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={1.8} d="M6 6l12 12M18 6L6 18" /></svg>
+                </button>
+              </div>
+              <div className="flex-1 px-5 py-6 sm:px-7">
+                {isAuthenticated ? (
+                  <div className="border-y border-white/50">
+                    <Link
+                      href="/customer-profile"
+                      className={`flex min-h-14 items-center gap-3 border-b border-white/50 px-4 text-sm font-medium transition-colors dark:border-slate-700 dark:text-white ${isMyProfileActive ? 'bg-white/35 text-gray-900 dark:bg-slate-800 dark:text-white' : 'text-gray-900 hover:bg-white/35 dark:hover:bg-slate-800'}`}
+                      onClick={() => setAccountDrawerOpen(false)}
+                    >
+                      <svg className="h-4 w-4 text-gray-500 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                      <span>Edit Profile</span>
+                    </Link>
+                    <Link
+                      href={route('shop-owner-register')}
+                      className={`flex min-h-14 items-center gap-3 border-b border-white/50 px-4 text-sm font-medium transition-colors dark:border-slate-700 dark:text-white ${isMobileServicesActive ? 'bg-white/35 text-gray-900 dark:bg-slate-800 dark:text-white' : 'text-gray-900 hover:bg-white/35 dark:hover:bg-slate-800'}`}
+                      onClick={() => setAccountDrawerOpen(false)}
+                    >
+                      <svg className="h-4 w-4 text-gray-500 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2m8-8a4 4 0 100-8 4 4 0 000 8zm6-3v6m3-3h-6" />
+                      </svg>
+                      <span>Join Our Team</span>
+                    </Link>
+                    <button
+                      type="button"
+                      className="flex min-h-14 w-full items-center gap-3 px-4 text-left text-sm font-medium text-red-600 transition-colors hover:bg-red-50/60 dark:hover:bg-red-950/40"
+                      onClick={() => {
+                        setAccountDrawerOpen(false);
+                        handleLogout();
+                      }}
+                    >
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                      </svg>
+                      <span>Log out</span>
+                    </button>
+                  </div>
+                ) : (
+                  <Link href="/login" onClick={() => setAccountDrawerOpen(false)} className="flex min-h-14 items-center gap-3 border-y border-white/50 px-4 text-sm font-medium text-gray-900 transition-colors hover:bg-white/35 dark:border-slate-700 dark:text-white dark:hover:bg-slate-800">
+                    Customer Login
+                  </Link>
+                )}
+              </div>
+            </aside>
+          </>
+          <>
+            <button
+              type="button"
+              aria-label="Close cart"
+              onClick={() => setCartDrawerOpen(false)}
+              className={`fixed inset-0 z-[100] bg-black/35 backdrop-blur-[2px] transition-opacity duration-300 motion-reduce:transition-none ${cartDrawerOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+            />
+            <aside
+              aria-label="Shopping cart"
+              aria-hidden={!cartDrawerOpen}
+              className={`userside-customer-drawer fixed right-0 top-0 z-[110] flex h-dvh w-[min(92vw,30rem)] max-w-[30rem] flex-col border-l border-white/60 bg-white/60 text-[#111111] dark:border-slate-700 dark:bg-slate-900/95 dark:text-white shadow-2xl backdrop-blur-2xl transition-transform duration-300 ease-out motion-reduce:transition-none ${cartDrawerOpen ? 'translate-x-0' : 'translate-x-full pointer-events-none'}`}
+            >
+                <div className="flex items-center justify-between border-b border-[#dedede] px-5 py-5 sm:px-7 dark:border-slate-700">
+                  <div><p className="text-lg font-semibold">Cart</p><p className="mt-1 text-xs uppercase tracking-[0.16em] text-[#777777] dark:text-slate-400">{effectiveCartCount} {effectiveCartCount === 1 ? 'item' : 'items'}</p></div>
+                  <button type="button" onClick={() => setCartDrawerOpen(false)} className="inline-flex h-10 w-10 items-center justify-center" aria-label="Close cart"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={1.8} d="M6 6l12 12M18 6L6 18" /></svg></button>
+                </div>
+                <div className="flex-1 overflow-y-auto px-5 py-5 sm:px-7">
+                  {quickCartLoading && <p className="text-sm text-[#777777] dark:text-slate-400">Loading your cart...</p>}
+                  {!quickCartLoading && quickCartItems.length === 0 && <div className="py-12 text-center"><p className="text-base font-medium dark:text-white">Your cart is empty.</p><Link href={route('products')} onClick={() => setCartDrawerOpen(false)} className="mt-5 inline-flex min-h-11 items-center justify-center bg-[#111111] px-6 text-xs font-semibold uppercase tracking-[0.16em] text-white dark:bg-slate-100 dark:text-slate-950">Shop products</Link></div>}
+                  {!quickCartLoading && quickCartItems.length > 0 && <div className="space-y-5">
+                    {quickCartItems.map((item) => <div key={item.id} className="flex gap-4 border-b border-[#ededed] pb-5"><div className="h-24 w-24 shrink-0 overflow-hidden bg-[#f3f3f3]">{item.image ? <img src={item.image} alt={item.name} className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center text-xs text-[#777777]">No image</div>}</div><div className="min-w-0 flex-1"><p className="font-medium">{item.name}</p>{(item.size || item.color) && <p className="mt-1 text-xs text-[#777777]">{[item.size, item.color].filter(Boolean).join(' / ')}</p>}<div className="mt-4 flex items-center justify-between text-sm"><span>Qty {item.qty}</span><span className="font-semibold">₱{item.price.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span></div></div></div>)}
+                  </div>}
+                </div>
+                <div className="border-t border-[#dedede] px-5 py-5 sm:px-7"><div className="flex items-center justify-between text-sm font-semibold"><span>Estimated total</span><span>₱{quickCartItems.reduce((total, item) => total + item.price * item.qty, 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span></div><Link href="/checkout" onClick={() => setCartDrawerOpen(false)} className="mt-5 flex min-h-12 items-center justify-center bg-[#111111] text-xs font-semibold uppercase tracking-[0.16em] text-white">Checkout</Link></div>
+            </aside>
+          </>
+          <button
+            type="button"
+            aria-label="Close menu"
+            onClick={() => {
+              setAccountDrawerOpen(false);
+              setLandingSidebarOpen(false);
+            }}
+            className={`fixed inset-0 z-[100] bg-black/35 backdrop-blur-[2px] transition-opacity duration-300 motion-reduce:transition-none ${landingSidebarOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+          />
+          <aside
+            aria-label="Site menu"
+            className={`userside-customer-drawer fixed left-0 top-0 z-[110] flex h-dvh w-[min(88vw,31rem)] flex-col overflow-y-auto border-r border-white/60 bg-white/60 text-[#111111] dark:border-slate-700 dark:bg-slate-900/95 dark:text-white shadow-2xl backdrop-blur-2xl transition-transform duration-300 ease-out motion-reduce:transition-none ${landingSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
+          >
+            <div className="flex items-center justify-between border-b border-[#e5e5e5] px-6 py-6 sm:px-8 dark:border-slate-700">
+              <Link href={route('landing')} onClick={() => { setAccountDrawerOpen(false); setLandingSidebarOpen(false); }} className="text-xl font-semibold tracking-[-0.06em] sm:text-2xl">
+                SOLESPACE
+              </Link>
+              <button type="button" onClick={() => { setAccountDrawerOpen(false); setLandingSidebarOpen(false); }} className="inline-flex h-11 w-11 items-center justify-center rounded-full hover:bg-[#f5f5f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] dark:hover:bg-slate-800 dark:focus-visible:ring-slate-300" aria-label="Close menu">
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 6l12 12M18 6L6 18" /></svg>
+              </button>
+            </div>
+            <nav className="flex-1 px-6 py-7 sm:px-8">
+              <div className="space-y-1">
+                {navItems.map((item) => {
+                  const hasChildren = Boolean(item.dropdownKey);
+                  const href = route(item.route, item.params ?? undefined);
+                  const isExpanded = landingSidebarExpanded === item.dropdownKey;
+                  return (
+                    <div key={`${item.label}-${item.dropdownKey ?? 'link'}`}>
+                      <div className="flex items-center justify-between">
+                        <Link href={href} onClick={() => { setAccountDrawerOpen(false); setLandingSidebarOpen(false); }} className="flex min-h-12 flex-1 items-center text-lg font-semibold tracking-[-0.02em] transition-opacity hover:opacity-55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] sm:text-xl">
+                          {item.label}
+                        </Link>
+                        {hasChildren && (
+                          <button type="button" onClick={() => setLandingSidebarExpanded(isExpanded ? null : item.dropdownKey ?? null)} className="inline-flex h-11 w-11 items-center justify-center rounded-full hover:bg-[#f5f5f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111]" aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${item.label}`}>
+                            <svg className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-45' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={2} d="M12 5v14M5 12h14" /></svg>
+                          </button>
+                        )}
+                      </div>
+                      {isExpanded && (
+                        <div className="mb-3 ml-4 border-l border-[#cacacb] pl-4 dark:border-slate-700">
+                          <Link href={route('products', item.params?.category ? { category: item.params.category } : undefined)} onClick={() => { setAccountDrawerOpen(false); setLandingSidebarOpen(false); }} className="flex min-h-10 items-center text-sm font-medium text-[#707072] hover:text-[#111111] dark:text-slate-400 dark:hover:text-white">Shop all</Link>
+                          {['New arrivals', 'Best sellers', 'Running', 'Basketball', 'Lifestyle'].map((category) => (
+                            <Link key={category} href={route('products', item.params?.category ? { category: item.params.category } : undefined)} onClick={() => { setAccountDrawerOpen(false); setLandingSidebarOpen(false); }} className="flex min-h-10 items-center text-sm font-medium text-[#707072] hover:text-[#111111] dark:text-slate-400 dark:hover:text-white">{category}</Link>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </nav>
+            <div className="border-t border-[#cacacb] px-6 py-6 sm:px-8 dark:border-slate-700">
+              <button type="button" onClick={() => { setCartDrawerOpen(false); setAccountDrawerOpen(true); }} aria-expanded={accountDrawerOpen} className="flex min-h-12 w-full items-center gap-3 text-left text-base font-medium hover:opacity-55"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3" strokeWidth={2}/><path strokeLinecap="round" strokeWidth={2} d="M5 20a7 7 0 0 1 14 0"/></svg>{isAuthenticated ? 'Account' : 'Sign in'}</button>
+              <button type="button" onClick={() => { setLandingSidebarOpen(false); setAccountDrawerOpen(false); setCartDrawerOpen(true); }} className="flex min-h-12 w-full items-center gap-3 text-left text-base font-medium hover:opacity-55"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={2} d="M3 4h2l2.2 10.2a2 2 0 0 0 1.96 1.58h7.68a2 2 0 0 0 1.95-1.56L21 7H8"/><circle cx="10" cy="19" r="1.5"/><circle cx="17" cy="19" r="1.5"/></svg>Cart {effectiveCartCount > 0 && `(${effectiveCartCount})`}</button>
+              <Link href={route('download')} onClick={() => { setAccountDrawerOpen(false); setLandingSidebarOpen(false); }} className="flex min-h-12 items-center gap-3 text-base font-medium hover:opacity-55"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14" /></svg>Download</Link>
+            </div>
+          </aside>
+        </>
+        )}
+      </nav>
+    </>
   );
 };
 export default Navigation;

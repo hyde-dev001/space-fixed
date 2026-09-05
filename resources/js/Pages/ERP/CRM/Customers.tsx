@@ -3,6 +3,7 @@ import { useMemo, useState, useCallback } from "react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import Swal from "sweetalert2";
 import axios from "axios";
+import { erpUrlWithParams } from "@/utils/erpCapabilities";
 
 type CustomerStatus = "active" | "inactive";
 type TabType = "personal" | "purchase" | "repair" | "notes";
@@ -128,7 +129,8 @@ interface CustomerDetail extends CustomerListItem {
 const metricCardClasses = "group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-5 shadow-sm transition-all duration-500 hover:shadow-xl hover:border-gray-300 hover:-translate-y-1 dark:border-gray-800 dark:bg-white/3 dark:hover:border-gray-700";
 
 export default function Customers() {
-  const { initialCustomers = [] } = usePage<{ initialCustomers: CustomerListItem[] }>().props;
+  const { initialCustomers = [], auth, erpCapabilities } = usePage().props as any;
+  const ownerMode = auth?.erpActor?.ownerMode === true;
 
   const [customers, setCustomers] = useState<CustomerListItem[]>(initialCustomers);
   const [search, setSearch] = useState("");
@@ -192,7 +194,15 @@ export default function Customers() {
     setShowDetailsModal(true);
     setLoadingDetail(true);
     try {
-      const { data } = await axios.get<CustomerDetail>(`/api/crm/customers/${customer.id}`);
+      const detailUrl = erpUrlWithParams(erpCapabilities, "GET:crm.api.customers.show", { id: customer.id })
+        ?? (ownerMode ? null : `/api/crm/customers/${customer.id}`);
+
+      if (!detailUrl) {
+        setShowDetailsModal(false);
+        return;
+      }
+
+      const { data } = await axios.get<CustomerDetail>(detailUrl);
       // Normalise: server returns { customer, orders, repairs, notes, stats }
       const detail: CustomerDetail = {
         ...(data as any).customer,
@@ -216,7 +226,7 @@ export default function Customers() {
     } finally {
       setLoadingDetail(false);
     }
-  }, []);
+  }, [erpCapabilities, ownerMode]);
 
   const startEdit = () => {
     if (!customerDetail) return;
@@ -232,7 +242,7 @@ export default function Customers() {
   };
 
   const saveEdit = async () => {
-    if (!customerDetail || !isFormDirty) return;
+    if (ownerMode || !customerDetail || !isFormDirty) return;
 
     const result = await Swal.fire({
       title: "Save changes?",
@@ -272,7 +282,7 @@ export default function Customers() {
   };
 
   const addStaffNote = async () => {
-    if (!customerDetail || !noteDraft.trim()) return;
+    if (ownerMode || !customerDetail || !noteDraft.trim()) return;
     try {
       setSavingNote(true);
       const { data } = await axios.post(`/api/crm/customers/${customerDetail.id}/notes`, { content: noteDraft.trim() });
@@ -401,7 +411,7 @@ export default function Customers() {
                   <tr key={customer.id} className="bg-white transition-colors hover:bg-gray-50 dark:bg-transparent dark:hover:bg-gray-800/40">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-linear-to-br from-blue-500 to-indigo-600 text-sm font-bold text-white">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-950 text-sm font-bold text-white">
                           {getInitials(customer.name)}
                         </div>
                         <div>
@@ -501,7 +511,7 @@ export default function Customers() {
                 {!loadingDetail && customerDetail && (<>
                 <div className="flex flex-col gap-4 border-b border-gray-200 pb-5 dark:border-gray-800 md:flex-row md:items-center md:justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-linear-to-br from-blue-500 to-indigo-600 text-base font-bold text-white">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gray-950 text-base font-bold text-white">
                       {getInitials(customerDetail.name)}
                     </div>
                     <div>
@@ -511,7 +521,7 @@ export default function Customers() {
                   </div>
 
                   <div className="flex items-center gap-2">
-                    {editing ? (
+                    {!ownerMode && editing ? (
                       <>
                         <button onClick={() => setEditing(false)} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Cancel</button>
                         <button
@@ -522,17 +532,13 @@ export default function Customers() {
                           {savingEdit ? "Saving…" : "Save Changes"}
                         </button>
                       </>
-                    ) : (
-                      <>
-                        <button onClick={startEdit} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">Edit Customer</button>
-                        <button
-                          onClick={() => { setShowDetailsModal(false); setEditing(false); setNoteDraft(""); setActiveTab("personal"); setCustomerDetail(null); }}
-                          className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-                        >
-                          Close
-                        </button>
-                      </>
-                    )}
+                    ) : null}
+                    <button
+                      onClick={() => { setShowDetailsModal(false); setEditing(false); setNoteDraft(""); setActiveTab("personal"); setCustomerDetail(null); }}
+                      className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+                    >
+                      Close
+                    </button>
                   </div>
                 </div>
 
@@ -662,7 +668,7 @@ export default function Customers() {
 
                   {activeTab === "notes" && (
                     <div className="space-y-4">
-                      <div className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
+                      {!ownerMode && <div className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
                         <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">Add staff note</label>
                         <textarea
                           value={noteDraft}
@@ -681,7 +687,7 @@ export default function Customers() {
                             {savingNote ? "Saving…" : "Save Note"}
                           </button>
                         </div>
-                      </div>
+                      </div>}
 
                       <div className="space-y-3">
                         {(customerDetail.notes ?? []).map((note) => (

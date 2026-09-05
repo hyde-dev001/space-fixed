@@ -5,7 +5,7 @@ import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import { purchaseRequestApi, supplierApi, type PurchaseRequest as PurchaseRequestType, type Supplier } from "@/services/procurementApi";
 import { stockRequestApi } from "@/services/stockRequestApi";
 import { workflowFeedback } from "@/utils/workflowFeedback";
-import { clearModalDraft, loadModalDraft, saveModalDraft } from "@/utils/modalDraft";
+import { clearModalDraft, isModalDraftSourceAvailable, loadModalDraft, saveModalDraft, scopedModalDraftKey } from "@/utils/modalDraft";
 import type { StockRequestApproval } from "@/types/procurement";
 
 type RequestPriority = "high" | "medium" | "low";
@@ -40,7 +40,6 @@ const initialFormState: PurchaseRequestFormState = {
 };
 
 const PURCHASE_REQUEST_DRAFT_KEY = "erp.purchase-request.create-modal.draft";
-const STOCK_REQUEST_NOTE_MARKER_REGEX = /\[stock_request_id:(\d+)\]/i;
 
 const formatPriority = (priority: string): string => {
 	const map: Record<string, string> = {
@@ -193,16 +192,10 @@ const getAvailableSizeLabels = (
 
 const getEffectiveQuantity = (
 	quantity: number,
-	unitCost: number,
-	totalCost: number,
-	isAllSizes: boolean,
-): number => {
-	if (!isAllSizes) return quantity;
-	if (unitCost <= 0) return quantity;
-
-	const calculatedQuantity = Math.round(totalCost / unitCost);
-	return calculatedQuantity > 0 ? calculatedQuantity : quantity;
-};
+	_unitCost?: number,
+	_totalCost?: number,
+	_isAllSizes?: boolean,
+): number => quantity;
 
 interface MetricCardProps {
 	title: string;
@@ -286,7 +279,9 @@ const currency = new Intl.NumberFormat("en-PH", {
 });
 
 export default function PurchaseRequest() {
-	const { initialData, initialSuppliers, initialAcceptedRequests } = usePage().props as any;
+	const { auth, initialData, initialSuppliers, initialAcceptedRequests } = usePage().props as any;
+	const ownerMode = auth?.erpActor?.ownerMode === true;
+	const draftKey = scopedModalDraftKey(PURCHASE_REQUEST_DRAFT_KEY, auth?.user?.shop_owner_id, auth?.user?.id);
 	const [purchaseRequests, setPurchaseRequests] = useState<PurchaseRequestType[]>(initialData?.data ?? []);
 	const [suppliers, setSuppliers] = useState<Supplier[]>(initialSuppliers ?? []);
 	const [acceptedStockRequests, setAcceptedStockRequests] = useState<StockRequestApproval[]>(initialAcceptedRequests?.data ?? []);
@@ -297,8 +292,16 @@ export default function PurchaseRequest() {
 	const [currentPage, setCurrentPage] = useState(1);
 	const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 	const [viewingRequest, setViewingRequest] = useState<PurchaseRequestType | null>(null);
+	useEffect(() => {
+		const id = Number(new URLSearchParams(window.location.search).get("purchase_request"));
+		if (id > 0) setViewingRequest(purchaseRequests.find((request) => request.id === id) ?? null);
+	}, [purchaseRequests]);
 	const [formData, setFormData] = useState<PurchaseRequestFormState>(initialFormState);
-	const [metrics, setMetrics] = useState({ total_requests: 0, pending_finance: 0, approved: 0 });
+	const [metrics, setMetrics] = useState(() => ({
+		total_requests: initialData?.total ?? purchaseRequests.length,
+		pending_finance: purchaseRequests.filter((request) => request.status === "pending_finance").length,
+		approved: purchaseRequests.filter((request) => request.status === "approved").length,
+	}));
 	const isCreateFormDirty = useMemo(
 		() =>
 			formData.stockRequestId !== initialFormState.stockRequestId ||
@@ -334,7 +337,7 @@ export default function PurchaseRequest() {
 	// Fetch suppliers
 	const fetchSuppliers = async () => {
 		try {
-			const response = await supplierApi.getAll({ page: 1, per_page: 100 });
+			const response = await supplierApi.getAll({ page: 1, per_page: 100, is_active: true });
 			setSuppliers(response.data || []);
 		} catch (error) {
 			console.error("Error fetching suppliers:", error);
@@ -342,13 +345,18 @@ export default function PurchaseRequest() {
 	};
 
 	// Fetch accepted stock requests — only these may become a PR
-	const fetchAcceptedStockRequests = async () => {
+	const fetchAcceptedStockRequests = async (): Promise<StockRequestApproval[]> => {
+		if (ownerMode) return acceptedStockRequests;
+
 		try {
-			const response = await stockRequestApi.getAll({ status: 'accepted', per_page: 200 });
+			const response = await stockRequestApi.getAll({ status: 'accepted', available_for_purchase_request: true, per_page: 200 });
 			const data = (response as any).data ?? response ?? [];
-			setAcceptedStockRequests(Array.isArray(data) ? data : []);
+			const requests = Array.isArray(data) ? data : [];
+			setAcceptedStockRequests(requests);
+			return requests;
 		} catch (error) {
 			console.error("Error fetching accepted stock requests:", error);
+			return [];
 		}
 	};
 
@@ -367,20 +375,26 @@ export default function PurchaseRequest() {
 	};
 
 	useEffect(() => {
+		if (ownerMode || initialData) return;
+
 		fetchPurchaseRequests();
 		fetchSuppliers();
 		fetchAcceptedStockRequests();
 		fetchMetrics();
+	}, [ownerMode, initialData]);
+
+	useEffect(() => {
+		clearModalDraft(PURCHASE_REQUEST_DRAFT_KEY);
 	}, []);
 
 	useEffect(() => {
 		if (!isCreateModalOpen) return;
 		if (isCreateFormDirty) {
-			saveModalDraft(PURCHASE_REQUEST_DRAFT_KEY, formData);
+			saveModalDraft(draftKey, formData);
 			return;
 		}
-		clearModalDraft(PURCHASE_REQUEST_DRAFT_KEY);
-	}, [formData, isCreateFormDirty, isCreateModalOpen]);
+		clearModalDraft(draftKey);
+	}, [draftKey, formData, isCreateFormDirty, isCreateModalOpen]);
 
 	useEffect(() => {
 		if (!isCreateModalOpen || !isCreateFormDirty) return;
@@ -395,9 +409,17 @@ export default function PurchaseRequest() {
 	}, [isCreateFormDirty, isCreateModalOpen]);
 
 	const handleOpenCreateModal = async () => {
-		await fetchAcceptedStockRequests();
+		if (ownerMode) return;
 
-		const savedDraft = loadModalDraft<Partial<PurchaseRequestFormState>>(PURCHASE_REQUEST_DRAFT_KEY);
+		const currentRequests = await fetchAcceptedStockRequests();
+
+		const savedDraft = loadModalDraft<Partial<PurchaseRequestFormState>>(draftKey);
+		if (savedDraft && !isModalDraftSourceAvailable(savedDraft.stockRequestId, currentRequests.map((request) => request.id))) {
+			clearModalDraft(draftKey);
+			setFormData(initialFormState);
+			setIsCreateModalOpen(true);
+			return;
+		}
 		if (savedDraft) {
 			const shouldRestore = await workflowFeedback.confirm({
 				title: "Restore draft?",
@@ -409,7 +431,7 @@ export default function PurchaseRequest() {
 			if (shouldRestore.isConfirmed) {
 				setFormData({ ...initialFormState, ...savedDraft });
 			} else {
-				clearModalDraft(PURCHASE_REQUEST_DRAFT_KEY);
+				clearModalDraft(draftKey);
 				setFormData(initialFormState);
 			}
 		} else {
@@ -447,25 +469,6 @@ export default function PurchaseRequest() {
 	const startIndex = (currentPage - 1) * itemsPerPage;
 	const paginatedItems = filteredData?.slice(startIndex, startIndex + itemsPerPage) || [];
 
-	const processedStockRequestIds = useMemo(() => {
-		return new Set(
-			(purchaseRequests || [])
-				.filter((pr) => pr.status !== "rejected")
-				.map((pr) => {
-					const noteValue = String(pr.notes || "");
-					const match = noteValue.match(STOCK_REQUEST_NOTE_MARKER_REGEX);
-					return match ? Number(match[1]) : null;
-				})
-				.filter((id): id is number => id !== null && !Number.isNaN(id))
-		);
-	}, [purchaseRequests]);
-
-	const availableAcceptedStockRequests = useMemo(() => {
-		return acceptedStockRequests.filter((sr) => {
-			return !processedStockRequestIds.has(Number(sr.id));
-		});
-	}, [acceptedStockRequests, processedStockRequestIds]);
-
 	const selectedStockRequest = useMemo(
 		() => acceptedStockRequests.find((sr) => String(sr.id) === formData.stockRequestId),
 		[acceptedStockRequests, formData.stockRequestId],
@@ -489,7 +492,7 @@ export default function PurchaseRequest() {
 	const requestCloseCreateModal = async () => {
 		if (!isCreateFormDirty) {
 			closeCreateModal();
-			clearModalDraft(PURCHASE_REQUEST_DRAFT_KEY);
+			clearModalDraft(draftKey);
 			return;
 		}
 
@@ -502,7 +505,7 @@ export default function PurchaseRequest() {
 
 		if (!confirmClose.isConfirmed) return;
 
-		saveModalDraft(PURCHASE_REQUEST_DRAFT_KEY, formData);
+		saveModalDraft(draftKey, formData);
 		closeCreateModal();
 	};
 
@@ -543,7 +546,7 @@ export default function PurchaseRequest() {
 			const newPR = await purchaseRequestApi.create(requestData);
 			const submittedPrNumber = newPR?.pr_number || "Purchase request";
 
-			clearModalDraft(PURCHASE_REQUEST_DRAFT_KEY);
+			clearModalDraft(draftKey);
 			closeCreateModal();
 			await fetchPurchaseRequests();
 			await fetchMetrics();
@@ -588,12 +591,14 @@ export default function PurchaseRequest() {
 						<h1 className="text-2xl font-semibold mb-1">Purchase Request (Replenishment)</h1>
 						<p className="text-gray-600 dark:text-gray-400">Build PR from approved replenishment requests, then submit to Finance</p>
 					</div>
-					<button
-						onClick={handleOpenCreateModal}
-						className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors whitespace-nowrap"
-					>
-						+ New PR
-					</button>
+					{!ownerMode && (
+						<button
+							onClick={handleOpenCreateModal}
+							className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors whitespace-nowrap"
+						>
+							+ New PR
+						</button>
+					)}
 				</div>
 
 				<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -813,14 +818,14 @@ export default function PurchaseRequest() {
 									className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
 								>
 									<option value="">— Select an approved stock request —</option>
-									{availableAcceptedStockRequests
+									{acceptedStockRequests
 										.map((sr) => (
 											<option key={sr.id} value={String(sr.id)}>
-												{sr.request_number} — {sr.product_name} (Qty: {sr.quantity_needed}{shouldShowRequestedSize(sr.requested_size, sr.inventory_item?.category) ? `, ${getRequestedSizeLabel(sr.requested_size)}` : ""}{sr.requested_color ? `, Color ${sr.requested_color}` : ""})
+												{sr.request_number} — {sr.product_name} (Qty: {sr.quantity_needed}{isAllSizesRequest(sr.requested_size, sr.inventory_item?.category) ? " total units across All Sizes" : shouldShowRequestedSize(sr.requested_size, sr.inventory_item?.category) ? `, ${getRequestedSizeLabel(sr.requested_size)}` : " units"}{sr.requested_color ? `, Color ${sr.requested_color}` : ""})
 											</option>
 										))}
 								</select>
-								{availableAcceptedStockRequests.length === 0 && (
+								{acceptedStockRequests.length === 0 && (
 									<p className="mt-1 text-xs text-amber-600 dark:text-amber-400">⚠ No approved stock requests yet. Inventory staff must submit and get approval first.</p>
 								)}
 							</div>
@@ -882,7 +887,11 @@ export default function PurchaseRequest() {
 
 							<div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
 								<div>
-									<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Quantity</label>
+									<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+										{selectedStockRequest && isAllSizesRequest(selectedStockRequest.requested_size, selectedStockRequest.inventory_item?.category)
+											? "Total Quantity Across All Sizes"
+											: "Quantity"}
+									</label>
 									<input
 										type="number"
 										min={1}
@@ -1005,14 +1014,18 @@ export default function PurchaseRequest() {
 
 							<div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
 								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
-									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Quantity</p>
+									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
+										{isAllSizesRequest(viewingRequest.requested_size, viewingRequest.inventory_item?.category)
+											? "Total Quantity Across All Sizes"
+											: "Quantity"}
+									</p>
 									<p className="text-base font-semibold text-gray-900 dark:text-white">
 										{getEffectiveQuantity(
 											viewingRequest.quantity,
 											viewingRequest.unit_cost,
 											viewingRequest.total_cost,
 											isAllSizesRequest(viewingRequest.requested_size, viewingRequest.inventory_item?.category),
-										)}
+										)}{isAllSizesRequest(viewingRequest.requested_size, viewingRequest.inventory_item?.category) ? " units" : ""}
 									</p>
 								</div>
 								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">

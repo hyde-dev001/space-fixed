@@ -2,9 +2,11 @@
 
 namespace Tests\Feature\SuspensionAppeals;
 
+use App\Enums\NotificationType;
 use App\Mail\SuspensionAppealDecisionMail;
 use App\Mail\SuspensionAppealSubmittedMail;
 use App\Mail\SuspensionNoticeMail;
+use App\Models\Notification;
 use App\Models\ShopOwner;
 use App\Models\SuperAdmin;
 use App\Models\SuspensionAppeal;
@@ -12,11 +14,20 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\URL;
+use Tests\Concerns\AuthenticatesPrivilegedUsers;
 use Tests\TestCase;
 
 class SuspensionAppealFlowTest extends TestCase
 {
+    use AuthenticatesPrivilegedUsers;
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        SuperAdmin::factory()->superAdmin()->create();
+    }
 
     private function postWithCsrf(string $uri, array $payload = [], array $headers = [])
     {
@@ -36,7 +47,7 @@ class SuspensionAppealFlowTest extends TestCase
             'email' => 'appeal-customer@example.com',
         ]);
 
-        $response = $this->actingAs($superAdmin, 'super_admin')
+        $response = $this->actingAsCompletedPrivileged($superAdmin)
             ->postWithCsrf("/admin/users/{$customer->id}/suspend", [
                 'suspension_reason' => 'Repeated abusive conduct in transactions.',
             ]);
@@ -69,7 +80,7 @@ class SuspensionAppealFlowTest extends TestCase
             'email' => 'appeal-shop@example.com',
         ]);
 
-        $response = $this->actingAs($superAdmin, 'super_admin')
+        $response = $this->actingAsCompletedPrivileged($superAdmin)
             ->postWithCsrf("/admin/shops/{$shopOwner->id}/suspend", [
                 'suspension_reason' => 'Multiple verified policy violations from customer reports.',
             ]);
@@ -100,20 +111,20 @@ class SuspensionAppealFlowTest extends TestCase
         $superAdmin = SuperAdmin::query()->firstOrFail();
 
         $customer = User::factory()->create([
-            'status' => 'suspended',
+            'status' => 'active',
             'email' => 'submit-appeal@example.com',
         ]);
 
-        $appeal = SuspensionAppeal::create([
-            'account_type' => 'customer',
-            'account_id' => $customer->id,
-            'account_name' => $customer->name,
-            'recipient_email' => $customer->email,
-            'suspension_reason' => 'Suspension reason for test.',
-            'status' => 'eligible',
-            'appeal_token' => hash('sha256', 'test-submit-token-' . uniqid()),
-            'expires_at' => now()->addHours(24),
-        ]);
+        $this->actingAsCompletedPrivileged($superAdmin)
+            ->postWithCsrf("/admin/users/{$customer->id}/suspend", [
+                'suspension_reason' => 'Suspension reason for test.',
+            ])
+            ->assertStatus(302);
+
+        $appeal = SuspensionAppeal::query()
+            ->where('account_type', 'customer')
+            ->where('account_id', $customer->id)
+            ->firstOrFail();
 
         $showUrl = URL::temporarySignedRoute('appeals.show', now()->addHours(2), [
             'token' => $appeal->appeal_token,
@@ -138,6 +149,17 @@ class SuspensionAppealFlowTest extends TestCase
             'id' => $appeal->id,
             'status' => 'submitted',
         ]);
+        $this->assertDatabaseHas('notifications', [
+            'super_admin_id' => $superAdmin->id,
+            'type' => NotificationType::SUSPENSION_APPEAL_SUBMITTED->value,
+            'action_url' => route('admin.suspension-appeals'),
+            'is_read' => false,
+            'requires_action' => true,
+        ]);
+        $this->assertSame(1, Notification::query()
+            ->where('super_admin_id', $superAdmin->id)
+            ->where('type', NotificationType::SUSPENSION_APPEAL_SUBMITTED->value)
+            ->count());
 
         Mail::assertSent(SuspensionAppealSubmittedMail::class, function (SuspensionAppealSubmittedMail $mail) use ($superAdmin) {
             return $mail->hasTo($superAdmin->email);
@@ -150,24 +172,27 @@ class SuspensionAppealFlowTest extends TestCase
 
         $superAdmin = SuperAdmin::query()->firstOrFail();
         $customer = User::factory()->create([
-            'status' => 'suspended',
+            'status' => 'active',
             'email' => 'decision-appeal@example.com',
         ]);
 
-        $appeal = SuspensionAppeal::create([
-            'account_type' => 'customer',
-            'account_id' => $customer->id,
-            'account_name' => $customer->name,
-            'recipient_email' => $customer->email,
-            'suspension_reason' => 'Suspension reason for approval test.',
+        $this->actingAsCompletedPrivileged($superAdmin)
+            ->postWithCsrf("/admin/users/{$customer->id}/suspend", [
+                'suspension_reason' => 'Suspension reason for approval test.',
+            ])
+            ->assertStatus(302);
+
+        $appeal = SuspensionAppeal::query()
+            ->where('account_type', 'customer')
+            ->where('account_id', $customer->id)
+            ->firstOrFail();
+        $appeal->forceFill([
             'status' => 'submitted',
-            'appeal_token' => hash('sha256', 'test-decision-token-' . uniqid()),
             'appeal_message' => 'I acknowledge the issue and have taken corrective action to prevent recurrence.',
             'submitted_at' => now()->subHour(),
-            'expires_at' => now()->addHours(24),
-        ]);
+        ])->save();
 
-        $response = $this->actingAs($superAdmin, 'super_admin')
+        $response = $this->actingAsCompletedPrivileged($superAdmin)
             ->postWithCsrf("/admin/appeals/{$appeal->id}/approve", [
                 'reviewer_notes' => 'Approved after manual review of evidence and account history.',
             ]);

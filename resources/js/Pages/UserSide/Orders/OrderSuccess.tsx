@@ -1,10 +1,14 @@
-﻿import React, { useEffect, useState } from 'react';
-import { router } from '@inertiajs/react';
+﻿import React, { useEffect } from 'react';
+import { Head, router } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 
+type VerifyPaymentResponse = {
+  success?: boolean;
+  payment_verified?: boolean;
+};
+
 export default function OrderSuccess() {
-  const [loading, setLoading] = useState(true);
-  const [message, setMessage] = useState('Verifying your payment with PayMongo...');
+  const message = 'Verifying your payment with PayMongo...';
 
   useEffect(() => {
     const run = async () => {
@@ -78,7 +82,7 @@ export default function OrderSuccess() {
         // Retry up to 6 times (12 seconds total) waiting for payment_status = 'paid'.
         const MAX_ATTEMPTS = 6;
         const RETRY_DELAY  = 2000;
-        let data: any = null;
+        let data: VerifyPaymentResponse | null = null;
 
         for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
           const res = await fetch(`/api/orders/${pendingOrderIdRaw}/verify-payment-return`, {
@@ -110,8 +114,14 @@ export default function OrderSuccess() {
         }
 
         if (data?.success && data?.payment_verified) {
+          try {
+            sessionStorage.setItem('paymongoPaymentSuccess', '1');
+          } catch (error) {
+            console.warn('Failed to prepare PayMongo success notification:', error);
+          }
+
           sessionStorage.removeItem('pendingOrderId');
-          router.visit(postReturnDestination, { replace: true });
+          router.visit('/my-orders', { replace: true });
           return;
         } else {
           try {
@@ -127,8 +137,6 @@ export default function OrderSuccess() {
         sessionStorage.removeItem('pendingOrderId');
         router.visit(postReturnDestination, { replace: true });
         return;
-      } finally {
-        setLoading(false);
       }
     };
 
@@ -136,14 +144,15 @@ export default function OrderSuccess() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+    <>
+      <Head title="Payment Successful" />
       <Navigation />
-      {loading && (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4 py-16">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-black mx-auto"></div>
           <p className="mt-4 text-gray-600">{message}</p>
         </div>
-      )}
-    </div>
+      </div>
+    </>
   );
 }

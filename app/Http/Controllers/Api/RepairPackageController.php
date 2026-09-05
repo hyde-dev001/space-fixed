@@ -6,7 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\InventoryItem;
 use App\Models\RepairPackage;
 use App\Models\RepairRequest;
-use App\Models\ShopOwner;
+use App\Services\NotificationService;
 use App\Services\ShopOwnerApprovalPolicyService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -19,7 +19,10 @@ class RepairPackageController extends Controller
     private const REPAIR_VAT_RATE_PERCENT = 12.0;
     private const MATERIAL_TEMPLATE_TABLE = 'repair_material_template_items';
 
-    public function __construct(private ShopOwnerApprovalPolicyService $shopOwnerApprovalPolicyService)
+    public function __construct(
+        private ShopOwnerApprovalPolicyService $shopOwnerApprovalPolicyService,
+        private NotificationService $notificationService,
+    )
     {
     }
 
@@ -215,6 +218,10 @@ class RepairPackageController extends Controller
                     'add_ons_total',
                     'final_total',
                     'total',
+                    'payment_status',
+                    'payment_policy',
+                    'total_paid_amount',
+                    'total_refunded_amount',
                     'status',
                     'created_at',
                     'pricing_breakdown',
@@ -450,88 +457,6 @@ class RepairPackageController extends Controller
         // Separate validation for price changes vs regular updates
         $isPriceChange = $request->has('package_price') && 
                         ((float)$request->package_price !== (float)$package->package_price);
-        $isIndividualShop = $this->isIndividualRegistrationShop((int) $package->shop_owner_id);
-
-        if ($isPriceChange && $isIndividualShop) {
-            $validator = Validator::make($request->all(), [
-                'package_price' => 'required|numeric|min:0',
-                'name' => 'sometimes|required|string|max:255',
-                'description' => 'nullable|string',
-                'status' => 'sometimes|in:active,inactive',
-                'starts_at' => 'nullable|date',
-                'ends_at' => 'nullable|date|after_or_equal:starts_at',
-                'service_ids' => 'sometimes|required|array|min:2',
-                'service_ids.*' => 'integer|exists:repair_services,id',
-                'material_templates' => 'sometimes|array|min:1',
-                'material_templates.*.inventory_item_id' => 'required_with:material_templates|integer|distinct|exists:inventory_items,id',
-                'material_templates.*.default_quantity' => 'required_with:material_templates|integer|min:1',
-                'material_templates.*.is_critical' => 'sometimes|boolean',
-                'material_templates.*.tolerance_percent' => 'nullable|numeric|min:0|max:100',
-            ]);
-
-            if ($validator->fails()) {
-                return response()->json([
-                    'success' => false,
-                    'errors' => $validator->errors(),
-                ], 422);
-            }
-
-            $updateData = $request->only(['name', 'description', 'status', 'starts_at', 'ends_at', 'package_price']);
-
-            if (Auth::guard('user')->check()) {
-                $updateData['updated_by'] = Auth::guard('user')->id();
-            }
-
-            // Individual shops do not need pending approval metadata on package prices.
-            $workflowResetData = [
-                'old_package_price' => null,
-                'change_reason' => $request->filled('reason') ? (string) $request->reason : null,
-                // Keep a valid enum value for non-nullable schema.
-                'approval_status' => 'none',
-                'approval_workflow_version' => null,
-                'current_approval_level' => null,
-                'approval_id' => null,
-                'finance_reviewed_by' => null,
-                'finance_reviewed_at' => null,
-                'finance_notes' => null,
-                'owner_reviewed_by' => null,
-                'owner_reviewed_at' => null,
-                'owner_notes' => null,
-            ];
-
-            $package->update($this->onlyExistingRepairPackageColumns(array_merge($updateData, $workflowResetData)));
-
-            if ($request->has('service_ids')) {
-                try {
-                    $package->syncIncludedServices((array) $request->service_ids);
-                } catch (ValidationException $e) {
-                    return response()->json([
-                        'success' => false,
-                        'errors' => $e->errors(),
-                    ], 422);
-                }
-            }
-
-            if ($request->has('material_templates')) {
-                try {
-                    $this->syncMaterialTemplates($package, (array) $request->input('material_templates', []));
-                } catch (ValidationException $e) {
-                    return response()->json([
-                        'success' => false,
-                        'errors' => $e->errors(),
-                    ], 422);
-                }
-            }
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Repair package updated successfully.',
-                'data' => $package->load([
-                    'services:id,name,category,price,duration,status,shop_owner_id',
-                    'materialTemplateItems:' . $this->materialTemplateItemSelectList(),
-                ]),
-            ]);
-        }
 
         // Check for duplicate/pending price change requests
         if ($isPriceChange && $request->has('reason')) {
@@ -594,6 +519,18 @@ class RepairPackageController extends Controller
                 'owner_reviewed_at' => null,
                 'owner_notes' => null,
             ]));
+
+            $this->notificationService->notifyRepairPriceChangeSubmittedToFinance(
+                (int) $package->shop_owner_id,
+                [
+                    'service_name' => $package->name . ' (Package)',
+                    'old_price' => $currentPrice,
+                    'proposed_price' => $proposedPrice,
+                    'package_id' => $package->id,
+                    'approval_stage' => 'finance_initial',
+                    'requires_owner_approval' => $requiresOwnerApproval,
+                ],
+            );
 
             return response()->json([
                 'success' => true,
@@ -735,15 +672,6 @@ class RepairPackageController extends Controller
         }
 
         return null;
-    }
-
-    private function isIndividualRegistrationShop(int $shopOwnerId): bool
-    {
-        $shopOwner = ShopOwner::query()
-            ->select('id', 'registration_type')
-            ->find($shopOwnerId);
-
-        return (bool) ($shopOwner && $shopOwner->isIndividual());
     }
 
     private function canAccessPackage(RepairPackage $package): bool

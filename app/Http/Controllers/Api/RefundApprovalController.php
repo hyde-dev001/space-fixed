@@ -5,16 +5,13 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\OrderRefund;
 use App\Services\OrderRefundService;
-use App\Services\ShopOwnerApprovalPolicyService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Schema;
 
 class RefundApprovalController extends Controller
 {
     public function __construct(
         private readonly OrderRefundService $orderRefundService,
-        private readonly ShopOwnerApprovalPolicyService $shopOwnerApprovalPolicyService,
     ) {
     }
 
@@ -26,7 +23,12 @@ class RefundApprovalController extends Controller
         }
 
         $query = $this->baseListQuery($request)
-            ->where('shop_owner_id', (int) ($user->shop_owner_id ?? 0));
+            ->where('shop_owner_id', (int) ($user->shop_owner_id ?? 0))
+            ->where(function ($builder) {
+                $builder->where('reason_code', '!=', 'delivery_attempts_exhausted')
+                    ->orWhereNull('reason_code')
+                    ->orWhere('return_status', 'received');
+            });
 
         if (strtolower((string) $request->get('status', '')) === 'pending') {
             $query->where(function ($builder) {
@@ -73,6 +75,25 @@ class RefundApprovalController extends Controller
         return response()->json($paginated);
     }
 
+    public function shopOwnerShow(Request $request, int $id)
+    {
+        $shopOwner = Auth::guard('shop_owner')->user();
+        if (!$shopOwner) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        $refund = $this->baseListQuery($request)
+            ->where('shop_owner_id', (int) $shopOwner->id)
+            ->whereKey($id)
+            ->first();
+
+        if (!$refund) {
+            return response()->json(['message' => 'Refund not found'], 404);
+        }
+
+        return response()->json($this->transformRefund($refund));
+    }
+
     public function financeApprove(Request $request, int $id)
     {
         $user = Auth::guard('user')->user();
@@ -88,6 +109,7 @@ class RefundApprovalController extends Controller
 
         $validated = $request->validate([
             'approval_note' => 'nullable|string|max:1000',
+            'approved_amount' => 'nullable|numeric|min:0.01',
         ]);
 
         $result = $this->orderRefundService->approveRequestedRefund(
@@ -95,6 +117,7 @@ class RefundApprovalController extends Controller
             stage: 'finance',
             processedBy: (int) $user->id,
             approvalNote: $validated['approval_note'] ?? null,
+            approvedAmount: isset($validated['approved_amount']) ? (float) $validated['approved_amount'] : null,
         );
 
         if (in_array((string) ($result['result'] ?? ''), ['failed', 'invalid_state', 'already_approved', 'already_refunded'], true)) {
@@ -351,19 +374,16 @@ class RefundApprovalController extends Controller
             $reasonDetails = trim($reasonDetails . ($reasonDetails !== '' ? "\n\n" : '') . 'Other reason note: ' . $otherReasonNote);
         }
 
-        $lineBasedAmount = 0.0;
-        if (Schema::hasTable('order_refund_items')) {
-            $lineBasedAmount = round((float) $refund->items->sum(fn ($line) => (float) ($line->line_amount ?? 0)), 2);
-        }
+        $isExhaustedDeliveryRefund = (string) ($refund->reason_code ?? '') === 'delivery_attempts_exhausted';
+        $effectiveAmount = $this->orderRefundService->resolvePayoutAmount($refund, $order);
+        $rawAmount = round((float) ($refund->amount ?? 0), 2);
+        $shippingFee = round(min(max(0, (float) ($order->shipping_fee ?? 0)), $effectiveAmount), 2);
+        $canAdjustRefundAmount = $isExhaustedDeliveryRefund
+            && $financeStatus === 'pending'
+            && $shippingFee > 0
+            && str_contains($cleanReasonNote, OrderRefundService::FINANCE_SHIPPING_DECISION_MARKER);
 
-        $effectiveAmount = $lineBasedAmount > 0
-            ? $lineBasedAmount
-            : round((float) ($refund->amount ?? 0), 2);
-
-        $requiresOwnerApproval = $this->shopOwnerApprovalPolicyService->requiresOwnerApprovalForRefund(
-            (int) ($refund->shop_owner_id ?? 0),
-            $effectiveAmount
-        );
+        $requiresOwnerApproval = (bool) ($refund->requires_owner_approval ?? true);
 
         $approvalStage = 'none';
         if ($financeStatus === 'pending') {
@@ -393,6 +413,14 @@ class RefundApprovalController extends Controller
             'customerName' => (string) ($refund->customer?->name ?? 'Unknown Customer'),
             'orderTotal' => '₱' . number_format($orderTotal, 2),
             'refundAmount' => '₱' . number_format($effectiveAmount, 2),
+            'refundAmountValue' => $effectiveAmount,
+            'payoutAmount' => '₱' . number_format($effectiveAmount, 2),
+            'payoutAmountValue' => $effectiveAmount,
+            'canAdjustRefundAmount' => $canAdjustRefundAmount,
+            'refundAmountWithoutShipping' => $isExhaustedDeliveryRefund
+                ? round(max(0, $rawAmount - min(max(0, (float) ($order->shipping_fee ?? 0)), $rawAmount)), 2)
+                : $effectiveAmount,
+            'shippingFee' => $shippingFee,
             'refundMethod' => $this->humanizeRefundMethod($refund->requested_refund_method),
             'requestedBy' => (string) ($refund->customer?->name ?? 'Customer'),
             'requestDate' => optional($refund->requested_at)->format('Y-m-d') ?? optional($refund->created_at)->format('Y-m-d'),
@@ -407,6 +435,7 @@ class RefundApprovalController extends Controller
             'requiresOwnerApproval' => $requiresOwnerApproval,
             'approvalStage' => $approvalStage,
             'returnStatus' => (string) ($refund->return_status ?? 'awaiting_approval'),
+            'canExecutePayout' => $this->orderRefundService->canExecuteApprovedRefund($refund),
             'returnSource' => (string) ($refund->return_source ?? 'customer'),
             'refundExecutedAt' => optional($refund->refund_executed_at)->toDateTimeString(),
             'refundedAt' => optional($refund->refunded_at)->toDateTimeString(),

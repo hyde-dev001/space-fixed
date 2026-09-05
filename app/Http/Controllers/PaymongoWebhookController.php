@@ -4,12 +4,15 @@ namespace App\Http\Controllers;
 
 use App\Models\Order;
 use App\Models\OrderRefund;
+use App\Models\RepairPaymentSession;
 use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use App\Models\ShopOwnerSubscription;
 use App\Models\ShopOwnerSubscriptionPayment;
+use App\Models\ShopOwnerSubscriptionRefund;
 use App\Services\NotificationService;
 use App\Services\PaymentSettlementService;
+use App\Services\PremiumSubscriptionRefundService;
 use App\Enums\NotificationType;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -24,15 +27,13 @@ class PaymongoWebhookController extends Controller
     public function handle(Request $request)
     {
         try {
-            $payload = $request->all();
-
             $webhookSecret = (string) config('services.paymongo.webhook_secret');
             if ($webhookSecret !== '') {
                 try {
                     $this->verifyWebhookSignature($request);
                 } catch (\RuntimeException $e) {
                     Log::warning('Rejected PayMongo webhook due to invalid signature', [
-                        'error' => $e->getMessage(),
+                        'reason' => 'invalid_signature',
                     ]);
                     return response()->json(['message' => 'Invalid webhook signature'], 401);
                 }
@@ -43,6 +44,8 @@ class PaymongoWebhookController extends Controller
                 }
                 Log::warning('PAYMONGO webhook secret is not configured; signature verification skipped');
             }
+
+            $payload = $request->all();
 
             Log::info('PayMongo Webhook Received', [
                 'event_type' => $payload['data']['attributes']['type'] ?? null,
@@ -84,8 +87,7 @@ class PaymongoWebhookController extends Controller
 
         } catch (\Exception $e) {
             Log::error('Webhook processing error', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'exception_class' => $e::class,
             ]);
             return response()->json(['message' => 'Server error'], 500);
         }
@@ -114,7 +116,16 @@ class PaymongoWebhookController extends Controller
             return $this->handleOrderPayment($order, $paymentId);
         }
 
-        // Try to find repair request by payment_link_id
+        $repairSession = RepairPaymentSession::query()
+            ->with('repairRequest')
+            ->where('provider_link_id', $paymentLinkId)
+            ->first();
+
+        if ($repairSession?->repairRequest) {
+            return $this->handleRepairPayment($repairSession->repairRequest, $paymentId, $repairSession);
+        }
+
+        // Legacy repair links created before persisted payment sessions.
         $repairRequest = RepairRequest::where('paymongo_link_id', $paymentLinkId)->first();
 
         if ($repairRequest) {
@@ -186,10 +197,10 @@ class PaymongoWebhookController extends Controller
     /**
      * Handle repair request payment
      */
-    private function handleRepairPayment($repairRequest, $paymentId)
+    private function handleRepairPayment($repairRequest, $paymentId, ?RepairPaymentSession $session = null)
     {
         $settlement = app(PaymentSettlementService::class)
-            ->settleRepairPaid($repairRequest, (string) $paymentId, true);
+            ->settleRepairPaid($repairRequest, (string) $paymentId, true, $session);
 
         $result = $settlement['result'] ?? 'settled';
         $settledRepair = $settlement['model'] ?? $repairRequest;
@@ -222,6 +233,17 @@ class PaymongoWebhookController extends Controller
             ]);
 
             return response()->json(['message' => 'No payable phase due'], 200);
+        }
+
+        if ($result === 'reconciliation') {
+            Log::warning('Repair delivery payment requires reconciliation', [
+                'repair_id' => $settledRepair->id,
+                'request_id' => $settledRepair->request_id,
+                'payment_id' => $paymentId,
+                'payment_session_id' => $session?->id,
+            ]);
+
+            return response()->json(['message' => 'Repair payment requires reconciliation'], 200);
         }
 
         $phase = (string) ($settlement['phase'] ?? '');
@@ -301,49 +323,46 @@ class PaymongoWebhookController extends Controller
      */
     private function verifyWebhookSignature(Request $request): void
     {
-        $signature = $request->header('Paymongo-Signature');
+        $signatureHeader = trim((string) $request->header('Paymongo-Signature'));
         $payload = $request->getContent();
-        $webhookSecret = config('services.paymongo.webhook_secret');
+        $webhookSecret = (string) config('services.paymongo.webhook_secret');
 
-        if (!$signature || !$webhookSecret) {
+        if ($signatureHeader === '' || $webhookSecret === '') {
             throw new \RuntimeException('Missing webhook signature or secret');
         }
 
-        $providedSignature = $this->extractSignatureValue((string) $signature);
-        if (!$providedSignature) {
-            throw new \RuntimeException('Webhook signature format is invalid');
-        }
-
-        $computedSignature = hash_hmac('sha256', $payload, $webhookSecret);
-
-        if (!hash_equals($computedSignature, $providedSignature)) {
-            throw new \RuntimeException('Invalid webhook signature');
-        }
-    }
-
-    private function extractSignatureValue(string $signatureHeader): ?string
-    {
-        $trimmed = trim($signatureHeader);
-        if ($trimmed === '') {
-            return null;
-        }
-
-        if (str_contains($trimmed, ',')) {
-            $parts = array_map('trim', explode(',', $trimmed));
-            foreach ($parts as $part) {
-                if (str_starts_with($part, 'v1=')) {
-                    $value = trim((string) substr($part, 3));
-                    return $value !== '' ? $value : null;
-                }
+        $parts = [];
+        foreach (explode(',', $signatureHeader) as $part) {
+            [$name, $value] = array_pad(explode('=', trim($part), 2), 2, null);
+            if ($name !== null && $value !== null) {
+                $parts[trim($name)] = trim($value);
             }
         }
 
-        if (str_starts_with($trimmed, 'v1=')) {
-            $value = trim((string) substr($trimmed, 3));
-            return $value !== '' ? $value : null;
+        $timestamp = $parts['t'] ?? null;
+        if (! is_string($timestamp) || ! ctype_digit($timestamp)) {
+            throw new \RuntimeException('Webhook signature format is invalid');
         }
 
-        return $trimmed;
+        $tolerance = max(1, (int) config('services.paymongo.webhook_tolerance_seconds', 300));
+        if (abs(time() - (int) $timestamp) > $tolerance) {
+            throw new \RuntimeException('Webhook signature timestamp is outside the allowed window');
+        }
+
+        $decoded = json_decode($payload, true);
+        $liveMode = is_array($decoded)
+            && (bool) data_get($decoded, 'data.attributes.livemode', false);
+        $providedSignature = $liveMode ? ($parts['li'] ?? '') : ($parts['te'] ?? '');
+
+        if (! is_string($providedSignature) || $providedSignature === '') {
+            throw new \RuntimeException('Webhook signature format is invalid');
+        }
+
+        $computedSignature = hash_hmac('sha256', $timestamp.'.'.$payload, $webhookSecret);
+
+        if (! hash_equals($computedSignature, $providedSignature)) {
+            throw new \RuntimeException('Invalid webhook signature');
+        }
     }
 
     /**
@@ -365,26 +384,77 @@ class PaymongoWebhookController extends Controller
         $paymentId  = $payments[0]['id'] ?? null;
         $paymentAttributes = $payments[0]['attributes'] ?? [];
         $paidAmount = $this->extractPaidAmount($attributes, $paymentAttributes);
+        $providerCurrency = strtoupper((string) ($paymentAttributes['currency'] ?? $attributes['currency'] ?? ''));
+
+        $repairSession = RepairPaymentSession::query()
+            ->with('repairRequest')
+            ->where('provider_link_id', $sessionId)
+            ->first();
+
+        if ($repairSession?->repairRequest) {
+            return $this->handleRepairPayment($repairSession->repairRequest, $paymentId, $repairSession);
+        }
+
+        $payment = $this->resolveSubscriptionPayment($sessionId, $metadata);
+        if (!$payment) {
+            Log::warning('Premium payment record not found for checkout_session.payment.paid', [
+                'session_id' => $sessionId,
+            ]);
+
+            return response()->json(['message' => 'Payment record not found'], 200);
+        }
 
         // Resolve the subscription record (outside the transaction is fine for the lookup)
         $subscription = $this->resolveSubscription($sessionId, $metadata);
 
-        if (!$subscription) {
+        if (!$subscription || (int) $payment->subscription_id !== (int) $subscription->id) {
             Log::warning('Premium subscription not found for checkout_session.payment.paid', [
                 'session_id' => $sessionId,
-                'metadata'   => $metadata,
             ]);
-            return response()->json(['message' => 'Subscription not found'], 404);
+            return response()->json(['message' => 'Subscription not found'], 200);
         }
 
-        $activated = DB::transaction(function () use ($subscription, $sessionId, $paymentId, $paidAmount, $metadata) {
+        $activated = DB::transaction(function () use ($subscription, $payment, $sessionId, $paymentId, $paidAmount, $providerCurrency, $metadata) {
             // Lock the specific row; prevents duplicate activation under concurrent webhooks
+            $lockedPayment = ShopOwnerSubscriptionPayment::query()
+                ->whereKey($payment->id)
+                ->lockForUpdate()
+                ->firstOrFail();
             $locked = ShopOwnerSubscription::where('id', $subscription->id)
                 ->lockForUpdate()
-                ->first();
+                ->firstOrFail();
+            $metadataSubscriptionId = array_key_exists('subscription_id', $metadata)
+                && is_scalar($metadata['subscription_id'])
+                ? (string) $metadata['subscription_id']
+                : (string) $locked->id;
+            $metadataShopOwnerId = array_key_exists('shop_owner_id', $metadata)
+                && is_scalar($metadata['shop_owner_id'])
+                ? (string) $metadata['shop_owner_id']
+                : (string) $locked->shop_owner_id;
+
+            if ((int) $lockedPayment->subscription_id !== (int) $locked->id
+                || (int) $lockedPayment->shop_owner_id !== (int) $locked->shop_owner_id
+                || ($sessionId && $lockedPayment->paymongo_session_id && $lockedPayment->paymongo_session_id !== $sessionId)
+                || ($sessionId && $locked->paymongo_session_id && $locked->paymongo_session_id !== $sessionId)
+                || $metadataSubscriptionId !== (string) $locked->id
+                || $metadataShopOwnerId !== (string) $locked->shop_owner_id
+                || ! is_string($paymentId)
+                || trim($paymentId) === ''
+                || ($paidAmount === null)
+                || $providerCurrency === ''
+                || $providerCurrency !== strtoupper((string) $lockedPayment->currency)
+                || abs($paidAmount - (float) $lockedPayment->amount_due) > 0.009) {
+                Log::warning('Premium payment webhook failed local verification', [
+                    'subscription_id' => $locked->id,
+                    'payment_record_id' => $lockedPayment->id,
+                    'session_id' => $sessionId,
+                ]);
+
+                return false;
+            }
 
             // Idempotency: already active — nothing to do
-            if ($locked->status === 'active') {
+            if ($lockedPayment->status === 'paid' || $locked->status === 'active') {
                 Log::info('Premium subscription already active — duplicate webhook ignored', [
                     'subscription_id' => $locked->id,
                     'session_id'      => $sessionId,
@@ -394,7 +464,7 @@ class PaymongoWebhookController extends Controller
 
             // Guard: only activate subscriptions that are in the expected pre-payment states.
             // 'expired', 'cancelled' must never be reactivated through a payment webhook.
-            if (!in_array($locked->status, ['pending', 'failed'])) {
+            if ($lockedPayment->status !== 'pending' || $locked->status !== 'pending') {
                 Log::warning('Premium subscription in non-activatable state — skipping', [
                     'subscription_id' => $locked->id,
                     'current_status'  => $locked->status,
@@ -411,7 +481,7 @@ class PaymongoWebhookController extends Controller
             $updatePayload = [
                 'status'                => 'active',
                 'paymongo_payment_id'   => $paymentId,
-                'paid_amount'           => $paidAmount ?? $locked->paid_amount ?? $locked->premiumPlan?->price,
+                'paid_amount'           => $paidAmount,
                 'starts_at'             => $startsAt,
                 'ends_at'               => $endsAt,
             ];
@@ -424,6 +494,12 @@ class PaymongoWebhookController extends Controller
                 $updatePayload['auto_renew_status'] = ShopOwnerSubscription::AUTO_RENEW_STATUS_ENABLED;
             }
 
+            $lockedPayment->update([
+                'paymongo_payment_id' => $paymentId,
+                'status' => 'paid',
+                'amount_paid' => $paidAmount,
+                'paid_at' => now(),
+            ]);
             $locked->update($updatePayload);
 
             // Upgrade path: once the new paid subscription is active, immediately end
@@ -459,8 +535,6 @@ class PaymongoWebhookController extends Controller
                     $source->update($sourceUpdate);
                 }
             }
-
-            $this->syncSubscriptionPaymentLedger($sessionId, $paymentId, $locked, $metadata, 'paid', $paidAmount);
 
             activity()
                 ->performedOn($locked)
@@ -512,7 +586,7 @@ class PaymongoWebhookController extends Controller
                 // Never let a notification error surface as a webhook failure
                 Log::error('Failed to send premium activation notification', [
                     'subscription_id' => $activated->id,
-                    'error'           => $e->getMessage(),
+                    'exception_class' => $e::class,
                 ]);
             }
         }
@@ -530,25 +604,68 @@ class PaymongoWebhookController extends Controller
         $sessionId = $eventData['id'] ?? null;
         $metadata  = $eventData['attributes']['metadata'] ?? [];
 
+        $repairSession = RepairPaymentSession::query()
+            ->with('repairRequest')
+            ->where('provider_link_id', $sessionId)
+            ->first();
+
+        if ($repairSession?->repairRequest) {
+            DB::transaction(function () use ($repairSession): void {
+                $lockedSession = RepairPaymentSession::query()->lockForUpdate()->findOrFail($repairSession->id);
+                if ($lockedSession->status !== 'pending') {
+                    return;
+                }
+
+                $lockedSession->update([
+                    'status' => 'failed',
+                    'resolved_at' => now(),
+                ]);
+                app(PaymentSettlementService::class)->recordRepairPaymentFailure(
+                    $repairSession->repairRequest,
+                    'paymongo_payment_failed',
+                );
+            });
+
+            return response()->json(['message' => 'Repair payment failure recorded'], 200);
+        }
+
+        $payment = $this->resolveSubscriptionPayment($sessionId, $metadata);
         $subscription = $this->resolveSubscription($sessionId, $metadata);
 
-        if (!$subscription) {
+        if (!$subscription || !$payment || (int) $payment->subscription_id !== (int) $subscription->id) {
             // Nothing to update — return 200 to stop PayMongo retrying
             return response()->json(['message' => 'Subscription not found — no action'], 200);
         }
 
-        DB::transaction(function () use ($subscription, $sessionId, $metadata) {
+        if (
+            (array_key_exists('subscription_id', $metadata)
+                && (! is_scalar($metadata['subscription_id'])
+                    || (string) $metadata['subscription_id'] !== (string) $subscription->id))
+            || (array_key_exists('shop_owner_id', $metadata)
+                && (! is_scalar($metadata['shop_owner_id'])
+                    || (string) $metadata['shop_owner_id'] !== (string) $subscription->shop_owner_id))
+        ) {
+            return response()->json(['message' => 'Subscription webhook binding mismatch'], 200);
+        }
+
+        $failed = DB::transaction(function () use ($subscription, $payment, $sessionId) {
+            $lockedPayment = ShopOwnerSubscriptionPayment::query()
+                ->whereKey($payment->id)
+                ->lockForUpdate()
+                ->firstOrFail();
             $locked = ShopOwnerSubscription::where('id', $subscription->id)
                 ->lockForUpdate()
-                ->first();
+                ->firstOrFail();
 
-            if ($locked->status !== 'pending') {
+            if ((int) $lockedPayment->shop_owner_id !== (int) $locked->shop_owner_id
+                || $lockedPayment->status !== 'pending' || $locked->status !== 'pending'
+                || ($sessionId && $lockedPayment->paymongo_session_id && $lockedPayment->paymongo_session_id !== $sessionId)) {
                 // Already resolved (active, failed, cancelled, expired) — skip
-                return;
+                return false;
             }
 
+            $lockedPayment->update(['status' => 'failed']);
             $locked->update(['status' => 'failed']);
-            $this->syncSubscriptionPaymentLedger($sessionId, null, $locked, $metadata, 'failed', null);
 
             activity()
                 ->performedOn($locked)
@@ -557,6 +674,7 @@ class PaymongoWebhookController extends Controller
                     'shop_owner_id'   => $locked->shop_owner_id,
                     'plan_code'       => $locked->plan_code,
                     'session_id'      => $sessionId,
+                    'payment_record_id' => $lockedPayment->id,
                 ])
                 ->log('Premium subscription payment failed: ' . $locked->plan_code);
 
@@ -565,10 +683,13 @@ class PaymongoWebhookController extends Controller
                 'shop_owner_id'   => $locked->shop_owner_id,
                 'session_id'      => $sessionId,
             ]);
+
+            return true;
         });
 
         // Notify the shop owner so they know to retry
-        try {
+        if ($failed) {
+            try {
             $appUrl    = rtrim(config('app.url'), '/');
             $planLabel = ucfirst($subscription->plan_code);
 
@@ -581,58 +702,15 @@ class PaymongoWebhookController extends Controller
                 $appUrl . '/shop-owner/premium/benefits',
                 'high'
             );
-        } catch (\Exception $e) {
-            Log::error('Failed to send premium payment-failed notification', [
-                'subscription_id' => $subscription->id,
-                'error'           => $e->getMessage(),
-            ]);
+            } catch (\Exception $e) {
+                Log::error('Failed to send premium payment-failed notification', [
+                    'subscription_id' => $subscription->id,
+                    'exception_class' => $e::class,
+                ]);
+            }
         }
 
-        return response()->json(['message' => 'Failure recorded'], 200);
-    }
-
-    /**
-     * @param array<string, mixed> $metadata
-     */
-    private function syncSubscriptionPaymentLedger(
-        ?string $sessionId,
-        ?string $paymentId,
-        ShopOwnerSubscription $subscription,
-        array $metadata,
-        string $status,
-        ?float $paidAmount
-    ): void {
-        $query = ShopOwnerSubscriptionPayment::query();
-
-        if (!empty($metadata['payment_record_id'])) {
-            $query->where('id', (int) $metadata['payment_record_id']);
-        } elseif ($sessionId) {
-            $query->where('paymongo_session_id', $sessionId);
-        } else {
-            $query->where('subscription_id', $subscription->id)
-                ->where('status', 'pending');
-        }
-
-        $paymentRecord = $query->latest('id')->first();
-        if (!$paymentRecord) {
-            return;
-        }
-
-        $updates = [
-            'subscription_id' => $subscription->id,
-            'status' => $status,
-        ];
-
-        if ($paymentId) {
-            $updates['paymongo_payment_id'] = $paymentId;
-        }
-
-        if ($status === 'paid') {
-            $updates['paid_at'] = now();
-            $updates['amount_paid'] = $paidAmount ?? $paymentRecord->amount_due;
-        }
-
-        $paymentRecord->update($updates);
+        return response()->json(['message' => $failed ? 'Failure recorded' : 'Already processed'], 200);
     }
 
     /**
@@ -641,13 +719,48 @@ class PaymongoWebhookController extends Controller
      * Priority:
      *   1. paymongo_session_id column (most reliable — set at checkout creation)
      *   2. subscription_id in session metadata (fallback)
+     *
+     * @param array<string, mixed> $metadata
      */
+    private function resolveSubscriptionPayment(?string $sessionId, array $metadata): ?ShopOwnerSubscriptionPayment
+    {
+        if (!empty($metadata['payment_record_id'])) {
+            return ShopOwnerSubscriptionPayment::query()
+                ->whereKey((int) $metadata['payment_record_id'])
+                ->first();
+        }
+
+        if ($sessionId) {
+            $matches = ShopOwnerSubscriptionPayment::query()
+                ->where('paymongo_session_id', $sessionId)
+                ->limit(2)
+                ->get();
+
+            return $matches->count() === 1 ? $matches->first() : null;
+        }
+
+        if (!empty($metadata['subscription_id'])) {
+            $matches = ShopOwnerSubscriptionPayment::query()
+                ->where('subscription_id', (int) $metadata['subscription_id'])
+                ->where('status', 'pending')
+                ->limit(2)
+                ->get();
+
+            return $matches->count() === 1 ? $matches->first() : null;
+        }
+
+        return null;
+    }
+
     private function resolveSubscription(?string $sessionId, array $metadata): ?ShopOwnerSubscription
     {
         if ($sessionId) {
-            $sub = ShopOwnerSubscription::where('paymongo_session_id', $sessionId)->first();
-            if ($sub) {
-                return $sub;
+            $matches = ShopOwnerSubscription::query()
+                ->where('paymongo_session_id', $sessionId)
+                ->limit(2)
+                ->get();
+            if ($matches->count() === 1) {
+                return $matches->first();
             }
         }
 
@@ -690,10 +803,49 @@ class PaymongoWebhookController extends Controller
 
         $status = strtolower((string) $rawStatus);
 
+        $subscriptionRefund = $this->resolveSubscriptionRefundAttempt($refundId, $paymentId);
+        if ($subscriptionRefund) {
+            $trustedPaymentId = (string) $subscriptionRefund->payment?->paymongo_payment_id;
+            if ($paymentId && $trustedPaymentId !== (string) $paymentId) {
+                Log::warning('Subscription refund webhook payment binding mismatch', [
+                    'refund_id' => $refundId,
+                    'payment_id' => $paymentId,
+                ]);
+
+                return response()->json(['message' => 'Refund event ignored'], 200);
+            }
+
+            $outcome = $eventType === 'payment.refunded'
+                ? 'succeeded'
+                : match ($status) {
+                    'succeeded', 'completed', 'paid' => 'succeeded',
+                    'pending', 'processing' => 'processing',
+                    'failed', 'canceled', 'cancelled' => 'failed',
+                    default => 'unknown',
+                };
+
+            $result = app(PremiumSubscriptionRefundService::class)->applyProviderWebhook(
+                attempt: $subscriptionRefund,
+                result: [
+                    'outcome' => $outcome,
+                    'refund_id' => $refundId,
+                    'amount' => is_numeric($attributes['amount'] ?? null) ? (int) $attributes['amount'] : null,
+                    'currency' => isset($attributes['currency']) ? strtoupper((string) $attributes['currency']) : null,
+                    'payment_id' => $paymentId,
+                    'failure_code' => $outcome === 'failed' ? 'provider_refund_failed' : null,
+                ],
+                request: request(),
+            );
+
+            return response()->json([
+                'message' => 'Subscription refund updated',
+                'status' => $result['outcome'],
+            ], 200);
+        }
+
         if (!$refundId && !$paymentId) {
             Log::warning('Refund webhook missing identifiers', [
                 'event_type' => $eventType,
-                'event_data' => $eventData,
             ]);
 
             return response()->json(['message' => 'Missing refund identifiers'], 200);
@@ -761,5 +913,36 @@ class PaymongoWebhookController extends Controller
         ]);
 
         return response()->json(['message' => 'Refund processing'], 200);
+    }
+
+    private function resolveSubscriptionRefundAttempt(?string $refundId, ?string $paymentId): ?ShopOwnerSubscriptionRefund
+    {
+        if (! $refundId && ! $paymentId) {
+            return null;
+        }
+
+        $query = ShopOwnerSubscriptionRefund::query()->with('payment');
+        if ($refundId) {
+            $query->where(function ($query) use ($refundId, $paymentId): void {
+                $query->where('provider_refund_id', $refundId);
+
+                if ($paymentId) {
+                    $query->orWhere(function ($query) use ($paymentId): void {
+                        $query->whereNull('provider_refund_id')
+                            ->whereHas(
+                                'payment',
+                                fn ($paymentQuery) => $paymentQuery->where('paymongo_payment_id', $paymentId),
+                            );
+                    });
+                }
+            });
+        } elseif ($paymentId) {
+            $query->whereHas(
+                'payment',
+                fn ($paymentQuery) => $paymentQuery->where('paymongo_payment_id', $paymentId),
+            );
+        }
+
+        return $query->latest('id')->first();
     }
 }

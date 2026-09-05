@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "@inertiajs/react";
+import { route } from "ziggy-js";
 import { useSidebar } from "../context/SidebarContext";
 import { ThemeToggleButton } from "../components/common/ThemeToggleButton";
 import NotificationCenter from "../components/header/NotificationCenter";
 import ShopOwnerDropdown from "../components/header/ShopOwnerDropdown";
-import NotificationBell from "../Components/common/NotificationBell";
+import NotificationBell from "../components/common/NotificationBell";
 
 const AppHeader_shopOwner: React.FC = () => {
   const [isApplicationMenuOpen, setApplicationMenuOpen] = useState(false);
@@ -83,7 +84,7 @@ const AppHeader_shopOwner: React.FC = () => {
             {/* Cross Icon */}
           </button>
 
-          <Link href={route("landing")} className="lg:hidden">
+          <Link href={route("shop-owner.dashboard")} className="lg:hidden">
             <img
               className="dark:hidden"
               src="/images/logo/logo.svg"
@@ -159,6 +160,7 @@ const AppHeader_shopOwner: React.FC = () => {
             <NotificationBell 
               basePath="/api/shop-owner/notifications"
               iconSize={24}
+              className="rounded-full border border-gray-200 bg-white text-gray-900 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
             />
             {/* <!-- Dark Mode Toggler --> */}
             <ThemeToggleButton />
@@ -166,7 +168,7 @@ const AppHeader_shopOwner: React.FC = () => {
             {/* <!-- Notification Menu Area --> */}
           </div>
           {/* <!-- User Area --> */}
-          <ShopOwnerDropdown />
+          <ShopOwnerDropdown businessStyle />
         </div>
       </div>
     </header>

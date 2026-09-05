@@ -143,7 +143,7 @@ class RetailPosPaymentService
                 'vat_amount' => round((float) $breakdown['vat'], 2),
                 // Keep retail POS orders in a closed/fulfilled state that exists in the current enum.
                 'status' => 'delivered',
-                'customer_name' => (string) ($payload['walk_in_name'] ?? 'Walk-in Customer'),
+                'customer_name' => trim((string) ($payload['walk_in_name'] ?? '')) ?: 'Walk-in Customer',
                 'customer_email' => $payload['walk_in_email'] ?? null,
                 'customer_phone' => $payload['walk_in_phone'] ?? null,
                 'customer_address' => 'Walk-in POS',
@@ -160,6 +160,7 @@ class RetailPosPaymentService
                 OrderItem::create([
                     'order_id' => $order->id,
                     'product_id' => $product->id,
+                    'product_variant_id' => $variant?->id,
                     'product_name' => (string) $product->name,
                     'product_slug' => (string) $product->slug,
                     'price' => $item['unit_price'],

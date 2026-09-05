@@ -7,7 +7,7 @@ use App\Models\ShopOwner;
 use App\Models\StockMovement;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Laravel\Sanctum\Sanctum;
+use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
 class StockMovementTest extends TestCase
@@ -20,10 +20,12 @@ class StockMovementTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        
+        config(['auth.defaults.guard' => 'user']);
         $this->shopOwner = ShopOwner::factory()->create();
         $this->user = User::factory()->create(['shop_owner_id' => $this->shopOwner->id]);
-        Sanctum::actingAs($this->user);
+        Permission::findOrCreate('access-stock-movement', 'user');
+        $this->user->givePermissionTo('access-stock-movement');
+        $this->actingAs($this->user, 'user');
     }
 
     /** @test */
@@ -96,8 +98,9 @@ class StockMovementTest extends TestCase
         $response->assertStatus(200)
             ->assertJsonStructure([
                 'total_movements',
-                'stock_in_total',
-                'stock_out_total',
+                'stock_in',
+                'stock_out',
+                'adjustments',
             ]);
     }
 

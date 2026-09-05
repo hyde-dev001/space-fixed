@@ -1,9 +1,13 @@
 import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
+import { GPS_POSITION_OPTIONS, getCurrentPositionWithTimeout } from '@/utils/geolocation';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 import { useCart } from '../../../contexts/CartContext';
-import NotificationBell from '../../../Components/common/NotificationBell';
+import NotificationBell from '../../../components/common/NotificationBell';
 import { useBadgeCounts } from '../../../hooks/useBadgeCounts';
+import CustomerAddressManager, { type CustomerAddress } from '@/components/address/CustomerAddressManager';
+import { CustomerFooterReveal } from '../../../components/common/CustomerFooter';
+import { useScrollReveal } from '../Shared/useScrollReveal';
 
 interface Shop {
   id: number;
@@ -20,6 +24,36 @@ interface Shop {
 
 interface Props {
   shops: Shop[];
+}
+
+type CoverageQuote = {
+  status: 'loading' | 'ready' | 'error';
+  available?: boolean;
+  reason?: string | null;
+  distance_km?: number | null;
+  fee?: number | null;
+};
+
+function coverageText(quote?: CoverageQuote): string {
+  if (!quote || quote.status === 'loading') return 'Checking coverage...';
+  if (quote.status === 'error') return 'Coverage unavailable';
+  if (quote.available) {
+    const details = [
+      quote.distance_km != null ? `${quote.distance_km} km` : null,
+      quote.fee != null ? `₱${Number(quote.fee).toLocaleString('en-PH')}` : null,
+    ].filter(Boolean);
+    return `Within coverage${details.length ? ` · ${details.join(' · ')}` : ''}`;
+  }
+  if (quote.reason === 'address_needs_pin') return 'Pin required';
+  if (quote.reason === 'outside_coverage') return 'Outside coverage';
+  return 'Shop delivery unavailable';
+}
+
+function coverageClass(quote?: CoverageQuote): string {
+  if (quote?.status === 'ready' && quote.available) return 'bg-green-50 text-green-800 border-green-200';
+  if (quote?.status === 'ready' && quote.reason === 'outside_coverage') return 'bg-amber-50 text-amber-800 border-amber-200';
+  if (quote?.status === 'ready' && quote.reason === 'address_needs_pin') return 'bg-orange-50 text-orange-800 border-orange-200';
+  return 'bg-gray-50 text-gray-700 border-gray-200';
 }
 
 // Haversine formula — returns distance in km
@@ -52,15 +86,20 @@ const Repair: React.FC<Props> = ({ shops }) => {
     ? liveBadgeCounts.chatIconCount
     : initialChatIconCount;
   const cartBadgeCount = Number((page.props as any)?.cartIconCount ?? (cartLoading ? 0 : cartCount) ?? 0);
-  const meHref = isAuthenticated ? '/customer-profile' : '/user/login';
+  const meHref = isAuthenticated ? '/customer-profile' : '/login';
   const [sortBy, setSortBy] = useState('near_me');
   const [isSortOpen, setIsSortOpen] = useState(false);
+  const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
   const [mobileSearchQuery, setMobileSearchQuery] = useState('');
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [locating, setLocating] = useState(false);
   const [locError, setLocError] = useState<string | null>(null);
+  const [selectedAddress, setSelectedAddress] = useState<CustomerAddress | null>(null);
+  const [coverageByShop, setCoverageByShop] = useState<Record<number, CoverageQuote>>({});
   const sortMenuRef = useRef<HTMLDivElement | null>(null);
   const accountMenuRef = useRef<HTMLDivElement | null>(null);
+  const revealRootRef = useRef<HTMLDivElement | null>(null);
+  useScrollReveal(revealRootRef);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
 
   const handleImageError = (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
@@ -92,23 +131,68 @@ const Repair: React.FC<Props> = ({ shops }) => {
     }
     setLocating(true);
     setLocError(null);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
+    void getCurrentPositionWithTimeout(GPS_POSITION_OPTIONS)
+      .then((pos) => {
         setUserCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
         setSortBy('near_me');
-        setLocating(false);
-      },
-      () => {
+      })
+      .catch(() => {
         setLocError('Location access denied. Please allow location in your browser.');
-        setLocating(false);
-      },
-      { enableHighAccuracy: true, timeout: 10000 },
-    );
+      })
+      .finally(() => setLocating(false));
   }, []);
 
   useEffect(() => {
-    requestLocation();
-  }, [requestLocation]);
+    if (!isAuthenticated) requestLocation();
+  }, [isAuthenticated, requestLocation]);
+
+  const initialAddressId = useMemo(() => {
+    const value = new URLSearchParams(window.location.search).get('address_id');
+    return value ? Number(value) || null : null;
+  }, []);
+
+  const handleAddressSelect = useCallback((address: CustomerAddress) => {
+    setSelectedAddress(address);
+    if (address.latitude !== null && address.longitude !== null) {
+      setUserCoords({ lat: address.latitude, lng: address.longitude });
+      setSortBy('near_me');
+      setLocError(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!selectedAddress) {
+      setCoverageByShop({});
+      return;
+    }
+
+    const controller = new AbortController();
+    setCoverageByShop(Object.fromEntries(shops.map((shop) => [shop.id, { status: 'loading' }])));
+
+    Promise.all(shops.map(async (shop): Promise<[number, CoverageQuote]> => {
+      try {
+        const response = await fetch(`/api/repair/shops/${shop.id}/delivery-quote?address_id=${selectedAddress.id}`, {
+          credentials: 'include',
+          headers: { Accept: 'application/json' },
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error('Coverage request failed');
+        const quote = await response.json();
+        return [shop.id, { status: 'ready', ...quote }];
+      } catch (error) {
+        if ((error as Error).name === 'AbortError') throw error;
+        return [shop.id, { status: 'error' }];
+      }
+    }))
+      .then((entries) => setCoverageByShop(Object.fromEntries(entries)))
+      .catch((error) => {
+        if ((error as Error).name !== 'AbortError') {
+          setCoverageByShop(Object.fromEntries(shops.map((shop) => [shop.id, { status: 'error' }])));
+        }
+      });
+
+    return () => controller.abort();
+  }, [selectedAddress, shops]);
 
   const handleSortSelect = (value: string) => {
     if (value === 'near_me') {
@@ -209,7 +293,8 @@ const Repair: React.FC<Props> = ({ shops }) => {
   return (
     <>
       <Head title="Repair Services - SoleSpace" />
-      <div className="min-h-screen bg-white font-outfit antialiased">
+      <CustomerFooterReveal>
+      <div ref={revealRootRef} className="userside-repair-list-page min-h-screen bg-white font-outfit antialiased">
         <div className="hidden xl:block">
           <Navigation />
         </div>
@@ -274,25 +359,18 @@ const Repair: React.FC<Props> = ({ shops }) => {
                     {isAuthenticated ? (
                       <>
                         <Link
-                          href="/my-orders"
-                          className="flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-sm font-medium text-black hover:bg-gray-50"
-                          onClick={() => setIsAccountMenuOpen(false)}
-                        >
-                          <span>Orders</span>
-                        </Link>
-                        <Link
-                          href="/my-repairs"
-                          className="flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-sm font-medium text-black hover:bg-gray-50"
-                          onClick={() => setIsAccountMenuOpen(false)}
-                        >
-                          <span>Repair</span>
-                        </Link>
-                        <Link
                           href="/customer-profile"
                           className="flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-sm font-medium text-black hover:bg-gray-50"
                           onClick={() => setIsAccountMenuOpen(false)}
                         >
                           <span>Edit Profile</span>
+                        </Link>
+                        <Link
+                          href="/shop-owner-register"
+                          className="flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-sm font-medium text-black hover:bg-gray-50"
+                          onClick={() => setIsAccountMenuOpen(false)}
+                        >
+                          <span>Join Our Team</span>
                         </Link>
                         <button
                           type="button"
@@ -331,49 +409,60 @@ const Repair: React.FC<Props> = ({ shops }) => {
 
         <div className="mx-auto w-full max-w-107.5 px-4 pb-24 pt-16 sm:max-w-170 md:max-w-225 lg:max-w-5xl xl:max-w-480 xl:px-6 xl:pt-32 xl:pb-20 2xl:px-12">
           {/* Header row */}
-          <div className="mb-4 flex items-center justify-between gap-3 sm:mb-5">
+          <div data-scroll-reveal className="scroll-reveal relative z-30 mb-4 flex flex-wrap items-center justify-between gap-3 sm:mb-5">
             <div className="text-[11px] sm:text-xs text-black/55 tracking-[0.18em] uppercase">Home / All Repair</div>
-            <div className="relative" ref={sortMenuRef}>
-              <button
-                type="button"
-                onClick={() => setIsSortOpen((prev) => !prev)}
-                className="flex items-center gap-1.5 text-xs font-medium text-black/80 sm:gap-2 sm:text-sm"
-              >
-                <span>
-                  <span className="font-semibold">Sort by:</span>{' '}
-                  <span>{currentSortLabel}</span>
-                </span>
-                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-100">
-                  <svg
-                    className={`h-3.5 w-3.5 text-gray-700 transition-transform duration-200 ${isSortOpen ? 'rotate-180' : ''}`}
-                    viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"
-                  >
-                    <path d="M5 12L10 7L15 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                </span>
-              </button>
-
-              {isSortOpen && (
-                <div className="absolute right-0 mt-3 z-20 w-[min(92vw,14.5rem)] rounded-2xl border border-gray-300 bg-white py-3 shadow-[0_20px_40px_-24px_rgba(15,23,42,0.55)] xl:w-56" role="menu">
-                  {sortOptions.map((option) => {
-                    const isActive = sortBy === option.value;
-                    return (
-                      <button
-                        key={option.value}
-                        type="button"
-                        role="menuitem"
-                        onClick={() => handleSortSelect(option.value)}
-                        className="group w-full px-5 py-2.5 text-left text-sm"
-                      >
-                        <span className={`relative inline-block ${isActive ? 'text-black font-semibold' : 'text-black/75'}`}>
-                          {option.label}
-                          <span className={`absolute bottom-0 left-0 h-[1.5px] bg-black transition-all duration-300 ${isActive ? 'w-full' : 'w-0 group-hover:w-full'}`} />
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
+            <div className="flex items-center gap-3 sm:gap-4">
+              {isAuthenticated && (
+                <button
+                  type="button"
+                  onClick={() => setIsAddressModalOpen(true)}
+                  className="min-h-11 px-1 text-xs font-semibold text-[#16233b] underline underline-offset-4 transition-colors hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16233b]/40 sm:text-sm"
+                >
+                  {selectedAddress ? 'Edit address' : 'Add address'}
+                </button>
               )}
+              <div className="relative" ref={sortMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setIsSortOpen((prev) => !prev)}
+                  className="flex items-center gap-1.5 text-xs font-medium text-black/80 sm:gap-2 sm:text-sm"
+                >
+                  <span>
+                    <span className="font-semibold">Sort by:</span>{' '}
+                    <span>{currentSortLabel}</span>
+                  </span>
+                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-100">
+                    <svg
+                      className={`h-3.5 w-3.5 text-gray-700 transition-transform duration-200 ${isSortOpen ? 'rotate-180' : ''}`}
+                      viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"
+                    >
+                      <path d="M5 12L10 7L15 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </span>
+                </button>
+
+                {isSortOpen && (
+                  <div className="absolute right-0 z-40 mt-3 w-[min(92vw,14.5rem)] rounded-2xl border border-gray-300 bg-white py-3 shadow-[0_20px_40px_-24px_rgba(15,23,42,0.55)] xl:w-56" role="menu">
+                    {sortOptions.map((option) => {
+                      const isActive = sortBy === option.value;
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          role="menuitem"
+                          onClick={() => handleSortSelect(option.value)}
+                          className="group w-full px-5 py-2.5 text-left text-sm"
+                        >
+                          <span className={`relative inline-block ${isActive ? 'font-semibold text-black' : 'text-black/75'}`}>
+                            {option.label}
+                            <span className={`absolute bottom-0 left-0 h-[1.5px] bg-black transition-all duration-300 ${isActive ? 'w-full' : 'w-0 group-hover:w-full'}`} />
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -388,6 +477,22 @@ const Repair: React.FC<Props> = ({ shops }) => {
             Browse our curated collection of repair shops. Click a shop card to view details and request service.
           </p>
 
+          {isAuthenticated && (
+            <div>
+              <CustomerAddressManager
+                onSelect={handleAddressSelect}
+                onSelectionCleared={() => setSelectedAddress(null)}
+                initialAddressId={initialAddressId}
+                showAddTrigger={false}
+                showAddressSummary={false}
+                showSavedAddressesInModal
+                modalMode={selectedAddress ? 'edit' : 'add'}
+                isModalOpen={isAddressModalOpen}
+                onModalOpenChange={setIsAddressModalOpen}
+              />
+            </div>
+          )}
+
           {/* Shops Grid */}
           <div className="mb-12">
             {displayShops.length === 0 ? (
@@ -398,9 +503,9 @@ const Repair: React.FC<Props> = ({ shops }) => {
             ) : (
               <div className="grid grid-cols-2 gap-3 xl:gap-4 xl:grid-cols-3 2xl:grid-cols-4">
                 {displayShops.map((shop) => (
+                  <div key={shop.id} data-scroll-reveal className="scroll-reveal h-full">
                   <Link
-                    key={shop.id}
-                    href={`/repair-shop/${shop.id}`}
+                    href={`/repair-shop/${shop.id}${selectedAddress ? `?address_id=${selectedAddress.id}` : ''}`}
                     className="group flex h-full flex-col rounded-2xl border border-gray-200 bg-white shadow-[0_12px_28px_-24px_rgba(15,23,42,0.45)] transition-all duration-300 hover:-translate-y-1 hover:border-gray-300 hover:shadow-[0_24px_40px_-24px_rgba(15,23,42,0.55)] xl:rounded-3xl xl:border-gray-300 xl:shadow-[0_16px_35px_-24px_rgba(15,23,42,0.45)]"
                   >
                     <div className="aspect-[0.95] overflow-hidden rounded-t-2xl bg-gray-50 xl:aspect-square xl:rounded-t-3xl">
@@ -431,6 +536,11 @@ const Repair: React.FC<Props> = ({ shops }) => {
                           {formatDistance(shop.distance)}
                         </p>
                       )}
+                      {selectedAddress && (
+                        <p className={`mb-3 rounded-full border px-2.5 py-1 text-[10px] font-semibold xl:text-xs ${coverageClass(coverageByShop[shop.id])}`}>
+                          {coverageText(coverageByShop[shop.id])}
+                        </p>
+                      )}
                       <div className={`${buttonBaseClass} ${buttonDarkClass} mt-auto w-full text-[10px] xl:text-xs`}>
                         View Shop
                         <svg className="h-3.5 w-3.5 transition-transform duration-300 group-hover:translate-x-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -439,6 +549,7 @@ const Repair: React.FC<Props> = ({ shops }) => {
                       </div>
                     </div>
                   </Link>
+                  </div>
                 ))}
               </div>
             )}
@@ -488,6 +599,7 @@ const Repair: React.FC<Props> = ({ shops }) => {
           </div>
         </div>
       </div>
+      </CustomerFooterReveal>
     </>
   );
 };

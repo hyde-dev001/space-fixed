@@ -24,7 +24,7 @@ class EnsureCustomerAccount
             return redirect()->route('user.login.form');
         }
 
-        $isCustomerAccount = is_null($user->shop_owner_id);
+        $isCustomerAccount = $user->isCustomerAccount();
 
         if (!$isCustomerAccount) {
             if ($request->expectsJson() || $request->is('api/*')) {

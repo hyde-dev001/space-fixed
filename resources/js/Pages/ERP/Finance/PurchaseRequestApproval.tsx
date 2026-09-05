@@ -11,9 +11,13 @@ type MetricColor = "success" | "warning" | "info";
 const SIZE_SYSTEMS = ["US", "UK", "EU", "AU", "CN"] as const;
 
 interface PurchaseRequestApprovalItem extends PurchaseRequest {
-	requires_owner_approval?: boolean;
 	approval_stage?: "finance_initial" | "finance_final" | null;
 }
+
+export const isFinanceReviewStatus = (status: string) => status === "pending_finance" || status === "pending_finance_final";
+export const financeApprovalPrompt = (status: string, prNumber: string) => status === "pending_finance_final"
+	? `Finalize ${prNumber} after Shop Owner approval?`
+	: `Approve ${prNumber} and send to Shop Owner for approval?`;
 
 const priorityBadgeClass: Record<RequestPriority, string> = {
 	high: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
@@ -136,16 +140,10 @@ const getAvailableSizeLabels = (
 
 const getEffectiveQuantity = (
 	quantity: number,
-	unitCost: number,
-	totalCost: number,
-	isAllSizes: boolean,
-): number => {
-	if (!isAllSizes) return quantity;
-	if (unitCost <= 0) return quantity;
-
-	const calculatedQuantity = Math.round(totalCost / unitCost);
-	return calculatedQuantity > 0 ? calculatedQuantity : quantity;
-};
+	_unitCost?: number,
+	_totalCost?: number,
+	_isAllSizes?: boolean,
+): number => quantity;
 
 const isRepairMaterialsRequest = (request: PurchaseRequestApprovalItem): boolean => {
 	const category = String((request as any)?.inventory_item?.category || "").trim().toLowerCase();
@@ -256,6 +254,10 @@ export default function PurchaseRequestApproval({ onModalStateChange, requests: 
 	const [statusFilter, setStatusFilter] = useState<"all" | ApprovalStatus>("all");
 	const [currentPage, setCurrentPage] = useState(1);
 	const [viewingRequest, setViewingRequest] = useState<PurchaseRequestApprovalItem | null>(null);
+	useEffect(() => {
+		const id = Number(new URLSearchParams(window.location.search).get("purchase_request"));
+		if (id > 0) setViewingRequest(requests.find((request) => request.id === id) ?? null);
+	}, [requests]);
 
 	const fetchPurchaseRequests = async () => {
 		try {
@@ -307,7 +309,7 @@ export default function PurchaseRequestApproval({ onModalStateChange, requests: 
 	const handleApprove = async (request: PurchaseRequestApprovalItem) => {
 		setViewingRequest(null);
 
-		if (request.status !== "pending_finance" && request.status !== "pending_finance_final") {
+		if (!isFinanceReviewStatus(request.status)) {
 			await Swal.fire({
 				icon: "warning",
 				title: "Cannot Approve",
@@ -318,12 +320,7 @@ export default function PurchaseRequestApproval({ onModalStateChange, requests: 
 		}
 
 		const isFinanceFinalStage = request.status === "pending_finance_final";
-		const canApplyImmediately = isFinanceFinalStage || request.requires_owner_approval === false;
-		const confirmText = isFinanceFinalStage
-			? `Finalize ${request.pr_number} after Shop Owner approval?`
-			: canApplyImmediately
-				? `Approve ${request.pr_number} and apply immediately?`
-				: `Approve ${request.pr_number} and send to Shop Owner for approval?`;
+		const confirmText = financeApprovalPrompt(request.status, request.pr_number);
 
 		const result = await Swal.fire({
 			title: "Approve purchase request?",
@@ -341,23 +338,18 @@ export default function PurchaseRequestApproval({ onModalStateChange, requests: 
 		if (!result.isConfirmed) return;
 
 		try {
-			const response = await axios.post(
+			await axios.post(
 				`/api/finance/purchase-requests/${request.id}/approve`,
 				{
 					approval_notes: result.value || undefined,
 				}
 			);
 
-			const approvingRequest = response.data?.purchase_request || request;
-			const requiresOwnerApproval = approvingRequest.requires_owner_approval !== false;
-
 			fetchPurchaseRequests();
 
 			const successText = isFinanceFinalStage
 				? `${request.pr_number} was finalized by Finance.`
-				: requiresOwnerApproval
-					? `${request.pr_number} was approved and sent to Shop Owner for approval.`
-					: `${request.pr_number} was approved and applied immediately.`;
+				: `${request.pr_number} was approved and sent to Shop Owner for approval.`;
 
 			await Swal.fire({
 				icon: "success",
@@ -380,7 +372,7 @@ export default function PurchaseRequestApproval({ onModalStateChange, requests: 
 	const handleReject = async (request: PurchaseRequestApprovalItem) => {
 		setViewingRequest(null);
 
-		if (request.status !== "pending_finance") {
+		if (!isFinanceReviewStatus(request.status)) {
 			await Swal.fire({
 				icon: "warning",
 				title: "Cannot Reject",
@@ -436,9 +428,8 @@ export default function PurchaseRequestApproval({ onModalStateChange, requests: 
 	};
 
 	const isAnyModalOpen = Boolean(viewingRequest);
-	const canApproveViewingRequest =
-		viewingRequest?.status === "pending_finance" || viewingRequest?.status === "pending_finance_final";
-	const canRejectViewingRequest = viewingRequest?.status === "pending_finance";
+	const canApproveViewingRequest = Boolean(viewingRequest && isFinanceReviewStatus(viewingRequest.status));
+	const canRejectViewingRequest = Boolean(viewingRequest && isFinanceReviewStatus(viewingRequest.status));
 
 	const viewingRequestAvailableSizeLabels = useMemo(() => {
 		if (!viewingRequest) return [];
@@ -665,14 +656,18 @@ export default function PurchaseRequestApproval({ onModalStateChange, requests: 
 
 							<div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
 								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
-									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Quantity</p>
+									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
+										{isAllSizesRequest(viewingRequest.requested_size) && String((viewingRequest as any)?.inventory_item?.category || "").toLowerCase() === "shoes"
+											? "Total Quantity Across All Sizes"
+											: "Quantity"}
+									</p>
 									<p className="text-base font-semibold text-gray-900 dark:text-white">
 										{getEffectiveQuantity(
 											viewingRequest.quantity,
 											viewingRequest.unit_cost,
 											viewingRequest.total_cost,
 											isAllSizesRequest(viewingRequest.requested_size),
-										)}
+										)}{isAllSizesRequest(viewingRequest.requested_size) && String((viewingRequest as any)?.inventory_item?.category || "").toLowerCase() === "shoes" ? " units" : ""}
 									</p>
 								</div>
 								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">

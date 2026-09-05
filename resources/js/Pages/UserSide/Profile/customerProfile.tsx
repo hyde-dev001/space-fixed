@@ -3,6 +3,8 @@ import { Head, Link, router, usePage } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 import Swal from '../Shared/UserModal';
 import { useBadgeCounts } from '../../../hooks/useBadgeCounts';
+import { CustomerFooterReveal } from '../../../components/common/CustomerFooter';
+import IdentityVerificationPanel, { type CustomerIdentityVerification } from './IdentityVerificationPanel';
 
 type ProfileData = {
 	firstName: string;
@@ -30,6 +32,7 @@ type PageProps = {
 	errors?: Record<string, string>;
 	orderStatusCount?: number;
 	repairStatusCount?: number;
+	identity_verification: CustomerIdentityVerification | null;
 };
 
 const CustomerProfile: React.FC = () => {
@@ -40,6 +43,7 @@ const CustomerProfile: React.FC = () => {
 		errors,
 		orderStatusCount = 0,
 		repairStatusCount = 0,
+		identity_verification,
 	} = page.props;
 	const [profileData, setProfileData] = useState<ProfileData>({
 		firstName: user.first_name || '',
@@ -360,6 +364,7 @@ const CustomerProfile: React.FC = () => {
 	}, [flash]);
 
 	return (
+		<CustomerFooterReveal>
 		<div className="min-h-screen bg-gray-50">
 			<Head title="Edit Profile" />
 			<Navigation />
@@ -392,7 +397,7 @@ const CustomerProfile: React.FC = () => {
 						</div>
 						<div className="mt-4 flex items-center gap-3.5 md:gap-4">
 							<div className="relative">
-								<div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-white/35 bg-white/12 text-lg font-semibold uppercase text-white md:h-16 md:w-16 md:text-xl">
+                                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-white/35 bg-gray-950 dark:bg-white/12 text-lg font-semibold uppercase text-white md:h-16 md:w-16 md:text-xl">
 									{photoPreview ? (
 										<img src={photoPreview} alt="Profile" className="h-full w-full rounded-full object-cover" />
 									) : (
@@ -442,7 +447,7 @@ const CustomerProfile: React.FC = () => {
 
 					<div className="rounded-[28px] border border-[#dfe4ea] bg-white px-4 py-4 shadow-[0_14px_28px_-24px_rgba(15,23,42,0.6)] md:px-6 md:py-6">
 						<div className="mb-4 flex items-center justify-between">
-							<h2 className="text-[1.02rem] font-semibold text-[#16233b] md:text-[1.3rem]">My Repairs</h2>
+							<h2 className="text-[1.02rem] font-semibold text-[#16233b] md:text-[1.3rem]">Repairs</h2>
 							<a href="/repair-services" className="text-xs font-medium text-[#2e3f5c] hover:text-[#16233b] md:text-base">View History</a>
 						</div>
 						<div className="grid grid-cols-4 gap-2.5 md:gap-3">
@@ -500,6 +505,12 @@ const CustomerProfile: React.FC = () => {
 							</div>
 						)}
 					</div>
+
+					<IdentityVerificationPanel
+						identityVerification={identity_verification}
+						firstName={profileData.firstName}
+						lastName={profileData.lastName}
+					/>
 
 					<div className="rounded-[28px] border border-gray-200 bg-white px-4 py-4 shadow-sm">
 					<h2 className="mb-4 text-[1.02rem] font-semibold text-gray-900">Change Password</h2>
@@ -593,6 +604,14 @@ const CustomerProfile: React.FC = () => {
 						</div>
 					</div>
 
+					<div className="mt-8">
+						<IdentityVerificationPanel
+							identityVerification={identity_verification}
+							firstName={profileData.firstName}
+							lastName={profileData.lastName}
+						/>
+					</div>
+
 					<div className="mt-8 rounded-2xl border border-gray-200 bg-white px-6 py-6 lg:px-8">
 					<h3 className="text-base font-semibold text-gray-900">Change Password</h3>
 					<form onSubmit={handlePasswordSubmit} className="mt-6 grid grid-cols-1 gap-6 text-sm md:grid-cols-2">
@@ -653,6 +672,7 @@ const CustomerProfile: React.FC = () => {
 				</div>
 			</div>
 		</div>
+		</CustomerFooterReveal>
 	);
 };
 

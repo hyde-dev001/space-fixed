@@ -2,6 +2,7 @@ import { Head, usePage } from '@inertiajs/react';
 import AppLayoutERP from '../../../layout/AppLayout_ERP';
 import { useState, useEffect } from 'react';
 import Swal from 'sweetalert2';
+import { GPS_POSITION_OPTIONS, getCurrentPositionWithTimeout } from '../../../utils/geolocation';
 
 const ClockIcon = () => (
     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -629,7 +630,7 @@ export default function TimeIn() {
                         <p class="mb-2">You cannot clock in at this time.</p>
                         <p class="text-sm text-gray-600">Shop Hours: <strong>${openTimeDisplay} - ${closeTimeDisplay}</strong></p>
                         <p class="text-sm text-gray-600">Current Time: <strong>${formatTimeShort(now)}</strong></p>
-                        <p class="text-sm text-amber-600 mt-2">⏰ You can clock in starting 30 minutes before opening time.</p>
+                        <p class="text-sm text-amber-600 mt-2">You can clock in starting 30 minutes before opening time.</p>
                     </div>
                 `,
                 confirmButtonColor: '#ef4444'
@@ -650,9 +651,7 @@ export default function TimeIn() {
                 return;
             }
             try {
-                const position = await new Promise<GeolocationPosition>((resolve, reject) =>
-                    navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 15000 }),
-                );
+                const position = await getCurrentPositionWithTimeout(GPS_POSITION_OPTIONS);
                 locationPayload = { latitude: position.coords.latitude, longitude: position.coords.longitude };
             } catch {
                 await Swal.fire({
@@ -698,7 +697,7 @@ export default function TimeIn() {
                             <p class="mb-2">You are <strong class="text-blue-600">${data.attendance.minutes_early} minutes early</strong></p>
                             <p class="text-sm text-gray-600">Expected In: ${formatTimeFromString(data.attendance.expected_check_in)}</p>
                             <p class="text-sm text-gray-600">Actual: ${formatTimeFromString(data.attendance.check_in_time)}</p>
-                            <p class="text-sm text-amber-600 mt-2">⏰ This is within the allowed grace period (30 minutes before opening)</p>
+                            <p class="text-sm text-amber-600 mt-2">This is within the allowed grace period (30 minutes before opening)</p>
                         </div>`,
                         input: 'textarea',
                         inputLabel: 'Please provide a reason (optional)',
@@ -752,7 +751,7 @@ export default function TimeIn() {
                 } else {
                     await Swal.fire({
                         icon: 'success',
-                        title: 'On Time! ✓',
+                        title: 'On Time!',
                         text: 'You checked in on time. Great job!',
                         timer: 2000,
                         showConfirmButton: false
@@ -784,7 +783,7 @@ export default function TimeIn() {
                         html: `<div class="text-left">
                             <p class="mb-2"><strong>Shop opens at ${formatTimeFromString(data.shop_open_time)}</strong></p>
                             <p class="text-sm text-gray-600">You can check in starting from: <strong>${formatTimeFromString(data.earliest_check_in)}</strong></p>
-                            <p class="text-sm text-amber-600 mt-2">⏰ Please wait ${data.minutes_too_early} more minutes</p>
+                            <p class="text-sm text-amber-600 mt-2">Please wait ${data.minutes_too_early} more minutes</p>
                         </div>`,
                         confirmButtonColor: '#3b82f6',
                     });
@@ -843,10 +842,7 @@ export default function TimeIn() {
             const data = await response.json();
             if (response.ok) {
                 setIsOnLunch(false);
-                setTimeout(() => {
-                    setLunchStartTime(null);
-                    setLunchEndTime(null);
-                }, 100);
+                setLunchEndTime(parseAttendanceTimeToDate(data.lunch_break_end) ?? getPHTime());
             } else {
                 Swal.fire('Error', data.error || 'Failed to end lunch break', 'error');
             }
@@ -1271,25 +1267,30 @@ export default function TimeIn() {
         <AppLayoutERP>
             <Head title="Attendance - Time In/Out" />
             
-            <div className="min-h-screen">
+            <div data-testid="time-in-page" className="min-h-screen overflow-x-hidden text-gray-900 dark:text-white">
                 {!showOvertimeModal && !showLeaveModal ? (
                 <>
                 {/* Header Section */}
-                <div className="mb-12">
-                    <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-3">
-                            <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/30">
+                <div className="mb-6 sm:mb-8">
+                    <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
+                        <div className="flex min-w-0 items-start gap-3">
+                            <div className="shrink-0 rounded-full bg-gray-100 p-2.5 text-gray-900 dark:bg-gray-800 dark:text-white">
                                 <ClockIcon />
                             </div>
-                            <h1 className="text-4xl font-bold text-gray-900 dark:text-white">
-                                Attendance Tracking
-                            </h1>
+                            <div className="min-w-0">
+                                <h1 className="text-xl font-semibold leading-tight tracking-tight text-gray-900 dark:text-white sm:text-2xl">
+                                    Attendance Tracking
+                                </h1>
+                                <p className="mt-1 text-sm leading-6 text-gray-500 dark:text-gray-400 sm:text-base">
+                                    Manage your daily work hours efficiently
+                                </p>
+                            </div>
                         </div>
-                        <div className="flex items-center gap-3">
+                        <div className="grid w-full grid-cols-2 gap-2 xl:w-auto xl:min-w-[280px]">
                             <button
                                 onClick={handleOvertimeClick}
                                 disabled={isOnApprovedLeaveToday || todayOvertimeRequests.some(ot => ['pending', 'approved', 'assigned'].includes(ot.status))}
-                                className="rounded-lg border border-blue-600 bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all duration-200 hover:bg-blue-700 hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-blue-600 flex items-center gap-2"
+                                className="flex min-h-12 w-full items-center justify-center gap-2 rounded-full bg-gray-100 px-3 py-3 text-sm font-semibold text-gray-900 transition-colors hover:bg-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-800 dark:text-white dark:hover:bg-gray-700"
                                 title={
                                     isOnApprovedLeaveToday
                                         ? 'Overtime requests are disabled while on approved leave'
@@ -1299,32 +1300,30 @@ export default function TimeIn() {
                                 }
                             >
                                 <OvertimeIcon />
-                                Over Time
+                                Overtime
                             </button>
                             <button
                                 onClick={handleRequestLeaveClick}
-                                className="rounded-lg border border-blue-600 bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all duration-200 hover:bg-blue-700 hover:shadow-md flex items-center gap-2"
+                                className="flex min-h-12 w-full items-center justify-center gap-2 rounded-full bg-gray-100 px-3 py-3 text-sm font-semibold text-gray-900 transition-colors hover:bg-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 dark:bg-gray-800 dark:text-white dark:hover:bg-gray-700"
                             >
                                 <LeaveIcon />
                                 Request Leave
                             </button>
                         </div>
                     </div>
-                    <p className="text-lg text-gray-600 dark:text-gray-400 mt-2">
-                        Manage your daily work hours efficiently
-                    </p>
                 </div>
 
+                <div data-testid="attendance-dashboard" className="mb-8 grid gap-4 xl:mb-12 xl:grid-cols-5 xl:items-stretch xl:gap-6">
                 {/* Main Clock Section */}
-                <div className="mb-12">
-                    <div className="relative overflow-hidden rounded-3xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 p-0 shadow-xl">
-                        <div className="relative p-12 md:p-16">
+                <div className="min-w-0 xl:col-span-3">
+                    <div className="overflow-hidden rounded-3xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900/50">
+                        <div className="p-5 sm:p-7 md:p-8 xl:p-10">
                             <div className="text-center">
-                                <div className="mb-8">
-                                    <p className="text-gray-600 dark:text-gray-400 text-sm font-semibold uppercase tracking-widest mb-4">
+                                <div>
+                                    <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
                                         Current Time
                                     </p>
-                                    <div className={`text-6xl md:text-7xl font-bold font-mono tracking-tight mb-4 ${
+                                    <div aria-live="polite" className={`mb-3 whitespace-nowrap font-mono text-[2.15rem] font-semibold leading-none tabular-nums tracking-[-0.055em] min-[380px]:text-[2.45rem] sm:text-5xl xl:text-6xl ${
                                         isClockedIn 
                                             ? todayAttendance?.is_late 
                                                 ? 'text-red-600 dark:text-red-400' 
@@ -1335,12 +1334,12 @@ export default function TimeIn() {
                                     </div>
                                     {shopHours ? (
                                         shopHours.is_open ? (
-                                            <p className="text-sm text-gray-600 dark:text-gray-400">
-                                                Shop Hours Today: <span className="font-semibold text-green-600 dark:text-green-400">{formatTimeFromString(shopHours.open)} - {formatTimeFromString(shopHours.close)}</span>
+                                            <p className="text-xs text-gray-500 dark:text-gray-400 sm:text-sm">
+                                                Shop hours <span className="font-semibold text-gray-900 dark:text-white">{formatTimeFromString(shopHours.open)} - {formatTimeFromString(shopHours.close)}</span>
                                             </p>
                                         ) : (
                                             <p className="text-sm text-red-600 dark:text-red-400 font-semibold">
-                                                🔴 Shop Closed Today ({shopHours.day})
+                                                Shop Closed Today ({shopHours.day})
                                             </p>
                                         )
                                     ) : (
@@ -1348,7 +1347,7 @@ export default function TimeIn() {
                                             Loading shop hours...
                                         </p>
                                     )}
-                                    <p className="text-gray-600 dark:text-gray-400 text-lg">
+                                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400 sm:text-base">
                                         {new Date().toLocaleDateString('en-US', { 
                                             weekday: 'long', 
                                             month: 'long', 
@@ -1357,15 +1356,15 @@ export default function TimeIn() {
                                         })}
                                     </p>
                                     {isOnApprovedLeaveToday && (
-                                        <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-amber-300 bg-amber-50 px-4 py-2 text-amber-700 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
+                                        <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-amber-50 px-3 py-2 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
                                             <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
                                             <span className="text-sm font-semibold uppercase tracking-wide">On Approved Leave Today</span>
                                         </div>
                                     )}
                                 </div>
 
-                                <div className="mb-8 flex justify-center">
-                                    <div className={`flex items-center gap-2 px-6 py-3 rounded-full transition-all duration-300 ${
+                                <div className="my-5 flex justify-center sm:my-6">
+                                    <div className={`flex min-h-10 items-center gap-2 rounded-full px-4 py-2 transition-colors duration-200 ${
                                         isOnLunch
                                             ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 border border-orange-300 dark:border-orange-700'
                                             : isOnApprovedLeaveToday
@@ -1374,23 +1373,23 @@ export default function TimeIn() {
                                             ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 border border-green-300 dark:border-green-700' 
                                             : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border border-red-300 dark:border-red-700'
                                     }`}>
-                                        <div className={`w-3 h-3 rounded-full animate-pulse ${
+                                        <div className={`h-2.5 w-2.5 rounded-full ${
                                             isOnLunch ? 'bg-orange-500' : isOnApprovedLeaveToday ? 'bg-amber-500' : isClockedIn ? 'bg-green-500' : 'bg-red-500'
                                         }`} />
-                                        <span className="font-semibold text-sm uppercase tracking-wide">
+                                        <span className="text-xs font-semibold uppercase tracking-[0.12em]">
                                             {isOnLunch ? 'On Lunch Break' : isOnApprovedLeaveToday ? 'On Leave Today' : isClockedIn ? 'Clocked In' : 'Clocked Out'}
                                         </span>
                                     </div>
                                 </div>
 
-                                <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
+                                <div className="grid w-full grid-cols-1 gap-2.5 min-[420px]:grid-cols-2">
                                     <button
                                         onClick={handleClockIn}
                                         disabled={isClockedIn || isLoading || isOnApprovedLeaveToday}
-                                        className={`px-8 py-4 rounded-2xl font-bold text-lg transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg ${
+                                        className={`min-h-12 w-full rounded-full px-6 py-3 text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 ${
                                             isClockedIn || isLoading || isOnApprovedLeaveToday
-                                                ? 'bg-gray-200 dark:bg-gray-800 text-gray-400 dark:text-gray-600 cursor-not-allowed'
-                                                : 'bg-green-500 text-white hover:bg-green-600 hover:shadow-xl'
+                                                ? 'cursor-not-allowed bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-600'
+                                                : 'bg-[#111111] text-white hover:bg-black'
                                         }`}
                                     >
                                         <div className="flex items-center justify-center gap-2">
@@ -1411,10 +1410,10 @@ export default function TimeIn() {
                                         </div>
                                     </button>
 
-                                    {isClockedIn && !isOnLunch && (
+                                    {isClockedIn && !isOnLunch && !lunchEndTime && (
                                         <button
                                             onClick={handleStartLunch}
-                                            className="px-8 py-4 rounded-2xl font-bold text-lg transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg bg-orange-500 text-white hover:bg-orange-600 hover:shadow-xl"
+                                            className="min-h-12 w-full rounded-full bg-[#111111] px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-black focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2"
                                         >
                                             <div className="flex items-center justify-center gap-2">
                                                 <CoffeeIcon />
@@ -1426,7 +1425,7 @@ export default function TimeIn() {
                                     {isOnLunch && (
                                         <button
                                             onClick={handleEndLunch}
-                                            className="px-8 py-4 rounded-2xl font-bold text-lg transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg bg-blue-500 text-white hover:bg-blue-600 hover:shadow-xl"
+                                            className="min-h-12 w-full rounded-full bg-[#111111] px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-black focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2"
                                         >
                                             <div className="flex items-center justify-center gap-2">
                                                 <CheckIcon />
@@ -1438,10 +1437,10 @@ export default function TimeIn() {
                                     <button
                                         onClick={handleClockOut}
                                         disabled={!isClockedIn || isOnLunch || isLoading}
-                                        className={`px-8 py-4 rounded-2xl font-bold text-lg transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg ${
+                                        className={`min-h-12 w-full rounded-full px-6 py-3 text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 ${
                                             !isClockedIn || isOnLunch || isLoading
-                                                ? 'bg-gray-200 dark:bg-gray-800 text-gray-400 dark:text-gray-600 cursor-not-allowed'
-                                                : 'bg-red-500 text-white hover:bg-red-600 hover:shadow-xl'
+                                                ? 'cursor-not-allowed bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-600'
+                                                : 'bg-[#111111] text-white hover:bg-black'
                                         }`}
                                     >
                                         {isLoading ? (
@@ -1462,27 +1461,27 @@ export default function TimeIn() {
                     </div>
                 </div>
 
-                <div className="mb-12 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                    <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 p-6 shadow-sm">
-                        <div className="flex items-center gap-3 mb-2">
-                            <div className="p-2 rounded-lg bg-green-100 dark:bg-green-900/30">
+                <div data-testid="attendance-summary" className="grid min-w-0 grid-cols-2 gap-px overflow-hidden rounded-3xl border border-gray-200 bg-gray-200 xl:col-span-2 xl:h-full dark:border-gray-800 dark:bg-gray-800">
+                    <div className="min-w-0 bg-white p-4 dark:bg-gray-900/50 sm:p-5">
+                        <div className="mb-3 flex items-center gap-2">
+                            <div className="rounded-full bg-gray-100 p-2 dark:bg-gray-800">
                                 <CheckIcon />
                             </div>
-                            <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Login Time</h3>
+                            <h3 className="text-xs font-medium text-gray-500 dark:text-gray-400">Login Time</h3>
                         </div>
-                        <div className="text-3xl font-bold text-gray-900 dark:text-white font-mono">
+                        <div className="break-words font-mono text-lg font-semibold tracking-tight text-gray-900 dark:text-white sm:text-xl">
                             {formatTime(loginTime)}
                         </div>
                     </div>
 
-                    <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 p-6 shadow-sm">
-                        <div className="flex items-center gap-3 mb-2">
-                            <div className="p-2 rounded-lg bg-orange-100 dark:bg-orange-900/30">
+                    <div className="min-w-0 bg-white p-4 dark:bg-gray-900/50 sm:p-5">
+                        <div className="mb-3 flex items-center gap-2">
+                            <div className="rounded-full bg-gray-100 p-2 dark:bg-gray-800">
                                 <CoffeeIcon />
                             </div>
-                            <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Lunch Break</h3>
+                            <h3 className="text-xs font-medium text-gray-500 dark:text-gray-400">Lunch Break</h3>
                         </div>
-                        <div className="text-2xl font-bold text-gray-900 dark:text-white font-mono">
+                        <div className="break-words font-mono text-sm font-semibold tracking-tight text-gray-900 dark:text-white sm:text-base">
                             {lunchStartTime && lunchEndTime 
                                 ? `${formatTimeShort(lunchStartTime)} - ${formatTimeShort(lunchEndTime)}`
                                 : lunchStartTime 
@@ -1492,24 +1491,24 @@ export default function TimeIn() {
                         </div>
                     </div>
 
-                    <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 p-6 shadow-sm">
-                        <div className="flex items-center gap-3 mb-2">
-                            <div className="p-2 rounded-lg bg-red-100 dark:bg-red-900/30">
+                    <div className="min-w-0 bg-white p-4 dark:bg-gray-900/50 sm:p-5">
+                        <div className="mb-3 flex items-center gap-2">
+                            <div className="rounded-full bg-gray-100 p-2 dark:bg-gray-800">
                                 <ClockIcon />
                             </div>
-                            <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Logout Time</h3>
+                            <h3 className="text-xs font-medium text-gray-500 dark:text-gray-400">Logout Time</h3>
                         </div>
-                        <div className="text-3xl font-bold text-gray-900 dark:text-white font-mono">
+                        <div className="break-words font-mono text-lg font-semibold tracking-tight text-gray-900 dark:text-white sm:text-xl">
                             {formatTime(logoutTime)}
                         </div>
                     </div>
 
-                    <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 p-6 shadow-sm">
-                        <div className="flex items-center gap-3 mb-2">
-                            <div className={`p-2 rounded-lg ${isTodayLate ? 'bg-red-100 dark:bg-red-900/30' : 'bg-blue-100 dark:bg-blue-900/30'}`}>
+                    <div className="min-w-0 bg-white p-4 dark:bg-gray-900/50 sm:p-5">
+                        <div className="mb-3 flex items-center gap-2">
+                            <div className="rounded-full bg-gray-100 p-2 dark:bg-gray-800">
                                 <ClockIcon />
                             </div>
-                            <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Today's Status</h3>
+                            <h3 className="text-xs font-medium text-gray-500 dark:text-gray-400">Today's Status</h3>
                         </div>
                         {todayAttendance && todayAttendance.check_in_time ? (
                             <div className="space-y-2">
@@ -1524,7 +1523,7 @@ export default function TimeIn() {
                                 {isTodayLate ? (
                                     <div className="mt-2 p-2 bg-red-50 dark:bg-red-900/20 rounded-lg">
                                         <p className="text-xs font-semibold text-red-600 dark:text-red-400">
-                                            {todayMinutesLate > 0 ? `⚠️ Late by ${todayMinutesLate} min` : '⚠️ Late'}
+                                            {todayMinutesLate > 0 ? `Late by ${todayMinutesLate} min` : 'Late'}
                                         </p>
                                         {todayMinutesLate > 0 && todayMinutesLate <= 5 && (
                                             <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-1">
@@ -1535,7 +1534,7 @@ export default function TimeIn() {
                                 ) : todayAttendance.check_in_time ? (
                                     <div className="mt-2 p-2 bg-green-50 dark:bg-green-900/20 rounded-lg">
                                         <p className="text-xs font-semibold text-green-600 dark:text-green-400">
-                                            ✓ On Time
+                                            On Time
                                         </p>
                                     </div>
                                 ) : null}
@@ -1545,23 +1544,24 @@ export default function TimeIn() {
                         )}
                     </div>
                 </div>
+                </div>
 
                 {/* Monthly Stats removed per request */}
 
                 {/* SEAMLESS OVERTIME: Automatic OT Indicator */}
                 {todayAttendance?.has_approved_overtime && (
-                    <div className="mb-8 rounded-2xl border-2 border-blue-500 dark:border-blue-600 bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-900/40 dark:to-cyan-900/40 shadow-lg overflow-hidden">
-                        <div className="p-6">
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-4">
+                    <div className="mb-8 overflow-hidden rounded-2xl border-2 border-blue-500 bg-gradient-to-r from-blue-50 to-cyan-50 shadow-sm dark:border-blue-600 dark:from-blue-900/40 dark:to-cyan-900/40">
+                        <div className="p-4 sm:p-6">
+                            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                                <div className="flex min-w-0 items-start gap-4">
                                     <div className="p-3 rounded-xl bg-blue-500 dark:bg-blue-600">
                                         <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                                         </svg>
                                     </div>
-                                    <div>
+                                    <div className="min-w-0">
                                         <h3 className="text-lg font-bold text-blue-900 dark:text-blue-100">
-                                            {isShiftActuallyExtended ? '🎯 Overtime Approved & Active' : '🎯 Overtime Approved'}
+                                            {isShiftActuallyExtended ? 'Overtime Approved & Active' : 'Overtime Approved'}
                                         </h3>
                                         <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
                                             {isShiftActuallyExtended
@@ -1579,14 +1579,14 @@ export default function TimeIn() {
                                 </div>
                             </div>
                             
-                            <div className="mt-6 grid grid-cols-3 gap-4">
-                                <div className="bg-white dark:bg-gray-800/50 rounded-lg p-4">
+                            <div className="mt-5 grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 xl:mt-6 xl:grid-cols-3 xl:gap-4">
+                                <div className="min-w-0 overflow-hidden rounded-lg bg-white p-4 dark:bg-gray-800/50">
                                     <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">Regular Shift Ends</p>
                                     <p className="text-xl font-bold text-gray-900 dark:text-white">
                                         {formatTimeFromString(shopHours?.close)}
                                     </p>
                                 </div>
-                                <div className="bg-white dark:bg-gray-800/50 rounded-lg p-4">
+                                <div className="min-w-0 overflow-hidden rounded-lg bg-white p-4 dark:bg-gray-800/50">
                                     <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">
                                         {isShiftActuallyExtended ? 'Extended Until' : 'Approved Until'}
                                     </p>
@@ -1594,7 +1594,7 @@ export default function TimeIn() {
                                         {formatTimeFromString(todayAttendance.adjusted_checkout_time)}
                                     </p>
                                 </div>
-                                <div className="bg-white dark:bg-gray-800/50 rounded-lg p-4">
+                                <div className="min-w-0 overflow-hidden rounded-lg bg-white p-4 dark:bg-gray-800/50">
                                     <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">Overtime Hours</p>
                                     <p className="text-xl font-bold text-green-600 dark:text-green-400">
                                         {todayAttendance.overtime_hours} hrs
@@ -1602,9 +1602,9 @@ export default function TimeIn() {
                                 </div>
                             </div>
                             
-                            <div className="mt-4 p-3 bg-blue-500/10 dark:bg-blue-500/20 rounded-lg border border-blue-200 dark:border-blue-700">
+                            <div className="mt-4 rounded-lg border border-blue-200 bg-blue-500/10 p-3 dark:border-blue-700 dark:bg-blue-500/20">
                                 <p className="text-sm text-blue-800 dark:text-blue-200">
-                                    <strong>📋 Reason:</strong> {todayAttendance.overtime_reason}
+                                    <strong>Reason:</strong> {todayAttendance.overtime_reason}
                                 </p>
                             </div>
                             
@@ -1627,31 +1627,31 @@ export default function TimeIn() {
                     </div>
                 )}
 
-                {/* Attendance Records Table */}
-                <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 shadow-sm overflow-hidden">
-                    <div className="p-8 border-b border-gray-200 dark:border-gray-800">
-                        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                            <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-                                <div className="p-2 rounded-lg bg-orange-100 dark:bg-orange-900/30">
+                {/* Attendance Records */}
+                <div className="min-w-0 overflow-hidden rounded-3xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900/50">
+                    <div className="border-b border-gray-200 p-4 dark:border-gray-800 sm:p-6">
+                        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                            <h2 className="flex items-center gap-3 text-xl font-semibold tracking-tight text-gray-900 dark:text-white sm:text-2xl">
+                                <div className="rounded-full bg-gray-100 p-2.5 dark:bg-gray-800">
                                     <CalendarIcon />
                                 </div>
                                 Attendance History
                             </h2>
 
-                            <div className="flex w-full flex-col gap-3 sm:flex-row lg:w-auto">
+                            <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 xl:flex xl:w-auto">
                                 <input
                                     type="text"
                                     value={attendanceSearchQuery}
                                     onChange={(e) => setAttendanceSearchQuery(e.target.value)}
                                     placeholder="Search date, time, hours, status..."
-                                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 transition-colors focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:border-gray-700 dark:bg-gray-800 dark:text-white sm:w-72"
+                                    className="min-h-12 w-full rounded-full border border-gray-300 bg-white px-4 py-2 text-sm text-gray-900 transition-colors focus:border-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900/20 dark:border-gray-700 dark:bg-gray-800 dark:text-white xl:w-72"
                                 />
                                 <select
                                     value={attendanceStatusFilter}
                                     onChange={(e) => setAttendanceStatusFilter(e.target.value)}
                                     aria-label="Filter attendance history by status"
                                     title="Filter attendance history by status"
-                                    className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 transition-colors focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                                    className="min-h-12 w-full rounded-full border border-gray-300 bg-white px-4 py-2 text-sm text-gray-900 transition-colors focus:border-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900/20 dark:border-gray-700 dark:bg-gray-800 dark:text-white xl:w-auto"
                                 >
                                     {attendanceStatusOptions.map((statusOption) => (
                                         <option key={statusOption} value={statusOption}>
@@ -1662,22 +1662,69 @@ export default function TimeIn() {
                             </div>
                         </div>
                     </div>
-                    <div className="overflow-x-auto">
-                        <table className="w-full">
+                    <div data-testid="attendance-mobile-history" className="divide-y divide-gray-200 xl:hidden dark:divide-gray-800">
+                        {filteredAttendanceRecords.length === 0 ? (
+                            <div className="px-5 py-10 text-center">
+                                <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800">
+                                    <CalendarIcon />
+                                </div>
+                                <p className="font-medium text-gray-900 dark:text-white">
+                                    {attendanceRecords.length === 0 ? 'No attendance records yet' : 'No matching attendance records'}
+                                </p>
+                                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                                    {attendanceRecords.length === 0
+                                        ? 'Clock in to create your first record'
+                                        : 'Try a different keyword or status filter'}
+                                </p>
+                            </div>
+                        ) : (
+                            paginatedAttendanceRecords.map((record, index) => (
+                                <article key={`${record.date}-mobile-${attendanceStartIndex + index}`} className="p-4 sm:p-5">
+                                    <div className="mb-4 flex items-start justify-between gap-3">
+                                        <div>
+                                            <p className="font-semibold text-gray-900 dark:text-white">{record.date}</p>
+                                            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Expected in {record.expectedCheckIn || '--:--'}</p>
+                                        </div>
+                                        <span className={`inline-flex shrink-0 items-center rounded-full px-3 py-1 text-xs font-semibold ${getAttendanceStatusBadgeClass(record.status)}`}>
+                                            {record.status}
+                                        </span>
+                                    </div>
+                                    <dl className="grid grid-cols-3 gap-2 rounded-2xl bg-gray-50 p-3 dark:bg-gray-800/60">
+                                        <div>
+                                            <dt className="text-[11px] font-medium text-gray-500 dark:text-gray-400">Clock in</dt>
+                                            <dd className={`mt-1 font-mono text-sm font-semibold ${record.isLate ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-white'}`}>
+                                                {record.clockIn}
+                                            </dd>
+                                        </div>
+                                        <div>
+                                            <dt className="text-[11px] font-medium text-gray-500 dark:text-gray-400">Clock out</dt>
+                                            <dd className="mt-1 font-mono text-sm font-semibold text-gray-900 dark:text-white">{record.clockOut}</dd>
+                                        </div>
+                                        <div>
+                                            <dt className="text-[11px] font-medium text-gray-500 dark:text-gray-400">Total</dt>
+                                            <dd className="mt-1 font-mono text-sm font-semibold text-gray-900 dark:text-white">{record.totalHours}</dd>
+                                        </div>
+                                    </dl>
+                                </article>
+                            ))
+                        )}
+                    </div>
+                    <div data-testid="attendance-history-table" className="hidden overflow-x-auto overscroll-x-contain xl:block">
+                        <table className="min-w-[720px] w-full">
                             <thead className="bg-gray-50 dark:bg-gray-800/50">
                                 <tr>
-                                    <th className="px-8 py-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">Date</th>
-                                    <th className="px-8 py-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">Clock In</th>
-                                    <th className="px-8 py-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">Expected In</th>
-                                    <th className="px-8 py-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">Clock Out</th>
-                                    <th className="px-8 py-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">Total Hours</th>
-                                    <th className="px-8 py-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">Status</th>
+                                    <th className="px-4 py-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300 sm:px-8">Date</th>
+                                    <th className="px-4 py-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300 sm:px-8">Clock In</th>
+                                    <th className="px-4 py-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300 sm:px-8">Expected In</th>
+                                    <th className="px-4 py-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300 sm:px-8">Clock Out</th>
+                                    <th className="px-4 py-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300 sm:px-8">Total Hours</th>
+                                    <th className="px-4 py-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300 sm:px-8">Status</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {filteredAttendanceRecords.length === 0 ? (
                                     <tr className="border-t border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-colors">
-                                        <td colSpan={6} className="px-8 py-12 text-center">
+                                        <td colSpan={6} className="px-4 py-12 text-center sm:px-8">
                                             <div className="flex flex-col items-center gap-3">
                                                 <div className="p-4 rounded-full bg-gray-100 dark:bg-gray-800">
                                                     <CalendarIcon />
@@ -1696,8 +1743,8 @@ export default function TimeIn() {
                                 ) : (
                                     paginatedAttendanceRecords.map((record, index) => (
                                         <tr key={`${record.date}-${attendanceStartIndex + index}`} className="border-t border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-colors">
-                                            <td className="px-8 py-4 text-gray-900 dark:text-white font-medium">{record.date}</td>
-                                            <td className="px-8 py-4">
+                                            <td className="px-4 py-4 text-gray-900 dark:text-white font-medium sm:px-8">{record.date}</td>
+                                            <td className="px-4 py-4 sm:px-8">
                                                 <div className="flex items-center gap-2">
                                                     <span className={`font-mono ${record.isLate ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-white'}`}>
                                                         {record.clockIn}
@@ -1709,10 +1756,10 @@ export default function TimeIn() {
                                                     )}
                                                 </div>
                                             </td>
-                                            <td className="px-8 py-4 text-sm text-gray-500 dark:text-gray-400 font-mono">
+                                            <td className="px-4 py-4 text-sm text-gray-500 dark:text-gray-400 font-mono sm:px-8">
                                                 {record.expectedCheckIn || '--:--'}
                                             </td>
-                                            <td className="px-8 py-4 text-gray-900 dark:text-white font-mono">
+                                            <td className="px-4 py-4 text-gray-900 dark:text-white font-mono sm:px-8">
                                                 <div className="flex items-center gap-2">
                                                     {record.clockOut}
                                                     {record.autoClockedOut && (
@@ -1722,8 +1769,8 @@ export default function TimeIn() {
                                                     )}
                                                 </div>
                                             </td>
-                                            <td className="px-8 py-4 text-gray-900 dark:text-white font-mono">{record.totalHours}</td>
-                                            <td className="px-8 py-4">
+                                            <td className="px-4 py-4 text-gray-900 dark:text-white font-mono sm:px-8">{record.totalHours}</td>
+                                            <td className="px-4 py-4 sm:px-8">
                                                 <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${getAttendanceStatusBadgeClass(record.status)}`}>
                                                     {record.status}
                                                 </span>
@@ -1736,16 +1783,16 @@ export default function TimeIn() {
                     </div>
 
                     {filteredAttendanceRecords.length > 0 && (
-                        <div className="flex flex-col gap-4 border-t border-gray-200 dark:border-gray-800 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-                            <p className="text-sm text-gray-600 dark:text-gray-400">
+                        <div className="flex flex-col gap-4 border-t border-gray-200 px-4 py-4 dark:border-gray-800 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+                            <p className="min-w-0 break-words text-sm text-gray-600 dark:text-gray-400">
                                 Showing {attendanceStartIndex + 1} to {Math.min(attendanceEndIndex, filteredAttendanceRecords.length)} of {filteredAttendanceRecords.length} records
                             </p>
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
                                 <button
                                     type="button"
                                     onClick={() => setAttendanceCurrentPage((prev) => Math.max(prev - 1, 1))}
                                     disabled={attendanceCurrentPage === 1}
-                                    className="rounded-lg border border-gray-300 dark:border-gray-700 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-200 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
+                                    className="min-h-11 rounded-full border border-gray-300 px-4 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
                                 >
                                     Previous
                                 </button>
@@ -1755,9 +1802,9 @@ export default function TimeIn() {
                                         key={page}
                                         type="button"
                                         onClick={() => setAttendanceCurrentPage(page)}
-                                        className={`rounded-lg px-3 py-1.5 text-sm font-semibold transition-colors ${
+                                        className={`min-h-11 min-w-11 rounded-full px-3 py-1.5 text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 ${
                                             attendanceCurrentPage === page
-                                                ? 'bg-blue-600 text-white shadow-sm'
+                                                ? 'bg-[#111111] text-white'
                                                 : 'border border-gray-300 text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800'
                                         }`}
                                     >
@@ -1769,7 +1816,7 @@ export default function TimeIn() {
                                     type="button"
                                     onClick={() => setAttendanceCurrentPage((prev) => Math.min(prev + 1, attendanceTotalPages))}
                                     disabled={attendanceCurrentPage === attendanceTotalPages}
-                                    className="rounded-lg border border-gray-300 dark:border-gray-700 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-200 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
+                                    className="min-h-11 rounded-full border border-gray-300 px-4 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
                                 >
                                     Next
                                 </button>
@@ -1782,12 +1829,12 @@ export default function TimeIn() {
 
                 {/* Leave Request Modal */}
                 {showLeaveModal && (
-                    <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-                        <div className="bg-white dark:bg-gray-900 rounded-3xl shadow-2xl max-w-4xl w-full p-8 md:p-10 border border-gray-200 dark:border-gray-800">
-                            <div className="flex items-start justify-between mb-6">
+                    <div className="fixed inset-0 z-[999999] flex items-start justify-center overflow-y-auto bg-black/60 p-3 backdrop-blur-sm sm:items-center sm:p-4">
+                        <div className="my-3 max-h-[calc(100dvh-1.5rem)] w-full max-w-4xl overflow-y-auto rounded-3xl border border-gray-200 bg-white p-4 shadow-2xl dark:border-gray-800 dark:bg-gray-900 sm:my-4 sm:max-h-[calc(100dvh-2rem)] sm:p-6 md:p-8 xl:p-10">
+                            <div className="mb-6 flex items-start justify-between gap-4">
                                 <div>
                                 <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-                                    <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/30">
+                                    <div className="p-2 rounded-lg bg-gray-100 text-gray-900 dark:bg-blue-900/30">
                                         <LeaveIcon />
                                     </div>
                                     Request Leave
@@ -1800,7 +1847,7 @@ export default function TimeIn() {
                                     onClick={() => setShowLeaveModal(false)}
                                     title="Close leave request modal"
                                     aria-label="Close leave request modal"
-                                    className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                                    className="min-h-11 min-w-11 shrink-0 rounded-lg p-2 transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:hover:bg-gray-800"
                                 >
                                     <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -1808,13 +1855,13 @@ export default function TimeIn() {
                                 </button>
                             </div>
 
-                            <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-                                <div className="lg:col-span-3 rounded-2xl border border-gray-200 dark:border-gray-700 p-4 md:p-5">
+                            <div className="grid grid-cols-1 gap-4 xl:grid-cols-5 xl:gap-6">
+                                <div className="rounded-2xl border border-gray-200 p-4 dark:border-gray-700 md:p-5 xl:col-span-3">
                                     <div className="flex items-center justify-between mb-4">
                                         <button
                                             type="button"
                                             onClick={() => setLeaveCalendarMonth(new Date(leaveCalendarYear, leaveCalendarMonthIndex - 1, 1))}
-                                            className="h-9 w-9 rounded-lg border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
+                                            className="h-11 w-11 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
                                             aria-label="Previous month"
                                             title="Previous month"
                                         >
@@ -1824,7 +1871,7 @@ export default function TimeIn() {
                                         <button
                                             type="button"
                                             onClick={() => setLeaveCalendarMonth(new Date(leaveCalendarYear, leaveCalendarMonthIndex + 1, 1))}
-                                            className="h-9 w-9 rounded-lg border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
+                                            className="h-11 w-11 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
                                             aria-label="Next month"
                                             title="Next month"
                                         >
@@ -1832,7 +1879,7 @@ export default function TimeIn() {
                                         </button>
                                     </div>
 
-                                    <div className="grid grid-cols-7 gap-2 mb-2">
+                                    <div className="mb-2 grid grid-cols-7 gap-1 sm:gap-2">
                                         {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((dayName) => (
                                             <div key={dayName} className="text-center text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 py-1">
                                                 {dayName}
@@ -1840,7 +1887,7 @@ export default function TimeIn() {
                                         ))}
                                     </div>
 
-                                    <div className="grid grid-cols-7 gap-2">
+                                    <div className="grid grid-cols-7 gap-1 sm:gap-2">
                                         {leaveCalendarCells.map((day, index) => {
                                             if (day === null) {
                                                 return <div key={`empty-${index}`} className="h-11 rounded-lg" />;
@@ -1892,14 +1939,14 @@ export default function TimeIn() {
                                         <button
                                             type="button"
                                             onClick={() => setLeaveEndDate('')}
-                                            className="ml-auto text-blue-600 dark:text-blue-400 font-semibold hover:underline"
+                                            className="min-h-11 ml-auto text-left font-semibold text-blue-600 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:text-blue-400"
                                         >
                                             Clear End Date
                                         </button>
                                     </div>
                                 </div>
 
-                                <div className="lg:col-span-2 space-y-4">
+                                <div className="space-y-4 xl:col-span-2">
                                     <div className="rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50/70 dark:bg-blue-900/20 p-4">
                                         <p className="text-sm font-semibold text-blue-700 dark:text-blue-300">Request Summary</p>
                                         <p className="mt-1 text-sm text-blue-700/90 dark:text-blue-200">
@@ -1932,15 +1979,15 @@ export default function TimeIn() {
                                             onChange={(e) => setLeaveReason(e.target.value)}
                                             placeholder="Briefly explain your leave request..."
                                             rows={8}
-                                            className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all resize-none"
+                                            className="min-h-11 w-full resize-none rounded-xl border border-gray-300 bg-white px-4 py-3 text-gray-900 transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
                                         />
                                     </div>
 
-                                    <div className="flex gap-3 pt-1">
+                                    <div className="flex flex-col gap-3 pt-1 sm:flex-row">
                                         <button
                                             onClick={() => setShowLeaveModal(false)}
                                             disabled={isLoading}
-                                            className="flex-1 px-5 py-2.5 rounded-xl text-sm font-semibold text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                                            className="min-h-11 flex-1 rounded-xl bg-gray-100 px-5 py-2.5 text-sm font-semibold text-gray-700 transition-all duration-300 hover:bg-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
                                         >
                                             Cancel
                                         </button>
@@ -1953,7 +2000,7 @@ export default function TimeIn() {
                                                 !leavePreviewEndDate ||
                                                 leaveRangeIsInvalid
                                             }
-                                            className="flex-1 px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-all duration-300 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
+                                            className="min-h-11 flex-1 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg transition-all duration-300 hover:bg-blue-700 hover:shadow-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50"
                                         >
                                             {isLoading ? 'Submitting...' : 'Submit Request'}
                                         </button>
@@ -1966,8 +2013,8 @@ export default function TimeIn() {
 
                 {/* Overtime Modal */}
                 {showOvertimeModal && (
-                    <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-                        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-md w-full p-8">
+                    <div className="fixed inset-0 z-[999999] flex items-start justify-center overflow-y-auto bg-black/60 p-3 backdrop-blur-sm sm:items-center sm:p-4">
+                        <div className="my-3 max-h-[calc(100dvh-1.5rem)] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-4 shadow-2xl dark:bg-gray-900 sm:my-4 sm:max-h-[calc(100dvh-2rem)] sm:p-6 md:p-8">
                             <div className="mb-6">
                                 <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Request Overtime</h2>
                                 <p className="text-gray-600 dark:text-gray-400 mt-1 text-sm">Submit your overtime request for approval</p>
@@ -1978,12 +2025,12 @@ export default function TimeIn() {
                                     <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
                                         Hours of Overtime <span className="text-red-500">*</span>
                                     </label>
-                                    <div className="grid grid-cols-4 gap-3">
+                                    <div className="grid grid-cols-2 gap-3 min-[420px]:grid-cols-4">
                                         {[1, 2, 3, 4].map((hours) => (
                                             <button
                                                 key={hours}
                                                 onClick={() => setOvertimeHours(hours.toString())}
-                                                className={`py-3 px-2 rounded-lg font-semibold transition-all duration-200 ${
+                                                className={`min-h-11 rounded-lg px-2 py-3 font-semibold transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
                                                     overtimeHours === hours.toString()
                                                         ? 'bg-blue-600 text-white shadow-lg'
                                                         : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
@@ -2007,7 +2054,7 @@ export default function TimeIn() {
                                                 setOvertimeCustomReason('');
                                             }
                                         }}
-                                        className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                                        className="min-h-11 w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-gray-900 transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
                                     >
                                         <option value="">Select a reason</option>
                                         <option value="Work backlog">Work backlog</option>
@@ -2028,23 +2075,23 @@ export default function TimeIn() {
                                             onChange={(e) => setOvertimeCustomReason(e.target.value)}
                                             placeholder="Enter your reason for overtime..."
                                             rows={3}
-                                            className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all resize-none"
+                                            className="min-h-11 w-full resize-none rounded-xl border border-gray-300 bg-white px-4 py-3 text-gray-900 transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
                                         />
                                     </div>
                                 )}
 
-                                <div className="flex gap-3 pt-4">
+                                <div className="flex flex-col gap-3 pt-4 sm:flex-row">
                                     <button
                                         onClick={() => setShowOvertimeModal(false)}
                                         disabled={isLoading}
-                                        className="flex-1 px-6 py-3 rounded-xl font-semibold text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        className="min-h-11 flex-1 rounded-xl bg-gray-100 px-6 py-3 font-semibold text-gray-700 transition-all duration-300 hover:bg-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
                                     >
                                         Cancel
                                     </button>
                                     <button
                                         onClick={handleOvertimeRequest}
                                         disabled={isLoading || !overtimeHours || !overtimeReason || (overtimeReason === 'Others' && !overtimeCustomReason)}
-                                        className="flex-1 px-6 py-3 rounded-xl font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-all duration-300 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none flex items-center justify-center gap-2"
+                                        className="min-h-11 flex-1 rounded-xl bg-blue-600 px-6 py-3 font-semibold text-white shadow-lg transition-all duration-300 hover:bg-blue-700 hover:shadow-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 flex items-center justify-center gap-2"
                                     >
                                         {isLoading ? (
                                             <>

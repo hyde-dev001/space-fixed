@@ -11,7 +11,6 @@ import {
     canAccessProducts,
     canAccessServices,
     canAccessStaffManagement,
-    canAccessPriceApprovals,
 } from '@/utils/shopOwnerAccess';
 
 /**
@@ -38,7 +37,9 @@ export const getShopOwnerNavigation = (access: ShopOwnerAccess): NavigationItem[
             visible: canAccessProducts(access),
             subItems: [
                 { label: 'All Products', path: '/shop-owner/products' },
-                { label: 'Add Product', path: '/shop-owner/products/add' },
+                ...(access.registrationType === 'individual'
+                    ? [{ label: 'Add Product', path: '/shop-owner/products/add' }]
+                    : []),
                 { label: 'Categories', path: '/shop-owner/products/categories' },
             ],
         },
@@ -81,22 +82,12 @@ export const getShopOwnerNavigation = (access: ShopOwnerAccess): NavigationItem[
             visible: true,
         },
 
-        // Price Approvals - Business only
+        // All owner approval decisions use the Approval Center.
         {
-            label: 'Price Approvals',
-            path: '/shop-owner/price-approvals',
-            icon: '💰',
-            visible: canAccessPriceApprovals(access),
-            badge: 'Business Only',
-        },
-
-        // Expense Approvals - Business only
-        {
-            label: 'Expense Approvals',
-            path: '/shop-owner/expense-approvals',
-            icon: '🧾',
-            visible: canAccessPriceApprovals(access),
-            badge: 'Business Only',
+            label: 'Approval Center',
+            path: '/shop-owner/action-center',
+            icon: '✓',
+            visible: true,
         },
 
         // Refunds - Always visible
@@ -135,7 +126,7 @@ export const getShopOwnerNavigation = (access: ShopOwnerAccess): NavigationItem[
             path: '/shop-owner/upgrade',
             icon: '⬆️',
             visible: access.registrationType === 'individual',
-            className: 'bg-blue-500 text-white rounded-lg mt-2 hover:bg-blue-600',
+            className: 'bg-black text-white rounded-lg mt-2 hover:bg-gray-900',
         },
     ];
 
@@ -153,12 +144,12 @@ export const getQuickActions = (access: ShopOwnerAccess) => {
     const actions = [];
 
     // Add Product action (Retail or Both)
-    if (canAccessProducts(access)) {
+    if (canAccessProducts(access) && access.registrationType === 'individual') {
         actions.push({
             label: 'Add Product',
             icon: '➕',
             path: '/shop-owner/products/add',
-            color: 'bg-blue-500',
+            color: 'bg-black',
         });
     }
 
@@ -177,7 +168,7 @@ export const getQuickActions = (access: ShopOwnerAccess) => {
         label: 'View Orders',
         icon: '📋',
         path: '/shop-owner/orders',
-        color: 'bg-purple-500',
+        color: 'bg-black',
     });
 
     // Customer Messages (Always)

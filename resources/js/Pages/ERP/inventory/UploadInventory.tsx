@@ -106,7 +106,7 @@ const MetricCard: React.FC<MetricCardProps> = ({ title, value, icon: Icon, color
       case 'success': return 'from-green-500 to-emerald-600';
       case 'error': return 'from-red-500 to-rose-600';
       case 'warning': return 'from-yellow-500 to-orange-600';
-      case 'info': return 'from-blue-500 to-indigo-600';
+      case 'info': return 'from-gray-700 to-gray-900';
       default: return 'from-gray-500 to-gray-600';
     }
   };
@@ -205,6 +205,9 @@ const canUseCategoryForBusinessType = (category: StockCategory, businessType: Bu
   return businessType === 'repair' || businessType === 'both';
 };
 
+const showValidationWarning = (title: string, text: string) =>
+  Swal.fire({ icon: 'warning', title, text, confirmButtonColor: '#000000' });
+
 const mapApiItemToStock = (item: ApiInventoryItem): StockItem | null => {
   const normalizedCategory: StockCategory | null = item.category === 'shoes'
     ? 'shoes'
@@ -295,6 +298,7 @@ const mapApiItemToStock = (item: ApiInventoryItem): StockItem | null => {
 
 export default function UploadInventory() {
   const { initialData, auth } = usePage().props as any;
+  const ownerMode = auth?.erpActor?.ownerMode === true;
   const allowedInventoryImageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif'];
   const allowedInventoryImageMimeTypes = [
     'image/jpeg',
@@ -429,6 +433,8 @@ export default function UploadInventory() {
   });
 
   const fetchStocks = async (archived = showArchived) => {
+    if (ownerMode) return;
+
     setLoadingStocks(true);
     try {
       const res = await inventoryItemAPI.getAll({ per_page: 50, archived });
@@ -636,7 +642,7 @@ export default function UploadInventory() {
     setCategoryFilter('all');
     setTablePage(1);
     void fetchStocks(showArchived);
-  }, [showArchived]);
+  }, [showArchived, ownerMode]);
 
   const resetForm = () => {
     setFormData({
@@ -660,6 +666,8 @@ export default function UploadInventory() {
   };
 
   const handleOpenModal = (stock?: StockItem) => {
+    if (ownerMode) return;
+
     if (stock) {
       setEditingStock(stock);
       setFormData({
@@ -687,12 +695,14 @@ export default function UploadInventory() {
   };
 
   const handleArchive = async (id: number, productName: string) => {
+    if (ownerMode) return;
+
     const confirmation = await Swal.fire({
       title: 'Archive Product?',
       html: `You are about to archive <strong>${productName}</strong>.<br/>It will be removed from the active list.`,
       icon: 'warning',
       showCancelButton: true,
-      confirmButtonColor: '#7c3aed',
+      confirmButtonColor: '#000000',
       cancelButtonColor: '#6b7280',
       confirmButtonText: 'Yes, archive it',
       cancelButtonText: 'Cancel',
@@ -721,12 +731,14 @@ export default function UploadInventory() {
   };
 
   const handleRestore = async (id: number, productName: string) => {
+    if (ownerMode) return;
+
     const confirmation = await Swal.fire({
       title: 'Restore Product?',
       html: `You are about to restore <strong>${productName}</strong>.<br/>It will return to the active list.`,
       icon: 'question',
       showCancelButton: true,
-      confirmButtonColor: '#2563eb',
+      confirmButtonColor: '#000000',
       cancelButtonColor: '#6b7280',
       confirmButtonText: 'Yes, restore it',
       cancelButtonText: 'Cancel',
@@ -772,23 +784,23 @@ export default function UploadInventory() {
     if (!editingStock && isShoesMode) {
       const allSizes = colorVariants.flatMap((v) => v.sizes);
       if (allSizes.length === 0) {
-        alert('Please add at least one size before saving stock.');
+        await showValidationWarning('Size required', 'Please add at least one size before saving stock.');
         return;
       }
 
       if (allSizes.some((s) => Number(s.quantity) <= 0)) {
-        alert('Each size must have stock greater than 0.');
+        await showValidationWarning('Invalid stock quantity', 'Each size must have stock greater than 0.');
         return;
       }
 
       if (quantityAsNumber <= 0) {
-        alert('Total stock must be greater than 0.');
+        await showValidationWarning('Invalid stock quantity', 'Total stock must be greater than 0.');
         return;
       }
     }
 
     if (!isShoesMode && (Number.isNaN(quantityAsNumber) || quantityAsNumber <= 0 || !Number.isInteger(quantityAsNumber))) {
-      alert('Quantity must be a whole number greater than 0.');
+      await showValidationWarning('Invalid quantity', 'Quantity must be a whole number greater than 0.');
       return;
     }
 
@@ -802,7 +814,7 @@ export default function UploadInventory() {
       if (isShoesMode) {
         const totalVariantImages = colorVariants.reduce((sum, variant) => sum + variant.images.length, 0);
         if (colorVariants.length === 0 || totalVariantImages === 0) {
-          alert('Please add at least one color variant and upload at least one image.');
+          await showValidationWarning('Images required', 'Please add at least one color variant and upload at least one image.');
           return;
         }
       }
@@ -842,7 +854,7 @@ export default function UploadInventory() {
         text: 'Your changes will be saved and synced to inventory.',
         icon: 'question',
         showCancelButton: true,
-        confirmButtonColor: '#2563eb',
+        confirmButtonColor: '#000000',
         cancelButtonColor: '#6b7280',
         confirmButtonText: 'Yes, update',
         cancelButtonText: 'Cancel',
@@ -957,37 +969,39 @@ export default function UploadInventory() {
                   : 'Manage stock uploads for shoes and repair materials'}
               </p>
             </div>
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowArchived((prev) => !prev);
-                }}
-                className={`inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${
-                  showArchived
-                    ? 'border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100 dark:border-purple-700 dark:bg-purple-900/20 dark:text-purple-300'
-                    : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800'
-                }`}
-              >
-                {showArchived ? (
-                  <>
-                    <ArchiveRestoreIcon className="size-5" />
-                    Show Active
-                  </>
-                ) : (
-                  <>
-                    <ArchiveBoxIcon className="size-5" />
-                    Show Archived
-                  </>
-                )}
-              </button>
-              <button
-                onClick={() => handleOpenModal()}
-                className="px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-              >
-                + Add Stock Entry
-              </button>
-            </div>
+            {!ownerMode && (
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowArchived((prev) => !prev);
+                  }}
+                  className={`inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${
+                    showArchived
+                      ? 'border-gray-900 bg-gray-900 text-white hover:bg-gray-800 dark:border-gray-500 dark:bg-gray-700 dark:text-white dark:hover:bg-gray-600'
+                      : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800'
+                  }`}
+                >
+                  {showArchived ? (
+                    <>
+                      <ArchiveRestoreIcon className="size-5" />
+                      Show Active
+                    </>
+                  ) : (
+                    <>
+                      <ArchiveBoxIcon className="size-5" />
+                      Show Archived
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={() => handleOpenModal()}
+                  className="px-5 py-2 bg-black text-white rounded-lg hover:bg-gray-800 transition-colors font-medium"
+                >
+                  + Add Stock Entry
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
@@ -1011,7 +1025,7 @@ export default function UploadInventory() {
                     setCategoryFilter(event.target.value as 'all' | StockCategory);
                     setTablePage(1);
                   }}
-                  className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
+                  className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-gray-900 dark:focus:border-gray-300"
                 >
                   <option value="all">All Categories</option>
                   {canUploadRepair && <option value="repair_materials">Repair Materials</option>}
@@ -1091,11 +1105,11 @@ export default function UploadInventory() {
                         </td>
                         <td className="px-6 py-4 text-gray-900 dark:text-white whitespace-nowrap">{formatUploadDate(stock.createdAt)}</td>
                         <td className="px-6 py-4 text-right flex items-center justify-end gap-2">
-                          {!showArchived ? (
+                          {!ownerMode && (!showArchived ? (
                             <>
                               <button
                                 onClick={() => handleOpenModal(stock)}
-                                className="p-2 text-blue-600 hover:text-blue-700 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                                className="p-2 text-gray-900 hover:text-black dark:text-gray-200 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
                                 title="Edit stock"
                               >
                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1113,12 +1127,12 @@ export default function UploadInventory() {
                           ) : (
                             <button
                               onClick={() => handleRestore(stock.id, stock.name)}
-                              className="p-2 text-blue-600 hover:text-blue-700 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                              className="p-2 text-gray-900 hover:text-black dark:text-gray-200 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
                               title="Restore stock"
                             >
                               <ArchiveRestoreIcon className="w-5 h-5" />
                             </button>
-                          )}
+                          ))}
                         </td>
                       </tr>
                     );
@@ -1197,7 +1211,7 @@ export default function UploadInventory() {
                         }
                       }}
                       className={`relative inline-flex h-6 w-12 items-center rounded-full transition-colors ${
-                        isShoesMode ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-700'
+                        isShoesMode ? 'bg-gray-900 dark:bg-gray-500' : 'bg-gray-300 dark:bg-gray-700'
                       }`}
                       aria-label="Toggle upload type"
                     >
@@ -1236,7 +1250,7 @@ export default function UploadInventory() {
                                   onClick={() => setEditSizeSystem(system)}
                                   className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors ${
                                     editSizeSystem === system
-                                      ? 'bg-blue-600 text-white'
+                                      ? 'bg-black text-white dark:bg-white dark:text-gray-900'
                                       : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'
                                   }`}
                                 >
@@ -1266,7 +1280,7 @@ export default function UploadInventory() {
                                     <span className="text-xs font-medium bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200 px-2 py-0.5 rounded-full">
                                       {cv.sizes.length} sizes
                                     </span>
-                                    <span className="ml-auto text-xs font-semibold bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 px-2.5 py-0.5 rounded-full">
+                                    <span className="ml-auto text-xs font-semibold bg-gray-100 text-gray-900 dark:bg-gray-700 dark:text-gray-100 px-2.5 py-0.5 rounded-full">
                                       {cv.sizes.reduce((sum, s) => sum + s.quantity, 0)} units
                                     </span>
                                   </div>
@@ -1275,7 +1289,7 @@ export default function UploadInventory() {
                                     <div className="flex items-center justify-between mb-2">
                                       <span className="text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-400">Images ({cv.images.length})</span>
                                       <label
-                                        className="cursor-pointer inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-300 bg-white text-blue-600 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 transition-colors dark:border-gray-600 dark:bg-gray-900 dark:text-blue-300 dark:hover:border-blue-700"
+                                        className="cursor-pointer inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-900 hover:border-gray-500 hover:bg-gray-100 hover:text-black transition-colors dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 dark:hover:border-gray-400"
                                         title={colorImageUploading[cv.id] ? 'Uploading images...' : 'Add images'}
                                         aria-label="Add images"
                                       >
@@ -1314,7 +1328,7 @@ export default function UploadInventory() {
                                               className="w-14 h-14 object-cover rounded-lg border border-gray-200 dark:border-gray-700"
                                             />
                                             {img.is_thumbnail && (
-                                              <span className="absolute bottom-0 left-0 right-0 bg-blue-600/80 text-white text-[9px] text-center rounded-b-lg leading-tight py-0.5">
+                                              <span className="absolute bottom-0 left-0 right-0 bg-gray-900/90 text-white text-[9px] text-center rounded-b-lg leading-tight py-0.5">
                                                 Thumb
                                               </span>
                                             )}
@@ -1352,8 +1366,8 @@ export default function UploadInventory() {
                                               onClick={() => setEditingSizeQty({ sizeId: s.id, value: String(s.quantity) })}
                                               className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-xs font-medium transition-colors ${
                                                 isEditingThis
-                                                  ? 'bg-blue-50 border-blue-300 text-blue-700 dark:bg-blue-900/20 dark:border-blue-600 dark:text-blue-300'
-                                                  : 'bg-gray-50 border-gray-200 text-gray-700 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-blue-900/20 dark:hover:border-blue-700 dark:hover:text-blue-300'
+                                                  ? 'bg-gray-900 border-gray-900 text-white dark:bg-gray-100 dark:border-gray-100 dark:text-gray-900'
+                                                  : 'bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100 hover:border-gray-400 hover:text-gray-900 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:border-gray-500 dark:hover:text-white'
                                               }`}
                                               title="Click to edit quantity"
                                             >
@@ -1369,11 +1383,11 @@ export default function UploadInventory() {
                                     </div>
 
                                     {activeSize && (
-                                      <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50/70 dark:border-blue-800 dark:bg-blue-900/20 p-3">
+                                      <div className="mt-3 rounded-lg border border-gray-300 bg-gray-50 dark:border-gray-600 dark:bg-gray-800 p-3">
                                         <div className="flex flex-wrap items-end gap-2">
                                           <div className="min-w-[120px]">
-                                            <p className="text-xs text-blue-700 dark:text-blue-300 font-medium">Editing Size</p>
-                                            <p className="text-sm font-semibold text-blue-900 dark:text-blue-200">{getStoredSizeLabel(activeSize)}</p>
+                                            <p className="text-xs text-gray-700 dark:text-gray-300 font-medium">Editing Size</p>
+                                            <p className="text-sm font-semibold text-gray-900 dark:text-white">{getStoredSizeLabel(activeSize)}</p>
                                           </div>
                                           <div className="flex items-center gap-2">
                                             <button
@@ -1386,7 +1400,7 @@ export default function UploadInventory() {
                                                   return { ...prev, value: String(next) };
                                                 })
                                               }
-                                              className="h-9 w-9 rounded-lg border border-blue-300 text-blue-700 hover:bg-blue-100 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/30"
+                                              className="h-9 w-9 rounded-lg border border-gray-300 text-gray-900 hover:bg-gray-100 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
                                               title="Decrease quantity"
                                             >
                                               -
@@ -1402,7 +1416,7 @@ export default function UploadInventory() {
                                                 if (e.key === 'Enter') handleUpdateSizeQty(activeSize.id, editingSizeQty?.value ?? '');
                                                 if (e.key === 'Escape') setEditingSizeQty(null);
                                               }}
-                                              className="h-9 w-24 rounded-lg border border-blue-300 bg-white px-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-blue-700 dark:bg-gray-900 dark:text-white"
+                                              className="h-9 w-24 rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-white dark:focus:ring-gray-300"
                                               title={`Quantity for size ${getStoredSizeLabel(activeSize)}`}
                                             />
                                             <button
@@ -1415,7 +1429,7 @@ export default function UploadInventory() {
                                                   return { ...prev, value: String(next) };
                                                 })
                                               }
-                                              className="h-9 w-9 rounded-lg border border-blue-300 text-blue-700 hover:bg-blue-100 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/30"
+                                              className="h-9 w-9 rounded-lg border border-gray-300 text-gray-900 hover:bg-gray-100 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
                                               title="Increase quantity"
                                             >
                                               +
@@ -1432,7 +1446,7 @@ export default function UploadInventory() {
                                             <button
                                               type="button"
                                               onClick={() => handleUpdateSizeQty(activeSize.id, editingSizeQty?.value ?? '')}
-                                              className="h-9 px-3 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700"
+                                              className="h-9 px-3 rounded-lg bg-black text-white text-xs font-semibold hover:bg-gray-800"
                                             >
                                               Save Quantity
                                             </button>
@@ -1495,7 +1509,7 @@ export default function UploadInventory() {
                                         type="button"
                                         onClick={() => handleAddSizeToExistingColor(cv.id)}
                                         disabled={!canAddSize}
-                                        className="h-10 px-4 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                        className="h-10 px-4 rounded-lg bg-black text-white text-sm font-medium hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                       >
                                         Add Size
                                       </button>
@@ -1657,7 +1671,7 @@ export default function UploadInventory() {
                             type="checkbox"
                             checked={selectedShoeTypes.includes(option.value)}
                             onChange={() => toggleShoeType(option.value)}
-                            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            className="h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-gray-900"
                           />
                           {option.label}
                         </label>

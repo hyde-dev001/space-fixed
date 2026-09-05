@@ -15,6 +15,7 @@ use App\Models\User;
 use App\Services\RepairPosPaymentService;
 use App\Services\RepairPosReceiptService;
 use App\Services\RepairPosRefundService;
+use App\Services\Manager\ManagerRepairService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
@@ -24,14 +25,19 @@ class RepairPosController extends Controller
 {
     public function checkout(Request $request, RepairPosPaymentService $service)
     {
+        if ($request->input('customer_type') === 'walk_in'
+            && (int) ($request->input('customer_id') ?? 0) <= 0) {
+            $request->merge(['customer_id' => null]);
+        }
+
         $validated = $request->validate([
             'repair_request_id' => ['nullable', 'integer', 'exists:repair_requests,id'],
             'due_type' => ['required', 'string', 'in:deposit,balance,full'],
             'idempotency_key' => ['required', 'string', 'min:8', 'max:100'],
             'customer_type' => ['required', 'string', 'in:registered,walk_in'],
             'customer_id' => ['nullable', 'integer', 'exists:users,id'],
-            'walk_in_name' => ['nullable', 'string', 'max:255'],
-            'walk_in_phone' => ['nullable', 'string', 'max:30'],
+            'walk_in_name' => ['required_if:customer_type,walk_in', 'nullable', 'string', 'max:255'],
+            'walk_in_phone' => ['required_if:customer_type,walk_in', 'nullable', 'string', 'max:30'],
             'walk_in_email' => ['nullable', 'email', 'max:255'],
             'manual_repair_subtotal' => ['nullable', 'numeric', 'min:0.01'],
             'manual_service_summary' => ['nullable', 'string', 'max:2000'],
@@ -85,13 +91,6 @@ class RepairPosController extends Controller
                 ], 422);
             }
 
-            if (trim((string) ($validated['walk_in_name'] ?? '')) === '') {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Walk-in customer name is required for manual POS checkout.',
-                ], 422);
-            }
-
             $manualSubtotal = (float) ($validated['manual_repair_subtotal'] ?? 0);
             if ($manualSubtotal <= 0) {
                 return response()->json([
@@ -137,13 +136,12 @@ class RepairPosController extends Controller
 
         $subtotal = round((float) ($payload['manual_repair_subtotal'] ?? 0), 2);
         $summary = trim((string) ($payload['manual_service_summary'] ?? 'Walk-in service from POS checkout.'));
-        $walkInName = trim((string) ($payload['walk_in_name'] ?? 'Walk-in Customer'));
-        $walkInPhone = trim((string) ($payload['walk_in_phone'] ?? 'N/A'));
+        $walkInName = trim((string) ($payload['walk_in_name'] ?? ''));
+        $walkInPhone = trim((string) ($payload['walk_in_phone'] ?? ''));
         $walkInEmail = trim((string) ($payload['walk_in_email'] ?? ''));
 
         $snapshotServiceName = $summary !== '' ? $summary : 'Walk-in POS Service';
-        $shopPolicy = (string) (ShopOwner::query()->whereKey($shopOwnerId)->value('repair_payment_policy') ?? 'deposit_50');
-        $manualPolicy = (string) ($payload['manual_payment_policy'] ?? $shopPolicy);
+        $manualPolicy = (string) ($payload['manual_payment_policy'] ?? 'full_upfront');
         $resolvedPolicy = $manualPolicy === 'deposit_50' ? 'deposit_50' : 'full_upfront';
         $isIndividualShop = $this->isIndividualShopOwner($shopOwnerId);
 
@@ -247,7 +245,7 @@ class RepairPosController extends Controller
             'request_id' => $requestId,
             'customer_name' => $walkInName,
             'email' => $walkInEmail !== '' ? $walkInEmail : 'N/A',
-            'phone' => $walkInPhone !== '' ? $walkInPhone : 'N/A',
+            'phone' => $walkInPhone,
             'shoe_type' => 'Walk-in',
             'brand' => null,
             'description' => $snapshotServiceName,
@@ -284,7 +282,7 @@ class RepairPosController extends Controller
             'delivery_method' => 'walk_in',
             'intake_delivery_method' => 'walk_in',
             'return_delivery_method' => 'walk_in',
-            'status' => 'pending',
+            'status' => 'new_request',
         ]);
 
         if ($resolvedServiceIds->isNotEmpty()) {
@@ -341,6 +339,13 @@ class RepairPosController extends Controller
                 'success' => false,
                 'message' => 'Repair request not found for this transaction.',
             ], 404);
+        }
+
+        if ((int) $repair->shop_owner_id !== (int) $source->shop_owner_id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This transaction is not linked to the selected repair shop.',
+            ], 403);
         }
 
         $latestWarrantyClaim = RepairWarrantyClaim::query()
@@ -467,6 +472,59 @@ class RepairPosController extends Controller
         ]);
     }
 
+    public function manualRefundRejectedNoAccount(Request $request, RepairPosRefundService $service)
+    {
+        $actor = $this->resolveActor();
+        if (! $actor
+            || ! Auth::guard('user')->check()
+            || ! $this->isCashierActor($actor)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Only a Cashier can record this manual POS refund.',
+            ], 403);
+        }
+
+        $validated = $request->validate([
+            'source_transaction_id' => ['required', 'integer', 'exists:pos_transactions,id'],
+            'receipt_no' => ['required', 'string', 'max:120'],
+        ]);
+
+        $source = PosTransaction::query()
+            ->with('receipt')
+            ->findOrFail((int) $validated['source_transaction_id']);
+        $shopOwnerId = $this->resolveActorShopOwnerId($actor);
+
+        if ($shopOwnerId <= 0 || $shopOwnerId !== (int) $source->shop_owner_id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'You are not authorized to refund this transaction.',
+            ], 403);
+        }
+
+        $presentedReceiptNo = trim((string) $validated['receipt_no']);
+        $expectedReceiptNo = trim((string) ($source->receipt?->receipt_no ?? $source->transaction_no ?? ''));
+        if ($expectedReceiptNo === '' || strcasecmp($presentedReceiptNo, $expectedReceiptNo) !== 0) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Presented receipt does not match the selected transaction.',
+                'errors' => [
+                    'receipt_no' => ['Presented receipt does not match the selected transaction.'],
+                ],
+            ], 422);
+        }
+
+        $refund = $service->executeManualRejectedNoAccountRefund(
+            source: $source,
+            actorId: $this->resolveActorAuditUserId(),
+        );
+
+        return response()->json([
+            'success' => true,
+            'refund_id' => $refund->id,
+            'data' => $refund,
+        ]);
+    }
+
     public function listRefundQueue(Request $request, RepairPosRefundService $service)
     {
         $shopOwnerId = $this->resolveActorShopOwnerId($this->resolveActor());
@@ -545,7 +603,7 @@ class RepairPosController extends Controller
                 'status' => (string) $refund->status,
                 'repairer_status' => $refund->repairer_status,
                 'finance_status' => $refund->finance_status,
-                'owner_status' => $refund->owner_status,
+                'owner_status' => $refund->shop_owner_status,
                 'shop_owner_status' => $refund->shop_owner_status,
                 'requested_amount' => (float) $refund->requested_amount,
                 'approved_amount' => $refund->approved_amount === null ? null : (float) $refund->approved_amount,
@@ -660,10 +718,17 @@ class RepairPosController extends Controller
             ->where('shop_owner_id', $shopOwnerId)
             ->where('manual_pos_queue_enabled', true)
             ->where('request_id', 'like', 'REP-POS-%')
+            ->whereNull('assigned_repairer_id')
             ->whereIn('status', ['pending', 'received', 'in_progress', 'ready_for_pickup'])
             ->with([
+                'user',
                 'latestPosTransaction.receipt',
-                'latestWarrantyClaim:id,original_repair_request_id,status,approved_once_guard',
+                'latestWarrantyClaim' => fn ($query) => $query->select([
+                    'repair_warranty_claims.id',
+                    'repair_warranty_claims.original_repair_request_id',
+                    'repair_warranty_claims.status',
+                    'repair_warranty_claims.approved_once_guard',
+                ]),
             ])
             ->when($q !== '', function ($query) use ($q) {
                 $query->where(function ($inner) use ($q) {
@@ -679,6 +744,24 @@ class RepairPosController extends Controller
             ->get();
 
         $data = $rows->map(function (RepairRequest $repair) {
+            $isMissing = static function ($value): bool {
+                return in_array(strtolower(trim((string) $value)), ['', 'n/a'], true);
+            };
+            $customerName = trim((string) $repair->customer_name);
+            if ($isMissing($customerName)) {
+                $customerName = trim((string) ($repair->user?->first_name ?? '') . ' ' . (string) ($repair->user?->last_name ?? ''));
+                if ($customerName === '') {
+                    $customerName = trim((string) ($repair->user?->name ?? ''));
+                }
+            }
+            $customerPhone = trim((string) ($repair->phone ?? ''));
+            if ($isMissing($customerPhone)) {
+                $customerPhone = trim((string) ($repair->user?->phone ?? ''));
+            }
+            $customerEmail = trim((string) ($repair->email ?? ''));
+            if ($isMissing($customerEmail)) {
+                $customerEmail = trim((string) ($repair->user?->email ?? ''));
+            }
             $total = round((float) ($repair->final_total ?? $repair->total ?? 0), 2);
             $paid = round((float) ($repair->total_paid_amount ?? 0), 2);
             $refunded = round((float) ($repair->total_refunded_amount ?? 0), 2);
@@ -705,8 +788,10 @@ class RepairPosController extends Controller
             return [
                 'id' => (int) $repair->id,
                 'request_id' => (string) $repair->request_id,
-                'customer_name' => (string) $repair->customer_name,
-                'phone' => (string) ($repair->phone ?? ''),
+                'customer_name' => $customerName,
+                'customer_id' => $repair->user_id !== null ? (int) $repair->user_id : null,
+                'phone' => $customerPhone,
+                'email' => $isMissing($customerEmail) ? null : $customerEmail,
                 'status' => $status,
                 'payment_policy' => $normalizedPolicy,
                 'total' => $total,
@@ -1122,6 +1207,16 @@ class RepairPosController extends Controller
         return false;
     }
 
+    private function isCashierActor(object $actor): bool
+    {
+        if (! method_exists($actor, 'hasRole')) {
+            return false;
+        }
+
+        return $actor->hasRole('Cashier')
+            || $actor->hasRole('cashier');
+    }
+
     private function shouldAutoProcessIndividualShopOwnerRefund(PosTransaction $source, int $actorShopOwnerId): bool
     {
         if (!Auth::guard('shop_owner')->check()) {
@@ -1142,39 +1237,7 @@ class RepairPosController extends Controller
 
     private function assignManualPosRepairOwner(RepairRequest $repair, object $actor, int $shopOwnerId): void
     {
-        $actorUserId = (int) (Auth::guard('user')->id() ?? 0);
-
-        if ($actorUserId > 0) {
-            $actorUser = User::query()->find($actorUserId);
-            if ($actorUser && method_exists($actorUser, 'hasRole') && $actorUser->hasRole('Repairer')) {
-                $repair->forceFill([
-                    'assigned_repairer_id' => $actorUserId,
-                    'assigned_at' => now(),
-                    'assignment_method' => 'manual',
-                    'assigned_by' => $actorUserId,
-                    'assignment_notes' => 'Assigned from manual POS checkout by repairer actor',
-                    'status' => 'assigned_to_repairer',
-                ])->save();
-
-                return;
-            }
-        }
-
-        $candidate = $this->resolveLeastLoadedRepairer($shopOwnerId, false)
-            ?? $this->resolveLeastLoadedRepairer($shopOwnerId, true);
-
-        if (!$candidate) {
-            return;
-        }
-
-        $repair->forceFill([
-            'assigned_repairer_id' => (int) $candidate->id,
-            'assigned_at' => now(),
-            'assignment_method' => 'auto',
-            'assigned_by' => (int) ($actorUserId > 0 ? $actorUserId : $this->resolveActorAuditUserId()),
-            'assignment_notes' => 'Auto-assigned from manual POS checkout',
-            'status' => 'assigned_to_repairer',
-        ])->save();
+        app(ManagerRepairService::class)->assignManualPos($repair, $actor, $shopOwnerId);
     }
 
     private function isIndividualShopOwner(int $shopOwnerId): bool

@@ -8,10 +8,22 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 
 class InventoryItem extends Model
 {
     use HasFactory, SoftDeletes;
+
+    private const VALID_MOVEMENT_TYPES = [
+        'stock_in',
+        'stock_out',
+        'adjustment',
+        'return',
+        'repair_usage',
+        'transfer',
+        'damage',
+        'initial',
+    ];
 
     protected $fillable = [
         'product_id',
@@ -203,6 +215,8 @@ class InventoryItem extends Model
      */
     public function incrementStock(int $quantity, string $type = 'stock_in', ?string $notes = null, ?int $userId = null): StockMovement
     {
+        $this->assertValidMovementType($type);
+
         $quantityBefore = $this->available_quantity;
         $this->available_quantity += $quantity;
         $this->save();
@@ -223,19 +237,44 @@ class InventoryItem extends Model
      */
     public function decrementStock(int $quantity, string $type = 'stock_out', ?string $notes = null, ?int $userId = null): StockMovement
     {
-        $quantityBefore = $this->available_quantity;
-        $this->available_quantity = max(0, $this->available_quantity - $quantity);
-        $this->save();
+        $this->assertValidMovementType($type);
 
-        return $this->stockMovements()->create([
-            'movement_type' => $type,
-            'quantity_change' => -$quantity,
-            'quantity_before' => $quantityBefore,
-            'quantity_after' => $this->available_quantity,
-            'notes' => $notes,
-            'performed_by' => $userId,
-            'performed_at' => now(),
-        ]);
+        return DB::transaction(function () use ($quantity, $type, $notes, $userId) {
+            $item = self::query()->lockForUpdate()->findOrFail($this->getKey());
+
+            if ($quantity <= 0) {
+                throw new \InvalidArgumentException('Stock deduction quantity must be greater than zero.');
+            }
+
+            if ($quantity > $item->available_quantity) {
+                throw new \InvalidArgumentException('Stock deduction exceeds available quantity.');
+            }
+
+            $quantityBefore = $item->available_quantity;
+            $item->available_quantity -= $quantity;
+            $item->save();
+
+            $movement = $item->stockMovements()->create([
+                'movement_type' => $type,
+                'quantity_change' => -$quantity,
+                'quantity_before' => $quantityBefore,
+                'quantity_after' => $item->available_quantity,
+                'notes' => $notes,
+                'performed_by' => $userId,
+                'performed_at' => now(),
+            ]);
+
+            $this->setRawAttributes($item->getAttributes(), true);
+
+            return $movement;
+        });
+    }
+
+    private function assertValidMovementType(string $type): void
+    {
+        if (! in_array($type, self::VALID_MOVEMENT_TYPES, true)) {
+            throw new \InvalidArgumentException('Invalid stock movement type.');
+        }
     }
 
     /**
