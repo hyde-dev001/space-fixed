@@ -21,6 +21,8 @@ class RiderLocationService
     /** @var array<int, ShipmentLegStatus> */
     private const TRACKABLE_LEG_STATUSES = [
         ShipmentLegStatus::IN_TRANSIT,
+        ShipmentLegStatus::ASSIGNED,
+        ShipmentLegStatus::PICKUP_SCHEDULED,
     ];
 
     public function __construct(
@@ -35,7 +37,7 @@ class RiderLocationService
             || $leg->shipment->status !== ShipmentStatus::ACTIVE
             || $leg->rider_progress_state !== RiderProgressState::ACTIVE
             || ! in_array($leg->status, self::TRACKABLE_LEG_STATUSES, true)
-            || ! $this->isCustomerDeliveryLeg($leg)) {
+            || ! $this->isCustomerTrackableLeg($leg)) {
             return null;
         }
 
@@ -191,7 +193,7 @@ class RiderLocationService
         if (! $leg) {
             return null;
         }
-        $snapshot = is_array($leg->destination_snapshot) ? $leg->destination_snapshot : [];
+        $snapshot = $this->trackingTargetSnapshot($leg);
         $coordinate = static fn (string $key): ?float => is_numeric($snapshot[$key] ?? null)
             ? (float) $snapshot[$key]
             : null;
@@ -216,9 +218,74 @@ class RiderLocationService
         );
     }
 
-    private function isCustomerDeliveryLeg(ShipmentLeg $leg): bool
+    private function isCustomerTrackableLeg(ShipmentLeg $leg): bool
     {
-        return data_get($leg->destination_snapshot, 'type') === 'customer';
+        if ($this->isRepairPickupTrackingLeg($leg) || $this->isRetailRefundReturnTrackingLeg($leg)) {
+            return true;
+        }
+
+        return $leg->status === ShipmentLegStatus::IN_TRANSIT
+            && data_get($leg->destination_snapshot, 'type') === 'customer';
+    }
+
+    private function isRepairPickupTrackingLeg(ShipmentLeg $leg): bool
+    {
+        $leg->loadMissing('shipment');
+
+        if ($leg->shipment?->source_type !== 'repair_request'
+            || $leg->shipment?->purpose !== 'repair_pickup'
+            || $leg->leg_type !== 'inbound') {
+            return false;
+        }
+
+        $prePickup = $leg->picked_up_at === null
+            && in_array($leg->status, [
+                ShipmentLegStatus::ASSIGNED,
+                ShipmentLegStatus::PICKUP_SCHEDULED,
+            ], true)
+            && data_get($leg->origin_snapshot, 'type') === 'customer';
+        $toShop = $leg->picked_up_at !== null
+            && $leg->status === ShipmentLegStatus::IN_TRANSIT
+            && data_get($leg->destination_snapshot, 'type') === 'shop';
+
+        return $prePickup || $toShop;
+    }
+
+    private function isRetailRefundReturnTrackingLeg(ShipmentLeg $leg): bool
+    {
+        $leg->loadMissing('shipment');
+
+        if ($leg->shipment?->source_type !== 'order_refund'
+            || $leg->shipment?->purpose !== 'refund_return'
+            || $leg->leg_type !== 'return_to_shop') {
+            return false;
+        }
+
+        $prePickup = $leg->picked_up_at === null
+            && in_array($leg->status, [
+                ShipmentLegStatus::ASSIGNED,
+                ShipmentLegStatus::PICKUP_SCHEDULED,
+            ], true)
+            && data_get($leg->origin_snapshot, 'type') === 'customer';
+        $toShop = $leg->picked_up_at !== null
+            && $leg->status === ShipmentLegStatus::IN_TRANSIT
+            && data_get($leg->destination_snapshot, 'type') === 'shop';
+
+        return $prePickup || $toShop;
+    }
+
+    /** @return array<string, mixed> */
+    private function trackingTargetSnapshot(ShipmentLeg $leg): array
+    {
+        $isCustomerPickup = (
+            $this->isRepairPickupTrackingLeg($leg)
+            || $this->isRetailRefundReturnTrackingLeg($leg)
+        ) && $leg->picked_up_at === null;
+        $snapshot = $isCustomerPickup
+            ? $leg->origin_snapshot
+            : $leg->destination_snapshot;
+
+        return is_array($snapshot) ? $snapshot : [];
     }
 
     private function isVisibleLocation(RiderCurrentLocation $location): bool
@@ -236,7 +303,7 @@ class RiderLocationService
             && $profile?->active
             && $profile->availability_status !== 'inactive'
             && $profile->rider_type === 'employee'
-            && $this->isCustomerDeliveryLeg($leg)
+            && $this->isCustomerTrackableLeg($leg)
             && (! $leg->delivery_batch_id || $this->isCurrentBatchLeg($leg, $assignment));
     }
 
@@ -245,7 +312,7 @@ class RiderLocationService
     {
         $leg = $location->leg;
         $shipment = $leg?->shipment;
-        $snapshot = is_array($leg?->destination_snapshot) ? $leg->destination_snapshot : [];
+        $snapshot = $leg ? $this->trackingTargetSnapshot($leg) : [];
         $coordinate = static fn (string $key): ?float => is_numeric($snapshot[$key] ?? null)
             ? (float) $snapshot[$key]
             : null;

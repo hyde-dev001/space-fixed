@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => ({
     canRecordProof: true,
     canUpdateStatus: true,
     canReportIssue: true,
+    liveTrackingEnabled: false,
     maxDeliveryAttempts: 2,
     today: '2026-07-29',
   },
@@ -145,6 +146,7 @@ beforeEach(() => {
   mocks.props.canRecordProof = true;
   mocks.props.canUpdateStatus = true;
   mocks.props.canReportIssue = true;
+  mocks.props.liveTrackingEnabled = false;
   mocks.props.deliveryData = {
     offers: [],
     current: null,
@@ -620,6 +622,85 @@ describe('MyDeliveries rider interactions', () => {
     }], { group: 'upcoming' });
     view.rerender(<MyDeliveries />);
     expect(screen.queryByRole('button', { name: 'Failed pickup' })).not.toBeInTheDocument();
+  });
+
+  it('offers GPS tracking before a repair pickup is confirmed', () => {
+    mocks.props.liveTrackingEnabled = true;
+    mocks.props.deliveryData.up_next = workItem('single', 'assigned', [{
+      ...leg(22, null, 'assigned'),
+      leg_type: 'inbound',
+      origin_snapshot: {
+        type: 'customer',
+        name: 'Customer Home',
+        address: 'Customer pickup address',
+        latitude: 14.61,
+        longitude: 120.99,
+      },
+      destination_snapshot: {
+        type: 'shop',
+        name: 'Repair shop',
+        address: 'Shop address',
+        latitude: 14.62,
+        longitude: 121,
+      },
+      shipment: {
+        id: 122,
+        source_type: 'repair_request',
+        source_id: 222,
+        purpose: 'repair_pickup',
+      },
+      assignments: [{ id: 222, status: 'accepted' }],
+    }], {
+      group: 'upcoming',
+      business_types: ['repair'],
+      business_label: 'Repair pickup',
+    });
+
+    render(<MyDeliveries />);
+
+    expect(screen.getByRole('region', { name: 'GPS tracking' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Start GPS tracking' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Confirm pickup' })).toBeVisible();
+  });
+
+  it('tracks a repair pickup toward the shop after customer handoff', async () => {
+    mocks.props.liveTrackingEnabled = true;
+    mocks.props.deliveryData.up_next = workItem('single', 'in_transit', [{
+      ...leg(23, null, 'in_transit'),
+      leg_type: 'inbound',
+      picked_up_at: '2026-09-04T00:05:00.000Z',
+      origin_snapshot: {
+        type: 'customer',
+        name: 'Customer Home',
+        address: 'Customer pickup address',
+        latitude: 14.61,
+        longitude: 120.99,
+      },
+      destination_snapshot: {
+        type: 'shop',
+        name: 'Repair shop',
+        address: 'Shop address',
+        latitude: 14.62,
+        longitude: 121,
+      },
+      shipment: {
+        id: 123,
+        source_type: 'repair_request',
+        source_id: 223,
+        purpose: 'repair_pickup',
+      },
+      assignments: [{ id: 223, status: 'accepted' }],
+    }], {
+      group: 'current',
+      business_types: ['repair'],
+      business_label: 'Repair pickup',
+    });
+
+    render(<MyDeliveries />);
+    fireEvent.click(screen.getByRole('button', { name: 'Start GPS tracking' }));
+
+    await waitFor(() => expect(screen.getByText('Route to repair shop')).toBeVisible());
+    expect(screen.getByText('Shop address')).toBeVisible();
   });
 
   it('requires a photo for every failed pickup reason and notes only for Other', () => {
@@ -1203,5 +1284,36 @@ describe('MyDeliveries rider interactions', () => {
     expect((form as FormData).get('type')).toBe('vehicle_problem');
     expect((form as FormData).get('notes')).toBe('Motorcycle puncture on route.');
     expect((form as FormData).get('photo_files[]')).toBe(photo);
+  });
+
+  it('shows and submits a replacement proof after dispatcher rejection', async () => {
+    mocks.props.deliveryData.filters = {
+      tab: 'issues',
+      business: 'all',
+      window: 'all',
+      search: '',
+    };
+    mocks.props.deliveryData.list.data = [{
+      item_type: 'issue',
+      issue_type: 'proof_correction',
+      key: 'proof-correction:12:18',
+      id: 18,
+      delivery_id: 12,
+      parent_key: 'single:12',
+      business_types: ['retail'],
+      reason: 'The delivery image is not readable.',
+      proof_id: 18,
+      replacement_allowed: true,
+    }];
+
+    render(<MyDeliveries />);
+
+    expect(screen.getByText('Replace delivery proof')).toBeVisible();
+    const proof = new File(['replacement'], 'replacement.jpg', { type: 'image/jpeg' });
+    fireEvent.change(screen.getByLabelText('Replacement delivery proof'), { target: { files: [proof] } });
+    fireEvent.click(screen.getByRole('button', { name: 'Submit replacement proof' }));
+
+    await waitFor(() => expect(mocks.recordProof).toHaveBeenCalledWith(12, expect.any(FormData)));
+    expect((mocks.recordProof.mock.calls[0][1] as FormData).get('replaces_proof_id')).toBe('18');
   });
 });

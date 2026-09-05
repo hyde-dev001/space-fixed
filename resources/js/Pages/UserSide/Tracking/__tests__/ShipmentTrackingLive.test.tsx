@@ -71,12 +71,178 @@ describe('ShipmentTracking live tracking', () => {
     await waitFor(() => expect(mocks.get).toHaveBeenCalledWith('/tracking/shipments/1'));
   });
 
+  it('shows live pickup tracking for a repair shipment while the rider is going to the customer', async () => {
+    shipment.purpose = 'repair_pickup';
+    shipment.source_type = 'repair_request';
+    shipment.legs[0] = {
+      ...shipment.legs[0],
+      leg_type: 'inbound',
+      status: 'assigned',
+      origin_snapshot: {
+        type: 'customer',
+        name: 'Customer Home',
+        address: 'Customer pickup address',
+        latitude: 14.61,
+        longitude: 120.99,
+      },
+      destination_snapshot: {
+        type: 'shop',
+        name: 'Repair shop',
+        address: 'Shop address',
+        latitude: 14.62,
+        longitude: 121,
+      },
+      live_tracking: {
+        ...shipment.legs[0].live_tracking,
+        destination: {
+          type: 'customer',
+          name: 'Customer Home',
+          address: 'Customer pickup address',
+          latitude: 14.61,
+          longitude: 120.99,
+        },
+      },
+    };
+
+    render(<ShipmentTracking />);
+
+    expect(screen.getByText('Live pickup location')).toBeInTheDocument();
+    expect(screen.getByTestId('customer-live-map')).toHaveTextContent('1 customer marker');
+    await waitFor(() => expect(mocks.get).toHaveBeenCalledWith('/tracking/shipments/1'));
+  });
+
+  it('continues live pickup tracking toward the repair shop after handoff', async () => {
+    shipment.purpose = 'repair_pickup';
+    shipment.source_type = 'repair_request';
+    shipment.legs[0] = {
+      ...shipment.legs[0],
+      leg_type: 'inbound',
+      status: 'in_transit',
+      picked_up_at: '2026-09-04T00:05:00.000Z',
+      origin_snapshot: {
+        type: 'customer',
+        name: 'Customer Home',
+        address: 'Customer pickup address',
+        latitude: 14.61,
+        longitude: 120.99,
+      },
+      destination_snapshot: {
+        type: 'shop',
+        name: 'Repair shop',
+        address: 'Shop address',
+        latitude: 14.62,
+        longitude: 121,
+      },
+      live_tracking: {
+        ...shipment.legs[0].live_tracking,
+        status: 'in_transit',
+        destination: {
+          type: 'shop',
+          name: 'Repair shop',
+          address: 'Shop address',
+          latitude: 14.62,
+          longitude: 121,
+        },
+      },
+    };
+
+    render(<ShipmentTracking />);
+
+    expect(screen.getByText('Live pickup location')).toBeInTheDocument();
+    expect(screen.getByTestId('customer-live-map')).toHaveTextContent('1 customer marker');
+    await waitFor(() => expect(mocks.get).toHaveBeenCalledWith('/tracking/shipments/1'));
+  });
+
+  it('keeps polling through the pickup handoff before the rider starts the shop leg', async () => {
+    shipment.purpose = 'repair_pickup';
+    shipment.source_type = 'repair_request';
+    shipment.legs[0] = {
+      ...shipment.legs[0],
+      leg_type: 'inbound',
+      status: 'picked_up',
+      picked_up_at: '2026-09-04T00:05:00.000Z',
+      destination_snapshot: {
+        type: 'shop',
+        name: 'Repair shop',
+        address: 'Shop address',
+        latitude: 14.62,
+        longitude: 121,
+      },
+      live_tracking: null,
+    };
+
+    render(<ShipmentTracking />);
+
+    expect(screen.getByText('Live pickup location')).toBeInTheDocument();
+    expect(screen.getByText(/Waiting for the rider's first GPS update\./)).toBeInTheDocument();
+    await waitFor(() => expect(mocks.get).toHaveBeenCalledWith('/tracking/shipments/1'));
+  });
+
   it('shows the stale state without exposing rider identity', () => {
+    shipment.legs[0].live_tracking = {
+      leg_id: 2,
+      status: 'in_transit',
+      destination: shipment.legs[0].destination_snapshot,
+      location: {
+        latitude: 14.5995,
+        longitude: 120.9842,
+        accuracy_m: 12,
+        speed_mps: 4,
+        heading_deg: 90,
+        recorded_at: '2026-09-04T00:00:00.000Z',
+        received_at: '2026-09-04T00:00:01.000Z',
+      },
+      route: null,
+      stale: false,
+    };
     shipment.legs[0].live_tracking.stale = true;
 
     render(<ShipmentTracking />);
 
     expect(screen.getByText('Location may be out of date')).toBeInTheDocument();
     expect(screen.queryByText('Rider Three')).not.toBeInTheDocument();
+  });
+
+  it('shows live tracking while a retail refund return rider collects the item', async () => {
+    shipment.purpose = 'refund_return';
+    shipment.source_type = 'order_refund';
+    shipment.status = 'active';
+    shipment.legs[0] = {
+      ...shipment.legs[0],
+      leg_type: 'return_to_shop',
+      status: 'assigned',
+      picked_up_at: null,
+      origin_snapshot: {
+        type: 'customer',
+        name: 'Customer Home',
+        address: 'Customer return address',
+        latitude: 14.61,
+        longitude: 120.99,
+      },
+      destination_snapshot: {
+        type: 'shop',
+        name: 'Retail Shop',
+        address: 'Shop address',
+        latitude: 14.62,
+        longitude: 121,
+      },
+      live_tracking: {
+        ...shipment.legs[0].live_tracking,
+        status: 'assigned',
+        destination: {
+          type: 'customer',
+          name: 'Customer Home',
+          address: 'Customer return address',
+          latitude: 14.61,
+          longitude: 120.99,
+        },
+      },
+    };
+
+    render(<ShipmentTracking />);
+
+    expect(screen.getByText('Live return location')).toBeInTheDocument();
+    expect(screen.getByTestId('customer-live-map')).toHaveTextContent('1 customer marker');
+    await waitFor(() => expect(mocks.get).toHaveBeenCalledWith('/tracking/shipments/1'));
   });
 });

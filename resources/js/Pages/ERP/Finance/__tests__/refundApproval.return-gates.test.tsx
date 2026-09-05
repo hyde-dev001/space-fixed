@@ -4,6 +4,7 @@ import {
   canFinanceAuthorizeRefund,
   getApprovalStageLabel,
   getFinanceApprovalNotice,
+  resolveFinanceDisplayStatus,
 } from "../refundApproval";
 
 const request = (overrides: Record<string, unknown> = {}) => ({
@@ -60,5 +61,15 @@ describe("Finance customer refund gates", () => {
       financeStatus: "approved_initial",
       shopOwnerStatus: "pending",
     }))).toBe("Waiting for shop owner approval");
+  });
+
+  it("labels an executed repair refund as refunded instead of payout-ready", () => {
+    expect(resolveFinanceDisplayStatus(request({
+      refundType: "repair",
+      rawStatus: "succeeded",
+      status: "Approved",
+      financeStatus: "approved",
+      shopOwnerStatus: "approved",
+    }))).toBe("Refunded");
   });
 });

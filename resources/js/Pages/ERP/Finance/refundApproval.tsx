@@ -295,7 +295,7 @@ interface RefundRequest {
 	refundNote?: string;
 	reasonDetails?: string;
 	reason: string;
-	status: "Pending" | "Approved" | "Rejected";
+	status: "Pending" | "Approved" | "Processing" | "Refunded" | "Rejected";
 	rawStatus?: string;
 	shopOwnerStatus?: string;
 	financeStatus?: string;
@@ -397,7 +397,7 @@ export const getApprovalStageLabel = (
 	return null;
 };
 
-const resolveFinanceDisplayStatus = (item: RefundRequest): RefundRequest["status"] => {
+export const resolveFinanceDisplayStatus = (item: RefundRequest): RefundRequest["status"] => {
 	const rawStatus = String(item.rawStatus || "").toLowerCase();
 	const financeStatus = String(item.financeStatus || "").toLowerCase();
 	const shopOwnerStatus = String(item.shopOwnerStatus || "").toLowerCase();
@@ -406,8 +406,12 @@ const resolveFinanceDisplayStatus = (item: RefundRequest): RefundRequest["status
 		return "Rejected";
 	}
 
-	if (["processing", "succeeded", "completed", "paid"].includes(rawStatus)) {
-		return "Approved";
+	if (item.refundType === "repair" && rawStatus === "processing") {
+		return "Processing";
+	}
+
+	if (item.refundType === "repair" && ["succeeded", "completed", "paid", "refunded"].includes(rawStatus)) {
+		return "Refunded";
 	}
 
 	if (financeStatus === "approved") {
@@ -478,13 +482,13 @@ export const canExecuteRefundPayout = (request: RefundRequest): boolean => {
 	if (request.refundType === "repair") {
 		return financeStatus === "approved"
 			&& ["approved", "skipped"].includes(shopOwnerStatus)
-			&& !["processing", "succeeded", "failed", "rejected"].includes(rawStatus);
+			&& !["processing", "succeeded", "completed", "paid", "refunded", "failed", "rejected"].includes(rawStatus);
 	}
 
 	return financeStatus === "approved"
 		&& shopOwnerStatus === "approved"
 		&& String(request.returnStatus || "").toLowerCase() === "received"
-		&& !["processing", "succeeded", "failed", "rejected"].includes(rawStatus);
+		&& !["processing", "succeeded", "completed", "paid", "refunded", "failed", "rejected"].includes(rawStatus);
 };
 
 const formatPayoutChannelLabel = (channel?: string): string => {
@@ -1554,8 +1558,10 @@ export default function RefundApproval() {
 													className={`px-2 py-1 rounded-full text-xs font-semibold ${
 														request.approvalStageLabel?.startsWith('Waiting') === true
 															? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300"
-															: request.status === "Approved"
+															: ["Approved", "Refunded"].includes(request.status)
 															? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300"
+															: request.status === "Processing"
+															? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
 															: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
 													}`}
 												>

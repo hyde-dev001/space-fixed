@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Link } from '@inertiajs/react';
 import axios from 'axios';
 import LiveTrackingMap, { type LiveRiderLocation } from './LiveTrackingMap';
-import type { CustomerDeliveryProof, TrackingShipment } from '@/types/logistics';
+import type { CustomerDeliveryProof, TrackingShipment, TrackingShipmentLeg } from '@/types/logistics';
 
 const titleCase = (value: string) =>
   value.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -28,6 +28,76 @@ const snapshotText = (snapshot?: Record<string, unknown> | null) => {
 
 const customerTrackingPollMs = 5000;
 const trackableStatuses = ['in_transit'];
+const isRepairPickupBeforeHandoff = (
+  shipment: TrackingShipment,
+  leg?: TrackingShipmentLeg,
+): boolean =>
+  shipment.source_type === 'repair_request'
+  && shipment.purpose === 'repair_pickup'
+  && leg?.leg_type === 'inbound'
+  && !leg.picked_up_at
+  && ['assigned', 'pickup_scheduled'].includes(leg.status)
+  && leg.origin_snapshot?.type === 'customer';
+const isRepairPickupToShop = (
+  shipment: TrackingShipment,
+  leg?: TrackingShipmentLeg,
+): boolean =>
+  shipment.source_type === 'repair_request'
+  && shipment.purpose === 'repair_pickup'
+  && leg?.leg_type === 'inbound'
+  && Boolean(leg.picked_up_at)
+  && leg.status === 'in_transit'
+  && leg.destination_snapshot?.type === 'shop';
+const isRepairPickupHandoffPending = (
+  shipment: TrackingShipment,
+  leg?: TrackingShipmentLeg,
+): boolean =>
+  shipment.source_type === 'repair_request'
+  && shipment.purpose === 'repair_pickup'
+  && leg?.leg_type === 'inbound'
+  && Boolean(leg.picked_up_at)
+  && leg.status === 'picked_up'
+  && leg.destination_snapshot?.type === 'shop';
+const isRepairPickupTrackingLeg = (
+  shipment: TrackingShipment,
+  leg?: TrackingShipmentLeg,
+): boolean =>
+  isRepairPickupBeforeHandoff(shipment, leg) || isRepairPickupToShop(shipment, leg);
+const isRetailRefundReturnBeforeHandoff = (
+  shipment: TrackingShipment,
+  leg?: TrackingShipmentLeg,
+): boolean =>
+  shipment.source_type === 'order_refund'
+  && shipment.purpose === 'refund_return'
+  && leg?.leg_type === 'return_to_shop'
+  && !leg.picked_up_at
+  && ['assigned', 'pickup_scheduled'].includes(leg.status)
+  && leg.origin_snapshot?.type === 'customer';
+const isRetailRefundReturnToShop = (
+  shipment: TrackingShipment,
+  leg?: TrackingShipmentLeg,
+): boolean =>
+  shipment.source_type === 'order_refund'
+  && shipment.purpose === 'refund_return'
+  && leg?.leg_type === 'return_to_shop'
+  && Boolean(leg.picked_up_at)
+  && leg.status === 'in_transit'
+  && leg.destination_snapshot?.type === 'shop';
+const isRetailRefundReturnHandoffPending = (
+  shipment: TrackingShipment,
+  leg?: TrackingShipmentLeg,
+): boolean =>
+  shipment.source_type === 'order_refund'
+  && shipment.purpose === 'refund_return'
+  && leg?.leg_type === 'return_to_shop'
+  && Boolean(leg.picked_up_at)
+  && leg.status === 'picked_up'
+  && leg.destination_snapshot?.type === 'shop';
+const isRetailRefundReturnTrackingLeg = (
+  shipment: TrackingShipment,
+  leg?: TrackingShipmentLeg,
+): boolean =>
+  isRetailRefundReturnBeforeHandoff(shipment, leg) || isRetailRefundReturnToShop(shipment, leg);
 const formatDistance = (meters: number) => meters >= 1000
   ? `${(meters / 1000).toFixed(1)} km`
   : `${Math.round(meters)} m`;
@@ -167,10 +237,17 @@ export default function ShipmentTrackingPanel({
 
   const currentLeg = currentShipment.legs[currentShipment.legs.length - 1];
   const liveTracking = currentLeg?.live_tracking ?? null;
+  const isLiveCustomerDelivery = trackableStatuses.includes(currentLeg?.status ?? '')
+    && currentLeg?.destination_snapshot?.type === 'customer';
+  const isLiveRepairPickup = isRepairPickupTrackingLeg(currentShipment, currentLeg);
+  const isRepairPickupHandoff = isRepairPickupHandoffPending(currentShipment, currentLeg);
+  const isRepairPickupPhase = isLiveRepairPickup || isRepairPickupHandoff;
+  const isLiveRetailRefundReturn = isRetailRefundReturnTrackingLeg(currentShipment, currentLeg);
+  const isRetailRefundReturnHandoff = isRetailRefundReturnHandoffPending(currentShipment, currentLeg);
+  const isRetailRefundReturnPhase = isLiveRetailRefundReturn || isRetailRefundReturnHandoff;
   const shouldPoll = currentShipment.live_tracking_enabled === true
     && currentShipment.status === 'active'
-    && trackableStatuses.includes(currentLeg?.status ?? '')
-    && currentLeg?.destination_snapshot?.type === 'customer';
+    && (isLiveCustomerDelivery || isRepairPickupPhase || isRetailRefundReturnPhase);
 
   useEffect(() => {
     if (!shouldPoll) {
@@ -200,6 +277,16 @@ export default function ShipmentTrackingPanel({
 
   const isReturn = currentShipment.purpose === 'refund_return';
   const isRepair = currentShipment.source_type === 'repair_request';
+  const trackingSectionLabel = isRepairPickupPhase
+    ? 'Live pickup location'
+    : isRetailRefundReturnPhase ? 'Live return location' : 'Live delivery location';
+  const trackingMapLabel = isRepairPickupToShop(currentShipment, currentLeg)
+    ? 'Shop drop-off map'
+    : isRetailRefundReturnToShop(currentShipment, currentLeg)
+      ? 'Return to shop map'
+      : isRetailRefundReturnBeforeHandoff(currentShipment, currentLeg)
+        ? 'Customer return pickup map'
+        : isLiveRepairPickup ? 'Customer pickup map' : 'Customer delivery map';
   const shipmentNumber = currentShipment.shipment_number ?? currentShipment.id;
   const itemLabel = isReturn ? 'Return' : isRepair ? 'Repair Delivery' : 'Shipment';
   const trackingNumber = isReturn ? `RET-${currentShipment.id}` : (currentLeg?.tracking_number || `SHP-${currentShipment.id}`);
@@ -288,8 +375,8 @@ export default function ShipmentTrackingPanel({
         <section className="rounded-2xl border border-slate-300 bg-white p-5 shadow-[0_18px_50px_-35px_rgba(15,23,42,0.25)] sm:p-6" aria-live="polite">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <h2 className="text-base font-bold tracking-tight text-slate-950">Live delivery location</h2>
-              <p className="mt-1 text-sm text-gray-600">The map shows the latest available delivery position.</p>
+              <h2 className="text-base font-bold tracking-tight text-slate-950">{trackingSectionLabel}</h2>
+              <p className="mt-1 text-sm text-gray-600">The map shows the rider&apos;s latest available position.</p>
             </div>
             {liveTracking?.stale && (
               <span className="w-fit rounded-full border border-slate-300 bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-950">
@@ -319,7 +406,7 @@ export default function ShipmentTrackingPanel({
                 )}
               </div>
               <div className="mt-4 overflow-hidden rounded-xl border border-gray-200">
-                <LiveTrackingMap locations={customerMapLocations} label="Customer delivery map" followLocation viewer="customer" />
+                <LiveTrackingMap locations={customerMapLocations} label={trackingMapLabel} followLocation viewer="customer" />
               {!roadRoute && (
                 <p role="status" className="mt-3 text-sm font-semibold text-gray-700">
                   Road route is temporarily unavailable. The rider location will continue updating.

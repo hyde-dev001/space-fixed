@@ -558,7 +558,11 @@ class RepairRefundWorkflowController extends Controller
         $requiresOwnerApproval = (bool) ($refund->requires_owner_approval ?? true);
 
         $approvalStage = 'none';
-        if ($financeStatus === 'pending') {
+        if ($status === 'processing') {
+            $approvalStage = 'processing';
+        } elseif ($status === 'succeeded') {
+            $approvalStage = 'refunded';
+        } elseif ($financeStatus === 'pending') {
             $approvalStage = 'finance_initial';
         } elseif ($financeStatus === 'approved_initial' && $shopOwnerStatus === 'pending') {
             $approvalStage = 'shop_owner';
@@ -574,14 +578,16 @@ class RepairRefundWorkflowController extends Controller
         };
 
         $uiStatus = match (true) {
-            in_array($status, ['requested'], true) => 'Pending',
+            in_array($status, ['succeeded', 'completed', 'paid', 'refunded'], true) => 'Refunded',
+            $status === 'processing' => 'Processing',
+            $status === 'requested' => 'Pending',
             in_array($status, ['rejected', 'failed', 'cancelled'], true) => 'Rejected',
             default => 'Approved',
         };
 
         $canExecutePayout = $financeStatus === 'approved'
             && in_array($shopOwnerStatus, ['approved', 'skipped'], true)
-            && !in_array($status, ['processing', 'succeeded', 'failed', 'rejected', 'cancelled'], true);
+            && !in_array($status, ['processing', 'succeeded', 'completed', 'paid', 'refunded', 'failed', 'rejected', 'cancelled'], true);
 
         $evidenceSnapshot = is_array($refund->evidence_snapshot) ? $refund->evidence_snapshot : [];
         $evidenceCandidates = [];
@@ -658,7 +664,7 @@ class RepairRefundWorkflowController extends Controller
             'refundAmount' => '₱' . number_format((float) ($refund->requested_amount ?? 0), 2),
             'refundMethod' => $this->resolveRefundMethodLabel($source?->paymentLines?->pluck('tender_type')->first()),
             'requestedBy' => $requestedBy,
-            'requestDate' => optional($refund->requested_at ?? $refund->created_at)->format('Y-m-d'),
+            'requestDate' => optional($refund->requested_at ?? $refund->created_at)->toISOString(),
             'refundReason' => ucwords(str_replace('_', ' ', (string) ($refund->reason_code ?? 'repair_refund'))),
             'refundNote' => $reasonNotes ?? '',
             'reason' => $reasonNotes ?? '',

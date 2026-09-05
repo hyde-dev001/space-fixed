@@ -382,6 +382,26 @@ class RiderMyDeliveriesPageTest extends TestCase
         $this->assertSame('The delivery image is not readable.', $issue['reason']);
     }
 
+    public function test_proof_correction_defaults_to_the_issues_tab_for_rider_action(): void
+    {
+        [, $leg] = $this->shipmentWithLeg('retail_delivery', [
+            'status' => 'proof_correction_required',
+            'rider_progress_state' => RiderProgressState::PROOF_ACTION_REQUIRED,
+        ]);
+        $this->assign($leg, $this->rider, 'accepted');
+        HandoffProof::factory()->create([
+            'shipment_leg_id' => $leg->id,
+            'handoff_type' => 'delivery',
+            'review_status' => 'rejected',
+            'rejection_reason' => 'The delivery image is not readable.',
+        ]);
+
+        $props = $this->deliveryData();
+
+        $this->assertSame('issues', $props['filters']['tab']);
+        $this->assertSame('proof_correction', $props['list']['data'][0]['issue_type']);
+    }
+
     private function deliveryData(string $query = ''): array
     {
         return $this->actingAs($this->user->fresh(), 'user')

@@ -32,6 +32,61 @@ type ActionRunner = (
   onError?: (error: unknown) => boolean,
 ) => void;
 
+const isRepairPickupBeforeHandoff = (delivery?: TrackingShipmentLeg | null): boolean =>
+  delivery?.shipment?.source_type === 'repair_request'
+  && delivery.shipment.purpose === 'repair_pickup'
+  && delivery.leg_type === 'inbound'
+  && !delivery.picked_up_at
+  && ['assigned', 'pickup_scheduled'].includes(delivery.status)
+  && delivery.origin_snapshot?.type === 'customer';
+
+const isRepairPickupTrackingLeg = (delivery?: TrackingShipmentLeg | null): boolean =>
+  isRepairPickupBeforeHandoff(delivery)
+  || (
+    delivery?.shipment?.source_type === 'repair_request'
+    && delivery.shipment.purpose === 'repair_pickup'
+    && delivery.leg_type === 'inbound'
+    && Boolean(delivery.picked_up_at)
+    && delivery.status === 'in_transit'
+    && delivery.destination_snapshot?.type === 'shop'
+  );
+
+const isRetailRefundReturnBeforeHandoff = (delivery?: TrackingShipmentLeg | null): boolean =>
+  delivery?.shipment?.source_type === 'order_refund'
+  && delivery.shipment.purpose === 'refund_return'
+  && delivery.leg_type === 'return_to_shop'
+  && !delivery.picked_up_at
+  && ['assigned', 'pickup_scheduled'].includes(delivery.status)
+  && delivery.origin_snapshot?.type === 'customer';
+
+const isRetailRefundReturnTrackingLeg = (delivery?: TrackingShipmentLeg | null): boolean =>
+  isRetailRefundReturnBeforeHandoff(delivery)
+  || (
+    delivery?.shipment?.source_type === 'order_refund'
+    && delivery.shipment.purpose === 'refund_return'
+    && delivery.leg_type === 'return_to_shop'
+    && Boolean(delivery.picked_up_at)
+    && delivery.status === 'in_transit'
+    && delivery.destination_snapshot?.type === 'shop'
+  );
+
+const canRiderTrack = (delivery?: TrackingShipmentLeg | null): boolean =>
+  isRepairPickupTrackingLeg(delivery)
+  || isRetailRefundReturnTrackingLeg(delivery)
+  || (delivery?.status === 'in_transit' && delivery.destination_snapshot?.type === 'customer');
+
+const riderTrackingTarget = (delivery: TrackingShipmentLeg) =>
+  (isRepairPickupBeforeHandoff(delivery) || isRetailRefundReturnBeforeHandoff(delivery))
+    ? delivery.origin_snapshot
+    : delivery.destination_snapshot;
+
+const riderTrackingDestinationLabel = (delivery: TrackingShipmentLeg) =>
+  delivery.shipment?.source_type === 'order_refund'
+  && delivery.shipment.purpose === 'refund_return'
+  && delivery.leg_type === 'return_to_shop'
+    ? 'shop'
+    : undefined;
+
 const arrivalReasons = [
   ['gps_inaccurate', 'GPS location is inaccurate'],
   ['pin_incorrect', 'Shop or customer pin is incorrect'],
@@ -1529,13 +1584,13 @@ function CurrentDeliveryCard({
               <DeliveryContact delivery={actionable} />
               {liveTrackingEnabled
                 && canUpdateStatus
-                && actionable.status === 'in_transit'
-                && actionable.destination_snapshot?.type === 'customer'
+                && canRiderTrack(actionable)
                 && (
                   <div className="mt-4">
                     <RiderGpsTracker
                       legId={actionable.id}
-                      destination={actionable.destination_snapshot}
+                      destination={riderTrackingTarget(actionable)}
+                      destinationLabel={riderTrackingDestinationLabel(actionable)}
                       enabled
                       online={online}
                       movingIntervalSeconds={liveTrackingMovingIntervalSeconds}
@@ -1609,6 +1664,10 @@ function UpNextCard({
   canRecordProof,
   canUpdateStatus,
   canReportIssue,
+  liveTrackingEnabled,
+  liveTrackingMovingIntervalSeconds,
+  liveTrackingStationaryIntervalSeconds,
+  liveTrackingHiddenIntervalSeconds,
   today,
   runAction,
 }: {
@@ -1619,6 +1678,10 @@ function UpNextCard({
   canRecordProof: boolean;
   canUpdateStatus: boolean;
   canReportIssue: boolean;
+  liveTrackingEnabled: boolean;
+  liveTrackingMovingIntervalSeconds: number;
+  liveTrackingStationaryIntervalSeconds: number;
+  liveTrackingHiddenIntervalSeconds: number;
   today: string;
   runAction: ActionRunner;
 }) {
@@ -1655,6 +1718,26 @@ function UpNextCard({
             runAction={runAction}
           />
         </div>
+        {!locked
+          && item.kind === 'single'
+          && liveTrackingEnabled
+          && canUpdateStatus
+          && actionable
+          && canRiderTrack(actionable)
+          && (
+            <div className='mt-4'>
+              <RiderGpsTracker
+                legId={actionable.id}
+                destination={riderTrackingTarget(actionable)}
+                destinationLabel={riderTrackingDestinationLabel(actionable)}
+                enabled
+                online={online}
+                movingIntervalSeconds={liveTrackingMovingIntervalSeconds}
+                stationaryIntervalSeconds={liveTrackingStationaryIntervalSeconds}
+                hiddenIntervalSeconds={liveTrackingHiddenIntervalSeconds}
+              />
+            </div>
+          )}
         <button
           type="button"
           onClick={() => setShowDetails((current) => !current)}
@@ -2246,6 +2329,10 @@ export default function MyDeliveries() {
           canRecordProof={canRecordProof}
           canUpdateStatus={canUpdateStatus}
           canReportIssue={canReportIssue}
+          liveTrackingEnabled={liveTrackingEnabled}
+          liveTrackingMovingIntervalSeconds={liveTrackingMovingIntervalSeconds}
+          liveTrackingStationaryIntervalSeconds={liveTrackingStationaryIntervalSeconds}
+          liveTrackingHiddenIntervalSeconds={liveTrackingHiddenIntervalSeconds}
           today={today}
           runAction={runAction}
         />

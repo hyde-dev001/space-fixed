@@ -302,6 +302,15 @@ export type LogisticsRider = {
 
 export type DeliveryBatchStatus = 'draft' | 'offered' | 'accepted' | 'in_progress' | 'completed' | 'cancelled';
 
+export type BatchSuggestion = {
+  rider_profile_id: number;
+  capacity: number;
+  assigned_count: number;
+  overload_count: number;
+  module: LogisticsModule;
+  leg_ids: number[];
+};
+
 export type DeliveryBatch = {
   id: number;
   delivery_date: string;

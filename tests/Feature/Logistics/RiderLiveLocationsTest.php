@@ -35,6 +35,29 @@ class RiderLiveLocationsTest extends TestCase
         ]);
         $foreign = $this->trackedLeg($foreignShop, 'Foreign customer', ['latitude' => 10.3157, 'longitude' => 123.8854]);
         $delivered = $this->trackedLeg($shop, 'Delivered customer', ['latitude' => 14.6010, 'longitude' => 120.9860], 'delivered');
+        $refundReturn = $this->trackedLeg($shop, 'Refund return', ['latitude' => 14.6020, 'longitude' => 120.9870]);
+        $refundReturn['leg']->shipment->update([
+            'source_type' => 'order_refund',
+            'purpose' => 'refund_return',
+        ]);
+        $refundReturn['leg']->update([
+            'leg_type' => 'return_to_shop',
+            'picked_up_at' => now(),
+            'origin_snapshot' => [
+                'type' => 'customer',
+                'name' => 'Refund return customer',
+                'address' => 'Refund return customer address',
+                'latitude' => 14.61,
+                'longitude' => 120.99,
+            ],
+            'destination_snapshot' => [
+                'type' => 'shop',
+                'name' => 'Shop',
+                'address' => 'Shop address',
+                'latitude' => 14.62,
+                'longitude' => 121.00,
+            ],
+        ]);
 
         $response = $this->actingAs($dispatcher, 'user')
             ->getJson('/api/logistics/live-locations')
@@ -44,9 +67,10 @@ class RiderLiveLocationsTest extends TestCase
 
         $locations = collect($response->json('locations'));
 
-        $this->assertCount(2, $locations);
-        $this->assertSame([$visible['leg']->id, $stale['leg']->id], $locations->pluck('leg_id')->sort()->values()->all());
+        $this->assertCount(3, $locations);
+        $this->assertSame([$visible['leg']->id, $stale['leg']->id, $refundReturn['leg']->id], $locations->pluck('leg_id')->sort()->values()->all());
         $this->assertTrue($locations->firstWhere('leg_id', $stale['leg']->id)['stale']);
+        $this->assertSame('shop', $locations->firstWhere('leg_id', $refundReturn['leg']->id)['destination']['type']);
         $this->assertFalse($locations->contains('leg_id', $foreign['leg']->id));
         $this->assertFalse($locations->contains('leg_id', $delivered['leg']->id));
     }
