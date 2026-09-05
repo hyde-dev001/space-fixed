@@ -2412,6 +2412,8 @@ const MyRepairs: React.FC = () => {
 
             if (usedQueryFallback) {
               window.location.href = '/';
+            } else {
+              window.location.reload();
             }
           } else if (result?.expired) {
             if (usedQueryFallback) {

@@ -43,6 +43,8 @@ const repair = (intakeDeliveryMethod: string, canConfirmReceipt = false) => ({
   final_total: 500,
   status: 'pending',
   payment_status: 'completed',
+  total_paid_amount: 500,
+  fully_paid: true,
   created_at: '2026-07-20T08:00:00.000Z',
   intake_delivery_method: intakeDeliveryMethod,
   return_delivery_method: 'customer_pickup',
@@ -153,6 +155,15 @@ describe('JobOrdersRepair intake logistics', () => {
     expect(
       screen.queryByText(/contact (?:a )?(?:delivery service|carrier|rider)|manually (?:enter|add) (?:carrier|rider)/i),
     ).not.toBeInTheDocument();
+  });
+
+  it('shows the canonical repair payment state alongside intake progress', async () => {
+    render(<JobOrdersRepair />);
+    await openDetails();
+
+    const paymentLabel = screen.getByText('Payment', { exact: true });
+    expect(paymentLabel).toBeInTheDocument();
+    expect(paymentLabel.parentElement).toHaveTextContent('Paid');
   });
 
   it('confirms an approved handoff and refreshes the repair from the server', async () => {

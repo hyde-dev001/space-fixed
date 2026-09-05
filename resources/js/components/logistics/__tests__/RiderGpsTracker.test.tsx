@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import RiderGpsTracker from '../RiderGpsTracker';
 
@@ -42,7 +42,6 @@ const position = (timestamp = Date.parse('2026-09-04T00:00:00.000Z')) => ({
 }) as GeolocationPosition;
 
 beforeEach(() => {
-  window.sessionStorage.clear();
   vi.clearAllMocks();
   Object.defineProperty(navigator, 'geolocation', {
     configurable: true,
@@ -60,12 +59,10 @@ afterEach(() => {
 });
 
 describe('RiderGpsTracker', () => {
-  it('starts tracking and sends the browser GPS reading to the assigned leg', async () => {
+  it('automatically starts tracking and sends the browser GPS reading to the assigned leg', async () => {
     mocks.getPosition.mockResolvedValue(position());
 
     render(<RiderGpsTracker legId={42} enabled online />);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Start GPS tracking' }));
 
     await waitFor(() => expect(mocks.recordLocation).toHaveBeenCalledWith(42, {
       latitude: 14.3001,
@@ -77,11 +74,10 @@ describe('RiderGpsTracker', () => {
     }));
     expect(screen.getByText('GPS tracking active')).toBeVisible();
   });
-  it('resumes tracking after the rider refreshes the delivery page', async () => {
+  it('automatically resumes tracking after the rider refreshes the delivery page', async () => {
     mocks.getPosition.mockResolvedValue(position());
 
     const firstRender = render(<RiderGpsTracker legId={42} enabled online />);
-    fireEvent.click(screen.getByRole('button', { name: 'Start GPS tracking' }));
     await waitFor(() => expect(mocks.recordLocation).toHaveBeenCalled());
     firstRender.unmount();
     mocks.recordLocation.mockClear();
@@ -112,7 +108,6 @@ describe('RiderGpsTracker', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Start GPS tracking' }));
     await waitFor(() => expect(mocks.recordLocation).toHaveBeenCalled());
 
     const moved = position(Date.parse('2026-09-04T00:00:30.000Z'));
@@ -142,8 +137,6 @@ describe('RiderGpsTracker', () => {
         destination={{ latitude: 14.4, longitude: 121.05, address: 'Customer address' }}
       />,
     );
-
-    fireEvent.click(screen.getByRole('button', { name: 'Start GPS tracking' }));
 
     await waitFor(() => expect(mocks.recordLocation).toHaveBeenCalledWith(42, expect.objectContaining({
       latitude: 14.31,
@@ -176,7 +169,6 @@ describe('RiderGpsTracker', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Start GPS tracking' }));
     await waitFor(() => expect(mocks.recordLocation).toHaveBeenCalled());
 
     const accurate = position(inaccurate.timestamp);
@@ -192,8 +184,6 @@ describe('RiderGpsTracker', () => {
     vi.stubGlobal('fetch', vi.fn());
 
     render(<RiderGpsTracker legId={42} enabled online />);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Start GPS tracking' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Location permission is required to start tracking.',
@@ -213,8 +203,6 @@ describe('RiderGpsTracker', () => {
 
     render(<RiderGpsTracker legId={42} enabled online />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Start GPS tracking' }));
-
     expect(await screen.findByRole('alert')).toHaveTextContent(/desktop network location/i);
     expect(mocks.recordLocation).not.toHaveBeenCalled();
   });
@@ -223,8 +211,6 @@ describe('RiderGpsTracker', () => {
     mocks.getPosition.mockRejectedValue({ code: 1 });
 
     render(<RiderGpsTracker legId={42} enabled online />);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Start GPS tracking' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Location permission is required to start tracking.',
@@ -248,8 +234,6 @@ describe('RiderGpsTracker', () => {
         }}
       />,
     );
-
-    fireEvent.click(screen.getByRole('button', { name: 'Start GPS tracking' }));
 
     expect(await screen.findByTestId('rider-route-map')).toHaveTextContent('Customer address');
     expect(screen.getByTestId('rider-route-map')).toHaveTextContent('rider');
@@ -279,8 +263,6 @@ describe('RiderGpsTracker', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Start GPS tracking' }));
-
     expect(await screen.findByTestId('rider-route-map')).toHaveTextContent('Customer address road');
   });
 
@@ -294,8 +276,6 @@ describe('RiderGpsTracker', () => {
     });
 
     render(<RiderGpsTracker legId={42} enabled online />);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Start GPS tracking' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'The GPS accuracy is too low for tracking.',

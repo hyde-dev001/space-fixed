@@ -396,6 +396,17 @@ const formatPesoAmount = (value: unknown): string | null => {
   return parsed === null ? null : `₱${parsed.toFixed(2)}`;
 };
 
+const getRepairPaymentStateLabel = (
+  order: Pick<RepairOrder, 'payment_status' | 'fullyPaid' | 'totalPaidAmount'>,
+): string => {
+  const status = String(order.payment_status ?? '').toLowerCase();
+  if (status === 'refunded') return 'Refunded';
+  if (status === 'partially_refunded') return 'Partially Refunded';
+  if (status === 'partially_paid') return 'Deposit Paid';
+  if (status === 'paid' || status === 'completed' || Boolean(order.fullyPaid)) return 'Paid';
+  return (toNumber(order.totalPaidAmount) ?? 0) > 0 ? 'Deposit Paid' : 'Unpaid';
+};
+
 const humanizeReasonCode = (value: string | null | undefined): string => {
   const normalized = String(value ?? "").trim();
   if (!normalized) {
@@ -3374,7 +3385,7 @@ export default function JobOrdersRepair() {
                     </p>
                     <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm dark:border-blue-800 dark:bg-blue-900/20">
                       <p className="font-semibold text-gray-900 dark:text-white">Delivery progress</p>
-                      <dl className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                      <dl className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
                         <div>
                           <dt className="text-xs text-gray-500 dark:text-gray-400">Shipment</dt>
                           <dd className="font-medium text-gray-900 dark:text-white">{formatLogisticsStatus(viewOrder.intakeHandoff.shipment_status)}</dd>
@@ -3386,6 +3397,17 @@ export default function JobOrdersRepair() {
                         <div>
                           <dt className="text-xs text-gray-500 dark:text-gray-400">Proof</dt>
                           <dd className="font-medium text-gray-900 dark:text-white">{formatLogisticsStatus(viewOrder.intakeHandoff.proof_status)}</dd>
+                        </div>
+                        <div>
+                          <dt className="text-xs text-gray-500 dark:text-gray-400">Payment</dt>
+                          <dd className="font-medium text-gray-900 dark:text-white">
+                            {getRepairPaymentStateLabel(viewOrder)}
+                          </dd>
+                          {(toNumber(viewOrder.totalPaidAmount) ?? 0) > 0 && (
+                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                              {formatPesoAmount(viewOrder.totalPaidAmount)} collected
+                            </span>
+                          )}
                         </div>
                       </dl>
                       {(viewOrder.intakeHandoff.scheduled_delivery_date || viewOrder.intakeHandoff.delivery_window) && (

@@ -92,9 +92,9 @@ beforeEach(() => {
 });
 
 describe('MyDeliveries GPS tracking integration', () => {
-  it('shows the tracker for an eligible current delivery when enabled by the server', () => {
+  it('automatically starts the tracker for an eligible current delivery', () => {
     render(<MyDeliveries />);
 
-    expect(screen.getByRole('button', { name: 'Start GPS tracking' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Stop GPS tracking' })).toBeVisible();
   });
 });

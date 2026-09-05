@@ -150,7 +150,7 @@ export default function LiveTrackingMap({ locations, label = 'Live rider map', f
 
     visible.forEach((entry) => {
       const point: [number, number] = [entry.location.latitude, entry.location.longitude];
-      const tooltip = `${entry.rider.name ?? 'Delivery'}${entry.stale ? ' - Stale location' : ''}`;
+      const tooltip = `${entry.rider.name ?? 'Rider'}${entry.stale ? ' - Stale location' : ''}`;
       const existing = markersRef.current.get(entry.leg_id);
 
       if (existing) {
