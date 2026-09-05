@@ -116,6 +116,9 @@ export default function ShipmentTrackingModal({
   };
 
   if (!isOpen || shipmentId === null) return null;
+  const displayShipmentNumber = request.status === 'success'
+    ? request.shipment.shipment_number ?? shipmentId
+    : shipmentId;
 
   return (
     <div
@@ -135,7 +138,7 @@ export default function ShipmentTrackingModal({
       >
         <header className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-gray-200 bg-white px-4 py-4 sm:px-6">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Shipment #{shipmentId}</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Shipment #{displayShipmentNumber}</p>
             <h2 id="shipment-tracking-title" className="mt-1 text-xl font-bold tracking-tight text-[#16233b]">
               Shipment tracking
             </h2>

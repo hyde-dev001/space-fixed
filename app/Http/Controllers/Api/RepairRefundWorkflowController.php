@@ -174,9 +174,18 @@ class RepairRefundWorkflowController extends Controller
             ->latest('id')
             ->get();
 
+        $data = $refunds->map(function (PosRefund $refund): array {
+            $payload = $refund->toArray();
+            $reasonNotes = PosRefund::normalizeReasonNotes($refund->reason_notes);
+            $payload['reason_notes'] = $reasonNotes;
+            $payload['reason_details'] = $reasonNotes;
+
+            return $payload;
+        })->values();
+
         return response()->json([
             'success' => true,
-            'data' => $refunds,
+            'data' => $data,
         ]);
     }
 
@@ -557,6 +566,13 @@ class RepairRefundWorkflowController extends Controller
             $approvalStage = 'approved';
         }
 
+        $approvalStageLabel = match ($approvalStage) {
+            'finance_initial' => 'Waiting for Finance approval',
+            'shop_owner' => 'Waiting for shop owner approval',
+            'approved' => 'Ready for payout',
+            default => null,
+        };
+
         $uiStatus = match (true) {
             in_array($status, ['requested'], true) => 'Pending',
             in_array($status, ['rejected', 'failed', 'cancelled'], true) => 'Rejected',
@@ -590,6 +606,7 @@ class RepairRefundWorkflowController extends Controller
             $candidate = (string) ($item['url'] ?? $item['path'] ?? $item['src'] ?? '');
             return trim($candidate) !== '' ? trim($candidate) : null;
         }, $evidenceCandidates), fn ($item) => is_string($item) && $item !== ''));
+        $reasonNotes = PosRefund::normalizeReasonNotes($refund->reason_notes);
 
         $legs = $refund->legs ?? collect();
         $hasGatewayLeg = $legs->contains(fn ($leg) => (string) ($leg->leg_type ?? '') === 'gateway' && (float) ($leg->requested_amount ?? 0) > 0);
@@ -643,8 +660,9 @@ class RepairRefundWorkflowController extends Controller
             'requestedBy' => $requestedBy,
             'requestDate' => optional($refund->requested_at ?? $refund->created_at)->format('Y-m-d'),
             'refundReason' => ucwords(str_replace('_', ' ', (string) ($refund->reason_code ?? 'repair_refund'))),
-            'refundNote' => (string) ($refund->reason_notes ?? ''),
-            'reason' => (string) ($refund->reason_notes ?? ''),
+            'refundNote' => $reasonNotes ?? '',
+            'reason' => $reasonNotes ?? '',
+            'reasonDetails' => $reasonNotes ?? '',
             'status' => $uiStatus,
             'rawStatus' => $status,
             'workflowSource' => (string) ($refund->workflow_source ?? 'pos'),
@@ -653,6 +671,7 @@ class RepairRefundWorkflowController extends Controller
             'financeStatus' => (string) ($refund->finance_status ?? 'pending'),
             'requiresOwnerApproval' => $requiresOwnerApproval,
             'approvalStage' => $approvalStage,
+            'approvalStageLabel' => $approvalStageLabel,
             'sourceType' => 'repair',
             'repairNumber' => $repair?->request_id,
             'receiptNumber' => $receiptNo !== '' ? $receiptNo : null,

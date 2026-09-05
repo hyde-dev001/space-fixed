@@ -56,6 +56,38 @@ describe("owner approval renderer parity", () => {
     expect(screen.getByText("Wrong item received")).toBeInTheDocument();
   });
 
+  it("keeps repair refund notes separate and renders evidence previews", () => {
+    render(
+      <RefundApprovalDetails
+        item={item({ source_type: "repair_refund", title: "Repair refund approval" })}
+        detail={{
+          refundReason: "Service defect",
+          reason: "Customer note from refund request.",
+          reasonDetails: "Customer note from refund request.",
+          refundNote: "Customer note from refund request.",
+          media: [
+            "/storage/refund-evidence/repair-1/photo.jpg",
+            "/storage/refund-evidence/repair-1/video.mp4",
+          ],
+          rawStatus: "requested",
+          approvalStage: "shop_owner",
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Service defect")).toBeInTheDocument();
+    expect(screen.getByText("Customer note from refund request.")).toBeInTheDocument();
+    expect(screen.getByAltText("Refund evidence 1")).toHaveAttribute(
+      "src",
+      "/storage/refund-evidence/repair-1/photo.jpg",
+    );
+    expect(screen.getByRole("link", { name: "Open refund evidence 2" })).toHaveAttribute(
+      "href",
+      "/storage/refund-evidence/repair-1/video.mp4",
+    );
+    expect(screen.queryByText("/storage/refund-evidence/repair-1/photo.jpg")).not.toBeInTheDocument();
+  });
+
   it("renders the owner detail shapes for prices, payroll, salary, purchasing, expenses, and repairs", () => {
     const cases = [
       {

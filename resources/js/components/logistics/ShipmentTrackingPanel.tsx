@@ -200,6 +200,7 @@ export default function ShipmentTrackingPanel({
 
   const isReturn = currentShipment.purpose === 'refund_return';
   const isRepair = currentShipment.source_type === 'repair_request';
+  const shipmentNumber = currentShipment.shipment_number ?? currentShipment.id;
   const itemLabel = isReturn ? 'Return' : isRepair ? 'Repair Delivery' : 'Shipment';
   const trackingNumber = isReturn ? `RET-${currentShipment.id}` : (currentLeg?.tracking_number || `SHP-${currentShipment.id}`);
   const trackingUrl = isReturn ? `/tracking/shipments/${currentShipment.id}` : currentLeg?.tracking_url;
@@ -208,7 +209,8 @@ export default function ShipmentTrackingPanel({
   const customerMapLocations: LiveRiderLocation[] = liveTracking ? [{
     leg_id: liveTracking.leg_id,
     shipment_id: currentShipment.id,
-    shipment_reference: `Shipment #${currentShipment.id}`,
+    shipment_number: shipmentNumber,
+    shipment_reference: `Shipment #${shipmentNumber}`,
     rider: { id: null, name: 'Delivery' },
     status: liveTracking.status,
     destination: liveTracking.destination ?? {},

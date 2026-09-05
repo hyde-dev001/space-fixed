@@ -3,6 +3,7 @@
 namespace App\Services\Logistics;
 
 use App\Enums\Logistics\CarrierType;
+use App\Models\ShopOwner;
 use App\Models\Logistics\ShippingMethod;
 use App\Models\Logistics\Shipment;
 use Illuminate\Support\Facades\DB;
@@ -42,7 +43,16 @@ class ShipmentRequestService
         $data = $validator->validated();
 
         return DB::transaction(function () use ($data) {
+            ShopOwner::query()
+                ->whereKey($data['shop_owner_id'])
+                ->lockForUpdate()
+                ->firstOrFail();
+            $shipmentNumber = (int) Shipment::query()
+                ->where('shop_owner_id', $data['shop_owner_id'])
+                ->max('shipment_number') + 1;
+
             $shipment = Shipment::create([
+                'shipment_number' => $shipmentNumber,
                 'shop_owner_id' => $data['shop_owner_id'],
                 'source_type' => $data['source_type'],
                 'source_id' => $data['source_id'],

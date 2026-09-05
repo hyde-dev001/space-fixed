@@ -148,14 +148,10 @@ class RepairPosPaymentService
                 ]);
             }
 
-            $posWalkInNeedsRepairerReview = ($phaseBreakdown['phase'] ?? null) === 'initial'
-                && ($phaseBreakdown['delivery_method'] ?? null) === 'walk_in'
-                && (int) ($lockedRepair->assigned_repairer_id ?? 0) > 0;
             $this->paymentSettlementService->settleRepairPhasePaid(
                 $lockedRepair,
                 $phaseBreakdown,
                 null,
-                $posWalkInNeedsRepairerReview,
             );
             RepairPaymentSession::query()
                 ->where('repair_request_id', $lockedRepair->id)

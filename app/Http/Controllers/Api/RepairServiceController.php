@@ -717,9 +717,12 @@ class RepairServiceController extends Controller
     public function financeApprove(Request $request, $id)
     {
         $requestType = strtolower((string) $request->input('request_type', ''));
+        $financeShopOwnerId = (int) (Auth::guard('user')->user()?->shop_owner_id ?? 0);
 
         if ($requestType === 'package') {
-            $package = RepairPackage::find($id);
+            $package = RepairPackage::query()
+                ->where('shop_owner_id', $financeShopOwnerId)
+                ->find($id);
             if (!$package) {
                 return response()->json([
                     'success' => false,
@@ -731,9 +734,13 @@ class RepairServiceController extends Controller
         }
 
         // Try to find as a service first, then fallback to package for backward compatibility.
-        $service = RepairService::find($id);
+        $service = RepairService::query()
+            ->where('shop_owner_id', $financeShopOwnerId)
+            ->find($id);
         if (!$service) {
-            $package = RepairPackage::find($id);
+            $package = RepairPackage::query()
+                ->where('shop_owner_id', $financeShopOwnerId)
+                ->find($id);
             if (!$package) {
                 return response()->json([
                     'success' => false,
@@ -901,9 +908,12 @@ class RepairServiceController extends Controller
     public function financeReject(Request $request, $id)
     {
         $requestType = strtolower((string) $request->input('request_type', ''));
+        $financeShopOwnerId = (int) (Auth::guard('user')->user()?->shop_owner_id ?? 0);
 
         if ($requestType === 'package') {
-            $package = RepairPackage::find($id);
+            $package = RepairPackage::query()
+                ->where('shop_owner_id', $financeShopOwnerId)
+                ->find($id);
             if (!$package) {
                 return response()->json([
                     'success' => false,
@@ -915,9 +925,13 @@ class RepairServiceController extends Controller
         }
 
         // Try to find as a service first, then fallback to package for backward compatibility.
-        $service = RepairService::find($id);
+        $service = RepairService::query()
+            ->where('shop_owner_id', $financeShopOwnerId)
+            ->find($id);
         if (!$service) {
-            $package = RepairPackage::find($id);
+            $package = RepairPackage::query()
+                ->where('shop_owner_id', $financeShopOwnerId)
+                ->find($id);
             if (!$package) {
                 return response()->json([
                     'success' => false,
@@ -1277,7 +1291,9 @@ class RepairServiceController extends Controller
         $requestType = strtolower((string) $request->input('request_type', ''));
 
         if ($requestType === 'package') {
-            $package = RepairPackage::find($id);
+            $package = RepairPackage::query()
+                ->where('shop_owner_id', Auth::guard('shop_owner')->id())
+                ->find($id);
             if (!$package) {
                 return response()->json([
                     'success' => false,
@@ -1289,7 +1305,9 @@ class RepairServiceController extends Controller
         }
 
         if ($requestType === 'service') {
-            $service = RepairService::find($id);
+            $service = RepairService::query()
+                ->where('shop_owner_id', Auth::guard('shop_owner')->id())
+                ->find($id);
 
             if (!$service) {
                 return response()->json([
@@ -1346,7 +1364,9 @@ class RepairServiceController extends Controller
 
         // Backward-compatible fallback when request_type is missing:
         // prefer service first to avoid ID collisions with packages.
-        $service = RepairService::find($id);
+        $service = RepairService::query()
+            ->where('shop_owner_id', Auth::guard('shop_owner')->id())
+            ->find($id);
         if ($service) {
             if (!$this->requiresOwnerApprovalForService($service)) {
                 return response()->json([
@@ -1394,7 +1414,9 @@ class RepairServiceController extends Controller
             ]);
         }
 
-        $package = RepairPackage::find($id);
+        $package = RepairPackage::query()
+            ->where('shop_owner_id', Auth::guard('shop_owner')->id())
+            ->find($id);
         if ($package) {
             return $this->ownerApprovePackage($package);
         }
@@ -1411,9 +1433,12 @@ class RepairServiceController extends Controller
     public function financeApproveFinal(Request $request, $id)
     {
         $requestType = strtolower((string) $request->input('request_type', ''));
+        $financeShopOwnerId = (int) (Auth::guard('user')->user()?->shop_owner_id ?? 0);
 
         if ($requestType === 'package') {
-            $package = RepairPackage::find($id);
+            $package = RepairPackage::query()
+                ->where('shop_owner_id', $financeShopOwnerId)
+                ->find($id);
             if (!$package) {
                 return response()->json([
                     'success' => false,
@@ -1425,9 +1450,13 @@ class RepairServiceController extends Controller
         }
 
         // Try to find as a service first, then fallback to package for backward compatibility.
-        $service = RepairService::find($id);
+        $service = RepairService::query()
+            ->where('shop_owner_id', $financeShopOwnerId)
+            ->find($id);
         if (!$service) {
-            $package = RepairPackage::find($id);
+            $package = RepairPackage::query()
+                ->where('shop_owner_id', $financeShopOwnerId)
+                ->find($id);
             if (!$package) {
                 return response()->json([
                     'success' => false,
@@ -1733,7 +1762,9 @@ class RepairServiceController extends Controller
         $requestType = strtolower((string) $request->input('request_type', ''));
 
         if ($requestType === 'package') {
-            $package = RepairPackage::find($id);
+            $package = RepairPackage::query()
+                ->where('shop_owner_id', Auth::guard('shop_owner')->id())
+                ->find($id);
             if (!$package) {
                 return response()->json([
                     'success' => false,
@@ -1745,7 +1776,9 @@ class RepairServiceController extends Controller
         }
 
         if ($requestType === 'service') {
-            $service = RepairService::find($id);
+            $service = RepairService::query()
+                ->where('shop_owner_id', Auth::guard('shop_owner')->id())
+                ->find($id);
 
             if (!$service) {
                 return response()->json([
@@ -1819,7 +1852,9 @@ class RepairServiceController extends Controller
 
         // Backward-compatible fallback when request_type is missing:
         // prefer service first to avoid ID collisions with packages.
-        $service = RepairService::find($id);
+        $service = RepairService::query()
+            ->where('shop_owner_id', Auth::guard('shop_owner')->id())
+            ->find($id);
         if ($service) {
             if (!$this->requiresOwnerApprovalForService($service)) {
                 return response()->json([
@@ -1884,7 +1919,9 @@ class RepairServiceController extends Controller
             ]);
         }
 
-        $package = RepairPackage::find($id);
+        $package = RepairPackage::query()
+            ->where('shop_owner_id', Auth::guard('shop_owner')->id())
+            ->find($id);
         if ($package) {
             return $this->ownerRejectPackage($request, $package);
         }

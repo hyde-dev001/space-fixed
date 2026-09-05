@@ -9,6 +9,7 @@ use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
 use App\Models\Order;
 use App\Models\RepairRequest;
+use App\Models\RepairService;
 use App\Models\ShopOwner;
 use App\Models\ShopOwnerModule;
 use App\Models\ShopReview;
@@ -245,5 +246,32 @@ final class OwnerErpTenantIsolationTest extends TestCase
             ->assertOk()
             ->assertJsonPath('riders', [])
             ->assertJsonMissing(['shop_owner_id' => $otherOwner->id]);
+    }
+
+    public function test_repair_dashboard_uses_service_duration_when_no_completed_repair_exists(): void
+    {
+        $owner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
+            'business_type' => 'both',
+        ]);
+        $service = RepairService::create([
+            'shop_owner_id' => $owner->id,
+            'name' => 'Glue',
+            'category' => 'Care',
+            'price' => 150,
+            'duration' => '45 min',
+            'status' => 'Active',
+        ]);
+        $repair = RepairRequest::factory()->create([
+            'shop_owner_id' => $owner->id,
+            'created_at' => now()->subDay(),
+            'updated_at' => now()->subDay(),
+        ]);
+        $repair->services()->attach($service->id);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->getJson('/api/shop-owner/erp/staff/repair-dashboard')
+            ->assertOk()
+            ->assertJsonPath('requestedServices.0.avgTurnaround', 'Est. 45 min');
     }
 }

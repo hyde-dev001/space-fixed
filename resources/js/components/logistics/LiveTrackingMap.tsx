@@ -5,6 +5,7 @@ import type { LiveTrackingRoute } from '@/types/logistics';
 export type LiveRiderLocation = {
   leg_id: number;
   shipment_id: number | null;
+  shipment_number?: number | null;
   shipment_reference: string | null;
   rider: { id: number | null; name: string | null };
   status: string | null;

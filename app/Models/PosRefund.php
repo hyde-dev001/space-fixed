@@ -34,6 +34,18 @@ class PosRefund extends Model
         self::RECOVERY_OUTCOME_AUTOMATIC_SUCCESS,
     ];
 
+    public static function normalizeReasonNotes(?string $notes): ?string
+    {
+        $lines = preg_split('/\R/u', trim((string) $notes), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        $lines = array_values(array_filter(
+            $lines,
+            static fn (string $line): bool => preg_match('/^\s*Uploaded media references\s*:/i', $line) !== 1,
+        ));
+        $normalized = trim(implode("\n", $lines));
+
+        return $normalized !== '' ? $normalized : null;
+    }
+
     protected $fillable = [
         'refund_no',
         'shop_owner_id',

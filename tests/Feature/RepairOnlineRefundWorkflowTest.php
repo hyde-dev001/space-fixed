@@ -476,7 +476,7 @@ class RepairOnlineRefundWorkflowTest extends TestCase
             'request_type' => 'full',
             'requested_amount' => 650,
             'reason_code' => 'service_defect',
-            'reason_notes' => 'Evidence attached by customer.',
+            'reason_notes' => "Customer note from refund request.\nUploaded media references: old-photo.png, old-video.mp4",
             'status' => 'requested',
             'finance_status' => 'approved_initial',
             'shop_owner_status' => 'pending',
@@ -493,6 +493,10 @@ class RepairOnlineRefundWorkflowTest extends TestCase
             ->getJson('/api/shop-owner/repair-refunds');
 
         $response->assertOk();
+        $response->assertJsonPath('data.0.reason', 'Customer note from refund request.');
+        $response->assertJsonPath('data.0.refundNote', 'Customer note from refund request.');
+        $response->assertJsonPath('data.0.reasonDetails', 'Customer note from refund request.');
+        $response->assertJsonPath('data.0.approvalStageLabel', 'Waiting for shop owner approval');
         $response->assertJsonPath('data.0.media.0', 'https://example.com/evidence-photo.jpg');
         $response->assertJsonPath('data.0.media.1', 'https://example.com/evidence-video.mp4');
     }
