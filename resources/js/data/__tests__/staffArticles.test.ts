@@ -1,3 +1,6 @@
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -95,6 +98,25 @@ describe("Staff Articles catalog", () => {
         expect(screenshot.alt.tl.trim()).not.toBe("");
         expect(screenshot.aspectRatio).toBeGreaterThan(0);
       }
+    }
+  });
+
+  it("has a real WebP screenshot for every catalog slot", () => {
+    const screenshots = STAFF_ARTICLES.flatMap((article) => article.screenshots);
+
+    expect(screenshots).toHaveLength(94);
+
+    for (const screenshot of screenshots) {
+      const filePath = resolve(process.cwd(), "public", screenshot.path.replace(/^\//, ""));
+
+      const exists = existsSync(filePath);
+
+      expect(exists, screenshot.path).toBe(true);
+      if (!exists) continue;
+
+      const bytes = readFileSync(filePath);
+      expect(bytes.subarray(0, 4).toString("ascii"), screenshot.path).toBe("RIFF");
+      expect(bytes.subarray(8, 12).toString("ascii"), screenshot.path).toBe("WEBP");
     }
   });
 

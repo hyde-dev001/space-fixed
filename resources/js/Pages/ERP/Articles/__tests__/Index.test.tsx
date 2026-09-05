@@ -65,7 +65,7 @@ describe("Staff Articles page", () => {
     expect(screen.getByRole("heading", { name: /staff articles/i })).toBeInTheDocument();
     expect(screen.getByRole("searchbox", { name: /search staff articles/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /getting started/i })).toBeInTheDocument();
-    expect(screen.getAllByText(/staff workspace and permissions/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/staff pages and access/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/using the staff dashboard/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/32 articles/i)).toBeInTheDocument();
   });
@@ -82,7 +82,7 @@ describe("Staff Articles page", () => {
       target: { value: "tinanggihan" },
     });
 
-    expect(screen.getByText(/mga outcome ng price request/i)).toBeInTheDocument();
+    expect(screen.getByText(/resulta ng price request/i)).toBeInTheDocument();
   });
 
   it("shows a no-results reset state and preserves search/filter state in the URL", () => {
@@ -101,7 +101,7 @@ describe("Staff Articles page", () => {
 
     expect(screen.getByRole("searchbox", { name: /search staff articles/i })).toHaveValue("");
     expect(window.location.search).toBe("");
-    expect(screen.getAllByText(/staff workspace and permissions/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/staff pages and access/i).length).toBeGreaterThan(0);
   });
 
   it("renders valid details, an invalid slug, and an inaccessible known slug", () => {
