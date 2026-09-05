@@ -402,3 +402,15 @@ Expected: the remote feature branch points to the final rebased commit and is re
 - Type consistency: the shared `ArticleAudience`, `ArticleCatalog`, `ArticleGuide`, `ArticleViewer`, `ARTICLE_AUDIENCE_CONFIG`, and `loadArticleCatalog` names are used consistently by the catalog, route, page, and sidebar tasks.
 
 Plan complete and saved to `docs/superpowers/plans/2026-09-05-role-based-article-guides.md`. Inline execution is selected because the repository operating model requires one sequential main agent and the user already approved proceeding.
+
+## Approved follow-up: same-catalog access and Repairer entry fix
+
+The approved follow-up keeps the server-selected audience as the boundary. Once an employee has reached that audience route, the page shows the complete catalog for that role instead of applying per-article permission filtering that can hide valid same-role guides. Shop Owner keeps its business and registration filters. The detail page removes the visible `Who can use this` and `Common problems and what to do` sections. Repairer navigation no longer injects the Staff-only attendance destination and sends the repair-only logo entry to the valid Repairer Articles route.
+
+### Follow-up steps
+
+- [x] Add regression assertions in `resources/js/Pages/ERP/Articles/__tests__/Index.test.tsx` and `resources/js/layout/__tests__/AppSidebar_ERP.test.tsx` for same-catalog visibility, removed detail sections, Repairer Articles navigation, and the absence of Repairer `Log Attendance`.
+- [x] Update `resources/js/Pages/ERP/Articles/Index.tsx` to use the active catalog directly for employee audiences while preserving Shop Owner filtering.
+- [x] Update `resources/js/components/articles/ArticleDetail.tsx` to remove the two requested sections without removing the underlying guide data.
+- [x] Update `resources/js/layout/AppSidebar_ERP.tsx` so Repairer-only accounts do not receive the `/erp/time-in` attendance/logo path.
+- [x] Run focused tests, frontend tests, `git diff --check`, the relevant Laravel route suite, rebase onto `origin/solespace-b`, generate a fresh `public/build`, and push the feature branch.

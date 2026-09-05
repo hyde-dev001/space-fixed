@@ -49,6 +49,11 @@
 - Keep payment, delivery-plan locking, external courier tracking, and physical repair handoff as separate gates. Customer-arranged return tracking remains editable after balance payment and becomes immutable only after the employee records the handoff.
 - Derive repair POS customer identity from the locked repair request. Never persist UI sentinel IDs or caller-supplied guest details when the repair already contains the authoritative customer snapshot.
 
+## 2026-09-05 - Article audience boundary
+
+- Let the server-selected article audience control employee guide visibility. Client-side per-article permission filtering can hide valid same-role guides when shared props are incomplete; keep business and registration filtering for Shop Owner variants.
+- Do not inject a role-specific sidebar link to a shared page unless that account can open the route.
+
 ## 2026-09-01 - Retail return method authority
 
 - Persist the selected retail return method as the authority: valid Staff-entered third-party tracking starts `in_transit` in customer return fields without creating a Shop-owned shipment; physical receipt and inspection remain a separate Staff action.

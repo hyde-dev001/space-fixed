@@ -14,7 +14,6 @@ import type {
   ArticleViewer,
 } from "../../../data/articleGuides";
 import { loadArticleCatalog } from "../../../data/articleCatalogs";
-import { isRegularStaffViewer } from "../../../data/staffArticleAccess";
 import {
   getAccessibleArticles,
   getArticleBySlug,
@@ -142,9 +141,11 @@ export default function StaffArticlesIndex() {
   }, [audience]);
 
   const viewer = readViewer(props, audience ?? "");
-  const accessibleArticles = catalog === null || (audience === "staff" && !isRegularStaffViewer(viewer))
+  const accessibleArticles = catalog === null
     ? []
-    : getAccessibleArticles(catalog, viewer);
+    : audience === "shop-owner"
+      ? getAccessibleArticles(catalog, viewer)
+      : catalog.articles;
   const article = catalog === null || articleSlug === null
     ? undefined
     : getArticleBySlug(catalog, articleSlug);
