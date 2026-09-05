@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   toast: vi.fn(),
   error: vi.fn(),
   confirm: vi.fn(),
+  suggestions: vi.fn(),
 }));
 
 vi.mock('@inertiajs/react', () => ({
@@ -29,7 +30,7 @@ vi.mock('@/services/logisticsApi', () => ({ logisticsApi: {
   scheduleLegs: mocks.scheduleLegs,
   createBatch: mocks.createBatch,
   offerBatch: mocks.offerBatch,
-  suggestions: vi.fn(), updateBatch: mocks.updateBatch, removeBatchStop: mocks.removeBatchStop, cancelBatch: mocks.cancelBatch, restoreBatch: mocks.restoreBatch,
+  suggestions: mocks.suggestions, updateBatch: mocks.updateBatch, removeBatchStop: mocks.removeBatchStop, cancelBatch: mocks.cancelBatch, restoreBatch: mocks.restoreBatch,
 } }));
 vi.mock('@/utils/workflowFeedback', () => ({ workflowFeedback: {
   toast: mocks.toast,
@@ -106,6 +107,7 @@ beforeEach(() => {
   mocks.toast.mockResolvedValue({});
   mocks.error.mockResolvedValue({});
   mocks.confirm.mockResolvedValue({ isConfirmed: true });
+  mocks.suggestions.mockResolvedValue({ data: { suggestions: [] } });
 });
 
 function openBuilder() {
@@ -277,6 +279,41 @@ it('requests backend-filtered batch data for the selected module and slot', () =
     date: undefined,
     window: 'morning',
   }, expect.objectContaining({ only: ['batches', 'pool', 'unscheduled', 'filters'] }));
+});
+
+it('automatically loads and lets the dispatcher apply a nearest-stop suggestion', async () => {
+  const secondScheduledLeg = {
+    ...scheduledLeg,
+    id: 10,
+    shipment: { ...scheduledLeg.shipment, id: 100, source_id: 101 },
+    destination_snapshot: { ...scheduledLeg.destination_snapshot, name: 'Cara Santos', address: 'Bacoor, Cavite' },
+  };
+  mocks.props = { ...mocks.props, pool: [scheduledLeg, secondScheduledLeg], unscheduled: [] };
+  mocks.suggestions.mockResolvedValue({
+    data: {
+      suggestions: [{
+        rider_profile_id: 3,
+        capacity: 10,
+        assigned_count: 0,
+        overload_count: 0,
+        module: 'retail',
+        leg_ids: [10, 8],
+      }],
+    },
+  });
+
+  render(<Batches />);
+  openBuilder();
+
+  await waitFor(() => expect(mocks.suggestions).toHaveBeenCalledWith('2026-07-15', 'morning', 'all'));
+  expect(screen.getByText('Nearest-stop suggestions')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Use nearest-stop suggestion for Rider One' }));
+
+  const workspace = within(screen.getByTestId('batch-workspace'));
+  expect(workspace.getByRole('article', { name: 'Stop 1: Cara Santos' })).toBeInTheDocument();
+  expect(workspace.getByRole('article', { name: 'Stop 2: Ben Cruz' })).toBeInTheDocument();
+  expect(workspace.getAllByRole('article').findIndex((article) => article.getAttribute('aria-label') === 'Stop 1: Cara Santos'))
+    .toBeLessThan(workspace.getAllByRole('article').findIndex((article) => article.getAttribute('aria-label') === 'Stop 2: Ben Cruz'));
 });
 
 it('shows repair request, customer, and shoe details in the delivery pool', () => {

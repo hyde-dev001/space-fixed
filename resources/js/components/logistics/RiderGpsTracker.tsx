@@ -9,6 +9,7 @@ type Props = {
   enabled: boolean;
   online: boolean;
   destination?: Pick<DeliveryContactSnapshot, 'type' | 'name' | 'address' | 'latitude' | 'longitude'> | null;
+  destinationLabel?: string;
   movingIntervalSeconds?: number;
   stationaryIntervalSeconds?: number;
   hiddenIntervalSeconds?: number;
@@ -238,6 +239,7 @@ export default function RiderGpsTracker({
   enabled,
   online,
   destination,
+  destinationLabel: destinationLabelProp,
   movingIntervalSeconds = 5,
   stationaryIntervalSeconds = 30,
   hiddenIntervalSeconds = 60,
@@ -467,6 +469,7 @@ export default function RiderGpsTracker({
   };
 
   const destinationPoint = destinationCoordinates(destination);
+  const destinationLabel = destinationLabelProp ?? (destination?.type === 'shop' ? 'repair shop' : 'customer');
   const directRoute: LiveTrackingRoute | null = currentPosition && destinationPoint ? {
     distance_m: distanceMeters(currentPosition, destinationPoint),
     duration_s: Math.ceil(distanceMeters(currentPosition, destinationPoint) / ETA_SPEED_MPS),
@@ -550,14 +553,14 @@ export default function RiderGpsTracker({
       )}
       {tracking && !destinationPoint && (
         <p role="status" className="mt-3 text-sm font-semibold text-slate-700 dark:text-slate-300">
-          The customer map pin is unavailable. Use the Directions button above for navigation.
+          The {destinationLabel} map pin is unavailable. Use the Directions button above for navigation.
         </p>
       )}
       {mapLocations.length > 0 && (
         <div className="mt-4 overflow-hidden rounded-xl border border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-900">
           <div className="flex flex-col gap-2 border-b border-slate-200 p-3 dark:border-slate-700 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <h5 className="font-bold text-slate-950 dark:text-white">Route to customer</h5>
+              <h5 className="font-bold text-slate-950 dark:text-white">Route to {destinationLabel}</h5>
               <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
                 {destination?.address || destination?.name || 'Delivery destination'}
               </p>
@@ -568,7 +571,7 @@ export default function RiderGpsTracker({
               </p>
             )}
           </div>
-          <LiveTrackingMap locations={mapLocations} label="Rider route to customer map" followLocation viewer="rider" />
+          <LiveTrackingMap locations={mapLocations} label={'Rider route to ' + destinationLabel + ' map'} followLocation viewer="rider" />
           <p className="border-t border-slate-200 px-3 py-2 text-xs text-slate-500 dark:border-slate-700 dark:text-slate-400">
             {route?.source === 'road'
               ? 'Fastest available road route. Use Directions above for turn-by-turn navigation.'

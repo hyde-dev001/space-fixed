@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Head, router, usePage } from '@inertiajs/react';
 import { Plus } from 'lucide-react';
 import AppLayoutERP from '@/layout/AppLayout_ERP';
@@ -7,6 +7,7 @@ import {
   logisticsModuleForSourceType,
   logisticsModuleLabel,
   logisticsSourceLabel,
+  type BatchSuggestion,
   type DeliveryBatchPageProps,
   type DeliveryBatchStatus,
   type LogisticsModule,
@@ -69,12 +70,40 @@ export default function Batches() {
   const detailsTriggerRef = useRef<HTMLButtonElement | null>(null);
   const historyTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [suggestions, setSuggestions] = useState<BatchSuggestion[]>([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const [suggestionsError, setSuggestionsError] = useState('');
 
   const allDeliveries = useMemo(() => {
     const rows = new Map<number, TrackingShipmentLeg>();
     [...unscheduled, ...pool].forEach((leg) => rows.set(leg.id, leg));
     return [...rows.values()];
   }, [pool, unscheduled]);
+
+  useEffect(() => {
+    if (!building || !date) return;
+
+    let cancelled = false;
+    setSuggestions([]);
+    setSuggestionsLoading(true);
+    setSuggestionsError('');
+
+    void logisticsApi.suggestions(date, window, module)
+      .then(({ data }) => {
+        if (!cancelled) setSuggestions(data.suggestions ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setSuggestionsError('Nearest-stop suggestions are temporarily unavailable. You can arrange stops manually.');
+      })
+      .finally(() => {
+        if (!cancelled) setSuggestionsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [building, date, module, window]);
+
   const unscheduledIds = useMemo(() => new Set(unscheduled.map((leg) => leg.id)), [unscheduled]);
   const filteredDeliveries = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -112,6 +141,8 @@ export default function Batches() {
     setScheduledThisAttempt([]);
     setOverrideReason('');
     setError('');
+    setSuggestions([]);
+    setSuggestionsError('');
   };
   const openBatch = (batchId: number) => {
     setBuilding(false);
@@ -140,6 +171,9 @@ export default function Batches() {
     setTimeout(() => historyTriggerRef.current?.focus(), 0);
   };
   const changeSlot = (nextDate: string, nextWindow: string) => {
+    setSuggestions([]);
+    setSuggestionsLoading(false);
+    setSuggestionsError('');
     if (scheduledThisAttempt.length) {
       setSelectedIds([]);
       setScheduledThisAttempt([]);
@@ -187,6 +221,17 @@ export default function Batches() {
     setSelectedIds((ids) => checked
       ? [...ids.filter((id) => !matchingIds.includes(id)), ...matchingIds]
       : ids.filter((id) => !matchingIds.includes(id)));
+  };
+  const applySuggestion = (legIds: number[]) => {
+    const availableIds = new Set(allDeliveries.map((leg) => leg.id));
+    const nextIds = legIds.filter((legId) => availableIds.has(legId));
+    if (nextIds.length < 2) {
+      setError('This suggestion is no longer available. Refresh the delivery pool and try again.');
+      return;
+    }
+    setSelectedIds(nextIds);
+    setScheduledThisAttempt([]);
+    setError('');
   };
   const refreshBatchData = () => {
     setRefreshing(true);
@@ -402,6 +447,8 @@ export default function Batches() {
         overrideReason={overrideReason} submitting={submitting} busyLegId={busyLegId} onOverrideReasonChange={setOverrideReason}
         onMove={selectedBatch ? moveStops : moveLocal} onRemove={removeStop}
         onSave={saveDraft} onReview={() => selectedBatch && openReview(selectedBatch.id)}
+        suggestions={suggestions} suggestionRows={allDeliveries} suggestionRiders={riders}
+        suggestionsLoading={suggestionsLoading} suggestionsError={suggestionsError} onApplySuggestion={applySuggestion}
       /> : <section className="grid min-h-72 place-items-center rounded-2xl border border-dashed border-gray-300 bg-white p-8 text-center text-sm text-gray-500">Choose New Batch or open an existing batch to begin.</section>}
     </div>
     <section aria-label="Active batches" className="min-w-0 space-y-3">

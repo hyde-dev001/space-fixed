@@ -1,4 +1,5 @@
 import axios from 'axios';
+import type { BatchSuggestion, LogisticsModule } from '@/types/logistics';
 
 export const logisticsApi = {
   shipments: () => axios.get('/api/logistics/shipments'),
@@ -15,8 +16,10 @@ export const logisticsApi = {
   recordProof: (legId: number, payload: FormData | Record<string, unknown>) =>
     axios.post(`/api/logistics/legs/${legId}/proof`, payload),
   batches: () => axios.get('/api/logistics/batches'),
-  suggestions: (deliveryDate: string, deliveryWindow: string) =>
-    axios.get('/api/logistics/batch-suggestions', { params: { delivery_date: deliveryDate, delivery_window: deliveryWindow } }),
+  suggestions: (deliveryDate: string, deliveryWindow: string, module: 'all' | LogisticsModule = 'all') =>
+    axios.get<{ suggestions: BatchSuggestion[] }>('/api/logistics/batch-suggestions', {
+      params: { delivery_date: deliveryDate, delivery_window: deliveryWindow, module },
+    }),
   createBatch: (payload: Record<string, unknown>) => axios.post('/api/logistics/batches', payload),
   scheduleLegs: (legIds: number[], deliveryDate: string, deliveryWindow: string) =>
     axios.post('/api/logistics/legs/schedule', { leg_ids: legIds, delivery_date: deliveryDate, delivery_window: deliveryWindow }),
