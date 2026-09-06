@@ -65,7 +65,6 @@ interface ServiceMetrics {
   period_revenue: number;
   this_month_revenue: number;
   last_month_revenue: number;
-  rev_mom_change: number | null;
   total_services: number;
   services: ServiceStat[];
 }
@@ -81,7 +80,6 @@ interface PackageMetrics {
   period_revenue: number;
   this_month_revenue: number;
   last_month_revenue: number;
-  rev_mom_change: number | null;
   bookings: number;
   total_packages: number;
   revenue_share_pct: number;
@@ -132,7 +130,6 @@ interface RetailSalesMetrics {
   period_revenue: number;
   this_month_revenue: number;
   last_month_revenue: number;
-  rev_mom_change: number | null;
   avg_order_value: number;
   completion_rate: number | null;
   unique_customers: number;
@@ -232,13 +229,11 @@ function SummaryStatCard({
   label,
   value,
   sub,
-  badge,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   value: string | number;
   sub?: string;
-  badge?: { text: string; positive?: boolean };
 }) {
   const Icon = icon;
 
@@ -248,18 +243,12 @@ function SummaryStatCard({
         <Icon className="text-gray-800 size-6 dark:text-white/90" />
       </div>
 
-      <div className="flex items-end justify-between mt-5 gap-3">
+      <div className="mt-5">
         <div>
           <span className="text-sm text-gray-500 dark:text-gray-400">{label}</span>
           <h4 className="mt-2 font-bold text-gray-800 text-title-sm dark:text-white/90">{value}</h4>
           {sub && <span className="text-xs text-gray-500 dark:text-gray-400 mt-1 block">{sub}</span>}
         </div>
-
-        {badge && (
-          <span className={`px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${badge.positive ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"}`}>
-            {badge.text}
-          </span>
-        )}
       </div>
     </div>
   );
@@ -635,7 +624,6 @@ const DssInsights: React.FC = () => {
           period_revenue: 0,
           this_month_revenue: 0,
           last_month_revenue: 0,
-          rev_mom_change: null,
           total_services: 0,
           services: [],
         } : undefined),
@@ -643,7 +631,6 @@ const DssInsights: React.FC = () => {
           period_revenue: 0,
           this_month_revenue: 0,
           last_month_revenue: 0,
-          rev_mom_change: null,
           bookings: 0,
           total_packages: 0,
           revenue_share_pct: 0,
@@ -658,7 +645,6 @@ const DssInsights: React.FC = () => {
           period_revenue: 0,
           this_month_revenue: 0,
           last_month_revenue: 0,
-          rev_mom_change: null,
           avg_order_value: 0,
           completion_rate: null,
           unique_customers: 0,
@@ -996,16 +982,6 @@ const DssInsights: React.FC = () => {
             label="This Month Repair Revenue"
             value={data?.services ? fmt(data.services.this_month_revenue) : "–"}
             sub="Completed paid repairs"
-            badge={
-              data?.services?.rev_mom_change !== null && data?.services?.rev_mom_change !== undefined
-                ? `${data.services.rev_mom_change > 0 ? "+" : ""}${data.services.rev_mom_change}% vs last mo.`
-                : undefined
-            }
-            badgeColor={
-              (data?.services?.rev_mom_change ?? 0) >= 0
-                ? "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400"
-                : "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400"
-            }
             icon={MoneyIcon}
             color="success"
           />
@@ -1018,16 +994,6 @@ const DssInsights: React.FC = () => {
             label="This Month Retail Revenue"
             value={data?.retail_sales ? fmt(data.retail_sales.this_month_revenue) : "–"}
             sub="Completed + delivered orders"
-            badge={
-              data?.retail_sales?.rev_mom_change !== null && data?.retail_sales?.rev_mom_change !== undefined
-                ? `${data.retail_sales.rev_mom_change > 0 ? "+" : ""}${data.retail_sales.rev_mom_change}% vs last mo.`
-                : undefined
-            }
-            badgeColor={
-              (data?.retail_sales?.rev_mom_change ?? 0) >= 0
-                ? "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400"
-                : "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400"
-            }
             icon={MoneyIcon}
             color="success"
           />
@@ -1248,14 +1214,6 @@ const DssInsights: React.FC = () => {
                 label="This Month"
                 value={fmt(data.services.this_month_revenue)}
                 sub="Current month total"
-                badge={
-                  data.services.rev_mom_change !== null
-                    ? {
-                        text: `${data.services.rev_mom_change > 0 ? "+" : ""}${data.services.rev_mom_change}%`,
-                        positive: data.services.rev_mom_change >= 0,
-                      }
-                    : undefined
-                }
               />
 
               <SummaryStatCard
@@ -1280,14 +1238,6 @@ const DssInsights: React.FC = () => {
                   label="Package Revenue (This Month)"
                   value={fmt(data.packages.this_month_revenue)}
                   sub="Completed paid package repairs"
-                  badge={
-                    data.packages.rev_mom_change !== null
-                      ? {
-                          text: `${data.packages.rev_mom_change > 0 ? "+" : ""}${data.packages.rev_mom_change}%`,
-                          positive: data.packages.rev_mom_change >= 0,
-                        }
-                      : undefined
-                  }
                 />
               )}
             </div>

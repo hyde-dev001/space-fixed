@@ -5,20 +5,7 @@ import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import repairMaterialsApi, { type RepairMaterialInventoryItem } from "../../../services/repairMaterialsApi";
 
 type MetricColor = "success" | "warning" | "info";
-type ChangeType = "increase" | "decrease";
 type StatusFilter = "All" | "In Stock" | "Low Stock" | "Out of Stock";
-
-const ArrowUpIcon = ({ className }: { className?: string }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-  </svg>
-);
-
-const ArrowDownIcon = ({ className }: { className?: string }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-  </svg>
-);
 
 const BoxIcon = ({ className }: { className?: string }) => (
   <svg className={className} fill="currentColor" viewBox="0 0 24 24">
@@ -54,14 +41,12 @@ const CloseIcon = ({ className }: { className?: string }) => (
 interface MetricCardProps {
   title: string;
   value: number | string;
-  change: number;
-  changeType: ChangeType;
   icon: ComponentType<{ className?: string }>;
   color: MetricColor;
   description: string;
 }
 
-const MetricCard = ({ title, value, change, changeType, icon: Icon, color, description }: MetricCardProps) => {
+const MetricCard = ({ title, value, icon: Icon, color, description }: MetricCardProps) => {
   const getColorClasses = () => {
     switch (color) {
       case "success":
@@ -79,19 +64,9 @@ const MetricCard = ({ title, value, change, changeType, icon: Icon, color, descr
     <div className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-500 hover:shadow-xl hover:border-gray-300 hover:-translate-y-1 dark:border-gray-800 dark:bg-white/3 dark:hover:border-gray-700">
       <div className={`absolute inset-0 bg-linear-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
       <div className="relative">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center mb-4">
           <div className={`flex items-center justify-center w-14 h-14 bg-linear-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
             <Icon className="text-white size-7 drop-shadow-sm" />
-          </div>
-          <div
-            className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${
-              changeType === "increase"
-                ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-            }`}
-          >
-            {changeType === "increase" ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" />}
-            {Math.abs(change)}%
           </div>
         </div>
         <div className="space-y-2">
@@ -195,9 +170,9 @@ export default function RepairStocksOverview() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          <MetricCard title="Total Items in Stock" value={metrics.total_items} change={12} changeType="increase" icon={BoxIcon} color="info" description="Across repair materials" />
-          <MetricCard title="Low Stock Items" value={metrics.low_stock_count} change={5} changeType="decrease" icon={AlertIcon} color="warning" description="Need attention" />
-          <MetricCard title="Out of Stock" value={metrics.out_of_stock_count} change={2} changeType="decrease" icon={TrendUpIcon} color="success" description="Awaiting restock" />
+          <MetricCard title="Total Items in Stock" value={metrics.total_items} icon={BoxIcon} color="info" description="Across repair materials" />
+          <MetricCard title="Low Stock Items" value={metrics.low_stock_count} icon={AlertIcon} color="warning" description="Need attention" />
+          <MetricCard title="Out of Stock" value={metrics.out_of_stock_count} icon={TrendUpIcon} color="success" description="Awaiting restock" />
         </div>
 
         <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-6 shadow-sm">

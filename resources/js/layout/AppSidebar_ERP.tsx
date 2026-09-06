@@ -1259,9 +1259,11 @@ const EmployeeSidebarERP: React.FC = () => {
         if (allRoutePaths[routeName]) {
           const mappedPath = allRoutePaths[routeName];
 
+          if (params?.section && baseUrl !== mappedPath) return false;
+
           if (baseUrl === mappedPath) {
             if (params?.section) {
-              return queryString.includes(`section=${params.section}`);
+              return new URLSearchParams(queryString).get("section") === String(params.section);
             }
             return true;
           }
@@ -1274,10 +1276,11 @@ const EmployeeSidebarERP: React.FC = () => {
           const routeUrl = route(routeName, params || undefined);
           const routeUrlBase = routeUrl.split("?")[0];
 
+          if (params?.section && baseUrl !== routeUrlBase) return false;
+
           if (baseUrl === routeUrlBase) {
-            if (params?.section && !queryString && routeUrl.includes("?")) {
-              const routeQueryPart = routeUrl.split("?")[1] || "";
-              if (routeQueryPart.includes(`section=${params.section}`)) return true;
+            if (params?.section) {
+              return new URLSearchParams(queryString).get("section") === String(params.section);
             }
             return true;
           }

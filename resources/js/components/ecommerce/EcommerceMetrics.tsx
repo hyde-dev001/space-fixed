@@ -1,9 +1,4 @@
-import {
-  ArrowDownIcon,
-  ArrowUpIcon,
-} from "../../icons";
 import { MoneyIcon } from "../common/MoneyIcon";
-import Badge from "../ui/badge/Badge";
 
 // Type definitions
 interface DashboardStats {
@@ -11,7 +6,6 @@ interface DashboardStats {
     total: number;
     this_month: number;
     last_month: number;
-    growth_percentage: number;
     average_order: number;
   };
   orders: {
@@ -21,7 +15,6 @@ interface DashboardStats {
     shipped: number;
     completed: number;
     cancelled: number;
-    growth_percentage: number;
   };
   products: {
     total: number;
@@ -86,20 +79,6 @@ export default function EcommerceMetrics({
     return new Intl.NumberFormat('en-US').format(num);
   };
 
-  // Get growth badge color
-  const getGrowthColor = (growth: number) => {
-    return growth >= 0 ? 'success' : 'error';
-  };
-
-  // Normalize API growth values so badge UI never renders NaN%.
-  const normalizeGrowth = (growth: unknown) => {
-    const numericGrowth = Number(growth);
-    return Number.isFinite(numericGrowth) ? numericGrowth : 0;
-  };
-
-  const revenueGrowth = normalizeGrowth(stats?.revenue?.growth_percentage);
-  const ordersGrowth = normalizeGrowth(stats?.orders?.growth_percentage);
-
   return (
     <div className={`grid grid-cols-1 gap-4 sm:grid-cols-2 ${showOrdersMetric ? "lg:grid-cols-4" : "lg:grid-cols-3"} md:gap-6`}>
       {/* Revenue Metric */}
@@ -108,7 +87,7 @@ export default function EcommerceMetrics({
           <MoneyIcon className="text-gray-800 size-6 dark:text-white/90" />
         </div>
 
-        <div className="flex items-end justify-between mt-5">
+        <div className="mt-5">
           <div>
             <span className="text-sm text-gray-500 dark:text-gray-400">
               Total Revenue
@@ -117,10 +96,6 @@ export default function EcommerceMetrics({
               {stats ? formatCurrency(stats.revenue.total) : '₱0.00'}
             </h4>
           </div>
-          <Badge color={getGrowthColor(revenueGrowth)}>
-            {revenueGrowth >= 0 ? <ArrowUpIcon /> : <ArrowDownIcon />}
-            {Math.abs(revenueGrowth).toFixed(2)}%
-          </Badge>
         </div>
       </div>
 
@@ -130,7 +105,7 @@ export default function EcommerceMetrics({
           <div className="flex items-center justify-center w-12 h-12 bg-gray-100 rounded-xl dark:bg-gray-800">
             <BoxIconLine className="text-gray-800 size-6 dark:text-white/90" />
           </div>
-          <div className="flex items-end justify-between mt-5">
+          <div className="mt-5">
             <div>
               <span className="text-sm text-gray-500 dark:text-gray-400">
                 Total Orders
@@ -140,10 +115,6 @@ export default function EcommerceMetrics({
               </h4>
             </div>
 
-            <Badge color={getGrowthColor(ordersGrowth)}>
-              {ordersGrowth >= 0 ? <ArrowUpIcon /> : <ArrowDownIcon />}
-              {Math.abs(ordersGrowth).toFixed(2)}%
-            </Badge>
           </div>
         </div>
       )}

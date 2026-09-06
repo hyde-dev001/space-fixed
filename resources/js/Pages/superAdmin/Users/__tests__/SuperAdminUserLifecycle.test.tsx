@@ -56,7 +56,7 @@ beforeEach(() => {
 });
 
 describe('SuperAdminUserManagement lifecycle controls', () => {
-  it('renders server-provided period changes instead of hardcoded percentages', () => {
+  it('renders metric values without decorative period-change badges', () => {
     render(
       <SuperAdminUserManagement
         users={[user()]}
@@ -65,15 +65,14 @@ describe('SuperAdminUserManagement lifecycle controls', () => {
           pending: 2,
           active: 7,
           archived: 1,
-          changes: { total: 25, pending: -10, active: 0, archived: 50 },
         }}
       />
     );
 
-    expect(screen.getByText('25%')).toBeInTheDocument();
-    expect(screen.getByText('10%')).toBeInTheDocument();
-    expect(screen.getByText('0%')).toBeInTheDocument();
-    expect(screen.getByText('50%')).toBeInTheDocument();
+    expect(screen.getByText('10')).toBeInTheDocument();
+    expect(screen.getByText('2')).toBeInTheDocument();
+    expect(screen.getByText('7')).toBeInTheDocument();
+    expect(screen.queryByText('25%')).not.toBeInTheDocument();
     expect(screen.queryByText('12%')).not.toBeInTheDocument();
   });
 

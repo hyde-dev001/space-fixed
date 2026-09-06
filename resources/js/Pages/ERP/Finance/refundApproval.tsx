@@ -251,12 +251,6 @@ const ArrowUpIcon = ({ className }: { className?: string }) => (
 	</svg>
 );
 
-const ArrowDownIcon = ({ className }: { className?: string }) => (
-	<svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-		<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-	</svg>
-);
-
 const ReceiptIcon = ({ className }: { className?: string }) => (
 	<svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
 		<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -609,19 +603,16 @@ const refundMethodOptions = [
 ];
 
 type MetricColor = "success" | "warning" | "info";
-type ChangeType = "increase" | "decrease";
 
 interface MetricCardProps {
-	title: string;
-	value: number | string;
-	change?: number;
-	changeType?: ChangeType;
-	icon: ComponentType<{ className?: string }>;
+  title: string;
+  value: number | string;
+  icon: ComponentType<{ className?: string }>;
 	color: MetricColor;
 	description: string;
 }
 
-const MetricCard = ({ title, value, change, changeType, icon: Icon, color, description }: MetricCardProps) => {
+const MetricCard = ({ title, value, icon: Icon, color, description }: MetricCardProps) => {
 	const getColorClasses = () => {
 		switch (color) {
 			case "success":
@@ -639,22 +630,10 @@ const MetricCard = ({ title, value, change, changeType, icon: Icon, color, descr
 		<div className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-500 hover:shadow-xl hover:border-gray-300 hover:-translate-y-1 dark:border-gray-800 dark:bg-white/[0.03] dark:hover:border-gray-700">
 			<div className={`absolute inset-0 bg-gradient-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
 			<div className="relative">
-				<div className="flex items-center justify-between mb-4">
+				<div className="flex items-center mb-4">
 					<div className={`flex items-center justify-center w-14 h-14 bg-gradient-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
 						<Icon className="text-white size-7 drop-shadow-sm" />
 					</div>
-					{typeof change === "number" && changeType && (
-						<div
-							className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${
-								changeType === "increase"
-									? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-									: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-								}`}
-						>
-							{changeType === "increase" ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" />}
-							{Math.abs(change)}%
-						</div>
-					)}
 				</div>
 				<div className="space-y-2">
 					<p className="text-sm font-medium text-gray-600 dark:text-gray-400">{title}</p>
@@ -1382,8 +1361,6 @@ export default function RefundApproval() {
 					<MetricCard
 						title="Pending Approvals"
 						value={pendingCount}
-						change={9}
-						changeType="increase"
 						icon={ClockIcon}
 						color="warning"
 						description="Awaiting your review"
@@ -1391,8 +1368,6 @@ export default function RefundApproval() {
 					<MetricCard
 						title="Approved"
 						value={approvedCount}
-						change={6}
-						changeType="increase"
 						icon={CheckIcon}
 						color="success"
 						description="This month"
@@ -1407,8 +1382,6 @@ export default function RefundApproval() {
 					<MetricCard
 						title="Rejected"
 						value={rejectedCount}
-						change={2}
-						changeType="decrease"
 						icon={XIcon}
 						color="info"
 						description="This month"

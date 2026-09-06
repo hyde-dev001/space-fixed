@@ -61,18 +61,6 @@ const readLifecycleResponse = async (response) => {
   return payload;
 };
 
-const ArrowUpIcon = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-  </svg>
-);
-
-const ArrowDownIcon = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-  </svg>
-);
-
 interface User {
   id: number;
   firstName: string;
@@ -106,8 +94,6 @@ interface IdentityVerification {
 interface MetricData {
   title: string;
   value: number;
-  change: number;
-  changeType: 'increase' | 'decrease' | 'neutral';
   icon: React.ComponentType<{ className?: string }>;
   color: 'success' | 'error' | 'warning' | 'info';
   description: string;
@@ -117,8 +103,6 @@ interface MetricData {
 const MetricCard: React.FC<MetricData> = ({
   title,
   value,
-  change,
-  changeType,
   icon: Icon,
   color,
   description
@@ -140,24 +124,9 @@ const MetricCard: React.FC<MetricData> = ({
       <div className={`absolute inset-0 bg-gradient-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
 
       <div className="relative">
-        <div className="flex items-center justify-between mb-4">
+        <div className="mb-4">
           <div className={`flex items-center justify-center w-14 h-14 bg-gradient-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
             <Icon className="text-white size-7 drop-shadow-sm" />
-          </div>
-
-          <div className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${
-            changeType === 'increase'
-              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-              : changeType === 'decrease'
-                ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
-          }`} title="Compared with previous 30 days">
-            {changeType === 'increase'
-              ? <ArrowUpIcon className="size-3" />
-              : changeType === 'decrease'
-                ? <ArrowDownIcon className="size-3" />
-                : <span aria-hidden="true">-</span>}
-            {Math.abs(change)}%
           </div>
         </div>
 
@@ -196,14 +165,11 @@ interface UserPage {
   links?: Record<string, string | null>;
 }
 
-type UserMetricKey = 'total' | 'pending' | 'active' | 'archived';
-
 interface UserStats {
   total?: number;
   pending?: number;
   active?: number;
   archived?: number;
-  changes?: Partial<Record<UserMetricKey, number>>;
 }
 
 interface PageProps {
@@ -224,10 +190,6 @@ const emptyPagination: PaginationMeta = {
   to: null,
   total: 0,
 };
-
-const metricChangeType = (change: number): MetricData['changeType'] => (
-  change > 0 ? 'increase' : change < 0 ? 'decrease' : 'neutral'
-);
 
 const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, stats = {}, filters = {} }) => {
   // Modal refs for focus trapping
@@ -750,8 +712,6 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
           <MetricCard
             title="Total Users"
             value={stats.total ?? (isServerPaginated ? pagination.total : users.length)}
-            change={stats.changes?.total ?? 0}
-            changeType={metricChangeType(stats.changes?.total ?? 0)}
             icon={UserCircleIcon}
             color="info"
             description="Total registered users"
@@ -759,8 +719,6 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
           <MetricCard
             title="Pending Approvals"
             value={stats.pending ?? users.filter(u => u.status === 'pending').length}
-            change={stats.changes?.pending ?? 0}
-            changeType={metricChangeType(stats.changes?.pending ?? 0)}
             icon={AlertIcon}
             color="warning"
             description="Users awaiting approval"
@@ -768,8 +726,6 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
           <MetricCard
             title="Active Users"
             value={stats.active ?? users.filter(u => u.status === 'active' || u.status === 'approved').length}
-            change={stats.changes?.active ?? 0}
-            changeType={metricChangeType(stats.changes?.active ?? 0)}
             icon={CheckCircleIcon}
             color="success"
             description="Currently active users"
@@ -777,8 +733,6 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
           <MetricCard
             title="Archived"
             value={stats.archived ?? users.filter(u => u.archived === true || u.status === 'archived').length}
-            change={stats.changes?.archived ?? 0}
-            changeType={metricChangeType(stats.changes?.archived ?? 0)}
             icon={TrashBinIcon}
             color="error"
             description="Reversible archived accounts"

@@ -62,24 +62,10 @@ type Expense = {
 type MetricCardProps = {
   title: string;
   value: number | string;
-  change?: number;
-  changeType?: "increase" | "decrease";
   description?: string;
   color?: "success" | "error" | "warning" | "info";
   icon: React.FC<{ className?: string }>;
 };
-
-const ArrowUpIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-  </svg>
-);
-
-const ArrowDownIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-  </svg>
-);
 
 const WalletIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -141,8 +127,6 @@ const ArchiveRestoreIcon: React.FC<{ className?: string }> = ({ className }) => 
 const MetricCard: React.FC<MetricCardProps> = ({
   title,
   value,
-  change,
-  changeType,
   icon: Icon,
   color = "info",
   description,
@@ -166,23 +150,10 @@ const MetricCard: React.FC<MetricCardProps> = ({
       <div className={`absolute inset-0 bg-gradient-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
 
       <div className="relative">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center mb-4">
           <div className={`flex items-center justify-center w-14 h-14 bg-gradient-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
             <Icon className="text-white size-7 drop-shadow-sm" />
           </div>
-
-          {change !== undefined && changeType && (
-            <div
-              className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${
-                changeType === "increase"
-                  ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                  : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-              }`}
-            >
-              {changeType === "increase" ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" />}
-              {Math.abs(change)}%
-            </div>
-          )}
         </div>
 
         <div className="space-y-2">
@@ -735,8 +706,6 @@ const Expense: React.FC = () => {
         <MetricCard
           title="Total Spend"
           value={formatCurrency(stats.total)}
-          change={6.2}
-          changeType="increase"
           icon={WalletIcon}
           color="info"
           description="Month to date spend"
@@ -744,8 +713,6 @@ const Expense: React.FC = () => {
         <MetricCard
           title="Approved"
           value={formatCurrency(stats.approvedTotal)}
-          change={3.1}
-          changeType="increase"
           icon={CheckIcon}
           color="success"
           description="Cleared for payment"
@@ -753,8 +720,6 @@ const Expense: React.FC = () => {
         <MetricCard
           title="Pending"
           value={formatCurrency(stats.pendingTotal)}
-          change={2.4}
-          changeType="decrease"
           icon={ClockIcon}
           color="warning"
           description="Awaiting review"
@@ -762,8 +727,6 @@ const Expense: React.FC = () => {
         <MetricCard
           title="Average Expense"
           value={formatCurrency(Math.round(stats.avgExpense))}
-          change={1.8}
-          changeType="increase"
           icon={TrendingUpIcon}
           color="info"
           description="Per submitted record"

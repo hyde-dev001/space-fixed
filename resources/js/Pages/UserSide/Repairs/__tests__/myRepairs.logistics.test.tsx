@@ -695,6 +695,53 @@ describe("MyRepairs return logistics", () => {
     expect(await screen.findByText("Tracking details saved.")).toBeInTheDocument();
   });
 
+  it("shows a clean saving label and restores the return tracking action", async () => {
+    mocks.repair = repair({
+      return_delivery_method: "customer_pickup",
+      return_delivery_fee: 0,
+      return_logistics_quote: null,
+      same_as_intake_address: false,
+      collection_summary: {
+        collectible: false,
+        due_type: null,
+        phase: null,
+        collectible_amount: 0,
+        outstanding_balance: 0,
+        service_amount: 1500,
+        delivery_amount: 0,
+        total_paid_amount: 1500,
+        grand_total: 1500,
+        fully_paid: true,
+      },
+    });
+
+    let resolveSave!: (value: { data: { success: boolean; message: string } }) => void;
+    const saveRequest = new Promise<{ data: { success: boolean; message: string } }>((resolve) => {
+      resolveSave = resolve;
+    });
+    mocks.post.mockReturnValueOnce(saveRequest);
+
+    await renderReadyRepair();
+
+    const tracking = screen.getByRole("region", { name: "Return courier tracking" });
+    fireEvent.change(within(tracking).getByLabelText("Return carrier"), {
+      target: { value: "Lalamove" },
+    });
+    fireEvent.change(within(tracking).getByLabelText("Return tracking number"), {
+      target: { value: "RETURN-SAVING-123" },
+    });
+
+    fireEvent.click(within(tracking).getByRole("button", { name: "Save return tracking" }));
+
+    expect(within(tracking).getByRole("button", { name: "Saving..." })).toBeDisabled();
+
+    resolveSave({ data: { success: true, message: "Tracking details saved." } });
+
+    await waitFor(() => {
+      expect(within(tracking).getByRole("button", { name: "Save return tracking" })).toBeEnabled();
+    });
+  });
+
   it("keeps paid third-party return tracking editable after the plan lock until handoff", async () => {
     mocks.repair = repair({
       return_delivery_method: "customer_pickup",

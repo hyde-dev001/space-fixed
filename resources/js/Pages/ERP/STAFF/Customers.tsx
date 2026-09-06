@@ -16,18 +16,6 @@ const CheckCircleIcon = ({ className = "" }) => (
   </svg>
 );
 
-const ArrowUpIcon = ({ className = "" }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-  </svg>
-);
-
-const ArrowDownIcon = ({ className = "" }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-  </svg>
-);
-
 const EyeIcon = ({ className = "" }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -63,8 +51,6 @@ interface Customer {
 interface MetricData {
   title: string;
   value: number;
-  change: number;
-  changeType: 'increase' | 'decrease';
   icon: React.ComponentType<{ className?: string }>;
   color: 'success' | 'error' | 'warning' | 'info';
   description: string;
@@ -74,8 +60,6 @@ interface MetricData {
 const MetricCard: React.FC<MetricData> = ({
   title,
   value,
-  change,
-  changeType,
   icon: Icon,
   color,
   description
@@ -94,17 +78,9 @@ const MetricCard: React.FC<MetricData> = ({
     <div className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-500 hover:shadow-xl hover:border-gray-300 hover:-translate-y-1 dark:border-gray-800 dark:bg-white/[0.03] dark:hover:border-gray-700">
       <div className={`absolute inset-0 bg-gradient-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
       <div className="relative">
-        <div className="flex items-center justify-between mb-4">
+        <div className="mb-4">
           <div className={`flex items-center justify-center w-14 h-14 bg-gradient-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
             <Icon className="text-white size-7 drop-shadow-sm" />
-          </div>
-          <div className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${
-            changeType === 'increase'
-              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-              : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-          }`}>
-            {changeType === 'increase' ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" />}
-            {Math.abs(change)}%
           </div>
         </div>
         <div className="space-y-2">
@@ -158,13 +134,9 @@ export default function CustomersPage() {
   const customers = initialCustomers as Customer[];
   const stats = initialStats || {
     totalCustomers: 0,
-    totalCustomersChange: 0,
     activeCustomers: 0,
-    activeCustomersChange: 0,
     totalOrders: 0,
-    totalOrdersChange: 0,
     totalRevenue: 0,
-    totalRevenueChange: 0,
   };
 
   const filteredCustomers = useMemo(() => {
@@ -220,8 +192,6 @@ export default function CustomersPage() {
             <MetricCard
               title="Total Customers"
               value={stats.totalCustomers}
-              change={stats.totalCustomersChange}
-              changeType={stats.totalCustomersChange >= 0 ? 'increase' : 'decrease'}
               icon={UserCircleIcon}
               color="info"
               description="All customers with orders"
@@ -229,8 +199,6 @@ export default function CustomersPage() {
             <MetricCard
               title="Active Customers"
               value={stats.activeCustomers}
-              change={stats.activeCustomersChange}
-              changeType={stats.activeCustomersChange >= 0 ? 'increase' : 'decrease'}
               icon={CheckCircleIcon}
               color="success"
               description="Currently active customers"
@@ -238,8 +206,6 @@ export default function CustomersPage() {
             <MetricCard
               title="Total Orders"
               value={stats.totalOrders}
-              change={stats.totalOrdersChange}
-              changeType={stats.totalOrdersChange >= 0 ? 'increase' : 'decrease'}
               icon={ShoppingBagIcon}
               color="warning"
               description="All customer orders"
@@ -247,8 +213,6 @@ export default function CustomersPage() {
             <MetricCard
               title="Total Revenue"
               value={stats.totalRevenue}
-              change={stats.totalRevenueChange}
-              changeType={stats.totalRevenueChange >= 0 ? 'increase' : 'decrease'}
               icon={CurrencyIcon}
               color="info"
               description="Total customer spending"

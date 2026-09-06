@@ -454,6 +454,48 @@ it('preserves the employee HR attendance and payroll groups', () => {
   expect(screen.getByRole('link', { name: 'Salary Changes' })).toBeInTheDocument();
 });
 
+it.each([
+  { url: '/erp/hr?section=overview', activeLink: 'Dashboard' },
+  { url: '/erp/hr?section=employees', activeLink: 'Employees' },
+  { url: '/erp/hr?section=attendance', activeLink: 'View Attendance' },
+  { url: '/erp/hr?section=leaves', activeLink: 'Leave Requests' },
+  { url: '/erp/hr?section=overtime', activeLink: 'Overtime Requests' },
+  { url: '/erp/hr?section=payroll-view', activeLink: 'View Slip' },
+  { url: '/erp/hr?section=payroll-generate', activeLink: 'Generate Slip' },
+  { url: '/erp/hr?section=salary-changes', activeLink: 'Salary Changes' },
+  { url: '/erp/my-payslips', activeLink: 'My Payslips' },
+  { url: '/erp/hr/articles', activeLink: 'Articles' },
+])('activates only the intended HR destination for $url', ({ url, activeLink }) => {
+  state.url = url;
+  state.role = 'HR';
+  state.roles = ['HR'];
+  state.permissions = [
+    'access-hr-dashboard',
+    'access-employee-directory',
+    'access-attendance-records',
+    'access-leave-approvals',
+    'access-overtime-approvals',
+    'access-payslip-generation',
+    'access-view-payslip',
+    'manage-salary-changes',
+  ];
+
+  render(<AppSidebarERP />);
+
+  const activeLinks = screen.getAllByRole('link').filter((link) => (
+    link.className.includes('menu-item-active') || link.className.includes('menu-dropdown-item-active')
+  ));
+  expect(activeLinks.map((link) => link.textContent?.trim())).toContain(activeLink);
+
+  if (activeLink === 'Articles') {
+    expect(screen.getByRole('link', { name: 'Dashboard' })).toHaveClass('menu-item-inactive');
+    expect(screen.getByRole('link', { name: 'Employees' })).toHaveClass('menu-item-inactive');
+    expect(screen.getByRole('button', { name: 'Attendance Monitoring' })).toHaveClass('menu-item-inactive');
+    expect(screen.getByRole('button', { name: 'Payroll' })).toHaveClass('menu-item-inactive');
+    expect(screen.getByRole('link', { name: 'My Payslips' })).toHaveClass('menu-item-inactive');
+  }
+});
+
 it('renders the approved Manager workspace in the required groups and order', () => {
   state.url = '/erp/manager/dashboard';
   state.role = 'MANAGER';
