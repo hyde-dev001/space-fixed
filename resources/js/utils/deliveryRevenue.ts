@@ -22,8 +22,28 @@ type RepairRevenueInput = {
   returnLogisticsLockedAt?: string | null;
 };
 
+type RepairDeliveryFeeInput = Pick<RepairRevenueInput,
+  'intakeDeliveryMethod'
+  | 'intakeDeliveryFee'
+  | 'intakeLogisticsLockedAt'
+  | 'returnDeliveryMethod'
+  | 'returnDeliveryFee'
+  | 'returnLogisticsLockedAt'
+>;
+
 const money = (value: number) => Math.round((Math.max(0, value) + Number.EPSILON) * 100) / 100;
 const normalized = (value?: string | null) => String(value ?? '').trim().toLowerCase();
+
+export const getPaidRepairDeliveryFees = (input: RepairDeliveryFeeInput) => {
+  const intake = normalized(input.intakeDeliveryMethod) === 'shop_pickup' && input.intakeLogisticsLockedAt
+    ? money(input.intakeDeliveryFee ?? 0)
+    : 0;
+  const returnFee = normalized(input.returnDeliveryMethod) === 'shop_delivery' && input.returnLogisticsLockedAt
+    ? money(input.returnDeliveryFee ?? 0)
+    : 0;
+
+  return { intake, return: returnFee };
+};
 
 export const calculateRetailRevenue = (input: RetailRevenueInput): number => {
   const productRevenue = money(input.productRevenueExVat);
@@ -40,12 +60,7 @@ export const calculateRetailRevenue = (input: RetailRevenueInput): number => {
 export const calculateRepairRevenue = (input: RepairRevenueInput): number => {
   const serviceGross = money(input.serviceGrossAmount);
   const serviceNet = money(input.serviceNetAmount);
-  const intakeFee = normalized(input.intakeDeliveryMethod) === 'shop_pickup' && input.intakeLogisticsLockedAt
-    ? money(input.intakeDeliveryFee ?? 0)
-    : 0;
-  const returnFee = normalized(input.returnDeliveryMethod) === 'shop_delivery' && input.returnLogisticsLockedAt
-    ? money(input.returnDeliveryFee ?? 0)
-    : 0;
+  const { intake: intakeFee, return: returnFee } = getPaidRepairDeliveryFees(input);
   const deliveryRevenue = intakeFee + returnFee;
   const paymentStatus = normalized(input.paymentStatus);
   const fallbackServicePaid = paymentStatus === 'completed'

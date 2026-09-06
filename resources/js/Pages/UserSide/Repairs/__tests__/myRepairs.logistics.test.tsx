@@ -349,6 +349,36 @@ describe("MyRepairs loading performance", () => {
   });
 });
 
+describe('MyRepairs paid shipping breakdown', () => {
+  it('shows paid intake and return shipping fees in the repair total', async () => {
+    mocks.repair = repair({
+      status: 'ready_for_pickup',
+      total_paid_amount: 1885,
+      display_total_paid_amount: 1885,
+      return_logistics_locked_at: '2026-07-26T10:00:00.000Z',
+      collection_summary: {
+        collectible: false,
+        due_type: null,
+        phase: null,
+        collectible_amount: 0,
+        outstanding_balance: 0,
+        service_amount: 0,
+        delivery_amount: 0,
+        total_paid_amount: 1885,
+        grand_total: 1500,
+        fully_paid: true,
+      },
+    });
+
+    await renderReadyRepair();
+
+    const intakeFee = screen.getByText('Intake pickup shipping fee');
+    const returnFee = screen.getByText('Return delivery plan shipping fee');
+    expect(intakeFee.parentElement).toHaveTextContent('250');
+    expect(returnFee.parentElement).toHaveTextContent('135');
+  });
+});
+
 describe("MyRepairs intake payment", () => {
   it("hides payment until the repairer activates it", async () => {
     mocks.repair = repair({
