@@ -649,6 +649,32 @@ body.userside-hide-scrollbar::-webkit-scrollbar {
   height: 0;
 }
 
+/* Keep ERP and Shop Owner pages scrollable without showing browser scrollbar chrome. */
+html.backoffice-hide-scrollbar,
+body.backoffice-hide-scrollbar,
+html.backoffice-hide-scrollbar #app,
+body.backoffice-hide-scrollbar #app {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+html.backoffice-hide-scrollbar::-webkit-scrollbar,
+body.backoffice-hide-scrollbar::-webkit-scrollbar,
+html.backoffice-hide-scrollbar #app::-webkit-scrollbar,
+body.backoffice-hide-scrollbar #app::-webkit-scrollbar,
+html.backoffice-hide-scrollbar #app *::-webkit-scrollbar,
+body.backoffice-hide-scrollbar #app *::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+html.backoffice-hide-scrollbar #app *,
+body.backoffice-hide-scrollbar #app * {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
 /* Custom Flatpickr styling for dashboard consistency */
 .flatpickr-calendar {
   background: white !important;

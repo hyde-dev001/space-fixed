@@ -1611,15 +1611,15 @@ export default function TimeIn() {
                 <div data-testid="attendance-history-card" className="min-w-0 overflow-hidden rounded-3xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900/50">
                     <div className="border-b border-gray-200 p-4 dark:border-gray-800 sm:p-6">
                         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-                            <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center">
-                                <h2 className="flex items-center gap-3 text-xl font-semibold tracking-tight text-gray-900 dark:text-white sm:text-2xl">
-                                    <div className="rounded-full bg-gray-100 p-2.5 dark:bg-gray-800">
-                                        <CalendarIcon />
-                                    </div>
-                                    Attendance History
-                                </h2>
+                            <h2 className="flex items-center gap-3 text-xl font-semibold tracking-tight text-gray-900 dark:text-white sm:text-2xl">
+                                <div className="rounded-full bg-gray-100 p-2.5 dark:bg-gray-800">
+                                    <CalendarIcon />
+                                </div>
+                                Attendance History
+                            </h2>
 
-                                <div data-testid="attendance-actions" className="grid w-full grid-cols-2 gap-2 sm:w-auto">
+                            <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+                                <div data-testid="attendance-actions" className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto xl:justify-end">
                                     <button
                                         onClick={handleOvertimeClick}
                                         disabled={isOnApprovedLeaveToday || todayOvertimeRequests.some(ot => ['pending', 'approved', 'assigned'].includes(ot.status))}
@@ -1643,33 +1643,33 @@ export default function TimeIn() {
                                         Request Leave
                                     </button>
                                 </div>
-                            </div>
 
-                            <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 xl:flex xl:w-auto">
-                                <input
-                                    type="text"
-                                    value={attendanceSearchQuery}
-                                    onChange={(e) => setAttendanceSearchQuery(e.target.value)}
-                                    placeholder="Search date, time, hours, status..."
-                                    className="min-h-12 w-full rounded-full border border-gray-300 bg-white px-4 py-2 text-sm text-gray-900 transition-colors focus:border-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900/20 dark:border-gray-700 dark:bg-gray-800 dark:text-white xl:w-72"
-                                />
-                                <select
-                                    value={attendanceStatusFilter}
-                                    onChange={(e) => setAttendanceStatusFilter(e.target.value)}
-                                    aria-label="Filter attendance history by status"
-                                    title="Filter attendance history by status"
-                                    className={`min-h-12 w-full rounded-full px-4 py-2 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-[#111111] focus:ring-offset-2 xl:w-auto ${
-                                        attendanceStatusFilter === 'all'
-                                            ? 'border border-gray-300 bg-white text-gray-900 hover:bg-gray-100 focus:border-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:hover:bg-gray-800'
-                                            : 'border border-[#111111] bg-[#111111] text-white hover:bg-gray-200 hover:text-gray-900 focus:border-[#111111] dark:border-white dark:bg-black dark:text-white dark:hover:bg-gray-700 dark:hover:text-white'
-                                    }`}
-                                >
-                                    {attendanceStatusOptions.map((statusOption) => (
-                                        <option key={statusOption} value={statusOption} className="bg-white text-gray-900 checked:bg-[#111111] checked:text-white hover:bg-gray-100">
-                                            {statusOption === 'all' ? 'All Statuses' : statusOption}
-                                        </option>
-                                    ))}
-                                </select>
+                                <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 xl:flex xl:w-auto">
+                                    <input
+                                        type="text"
+                                        value={attendanceSearchQuery}
+                                        onChange={(e) => setAttendanceSearchQuery(e.target.value)}
+                                        placeholder="Search date, time, hours, status..."
+                                        className="min-h-12 w-full rounded-full border border-gray-300 bg-white px-4 py-2 text-sm text-gray-900 transition-colors focus:border-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900/20 dark:border-gray-700 dark:bg-gray-800 dark:text-white xl:w-72"
+                                    />
+                                    <select
+                                        value={attendanceStatusFilter}
+                                        onChange={(e) => setAttendanceStatusFilter(e.target.value)}
+                                        aria-label="Filter attendance history by status"
+                                        title="Filter attendance history by status"
+                                        className={`min-h-12 w-full rounded-full px-4 py-2 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-[#111111] focus:ring-offset-2 xl:w-auto ${
+                                            attendanceStatusFilter === 'all'
+                                                ? 'border border-gray-300 bg-white text-gray-900 hover:bg-gray-100 focus:border-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:hover:bg-gray-800'
+                                                : 'border border-[#111111] bg-[#111111] text-white hover:bg-gray-200 hover:text-gray-900 focus:border-[#111111] dark:border-white dark:bg-black dark:text-white dark:hover:bg-gray-700 dark:hover:text-white'
+                                        }`}
+                                    >
+                                        {attendanceStatusOptions.map((statusOption) => (
+                                            <option key={statusOption} value={statusOption} className="bg-white text-gray-900 checked:bg-[#111111] checked:text-white hover:bg-gray-100">
+                                                {statusOption === 'all' ? 'All Statuses' : statusOption}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
                             </div>
                         </div>
                     </div>
