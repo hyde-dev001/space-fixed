@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\RepairPackage;
 
+use App\Models\Employee;
 use App\Models\InventoryItem;
 use App\Models\RepairPackage;
 use App\Models\RepairRequest;
@@ -10,6 +11,7 @@ use App\Models\ShopOwner;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 class RepairPackageApiTest extends TestCase
@@ -270,7 +272,19 @@ class RepairPackageApiTest extends TestCase
         $shopOwner = ShopOwner::factory()->approved()->create();
         $customer = User::factory()->create([
             'email' => 'package-customer@example.com',
+            'identity_verification_status' => User::IDENTITY_APPROVED,
         ]);
+
+        $repairerRole = Role::findOrCreate('Repairer', 'user');
+        $repairer = User::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'status' => 'active',
+        ]);
+        Employee::factory()->active()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'email' => $repairer->email,
+        ]);
+        $repairer->assignRole($repairerRole);
 
         $s1 = $this->createService($shopOwner, ['name' => 'Deep Clean', 'price' => 500]);
         $s2 = $this->createService($shopOwner, ['name' => 'Sole Reglue', 'price' => 800]);
@@ -317,6 +331,8 @@ class RepairPackageApiTest extends TestCase
             ->first();
 
         $this->assertNotNull($createdRepair);
+        $this->assertSame((int) $repairer->id, (int) $createdRepair->assigned_repairer_id);
+        $this->assertSame('new_request', (string) $createdRepair->status);
         $this->assertEquals(1100.0, (float) $createdRepair->total);
         $this->assertDatabaseHas('repair_request_service', [
             'repair_request_id' => $createdRepair->id,
@@ -331,7 +347,9 @@ class RepairPackageApiTest extends TestCase
     public function test_customer_can_submit_package_with_add_ons_and_server_recomputes_total(): void
     {
         $shopOwner = ShopOwner::factory()->approved()->create();
-        $customer = User::factory()->create();
+        $customer = User::factory()->create([
+            'identity_verification_status' => User::IDENTITY_APPROVED,
+        ]);
 
         $includedA = $this->createService($shopOwner, ['name' => 'Deep Clean', 'price' => 450]);
         $includedB = $this->createService($shopOwner, ['name' => 'Sole Reglue', 'price' => 650]);
@@ -401,6 +419,7 @@ class RepairPackageApiTest extends TestCase
         $shopOwner = ShopOwner::factory()->approved()->create();
         $customer = User::factory()->create([
             'email' => 'processing-package@example.com',
+            'identity_verification_status' => User::IDENTITY_APPROVED,
         ]);
         $repairer = User::factory()->create([
             'shop_owner_id' => $shopOwner->id,
@@ -473,7 +492,9 @@ class RepairPackageApiTest extends TestCase
     public function test_customer_cannot_submit_package_add_on_that_is_already_included(): void
     {
         $shopOwner = ShopOwner::factory()->approved()->create();
-        $customer = User::factory()->create();
+        $customer = User::factory()->create([
+            'identity_verification_status' => User::IDENTITY_APPROVED,
+        ]);
 
         $includedService = $this->createService($shopOwner, ['name' => 'Deep Clean', 'price' => 450]);
         $otherIncludedService = $this->createService($shopOwner, ['name' => 'Repaint', 'price' => 300]);
@@ -513,7 +534,9 @@ class RepairPackageApiTest extends TestCase
     {
         $shopOwner = ShopOwner::factory()->approved()->create();
         $otherShopOwner = ShopOwner::factory()->approved()->create();
-        $customer = User::factory()->create();
+        $customer = User::factory()->create([
+            'identity_verification_status' => User::IDENTITY_APPROVED,
+        ]);
 
         $includedA = $this->createService($shopOwner, ['name' => 'Deep Clean', 'price' => 450]);
         $includedB = $this->createService($shopOwner, ['name' => 'Repaint', 'price' => 300]);

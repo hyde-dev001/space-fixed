@@ -17,4 +17,10 @@ describe('Manager Reports page contract', () => {
     expect(source).not.toContain('Customer Complaints');
     expect(source).not.toContain('complaints');
   });
+
+  it('protects report mutations with the shared CSRF request helper', () => {
+    expect(source).toContain('import { fetchWithCsrf } from "@/utils/fetch-with-csrf";');
+    expect(source).toContain('fetchWithCsrf("/api/manager/reports/generate"');
+    expect(source).toContain('fetchWithCsrf(`/api/manager/reports/${reviewTarget.id}/review`');
+  });
 });

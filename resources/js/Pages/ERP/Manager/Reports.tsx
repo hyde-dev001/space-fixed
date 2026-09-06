@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import { erpUrl } from "@/utils/erpCapabilities";
+import { fetchWithCsrf } from "@/utils/fetch-with-csrf";
 
 type IconComponent = ({ className }: { className?: string }) => JSX.Element;
 
@@ -262,7 +263,7 @@ export default function ERPReports() {
 
     try {
       setSubmitting(true);
-      const response = await fetch("/api/manager/reports/generate", {
+      const response = await fetchWithCsrf("/api/manager/reports/generate", {
         method: "POST",
         credentials: "include",
         headers: {
@@ -319,7 +320,7 @@ export default function ERPReports() {
 
     try {
       setSubmitting(true);
-      const response = await fetch(`/api/manager/reports/${reviewTarget.id}/review`, {
+      const response = await fetchWithCsrf(`/api/manager/reports/${reviewTarget.id}/review`, {
         method: "POST",
         credentials: "include",
         headers: {
