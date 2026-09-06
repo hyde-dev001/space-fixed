@@ -13,6 +13,7 @@ class CustomerTrackingService
 {
     public function __construct(
         private RiderLocationService $locations,
+        private DeliveryTypeResolver $deliveryTypes,
     ) {}
     private const ATTEMPT_REASON_LABELS = [
         'recipient_unavailable' => 'Recipient unavailable',
@@ -72,17 +73,21 @@ class CustomerTrackingService
         $liveTracking = (bool) config('logistics_tracking.enabled')
             ? $this->locations->customerLiveLocationForShipment($shipment)
             : null;
+        $deliveryType = $this->deliveryTypes->resolve($shipment);
 
         return [
             'id' => $shipment->id,
             'shipment_number' => $shipment->shipment_number,
             'purpose' => $shipment->purpose,
+            'delivery_type' => $deliveryType['delivery_type'],
+            'delivery_label' => $deliveryType['delivery_label'],
             'status' => $shipment->status->value,
             'source_type' => $shipment->source_type,
             'source_summary' => $this->repairSourceSummary($shipment),
             'created_at' => optional($shipment->created_at)->toISOString(),
             'live_tracking_enabled' => (bool) config('logistics_tracking.enabled'),
             'legs' => $shipment->legs->map(function ($leg) use ($shipment, $liveTracking) {
+                $deliveryType = $this->deliveryTypes->resolve($shipment, $leg);
                 $attempt = $leg->attempts->first();
                 $proof = $leg->status->value === 'delivered'
                     ? $leg->proofs->first()
@@ -94,6 +99,8 @@ class CustomerTrackingService
                     'id' => $leg->id,
                     'sequence' => $leg->sequence,
                     'leg_type' => $leg->leg_type,
+                    'delivery_type' => $deliveryType['delivery_type'],
+                    'delivery_label' => $deliveryType['delivery_label'],
                     'status' => $leg->status->value === 'proof_correction_required'
                         ? 'awaiting_proof_approval'
                         : $leg->status->value,

@@ -94,6 +94,8 @@ describe('LiveTrackingMap', () => {
           leg_id: 1,
           shipment_id: 1,
           shipment_reference: 'SHP-1',
+          delivery_type: 'repair_pickup',
+          delivery_label: 'Repair Pickup',
           rider: { id: null, name: null },
           status: 'active',
           destination: {},
@@ -112,6 +114,6 @@ describe('LiveTrackingMap', () => {
     );
 
     await waitFor(() => expect(leaflet.markerFactory).toHaveBeenCalled());
-    expect(leaflet.marker.bindTooltip).toHaveBeenCalledWith('Rider');
+    expect(leaflet.marker.bindTooltip).toHaveBeenCalledWith('Rider · Repair Pickup');
   });
 });

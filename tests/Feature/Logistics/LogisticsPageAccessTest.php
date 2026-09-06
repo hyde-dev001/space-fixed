@@ -115,9 +115,14 @@ class LogisticsPageAccessTest extends TestCase
             'module_key' => 'logistics',
             'enabled' => true,
         ]);
-        $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
+        $shipment = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'order',
+            'purpose' => 'retail_delivery',
+        ]);
         $leg = ShipmentLeg::factory()->create([
             'shipment_id' => $shipment->id,
+            'leg_type' => 'outbound',
             'status' => 'pending',
         ]);
         $rider = RiderProfile::factory()->create(['shop_owner_id' => $shop->id]);
@@ -125,7 +130,11 @@ class LogisticsPageAccessTest extends TestCase
         $this->actingAs($shop, 'shop_owner')
             ->getJson('/api/shop-owner/erp/logistics/shipments')
             ->assertOk()
-            ->assertJsonPath('data.0.id', $shipment->id);
+            ->assertJsonPath('data.0.id', $shipment->id)
+            ->assertJsonPath('data.0.delivery_type', 'retail_delivery')
+            ->assertJsonPath('data.0.delivery_label', 'Retail Delivery')
+            ->assertJsonPath('data.0.legs.0.delivery_type', 'retail_delivery')
+            ->assertJsonPath('data.0.legs.0.delivery_label', 'Retail Delivery');
 
         $this->actingAs($shop, 'shop_owner')
             ->getJson("/api/shop-owner/erp/logistics/shipments/{$shipment->id}")

@@ -6,10 +6,14 @@ import ShipmentTracking from '../ShipmentTracking';
 const shipment: any = {
   id: 1,
   purpose: 'retail_delivery',
+  delivery_type: 'retail_delivery',
+  delivery_label: 'Retail Delivery',
   status: 'active',
   legs: [{
     id: 2,
     leg_type: 'outbound',
+    delivery_type: 'retail_delivery',
+    delivery_label: 'Retail Delivery',
     status: 'pending',
     scheduled_delivery_date: '2026-07-15',
     delivery_window: 'morning',
@@ -29,6 +33,8 @@ vi.mock('../../Shared/Navigation', () => ({ default: () => null }));
 describe('ShipmentTracking', () => {
   beforeEach(() => {
     shipment.purpose = 'retail_delivery';
+    shipment.delivery_type = 'retail_delivery';
+    shipment.delivery_label = 'Retail Delivery';
     shipment.source_type = 'order';
     shipment.source_summary = null;
     shipment.status = 'active';
@@ -36,6 +42,8 @@ describe('ShipmentTracking', () => {
       id: 2,
       sequence: 1,
       leg_type: 'outbound',
+      delivery_type: 'retail_delivery',
+      delivery_label: 'Retail Delivery',
       status: 'pending',
       scheduled_delivery_date: '2026-07-15',
       delivery_window: 'morning',
@@ -62,6 +70,8 @@ describe('ShipmentTracking', () => {
 
   it('shows repair source details and returns to repairs', () => {
     shipment.purpose = 'repair_return';
+    shipment.delivery_type = 'repair_return';
+    shipment.delivery_label = 'Repair Return';
     shipment.source_type = 'repair_request';
     shipment.source_summary = {
       request_number: 'REP-2026-0042',

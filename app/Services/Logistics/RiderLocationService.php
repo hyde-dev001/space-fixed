@@ -27,6 +27,7 @@ class RiderLocationService
 
     public function __construct(
         private RouteEstimationService $routes,
+        private DeliveryTypeResolver $deliveryTypes,
     ) {}
 
     public function activeAssignmentFor(ShipmentLeg $leg, User $rider): ?DeliveryAssignment
@@ -180,6 +181,8 @@ class RiderLocationService
 
         return [
             'leg_id' => $payload['leg_id'],
+            'delivery_type' => $payload['delivery_type'],
+            'delivery_label' => $payload['delivery_label'],
             'status' => $payload['status'],
             'destination' => $payload['destination'],
             'location' => $payload['location'],
@@ -316,11 +319,14 @@ class RiderLocationService
         $coordinate = static fn (string $key): ?float => is_numeric($snapshot[$key] ?? null)
             ? (float) $snapshot[$key]
             : null;
+        $deliveryType = $this->deliveryTypes->resolve($shipment, $leg);
 
         return [
             'leg_id' => $leg?->id,
             'shipment_id' => $shipment?->id,
             'shipment_number' => $shipment?->shipment_number,
+            'delivery_type' => $deliveryType['delivery_type'],
+            'delivery_label' => $deliveryType['delivery_label'],
             'shipment_reference' => $shipment
                 ? 'Shipment #' . ($shipment->shipment_number ?? $shipment->id)
                 : null,

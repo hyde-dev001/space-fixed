@@ -98,7 +98,14 @@ const leg = (
     address: `Address ${id}`,
     delivery_instructions: `Instruction ${id}`,
   },
-  shipment: { id: id + 100, source_type: 'order', source_id: id + 200, purpose: 'retail_delivery' },
+  shipment: {
+    id: id + 100,
+    source_type: 'order',
+    source_id: id + 200,
+    purpose: 'retail_delivery',
+    delivery_type: 'retail_delivery',
+    delivery_label: 'Retail Delivery',
+  },
   proofs: [],
   assignments: [],
   attempts: [],
@@ -130,6 +137,8 @@ const workItem = (
   group: 'current',
   business_types: ['retail'],
   business_label: 'Retail delivery',
+  delivery_type: 'retail_delivery',
+  delivery_label: 'Retail Delivery',
   delivery_date: '2026-07-29',
   delivery_window: 'morning',
   deliveries,
@@ -255,6 +264,8 @@ describe('MyDeliveries task-first hierarchy', () => {
       id: 12,
       group: 'upcoming',
       business_label: 'Repair pickup',
+      delivery_type: 'repair_pickup',
+      delivery_label: 'Repair Pickup',
       business_types: ['repair'],
     });
 
@@ -286,6 +297,8 @@ describe('MyDeliveries task-first hierarchy', () => {
     const returnLeg = {
       ...leg(4, null, 'in_transit', 'SoleSpace shop'),
       leg_type: 'return_to_shop',
+      delivery_type: 'return_to_shop',
+      delivery_label: 'Return to shop',
       assignments: [{ id: 13, status: 'accepted' }],
       shipment: {
         id: 103,
@@ -296,12 +309,14 @@ describe('MyDeliveries task-first hierarchy', () => {
     };
     mocks.props.deliveryData.current = workItem('single', 'in_transit', [returnLeg], {
       business_label: 'Repair pickup',
+      delivery_type: 'return_to_shop',
+      delivery_label: 'Return to shop',
       business_types: ['repair'],
     });
 
     render(<MyDeliveries />);
 
-    expect(screen.getByText('Return to shop')).toBeVisible();
+    expect(screen.getAllByText('Return to shop')).toHaveLength(2);
     expect(screen.queryByLabelText('Delivery proof')).not.toBeInTheDocument();
     const photo = new File(['return'], 'return.jpg', { type: 'image/jpeg' });
     fireEvent.change(screen.getByLabelText('Return handoff photo'), {
@@ -614,6 +629,7 @@ describe('MyDeliveries rider interactions', () => {
     };
     mocks.props.deliveryData.up_next = workItem('single', 'assigned', [repairPickup], {
       group: 'upcoming', business_types: ['repair'], business_label: 'Repair pickup',
+      delivery_type: 'repair_pickup', delivery_label: 'Repair Pickup',
     });
     const view = render(<MyDeliveries />);
 
@@ -624,6 +640,8 @@ describe('MyDeliveries rider interactions', () => {
       group: 'upcoming',
       business_types: ['repair'],
       business_label: 'Repair pickup',
+      delivery_type: 'repair_pickup',
+      delivery_label: 'Repair Pickup',
     });
     view.rerender(<MyDeliveries />);
     expect(screen.getByRole('button', { name: 'Failed pickup' })).toBeVisible();
@@ -667,6 +685,8 @@ describe('MyDeliveries rider interactions', () => {
       group: 'upcoming',
       business_types: ['repair'],
       business_label: 'Repair pickup',
+      delivery_type: 'repair_pickup',
+      delivery_label: 'Repair Pickup',
     });
 
     render(<MyDeliveries />);
@@ -707,6 +727,8 @@ describe('MyDeliveries rider interactions', () => {
       group: 'current',
       business_types: ['repair'],
       business_label: 'Repair pickup',
+      delivery_type: 'repair_pickup',
+      delivery_label: 'Repair Pickup',
     });
 
     render(<MyDeliveries />);
@@ -726,7 +748,13 @@ describe('MyDeliveries rider interactions', () => {
       },
       arrivals: arrived('pickup'),
       assignments: [{ id: 220, status: 'accepted' }],
-    }], { group: 'upcoming', business_types: ['repair'], business_label: 'Repair pickup' });
+    }], {
+      group: 'upcoming',
+      business_types: ['repair'],
+      business_label: 'Repair pickup',
+      delivery_type: 'repair_pickup',
+      delivery_label: 'Repair Pickup',
+    });
     render(<MyDeliveries />);
     fireEvent.click(screen.getByRole('button', { name: 'Failed pickup' }));
 
@@ -795,6 +823,8 @@ describe('MyDeliveries rider interactions', () => {
     mocks.props.deliveryData.current = workItem('batch', 'in_progress', [failedStop, nextStop], {
       business_types: ['repair'],
       business_label: 'Repair pickup',
+      delivery_type: 'repair_pickup',
+      delivery_label: 'Repair Pickup',
     });
     const view = render(<MyDeliveries />);
     fireEvent.click(screen.getByRole('button', { name: 'Failed pickup' }));
@@ -816,6 +846,8 @@ describe('MyDeliveries rider interactions', () => {
     mocks.props.deliveryData.current = workItem('batch', 'in_progress', [nextStop], {
       business_types: ['repair'],
       business_label: 'Repair pickup',
+      delivery_type: 'repair_pickup',
+      delivery_label: 'Repair Pickup',
     });
     finishReport();
     await waitFor(() => expect(mocks.reload).toHaveBeenCalled());
@@ -844,6 +876,8 @@ describe('MyDeliveries rider interactions', () => {
       group: 'upcoming',
       business_types: ['repair'],
       business_label: 'Repair pickup',
+      delivery_type: 'repair_pickup',
+      delivery_label: 'Repair Pickup',
     });
     const view = render(<MyDeliveries />);
     fireEvent.click(screen.getByRole('button', { name: 'Failed pickup' }));
@@ -874,7 +908,13 @@ describe('MyDeliveries rider interactions', () => {
       },
       arrivals: arrived('pickup'),
       assignments: [{ id: 220, status: 'accepted' }],
-    }], { group: 'upcoming', business_types: ['repair'], business_label: 'Repair pickup' });
+    }], {
+      group: 'upcoming',
+      business_types: ['repair'],
+      business_label: 'Repair pickup',
+      delivery_type: 'repair_pickup',
+      delivery_label: 'Repair Pickup',
+    });
     render(<MyDeliveries />);
     fireEvent.click(screen.getByRole('button', { name: 'Failed pickup' }));
     choosePickerOption('Failed pickup reason', 'Customer unavailable / not home');

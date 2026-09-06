@@ -73,6 +73,11 @@ class RiderMyDeliveriesPageTest extends TestCase
 
         $this->assertSame("batch:{$activeBatch->id}", $props['current']['key']);
         $this->assertSame("single:{$nextLeg->id}", $props['up_next']['key']);
+        $this->assertSame('repair_pickup', $props['current']['delivery_type']);
+        $this->assertSame('Repair Pickup', $props['current']['delivery_label']);
+        $this->assertSame('Repair Pickup', $props['current']['deliveries'][0]['delivery_label']);
+        $this->assertSame('retail_delivery', $props['up_next']['delivery_type']);
+        $this->assertSame('Retail Delivery', $props['up_next']['delivery_label']);
         $this->assertFalse($props['has_active_conflict']);
         $this->assertNotContains("single:{$otherLeg->id}", $this->allKeys($props));
     }
@@ -414,10 +419,20 @@ class RiderMyDeliveriesPageTest extends TestCase
     {
         $shipment = Shipment::factory()->create([
             'shop_owner_id' => $this->shop->id,
+            'source_type' => match ($purpose) {
+                'repair_pickup', 'repair_return' => 'repair_request',
+                'refund_return' => 'order_refund',
+                default => 'order',
+            },
             'purpose' => $purpose,
         ]);
         $leg = ShipmentLeg::factory()->create([
             'shipment_id' => $shipment->id,
+            'leg_type' => match ($purpose) {
+                'repair_pickup' => 'inbound',
+                'refund_return' => 'return_to_shop',
+                default => 'outbound',
+            },
             'destination_snapshot' => [
                 'name' => 'Miguel Dela Rosa',
                 'phone' => '09123456789',

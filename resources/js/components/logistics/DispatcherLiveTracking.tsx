@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { logisticsApi } from '@/services/logisticsApi';
+import { logisticsDeliveryLabel } from '@/types/logistics';
 import LiveTrackingMap, { type LiveRiderLocation } from './LiveTrackingMap';
 
 type Props = {
@@ -83,6 +84,7 @@ export default function DispatcherLiveTracking({ enabled, pollIntervalSeconds = 
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="font-semibold text-gray-950 dark:text-white">{entry.rider.name ?? 'Rider'}</p>
+                  <p className="text-xs font-semibold text-blue-700 dark:text-blue-300">{logisticsDeliveryLabel(entry)}</p>
                   <p className="text-xs text-gray-500 dark:text-gray-400">{entry.shipment_reference ?? `Shipment #${entry.shipment_number ?? entry.shipment_id ?? '-'}`}</p>
                 </div>
                 <span className="font-semibold text-slate-950 dark:text-white">

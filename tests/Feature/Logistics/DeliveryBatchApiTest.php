@@ -180,11 +180,19 @@ class DeliveryBatchApiTest extends TestCase
             'leave_dates' => [],
         ]);
         $retailShipment = Shipment::factory()->create(['shop_owner_id' => $shop->id, 'source_type' => 'order']);
-        $repairShipment = Shipment::factory()->create(['shop_owner_id' => $shop->id, 'source_type' => 'repair_request']);
+        $repairShipment = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'repair_request',
+            'purpose' => 'repair_pickup',
+        ]);
         $retailBatch = DeliveryBatch::factory()->create(['shop_owner_id' => $shop->id]);
         $repairBatch = DeliveryBatch::factory()->create(['shop_owner_id' => $shop->id]);
         ShipmentLeg::factory()->count(2)->create(['shipment_id' => $retailShipment->id, 'delivery_batch_id' => $retailBatch->id]);
-        ShipmentLeg::factory()->count(2)->create(['shipment_id' => $repairShipment->id, 'delivery_batch_id' => $repairBatch->id]);
+        ShipmentLeg::factory()->count(2)->create([
+            'shipment_id' => $repairShipment->id,
+            'delivery_batch_id' => $repairBatch->id,
+            'leg_type' => 'inbound',
+        ]);
         $repairSuggestionLegs = ShipmentLeg::factory()->count(2)->create([
             'shipment_id' => $repairShipment->id,
             'scheduled_delivery_date' => '2026-07-15',
@@ -198,7 +206,9 @@ class DeliveryBatchApiTest extends TestCase
             ->getJson('/api/logistics/batches?module=repair')
             ->assertOk()
             ->assertJsonCount(1, 'batches')
-            ->assertJsonPath('batches.0.id', $repairBatch->id);
+            ->assertJsonPath('batches.0.id', $repairBatch->id)
+            ->assertJsonPath('batches.0.legs.0.delivery_type', 'repair_pickup')
+            ->assertJsonPath('batches.0.legs.0.delivery_label', 'Repair Pickup');
 
         $suggestions = $this->actingAs($dispatcher, 'user')
             ->getJson('/api/logistics/batch-suggestions?delivery_date=2026-07-15&delivery_window=morning&module=repair')

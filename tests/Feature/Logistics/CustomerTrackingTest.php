@@ -70,7 +70,9 @@ class CustomerTrackingTest extends TestCase
             ->getJson("/tracking/shipments/{$shipment->id}")
             ->assertOk()
             ->assertJsonPath('shipment.id', $shipment->id)
-            ->assertJsonPath('shipment.purpose', 'repair_pickup');
+            ->assertJsonPath('shipment.purpose', 'repair_pickup')
+            ->assertJsonPath('shipment.delivery_type', 'repair_pickup')
+            ->assertJsonPath('shipment.delivery_label', 'Repair Pickup');
     }
 
     public function test_my_orders_includes_shop_owned_tracking_status_and_rider(): void

@@ -12,6 +12,7 @@ use App\Models\ShopOwner;
 use App\Models\User;
 use App\Services\Logistics\BatchDispatchService;
 use App\Services\Logistics\BatchSuggestionService;
+use App\Services\Logistics\DeliveryTypeResolver;
 use App\Services\Logistics\LogisticsActorPolicy;
 use App\Services\ShopModuleAccessService;
 use Illuminate\Contracts\Auth\Authenticatable;
@@ -25,16 +26,24 @@ class DeliveryBatchController extends Controller
     public function __construct(
         private LogisticsActorPolicy $policy,
         private ShopModuleAccessService $modules,
+        private DeliveryTypeResolver $deliveryTypes,
     ) {}
 
     public function index(Request $request): JsonResponse
     {
         $shop = $this->dispatcherShop();
         $module = $this->module($shop, $request->validate(['module' => ['nullable', 'in:all,retail,repair']])['module'] ?? 'all');
-        return response()->json(['batches' => DeliveryBatch::with(['riderProfile', 'legs.assignments', 'legs.shipment'])
+        $batches = DeliveryBatch::with(['riderProfile', 'legs.assignments', 'legs.shipment'])
             ->where('shop_owner_id', $shop->id)
             ->when($module !== 'all', fn ($query) => $this->filterBatchesByModule($query, $module))
-            ->latest()->get()]);
+            ->latest()->get();
+        $batches->flatMap->legs->each(function (ShipmentLeg $leg): void {
+            $resolved = $this->deliveryTypes->resolve($leg->shipment, $leg);
+            $leg->setAttribute('delivery_type', $resolved['delivery_type']);
+            $leg->setAttribute('delivery_label', $resolved['delivery_label']);
+        });
+
+        return response()->json(['batches' => $batches]);
     }
 
     public function suggestions(Request $request, BatchSuggestionService $service): JsonResponse

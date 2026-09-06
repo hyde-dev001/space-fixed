@@ -7,6 +7,8 @@ export type LiveRiderLocation = {
   shipment_id: number | null;
   shipment_number?: number | null;
   shipment_reference: string | null;
+  delivery_type?: string | null;
+  delivery_label?: string | null;
   rider: { id: number | null; name: string | null };
   status: string | null;
   destination: {
@@ -150,7 +152,11 @@ export default function LiveTrackingMap({ locations, label = 'Live rider map', f
 
     visible.forEach((entry) => {
       const point: [number, number] = [entry.location.latitude, entry.location.longitude];
-      const tooltip = `${entry.rider.name ?? 'Rider'}${entry.stale ? ' - Stale location' : ''}`;
+      const riderLabel = entry.rider.name && entry.rider.name.toLowerCase() !== 'delivery'
+        ? entry.rider.name
+        : 'Rider';
+      const deliveryLabel = entry.delivery_label ? ' · ' + entry.delivery_label : '';
+      const tooltip = riderLabel + deliveryLabel + (entry.stale ? ' - Stale location' : '');
       const existing = markersRef.current.get(entry.leg_id);
 
       if (existing) {

@@ -19,6 +19,7 @@ use App\Models\User;
 use App\Services\Logistics\ArrivalService;
 use App\Services\Logistics\RiderLocationService;
 use App\Services\Logistics\AssignmentService;
+use App\Services\Logistics\DeliveryTypeResolver;
 use App\Services\Logistics\ProofService;
 use App\Services\Logistics\ProofReviewService;
 use App\Services\Logistics\LogisticsActorPolicy;
@@ -38,6 +39,7 @@ class ShipmentController extends Controller
 {
     public function __construct(
         private LogisticsActorPolicy $policy,
+        private DeliveryTypeResolver $deliveryTypes,
     ) {}
 
     public function index(): JsonResponse
@@ -49,6 +51,7 @@ class ShipmentController extends Controller
             ->where('shop_owner_id', $shop->id)
             ->latest()
             ->paginate(20);
+        $shipments->getCollection()->each(fn (Shipment $shipment) => $this->attachDeliveryTypeToShipment($shipment));
 
         return response()->json($shipments);
     }
@@ -72,9 +75,10 @@ class ShipmentController extends Controller
         $shop = $this->authorizedShop('view-logistics-shipments');
         $this->abortUnlessTenant($shipment->shop_owner_id, $shop);
 
-        return response()->json([
-            'shipment' => $shipment->load(['legs.proofs', 'legs.assignments.riderProfile', 'events']),
-        ]);
+        $shipment = $shipment->load(['legs.proofs', 'legs.assignments.riderProfile', 'events']);
+        $this->attachDeliveryTypeToShipment($shipment);
+
+        return response()->json(['shipment' => $shipment]);
     }
 
     public function investigateDispute(DeliveryDispute $dispute, DeliveryDisputeService $disputes): JsonResponse
@@ -632,6 +636,24 @@ class ShipmentController extends Controller
                 ->where('linked_id', $actor->getAuthIdentifier())
                 ->where('active', true))
             ->exists(), 403);
+    }
+
+    private function attachDeliveryTypeToShipment(Shipment $shipment): void
+    {
+        $resolved = $this->deliveryTypes->resolve($shipment);
+        $shipment->setAttribute('delivery_type', $resolved['delivery_type']);
+        $shipment->setAttribute('delivery_label', $resolved['delivery_label']);
+
+        if ($shipment->relationLoaded('legs')) {
+            $shipment->legs->each(fn (ShipmentLeg $leg) => $this->attachDeliveryTypeToLeg($leg, $shipment));
+        }
+    }
+
+    private function attachDeliveryTypeToLeg(ShipmentLeg $leg, ?Shipment $shipment = null): void
+    {
+        $resolved = $this->deliveryTypes->resolve($shipment ?: $leg->shipment, $leg);
+        $leg->setAttribute('delivery_type', $resolved['delivery_type']);
+        $leg->setAttribute('delivery_label', $resolved['delivery_label']);
     }
 
     private function authorizedShop(string $permission): ShopOwner

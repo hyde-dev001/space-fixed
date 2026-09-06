@@ -7,6 +7,8 @@ import ShipmentTracking from '../ShipmentTracking';
 const shipment: any = {
   id: 1,
   purpose: 'retail_delivery',
+  delivery_type: 'retail_delivery',
+  delivery_label: 'Retail Delivery',
   status: 'active',
   source_type: 'order',
   live_tracking_enabled: true,
@@ -14,10 +16,14 @@ const shipment: any = {
     id: 2,
     sequence: 1,
     leg_type: 'outbound',
+    delivery_type: 'retail_delivery',
+    delivery_label: 'Retail Delivery',
     status: 'in_transit',
     destination_snapshot: { type: 'customer', name: 'Customer', address: 'Manila', latitude: 14.61, longitude: 120.99 },
     live_tracking: {
       leg_id: 2,
+      delivery_type: 'retail_delivery',
+      delivery_label: 'Retail Delivery',
       status: 'in_transit',
       destination: { name: 'Customer', address: 'Manila', latitude: 14.61, longitude: 120.99 },
       location: {
@@ -78,6 +84,8 @@ describe('ShipmentTracking live tracking', () => {
   it('shows live pickup tracking for a repair shipment while the rider is going to the customer', async () => {
     shipment.purpose = 'repair_pickup';
     shipment.source_type = 'repair_request';
+    shipment.delivery_type = 'repair_pickup';
+    shipment.delivery_label = 'Repair Pickup';
     shipment.legs[0] = {
       ...shipment.legs[0],
       leg_type: 'inbound',
@@ -98,6 +106,8 @@ describe('ShipmentTracking live tracking', () => {
       },
       live_tracking: {
         ...shipment.legs[0].live_tracking,
+        delivery_type: 'repair_pickup',
+        delivery_label: 'Repair Pickup',
         destination: {
           type: 'customer',
           name: 'Customer Home',
@@ -118,6 +128,8 @@ describe('ShipmentTracking live tracking', () => {
   it('continues live pickup tracking toward the repair shop after handoff', async () => {
     shipment.purpose = 'repair_pickup';
     shipment.source_type = 'repair_request';
+    shipment.delivery_type = 'repair_pickup';
+    shipment.delivery_label = 'Repair Pickup';
     shipment.legs[0] = {
       ...shipment.legs[0],
       leg_type: 'inbound',
@@ -139,6 +151,8 @@ describe('ShipmentTracking live tracking', () => {
       },
       live_tracking: {
         ...shipment.legs[0].live_tracking,
+        delivery_type: 'repair_pickup',
+        delivery_label: 'Repair Pickup',
         status: 'in_transit',
         destination: {
           type: 'shop',
@@ -160,6 +174,8 @@ describe('ShipmentTracking live tracking', () => {
   it('keeps polling through the pickup handoff before the rider starts the shop leg', async () => {
     shipment.purpose = 'repair_pickup';
     shipment.source_type = 'repair_request';
+    shipment.delivery_type = 'repair_pickup';
+    shipment.delivery_label = 'Repair Pickup';
     shipment.legs[0] = {
       ...shipment.legs[0],
       leg_type: 'inbound',
@@ -210,6 +226,8 @@ describe('ShipmentTracking live tracking', () => {
   it('shows live tracking while a retail refund return rider collects the item', async () => {
     shipment.purpose = 'refund_return';
     shipment.source_type = 'order_refund';
+    shipment.delivery_type = 'retail_return';
+    shipment.delivery_label = 'Retail Return';
     shipment.status = 'active';
     shipment.legs[0] = {
       ...shipment.legs[0],
@@ -232,6 +250,8 @@ describe('ShipmentTracking live tracking', () => {
       },
       live_tracking: {
         ...shipment.legs[0].live_tracking,
+        delivery_type: 'retail_return',
+        delivery_label: 'Retail Return',
         status: 'assigned',
         destination: {
           type: 'customer',

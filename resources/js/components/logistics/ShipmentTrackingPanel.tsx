@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Link } from '@inertiajs/react';
 import axios from 'axios';
 import LiveTrackingMap, { type LiveRiderLocation } from './LiveTrackingMap';
-import type { CustomerDeliveryProof, TrackingShipment, TrackingShipmentLeg } from '@/types/logistics';
+import { logisticsDeliveryLabel, type CustomerDeliveryProof, type TrackingShipment, type TrackingShipmentLeg } from '@/types/logistics';
 
 const titleCase = (value: string) =>
   value.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -288,7 +288,7 @@ export default function ShipmentTrackingPanel({
         ? 'Customer return pickup map'
         : isLiveRepairPickup ? 'Customer pickup map' : 'Customer delivery map';
   const shipmentNumber = currentShipment.shipment_number ?? currentShipment.id;
-  const itemLabel = isReturn ? 'Return' : isRepair ? 'Repair Delivery' : 'Shipment';
+  const itemLabel = logisticsDeliveryLabel(currentShipment);
   const trackingNumber = isReturn ? `RET-${currentShipment.id}` : (currentLeg?.tracking_number || `SHP-${currentShipment.id}`);
   const trackingUrl = isReturn ? `/tracking/shipments/${currentShipment.id}` : currentLeg?.tracking_url;
   const awaitingConfirmation = ['awaiting_proof_approval', 'proof_correction_required'].includes(currentLeg?.status ?? '');
@@ -296,6 +296,8 @@ export default function ShipmentTrackingPanel({
   const customerMapLocations: LiveRiderLocation[] = liveTracking ? [{
     leg_id: liveTracking.leg_id,
     shipment_id: currentShipment.id,
+    delivery_type: liveTracking.delivery_type ?? currentLeg?.delivery_type ?? currentShipment.delivery_type ?? null,
+    delivery_label: liveTracking.delivery_label ?? currentLeg?.delivery_label ?? currentShipment.delivery_label ?? null,
     shipment_number: shipmentNumber,
     shipment_reference: `Shipment #${shipmentNumber}`,
     rider: { id: null, name: 'Rider' },
@@ -315,7 +317,7 @@ export default function ShipmentTrackingPanel({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-sm font-medium text-gray-500">{itemLabel} #{shipment.id}</p>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-950">{titleCase(currentShipment.purpose)}</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-950">{itemLabel}</h1>
         </div>
         <span className="w-fit rounded-full border border-gray-300 bg-white px-3 py-1 text-sm font-semibold text-gray-800">
           {awaitingConfirmation ? customerStatus(currentLeg?.status ?? '') : titleCase(currentShipment.status)}
