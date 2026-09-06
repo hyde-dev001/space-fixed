@@ -1498,6 +1498,50 @@ class LogisticsPageAccessTest extends TestCase
         );
     }
 
+    public function test_dispatcher_can_view_an_approved_repair_pickup_proof_from_legacy_storage(): void
+    {
+        $this->seed(RolesAndPermissionsSeeder::class);
+        Storage::fake('local');
+        Storage::fake('public');
+
+        $shop = ShopOwner::factory()->create(['business_type' => 'both']);
+        $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $dispatcher->assignRole('Logistics Dispatcher');
+        $shipment = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'repair_request',
+            'purpose' => 'repair_pickup',
+            'status' => 'completed',
+        ]);
+        $leg = ShipmentLeg::factory()->create([
+            'shipment_id' => $shipment->id,
+            'leg_type' => 'inbound',
+            'status' => 'delivered',
+        ]);
+        $path = 'logistics-proof/'.$leg->id.'/delivery.jpg';
+        Storage::disk('public')->put($path, 'legacy-repair-proof');
+        $proof = HandoffProof::factory()->create([
+            'shipment_leg_id' => $leg->id,
+            'file_path' => $path,
+            'review_status' => 'approved',
+        ]);
+
+        $payload = collect($this->actingAs($dispatcher, 'user')
+            ->get('/erp/logistics/shipments?status=completed')
+            ->assertOk()
+            ->viewData('page')['props']['shipments']['data'])
+            ->firstWhere('id', $shipment->id);
+
+        $this->assertSame(
+            '/api/logistics/proofs/'.$proof->id.'/file',
+            collect($payload['legs'][0]['proofs'])->firstWhere('id', $proof->id)['proof_url'],
+        );
+        $this->actingAs($dispatcher, 'user')
+            ->get('/api/logistics/proofs/'.$proof->id.'/file')
+            ->assertOk()
+            ->assertStreamedContent('legacy-repair-proof');
+    }
+
     public function test_dispatcher_shipments_include_available_riders_for_assignment(): void
     {
         $this->seed(RolesAndPermissionsSeeder::class);

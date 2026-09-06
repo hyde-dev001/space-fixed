@@ -96,7 +96,7 @@ class ArrivalService
             return $this->events->record($leg->shipment, $leg, [
                 'event_type' => $eventType,
                 'visibility' => 'internal',
-                'message' => $this->message($payload['arrival_type'], $check['result']),
+                'message' => $this->message($leg, $payload['arrival_type'], $check['result']),
                 'metadata' => [
                     ...$check,
                     ...$locationMetadata,
@@ -207,17 +207,20 @@ class ArrivalService
         }
     }
 
-    private function message(string $type, string $result): string
+    private function message(ShipmentLeg $leg, string $type, string $result): string
     {
-        $place = $type === 'pickup' ? 'pickup' : 'customer location';
+        $isInbound = in_array($leg->leg_type, ['inbound', 'return_to_shop'], true);
+        $place = $type === 'pickup'
+            ? ($isInbound ? 'customer location' : 'shop')
+            : ($isInbound ? 'shop' : 'customer location');
 
         if ($result === 'recorded') {
-            return 'Rider confirmed pickup at the shop.';
+            return 'Rider confirmed pickup at the ' . $place . '.';
         }
 
         return $result === 'verified'
-            ? "Rider arrived at the {$place}."
-            : "Rider recorded arrival at the {$place} with a location exception.";
+            ? 'Rider arrived at the ' . $place . '.'
+            : 'Rider recorded arrival at the ' . $place . ' with a location exception.';
     }
 
     private function distanceInMetres(float $lat1, float $lon1, float $lat2, float $lon2): float

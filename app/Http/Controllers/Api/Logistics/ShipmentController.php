@@ -173,7 +173,7 @@ class ShipmentController extends Controller
                 $this->cleanupStoredProof($storedPath);
             }
 
-            $proof->setAttribute('proof_url', $this->proofUrl($proof));
+            $proof->setAttribute('proof_url', $this->proofUrl($proof, $proofs));
 
             return response()->json(['proof' => $proof], $proof->wasRecentlyCreated ? 201 : 200);
         } catch (\Throwable $exception) {
@@ -184,7 +184,7 @@ class ShipmentController extends Controller
         }
     }
 
-    public function proofFile(HandoffProof $proof)
+    public function proofFile(HandoffProof $proof, ProofService $proofs)
     {
         $proof->loadMissing('leg.shipment');
         $shipment = $proof->leg->shipment;
@@ -201,9 +201,10 @@ class ShipmentController extends Controller
                 : 'assign-logistics-deliveries');
         $shop = $this->authorizedShop($proofPermission);
         $this->abortUnlessTenant((int) $proof->leg->shipment->shop_owner_id, $shop);
-        abort_unless($proof->file_path && Storage::disk('local')->exists($proof->file_path), 404);
+        $disk = $proofs->storageDisk($proof);
+        abort_unless($disk, 404);
 
-        return Storage::disk('local')->response($proof->file_path);
+        return Storage::disk($disk)->response($proof->getRawOriginal('file_path'));
     }
 
     public function attemptFile(DeliveryAttempt $attempt)
@@ -675,18 +676,11 @@ class ShipmentController extends Controller
             && ! str_contains($path, '\\');
     }
 
-    private function proofUrl(HandoffProof $proof): ?string
+    private function proofUrl(HandoffProof $proof, ProofService $proofs): ?string
     {
-        $path = $proof->getRawOriginal('file_path');
-        if (! is_string($path)
-            || ! str_starts_with($path, 'logistics-proof/')
-            || str_contains($path, '..')
-            || str_contains($path, '\\')
-            || ! Storage::disk('local')->exists($path)) {
-            return null;
-        }
-
-        return '/api/logistics/proofs/' . $proof->id . '/file';
+        return $proofs->storageDisk($proof)
+            ? '/api/logistics/proofs/' . $proof->id . '/file'
+            : null;
     }
 
     private function abortUnlessTenant(int $shopOwnerId, ShopOwner $shop): void

@@ -20,11 +20,16 @@ const timestamp = (value: string) =>
 
 function ArrivalRow({ type, arrival }: { type: 'pickup' | 'dropoff'; arrival: DeliveryArrival }) {
   const { label: resultLabel, Icon, className } = resultDetails[arrival.result];
-  const place = type === 'pickup' ? 'pickup' : 'customer';
+  const place = type === 'pickup' ? 'pickup' : arrival.place ?? 'customer';
+  const arrivalLabel = type === 'pickup'
+    ? 'Pickup arrival'
+    : place === 'shop'
+      ? 'Shop arrival'
+      : 'Customer arrival';
 
   return <div className="grid gap-1 rounded-lg bg-gray-50 p-3 sm:grid-cols-[8rem_1fr] dark:bg-gray-900/50">
     <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-      {type === 'pickup' ? 'Pickup arrival' : 'Customer arrival'}
+      {arrivalLabel}
     </p>
     <div className="min-w-0 text-xs text-gray-600 dark:text-gray-300">
       <p className={`inline-flex items-center gap-1 font-semibold ${className}`}><Icon aria-hidden="true" size={15} />{resultLabel}</p>

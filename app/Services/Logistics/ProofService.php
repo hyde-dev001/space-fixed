@@ -7,6 +7,7 @@ use App\Models\Logistics\HandoffProof;
 use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\ShipmentLeg;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
 
@@ -138,6 +139,25 @@ class ProofService
 
             return $proof;
         });
+    }
+
+    public function storageDisk(HandoffProof $proof): ?string
+    {
+        $path = $proof->getRawOriginal('file_path');
+        if (! is_string($path)
+            || ! str_starts_with($path, 'logistics-proof/')
+            || str_contains($path, '..')
+            || str_contains($path, chr(92))) {
+            return null;
+        }
+
+        foreach (['local', 'public'] as $disk) {
+            if (Storage::disk($disk)->exists($path)) {
+                return $disk;
+            }
+        }
+
+        return null;
     }
 
     public function hasRequiredPickupProof(ShipmentLeg $leg): bool
