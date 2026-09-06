@@ -11,13 +11,13 @@ import {
 import type {
   ArticleCatalog,
   ArticleLanguage,
-  ArticleViewer,
 } from "../../../data/articleGuides";
 import { loadArticleCatalog } from "../../../data/articleCatalogs";
 import {
   getAccessibleArticles,
   getArticleBySlug,
 } from "../../../utils/articleGuides";
+import { readArticleViewer } from "../../../utils/articleViewer";
 
 const LANGUAGE_STORAGE_KEY = "solespace:staff-articles:language";
 
@@ -45,12 +45,6 @@ type ArticlesPageProps = {
   };
 };
 
-const readStringArray = (value: unknown): string[] => (
-  Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === "string")
-    : []
-);
-
 const readLanguagePreference = (): ArticleLanguage => {
   if (typeof window === "undefined") return "en";
 
@@ -73,23 +67,6 @@ const useArticleLanguage = (): [ArticleLanguage, (language: ArticleLanguage) => 
   }, [language]);
 
   return [language, setLanguage];
-};
-
-const readViewer = (props: ArticlesPageProps, audience: string): ArticleViewer => {
-  const auth = props.auth;
-  const user = auth?.user;
-  const shopOwner = auth?.shop_owner ?? user?.shop_owner ?? props.shop_owner;
-
-  return {
-    permissions: readStringArray(auth?.permissions),
-    roles: readStringArray(user?.roles),
-    legacyRole: typeof user?.role === "string" ? user.role : null,
-    businessType: typeof shopOwner?.business_type === "string" ? shopOwner.business_type : null,
-    registrationType: typeof shopOwner?.registration_type === "string" ? shopOwner.registration_type : null,
-    ownerMode: audience === "shop-owner"
-      && auth?.erpActor?.type === "shop_owner"
-      && auth?.erpActor?.ownerMode === true,
-  };
 };
 
 const LoadingState = () => (
@@ -140,7 +117,7 @@ export default function StaffArticlesIndex() {
     };
   }, [audience]);
 
-  const viewer = readViewer(props, audience ?? "");
+  const viewer = readArticleViewer(props, audience ?? "");
   const accessibleArticles = catalog === null
     ? []
     : getAccessibleArticles(catalog, viewer);
