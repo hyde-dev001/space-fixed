@@ -252,7 +252,9 @@ class RepairPosController extends Controller
             ->values();
 
         $resolvedPackageName = $resolvedPackage ? (string) ($resolvedPackage->name ?? '') : null;
-        $resolvedPackagePrice = $resolvedPackage ? (float) ($resolvedPackage->package_price ?? 0) : null;
+        $resolvedPackagePrice = $resolvedPackage
+            ? $this->resolveEffectivePackagePrice($resolvedPackage)
+            : null;
         $includedServicesTotal = $resolvedPackage
             ? round((float) ($resolvedPackagePrice ?? $includedServices->sum(fn (RepairService $service) => (float) ($service->price ?? 0))), 2)
             : round((float) $includedServices->sum(fn (RepairService $service) => (float) ($service->price ?? 0)), 2);
@@ -318,6 +320,25 @@ class RepairPosController extends Controller
         }
 
         return $repair->fresh();
+    }
+
+    private function resolveEffectivePackagePrice(RepairPackage $package): float
+    {
+        $approvalStatus = strtolower((string) ($package->approval_status ?? 'none'));
+        $priceNotYetApplied = in_array($approvalStatus, [
+            'pending_finance',
+            'finance_approved',
+            'pending_owner',
+            'owner_approved',
+            'finance_rejected',
+            'owner_rejected',
+        ], true);
+
+        if ($priceNotYetApplied && $package->old_package_price !== null) {
+            return (float) $package->old_package_price;
+        }
+
+        return (float) ($package->package_price ?? 0);
     }
 
     public function showTransaction(PosTransaction $transaction)

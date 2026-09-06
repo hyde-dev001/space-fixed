@@ -358,6 +358,49 @@ class RepairPosPaymentFlowTest extends TestCase
     }
 
     #[Test]
+    public function package_checkout_uses_the_effective_price_when_a_new_price_is_pending_approval(): void
+    {
+        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        /** @var \App\Models\User $cashier */
+        $cashier = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $package = \App\Models\RepairPackage::create([
+            'shop_owner_id' => $shopOwner->id,
+            'name' => 'Pending Price Package',
+            'description' => 'Uses the currently effective package price.',
+            'package_price' => 599,
+            'old_package_price' => 499,
+            'approval_status' => 'pending_owner',
+            'status' => 'active',
+        ]);
+
+        $response = $this->actingAs($cashier, 'user')->postJson('/api/repair-pos/checkout', [
+            'repair_request_id' => null,
+            'due_type' => 'full',
+            'customer_type' => 'walk_in',
+            'walk_in_name' => 'Pending Price Customer',
+            'walk_in_phone' => '09171234567',
+            'idempotency_key' => 'pending-package-price-001',
+            'manual_repair_subtotal' => 499,
+            'manual_service_summary' => 'Pending price package checkout',
+            'manual_payment_policy' => 'full_upfront',
+            'manual_repair_package_id' => $package->id,
+            'cash_received' => 500,
+            'payment_lines' => [
+                ['tender_type' => 'cash', 'amount' => 499],
+            ],
+        ]);
+
+        $response->assertOk()->assertJsonPath('success', true);
+        $transaction = \App\Models\PosTransaction::query()->findOrFail((int) $response->json('transaction_id'));
+        $repair = \App\Models\RepairRequest::query()->findOrFail((int) $transaction->module_reference_id);
+
+        $this->assertSame('499.00', number_format((float) $transaction->paid_amount, 2, '.', ''));
+        $this->assertSame('499.00', number_format((float) $repair->package_price, 2, '.', ''));
+        $this->assertSame('499.00', number_format((float) $repair->final_total, 2, '.', ''));
+        $this->assertSame('1.00', number_format((float) data_get($transaction->metadata, 'change'), 2, '.', ''));
+    }
+
+    #[Test]
     public function repeated_manual_checkout_with_the_same_idempotency_key_reuses_one_repair_and_transaction(): void
     {
         $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);

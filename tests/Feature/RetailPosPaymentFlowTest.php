@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\InventoryColorVariant;
 use App\Models\InventoryItem;
 use App\Models\InventorySize;
+use App\Models\Finance\Invoice;
 use App\Models\OrderItem;
 use App\Models\PosTransaction;
 use App\Models\Product;
@@ -17,6 +18,7 @@ use App\Services\OrderReceiptService;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\Test;
+use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
 class RetailPosPaymentFlowTest extends TestCase
@@ -145,6 +147,74 @@ class RetailPosPaymentFlowTest extends TestCase
             'invalid_state',
             $receiptService->confirm($order)['result'],
         );
+    }
+
+    #[Test]
+    public function retail_pos_checkout_creates_one_paid_invoice_for_the_pos_order(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'retail']);
+        /** @var User $cashier */
+        $cashier = User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $product = Product::create([
+            'shop_owner_id' => $shopOwner->id,
+            'name' => 'Invoice Retail POS Sneaker',
+            'slug' => 'invoice-retail-pos-' . random_int(1000, 9999),
+            'price' => 100,
+            'stock_quantity' => 10,
+            'is_active' => true,
+        ]);
+
+        $payload = [
+            'idempotency_key' => 'retail-invoice-001',
+            'customer_type' => 'walk_in',
+            'walk_in_name' => 'Invoice Buyer',
+            'items' => [[
+                'product_id' => $product->id,
+                'qty' => 1,
+                'unit_price' => 100,
+            ]],
+            'payment_lines' => [['tender_type' => 'cash', 'amount' => 100]],
+        ];
+
+        $response = $this->actingAs($cashier, 'user')
+            ->postJson('/api/retail-pos/checkout', $payload);
+
+        $response->assertCreated();
+        $transaction = PosTransaction::query()->findOrFail((int) $response->json('data.id'));
+        $order = $transaction->sourceOrder()->firstOrFail();
+        $invoice = Invoice::query()
+            ->where('shop_id', $shopOwner->id)
+            ->where('job_order_id', $order->id)
+            ->first();
+
+        $this->assertNotNull($invoice);
+        $this->assertSame('paid', (string) $invoice->status);
+        $this->assertSame($order->order_number, (string) $invoice->job_reference);
+        $this->assertSame('retail_pos', data_get($invoice->meta, 'source'));
+        $this->assertSame((string) $transaction->transaction_no, (string) data_get($invoice->meta, 'pos_transaction_no'));
+        $this->assertSame('100.00', (string) $invoice->total);
+        $this->assertSame('10.71', (string) $invoice->tax_amount);
+        $this->assertSame(1, $invoice->items()->count());
+
+        $this->actingAs($cashier, 'user')
+            ->postJson('/api/retail-pos/checkout', $payload)
+            ->assertCreated();
+
+        $this->assertSame(
+            1,
+            Invoice::query()
+                ->where('shop_id', $shopOwner->id)
+                ->where('job_order_id', $order->id)
+                ->count(),
+        );
+
+        Permission::findOrCreate('access-finance-invoices', 'user');
+        $cashier->givePermissionTo('access-finance-invoices');
+        $this->actingAs($cashier, 'user')
+            ->getJson('/api/finance/invoices')
+            ->assertOk()
+            ->assertJsonPath('data.0.reference', $invoice->reference)
+            ->assertJsonPath('data.0.meta.source', 'retail_pos');
     }
 
     #[Test]
@@ -296,6 +366,7 @@ class RetailPosPaymentFlowTest extends TestCase
         $this->assertDatabaseCount('orders', 0);
         $this->assertDatabaseCount('pos_transactions', 0);
         $this->assertDatabaseCount('stock_movements', 0);
+        $this->assertDatabaseCount('finance_invoices', 0);
     }
 
     #[Test]

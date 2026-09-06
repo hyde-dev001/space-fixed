@@ -2965,7 +2965,7 @@ class RepairRequestController extends Controller
             if ($repairer) {
                 $repairRequest->update([
                     'assigned_repairer_id' => $repairer->id,
-                    'status' => 'assigned_to_repairer',
+                    'status' => 'new_request',
                     'assigned_at' => now(),
                 ]);
 

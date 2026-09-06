@@ -4,6 +4,8 @@ namespace App\Services;
 
 use App\Models\Order;
 use App\Models\OrderItem;
+use App\Models\Finance\Invoice;
+use App\Models\Finance\InvoiceItem;
 use App\Models\PosPaymentLine;
 use App\Models\PosTransaction;
 use App\Models\Product;
@@ -239,10 +241,106 @@ class RetailPosPaymentService
             }
 
             $transaction->load('paymentLines');
-            app(RepairPosReceiptService::class)->issue($transaction);
+            $receipt = app(RepairPosReceiptService::class)->issue($transaction);
+            $this->ensureRetailPosInvoice($order, $transaction, (string) $receipt->receipt_no);
 
             return $transaction->fresh(['paymentLines', 'receipt']);
         });
+    }
+
+    private function ensureRetailPosInvoice(Order $order, PosTransaction $transaction, string $receiptNo): Invoice
+    {
+        $existing = Invoice::withTrashed()
+            ->where('shop_id', (int) $order->shop_owner_id)
+            ->where('job_order_id', (int) $order->id)
+            ->lockForUpdate()
+            ->first();
+
+        if ($existing) {
+            if (! $existing->trashed() && (
+                (int) ($order->invoice_id ?? 0) !== (int) $existing->id
+                || ! (bool) $order->invoice_generated
+            )) {
+                $order->update([
+                    'invoice_generated' => true,
+                    'invoice_id' => $existing->id,
+                ]);
+            }
+
+            return $existing;
+        }
+
+        $order->loadMissing('items');
+        $paidAt = $transaction->paid_at ?? now();
+        $invoice = Invoice::create([
+            'shop_id' => (int) $order->shop_owner_id,
+            'reference' => 'RINV-' . (string) $transaction->transaction_no,
+            'customer_id' => $order->customer_id,
+            'customer_name' => $order->customer_name ?: 'Walk-in Customer',
+            'customer_email' => $order->customer_email,
+            'date' => $paidAt->toDateString(),
+            'due_date' => null,
+            'total' => $transaction->total_amount,
+            'tax_amount' => $transaction->tax_amount,
+            'status' => 'paid',
+            'payment_date' => $paidAt->toDateString(),
+            'payment_method' => (string) ($transaction->paymentLines->first()?->tender_type ?? $order->payment_method ?? 'cash'),
+            'job_order_id' => (int) $order->id,
+            'job_reference' => (string) $order->order_number,
+            'notes' => 'Auto-generated from Retail POS transaction #' . $transaction->transaction_no,
+            'meta' => [
+                'source' => 'retail_pos',
+                'pos_transaction_id' => (int) $transaction->id,
+                'pos_transaction_no' => (string) $transaction->transaction_no,
+                'receipt_no' => $receiptNo,
+                'order_id' => (int) $order->id,
+                'order_number' => (string) $order->order_number,
+                'subtotal_amount' => $transaction->subtotal,
+                'vat_amount' => $transaction->tax_amount,
+                'grand_total' => $transaction->total_amount,
+            ],
+        ]);
+
+        $remainingNet = round((float) $transaction->subtotal, 2);
+        foreach ($order->items as $index => $orderItem) {
+            $lineTotal = round((float) $orderItem->subtotal, 2);
+            $lineNet = $index === $order->items->count() - 1
+                ? $remainingNet
+                : VatInclusiveCalculator::extract($lineTotal, self::VAT_RATE_PERCENT)['net'];
+            $lineNet = round(max(0, $lineNet), 2);
+            $remainingNet = round($remainingNet - $lineNet, 2);
+            $quantity = max(1, (int) $orderItem->quantity);
+            $description = (string) $orderItem->product_name
+                . ($orderItem->size ? ' (Size: ' . $orderItem->size . ')' : '')
+                . ($orderItem->color ? ' (Color: ' . $orderItem->color . ')' : '');
+
+            InvoiceItem::create([
+                'invoice_id' => $invoice->id,
+                'description' => $description,
+                'quantity' => $quantity,
+                'unit_price' => round($lineNet / $quantity, 2),
+                'tax_rate' => self::VAT_RATE_PERCENT,
+                'amount' => $lineNet,
+            ]);
+        }
+
+        $order->update([
+            'invoice_generated' => true,
+            'invoice_id' => $invoice->id,
+        ]);
+
+        activity()
+            ->performedOn($order)
+            ->withProperties([
+                'invoice_id' => $invoice->id,
+                'invoice_reference' => $invoice->reference,
+                'pos_transaction_id' => $transaction->id,
+                'receipt_no' => $receiptNo,
+                'total' => $invoice->total,
+            ])
+            ->log('Auto-generated invoice for retail POS order');
+
+        return $invoice;
     }
 
     private function generateRetailPosOrderNumber(): string
