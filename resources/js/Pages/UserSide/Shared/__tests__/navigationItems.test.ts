@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { getCustomerNavItems } from '../navigationItems';
 
 describe('customer navigation items', () => {
-  it('shows Services in the guest navbar', () => {
+  it('shows Services without duplicating the bottom Sign in action in guest navigation', () => {
     const labels = getCustomerNavItems(false).map((item) => item.label);
 
     expect(labels).toContain('Services');
-    expect(labels).toContain('ACCOUNT');
+    expect(labels).not.toContain('ACCOUNT');
   });
 
   it('removes Services and ACCOUNT from the authenticated navbar', () => {

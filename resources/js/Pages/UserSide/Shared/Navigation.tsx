@@ -1461,68 +1461,6 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
             </>
           )}
           <>
-            <aside
-              role="dialog"
-              aria-modal="true"
-              aria-label="Account submenu"
-              aria-hidden={!accountDrawerOpen}
-              className={`userside-customer-drawer fixed left-[min(88vw,31rem)] top-0 z-[110] flex h-dvh w-[min(88vw,26rem)] max-w-[26rem] flex-col border-l border-white/60 bg-white/60 text-[#111111] dark:border-slate-700 dark:bg-slate-900/95 dark:text-white shadow-2xl backdrop-blur-2xl transition-[transform,opacity] duration-300 ease-out motion-reduce:transition-none ${accountDrawerOpen ? 'visible translate-x-0 opacity-100' : 'invisible translate-x-full opacity-0 pointer-events-none'}`}
-            >
-              <div className="flex items-center justify-between border-b border-white/50 bg-white/10 px-5 py-5 sm:px-7 dark:border-slate-700 dark:bg-slate-800/50">
-                <div>
-                  <p className="text-lg font-semibold">Account</p>
-                  <p className="mt-1 text-xs uppercase tracking-[0.16em] text-[#777777] dark:text-slate-400">Profile &amp; access</p>
-                </div>
-                <button type="button" onClick={() => setAccountDrawerOpen(false)} className="inline-flex h-10 w-10 items-center justify-center rounded-full hover:bg-white/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111]" aria-label="Close account">
-                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={1.8} d="M6 6l12 12M18 6L6 18" /></svg>
-                </button>
-              </div>
-              <div className="flex-1 px-5 py-6 sm:px-7">
-                {isAuthenticated ? (
-                  <div className="border-y border-white/50">
-                    <Link
-                      href="/customer-profile"
-                      className={`flex min-h-14 items-center gap-3 border-b border-white/50 px-4 text-sm font-medium transition-colors dark:border-slate-700 dark:text-white ${isMyProfileActive ? 'bg-white/35 text-gray-900 dark:bg-slate-800 dark:text-white' : 'text-gray-900 hover:bg-white/35 dark:hover:bg-slate-800'}`}
-                      onClick={() => setAccountDrawerOpen(false)}
-                    >
-                      <svg className="h-4 w-4 text-gray-500 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                      </svg>
-                      <span>Edit Profile</span>
-                    </Link>
-                    <Link
-                      href={route('shop-owner-register')}
-                      className={`flex min-h-14 items-center gap-3 border-b border-white/50 px-4 text-sm font-medium transition-colors dark:border-slate-700 dark:text-white ${isMobileServicesActive ? 'bg-white/35 text-gray-900 dark:bg-slate-800 dark:text-white' : 'text-gray-900 hover:bg-white/35 dark:hover:bg-slate-800'}`}
-                      onClick={() => setAccountDrawerOpen(false)}
-                    >
-                      <svg className="h-4 w-4 text-gray-500 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2m8-8a4 4 0 100-8 4 4 0 000 8zm6-3v6m3-3h-6" />
-                      </svg>
-                      <span>Join Our Team</span>
-                    </Link>
-                    <button
-                      type="button"
-                      className="flex min-h-14 w-full items-center gap-3 px-4 text-left text-sm font-medium text-red-600 transition-colors hover:bg-red-50/60 dark:hover:bg-red-950/40"
-                      onClick={() => {
-                        setAccountDrawerOpen(false);
-                        handleLogout();
-                      }}
-                    >
-                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                      </svg>
-                      <span>Log out</span>
-                    </button>
-                  </div>
-                ) : (
-                  <Link href="/login" onClick={() => setAccountDrawerOpen(false)} className="flex min-h-14 items-center gap-3 border-y border-white/50 px-4 text-sm font-medium text-gray-900 transition-colors hover:bg-white/35 dark:border-slate-700 dark:text-white dark:hover:bg-slate-800">
-                    Customer Login
-                  </Link>
-                )}
-              </div>
-            </aside>
-          </>
-          <>
             <button
               type="button"
               aria-label="Close cart"
@@ -1581,29 +1519,68 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                         <Link href={href} onClick={() => { setAccountDrawerOpen(false); setLandingSidebarOpen(false); }} className="flex min-h-12 flex-1 items-center text-lg font-semibold tracking-[-0.02em] transition-opacity hover:opacity-55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] sm:text-xl">
                           {item.label}
                         </Link>
-                        {hasChildren && (
-                          <button type="button" onClick={() => setLandingSidebarExpanded(isExpanded ? null : item.dropdownKey ?? null)} className="inline-flex h-11 w-11 items-center justify-center rounded-full hover:bg-[#f5f5f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111]" aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${item.label}`}>
-                            <svg className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-45' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={2} d="M12 5v14M5 12h14" /></svg>
-                          </button>
-                        )}
-                      </div>
-                      {isExpanded && (
-                        <div className="mb-3 ml-4 border-l border-[#cacacb] pl-4 dark:border-slate-700">
-                          <Link href={route('products', item.params?.category ? { category: item.params.category } : undefined)} onClick={() => { setAccountDrawerOpen(false); setLandingSidebarOpen(false); }} className="flex min-h-10 items-center text-sm font-medium text-[#707072] hover:text-[#111111] dark:text-slate-400 dark:hover:text-white">Shop all</Link>
-                          {['New arrivals', 'Best sellers', 'Running', 'Basketball', 'Lifestyle'].map((category) => (
-                            <Link key={category} href={route('products', item.params?.category ? { category: item.params.category } : undefined)} onClick={() => { setAccountDrawerOpen(false); setLandingSidebarOpen(false); }} className="flex min-h-10 items-center text-sm font-medium text-[#707072] hover:text-[#111111] dark:text-slate-400 dark:hover:text-white">{category}</Link>
-                          ))}
-                        </div>
-                      )}
+                         {hasChildren && (
+                           <button type="button" onClick={() => setLandingSidebarExpanded(isExpanded ? null : item.dropdownKey ?? null)} className="inline-flex h-11 w-11 items-center justify-center rounded-full hover:bg-[#f5f5f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111]" aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${item.label}`} aria-expanded={isExpanded} aria-controls={`sidebar-submenu-${item.dropdownKey}`}>
+                             <svg className={`h-4 w-4 transition-transform duration-300 ease-out motion-reduce:transition-none ${isExpanded ? 'rotate-45' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={2} d="M12 5v14M5 12h14" /></svg>
+                           </button>
+                         )}
+                       </div>
+                       {hasChildren && (
+                         <div id={`sidebar-submenu-${item.dropdownKey}`} aria-hidden={!isExpanded} className={`grid transition-[grid-template-rows,opacity,transform] duration-300 ease-out motion-reduce:transition-none ${isExpanded ? 'grid-rows-[1fr] translate-y-0 opacity-100' : 'grid-rows-[0fr] -translate-y-1 opacity-0 pointer-events-none'}`}>
+                           <div className="min-h-0 overflow-hidden">
+                             <div className="mb-3 ml-4 border-l border-[#cacacb] pl-4 dark:border-slate-700">
+                               <Link href={route('products', item.params?.category ? { category: item.params.category } : undefined)} onClick={() => { setAccountDrawerOpen(false); setLandingSidebarOpen(false); }} className="flex min-h-10 items-center text-sm font-medium text-[#707072] hover:text-[#111111] dark:text-slate-400 dark:hover:text-white">Shop all</Link>
+                               {['New arrivals', 'Best sellers', 'Running', 'Basketball', 'Lifestyle'].map((category) => (
+                                 <Link key={category} href={route('products', item.params?.category ? { category: item.params.category } : undefined)} onClick={() => { setAccountDrawerOpen(false); setLandingSidebarOpen(false); }} className="flex min-h-10 items-center text-sm font-medium text-[#707072] hover:text-[#111111] dark:text-slate-400 dark:hover:text-white">{category}</Link>
+                               ))}
+                             </div>
+                           </div>
+                         </div>
+                       )}
                     </div>
                   );
                 })}
               </div>
             </nav>
-            <div className="border-t border-[#cacacb] px-6 py-6 sm:px-8 dark:border-slate-700">
-              <button type="button" onClick={() => { setCartDrawerOpen(false); setAccountDrawerOpen(true); }} aria-expanded={accountDrawerOpen} className="flex min-h-12 w-full items-center gap-3 text-left text-base font-medium hover:opacity-55"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3" strokeWidth={2}/><path strokeLinecap="round" strokeWidth={2} d="M5 20a7 7 0 0 1 14 0"/></svg>{isAuthenticated ? 'Account' : 'Sign in'}</button>
+            <div className="relative border-t border-[#cacacb] px-6 py-6 sm:px-8 dark:border-slate-700">
+              {isAuthenticated ? (
+                <>
+                  <div
+                    id="customer-account-menu"
+                    aria-hidden={!accountDrawerOpen}
+                    className={`absolute bottom-full left-0 right-0 z-[120] mb-3 overflow-hidden rounded-2xl border border-white/60 bg-white/90 text-[#111111] shadow-2xl backdrop-blur-2xl transition-[transform,opacity] duration-300 ease-out motion-reduce:transition-none dark:border-slate-700 dark:bg-slate-900/95 dark:text-white ${accountDrawerOpen ? 'visible translate-y-0 opacity-100' : 'invisible translate-y-2 opacity-0 pointer-events-none'}`}
+                  >
+                    <div className="border-b border-white/50 px-4 py-3 dark:border-slate-700">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#777777] dark:text-slate-400">Account</p>
+                    </div>
+                    <nav aria-label="Account actions" className="divide-y divide-white/50 dark:divide-slate-700">
+                      <Link href="/customer-profile" onClick={() => setAccountDrawerOpen(false)} className={`flex min-h-12 items-center gap-3 px-4 text-sm font-medium text-gray-900 transition-colors hover:bg-white/35 dark:text-white dark:hover:bg-slate-800 ${isMyProfileActive ? 'bg-white/35 dark:bg-slate-800' : ''}`}>
+                        <svg className="h-4 w-4 text-gray-500 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={1.9} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                        <span>Edit Profile</span>
+                      </Link>
+                      <Link href={route('shop-owner-register')} onClick={() => setAccountDrawerOpen(false)} className={`flex min-h-12 items-center gap-3 px-4 text-sm font-medium text-gray-900 transition-colors hover:bg-white/35 dark:text-white dark:hover:bg-slate-800 ${isMobileServicesActive ? 'bg-white/35 dark:bg-slate-800' : ''}`}>
+                        <svg className="h-4 w-4 text-gray-500 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={1.9} d="M16 21v-2a4 4 0 00-4-4H6a2 2 0 00-2 2v2m8-8a4 4 0 100-8 4 4 0 000 8zm6-3v6m3-3h-6" /></svg>
+                        <span>Join Our Team</span>
+                      </Link>
+                      <button type="button" onClick={() => { setAccountDrawerOpen(false); handleLogout(); }} className="flex min-h-12 w-full cursor-pointer items-center gap-3 px-4 text-left text-sm font-medium text-red-600 transition-colors hover:bg-red-50/60 dark:hover:bg-red-950/40">
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={1.9} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+                        <span>Log out</span>
+                      </button>
+                    </nav>
+                  </div>
+                  <button type="button" onClick={() => { setCartDrawerOpen(false); setAccountDrawerOpen((open) => !open); }} aria-expanded={accountDrawerOpen} aria-controls="customer-account-menu" className="flex min-h-12 w-full cursor-pointer items-center gap-3 text-left text-base font-medium hover:opacity-55">
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3" strokeWidth={2}/><path strokeLinecap="round" strokeWidth={2} d="M5 20a7 7 0 0 1 14 0"/></svg>
+                    Account
+                  </button>
+                </>
+              ) : (
+                <Link href={route('login')} onClick={() => setLandingSidebarOpen(false)} className="flex min-h-12 items-center gap-3 text-base font-medium hover:opacity-55">
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3" strokeWidth={2}/><path strokeLinecap="round" strokeWidth={2} d="M5 20a7 7 0 0 1 14 0"/></svg>
+                  Sign in
+                </Link>
+              )}
               <button type="button" onClick={() => { setLandingSidebarOpen(false); setAccountDrawerOpen(false); setCartDrawerOpen(true); }} className="flex min-h-12 w-full items-center gap-3 text-left text-base font-medium hover:opacity-55"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={2} d="M3 4h2l2.2 10.2a2 2 0 0 0 1.96 1.58h7.68a2 2 0 0 0 1.95-1.56L21 7H8"/><circle cx="10" cy="19" r="1.5"/><circle cx="17" cy="19" r="1.5"/></svg>Cart {effectiveCartCount > 0 && `(${effectiveCartCount})`}</button>
-              <Link href={route('download')} onClick={() => { setAccountDrawerOpen(false); setLandingSidebarOpen(false); }} className="flex min-h-12 items-center gap-3 text-base font-medium hover:opacity-55"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14" /></svg>Download</Link>
+              <Link href={route('download')} onClick={() => { setAccountDrawerOpen(false); setLandingSidebarOpen(false); }} className="flex min-h-12 items-center gap-3 text-base font-medium hover:opacity-55"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={2} d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14" /></svg>Download</Link>
             </div>
           </aside>
         </>

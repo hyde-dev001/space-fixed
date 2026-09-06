@@ -10,5 +10,4 @@ export const getCustomerNavItems = (isAuthenticated: boolean) => [
     { route: 'my-repairs', label: 'My Repairs' },
   ] : []),
   ...(isAuthenticated ? [] : [{ route: 'services', label: 'Services' }]),
-  ...(isAuthenticated ? [] : [{ route: 'login', label: 'ACCOUNT' }]),
 ];
