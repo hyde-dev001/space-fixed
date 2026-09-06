@@ -61,18 +61,18 @@ beforeEach(() => {
 });
 
 describe("Staff Articles page", () => {
-  it("renders the searchable hub, recommendations, categories, and results", async () => {
+  it("renders the hub, recommendations, categories, and results", async () => {
     render(<ArticlesIndex />);
 
     expect(await screen.findByRole("heading", { name: /staff articles/i })).toBeInTheDocument();
-    expect(screen.getByRole("searchbox", { name: /search staff articles/i })).toBeInTheDocument();
+    expect(screen.queryByRole("searchbox")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /getting started/i })).toBeInTheDocument();
     expect(screen.getAllByText(/staff pages and access/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/using the staff dashboard/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/32 articles/i)).toBeInTheDocument();
   });
 
-  it("supports Tagalog search and persists the language choice", async () => {
+  it("supports Tagalog copy and persists the language choice", async () => {
     render(<ArticlesIndex />);
 
     await screen.findByRole("heading", { name: /staff articles/i });
@@ -81,29 +81,21 @@ describe("Staff Articles page", () => {
     expect(localStorage.getItem("solespace:staff-articles:language")).toBe("tl");
     expect(await screen.findByRole("heading", { name: /mga artikulo para sa staff/i })).toBeInTheDocument();
 
-    fireEvent.change(screen.getByRole("searchbox", { name: /maghanap/i }), {
-      target: { value: "tinanggihan" },
-    });
-
-    expect(await screen.findByText(/resulta ng price request/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /pagsisimula/i })).toBeInTheDocument();
   });
 
-  it("shows a no-results reset state and preserves search/filter state in the URL", async () => {
+  it("keeps category browsing and preserves the active category in the URL", async () => {
     render(<ArticlesIndex />);
 
-    await screen.findByRole("searchbox", { name: /search staff articles/i });
-    fireEvent.change(screen.getByRole("searchbox", { name: /search staff articles/i }), {
-      target: { value: "no matching article" },
-    });
+    await screen.findByRole("heading", { name: /staff articles/i });
     fireEvent.click(screen.getByRole("button", { name: /orders & returns/i }));
 
-    expect(await screen.findByText(/no staff articles match/i)).toBeInTheDocument();
-    expect(window.location.search).toContain("q=no+matching+article");
+    expect(await screen.findByRole("heading", { name: /orders & returns/i })).toBeInTheDocument();
     expect(window.location.search).toContain("category=orders");
+    expect(screen.getAllByText(/understanding retail job orders/i).length).toBeGreaterThan(0);
 
-    fireEvent.click(screen.getByRole("button", { name: /clear search and filters/i }));
+    fireEvent.click(screen.getByRole("button", { name: /orders & returns/i }));
 
-    expect(screen.getByRole("searchbox", { name: /search staff articles/i })).toHaveValue("");
     expect(window.location.search).toBe("");
     expect(screen.getAllByText(/staff pages and access/i).length).toBeGreaterThan(0);
   });
@@ -140,11 +132,11 @@ describe("Staff Articles page", () => {
     );
   });
 
-  it("hydrates query and category state from the browser URL without a network search", async () => {
-    window.history.replaceState({}, "", "/erp/articles?q=refund&category=orders");
+  it("hydrates category state from the browser URL", async () => {
+    window.history.replaceState({}, "", "/erp/articles?category=orders");
     render(<ArticlesIndex />);
 
-    expect(await screen.findByRole("searchbox", { name: /search staff articles/i })).toHaveValue("refund");
+    expect(await screen.findByRole("heading", { name: /orders & returns/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /orders & returns/i })).toHaveAttribute(
       "aria-pressed",
       "true",
@@ -166,7 +158,7 @@ describe("Staff Articles page", () => {
 
     expect(await screen.findByRole("heading", { name: /manager articles/i })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: /staff articles/i })).not.toBeInTheDocument();
-    expect(screen.getByRole("searchbox", { name: /search manager articles/i })).toBeInTheDocument();
+    expect(screen.queryByRole("searchbox")).not.toBeInTheDocument();
     expect(screen.getAllByText(/use the manager dashboard/i).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("link").some((link) => (
       link.getAttribute("href")?.startsWith("/erp/manager/articles/") ?? false
