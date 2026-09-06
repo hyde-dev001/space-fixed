@@ -6,7 +6,7 @@ import {
   loadArticleCatalog,
 } from "../articleAudience";
 import type { ArticleStep } from "../articleGuides";
-import { isArticleAccessible } from "../../utils/articleGuides";
+import { getAccessibleArticles, isArticleAccessible } from "../../utils/articleGuides";
 
 describe("shared article guide contract", () => {
   it("lists only the requested audiences with distinct routes", () => {
@@ -66,11 +66,70 @@ describe("shared article guide contract", () => {
     });
   });
 
+  it("removes guides for role features that do not exist", async () => {
+    const finance = await loadArticleCatalog("finance");
+    const hr = await loadArticleCatalog("hr");
+
+    expect(finance.articles.some((article) => article.slug === "finance-audit-logs")).toBe(false);
+    expect(hr.articles.some((article) => article.slug === "hr-audit-logs")).toBe(false);
+  });
+
   it("does not expose role-only guides without the matching role", async () => {
     const catalog = await loadArticleCatalog("manager");
     const managerArticle = catalog.articles[0];
 
     expect(isArticleAccessible(managerArticle, { permissions: [], roles: [] })).toBe(false);
-    expect(isArticleAccessible(managerArticle, { permissions: [], roles: ["Manager"] })).toBe(true);
+    expect(isArticleAccessible(managerArticle, { permissions: [], roles: ["Manager"] })).toBe(false);
+    expect(isArticleAccessible(managerArticle, {
+      permissions: ["access-manager-dashboard"],
+      roles: ["Manager"],
+    })).toBe(true);
+  });
+
+  it("filters Shop Owner guides by registration and business configuration", async () => {
+    const catalog = await loadArticleCatalog("shop-owner");
+    const slugsFor = (registrationType: string, businessType: string) => (
+      getAccessibleArticles(catalog, {
+        permissions: [],
+        roles: [],
+        ownerMode: true,
+        registrationType,
+        businessType,
+      }).map((article) => article.slug)
+    );
+
+    expect(slugsFor("company", "retail")).toEqual(expect.arrayContaining([
+      "shop-owner-home",
+      "shop-owner-retail",
+      "shop-owner-finance",
+      "shop-owner-reports",
+    ]));
+    expect(slugsFor("company", "retail")).not.toEqual(expect.arrayContaining([
+      "shop-owner-repair",
+      "shop-owner-pos",
+      "shop-owner-repair-individual",
+    ]));
+
+    expect(slugsFor("individual", "repair")).toEqual(expect.arrayContaining([
+      "shop-owner-home",
+      "shop-owner-pos",
+      "shop-owner-repair-individual",
+    ]));
+    expect(slugsFor("individual", "repair")).not.toEqual(expect.arrayContaining([
+      "shop-owner-finance",
+      "shop-owner-repair",
+    ]));
+
+    expect(slugsFor("individual", "both (retail & repair)")).toEqual(expect.arrayContaining([
+      "shop-owner-retail",
+      "shop-owner-pos",
+      "shop-owner-repair-individual",
+    ]));
+
+    expect(slugsFor("individual", "retail and repair")).toEqual(expect.arrayContaining([
+      "shop-owner-retail",
+      "shop-owner-pos",
+      "shop-owner-repair-individual",
+    ]));
   });
 });

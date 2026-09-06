@@ -130,7 +130,7 @@ describe("Staff Articles page", () => {
     expect(await screen.findByRole("heading", { name: /article not found/i })).toBeInTheDocument();
 
     pageState.props.articleSlug = "creating-product-from-inventory";
-    pageState.props.auth.permissions = ["access-staff-job-orders"];
+    pageState.props.auth.permissions = ["access-product-upload-staff"];
     pageState.url = "/erp/articles/creating-product-from-inventory";
     rerender(<ArticlesIndex />);
     expect(await screen.findByRole("heading", { name: /creating a product from inventory/i })).toBeInTheDocument();
@@ -173,7 +173,7 @@ describe("Staff Articles page", () => {
     ))).toBe(true);
   });
 
-  it("shows the active Repairer catalog even when the shared permission list is incomplete", async () => {
+  it("does not expose a Repairer catalog article without its feature permission", async () => {
     pageState.props.articleAudience = "repairer";
     pageState.props.auth.permissions = [];
     pageState.props.auth.user.role = "STAFF";
@@ -186,7 +186,23 @@ describe("Staff Articles page", () => {
     render(<ArticlesIndex />);
 
     expect(await screen.findByRole("heading", { name: /repairer articles/i })).toBeInTheDocument();
-    expect(screen.getByText(/7 articles/i)).toBeInTheDocument();
-    expect(screen.getAllByText(/use the repair dashboard/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/0 articles/i)).toBeInTheDocument();
+    expect(screen.queryByText(/use the repair dashboard/i)).not.toBeInTheDocument();
+  });
+
+  it("filters specialized articles by the active feature permission", async () => {
+    pageState.props.articleAudience = "finance";
+    pageState.props.auth.permissions = ["access-finance-dashboard"];
+    pageState.props.auth.user.role = "FINANCE";
+    pageState.props.auth.user.roles = ["Finance"];
+    pageState.url = "/finance/articles";
+    window.history.replaceState({}, "", "/finance/articles");
+
+    render(<ArticlesIndex />);
+
+    expect(await screen.findByRole("heading", { name: /finance articles/i })).toBeInTheDocument();
+    expect(screen.getByText(/1 article/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/use the finance dashboard/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/audit/i)).not.toBeInTheDocument();
   });
 });

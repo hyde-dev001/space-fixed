@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Erp;
 
 use App\Http\Controllers\Controller;
+use App\Services\ArticleAccessService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
@@ -12,6 +13,10 @@ use Inertia\Response as InertiaResponse;
 
 final class StaffArticlesController extends Controller
 {
+    public function __construct(
+        private readonly ArticleAccessService $articleAccess,
+    ) {}
+
     public function index(): InertiaResponse|RedirectResponse
     {
         return $this->render();
@@ -24,6 +29,10 @@ final class StaffArticlesController extends Controller
 
     private function render(?string $slug = null): InertiaResponse|RedirectResponse
     {
+        if ($slug !== null) {
+            abort_unless($this->articleAccess->allows('staff', $slug), 404);
+        }
+
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }

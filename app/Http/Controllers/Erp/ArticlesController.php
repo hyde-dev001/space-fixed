@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Erp;
 
+use App\Services\ArticleAccessService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -12,6 +13,10 @@ use Inertia\Response as InertiaResponse;
 
 final class ArticlesController
 {
+    public function __construct(
+        private readonly ArticleAccessService $articleAccess,
+    ) {}
+
     /**
      * @var array<int, string>
      */
@@ -43,6 +48,10 @@ final class ArticlesController
         $audience = (string) $request->route('articleAudience');
 
         abort_unless(in_array($audience, self::EMPLOYEE_AUDIENCES, true), 404);
+
+        if ($slug !== null) {
+            abort_unless($this->articleAccess->allows($audience, $slug), 404);
+        }
 
         if ($audience !== 'shop-owner' && Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');

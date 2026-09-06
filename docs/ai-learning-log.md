@@ -80,3 +80,7 @@
 
 - Evaluate deterministic novelty/non-document signals and clear selected-type mismatches before low-confidence fallback; otherwise an obvious fake can be routed to manual review.
 - For multi-side identity uploads, replace or reject the paired sides together and enforce required sides at the server boundary so images from different documents cannot be combined.
+
+## 2026-09-06 - Article entitlement boundaries
+
+- Normalize legacy business-type labels through the shared business access service at both server and client boundaries; direct article URLs must enforce the same feature and account-configuration scope as the filtered article hub.

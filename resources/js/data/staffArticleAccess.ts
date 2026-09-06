@@ -51,8 +51,12 @@ export const normalizeStaffArticleBusinessType = (
 ): "retail" | "repair" | "both" | "" => {
   const normalized = String(value ?? "").trim().toLocaleLowerCase();
 
-  if (normalized.includes("both")) return "both";
-  if (normalized === "retail" || normalized === "repair") return normalized;
+  if (normalized.includes("both")
+    || (normalized.includes("retail") && normalized.includes("repair"))) {
+    return "both";
+  }
+  if (normalized.includes("retail")) return "retail";
+  if (normalized.includes("repair")) return "repair";
 
   return "";
 };
