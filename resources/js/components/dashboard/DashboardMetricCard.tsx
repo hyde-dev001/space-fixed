@@ -18,9 +18,9 @@ type DashboardMetricCardProps = {
 
 const toneClasses: Record<DashboardMetricTone, string> = {
   neutral: 'bg-gray-100 text-gray-950 dark:bg-white/10 dark:text-white',
-  success: 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300',
-  warning: 'bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300',
-  danger: 'bg-rose-50 text-rose-800 dark:bg-rose-950/40 dark:text-rose-300',
+  success: 'bg-gray-100 text-gray-950 dark:bg-white/10 dark:text-white',
+  warning: 'bg-gray-100 text-gray-950 dark:bg-white/10 dark:text-white',
+  danger: 'bg-gray-100 text-gray-950 dark:bg-white/10 dark:text-white',
 };
 
 export default function DashboardMetricCard({

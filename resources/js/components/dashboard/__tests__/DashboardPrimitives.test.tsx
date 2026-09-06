@@ -56,6 +56,29 @@ describe('dashboard primitives', () => {
     expect(screen.getByRole('link', { name: /open tasks/i })).toHaveAttribute('href', '/erp/staff/job-orders');
   });
 
+  it.each(['success', 'warning', 'danger'] as const)('keeps %s metric icons monochrome', (tone) => {
+    render(
+      <DashboardMetricCard
+        label={`${tone} metric`}
+        value="12"
+        description="Metric description"
+        icon={() => <span aria-hidden="true">icon</span>}
+        iconTestId={`${tone}-icon`}
+        tone={tone}
+      />,
+    );
+
+    expect(screen.getByTestId(`${tone}-icon`)).toHaveClass('bg-gray-100', 'text-gray-950');
+    expect(screen.getByTestId(`${tone}-icon`)).not.toHaveClass(
+      'bg-emerald-50',
+      'bg-amber-50',
+      'bg-rose-50',
+      'text-emerald-800',
+      'text-amber-800',
+      'text-rose-800',
+    );
+  });
+
   it('keeps panels and state messages accessible', () => {
     const onRetry = vi.fn();
 
