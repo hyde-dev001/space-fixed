@@ -160,22 +160,23 @@ final class ManagerAssignmentEligibilityService
     private function hasEligibleRole(User $user, string $workType): bool
     {
         $roles = $workType === 'repair' ? ['Repairer'] : ['Staff', 'Manager'];
+        $eligibleRoles = array_map(static fn (string $role): string => strtoupper($role), $roles);
 
-        foreach ($roles as $role) {
-            if (strtoupper(trim((string) $user->getAttribute('role'))) === strtoupper($role)) {
-                return true;
-            }
-
-            try {
-                if ($user->hasRole($role, 'user')) {
-                    return true;
-                }
-            } catch (PermissionDoesNotExist) {
-                // A missing role is not an eligibility grant.
-            }
+        try {
+            $assignedRoles = $user->getRoleNames()
+                ->map(static fn ($role): string => strtoupper(trim((string) $role)))
+                ->filter()
+                ->all();
+        } catch (PermissionDoesNotExist) {
+            $assignedRoles = [];
         }
 
-        return false;
+        // Explicit operational roles take precedence over the legacy users.role column.
+        if ($assignedRoles !== []) {
+            return (bool) array_intersect($eligibleRoles, $assignedRoles);
+        }
+
+        return in_array(strtoupper(trim((string) $user->getAttribute('role'))), $eligibleRoles, true);
     }
 
     private function hasPermission(User $user, string $permission): bool
