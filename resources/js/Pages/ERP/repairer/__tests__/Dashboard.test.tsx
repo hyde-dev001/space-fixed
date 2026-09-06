@@ -54,6 +54,15 @@ it('renders the repair dashboard without a runtime hook error', () => {
     expect(screen.queryByText('ERP module')).not.toBeInTheDocument();
 });
 
+it('uses a monochrome badge for the requested services range', () => {
+    render(<DashboardRepair />);
+
+    const rangeBadge = screen.getByText('Last 7 days');
+
+    expect(rangeBadge).toHaveClass('bg-gray-900', 'text-white');
+    expect(rangeBadge).not.toHaveClass('bg-blue-50', 'text-blue-600');
+});
+
 it('uses shared metric cards and dark-mode surfaces for package analytics', async () => {
     pageState.props = {
         ...pageState.props,

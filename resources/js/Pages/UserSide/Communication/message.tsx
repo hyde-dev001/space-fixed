@@ -1323,8 +1323,8 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
                             )}
                             
                             {/* Footer message */}
-                            <div className="bg-blue-50 rounded-lg px-3 py-2.5 mb-4">
-                              <p className="text-xs text-blue-900 leading-relaxed">
+                            <div className="bg-gray-100 rounded-lg px-3 py-2.5 mb-4 dark:bg-gray-800">
+                              <p className="text-xs text-gray-900 leading-relaxed dark:text-gray-100">
                                 {content.includes('bring your item') 
                                   ? '💡 Please bring your item to our shop at your convenience.' 
                                   : '💡 We\'ll keep you updated on the progress of your repair.'}
