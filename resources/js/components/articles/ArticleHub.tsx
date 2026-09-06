@@ -1,4 +1,4 @@
-import { ArrowRight, BookOpen, Clock3, RotateCcw, Search } from "lucide-react";
+import { ArrowRight, BookOpen, Clock3, RotateCcw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "@inertiajs/react";
 
@@ -7,10 +7,7 @@ import type {
   ArticleGuide,
   ArticleLanguage,
 } from "../../data/articleGuides";
-import {
-  getArticleCategories,
-  searchArticles,
-} from "../../utils/articleGuides";
+import { getArticleCategories } from "../../utils/articleGuides";
 
 type ArticleHubProps = {
   catalog: ArticleCatalog;
@@ -27,14 +24,13 @@ const ALL_CATEGORY: Record<ArticleLanguage, string> = {
   tl: "Lahat ng artikulo",
 };
 
-const readHubState = (catalog: ArticleCatalog): { query: string; category: HubCategory } => {
-  if (typeof window === "undefined") return { query: "", category: "all" };
+const readHubState = (catalog: ArticleCatalog): { category: HubCategory } => {
+  if (typeof window === "undefined") return { category: "all" };
 
   const params = new URLSearchParams(window.location.search);
   const category = params.get("category") ?? "";
 
   return {
-    query: params.get("q") ?? "",
     category: catalog.categories.some((item) => item.key === category) ? category : "all",
   };
 };
@@ -57,17 +53,15 @@ const getHubCopy = (catalog: ArticleCatalog, language: ArticleLanguage) => {
         eyebrow: `${label} knowledge base`,
         title: catalog.title[language],
         intro: catalog.intro[language],
-        searchLabel: `Search ${label} articles`,
-        searchPlaceholder: "Search by task, status, or question",
         categories: "Browse by category",
         recommended: "Recommended reads",
         results: "Articles",
         articles: "articles",
         readMinutes: "min read",
         open: "Open article",
-        noResults: `No ${label} articles match those filters.`,
-        noResultsHint: "Try a wider word or clear the filters to see all available articles.",
-        clear: "Clear search and filters",
+        noResults: `No ${label} articles are available in this category.`,
+        noResultsHint: "Choose another category or clear the filter to see all available articles.",
+        clear: "Clear category filter",
         empty: "No articles are available for this account.",
         emptyHint: "This list follows the access and shop settings of the signed-in account.",
       }
@@ -75,17 +69,15 @@ const getHubCopy = (catalog: ArticleCatalog, language: ArticleLanguage) => {
         eyebrow: `Mga guide para sa ${label}`,
         title: catalog.title[language],
         intro: catalog.intro[language],
-        searchLabel: `Maghanap ng ${label} articles`,
-        searchPlaceholder: "Maghanap ayon sa task, status, o tanong",
         categories: "Mag-browse ayon sa category",
         recommended: "Mga inirerekomendang basahin",
         results: "Mga artikulo",
         articles: "artikulo",
         readMinutes: "min na basa",
         open: "Buksan ang artikulo",
-        noResults: `Walang ${label} articles na tumugma sa filters.`,
-        noResultsHint: "Subukan ang mas malawak na salita o i-clear ang filters para makita ang lahat.",
-        clear: "I-clear ang search at filters",
+        noResults: `Walang ${label} articles sa category na ito.`,
+        noResultsHint: "Pumili ng ibang category o i-clear ang filter para makita ang lahat.",
+        clear: "I-clear ang category filter",
         empty: "Walang available na artikulo para sa account na ito.",
         emptyHint: "Sinusunod ng listahang ito ang access at shop settings ng naka-sign-in na account.",
       };
@@ -182,7 +174,7 @@ export default function ArticleHub({
 }: ArticleHubProps) {
   const languageCopy = getHubCopy(catalog, language);
   const [hubState, setHubState] = useState(() => readHubState(catalog));
-  const { query, category } = hubState;
+  const { category } = hubState;
   const categories = getArticleCategories(catalog, articles);
   const categoryCounts = new Map(categories.map((item) => [item.key, item.count]));
 
@@ -191,18 +183,15 @@ export default function ArticleHub({
   }, [catalog]);
 
   const filteredArticles = useMemo(() => {
-    const searched = searchArticles(articles, query, language);
-
     return category === "all"
-      ? searched
-      : searched.filter((article) => article.category === category);
-  }, [articles, category, language, query]);
+      ? articles
+      : articles.filter((article) => article.category === category);
+  }, [articles, category]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
 
     const params = new URLSearchParams();
-    if (query.trim()) params.set("q", query.trim());
     if (category !== "all") params.set("category", category);
     const search = params.toString();
 
@@ -211,12 +200,11 @@ export default function ArticleHub({
       "",
       `${window.location.pathname}${search ? `?${search}` : ""}`,
     );
-  }, [category, query]);
+  }, [category]);
 
   const recommended = articles.filter((article) => article.recommended).slice(0, 3);
-  const hasFilters = Boolean(query.trim()) || category !== "all";
-  const clearFilters = () => setHubState({ query: "", category: "all" });
-  const setQuery = (nextQuery: string) => setHubState((current) => ({ ...current, query: nextQuery }));
+  const hasFilters = category !== "all";
+  const clearFilters = () => setHubState({ category: "all" });
   const setCategory = (nextCategory: HubCategory) => setHubState((current) => ({ ...current, category: nextCategory }));
   const testId = catalog.audience === "staff" ? "staff-articles-hub" : `${catalog.audience}-articles-hub`;
 
@@ -232,21 +220,6 @@ export default function ArticleHub({
           <ArticleLanguageToggle language={language} onLanguageChange={onLanguageChange} />
         </div>
 
-        <div className="mt-7 max-w-3xl">
-          <label htmlFor="article-search" className="sr-only">{languageCopy.searchLabel}</label>
-          <div className="relative">
-            <Search aria-hidden="true" className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-500 dark:text-gray-400" />
-            <input
-              id="article-search"
-              type="search"
-              value={query}
-              placeholder={languageCopy.searchPlaceholder}
-              aria-label={languageCopy.searchLabel}
-              className="min-h-12 w-full rounded-full border border-gray-300 bg-white pl-12 pr-4 text-sm text-gray-950 outline-none transition-colors placeholder:text-gray-500 focus:border-gray-950 focus:ring-2 focus:ring-gray-950/10 dark:border-gray-700 dark:bg-gray-950 dark:text-white dark:placeholder:text-gray-400 dark:focus:border-white dark:focus:ring-white/20"
-              onChange={(event) => setQuery(event.target.value)}
-            />
-          </div>
-        </div>
       </header>
 
       <section aria-labelledby="article-categories">

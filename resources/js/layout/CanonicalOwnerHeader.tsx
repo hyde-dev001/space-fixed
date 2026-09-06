@@ -5,6 +5,7 @@ import { useSidebar } from "../context/SidebarContext";
 import { ThemeToggleButton } from "../components/common/ThemeToggleButton";
 import NotificationBell from "../components/common/NotificationBell";
 import ShopOwnerDropdown from "../components/header/ShopOwnerDropdown";
+import ErpCommandSearch from "../components/header/ErpCommandSearch";
 import type { ErpActor, ErpUrls } from "../types/erp";
 
 interface CanonicalOwnerHeaderProps {
@@ -25,14 +26,25 @@ const CanonicalOwnerHeader: React.FC<CanonicalOwnerHeaderProps> = ({ menuButtonR
     settings: canonicalSettingsUrl,
   };
   const [isApplicationMenuOpen, setApplicationMenuOpen] = useState(false);
+  const [isMobileSearchOpen, setMobileSearchOpen] = useState(false);
   const { isExpanded, isMobileOpen, toggleSidebar, toggleMobileSidebar } = useSidebar();
   const inputRef = useRef<HTMLInputElement>(null);
+  const mobileInputRef = useRef<HTMLInputElement>(null);
+
+  const openMobileSearch = () => {
+    setMobileSearchOpen(true);
+    window.requestAnimationFrame(() => mobileInputRef.current?.focus());
+  };
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
-        inputRef.current?.focus();
+        if (window.innerWidth >= 1024) {
+          inputRef.current?.focus();
+        } else {
+          openMobileSearch();
+        }
       }
     };
 
@@ -75,16 +87,31 @@ const CanonicalOwnerHeader: React.FC<CanonicalOwnerHeaderProps> = ({ menuButtonR
             SoleSpace
           </Link>
           <div className="hidden lg:block">
-            <label htmlFor="canonical-owner-search" className="sr-only">Search</label>
-            <input
-              ref={inputRef}
+            <ErpCommandSearch
               id="canonical-owner-search"
-              type="search"
-              placeholder="Search or type command..."
-              className="h-10 w-72 rounded-lg border border-gray-200 bg-transparent px-3 text-sm text-gray-800 outline-none transition-colors motion-reduce:transition-none focus:border-[#111111] focus:ring-2 focus:ring-[#111111]/10 dark:border-gray-800 dark:text-white dark:focus:border-blue-400 dark:focus:ring-blue-500/20"
+              inputRef={inputRef}
+              inputClassName="h-10 w-72 rounded-lg border border-gray-200 bg-transparent py-2.5 pl-11 pr-14 text-sm text-gray-800 outline-none transition-colors motion-reduce:transition-none focus:border-[#111111] focus:ring-2 focus:ring-[#111111]/10 dark:border-gray-800 dark:text-white dark:focus:border-blue-400 dark:focus:ring-blue-500/20"
             />
           </div>
         </div>
+
+        <button
+          type="button"
+          className="rounded-lg p-2 text-gray-500 transition-colors motion-reduce:transition-none hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-gray-300 dark:hover:bg-gray-800 lg:hidden"
+          aria-label="Toggle Search"
+          aria-expanded={isMobileSearchOpen}
+          onClick={() => {
+            if (isMobileSearchOpen) {
+              setMobileSearchOpen(false);
+            } else {
+              openMobileSearch();
+            }
+          }}
+        >
+          <svg aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="m17.5 17.5-3.75-3.75m1.667-4.583a6.25 6.25 0 1 1-12.5 0 6.25 6.25 0 0 1 12.5 0Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
+        </button>
 
         <button
           type="button"
@@ -106,6 +133,16 @@ const CanonicalOwnerHeader: React.FC<CanonicalOwnerHeaderProps> = ({ menuButtonR
           <ShopOwnerDropdown actor={erpActor} urls={canonicalOwnerUrls} businessStyle />
         </div>
       </div>
+
+      {isMobileSearchOpen && (
+        <div className="absolute left-0 right-0 top-full border-b border-gray-200 bg-white px-3 pb-3 pt-2 shadow-sm dark:border-gray-800 dark:bg-gray-900 lg:hidden">
+          <ErpCommandSearch
+            id="canonical-owner-search-mobile"
+            inputRef={mobileInputRef}
+            inputClassName="h-10 w-full rounded-lg border border-gray-200 bg-transparent py-2.5 pl-11 pr-14 text-sm text-gray-800 outline-none transition-colors motion-reduce:transition-none focus:border-[#111111] focus:ring-2 focus:ring-[#111111]/10 dark:border-gray-800 dark:text-white dark:focus:border-blue-400 dark:focus:ring-blue-500/20"
+          />
+        </div>
+      )}
     </header>
   );
 };
