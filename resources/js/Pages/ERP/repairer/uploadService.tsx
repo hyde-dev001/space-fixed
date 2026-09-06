@@ -730,20 +730,20 @@ export default function UploadService() {
 
       <div className="p-6 space-y-6">
         {/* Header */}
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+        <div className="flex items-center justify-end">
           <h1 className="sr-only">Upload Services</h1>
           {activeTab === "services" && (
-            <div className="self-start flex items-center gap-3">
+            <div className="flex w-full flex-wrap items-center justify-end gap-3">
               <button
                 type="button"
                 onClick={() => setShowArchivedServices((prev) => !prev)}
-                className={`inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${
+                className={`inline-flex h-10 items-center gap-2 rounded-lg border px-4 text-sm font-medium transition-colors ${
                   showArchivedServices
                     ? "border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100 dark:border-purple-700 dark:bg-purple-900/20 dark:text-purple-300"
                     : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
                 }`}
               >
-                {showArchivedServices ? <ArchiveRestoreIcon className="w-5 h-5" /> : <ArchiveBoxIcon className="w-5 h-5" />}
+                {showArchivedServices ? <ArchiveRestoreIcon className="size-4" /> : <ArchiveBoxIcon className="size-4" />}
                 {showArchivedServices ? "Show Active" : "Show Archived"}
               </button>
 
@@ -753,7 +753,7 @@ export default function UploadService() {
                     resetForm();
                     setIsAddModalOpen(true);
                   }}
-                  className="inline-flex items-center gap-2 rounded-lg border border-[#111111] bg-[#111111] px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-gray-800"
+                  className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#111111] bg-[#111111] px-4 text-sm font-medium text-white shadow-sm transition-colors hover:bg-gray-800"
                 >
                   <PlusIcon className="size-4" />
                   Add Service
