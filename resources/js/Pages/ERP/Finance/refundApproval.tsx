@@ -1377,7 +1377,7 @@ export default function RefundApproval() {
 
 				<section
 					aria-labelledby="delivery-fee-adjustments-heading"
-					className="bg-white dark:bg-gray-900 border border-amber-200 dark:border-amber-900/60 rounded-2xl p-6 shadow-sm"
+					className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900"
 				>
 					<div className="mb-4">
 						<h2 id="delivery-fee-adjustments-heading" className="text-lg font-semibold text-gray-900 dark:text-white">

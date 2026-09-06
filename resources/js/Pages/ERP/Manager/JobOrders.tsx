@@ -41,26 +41,10 @@ const statusLabel = (value: string): string => {
         .replace(/\b\w/g, (character) => character.toUpperCase());
 };
 
-const statusClasses = (value: string): string => {
-    const normalized = value.toLowerCase();
-
-    if (["completed", "delivered"].includes(normalized)) {
-        return "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300";
-    }
-
-    if (["cancelled", "refund"].includes(normalized)) {
-        return "border-gray-200 bg-gray-100 text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300";
-    }
-
-    if (normalized === "reassignment_required") {
-        return "border-red-200 bg-red-50 text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300";
-    }
-
-    return "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-300";
-};
+const statusClasses = (_value: string): string => "text-gray-900 dark:text-gray-100";
 
 const StatusBadge = ({ value }: { value: string }) => (
-    <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${statusClasses(value)}`}>
+    <span className={`inline-flex text-sm font-semibold ${statusClasses(value)}`}>
         {statusLabel(value)}
     </span>
 );

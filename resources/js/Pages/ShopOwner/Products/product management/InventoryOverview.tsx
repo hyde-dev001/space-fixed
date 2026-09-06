@@ -59,28 +59,6 @@ const formatCategoryLabel = (category: string) =>
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
 
-const getCategoryBadgeClasses = (category: string) => {
-  const normalized = category.toLowerCase().replace(/\s+/g, "_");
-
-  if (normalized === "shoes") {
-    return "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-200";
-  }
-
-  if (normalized === "repair_materials") {
-    return "bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-200";
-  }
-
-  if (normalized === "accessories") {
-    return "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-200";
-  }
-
-  if (normalized === "care_products") {
-    return "bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-200";
-  }
-
-  return "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200";
-};
-
 const isProductItem = (item: InventoryItem) => {
   const normalized = item.category.toLowerCase().replace(/\s+/g, "_");
   return normalized === "shoes" || normalized === "product" || normalized === "products";
@@ -366,7 +344,7 @@ export default function InventoryOverview() {
                           </div>
                         </td>
                         <td className="py-3">
-                          <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${getCategoryBadgeClasses(item.category)}`}>
+                          <span className="font-medium text-gray-900 dark:text-gray-100">
                             {formatCategoryLabel(item.category)}
                           </span>
                         </td>
@@ -374,15 +352,7 @@ export default function InventoryOverview() {
                           <span className="font-semibold text-gray-900 dark:text-gray-100">{item.quantity}</span>
                         </td>
                         <td className="py-3">
-                          <span
-                            className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                              item.status === "In Stock"
-                                ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200"
-                                : item.status === "Low Stock"
-                                ? "bg-amber-50 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200"
-                                : "bg-red-50 text-red-700 dark:bg-red-900/40 dark:text-red-200"
-                            }`}
-                          >
+                          <span className="font-medium text-gray-900 dark:text-gray-100">
                             {item.status}
                           </span>
                         </td>
@@ -469,7 +439,7 @@ export default function InventoryOverview() {
                   </div>
                   <div>
                     <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Category</p>
-                    <span className={`mt-1 inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${getCategoryBadgeClasses(selectedItem.category)}`}>
+                    <span className="mt-1 font-medium text-gray-900 dark:text-gray-100">
                       {formatCategoryLabel(selectedItem.category)}
                     </span>
                   </div>
@@ -479,15 +449,7 @@ export default function InventoryOverview() {
                   </div>
                   <div>
                     <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Status</p>
-                    <span
-                      className={`inline-block px-2 py-1 rounded-full text-xs font-semibold ${
-                        selectedItem.status === "In Stock"
-                          ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200"
-                          : selectedItem.status === "Low Stock"
-                          ? "bg-amber-50 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200"
-                          : "bg-red-50 text-red-700 dark:bg-red-900/40 dark:text-red-200"
-                      }`}
-                    >
+                    <span className="font-medium text-gray-900 dark:text-gray-100">
                       {selectedItem.status}
                     </span>
                   </div>
