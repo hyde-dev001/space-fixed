@@ -1,21 +1,24 @@
 import { buildRoleArticle, defineCatalog, keywords, related, step, text } from "./roleCatalogFactory";
 
-const managerAccess = {
-  anyOfPermissions: [
-    "access-manager-dashboard",
-    "access-manager-job-orders",
-    "access-manager-repair-jobs",
-    "access-manager-staff-workload",
-    "access-manager-leave-approvals",
-    "access-manager-suspension-approvals",
-    "access-manager-termination-approvals",
-    "access-manager-rehire-approvals",
-    "access-manager-reports",
-    "access-manager-audit-logs",
-    "access-inventory-overview",
-  ],
+const managerAccess = (permissions: readonly string[]) => ({
+  anyOfPermissions: permissions,
   allowedRoles: ["MANAGER"],
-} as const;
+} as const);
+
+const managerDashboardAccess = managerAccess(["access-manager-dashboard"]);
+const managerRetailAccess = managerAccess(["access-manager-job-orders"]);
+const managerRepairAccess = managerAccess(["access-manager-repair-jobs"]);
+const managerWorkloadAccess = managerAccess(["access-manager-staff-workload"]);
+const managerLeaveAccess = managerAccess(["access-manager-leave-approvals"]);
+const managerLifecycleAccess = managerAccess([
+  "access-manager-suspension-approvals",
+  "access-manager-termination-approvals",
+  "access-manager-rehire-approvals",
+]);
+const managerInventoryAccess = managerAccess(["access-inventory-overview"]);
+const managerPricingAccess = managerAccess(["access-shoe-pricing"]);
+const managerReportsAccess = managerAccess(["access-manager-reports"]);
+const managerAuditAccess = managerAccess(["access-audit-logs"]);
 
 const categories = [
   { key: "overview", label: text("Overview", "Pangkalahatang tingin") },
@@ -26,13 +29,13 @@ const categories = [
 
 const articles = [
   buildRoleArticle({
-    slug: "manager-dashboard", order: 1, category: "overview", recommended: true, access: managerAccess,
+    slug: "manager-dashboard", order: 1, category: "overview", recommended: true, access: managerDashboardAccess,
     title: text("Use the Manager Dashboard", "Gamitin ang Manager Dashboard"),
     question: text("How do I check the work that needs my attention?", "Paano ko makikita ang work na kailangan ng pansin ko?"),
     summary: text("Review the main counts and open the correct queue from one page.", "Tingnan ang mahahalagang bilang at buksan ang tamang listahan sa isang page."),
     audience: text("Managers", "Mga Manager"), keywords: keywords("dashboard", "summary", "manager", "queue"),
     page: text("Manager > Dashboard (/erp/manager/dashboard)", "Manager > Dashboard (/erp/manager/dashboard)"),
-    checks: text("Read the cards for Job Orders, Repair Jobs, Staff Workload, and approvals. Open a card only when it matches your shop.", "Basahin ang cards para sa Job Orders, Repair Jobs, Staff Workload, at approvals. Buksan lang ang card na para sa shop mo."),
+    checks: text("Read the cards and labels shown for your account, then open only a queue that your sidebar makes available.", "Basahin ang cards at labels na ipinapakita para sa account mo, tapos buksan lang ang queue na available sa sidebar mo."),
     finish: text("Use the matching button or menu link to open the work list, then review the oldest pending item first.", "Gamitin ang tamang button o menu link para buksan ang listahan, tapos unahin ang pinakamatagal na pending item."),
     nextOwner: text("You or the next approval owner", "Ikaw o ang susunod na approval owner"),
     customerView: text("The customer sees the normal order or repair status after the work is updated.", "Makikita ng customer ang normal na status ng order o repair kapag na-update ang work."),
@@ -42,14 +45,14 @@ const articles = [
     steps: [
       step("open", "Open Manager Dashboard", "Use the Manager section in the sidebar and select Dashboard.", "Buksan ang Manager Dashboard", "Sa sidebar, buksan ang Manager at piliin ang Dashboard."),
       step("read", "Read the summary cards", "Check the number and short label on each card before opening a queue.", "Basahin ang summary cards", "Tingnan ang bilang at maikling label ng bawat card bago magbukas ng listahan."),
-      step("choose", "Choose one work list", "Open the card or sidebar item that matches the task you will handle.", "Pumili ng isang work list", "Buksan ang card o sidebar item na tugma sa task na hahawakan mo."),
+      step("choose", "Choose one work list", "Open a card or sidebar item that is visible for your account and matches the task you will handle.", "Pumili ng isang work list", "Buksan ang card o sidebar item na visible para sa account mo at tugma sa task na hahawakan mo."),
       step("follow", "Follow the queue", "Finish the review or send it to the owner shown by the page.", "Sundin ang queue", "Tapusin ang review o ipadala ito sa owner na nakalagay sa page."),
     ],
     related: [related("manager-staff-workload", "Check staff workload", "Tingnan ang staff workload"), related("manager-reports", "Open Manager reports", "Buksan ang Manager reports")],
     sourceCoverage: { routes: ["erp.manager.dashboard"], pages: ["ERP/Manager/Dashboard"], permissions: ["manager.capability:dashboard-read"], tests: ["tests/Feature/Manager"] },
   }),
   buildRoleArticle({
-    slug: "manager-retail-job-orders", order: 2, category: "operations", access: { ...managerAccess, allowedBusinessTypes: ["retail", "both"] },
+    slug: "manager-retail-job-orders", order: 2, category: "operations", access: { ...managerRetailAccess, allowedBusinessTypes: ["retail", "both"] },
     title: text("Review retail job orders", "Suriin ang retail job orders"),
     question: text("How do I check retail orders that need manager review?", "Paano ko susuriin ang retail orders na kailangan ng manager review?"),
     summary: text("Use the retail job order list to check order details and current status.", "Gamitin ang retail job order list para tingnan ang detalye at kasalukuyang status."),
@@ -72,7 +75,7 @@ const articles = [
     sourceCoverage: { routes: ["erp.manager.job-orders"], pages: ["ERP/Manager/JobOrders"], permissions: ["manager.capability:job-orders-read", "check.user.business.type:retail,both"], tests: ["tests/Feature/Manager"] },
   }),
   buildRoleArticle({
-    slug: "manager-repair-jobs", order: 3, category: "operations", access: { ...managerAccess, allowedBusinessTypes: ["repair", "both"] },
+    slug: "manager-repair-jobs", order: 3, category: "operations", access: { ...managerRepairAccess, allowedBusinessTypes: ["repair", "both"] },
     title: text("Review repair jobs", "Suriin ang repair jobs"),
     question: text("How do I review repair work and its status?", "Paano ko susuriin ang repair work at status nito?"),
     summary: text("Check repair jobs, assigned staff, materials, and the next action before approving or sending work on.", "Tingnan ang repair jobs, assigned staff, materials, at susunod na action bago mag-approve o magpatuloy ng work."),
@@ -95,7 +98,7 @@ const articles = [
     sourceCoverage: { routes: ["erp.manager.repair-jobs"], pages: ["ERP/Manager/RepairJobs"], permissions: ["manager.capability:repair-jobs-read", "check.user.business.type:repair,both"], tests: ["tests/Feature/Manager"] },
   }),
   buildRoleArticle({
-    slug: "manager-staff-workload", order: 4, category: "people", access: managerAccess,
+    slug: "manager-staff-workload", order: 4, category: "people", access: managerWorkloadAccess,
     title: text("Check staff workload", "Tingnan ang staff workload"),
     question: text("How do I see who has too much or too little work?", "Paano ko makikita kung sino ang maraming o kaunting work?"),
     summary: text("Use the workload page to balance assignments and spot work that is waiting.", "Gamitin ang workload page para balansehin ang assignments at makita ang naghihintay na work."),
@@ -115,7 +118,7 @@ const articles = [
     sourceCoverage: { routes: ["erp.manager.staff-workload"], pages: ["ERP/Manager/StaffWorkload"], permissions: ["manager.capability:staff-workload-read"], tests: ["tests/Feature/Manager"] },
   }),
   buildRoleArticle({
-    slug: "manager-leave-approvals", order: 5, category: "people", access: managerAccess,
+    slug: "manager-leave-approvals", order: 5, category: "people", access: managerLeaveAccess,
     title: text("Review leave approvals", "Suriin ang leave approvals"),
     question: text("How do I approve or reject a staff leave request?", "Paano ako mag-a-approve o reject ng staff leave request?"),
     summary: text("Check the dates and reason before saving an approval decision.", "Tingnan ang dates at dahilan bago i-save ang approval decision."),
@@ -135,7 +138,7 @@ const articles = [
     sourceCoverage: { routes: ["erp.manager.leave-approvals"], pages: ["ERP/Manager/LeaveApprovals"], permissions: ["manager.capability:leave-approvals-read"], tests: ["tests/Feature/Manager"] },
   }),
   buildRoleArticle({
-    slug: "manager-employee-lifecycle-approvals", order: 6, category: "people", access: managerAccess,
+    slug: "manager-employee-lifecycle-approvals", order: 6, category: "people", access: managerLifecycleAccess,
     title: text("Review employee change requests", "Suriin ang employee change requests"),
     question: text("How do I review suspension, termination, or rehire requests?", "Paano ko susuriin ang suspension, termination, o rehire requests?"),
     summary: text("Use the correct approval queue and save one clear decision for each request.", "Gamitin ang tamang approval queue at mag-save ng isang malinaw na decision bawat request."),
@@ -155,7 +158,7 @@ const articles = [
     sourceCoverage: { routes: ["erp.manager.suspension-approvals", "erp.manager.termination-approvals", "erp.manager.rehire-approvals"], pages: ["ERP/Manager/SuspensionApprovals", "ERP/Manager/TerminationApprovals", "ERP/Manager/RehireApprovals"], permissions: ["manager.capability:suspension-approvals-read", "manager.capability:termination-approvals-read", "manager.capability:rehire-approvals-read"], tests: ["tests/Feature/Manager"] },
   }),
   buildRoleArticle({
-    slug: "manager-inventory-overview", order: 7, category: "operations", access: managerAccess,
+    slug: "manager-inventory-overview", order: 7, category: "operations", access: managerInventoryAccess,
     title: text("Check inventory overview", "Tingnan ang inventory overview"),
     question: text("How do I see stock that may need action?", "Paano ko makikita ang stock na kailangan ng action?"),
     summary: text("Review active products, low stock, and out-of-stock counts before following up with Inventory.", "Tingnan ang active products, low stock, at out-of-stock counts bago mag-follow up sa Inventory."),
@@ -175,7 +178,7 @@ const articles = [
     sourceCoverage: { routes: ["erp.manager.inventory-overview"], pages: ["ERP/inventory/InventoryDashboard"], permissions: ["manager.capability:inventory-read"], tests: ["tests/Feature/Manager"] },
   }),
   buildRoleArticle({
-    slug: "manager-shoe-pricing", order: 8, category: "operations", access: { ...managerAccess, allowedBusinessTypes: ["retail", "both"] },
+    slug: "manager-shoe-pricing", order: 8, category: "operations", access: { ...managerPricingAccess, allowedBusinessTypes: ["retail", "both"] },
     title: text("Review shoe price requests", "Suriin ang shoe price requests"),
     question: text("How do I check a new shoe price before it is used?", "Paano ko iche-check ang bagong shoe price bago ito gamitin?"),
     summary: text("Check the product, old price, new price, reason, and request status before deciding.", "Tingnan ang produkto, dating presyo, bagong presyo, dahilan, at request status bago mag-decide."),
@@ -195,7 +198,7 @@ const articles = [
     sourceCoverage: { routes: ["erp.manager.shoe-pricing"], pages: ["ERP/STAFF/shoePricing"], permissions: ["access-shoe-pricing", "check.user.business.type:retail,both"], tests: ["tests/Feature/Manager"] },
   }),
   buildRoleArticle({
-    slug: "manager-reports", order: 9, category: "review", access: managerAccess,
+    slug: "manager-reports", order: 9, category: "review", access: managerReportsAccess,
     title: text("Open Manager reports", "Buksan ang Manager reports"),
     question: text("How do I read reports for shop performance?", "Paano ko babasahin ang reports para sa performance ng shop?"),
     summary: text("Use reports to compare work, sales, repairs, and other numbers shown for your shop.", "Gamitin ang reports para ikumpara ang work, sales, repairs, at ibang bilang ng shop mo."),
@@ -215,7 +218,7 @@ const articles = [
     sourceCoverage: { routes: ["erp.manager.reports"], pages: ["ERP/Manager/Reports"], permissions: ["manager.capability:reports-read"], tests: ["tests/Feature/Manager"] },
   }),
   buildRoleArticle({
-    slug: "manager-audit-logs", order: 10, category: "review", access: managerAccess,
+    slug: "manager-audit-logs", order: 10, category: "review", access: managerAuditAccess,
     title: text("Read Manager audit logs", "Basahin ang Manager audit logs"),
     question: text("How do I check what action was recorded?", "Paano ko iche-check kung anong action ang na-record?"),
     summary: text("Use the audit log to check who changed a record and when the action happened.", "Gamitin ang audit log para tingnan kung sino ang nagbago ng record at kailan ito ginawa."),

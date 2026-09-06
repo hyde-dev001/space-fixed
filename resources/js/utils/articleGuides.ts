@@ -27,8 +27,12 @@ const normalizeRole = (value: unknown): string => (
 const normalizeBusinessType = (value: unknown): "retail" | "repair" | "both" | "" => {
   const normalized = String(value ?? "").trim().toLocaleLowerCase();
 
-  if (normalized.includes("both")) return "both";
-  if (normalized === "retail" || normalized === "repair") return normalized;
+  if (normalized.includes("both")
+    || (normalized.includes("retail") && normalized.includes("repair"))) {
+    return "both";
+  }
+  if (normalized.includes("retail")) return "retail";
+  if (normalized.includes("repair")) return "repair";
 
   return "";
 };
@@ -57,9 +61,9 @@ const hasAudienceIdentity = (
   const permissionAllowed = article.access.anyOfPermissions.length > 0
     && article.access.anyOfPermissions.some((permission) => viewer.permissions.includes(permission));
   const allowedRoles = article.access.allowedRoles ?? [];
-  const identityAllowed = allowedRoles.length === 0
-    ? permissionAllowed || article.access.anyOfPermissions.length === 0
-    : roleAllowed || permissionAllowed;
+  const identityAllowed = article.access.anyOfPermissions.length > 0
+    ? permissionAllowed
+    : allowedRoles.length === 0 || roleAllowed;
 
   if (!identityAllowed) {
     return false;

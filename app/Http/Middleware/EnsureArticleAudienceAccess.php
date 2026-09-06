@@ -6,6 +6,7 @@ namespace App\Http\Middleware;
 
 use App\Models\ShopOwner;
 use App\Models\User;
+use App\Services\BusinessAccessControlService;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -13,6 +14,10 @@ use Symfony\Component\HttpFoundation\Response;
 
 final class EnsureArticleAudienceAccess
 {
+    public function __construct(
+        private readonly BusinessAccessControlService $businessAccess,
+    ) {}
+
     /**
      * @var array<string, array{roles: array<int, string>, permissions: array<int, string>}>
      */
@@ -29,7 +34,7 @@ final class EnsureArticleAudienceAccess
                 'access-manager-termination-approvals',
                 'access-manager-rehire-approvals',
                 'access-manager-reports',
-                'access-manager-audit-logs',
+                'access-audit-logs',
                 'access-inventory-overview',
             ],
         ],
@@ -52,14 +57,14 @@ final class EnsureArticleAudienceAccess
             'permissions' => [
                 'access-hr-dashboard',
                 'access-employee-directory',
-                'access-user-access-control',
+                'manage-employee-permissions',
                 'access-attendance-records',
                 'access-leave-approvals',
                 'access-overtime-approvals',
                 'access-payslip-generation',
                 'access-view-payslip',
-                'access-salary-changes',
-                'access-suspend-accounts',
+                'manage-salary-changes',
+                'request-employee-suspensions',
             ],
         ],
         'crm' => [
@@ -85,7 +90,6 @@ final class EnsureArticleAudienceAccess
                 'access-pricing-services',
                 'access-repair-stocks',
                 'access-repairer-support',
-                'access-unified-pos',
             ],
         ],
         'inventory' => [
@@ -96,7 +100,7 @@ final class EnsureArticleAudienceAccess
                 'access-product-inventory',
                 'access-stock-movement',
                 'access-upload-inventory',
-                'access-inventory-overview',
+                'access-supplier-order-monitoring',
             ],
         ],
         'procurement' => [
@@ -113,11 +117,10 @@ final class EnsureArticleAudienceAccess
         'logistics-dispatcher' => [
             'roles' => ['LOGISTICS DISPATCHER'],
             'permissions' => [
-                'view-logistics-dashboard',
-                'view-logistics-shipments',
-                'view-logistics-deliveries',
-                'view-logistics-batches',
-                'manage-logistics-settings',
+                'access-logistics-dashboard',
+                'assign-logistics-deliveries',
+                'manage-logistics-batches',
+                'configure-logistics-settings',
             ],
         ],
     ];
@@ -170,7 +173,7 @@ final class EnsureArticleAudienceAccess
         $status = $owner->getRawOriginal('status') ?? $owner->status;
         $status = $status instanceof \BackedEnum ? $status->value : (string) $status;
         $registrationType = strtolower(trim((string) $owner->registration_type));
-        $businessType = strtolower(trim((string) $owner->business_type));
+        $businessType = $this->businessAccess->normalizeBusinessType((string) $owner->business_type);
 
         if (strtolower(trim($status)) !== 'approved'
             || ! in_array($registrationType, ['company', 'individual'], true)
@@ -210,7 +213,7 @@ final class EnsureArticleAudienceAccess
     private function repairCapable(User $user): bool
     {
         $owner = $user->shopOwner;
-        $businessType = strtolower(trim((string) $owner?->business_type));
+        $businessType = $this->businessAccess->normalizeBusinessType((string) $owner?->business_type);
 
         return in_array($businessType, ['repair', 'both'], true);
     }

@@ -143,12 +143,10 @@ export default function StaffArticlesIndex() {
   const viewer = readViewer(props, audience ?? "");
   const accessibleArticles = catalog === null
     ? []
-    : audience === "shop-owner"
-      ? getAccessibleArticles(catalog, viewer)
-      : catalog.articles;
+    : getAccessibleArticles(catalog, viewer);
   const article = catalog === null || articleSlug === null
     ? undefined
-    : getArticleBySlug(catalog, articleSlug);
+    : getArticleBySlug({ ...catalog, articles: accessibleArticles }, articleSlug);
 
   return (
     <AppLayoutERP>

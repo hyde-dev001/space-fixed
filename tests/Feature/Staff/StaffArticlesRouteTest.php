@@ -142,10 +142,50 @@ class StaffArticlesRouteTest extends TestCase
 
         $this->actingAs($user, 'user')
             ->get('/erp/manager/articles/staff-workspace-permissions')
-            ->assertOk()
-            ->assertInertia(fn (Assert $page) => $page
-                ->where('articleAudience', 'manager')
-                ->where('articleSlug', 'staff-workspace-permissions'));
+            ->assertNotFound();
+    }
+
+    public function test_employee_direct_article_urls_require_the_article_scope(): void
+    {
+        $manager = $this->specializedUser('Manager', 'retail');
+
+        $this->actingAs($manager, 'user')
+            ->get('/erp/manager/articles/manager-repair-jobs')
+            ->assertNotFound();
+
+        $this->actingAs($manager, 'user')
+            ->get('/erp/manager/articles/manager-dashboard')
+            ->assertNotFound();
+    }
+
+    public function test_each_specialized_account_can_open_a_guide_for_its_granted_feature(): void
+    {
+        $accounts = [
+            ['role' => 'Manager', 'business_type' => 'retail', 'path' => '/erp/manager/articles', 'slug' => 'manager-dashboard', 'permission' => 'access-manager-dashboard'],
+            ['role' => 'Finance', 'path' => '/finance/articles', 'slug' => 'finance-dashboard', 'permission' => 'access-finance-dashboard'],
+            ['role' => 'HR', 'path' => '/erp/hr/articles', 'slug' => 'hr-dashboard', 'permission' => 'access-hr-dashboard'],
+            ['role' => 'CRM', 'path' => '/crm/articles', 'slug' => 'crm-dashboard', 'permission' => 'access-crm-dashboard'],
+            ['role' => 'Cashier', 'path' => '/erp/cashier/articles', 'slug' => 'cashier-point-of-sale', 'permission' => 'access-unified-pos'],
+            ['role' => 'Repairer', 'business_type' => 'repair', 'path' => '/erp/repairer/articles', 'slug' => 'repairer-dashboard', 'permission' => 'access-repairer-dashboard'],
+            ['role' => 'Inventory', 'path' => '/erp/inventory/articles', 'slug' => 'inventory-dashboard', 'permission' => 'access-inventory-dashboard'],
+            ['role' => 'Procurement', 'path' => '/erp/procurement/articles', 'slug' => 'procurement-dashboard', 'permission' => 'access-procurement-dashboard'],
+            ['role' => 'Logistics Dispatcher', 'path' => '/erp/logistics/articles', 'slug' => 'logistics-dispatcher-dashboard', 'permission' => 'access-logistics-dashboard'],
+        ];
+
+        foreach ($accounts as $account) {
+            $user = $this->specializedUser(
+                $account['role'],
+                $account['business_type'] ?? 'retail',
+            );
+            $user->givePermissionTo(Permission::findOrCreate($account['permission'], 'user'));
+
+            $this->actingAs($user, 'user')
+                ->get($account['path'].'/'.$account['slug'])
+                ->assertOk()
+                ->assertInertia(fn (Assert $page) => $page
+                    ->component('ERP/Articles/Index', false)
+                    ->where('articleSlug', $account['slug']));
+        }
     }
 
     public function test_repairer_articles_keep_the_repair_business_boundary(): void
@@ -161,8 +201,12 @@ class StaffArticlesRouteTest extends TestCase
     {
         foreach ([
             ['registration_type' => 'company', 'business_type' => 'retail'],
-            ['registration_type' => 'individual', 'business_type' => 'repair'],
+            ['registration_type' => 'company', 'business_type' => 'repair'],
             ['registration_type' => 'company', 'business_type' => 'both'],
+            ['registration_type' => 'individual', 'business_type' => 'retail'],
+            ['registration_type' => 'individual', 'business_type' => 'repair'],
+            ['registration_type' => 'individual', 'business_type' => 'both (retail & repair)'],
+            ['registration_type' => 'individual', 'business_type' => 'retail and repair'],
         ] as $attributes) {
             $owner = ShopOwner::factory()->approved()->create($attributes);
 
@@ -174,6 +218,59 @@ class StaffArticlesRouteTest extends TestCase
                     ->where('articleAudience', 'shop-owner')
                     ->where('articleSlug', null));
         }
+    }
+
+    public function test_owner_direct_article_urls_follow_business_and_registration_scope(): void
+    {
+        $retailOwner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'individual',
+            'business_type' => 'retail',
+        ]);
+        $companyOwner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
+            'business_type' => 'repair',
+        ]);
+        $individualRepairOwner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'individual',
+            'business_type' => 'repair',
+        ]);
+
+        $this->actingAs($retailOwner, 'shop_owner')
+            ->get('/shop-owner/erp/articles/shop-owner-repair')
+            ->assertNotFound();
+
+        $this->actingAs($retailOwner, 'shop_owner')
+            ->get('/shop-owner/erp/articles/shop-owner-pos')
+            ->assertOk();
+
+        $this->actingAs($companyOwner, 'shop_owner')
+            ->get('/shop-owner/erp/articles/shop-owner-finance')
+            ->assertOk();
+
+        $this->actingAs($companyOwner, 'shop_owner')
+            ->get('/shop-owner/erp/articles/shop-owner-repair')
+            ->assertOk();
+
+        $this->actingAs($companyOwner, 'shop_owner')
+            ->get('/shop-owner/erp/articles/shop-owner-pos')
+            ->assertNotFound();
+
+        $this->actingAs($individualRepairOwner, 'shop_owner')
+            ->get('/shop-owner/erp/articles/shop-owner-repair-individual')
+            ->assertOk();
+
+        $this->actingAs($individualRepairOwner, 'shop_owner')
+            ->get('/shop-owner/erp/articles/shop-owner-repair')
+            ->assertNotFound();
+    }
+
+    public function test_removed_feature_articles_are_not_reachable_by_direct_url(): void
+    {
+        $finance = $this->specializedUser('Finance');
+
+        $this->actingAs($finance, 'user')
+            ->get('/finance/articles/finance-audit-logs')
+            ->assertNotFound();
     }
 
     public function test_pending_shop_owners_cannot_open_the_owner_catalog(): void

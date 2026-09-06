@@ -1,36 +1,37 @@
 import { buildRoleArticle, defineCatalog, keywords, related, step, text } from "./roleCatalogFactory";
 
-const financeAccess = {
-  anyOfPermissions: [
-    "access-finance-dashboard",
-    "access-finance-expenses",
-    "access-finance-invoices",
-    "access-repair-price-approval",
-    "access-shoe-price-approval",
-    "access-approval-workflow",
-    "access-purchase-request-approval",
-    "access-payslip-approval",
-    "access-refund-approval",
-  ],
+const financeAccess = (permissions: readonly string[]) => ({
+  anyOfPermissions: permissions,
   allowedRoles: ["FINANCE", "FINANCE STAFF", "FINANCE MANAGER"],
-} as const;
+} as const);
+
+const financeDashboardAccess = financeAccess(["access-finance-dashboard"]);
+const financeInvoiceAccess = financeAccess(["access-finance-invoices"]);
+const financeExpenseAccess = financeAccess(["access-finance-expenses"]);
+const financeApprovalAccess = financeAccess([
+  "access-approval-workflow",
+  "access-purchase-request-approval",
+  "access-refund-approval",
+  "access-payslip-approval",
+  "access-repair-price-approval",
+  "access-shoe-price-approval",
+]);
 
 const categories = [
   { key: "overview", label: text("Overview", "Pangkalahatang tingin") },
   { key: "records", label: text("Money records", "Mga money record") },
   { key: "approvals", label: text("Approvals", "Mga approval") },
-  { key: "review", label: text("Review", "Review") },
 ] as const;
 
 const articles = [
   buildRoleArticle({
-    slug: "finance-dashboard", order: 1, category: "overview", recommended: true, access: financeAccess,
+    slug: "finance-dashboard", order: 1, category: "overview", recommended: true, access: financeDashboardAccess,
     title: text("Use the Finance Dashboard", "Gamitin ang Finance Dashboard"),
     question: text("How do I see the finance work waiting for me?", "Paano ko makikita ang finance work na naghihintay sa akin?"),
     summary: text("Read the finance summary and open the right list before making a decision.", "Basahin ang finance summary at buksan ang tamang listahan bago magdesisyon."),
     audience: text("Finance users", "Mga Finance user"), keywords: keywords("finance", "dashboard", "invoice", "approval"),
     page: text("Finance > Dashboard (/finance/dashboard)", "Finance > Dashboard (/finance/dashboard)"),
-    checks: text("Read the cards and labels for invoices, expenses, purchase requests, prices, refunds, and payslips.", "Basahin ang cards at labels para sa invoices, expenses, purchase requests, prices, refunds, at payslips."),
+    checks: text("Read the cards and labels shown for your account, then open only a queue that your Finance page makes available.", "Basahin ang cards at labels na ipinapakita para sa account mo, tapos buksan lang ang queue na available sa Finance page mo."),
     finish: text("Open the queue that matches your task and check its current status before acting.", "Buksan ang queue na tugma sa task at tingnan ang current status bago kumilos."),
     nextOwner: text("Finance reviewer, HR, Staff, or Shop Owner shown by the item", "Finance reviewer, HR, Staff, o Shop Owner na nasa item"),
     customerView: text("Customers see money or order changes only after the related record is approved and saved.", "Makikita ng customer ang money o order changes kapag approved at na-save ang related record."),
@@ -40,14 +41,14 @@ const articles = [
     steps: [
       step("open", "Open Finance Dashboard", "Use Finance in the sidebar and select Dashboard.", "Buksan ang Finance Dashboard", "Sa sidebar, buksan ang Finance at piliin ang Dashboard."),
       step("read", "Read the summary", "Check the count and status label on each finance card.", "Basahin ang summary", "Tingnan ang bilang at status label ng bawat finance card."),
-      step("choose", "Open the matching queue", "Choose invoices, expenses, or the approval queue that matches your work.", "Buksan ang tamang queue", "Piliin ang invoices, expenses, o approval queue na tugma sa work mo."),
+      step("choose", "Open the matching queue", "Choose the record or approval queue that is visible for your account and matches your work.", "Buksan ang tamang queue", "Piliin ang record o approval queue na visible para sa account mo at tugma sa work mo."),
       step("follow", "Check the next owner", "Read the item status and send it to the owner shown by the workflow.", "Tingnan ang susunod na owner", "Basahin ang item status at ipadala ito sa owner na nasa workflow."),
     ],
     related: [related("finance-invoices", "Review invoices", "Suriin ang invoices"), related("finance-approvals", "Review approval queues", "Suriin ang approval queues")],
     sourceCoverage: { routes: ["finance.dashboard"], pages: ["ERP/Finance/Dashboard"], permissions: ["access-finance-dashboard"], tests: ["tests/Feature/Finance"] },
   }),
   buildRoleArticle({
-    slug: "finance-invoices", order: 2, category: "records", access: financeAccess,
+    slug: "finance-invoices", order: 2, category: "records", access: financeInvoiceAccess,
     title: text("Review invoices", "Suriin ang invoices"),
     question: text("How do I check an invoice record?", "Paano ko iche-check ang invoice record?"),
     summary: text("Read invoice details and status before sending it to the next finance step.", "Basahin ang invoice details at status bago ipadala sa susunod na finance step."),
@@ -70,7 +71,7 @@ const articles = [
     sourceCoverage: { routes: ["finance.index", "finance.dashboard"], pages: ["ERP/Finance/Finance"], permissions: ["access-finance-invoices"], tests: ["tests/Feature/Finance"] },
   }),
   buildRoleArticle({
-    slug: "finance-create-invoice", order: 3, category: "records", access: financeAccess,
+    slug: "finance-create-invoice", order: 3, category: "records", access: financeInvoiceAccess,
     title: text("Create an invoice", "Gumawa ng invoice"),
     question: text("How do I create an invoice from the finance page?", "Paano ako gagawa ng invoice sa finance page?"),
     summary: text("Start from the correct source record, fill the shown fields, and check the final total.", "Magsimula sa tamang source record, punan ang fields na nasa page, at tingnan ang final total."),
@@ -93,7 +94,7 @@ const articles = [
     sourceCoverage: { routes: ["finance.create-invoice"], pages: ["ERP/Finance/Finance"], permissions: ["access-finance-invoices"], tests: ["tests/Feature/Finance"] },
   }),
   buildRoleArticle({
-    slug: "finance-expenses", order: 4, category: "records", access: financeAccess,
+    slug: "finance-expenses", order: 4, category: "records", access: financeExpenseAccess,
     title: text("Record or review expenses", "Mag-record o mag-review ng expenses"),
     question: text("How do I check an expense before it is approved?", "Paano ko iche-check ang expense bago ito ma-approve?"),
     summary: text("Check the amount, reason, date, and proof before sending an expense for review.", "Tingnan ang amount, dahilan, date, at proof bago ipadala ang expense para sa review."),
@@ -116,7 +117,7 @@ const articles = [
     sourceCoverage: { routes: ["finance.index"], pages: ["ERP/Finance/Finance"], permissions: ["access-finance-expenses"], tests: ["tests/Feature/Finance"] },
   }),
   buildRoleArticle({
-    slug: "finance-approvals", order: 5, category: "approvals", access: financeAccess,
+    slug: "finance-approvals", order: 5, category: "approvals", access: financeApprovalAccess,
     title: text("Review finance approval queues", "Suriin ang finance approval queues"),
     question: text("How do I approve or reject a finance request?", "Paano ako mag-a-approve o reject ng finance request?"),
     summary: text("Use the matching queue and decide only after checking the request details and reason.", "Gamitin ang tamang queue at magdesisyon lang pagkatapos tingnan ang detalye at dahilan."),
@@ -135,31 +136,8 @@ const articles = [
       step("decide", "Choose one decision", "Approve when the request is allowed. Reject only with a clear reason.", "Pumili ng isang decision", "Mag-approve kapag allowed ang request. Mag-reject lang na may malinaw na dahilan."),
       step("confirm", "Confirm the next step", "Check the saved status and tell the next owner shown in the workflow.", "Kumpirmahin ang susunod na step", "Tingnan ang na-save na status at sabihin sa next owner na nasa workflow."),
     ],
-    related: [related("finance-dashboard", "Use the Finance Dashboard", "Gamitin ang Finance Dashboard"), related("finance-audit-logs", "Read Finance audit logs", "Basahin ang Finance audit logs")],
+    related: [related("finance-dashboard", "Use the Finance Dashboard", "Gamitin ang Finance Dashboard")],
     sourceCoverage: { routes: ["finance.purchase-request-approval", "finance.index"], pages: ["ERP/Finance/Finance"], permissions: ["access-approval-workflow", "access-purchase-request-approval", "access-refund-approval", "access-payslip-approval"], tests: ["tests/Feature/Finance"] },
-  }),
-  buildRoleArticle({
-    slug: "finance-audit-logs", order: 6, category: "review", access: financeAccess,
-    title: text("Read Finance audit logs", "Basahin ang Finance audit logs"),
-    question: text("How do I check a recorded finance action?", "Paano ko iche-check ang na-record na finance action?"),
-    summary: text("Use the audit log to confirm who changed a finance record and when.", "Gamitin ang audit log para kumpirmahin kung sino ang nagbago ng finance record at kailan."),
-    audience: text("Finance users with audit access", "Mga Finance user na may audit access"), keywords: keywords("audit", "finance", "activity", "record"),
-    page: text("Finance > Audit Logs (/erp/finance/audit-logs)", "Finance > Audit Logs (/erp/finance/audit-logs)"),
-    checks: text("Read the actor, action, record number, date, amount, and reason shown in the log.", "Basahin ang actor, action, record number, date, amount, at dahilan na nasa log."),
-    finish: text("Use the log details for follow-up and do not change a record just to fix a report.", "Gamitin ang log details para sa follow-up at huwag baguhin ang record para lang maayos ang report."),
-    nextOwner: text("Finance lead or Shop Owner", "Finance lead o Shop Owner"),
-    customerView: text("Audit reading is internal and does not itself change customer information.", "Internal ang audit reading at hindi nito binabago ang customer information."),
-    pending: text("A recent action may appear after the record is fully saved and the page is refreshed.", "Maaaring lumabas ang recent action pagkatapos ma-save ang record at ma-refresh ang page."),
-    error: text("The log does not show the expected action or period.", "Hindi lumalabas sa log ang inaasahang action o period."),
-    recovery: text("Check the date and record filter, refresh once, and send the exact record number to Finance lead.", "Tingnan ang date at record filter, mag-refresh nang isang beses, at ipadala sa Finance lead ang eksaktong record number."),
-    steps: [
-      step("open", "Open Finance Audit Logs", "Open the Finance audit log from the Finance or audit menu.", "Buksan ang Finance Audit Logs", "Buksan ang Finance audit log sa Finance o audit menu."),
-      step("filter", "Set the date or record filter", "Use the available date, action, or record filter.", "Magtakda ng date o record filter", "Gamitin ang available na date, action, o record filter."),
-      step("read", "Read the saved action", "Check the actor, action, record, amount, and time.", "Basahin ang na-save na action", "Tingnan ang actor, action, record, amount, at oras."),
-      step("follow", "Send the record details", "Share the exact record number and action with the correct Finance owner.", "Ipadala ang record details", "Ibahagi sa tamang Finance owner ang eksaktong record number at action."),
-    ],
-    related: [related("finance-approvals", "Review finance approval queues", "Suriin ang finance approval queues"), related("finance-dashboard", "Use the Finance Dashboard", "Gamitin ang Finance Dashboard")],
-    sourceCoverage: { routes: ["erp.finance.audit-logs"], pages: ["ERP/Finance/AuditLogs"], permissions: ["access-audit-logs"], tests: ["tests/Feature/Finance"] },
   }),
 ] as const;
 
