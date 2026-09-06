@@ -76,6 +76,14 @@ afterEach(() => {
 });
 
 describe('staff order shipping coverage integration', () => {
+  it('keeps the order table columns grouped with balanced visual spacing', () => {
+    expect(source).toContain('min-w-[1180px]');
+    expect(source).toContain('w-[17rem]');
+    expect(source).toContain('rounded-xl bg-gray-50/80');
+    expect(source).toContain('h-9 w-9');
+    expect(source).toContain('aria-label="View order details"');
+  });
+
   it('keeps the finance return status concise and contained in its table cell', async () => {
     const financeReturnOrder = {
       ...makeOrder(33),
