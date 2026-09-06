@@ -146,7 +146,6 @@ export default function ERPInventoryOverview() {
   const [categoryFilter, setCategoryFilter] = useState(initialQuery.get("category") || "All");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [refreshTick, setRefreshTick] = useState(0);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
   const [categories, setCategories] = useState<string[]>([]);
   const [metrics, setMetrics] = useState<MetricsPayload>({
@@ -252,7 +251,7 @@ export default function ERPInventoryOverview() {
     };
 
     fetchInventoryOverview();
-  }, [currentPage, searchQuery, statusFilter, forceCategory, inventoryApiBasePath, isManager, refreshTick]);
+  }, [currentPage, searchQuery, statusFilter, forceCategory, inventoryApiBasePath, isManager]);
 
   const displayLoading = isManager ? managerInventoryQuery.isLoading : loading;
   const displayError = isManager ? managerInventoryQuery.error?.message || null : error;
@@ -301,20 +300,6 @@ export default function ERPInventoryOverview() {
                 Updated {new Date(lastUpdatedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
               </span>
             )}
-            <button
-              type="button"
-              onClick={() => {
-                if (isManager) {
-                  void managerInventoryQuery.refetch();
-                } else {
-                  setRefreshTick((value) => value + 1);
-                }
-              }}
-              disabled={displayLoading}
-              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
-            >
-              Refresh
-            </button>
           </div>
         </div>
 

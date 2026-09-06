@@ -1603,9 +1603,9 @@ export default function ProductManagement() {
 
         <div className="space-y-6">
           {/* Header */}
-          <div className="flex items-center justify-between">
+          <div className="flex w-full items-center justify-end">
             <h1 className="sr-only">Product Management</h1>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center justify-end gap-3">
               <Link
                 href="/services/product-image-spin-tutorial?from=product-uploader"
                 onClick={() => { setTutorialVisited(true); sessionStorage.setItem('tutorial_visited', JSON.stringify({ v: true, c: getCsrfToken() })); }}
