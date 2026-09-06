@@ -126,4 +126,31 @@ describe("owner approval renderer parity", () => {
       unmount();
     }
   });
+
+  it('resolves price approval metadata into human-readable owner details', () => {
+    render(
+      <PriceApprovalDetails
+        item={item({ source_type: 'product_price_change', title: 'Product price approval' })}
+        detail={{
+          requested_by: 83,
+          requester: { id: 83, name: 'Jane Staff' },
+          product: { name: 'Nike Air Force 1', category: 'shoes' },
+          current_price: 4999,
+          proposed_price: 5000,
+          status: 'finance_approved',
+          approval: { current_approver_role: 'shop_owner' },
+          approval_workflow_version: 'v4_multi_level',
+        }}
+      />,
+    );
+
+    expect(screen.getByText('Shoes')).toBeInTheDocument();
+    expect(screen.getByText('Jane Staff')).toBeInTheDocument();
+    expect(screen.getByText('Product Price Change')).toBeInTheDocument();
+    expect(screen.getByText('Shop Owner')).toBeInTheDocument();
+    expect(screen.getByText('V4 Multi-level Approval')).toBeInTheDocument();
+    expect(screen.queryByText('83')).not.toBeInTheDocument();
+    expect(screen.queryByText('shop_owner')).not.toBeInTheDocument();
+    expect(screen.queryByText('v4_multi_level')).not.toBeInTheDocument();
+  });
 });
