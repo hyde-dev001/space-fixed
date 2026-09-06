@@ -64,9 +64,11 @@ describe('Repair services visual controls', () => {
   it('keeps the Add Service action compact and category text unfilled', async () => {
     render(<UploadService />);
 
+    const archiveButton = screen.getByRole('button', { name: 'Show Archived' });
     const addServiceButton = screen.getByRole('button', { name: 'Add Service' });
-    expect(addServiceButton).toHaveClass('px-4', 'py-2');
-    expect(addServiceButton.parentElement).toHaveClass('self-start');
+    expect(addServiceButton.parentElement).toHaveClass('w-full', 'justify-end', 'items-center', 'gap-3');
+    expect(archiveButton).toHaveClass('h-10', 'px-4');
+    expect(addServiceButton).toHaveClass('h-10', 'px-4');
 
     const servicesTab = screen.getByRole('button', { name: 'Services' });
     expect(servicesTab.parentElement).toHaveClass('self-start');
