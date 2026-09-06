@@ -2,11 +2,17 @@
 
 namespace Tests\Feature;
 
+use App\Models\InventoryColorVariant;
+use App\Models\InventoryItem;
+use App\Models\InventorySize;
 use App\Models\OrderItem;
 use App\Models\PosTransaction;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\ShopOwner;
+use App\Models\StockMovement;
+use App\Services\Finance\FinanceSummaryService;
+use Carbon\CarbonImmutable;
 use App\Services\OrderReceiptService;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -139,5 +145,193 @@ class RetailPosPaymentFlowTest extends TestCase
             'invalid_state',
             $receiptService->confirm($order)['result'],
         );
+    }
+
+    #[Test]
+    public function retail_pos_checkout_decrements_the_linked_inventory_variant(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'retail']);
+        /** @var User $cashier */
+        $cashier = User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $product = Product::create([
+            'shop_owner_id' => $shopOwner->id,
+            'name' => 'Linked Retail POS Sneaker',
+            'slug' => 'linked-retail-pos-' . random_int(1000, 9999),
+            'price' => 100,
+            'stock_quantity' => 10,
+            'is_active' => true,
+        ]);
+        $variant = ProductVariant::create([
+            'product_id' => $product->id,
+            'size' => '8',
+            'color' => 'Black',
+            'quantity' => 1,
+            'is_active' => true,
+        ]);
+        $inventoryItem = InventoryItem::create([
+            'product_id' => $product->id,
+            'shop_owner_id' => $shopOwner->id,
+            'name' => $product->name,
+            'sku' => 'INV-RETAIL-POS-1001',
+            'category' => 'shoes',
+            'unit' => 'pairs',
+            'available_quantity' => 10,
+            'reserved_quantity' => 0,
+            'reorder_level' => 1,
+            'reorder_quantity' => 5,
+            'is_active' => true,
+        ]);
+        $color = InventoryColorVariant::create([
+            'inventory_item_id' => $inventoryItem->id,
+            'color_name' => 'Black',
+            'color_code' => '#000000',
+            'quantity' => 10,
+        ]);
+        $size = InventorySize::create([
+            'inventory_item_id' => $inventoryItem->id,
+            'inventory_color_variant_id' => $color->id,
+            'size' => '8',
+            'size_system' => 'US',
+            'quantity' => 10,
+        ]);
+
+        $response = $this->actingAs($cashier, 'user')->postJson('/api/retail-pos/checkout', [
+            'idempotency_key' => 'retail-linked-inventory-001',
+            'customer_type' => 'walk_in',
+            'walk_in_name' => 'Linked Inventory Buyer',
+            'items' => [[
+                'product_id' => $product->id,
+                'qty' => 2,
+                'unit_price' => 100,
+                'size' => '8',
+                'color' => 'Black',
+            ]],
+            'payment_lines' => [['tender_type' => 'cash', 'amount' => 200]],
+        ]);
+
+        $response->assertCreated()->assertJsonPath('success', true);
+        $transactionId = (int) $response->json('data.id');
+        $transaction = PosTransaction::findOrFail($transactionId);
+        $this->assertSame(8, (int) $product->fresh()->stock_quantity);
+        $this->assertSame(1, (int) $variant->fresh()->quantity);
+        $this->assertSame(8, (int) $inventoryItem->fresh()->available_quantity);
+        $this->assertSame(8, (int) $color->fresh()->quantity);
+        $this->assertSame(8, (int) $size->fresh()->quantity);
+        $this->assertDatabaseHas('stock_movements', [
+            'inventory_item_id' => $inventoryItem->id,
+            'movement_type' => 'stock_out',
+            'quantity_change' => -2,
+            'quantity_before' => 10,
+            'quantity_after' => 8,
+            'reference_type' => 'order',
+            'reference_id' => $transaction->module_reference_id,
+        ]);
+    }
+
+    #[Test]
+    public function retail_pos_checkout_rejects_when_linked_inventory_is_insufficient_and_rolls_back(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'retail']);
+        /** @var User $cashier */
+        $cashier = User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $product = Product::create([
+            'shop_owner_id' => $shopOwner->id,
+            'name' => 'Insufficient Linked Retail POS Sneaker',
+            'slug' => 'insufficient-linked-retail-pos-' . random_int(1000, 9999),
+            'price' => 100,
+            'stock_quantity' => 10,
+            'is_active' => true,
+        ]);
+        ProductVariant::create([
+            'product_id' => $product->id,
+            'size' => '8',
+            'color' => 'Black',
+            'quantity' => 10,
+            'is_active' => true,
+        ]);
+        $inventoryItem = InventoryItem::create([
+            'product_id' => $product->id,
+            'shop_owner_id' => $shopOwner->id,
+            'name' => $product->name,
+            'sku' => 'INV-RETAIL-POS-1002',
+            'category' => 'shoes',
+            'unit' => 'pairs',
+            'available_quantity' => 1,
+            'reserved_quantity' => 0,
+            'reorder_level' => 1,
+            'reorder_quantity' => 5,
+            'is_active' => true,
+        ]);
+        $color = InventoryColorVariant::create([
+            'inventory_item_id' => $inventoryItem->id,
+            'color_name' => 'Black',
+            'color_code' => '#000000',
+            'quantity' => 1,
+        ]);
+        InventorySize::create([
+            'inventory_item_id' => $inventoryItem->id,
+            'inventory_color_variant_id' => $color->id,
+            'size' => '8',
+            'size_system' => 'US',
+            'quantity' => 1,
+        ]);
+
+        $response = $this->actingAs($cashier, 'user')->postJson('/api/retail-pos/checkout', [
+            'idempotency_key' => 'retail-insufficient-inventory-001',
+            'customer_type' => 'walk_in',
+            'walk_in_name' => 'Insufficient Inventory Buyer',
+            'items' => [[
+                'product_id' => $product->id,
+                'qty' => 2,
+                'unit_price' => 100,
+                'size' => '8',
+                'color' => 'Black',
+            ]],
+            'payment_lines' => [['tender_type' => 'cash', 'amount' => 200]],
+        ]);
+
+        $response->assertStatus(422);
+        $this->assertSame(10, (int) $product->fresh()->stock_quantity);
+        $this->assertSame(1, (int) $inventoryItem->fresh()->available_quantity);
+        $this->assertDatabaseCount('orders', 0);
+        $this->assertDatabaseCount('pos_transactions', 0);
+        $this->assertDatabaseCount('stock_movements', 0);
+    }
+
+    #[Test]
+    public function retail_pos_sale_is_counted_once_in_the_finance_summary(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'retail']);
+        /** @var User $cashier */
+        $cashier = User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $product = Product::create([
+            'shop_owner_id' => $shopOwner->id,
+            'name' => 'Finance Retail POS Sneaker',
+            'slug' => 'finance-retail-pos-' . random_int(1000, 9999),
+            'price' => 100,
+            'stock_quantity' => 10,
+            'is_active' => true,
+        ]);
+
+        $response = $this->actingAs($cashier, 'user')->postJson('/api/retail-pos/checkout', [
+            'idempotency_key' => 'retail-finance-summary-001',
+            'customer_type' => 'walk_in',
+            'walk_in_name' => 'Finance Summary Buyer',
+            'items' => [[
+                'product_id' => $product->id,
+                'qty' => 1,
+                'unit_price' => 100,
+            ]],
+            'payment_lines' => [['tender_type' => 'cash', 'amount' => 100]],
+        ]);
+
+        $response->assertCreated();
+        $summary = app(FinanceSummaryService::class)->forCurrentPeriod(
+            (int) $shopOwner->id,
+            CarbonImmutable::now(config('app.timezone')),
+        );
+
+        $this->assertSame('89.29', $summary['supporting']['gross_revenue']);
+        $this->assertSame('100.00', $summary['primary']['net_cash_movement']);
     }
 }

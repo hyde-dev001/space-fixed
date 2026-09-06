@@ -45,6 +45,21 @@ class RepairPosPaymentService
         $dueAmount = (float) $phaseBreakdown['total_amount'];
 
         $paidAmount = collect($payload['payment_lines'])->sum(fn ($line) => (float) $line['amount']);
+        $cashAppliedAmount = collect($payload['payment_lines'])
+            ->filter(fn ($line) => ($line['tender_type'] ?? null) === 'cash')
+            ->sum(fn ($line) => (float) $line['amount']);
+        $cashReceivedInput = $payload['cash_received'] ?? null;
+        $cashReceived = $cashAppliedAmount > 0
+            ? round($cashReceivedInput === null ? $cashAppliedAmount : (float) $cashReceivedInput, 2)
+            : null;
+        if ($cashReceived !== null && $cashReceived < round((float) $cashAppliedAmount, 2)) {
+            throw ValidationException::withMessages([
+                'cash_received' => ['Cash received must cover the cash amount applied.'],
+            ]);
+        }
+        $cashChange = $cashReceived === null
+            ? 0.0
+            : round(max($cashReceived - round((float) $cashAppliedAmount, 2), 0), 2);
 
         if (round($dueAmount, 2) <= 0 || round($paidAmount, 2) !== round($dueAmount, 2)) {
             throw ValidationException::withMessages([
@@ -70,7 +85,7 @@ class RepairPosPaymentService
             ]);
         }
 
-        return DB::transaction(function () use ($repair, $payload, $actorId, $paidAmount, $dueType) {
+        return DB::transaction(function () use ($repair, $payload, $actorId, $paidAmount, $dueType, $cashReceived, $cashChange) {
             $lockedRepair = RepairRequest::query()->lockForUpdate()->findOrFail($repair->id);
             $canonicalCustomer = $this->canonicalizeRepairCustomer($lockedRepair, $payload);
             $phaseBreakdown = $this->paymentSettlementService->repairPaymentBreakdown($lockedRepair, $dueType);
@@ -133,6 +148,8 @@ class RepairPosPaymentService
                     'snapshot_version' => $phaseBreakdown['snapshot_version'],
                     'delivery_method' => $phaseBreakdown['delivery_method'],
                     'quote' => $phaseBreakdown['quote'],
+                    'cash_received' => $cashReceived,
+                    'change' => $cashChange,
                 ],
             ]);
 

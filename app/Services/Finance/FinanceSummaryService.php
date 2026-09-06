@@ -87,8 +87,20 @@ final class FinanceSummaryService
             ->whereNotNull('paid_at')
             ->where('paid_at', '>=', $from)
             ->where('paid_at', '<', $to)
-            ->whereIn('payment_status', ['paid', 'refunded'])
-            ->get(['id', 'total_amount', 'shipping_fee', 'vat_amount', 'carrier_company', 'paid_at']);
+            ->whereIn('payment_status', ['paid', 'refunded']);
+
+        if (Schema::hasTable('pos_transactions')) {
+            $rows->whereNotExists(function ($query): void {
+                $query->selectRaw('1')
+                    ->from('pos_transactions')
+                    ->whereColumn('pos_transactions.module_reference_id', 'orders.id')
+                    ->where('pos_transactions.module_type', 'retail')
+                    ->where('pos_transactions.due_type', 'full')
+                    ->whereIn('pos_transactions.status', ['paid', 'partially_refunded', 'refunded']);
+            });
+        }
+
+        $rows = $rows->get(['id', 'total_amount', 'shipping_fee', 'vat_amount', 'carrier_company', 'paid_at']);
 
         foreach ($rows as $row) {
             $total = $this->cents($row->total_amount);

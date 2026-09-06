@@ -17,9 +17,11 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 use Illuminate\Database\QueryException;
+use Carbon\CarbonImmutable;
 
 class InvoiceController extends Controller
 {
+    private const PAYMENT_CONDITIONS = ['Net 7', 'Net 15', 'Net 30', 'Due on receipt'];
     protected NotificationService $notificationService;
     protected FinanceShopContext $shopContext;
 
@@ -148,6 +150,7 @@ class InvoiceController extends Controller
             'customer_email' => 'nullable|email',
             'date' => 'required|date',
             'due_date' => 'nullable|date|after_or_equal:date',
+            'payment_condition' => ['nullable', 'string', Rule::in(self::PAYMENT_CONDITIONS)],
             'notes' => 'nullable|string',
             'items' => 'required|array|min:1',
             'items.*.description' => 'required|string',
@@ -155,6 +158,11 @@ class InvoiceController extends Controller
             'items.*.unit_price' => 'required|numeric|min:0',
             'items.*.tax_rate' => 'nullable|numeric|min:0|max:100',
         ]);
+
+        $paymentCondition = $data['payment_condition'] ?? null;
+        if ($paymentCondition) {
+            $data['due_date'] = $this->dueDateForCondition($data['date'], $paymentCondition);
+        }
 
         try {
             $shopOwnerId = $this->shopOwnerId();
@@ -190,6 +198,7 @@ class InvoiceController extends Controller
                 'shop_id' => $shopOwnerId,
                 'meta' => [
                     'created_by' => $this->actorUserId(),
+                    'payment_condition' => $paymentCondition,
                 ],
             ]);
 
@@ -258,7 +267,9 @@ class InvoiceController extends Controller
         $data = $request->validate([
             'customer_name' => 'sometimes|string|max:255',
             'customer_email' => 'sometimes|nullable|email',
+            'date' => 'sometimes|date',
             'due_date' => 'sometimes|nullable|date',
+            'payment_condition' => ['sometimes', 'nullable', 'string', Rule::in(self::PAYMENT_CONDITIONS)],
             'notes' => 'sometimes|nullable|string',
             'items' => 'sometimes|array|min:1',
             'items.*.description' => 'required_with:items|string',
@@ -270,8 +281,25 @@ class InvoiceController extends Controller
         try {
             DB::beginTransaction();
 
+            $hasPaymentCondition = array_key_exists('payment_condition', $data);
+            $paymentCondition = $hasPaymentCondition
+                ? $data['payment_condition']
+                : data_get($invoice->meta, 'payment_condition');
+            if ($paymentCondition) {
+                $data['due_date'] = $this->dueDateForCondition(
+                    $data['date'] ?? $invoice->date->toDateString(),
+                    $paymentCondition
+                );
+            }
+            unset($data['payment_condition']);
+
             // Update header
             $invoice->update(array_filter($data, fn($k) => !in_array($k, ['items']), ARRAY_FILTER_USE_KEY));
+            if ($hasPaymentCondition) {
+                $meta = $invoice->meta ?? [];
+                $meta['payment_condition'] = $paymentCondition;
+                $invoice->update(['meta' => $meta]);
+            }
 
             // Update items if provided
             if (!empty($data['items'])) {
@@ -712,6 +740,18 @@ class InvoiceController extends Controller
             'message' => 'Use the record payment endpoint instead.',
             'code' => 'PAYMENT_ROUTE_MOVED',
         ], 410);
+    }
+
+    private function dueDateForCondition(string $issueDate, string $condition): string
+    {
+        $days = match ($condition) {
+            'Net 7' => 7,
+            'Net 15' => 15,
+            'Net 30' => 30,
+            'Due on receipt' => 0,
+        };
+
+        return CarbonImmutable::parse($issueDate, config('app.timezone'))->startOfDay()->addDays($days)->toDateString();
     }
 
     private function shopOwnerId(): ?int

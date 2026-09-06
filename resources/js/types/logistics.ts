@@ -145,6 +145,7 @@ export type TrackingShipmentLeg = {
   } | null;
   shipment?: {
     id: number;
+    shipment_number?: number | null;
     source_type: string;
     source_id: number;
     source_summary?: LogisticsSourceSummary | null;

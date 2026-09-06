@@ -574,8 +574,11 @@ const tabLabels: Record<RiderDeliveryTab, string> = {
   all: 'All',
 };
 
+const deliveryNumber = (delivery?: TrackingShipmentLeg | null) =>
+  delivery?.shipment?.shipment_number ?? delivery?.id ?? '-';
+
 const itemTitle = (item: RiderDeliveryWorkItem) =>
-  item.kind === 'batch' ? `Batch #${item.id}` : `Single delivery #${item.id}`;
+  item.kind === 'batch' ? `Batch #${item.id}` : `Single delivery #${deliveryNumber(item.deliveries[0])}`;
 
 const deliveryCount = (item: RiderDeliveryWorkItem) =>
   `${item.deliveries.length} ${item.deliveries.length === 1 ? 'delivery' : 'deliveries'}`;
@@ -698,7 +701,7 @@ function DeliverySequence({ item }: { item: RiderDeliveryWorkItem }) {
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="font-semibold text-slate-950 dark:text-white">
-                  Delivery #{delivery.id} · Stop {sequence}
+                  Delivery #{deliveryNumber(delivery)} · Stop {sequence}
                 </p>
                 <StatusChip
                   status={delivery.status}
