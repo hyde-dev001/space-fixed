@@ -199,7 +199,7 @@ const DashboardRepair: React.FC = () => {
 								<h2 className="text-lg font-semibold text-gray-900">Most Requested Repair Services</h2>
 								<p className="text-sm text-gray-500">Top services based on recent requests.</p>
 							</div>
-							<span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-600">Last 7 days</span>
+							<span className="rounded-full bg-gray-900 px-3 py-1 text-xs font-semibold text-white dark:bg-gray-100 dark:text-gray-900">Last 7 days</span>
 						</div>
 						<div className="overflow-x-auto">
 							<table className="min-w-full divide-y divide-gray-100 text-sm">

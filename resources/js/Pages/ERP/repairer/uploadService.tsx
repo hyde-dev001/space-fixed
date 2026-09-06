@@ -733,7 +733,7 @@ export default function UploadService() {
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <h1 className="sr-only">Upload Services</h1>
           {activeTab === "services" && (
-            <div className="flex items-center gap-3">
+            <div className="self-start flex items-center gap-3">
               <button
                 type="button"
                 onClick={() => setShowArchivedServices((prev) => !prev)}
@@ -763,7 +763,7 @@ export default function UploadService() {
           )}
         </div>
 
-        <div className="inline-flex w-full rounded-xl border border-gray-200 bg-white p-1 dark:border-gray-800 dark:bg-white/[0.03] md:w-auto">
+        <div className="self-start inline-flex w-full rounded-xl border border-gray-200 bg-white p-1 dark:border-gray-800 dark:bg-white/[0.03] md:w-auto">
           <button
             type="button"
             onClick={() => setActiveTab("services")}

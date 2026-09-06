@@ -66,6 +66,10 @@ describe('Repair services visual controls', () => {
 
     const addServiceButton = screen.getByRole('button', { name: 'Add Service' });
     expect(addServiceButton).toHaveClass('px-4', 'py-2');
+    expect(addServiceButton.parentElement).toHaveClass('self-start');
+
+    const servicesTab = screen.getByRole('button', { name: 'Services' });
+    expect(servicesTab.parentElement).toHaveClass('self-start');
 
     const table = await screen.findByRole('table');
     const category = within(table).getByText('Care');
