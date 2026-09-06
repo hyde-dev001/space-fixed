@@ -54,18 +54,6 @@ const InfoIcon = ({ className = "" }) => (
   </svg>
 );
 
-const ArrowUpIcon = ({ className = "" }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-  </svg>
-);
-
-const ArrowDownIcon = ({ className = "" }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-  </svg>
-);
-
 interface OperatingHours {
   day: string;
   open: string;
@@ -168,14 +156,11 @@ interface RegistrationPage {
   to: number | null;
 }
 
-type RegistrationMetricKey = 'total' | 'pending' | 'approved' | 'rejected';
-
 interface RegistrationStats {
   total: number;
   pending: number;
   approved: number;
   rejected: number;
-  changes?: Partial<Record<RegistrationMetricKey, number>>;
 }
 
 interface RegistrationPageProps {
@@ -215,8 +200,6 @@ const initialReviewMetadata = (documents: RegistrationDocument[]): Record<number
 interface MetricData {
   title: string;
   value: number;
-  change: number;
-  changeType: 'increase' | 'decrease' | 'neutral';
   icon: React.ComponentType<{ className?: string }>;
   color: 'success' | 'error' | 'warning' | 'info';
   description: string;
@@ -226,8 +209,6 @@ interface MetricData {
 const MetricCard: React.FC<MetricData> = ({
   title,
   value,
-  change,
-  changeType,
   icon: Icon,
   color,
   description
@@ -248,24 +229,9 @@ const MetricCard: React.FC<MetricData> = ({
       <div className={`absolute inset-0 bg-gradient-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
 
       <div className="relative">
-        <div className="flex items-center justify-between mb-4">
+        <div className="mb-4">
           <div className={`flex items-center justify-center w-14 h-14 bg-gradient-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
             <Icon className="text-white size-7 drop-shadow-sm" />
-          </div>
-
-          <div className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${
-            changeType === 'increase'
-              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-              : changeType === 'decrease'
-                ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
-          }`} title="Compared with previous 30 days">
-            {changeType === 'increase'
-              ? <ArrowUpIcon className="size-3" />
-              : changeType === 'decrease'
-                ? <ArrowDownIcon className="size-3" />
-                : <span aria-hidden="true">-</span>}
-            {Math.abs(change)}%
           </div>
         </div>
 
@@ -284,10 +250,6 @@ const MetricCard: React.FC<MetricData> = ({
     </div>
   );
 };
-
-const registrationMetricChangeType = (change: number): MetricData['changeType'] => (
-  change > 0 ? 'increase' : change < 0 ? 'decrease' : 'neutral'
-);
 
 export default function ShopOwnerRegistrationView({
   registrations = [],
@@ -628,8 +590,6 @@ export default function ShopOwnerRegistrationView({
             <MetricCard
               title="Total Applications"
               value={stats?.total ?? registrationsState.length}
-              change={stats?.changes?.total ?? 0}
-              changeType={registrationMetricChangeType(stats?.changes?.total ?? 0)}
               icon={UserIcon}
               color="info"
               description="Total shop owner applications"
@@ -637,8 +597,6 @@ export default function ShopOwnerRegistrationView({
             <MetricCard
               title="Pending Reviews"
               value={stats?.pending ?? registrationsState.filter(r => r.status === 'pending').length}
-              change={stats?.changes?.pending ?? 0}
-              changeType={registrationMetricChangeType(stats?.changes?.pending ?? 0)}
               icon={TimeIcon}
               color="warning"
               description="Awaiting approval"
@@ -646,8 +604,6 @@ export default function ShopOwnerRegistrationView({
             <MetricCard
               title="Approved"
               value={stats?.approved ?? registrationsState.filter(r => r.status === 'approved').length}
-              change={stats?.changes?.approved ?? 0}
-              changeType={registrationMetricChangeType(stats?.changes?.approved ?? 0)}
               icon={CheckCircleIcon}
               color="success"
               description="Successfully approved"
@@ -655,8 +611,6 @@ export default function ShopOwnerRegistrationView({
             <MetricCard
               title="Rejected"
               value={stats?.rejected ?? registrationsState.filter(r => r.status === 'rejected').length}
-              change={stats?.changes?.rejected ?? 0}
-              changeType={registrationMetricChangeType(stats?.changes?.rejected ?? 0)}
               icon={AlertIcon}
               color="error"
               description="Application rejected"

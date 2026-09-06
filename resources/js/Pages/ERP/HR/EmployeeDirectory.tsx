@@ -38,8 +38,6 @@ type EmployeeSummaryStats = {
 type MetricCardProps = {
   title: string;
   value: number;
-  change?: number;
-  changeType?: "increase" | "decrease";
   description?: string;
   color?: "success" | "error" | "warning" | "info";
   icon: React.FC<{ className?: string }>;
@@ -122,18 +120,6 @@ const CalendarIcon: React.FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
-const ArrowUpIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-  </svg>
-);
-
-const ArrowDownIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-  </svg>
-);
-
 const Button: React.FC<{
   children: React.ReactNode;
   variant?: "primary" | "secondary" | "success" | "danger";
@@ -163,8 +149,6 @@ const Button: React.FC<{
 const MetricCard: React.FC<MetricCardProps> = ({
   title,
   value,
-  change,
-  changeType,
   icon: Icon,
   color = "info",
   description,
@@ -188,27 +172,10 @@ const MetricCard: React.FC<MetricCardProps> = ({
       <div className={`absolute inset-0 bg-gradient-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
 
       <div className="relative">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center mb-4">
           <div className={`flex items-center justify-center w-14 h-14 bg-gradient-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
             <Icon className="text-white size-7 drop-shadow-sm" />
           </div>
-
-          {change !== undefined && changeType && (
-            <div
-              className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${
-                changeType === "increase"
-                  ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                  : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-              }`}
-            >
-              {changeType === "increase" ? (
-                <ArrowUpIcon className="size-3" />
-              ) : (
-                <ArrowDownIcon className="size-3" />
-              )}
-              {Math.abs(change)}%
-            </div>
-          )}
         </div>
 
         <div className="space-y-2">
@@ -2413,8 +2380,6 @@ export const EmployeeManagement: React.FC<{
           <MetricCard
             title="Total Employees"
             value={stats.total}
-            change={8}
-            changeType="increase"
             icon={UserCircleIcon}
             color="info"
             description="All employee records"
@@ -2422,8 +2387,6 @@ export const EmployeeManagement: React.FC<{
           <MetricCard
             title="Active"
             value={stats.active}
-            change={3}
-            changeType="increase"
             icon={CheckCircleIcon}
             color="success"
             description="Currently available to work"
@@ -2431,8 +2394,6 @@ export const EmployeeManagement: React.FC<{
           <MetricCard
             title="On Leave"
             value={stats.onLeave}
-            change={2}
-            changeType="decrease"
             icon={CalendarIcon}
             color="warning"
             description="Temporarily unavailable"
@@ -2440,8 +2401,6 @@ export const EmployeeManagement: React.FC<{
           <MetricCard
             title="Probation"
             value={stats.probation}
-            change={1}
-            changeType="increase"
             icon={BriefcaseIcon}
             color="error"
             description="New hires under review"

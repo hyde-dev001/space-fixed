@@ -40,18 +40,6 @@ const DownloadIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
-const ArrowUpIcon = ({ className }: { className?: string }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-  </svg>
-);
-
-const ArrowDownIcon = ({ className }: { className?: string }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-  </svg>
-);
-
 const EyeIcon = ({ className }: { className?: string }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -69,16 +57,12 @@ const PencilIcon = ({ className }: { className?: string }) => (
 const MetricCard = ({
   title,
   value,
-  change,
-  changeType,
   icon: Icon,
   color,
   description,
 }: {
   title: string;
   value: number | string;
-  change?: number;
-  changeType?: "increase" | "decrease";
   icon: React.FC<{ className?: string }>;
   color: "success" | "error" | "warning" | "info";
   description: string;
@@ -103,25 +87,10 @@ const MetricCard = ({
       <div className={`absolute inset-0 bg-gradient-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
 
       <div className="relative">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center mb-4">
           <div className={`flex items-center justify-center w-14 h-14 bg-gradient-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
             <Icon className="text-white size-7 drop-shadow-sm" />
           </div>
-
-          {change !== undefined && changeType && (
-            <div className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${
-              changeType === "increase"
-                ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-            }`}>
-              {changeType === "increase" ? (
-                <ArrowUpIcon className="size-3" />
-              ) : (
-                <ArrowDownIcon className="size-3" />
-              )}
-              {Math.abs(change)}%
-            </div>
-          )}
         </div>
 
         <div className="space-y-2">
@@ -609,8 +578,6 @@ const ViewAttendance: React.FC = () => {
           icon={UsersIcon}
           color="info"
           description="Total workforce"
-          change={5}
-          changeType="increase"
         />
         <MetricCard
           title="Present Today"
@@ -618,8 +585,6 @@ const ViewAttendance: React.FC = () => {
           icon={CheckCircleIcon}
           color="success"
           description={`${stats.presentPercentage}% attendance rate`}
-          change={12}
-          changeType="increase"
         />
         <MetricCard
           title="Late"
@@ -634,8 +599,6 @@ const ViewAttendance: React.FC = () => {
           icon={UsersIcon}
           color="error"
           description="Not marked present"
-          change={3}
-          changeType="decrease"
         />
         <MetricCard
           title="On Leave"
@@ -643,8 +606,6 @@ const ViewAttendance: React.FC = () => {
           icon={CalendarIcon}
           color="warning"
           description="Approved leave"
-          change={0}
-          changeType="increase"
         />
       </div>
 

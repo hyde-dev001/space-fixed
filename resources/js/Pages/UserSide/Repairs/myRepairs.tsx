@@ -1577,7 +1577,7 @@ const CustomerExternalTrackingCard: React.FC<{
             disabled={saving || !carrier.trim() || !trackingNumber.trim()}
             className="rounded-full bg-[#16233b] px-5 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-gray-300 sm:w-fit"
           >
-            {saving ? 'Savingâ€¦' : `Save ${leg} tracking`}
+            {saving ? 'Saving...' : `Save ${leg} tracking`}
           </button>
         </div>
       )}

@@ -99,23 +99,9 @@ const BuildingStorefrontIcon: React.FC<{ className?: string }> = ({ className })
   </svg>
 );
 
-const ArrowUpIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-  </svg>
-);
-
-const ArrowDownIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-  </svg>
-);
-
 interface MetricData {
   title: string;
   value: number;
-  change: number;
-  changeType: 'increase' | 'decrease';
   icon: React.ComponentType<{ className?: string }>;
   color: 'success' | 'error' | 'warning' | 'info';
   description: string;
@@ -125,8 +111,6 @@ interface MetricData {
 const MetricCard: React.FC<MetricData> = ({
   title,
   value,
-  change,
-  changeType,
   icon: Icon,
   color,
   description
@@ -147,17 +131,9 @@ const MetricCard: React.FC<MetricData> = ({
       <div className={`absolute inset-0 bg-linear-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
 
       <div className="relative">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center mb-4">
           <div className={`flex items-center justify-center w-14 h-14 bg-linear-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
             <Icon className="text-white size-7 drop-shadow-sm" />
-          </div>
-
-          <div className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${changeType === 'increase'
-              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-              : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-            }`}>
-            {changeType === 'increase' ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" />}
-            {Math.abs(change)}%
           </div>
         </div>
 
@@ -362,8 +338,6 @@ export default function ShopOwnerAuditLogs() {
             <MetricCard
               title="Total Logs"
               value={stats.total_logs}
-              change={12}
-              changeType="increase"
               icon={DocumentTextIcon}
               color="info"
               description="All recorded activities"
@@ -372,8 +346,6 @@ export default function ShopOwnerAuditLogs() {
             <MetricCard
               title="Last 24 Hours"
               value={stats.logs_last_24h}
-              change={8}
-              changeType="increase"
               icon={ClockIcon}
               color="success"
               description="Recent activity count"
@@ -382,8 +354,6 @@ export default function ShopOwnerAuditLogs() {
             <MetricCard
               title="Created"
               value={stats.event_counts.created || 0}
-              change={15}
-              changeType="increase"
               icon={ShieldCheckIcon}
               color="success"
               description="New items created"
@@ -392,8 +362,6 @@ export default function ShopOwnerAuditLogs() {
             <MetricCard
               title="Updated"
               value={stats.event_counts.updated || 0}
-              change={5}
-              changeType="increase"
               icon={BuildingStorefrontIcon}
               color="warning"
               description="Items modified"

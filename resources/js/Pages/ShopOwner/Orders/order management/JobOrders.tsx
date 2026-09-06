@@ -187,8 +187,6 @@ const escapeHtml = (value: string): string =>
 type MetricCardProps = {
   title: string;
   value: number | string;
-  change?: number;
-  changeType?: "increase" | "decrease";
   description?: string;
   color?: "success" | "error" | "warning" | "info";
   icon: React.FC<{ className?: string }>;
@@ -222,18 +220,6 @@ const CalendarIcon: React.FC<{ className?: string }> = ({ className }) => (
 const MagnifyingGlassIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-  </svg>
-);
-
-const ArrowUpIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-  </svg>
-);
-
-const ArrowDownIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
   </svg>
 );
 
@@ -284,8 +270,6 @@ const ChevronRightIcon: React.FC<{ className?: string }> = ({ className }) => (
 const MetricCard: React.FC<MetricCardProps> = ({
   title,
   value,
-  change,
-  changeType,
   icon: Icon,
   color,
   description,
@@ -304,20 +288,10 @@ const MetricCard: React.FC<MetricCardProps> = ({
     <div className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-500 hover:shadow-xl hover:border-gray-300 hover:-translate-y-1 dark:border-gray-800 dark:bg-white/[0.03] dark:hover:border-gray-700">
       <div className={`absolute inset-0 bg-gradient-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
       <div className="relative">
-        <div className="flex items-center justify-between mb-4">
+        <div className="mb-4">
           <div className={`flex items-center justify-center w-14 h-14 bg-gradient-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
             <Icon className="text-white size-7 drop-shadow-sm" />
           </div>
-          {change !== undefined && (
-            <div className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${
-              changeType === "increase"
-                ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-            }`}>
-              {changeType === "increase" ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" />}
-              {Math.abs(change)}%
-            </div>
-          )}
         </div>
         <div className="space-y-2">
           <p className="text-sm font-medium text-gray-600 dark:text-gray-400">{title}</p>
@@ -1645,8 +1619,6 @@ export default function JobOrdersPage() {
           <MetricCard
             title="Pending Orders"
             value={stats.pending}
-            change={12}
-            changeType="increase"
             icon={ClipboardListIcon}
             color="warning"
             description="Awaiting processing"
@@ -1654,8 +1626,6 @@ export default function JobOrdersPage() {
           <MetricCard
             title="Processing"
             value={stats.processing}
-            change={8}
-            changeType="increase"
             icon={ClockIcon}
             color="info"
             description="Currently being prepared"
@@ -1663,8 +1633,6 @@ export default function JobOrdersPage() {
           <MetricCard
             title="Shipped"
             value={stats.shipped}
-            change={15}
-            changeType="increase"
             icon={CheckCircleIcon}
             color="success"
             description="Out for delivery"
@@ -1672,8 +1640,6 @@ export default function JobOrdersPage() {
           <MetricCard
             title="Total Revenue"
             value={`₱${stats.totalRevenue.toLocaleString()}`}
-            change={20}
-            changeType="increase"
             icon={MoneyIcon}
             color="success"
             description="From all orders"

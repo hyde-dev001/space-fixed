@@ -74,20 +74,8 @@ const ArchiveIcon = ({ className }) => (
   </svg>
 );
 
-const ArrowUpIcon = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-  </svg>
-);
-
-const ArrowDownIcon = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-  </svg>
-);
-
 // Professional Metric Card Component
-const MetricCard = ({ title, value, change, changeType, icon: Icon, color, description }) => {
+const MetricCard = ({ title, value, icon: Icon, color, description }) => {
   const getColorClasses = () => {
     switch (color) {
       case 'success': return 'from-green-500 to-emerald-600';
@@ -104,18 +92,9 @@ const MetricCard = ({ title, value, change, changeType, icon: Icon, color, descr
       <div className={`absolute inset-0 bg-gradient-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
 
       <div className="relative">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center mb-4">
           <div className={`flex items-center justify-center w-14 h-14 bg-gradient-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
             <Icon className="text-white size-7 drop-shadow-sm" />
-          </div>
-
-          <div className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${
-            changeType === 'increase'
-              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-              : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-          }`}>
-            {changeType === 'increase' ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" />}
-            {Math.abs(change)}%
           </div>
         </div>
 
@@ -499,8 +478,6 @@ function RegisteredShops({ shops, stats, filters = {} }) {
           <MetricCard
             title="Total Shops"
             value={dashboardStats.total || 0}
-            change={12}
-            changeType="increase"
             icon={StoreIcon}
             color="info"
             description="Total registered shops"
@@ -508,8 +485,6 @@ function RegisteredShops({ shops, stats, filters = {} }) {
           <MetricCard
             title="Active Shops"
             value={dashboardStats.active || 0}
-            change={8}
-            changeType="increase"
             icon={CheckCircleIcon}
             color="success"
             description="Currently operational"
@@ -517,8 +492,6 @@ function RegisteredShops({ shops, stats, filters = {} }) {
           <MetricCard
             title="Suspended"
             value={dashboardStats.suspended || 0}
-            change={-5}
-            changeType="decrease"
             icon={BanIcon}
             color="error"
             description="Temporarily suspended"
@@ -526,8 +499,6 @@ function RegisteredShops({ shops, stats, filters = {} }) {
           <MetricCard
             title="Archived Shops"
             value={dashboardStats.archived || 0}
-            change={0}
-            changeType="decrease"
             icon={ArchiveIcon}
             color="warning"
             description="Reversible archived accounts"
@@ -535,8 +506,6 @@ function RegisteredShops({ shops, stats, filters = {} }) {
           <MetricCard
             title="This Month"
             value={dashboardStats.thisMonth || 0}
-            change={15}
-            changeType="increase"
             icon={StoreIcon}
             color="warning"
             description="New registrations"

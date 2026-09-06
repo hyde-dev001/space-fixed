@@ -27,29 +27,14 @@ interface ReviewStats {
 }
 
 type MetricColor = "success" | "warning" | "info" | "error";
-type ChangeType = "increase" | "decrease";
 
 interface MetricCardProps {
   title: string;
   value: string;
-  change: number;
-  changeType: ChangeType;
   icon: ComponentType<{ className?: string }>;
   color: MetricColor;
   description: string;
 }
-
-const ArrowUpIcon = ({ className = "" }: { className?: string }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-  </svg>
-);
-
-const ArrowDownIcon = ({ className = "" }: { className?: string }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-  </svg>
-);
 
 const ReviewIcon = ({ className = "" }: { className?: string }) => (
   <svg className={className} viewBox="0 0 24 24" fill="currentColor">
@@ -70,7 +55,7 @@ const EyeIcon = ({ className = "" }: { className?: string }) => (
   </svg>
 );
 
-const MetricCard = ({ title, value, change, changeType, icon: Icon, color, description }: MetricCardProps) => {
+const MetricCard = ({ title, value, icon: Icon, color, description }: MetricCardProps) => {
   const getColorClasses = () => {
     switch (color) {
       case "success":
@@ -91,20 +76,9 @@ const MetricCard = ({ title, value, change, changeType, icon: Icon, color, descr
       <div className={`absolute inset-0 bg-linear-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
 
       <div className="relative">
-        <div className="mb-4 flex items-center justify-between">
+        <div className="mb-4 flex items-center">
           <div className={`flex h-14 w-14 items-center justify-center rounded-2xl bg-linear-to-br ${getColorClasses()} shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
             <Icon className="size-7 text-white drop-shadow-sm" />
-          </div>
-
-          <div
-            className={`flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold transition-all duration-300 ${
-              changeType === "increase"
-                ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-            }`}
-          >
-            {changeType === "increase" ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" />}
-            {Math.abs(change)}%
           </div>
         </div>
 
@@ -260,8 +234,6 @@ export default function CustomerReviews() {
           <MetricCard
             title="Total Reviews"
             value={reviews.length.toString()}
-            change={0}
-            changeType="increase"
             icon={ReviewIcon}
             color="info"
             description="Collected customer feedback entries"
@@ -269,8 +241,6 @@ export default function CustomerReviews() {
           <MetricCard
             title="Average Rating"
             value={`${Number(averageRating).toFixed(1)} / 5`}
-            change={0}
-            changeType="increase"
             icon={RatingIcon}
             color="warning"
             description="Overall satisfaction score"

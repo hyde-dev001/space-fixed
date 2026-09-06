@@ -1,5 +1,5 @@
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import FlaggedAccounts from '../FlaggedAccounts';
 
@@ -66,6 +66,19 @@ describe('Flagged account state UI', () => {
     expect(screen.getAllByText('Account suspended').length).toBeGreaterThan(0);
     expect(screen.queryByRole('button', { name: 'Dismiss' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Ban' })).not.toBeInTheDocument();
+  });
+
+  it('renders report details in the shared top-level modal layer', () => {
+    render(<FlaggedAccounts />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Review' }));
+
+    const modal = document.querySelector<HTMLElement>('.modal');
+    expect(modal).not.toBeNull();
+    if (!modal) return;
+
+    expect(modal).toHaveClass('fixed', 'z-99999');
+    expect(within(modal).getByRole('heading', { name: 'Review report details' })).toBeInTheDocument();
   });
 
   it('requires a suspension reason and posts the domain action', async () => {

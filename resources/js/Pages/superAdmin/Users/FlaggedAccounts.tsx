@@ -11,6 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from '../../../components/ui/table';
+import { Modal } from '../../../components/ui/modal';
 
 interface ReviewSnapshot {
   type?: string;
@@ -418,8 +419,13 @@ const FlaggedAccounts: React.FC = () => {
       </div>
 
       {detailAccount && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-6 shadow-xl dark:bg-gray-900">
+        <Modal
+          isOpen={Boolean(detailAccount)}
+          onClose={() => setDetailAccount(null)}
+          showCloseButton={false}
+          size="2xl"
+          className="m-4 max-h-[90vh] overflow-y-auto p-6 shadow-xl"
+        >
             <div className="mb-5 flex items-center justify-between border-b border-gray-200 pb-4 dark:border-gray-800">
               <div>
                 <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Review report details</h2>
@@ -491,8 +497,7 @@ const FlaggedAccounts: React.FC = () => {
                 </button>
               </div>
             )}
-          </div>
-        </div>
+        </Modal>
       )}
     </AppLayout>
   );

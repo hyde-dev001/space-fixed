@@ -111,26 +111,11 @@ const LowStockIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
-const ArrowUpIcon = ({ className }: { className?: string }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-  </svg>
-);
-
-const ArrowDownIcon = ({ className }: { className?: string }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-  </svg>
-);
-
 type MetricTone = 'blue' | 'indigo' | 'amber';
-type ChangeType = 'increase' | 'decrease';
 
 type MetricCardProps = {
   title: string;
   value: number | string;
-  change?: number;
-  changeType?: ChangeType;
   description?: string;
   icon: ComponentType<{ className?: string }>;
   tone: MetricTone;
@@ -148,29 +133,17 @@ const metricToneStyles: Record<MetricTone, { gradient: string }> = {
   },
 };
 
-const MetricCard = ({ title, value, change, changeType, description, icon: Icon, tone }: MetricCardProps) => {
+const MetricCard = ({ title, value, description, icon: Icon, tone }: MetricCardProps) => {
   const palette = metricToneStyles[tone];
 
   return (
     <div className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-500 hover:-translate-y-1 hover:border-gray-300 hover:shadow-xl dark:border-gray-800 dark:bg-white/3 dark:hover:border-gray-700">
       <div className={`absolute inset-0 bg-linear-to-br ${palette.gradient} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
       <div className="relative">
-        <div className="mb-4 flex items-center justify-between">
+        <div className="mb-4 flex items-center">
           <div className={`flex h-14 w-14 items-center justify-center rounded-2xl bg-linear-to-br ${palette.gradient} shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
             <Icon className="size-7 text-white drop-shadow-sm" />
           </div>
-          {change !== undefined && (
-            <div
-              className={`flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold transition-all duration-300 ${
-                changeType === 'decrease'
-                  ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                  : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-              }`}
-            >
-              {changeType === 'decrease' ? <ArrowDownIcon className="size-3" /> : <ArrowUpIcon className="size-3" />}
-              {Math.abs(change)}%
-            </div>
-          )}
         </div>
         <div className="space-y-2">
           <p className="text-sm font-medium text-gray-600 dark:text-gray-400">{title}</p>
@@ -455,8 +428,6 @@ export default function UploadStockMaterial() {
           <MetricCard
             title="Total Materials"
             value={metrics.totalItems}
-            change={12}
-            changeType="increase"
             description={showArchived ? 'Archived materials in view' : 'Active materials in inventory'}
             icon={MaterialsIcon}
             tone="blue"
@@ -464,8 +435,6 @@ export default function UploadStockMaterial() {
           <MetricCard
             title="Total Quantity"
             value={metrics.totalQuantity.toLocaleString()}
-            change={8}
-            changeType="increase"
             description="Combined quantity across listed materials"
             icon={QuantityIcon}
             tone="indigo"
@@ -473,8 +442,6 @@ export default function UploadStockMaterial() {
           <MetricCard
             title="Low Stock Items"
             value={metrics.lowStockCount}
-            change={15}
-            changeType="increase"
             description="Items at or below reorder level"
             icon={LowStockIcon}
             tone="amber"

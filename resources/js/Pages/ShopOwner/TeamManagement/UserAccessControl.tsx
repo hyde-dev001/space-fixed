@@ -14,8 +14,6 @@ import {
 } from '../../../components/ui/table';
 import {
   PlusIcon,
-  ArrowUpIcon,
-  ArrowDownIcon,
 } from '../../../icons';
 
 // Icon Components
@@ -103,8 +101,6 @@ interface UserAccount {
 interface MetricData {
   title: string;
   value: number;
-  change: number;
-  changeType: 'increase' | 'decrease';
   icon: React.ComponentType<{ className?: string }>;
   color: 'success' | 'error' | 'warning' | 'info';
   description: string;
@@ -128,8 +124,6 @@ type FieldValidationState = {
 const MetricCard: React.FC<MetricData> = ({
   title,
   value,
-  change,
-  changeType,
   icon: Icon,
   color,
   description
@@ -152,17 +146,9 @@ const MetricCard: React.FC<MetricData> = ({
       <div className={`absolute inset-0 bg-gradient-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
 
       <div className="relative">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center mb-4">
           <div className={`flex items-center justify-center w-14 h-14 bg-gradient-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
             <Icon className="text-white size-7 drop-shadow-sm" />
-          </div>
-
-          <div className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${changeType === 'increase'
-              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-              : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-            }`}>
-            {changeType === 'increase' ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" />}
-            {Math.abs(change)}%
           </div>
         </div>
 
@@ -689,8 +675,6 @@ const UserAccessControl: React.FC = () => {
     {
       title: 'Total Employees',
       value: stats.totalUsers,
-      change: 12,
-      changeType: 'increase',
       icon: UserCircleIcon,
       color: 'info',
       description: 'from last month'
@@ -698,8 +682,6 @@ const UserAccessControl: React.FC = () => {
     {
       title: 'Active Employees',
       value: stats.activeEmployees,
-      change: 5,
-      changeType: 'increase',
       icon: GroupIcon,
       color: 'success',
       description: 'from last month'
@@ -707,8 +689,6 @@ const UserAccessControl: React.FC = () => {
     {
       title: 'Total Roles',
       value: stats.totalRoles,
-      change: 0,
-      changeType: 'increase',
       icon: GroupIcon,
       color: 'warning',
       description: 'from last month'
@@ -716,8 +696,6 @@ const UserAccessControl: React.FC = () => {
     {
       title: 'Suspended Employees',
       value: stats.suspendedUsers,
-      change: 8,
-      changeType: 'decrease',
       icon: AlertIcon,
       color: 'error',
       description: 'from last month'
@@ -2151,8 +2129,6 @@ const UserAccessControl: React.FC = () => {
                 key={index}
                 title={metric.title}
                 value={metric.value}
-                change={metric.change}
-                changeType={metric.changeType}
                 icon={metric.icon}
                 color={metric.color}
                 description={metric.description}

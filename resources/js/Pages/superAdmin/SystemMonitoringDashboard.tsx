@@ -21,18 +21,6 @@ const TaskIcon = ({ className = "" }) => (
   </svg>
 );
 
-const ArrowUpIcon = ({ className = "" }) => (
-  <svg className={className} width="13" height="12" viewBox="0 0 13 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path fillRule="evenodd" clipRule="evenodd" d="M6.06462 1.62393C6.20193 1.47072 6.40135 1.37432 6.62329 1.37432C6.6236 1.37432 6.62391 1.37432 6.62422 1.37432C6.81631 1.37415 7.00845 1.44731 7.15505 1.5938L10.1551 4.5918C10.4481 4.88459 10.4483 5.35946 10.1555 5.65246C9.86273 5.94546 9.38785 5.94562 9.09486 5.65283L7.37329 3.93247L7.37329 10.125C7.37329 10.5392 7.03751 10.875 6.62329 10.875C6.20908 10.875 5.87329 10.5392 5.87329 10.125L5.87329 3.93578L4.15516 5.65281C3.86218 5.94561 3.3873 5.94546 3.0945 5.65248C2.8017 5.35949 2.80185 4.88462 3.09484 4.59182L6.06462 1.62393Z" fill="currentColor" />
-  </svg>
-);
-
-const ArrowDownIcon = ({ className = "" }) => (
-  <svg className={className} width="13" height="12" viewBox="0 0 13 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path fillRule="evenodd" clipRule="evenodd" d="M6.93538 10.3761C6.79807 10.5293 6.59865 10.6257 6.37671 10.6257C6.3764 10.6257 6.37609 10.6257 6.37578 10.6257C6.18369 10.6259 5.99155 10.5527 5.84495 10.4062L2.84495 7.4082C2.55195 7.11541 2.55175 6.64054 2.84455 6.34754C3.13727 6.05454 3.61215 6.05438 3.90514 6.34717L5.62671 8.06753L5.62671 1.875C5.62671 1.46079 5.96249 1.125 6.37671 1.125C6.79092 1.125 7.12671 1.46079 7.12671 1.875L7.12671 8.06422L8.84484 6.34719C9.13782 6.05439 9.6127 6.05454 9.9055 6.34752C10.1983 6.64051 10.1982 7.11538 9.90516 7.40818L6.93538 10.3761Z" fill="currentColor" />
-  </svg>
-);
-
 import {
   Table,
   TableBody,
@@ -46,8 +34,6 @@ import Badge from "../../components/ui/badge/Badge";
 interface MetricData {
   title: string;
   value: number;
-  change: number;
-  changeType: 'increase' | 'decrease';
   icon: React.ComponentType<{ className?: string }>;
   color: 'success' | 'error' | 'warning' | 'info';
   description: string;
@@ -58,9 +44,6 @@ interface DashboardPayload {
     total_users?: number;
     total_admins?: number;
     suspended_admins?: number;
-    total_users_change?: number;
-    total_admins_change?: number;
-    suspended_admins_change?: number;
   };
   system_health?: Array<{ metric: string; value: string; status: string }>;
   recent_activity?: Array<{ activity: string; time: string; status: string }>;
@@ -74,8 +57,6 @@ interface DashboardPayload {
 const MetricCard: React.FC<MetricData> = ({
   title,
   value,
-  change,
-  changeType,
   icon: Icon,
   color,
   description
@@ -117,18 +98,9 @@ const MetricCard: React.FC<MetricData> = ({
       <div className={`absolute inset-0 bg-gradient-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
 
       <div className="relative">
-        <div className="flex items-center justify-between mb-4">
+        <div className="mb-4">
           <div className={`flex items-center justify-center w-14 h-14 bg-gradient-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
             <Icon className="text-white size-7 drop-shadow-sm" />
-          </div>
-
-          <div className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${
-            changeType === 'increase'
-              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-              : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-          }`}>
-            {changeType === 'increase' ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" />}
-            {Math.abs(change)}%
           </div>
         </div>
 
@@ -162,8 +134,6 @@ export default function SystemMonitoringDashboard() {
     {
       title: "Total Users",
       value: Number(metrics.total_users || 0),
-      change: Math.abs(Number(metrics.total_users_change || 0)),
-      changeType: Number(metrics.total_users_change || 0) >= 0 ? 'increase' : 'decrease',
       icon: GroupIcon,
       color: 'success',
       description: "Active registered users"
@@ -171,8 +141,6 @@ export default function SystemMonitoringDashboard() {
     {
       title: "Total Admin Accounts",
       value: Number(metrics.total_admins || 0),
-      change: Math.abs(Number(metrics.total_admins_change || 0)),
-      changeType: Number(metrics.total_admins_change || 0) >= 0 ? 'increase' : 'decrease',
       icon: BoxIconLine,
       color: 'success',
       description: "Accounts with admin access"
@@ -180,8 +148,6 @@ export default function SystemMonitoringDashboard() {
     {
       title: "Suspended Admin Accounts",
       value: Number(metrics.suspended_admins || 0),
-      change: Math.abs(Number(metrics.suspended_admins_change || 0)),
-      changeType: Number(metrics.suspended_admins_change || 0) >= 0 ? 'increase' : 'decrease',
       icon: TaskIcon,
       color: 'warning',
       description: "Currently restricted admin accounts"
