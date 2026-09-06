@@ -177,15 +177,7 @@ export default function CustomersPage() {
 
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
         <div className="w-full">
-          {/* Header */}
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-              Customer Management
-            </h1>
-            <p className="text-gray-600 dark:text-gray-400">
-              View and manage customer information and activities
-            </p>
-          </div>
+          <h1 className="sr-only">Customer Management</h1>
 
           {/* Stats Cards */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">

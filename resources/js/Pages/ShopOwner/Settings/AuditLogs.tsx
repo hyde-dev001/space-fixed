@@ -319,18 +319,7 @@ export default function ShopOwnerAuditLogs() {
       <Head title="Activity Audit Logs" />
 
       <div className="p-6">
-        {/* Header */}
-        <div className="mb-6">
-          <div className="flex items-center gap-3 mb-2">
-            <h1 className="text-3xl font-bold text-gray-800">Activity Audit Logs</h1>
-          </div>
-          <p className="text-gray-600 mt-2">
-            Complete audit trail of all activities in your business
-          </p>
-          <p className="text-sm text-gray-500 mt-1">
-            Track products, expenses, employees, orders, and all business operations
-          </p>
-        </div>
+        <h1 className="sr-only">Activity Audit Logs</h1>
 
         {/* Stats Cards */}
         {stats && (

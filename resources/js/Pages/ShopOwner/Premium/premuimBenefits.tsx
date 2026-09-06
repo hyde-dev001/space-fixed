@@ -382,17 +382,7 @@ const PremiumBenefits: React.FC<Props> = () => {
 									Back
 								</Link>
 						</div>
-						<div className="mb-14">
-							<h1 className="mb-4 text-4xl font-bold uppercase tracking-tight text-black sm:text-5xl lg:text-6xl">
-								Premium Benefits
-							</h1>
-							<p className="mb-2 max-w-3xl text-base font-light leading-relaxed text-black/65">
-								Unlock exclusive advantages designed for retail-capable shops that want access to the virtual showroom.
-							</p>
-							<p className="text-xs font-semibold uppercase tracking-[0.16em] text-black/40">
-								Exclusive for Retail and Retail-Repair Shop Owners
-							</p>
-						</div>
+						<h1 className="sr-only">Premium Benefits</h1>
 
 						{subscription?.status === 'deactivated' ? (
 							<div className="mb-10 overflow-hidden rounded-3xl border border-[#16233b]/20 bg-linear-to-r from-[#16233b]/8 via-[#16233b]/4 to-transparent shadow-[0_22px_40px_-28px_rgba(15,23,42,0.6)]">

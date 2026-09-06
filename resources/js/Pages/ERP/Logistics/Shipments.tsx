@@ -526,8 +526,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
       <Head title={riderMode ? "My Deliveries" : ownerMode ? "Shipment Monitoring" : "ERP Logistics Shipments"} />
       <div data-testid="shipments-page" className="min-w-0 space-y-6 overflow-x-hidden">
         <div className="min-w-0">
-          <h1 className="text-2xl font-bold leading-tight text-gray-950 dark:text-white sm:text-3xl xl:text-2xl">{riderMode ? 'My Deliveries' : 'Shipments'}</h1>
-          <p className="mt-1 max-w-2xl text-sm leading-6 text-gray-500 dark:text-gray-400 xl:mt-0">{riderMode ? 'Process your assigned deliveries.' : ownerMode ? 'Monitor shipment status, delivery proof, and history.' : 'Assign riders and approve delivery proof.'}</p>
+          <h1 className="sr-only">{riderMode ? 'My Deliveries' : 'Shipments'}</h1>
         </div>
         {children}
 

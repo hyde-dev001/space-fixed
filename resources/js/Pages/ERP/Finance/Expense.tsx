@@ -677,12 +677,7 @@ const Expense: React.FC = () => {
         ) : (
           <>
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <div>
-                <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Expense Management</h1>
-                <p className="text-gray-600 dark:text-gray-400 mt-2">
-                  {ownerMode ? 'Review team spending across the ERP suite.' : 'Add and track team spending across the ERP suite.'}
-                </p>
-              </div>
+              <h1 className="sr-only">Expense Management</h1>
               <div className="flex items-center gap-3">
                 <button
                   type="button"

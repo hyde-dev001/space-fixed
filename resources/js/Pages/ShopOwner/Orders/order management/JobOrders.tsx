@@ -1604,15 +1604,7 @@ export default function JobOrdersPage() {
         </div>
       ) : (
         <div className="space-y-6">
-        {/* Header */}
-        <div className="flex justify-between items-start">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Customer Orders</h1>
-            <p className="text-gray-600 dark:text-gray-400 mt-2">
-              {isIndividualRegistration ? 'Process and manage customer shoe orders' : 'Monitor customer shoe orders'}
-            </p>
-          </div>
-        </div>
+          <h1 className="sr-only">Customer Orders</h1>
 
         {/* Metrics */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

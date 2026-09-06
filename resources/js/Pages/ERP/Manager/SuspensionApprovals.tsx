@@ -251,13 +251,7 @@ export default function SuspensionApprovals() {
 
             <main className="space-y-6 py-6 md:py-8" aria-labelledby="suspension-approvals-title">
                 <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-                    <div>
-                        <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600 dark:text-blue-400">People &amp; approvals</p>
-                        <h1 id="suspension-approvals-title" className="mt-2 text-3xl font-bold tracking-tight text-gray-900 dark:text-white">Suspension Approvals</h1>
-                        <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-600 dark:text-gray-400">
-                            Review the Manager stage of the HR -&gt; Manager -&gt; Shop Owner suspension workflow. Approval forwards the request; it does not suspend the employee by itself.
-                        </p>
-                    </div>
+                    <h1 id="suspension-approvals-title" className="sr-only">Suspension Approvals</h1>
                 </header>
 
                 <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label="Suspension approval summary">

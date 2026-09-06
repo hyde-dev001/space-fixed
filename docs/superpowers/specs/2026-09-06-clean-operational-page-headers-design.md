@@ -16,6 +16,7 @@ Use a surgical, page-level cleanup rather than a global `h1` rule or a shared-la
 - If a removed header shared a row with actions, preserve the actions and keep them aligned at the top of the content area.
 - Remove stray top-header context pills such as `Products`, `Products + Repair Materials`, and `Inventory Tracking` where they only duplicate the page context; keep functional controls such as Refresh, filters, and primary actions.
 - Keep adjacent icon-only action buttons in a horizontal, no-wrap row with enough column width and spacing; allow the table to scroll horizontally on narrow screens rather than stacking or overlapping actions.
+- Keep secondary order-status pills such as `Receipt Confirmed` and `Customer Dispute` on one readable line with consistent pill padding and enough status-column width; do not change their status conditions or colors.
 - Restore the existing user/account icon in the customer Account trigger without changing its accordion behavior.
 - Add a visible hover and keyboard-focus state to the Logout action while preserving its existing logout handler and red destructive styling.
 
@@ -32,7 +33,8 @@ No route, data request, permission check, handler, table behavior, dashboard con
 5. Logout has an obvious hover state and a visible keyboard-focus state, and still invokes the existing logout flow.
 6. Existing page actions remain available and aligned after the title block is removed.
 7. Table icon actions remain horizontally aligned and do not wrap into a vertical stack.
-8. Existing frontend tests pass, new regression coverage protects the dashboard/header boundary and navigation states, and a fresh production build succeeds.
+8. `Receipt Confirmed` and `Customer Dispute` render as readable, consistent status pills without broken line wrapping.
+9. Existing frontend tests pass, new regression coverage protects the dashboard/header boundary and navigation states, and a fresh production build succeeds.
 
 ## Verification plan
 

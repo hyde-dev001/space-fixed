@@ -221,11 +221,7 @@ export default function EmploymentLifecycleApprovals() {
       <Head title={label + " Approvals - Solespace ERP"} />
       <main className="space-y-6 py-6 md:py-8" aria-labelledby="lifecycle-approvals-title">
         <header>
-          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600 dark:text-blue-400">People &amp; approvals</p>
-          <h1 id="lifecycle-approvals-title" className="mt-2 text-3xl font-bold tracking-tight text-gray-900 dark:text-white">{label} Approvals</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-600 dark:text-gray-400">
-            Review the HR -&gt; Manager -&gt; Company Shop Owner {label.toLowerCase()} workflow. Manager approval only forwards the request; the employment/account state changes after Company Shop Owner approval.
-          </p>
+          <h1 id="lifecycle-approvals-title" className="sr-only">{label} Approvals</h1>
         </header>
 
         <section className="grid grid-cols-2 gap-4 lg:grid-cols-4" aria-label={label + " approval summary"}>

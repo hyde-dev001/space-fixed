@@ -13,7 +13,7 @@ describe('shop-owner HR employee directory routes', () => {
     expect(source).toContain("const ownerMode = auth?.erpActor?.ownerMode === true;");
     expect(source).toContain('const ownerReadOnly = ownerMode;');
     expect(source).toContain('const ownerCanCreate = ownerMode;');
-    expect(source).toContain('Review your shop workforce and add employees without changing account permissions.');
+    expect(source).toContain('<h1 className="sr-only">Employee Management</h1>');
     expect(source).toContain('{(!ownerReadOnly || ownerCanCreate) && (');
     expect(source).toContain("const employeeApiBase = ownerMode ? '/shop-owner/employees' : '/api/hr/employees';");
     expect(source).toContain('if (ownerMode) return;');

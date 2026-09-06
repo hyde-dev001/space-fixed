@@ -67,7 +67,7 @@ describe("Finance procurement expenses", () => {
 
 		render(<Expense />);
 
-		expect(screen.getByText("Review team spending across the ERP suite.")).toBeInTheDocument();
+		expect(screen.getByRole("heading", { name: "Expense Management" })).toHaveClass("sr-only");
 		expect(screen.queryByRole("button", { name: "Add Expense" })).not.toBeInTheDocument();
 	});
 });

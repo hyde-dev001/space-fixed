@@ -1977,11 +1977,8 @@ export default function JobOrdersPage() {
       ) : (
         <div className="space-y-6">
         {/* Header */}
-        <div className="flex justify-between items-start">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Customer Orders</h1>
-            <p className="text-gray-600 dark:text-gray-400 mt-2">Process and manage customer shoe orders</p>
-          </div>
+        <div className="flex items-start justify-end">
+          <h1 className="sr-only">Customer Orders</h1>
           <button
             onClick={refreshOrders}
             disabled={loading}
@@ -2154,10 +2151,10 @@ export default function JobOrdersPage() {
                 <col className="w-32" />
                 <col className="w-20" />
                 <col className="w-56" />
-                <col className="w-36" />
+                <col className="w-44" />
                 <col className="w-40" />
                 <col className="w-20" />
-                <col className="w-28" />
+                <col className="w-32" />
               </colgroup>
               <thead className="bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-800 sticky top-0 z-10">
                 <tr>
@@ -2281,21 +2278,21 @@ export default function JobOrdersPage() {
                         </div>
                       </td>
                       <td className="box-border px-5 py-5 align-top">
-                        <div className="min-w-0 space-y-2">
+                        <div className="space-y-2">
                           <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-full whitespace-nowrap ${getOrderStatusPresentation(order.status).badgeClass}`}>
                             <span className="size-1.5 rounded-full bg-current opacity-70" aria-hidden="true" />
                             {getOrderStatusPresentation(order.status).label}
                           </span>
                           {!isPosOrder(order) && (order.customerReceiptStatus === 'disputed' ? (
-                            <span className="inline-flex items-center rounded-full bg-rose-100 px-2.5 py-1 text-xs font-semibold text-rose-700 dark:bg-rose-900/30 dark:text-rose-300">
+                            <span className="inline-flex w-fit items-center whitespace-nowrap rounded-full bg-rose-100 px-2.5 py-1 text-xs font-semibold text-rose-700 dark:bg-rose-900/30 dark:text-rose-300">
                               Customer Dispute
                             </span>
                           ) : order.customerReceiptStatus === 'confirmed' ? (
-                            <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
+                            <span className="inline-flex w-fit items-center whitespace-nowrap rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
                               Receipt Confirmed
                             </span>
                           ) : order.status === 'delivered' ? (
-                            <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                            <span className="inline-flex w-fit items-center whitespace-nowrap rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
                               Receipt Pending
                             </span>
                           ) : null)}
@@ -2321,7 +2318,7 @@ export default function JobOrdersPage() {
                         </span>
                       </td>
                       <td className="box-border px-5 py-5 align-top">
-                        <div className="flex flex-wrap items-center justify-start gap-2">
+                        <div className="flex flex-nowrap items-center justify-start gap-2">
                           <button
                             type="button"
                             onClick={() => handleViewOrder(order)}

@@ -2853,15 +2853,7 @@ useEffect(() => {
 			<div className="space-y-6 p-4 md:p-6">
 				{!isOrderModalOpen && !isRefundQueueOpen && !isReceiptModalOpen && !isHistoryModalOpen && !isRetailRefundModalOpen && (
 				<div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-					<div>
-						<h1 className="text-2xl font-bold text-slate-900">Point of Sale</h1>
-						<p className="mt-1 text-sm text-slate-500">
-						{mode === "repair"
-							? "Manage repair cashier transactions and payment processing."
-							: "Process retail walk-in sales with the same POS design system."
-						}
-					</p>
-					</div>
+					<h1 className="sr-only">Point of Sale</h1>
 					<div className="flex flex-wrap items-center justify-start gap-2 xl:justify-end">
 						{allowedModes.includes("repair") && (
 							<button

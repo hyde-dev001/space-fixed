@@ -196,11 +196,7 @@ export default function RepairJobs() {
 
       <main className="space-y-6 py-6 md:py-8" aria-labelledby="owner-repair-jobs-title">
         <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600 dark:text-blue-400">Operations</p>
-            <h1 id="owner-repair-jobs-title" className="mt-2 text-3xl font-bold tracking-tight text-gray-900 dark:text-white">Repair Jobs</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-600 dark:text-gray-400">Monitor every repair request and each repairer&apos;s active workload. New requests are assigned by workload, while this page provides read-only operational visibility.</p>
-          </div>
+          <h1 id="owner-repair-jobs-title" className="sr-only">Repair Jobs</h1>
           <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
             <p className="font-semibold text-gray-900 dark:text-white">{payload?.total ?? 0} repairs in view</p>
             <p className="mt-1 text-gray-500 dark:text-gray-400">Last updated: {formatDateTime(repairs.data?.last_updated_at)}</p>

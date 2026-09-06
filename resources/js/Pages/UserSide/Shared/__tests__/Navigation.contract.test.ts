@@ -114,7 +114,7 @@ describe('user-side navigation shell', () => {
     const utilityStart = navigationSource.indexOf('<div className="border-t border-[#cacacb] px-6 py-6 sm:px-8 dark:border-slate-700">');
     const cartStart = navigationSource.indexOf('>Cart {effectiveCartCount > 0', utilityStart);
     const accountTriggerStart = navigationSource.indexOf('aria-controls="customer-account-submenu"');
-    const accountTriggerEnd = navigationSource.indexOf('>', accountTriggerStart);
+    const accountTriggerEnd = navigationSource.indexOf('</button>', accountTriggerStart);
     const accountTriggerSource = navigationSource.slice(navigationSource.lastIndexOf('<button', accountTriggerStart), accountTriggerEnd);
     const accountPanelSource = navigationSource.slice(accountPanelStart, cartStart);
 
@@ -148,6 +148,27 @@ describe('user-side navigation shell', () => {
     const siteNavEnd = navigationSource.indexOf('</nav>', siteNavStart);
     const siteNavSource = navigationSource.slice(siteNavStart, siteNavEnd);
     expect(siteNavSource).not.toContain('id="customer-account-submenu"');
+  });
+
+  it('keeps Account identifiable and makes Logout visibly interactive', () => {
+    const accountTriggerStart = navigationSource.indexOf('aria-controls="customer-account-submenu"');
+    const accountTriggerEnd = navigationSource.indexOf('</button>', accountTriggerStart);
+    const accountTriggerSource = navigationSource.slice(
+      navigationSource.lastIndexOf('<button', accountTriggerStart),
+      accountTriggerEnd,
+    );
+    const accountPanelStart = navigationSource.indexOf('id="customer-account-submenu"');
+    const logoutStart = navigationSource.indexOf('>Log out</span>', accountPanelStart);
+    const logoutSource = navigationSource.slice(
+      navigationSource.lastIndexOf('<button', logoutStart),
+      navigationSource.indexOf('</button>', logoutStart),
+    );
+
+    expect(accountTriggerSource).toContain('h-5 w-5');
+    expect(accountTriggerSource).toContain('aria-hidden="true"');
+    expect(logoutSource).toContain('hover:bg-red-50');
+    expect(logoutSource).toContain('focus-visible:ring-2');
+    expect(logoutSource).toContain('focus-visible:ring-red-500');
   });
 
   it('animates sidebar plus submenus and exposes their expanded state', () => {

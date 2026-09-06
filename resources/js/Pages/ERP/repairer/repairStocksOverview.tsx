@@ -159,15 +159,7 @@ export default function RepairStocksOverview() {
     <AppLayoutERP>
       <Head title="Stocks Overview - Repair - Solespace" />
       <div className="p-6 space-y-6">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold mb-1">Stocks Overview</h1>
-            <p className="text-gray-600 dark:text-gray-400">Monitor repair-material stock levels and item availability</p>
-          </div>
-          <span className="px-3 py-1 text-xs font-semibold rounded-full bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200 w-fit">
-            Repair Materials
-          </span>
-        </div>
+        <h1 className="sr-only">Stocks Overview</h1>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           <MetricCard title="Total Items in Stock" value={metrics.total_items} icon={BoxIcon} color="info" description="Across repair materials" />

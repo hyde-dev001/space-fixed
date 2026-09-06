@@ -303,14 +303,7 @@ export default function SuppliersManagement() {
 
 			<div className="p-6 space-y-6">
 				<div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-					<div>
-						<h1 className="text-2xl font-semibold mb-1">Suppliers Management</h1>
-						<p className="text-gray-600 dark:text-gray-400">
-							{showArchived
-								? "View archived supplier records, contact info, and purchase history"
-								: "View and manage supplier records, contact info, and purchase history"}
-						</p>
-					</div>
+					<h1 className="sr-only">Suppliers Management</h1>
 					<div className="flex items-center gap-2">
 						<button
 							type="button"

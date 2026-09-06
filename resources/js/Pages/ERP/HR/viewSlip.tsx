@@ -385,10 +385,7 @@ export default function ViewSlip() {
 
     return (
         <div className="space-y-6">
-            <div className="flex flex-col gap-2">
-                <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">View Slip</h1>
-                <p className="text-gray-600 dark:text-gray-400">Review and download employee payslips by period.</p>
-            </div>
+            <h1 className="sr-only">View Slip</h1>
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="md:col-span-2">

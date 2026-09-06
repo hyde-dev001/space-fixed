@@ -218,21 +218,7 @@ export default function InventoryOverview() {
     <Layout>
       <Head title="Inventory Overview - Solespace" />
       <div className="p-6 space-y-6">
-        {/* Header */}
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold mb-1">Inventory Overview</h1>
-            <p className="text-gray-600 dark:text-gray-400">View all available stock and inventory levels (Read-only)</p>
-          </div>
-          <div className="flex flex-wrap items-center justify-end gap-3">
-            <span className="px-3 py-1 text-xs font-semibold rounded-full bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200">
-              Shop Owner View
-            </span>
-            <span className="px-3 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200">
-              Read-Only Access
-            </span>
-          </div>
-        </div>
+        <h1 className="sr-only">Inventory Overview</h1>
 
         {/* Error State */}
         {error && (

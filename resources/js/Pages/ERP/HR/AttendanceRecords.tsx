@@ -549,14 +549,7 @@ const ViewAttendance: React.FC = () => {
     <div className="w-full space-y-6">
       {/* Header */}
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-            Attendance Records
-          </h1>
-          <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-            Track and manage employee attendance with detailed records
-          </p>
-        </div>
+        <h1 className="sr-only">Attendance Records</h1>
 
         <div className="mt-4 flex justify-end">
           <button

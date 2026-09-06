@@ -723,10 +723,7 @@ export default function PurchaseOrders() {
 
 			<div className="p-6 space-y-6">
 				<div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-					<div>
-						<h1 className="text-2xl font-semibold mb-1">Purchase Orders</h1>
-						<p className="text-gray-600 dark:text-gray-400">Create PO from approved PR, send to supplier, then track order progress end-to-end</p>
-					</div>
+					<h1 className="sr-only">Purchase Orders</h1>
 					{canCreate && <button
 						onClick={() => {
 							setIsCreateModalOpen(true);

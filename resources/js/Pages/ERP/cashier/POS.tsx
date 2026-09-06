@@ -2925,14 +2925,8 @@ const PointOfSalePage = () => {
 			<div className="cashier-pos-page space-y-6 p-4 md:p-6">
 				{!isOrderModalOpen && !isRefundQueueOpen && !isReceiptModalOpen && !isHistoryModalOpen && (
 				<div className="flex items-center justify-between">
-					<div>
-						<h1 className="text-2xl font-bold text-slate-900">Point of Sale</h1>
-						<p className="mt-1 text-sm text-slate-500">
-							{mode === "repair"
-								? "Manage repair cashier transactions and payment processing."
-								: "Process retail walk-in sales with the same POS design system."}
-						</p>
-						<div className="mt-3 flex flex-wrap gap-2">
+					<h1 className="sr-only">Point of Sale</h1>
+					<div className="flex flex-wrap gap-2">
 							{allowedModes.includes("repair") && (
 								<button
 									type="button"
@@ -2958,9 +2952,8 @@ const PointOfSalePage = () => {
 								>
 									Retail Mode
 								</button>
-							)}
+								)}
 						</div>
-					</div>
 					{(mode === "repair" || mode === "retail") && (
 						<div className="flex items-center gap-2">
 							<button

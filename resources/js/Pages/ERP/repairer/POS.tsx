@@ -1530,10 +1530,7 @@ const PointOfSalePage = () => {
 			<div className="space-y-6 p-4 md:p-6">
 				{!isOrderModalOpen && !isRefundQueueOpen && !isReceiptModalOpen && !isHistoryModalOpen && (
 				<div className="flex items-center justify-between">
-					<div>
-						<h1 className="text-2xl font-bold text-slate-900">Point of Sale</h1>
-						<p className="mt-1 text-sm text-slate-500">Manage repair cashier transactions and payment processing.</p>
-					</div>
+					<h1 className="sr-only">Point of Sale</h1>
 					<div className="flex items-center gap-2">
 						<button
 							type="button"

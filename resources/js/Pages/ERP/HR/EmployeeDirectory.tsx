@@ -2352,14 +2352,7 @@ export const EmployeeManagement: React.FC<{
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <div className="w-full">
         <div className="flex justify-between items-start mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Employee Management</h1>
-            <p className="text-gray-600 dark:text-gray-400">
-              {ownerReadOnly
-                ? 'Review your shop workforce and add employees without changing account permissions.'
-                : 'Manage employee accounts, access, and lifecycle'}
-            </p>
-          </div>
+          <h1 className="sr-only">Employee Management</h1>
           {(!ownerReadOnly || ownerCanCreate) && (
           <div className="flex gap-3">
             <button

@@ -433,10 +433,7 @@ export default function RequestMaterials() {
 
       <div className="p-6 space-y-6">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold mb-1">Request Material</h1>
-            <p className="text-gray-600 dark:text-gray-400">Request repair materials from Inventory and monitor their approval status</p>
-          </div>
+          <h1 className="sr-only">Request Material</h1>
           <div className="flex gap-2">
             {cart.length > 0 && (
               <button

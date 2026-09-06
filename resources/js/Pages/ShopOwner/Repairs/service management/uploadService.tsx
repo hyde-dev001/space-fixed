@@ -699,14 +699,7 @@ export default function UploadService() {
       <div className="p-6 space-y-6">
         {/* Header */}
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Upload Services</h1>
-            <p className="mt-2 text-gray-600 dark:text-gray-400">
-              {activeTab === "services"
-                ? "Manage and upload repair services for your shop"
-                : "Create and manage bundled repair packages for your shop"}
-            </p>
-          </div>
+          <h1 className="sr-only">Upload Services</h1>
           {activeTab === "services" && (
             <div className="flex items-center gap-3">
               <button
