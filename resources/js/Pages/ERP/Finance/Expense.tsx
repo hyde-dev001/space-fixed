@@ -676,9 +676,9 @@ const Expense: React.FC = () => {
           <LoadingSpinner message="Loading expenses..." />
         ) : (
           <>
-            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div className="flex flex-col items-end gap-4 md:flex-row md:items-center md:justify-end">
               <h1 className="sr-only">Expense Management</h1>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center justify-end gap-3">
                 <button
                   type="button"
                   onClick={() => setShowArchived((prev) => !prev)}

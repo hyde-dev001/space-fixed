@@ -1623,7 +1623,7 @@ export default function TimeIn() {
                                     <button
                                         onClick={handleOvertimeClick}
                                         disabled={isOnApprovedLeaveToday || todayOvertimeRequests.some(ot => ['pending', 'approved', 'assigned'].includes(ot.status))}
-                                        className="flex min-h-11 w-full items-center justify-center gap-2 rounded-full bg-gray-100 px-3 py-2 text-sm font-semibold text-gray-900 transition-colors hover:bg-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-800 dark:text-white dark:hover:bg-gray-700"
+                                        className="flex min-h-10 w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-full bg-gray-100 px-3 py-1.5 text-xs font-semibold text-gray-900 transition-colors hover:bg-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-800 dark:text-white dark:hover:bg-gray-700 sm:w-auto"
                                         title={
                                             isOnApprovedLeaveToday
                                                 ? 'Overtime requests are disabled while on approved leave'
@@ -1637,7 +1637,7 @@ export default function TimeIn() {
                                     </button>
                                     <button
                                         onClick={handleRequestLeaveClick}
-                                        className="flex min-h-11 w-full items-center justify-center gap-2 rounded-full bg-gray-100 px-3 py-2 text-sm font-semibold text-gray-900 transition-colors hover:bg-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 dark:bg-gray-800 dark:text-white dark:hover:bg-gray-700"
+                                        className="flex min-h-10 w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-full bg-gray-100 px-3 py-1.5 text-xs font-semibold text-gray-900 transition-colors hover:bg-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 dark:bg-gray-800 dark:text-white dark:hover:bg-gray-700 sm:w-auto"
                                     >
                                         <LeaveIcon />
                                         Request Leave

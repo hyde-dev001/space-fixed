@@ -69,6 +69,8 @@ it('keeps attendance actions inside the history card', async () => {
     expect(within(historyCard).getByRole('button', { name: 'Overtime' })).toBeInTheDocument();
     expect(within(historyCard).getByRole('button', { name: 'Request Leave' })).toBeInTheDocument();
     expect(screen.getByTestId('attendance-actions')).toHaveClass('xl:justify-end');
+    expect(within(historyCard).getByRole('button', { name: 'Overtime' })).toHaveClass('min-h-10', 'whitespace-nowrap');
+    expect(within(historyCard).getByRole('button', { name: 'Request Leave' })).toHaveClass('min-h-10', 'whitespace-nowrap');
     expect(screen.getAllByRole('button', { name: 'Overtime' })).toHaveLength(1);
     expect(screen.getAllByRole('button', { name: 'Request Leave' })).toHaveLength(1);
 });

@@ -2021,8 +2021,8 @@ export default function JobOrdersPage() {
                   onClick={() => setSelectedTab("all")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "all"
-                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                      ? "bg-[#111111] text-white hover:bg-gray-800 dark:bg-[#111111] dark:text-white dark:hover:bg-gray-800"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
                   All Orders ({stats.total})
@@ -2031,8 +2031,8 @@ export default function JobOrdersPage() {
                   onClick={() => setSelectedTab("pending")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "pending"
-                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                      ? "bg-[#111111] text-white hover:bg-gray-800 dark:bg-[#111111] dark:text-white dark:hover:bg-gray-800"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
                   {ORDER_STATUS_PRESENTATION.pending.label} ({stats.pending})
@@ -2041,8 +2041,8 @@ export default function JobOrdersPage() {
                   onClick={() => setSelectedTab("processing")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "processing"
-                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                      ? "bg-[#111111] text-white hover:bg-gray-800 dark:bg-[#111111] dark:text-white dark:hover:bg-gray-800"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
                   {ORDER_STATUS_PRESENTATION.processing.label} ({stats.processing})
@@ -2051,8 +2051,8 @@ export default function JobOrdersPage() {
                   onClick={() => setSelectedTab("shipped")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "shipped"
-                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                      ? "bg-[#111111] text-white hover:bg-gray-800 dark:bg-[#111111] dark:text-white dark:hover:bg-gray-800"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
                   {ORDER_STATUS_PRESENTATION.shipped.label} ({stats.shipped})
@@ -2061,8 +2061,8 @@ export default function JobOrdersPage() {
                   onClick={() => setSelectedTab("delivered")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "delivered"
-                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                      ? "bg-[#111111] text-white hover:bg-gray-800 dark:bg-[#111111] dark:text-white dark:hover:bg-gray-800"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
                   {ORDER_STATUS_PRESENTATION.delivered.label} ({stats.delivered})
@@ -2071,8 +2071,8 @@ export default function JobOrdersPage() {
                   onClick={() => setSelectedTab("completed")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "completed"
-                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                      ? "bg-[#111111] text-white hover:bg-gray-800 dark:bg-[#111111] dark:text-white dark:hover:bg-gray-800"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
                   {ORDER_STATUS_PRESENTATION.completed.label} ({stats.completed})
@@ -2081,8 +2081,8 @@ export default function JobOrdersPage() {
                   onClick={() => setSelectedTab("refund")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "refund"
-                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                      ? "bg-[#111111] text-white hover:bg-gray-800 dark:bg-[#111111] dark:text-white dark:hover:bg-gray-800"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
                   {ORDER_STATUS_PRESENTATION.refund.label} ({stats.refund})
@@ -2266,20 +2266,19 @@ export default function JobOrdersPage() {
                       </td>
                       <td className="box-border px-5 py-5 align-top">
                         <div className="space-y-2">
-                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-full whitespace-nowrap ${getOrderStatusPresentation(order.status).badgeClass}`}>
-                            <span className="size-1.5 rounded-full bg-current opacity-70" aria-hidden="true" />
+                          <span className="inline-flex items-center text-xs font-semibold whitespace-nowrap text-gray-900 dark:text-gray-100">
                             {getOrderStatusPresentation(order.status).label}
                           </span>
                           {!isPosOrder(order) && (order.customerReceiptStatus === 'disputed' ? (
-                            <span className="inline-flex w-fit items-center whitespace-nowrap rounded-full bg-rose-100 px-2.5 py-1 text-xs font-semibold text-rose-700 dark:bg-rose-900/30 dark:text-rose-300">
+                            <span className="inline-flex w-fit items-center whitespace-nowrap text-xs font-semibold text-gray-900 dark:text-gray-100">
                               Customer Dispute
                             </span>
                           ) : order.customerReceiptStatus === 'confirmed' ? (
-                            <span className="inline-flex w-fit items-center whitespace-nowrap rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
+                            <span className="inline-flex w-fit items-center whitespace-nowrap text-xs font-semibold text-gray-900 dark:text-gray-100">
                               Receipt Confirmed
                             </span>
                           ) : order.status === 'delivered' ? (
-                            <span className="inline-flex w-fit items-center whitespace-nowrap rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                            <span className="inline-flex w-fit items-center whitespace-nowrap text-xs font-semibold text-gray-900 dark:text-gray-100">
                               Receipt Pending
                             </span>
                           ) : null)}
@@ -2289,11 +2288,11 @@ export default function JobOrdersPage() {
                         {(() => {
                           const refundReturn = getRefundReturnDisplay(order);
                           if (refundReturn.label === '-') {
-                            return <span className={refundReturn.className}>-</span>;
+                            return <span className="text-gray-900 dark:text-gray-100">-</span>;
                           }
 
                           return (
-                            <span className={`inline-flex max-w-full flex-wrap items-center justify-start rounded-full px-2.5 py-1 text-left text-xs font-semibold leading-tight whitespace-normal break-words ${refundReturn.className}`}>
+                            <span className="inline-flex max-w-full flex-wrap items-center justify-start text-left text-xs font-semibold leading-tight whitespace-normal break-words text-gray-900 dark:text-gray-100">
                               {refundReturn.label}
                             </span>
                           );
@@ -2700,11 +2699,11 @@ export default function JobOrdersPage() {
                       <p className="mt-1 text-sm font-semibold text-gray-900 dark:text-white">Official status: {formatLogisticsStatus(viewOrder.status)}</p>
                     </div>
                     {!isPosOrder(viewOrder) && (viewOrder.customerReceiptStatus === 'disputed' ? (
-                      <span className="rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-700 dark:bg-rose-900/30 dark:text-rose-300">Customer Dispute</span>
+                      <span className="text-xs font-semibold text-gray-900 dark:text-gray-100">Customer Dispute</span>
                     ) : viewOrder.customerReceiptStatus === 'confirmed' ? (
-                      <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">Receipt Confirmed</span>
+                      <span className="text-xs font-semibold text-gray-900 dark:text-gray-100">Receipt Confirmed</span>
                     ) : viewOrder.status === 'delivered' ? (
-                      <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">Receipt Pending</span>
+                      <span className="text-xs font-semibold text-gray-900 dark:text-gray-100">Receipt Pending</span>
                     ) : null)}
                   </div>
                   {viewOrder.activeDeliveryDispute && (

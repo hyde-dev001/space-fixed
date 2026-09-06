@@ -866,14 +866,14 @@ const Invoice: React.FC = () => {
       ) : (
         <>
           {/* Header */}
-          <div className="flex justify-between items-start">
+          <div className="flex justify-end">
             <h1 className="sr-only">Invoices</h1>
-            <div className="flex gap-3">
+            <div className="flex w-full justify-end gap-3">
               {canCreateInvoice && (
                 <button
                   type="button"
                   onClick={handleCreateInvoice}
-                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200 shadow-sm"
+                  className="inline-flex items-center rounded-lg border border-transparent bg-[#111111] px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors duration-200 hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-2"
                 >
                   <PlusIcon className="size-5 mr-2" />
                   Create Invoice
@@ -925,7 +925,7 @@ const Invoice: React.FC = () => {
                 onClick={() => setSelectedTab("all")}
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                   selectedTab === "all"
-                    ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
+                    ? "bg-[#111111] text-white dark:bg-[#111111] dark:text-white"
                     : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
                 }`}
               >
@@ -935,7 +935,7 @@ const Invoice: React.FC = () => {
                 onClick={() => setSelectedTab("sent")}
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                   selectedTab === "sent"
-                    ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
+                    ? "bg-[#111111] text-white dark:bg-[#111111] dark:text-white"
                     : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
                 }`}
               >
@@ -945,7 +945,7 @@ const Invoice: React.FC = () => {
                 onClick={() => setSelectedTab("paid")}
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                   selectedTab === "paid"
-                    ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
+                    ? "bg-[#111111] text-white dark:bg-[#111111] dark:text-white"
                     : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
                 }`}
               >
@@ -955,7 +955,7 @@ const Invoice: React.FC = () => {
                 onClick={() => setSelectedTab("draft")}
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                   selectedTab === "draft"
-                    ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
+                    ? "bg-[#111111] text-white dark:bg-[#111111] dark:text-white"
                     : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
                 }`}
               >
@@ -965,7 +965,7 @@ const Invoice: React.FC = () => {
                 onClick={() => setSelectedTab("refunded")}
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                   selectedTab === "refunded"
-                    ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
+                    ? "bg-[#111111] text-white dark:bg-[#111111] dark:text-white"
                     : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
                 }`}
               >
@@ -1114,7 +1114,7 @@ const Invoice: React.FC = () => {
                             {invoice.reference}
                           </span>
                           {invoice.job_order && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 rounded-full border border-blue-300 dark:border-blue-700">
+                            <span className="inline-flex items-center gap-1 rounded-full border border-[#111111] bg-[#111111] px-2 py-0.5 text-xs font-medium text-white dark:border-[#111111] dark:bg-[#111111] dark:text-white">
                               <BriefcaseIcon className="size-3" />
                               Job #{invoice.job_order.id}
                             </span>
