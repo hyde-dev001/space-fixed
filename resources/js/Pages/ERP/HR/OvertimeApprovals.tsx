@@ -603,10 +603,7 @@ export function OvertimeRequests() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Overtime Requests</h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-2">Manage and review employee overtime requests</p>
-        </div>
+        <h1 className="sr-only">Overtime Requests</h1>
         {!ownerMode && (
           <button
             onClick={() => setIsAssignModalOpen(true)}

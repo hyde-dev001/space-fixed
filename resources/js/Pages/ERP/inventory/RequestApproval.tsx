@@ -370,15 +370,7 @@ export default function RequestApproval() {
 			{isReviewModalOpen && <div className="fixed inset-0 z-40" />}
 
 			<div className="p-6 space-y-6">
-				<div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-					<div>
-						<h1 className="text-2xl font-semibold mb-1">Repair Material Request Approval</h1>
-						<p className="text-gray-600 dark:text-gray-400">Review and approve material requests submitted by repair accounts</p>
-					</div>
-					<span className="px-3 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200 w-fit">
-						Repair to Inventory
-					</span>
-				</div>
+				<h1 className="sr-only">Repair Material Request Approval</h1>
 
 				<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
 					<MetricCard title="Total Requests" value={totalRequests} description="Material requests from repairers" icon={ClipboardIcon} color="info" />

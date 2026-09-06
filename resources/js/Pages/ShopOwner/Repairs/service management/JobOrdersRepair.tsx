@@ -2217,10 +2217,7 @@ export default function JobOrdersRepair() {
       <div className="space-y-6">
         {/* Header */}
         <div className="flex justify-between items-start">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Shoe Repair & Cleaning Services</h1>
-            <p className="text-gray-600 dark:text-gray-400 mt-2">Manage shoe cleaning and repair service orders</p>
-          </div>
+          <h1 className="sr-only">Shoe Repair &amp; Cleaning Services</h1>
           <div className="flex flex-col items-end gap-2">
             <p className="text-xs text-gray-600 dark:text-gray-400">
               Active workload: <span className={`font-semibold ${activeRepairCount >= repairRequestLimit ? 'text-red-600 dark:text-red-400' : ''}`}>{activeRepairCount}</span> / {repairRequestLimit}

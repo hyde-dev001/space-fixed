@@ -339,21 +339,7 @@ export default function Customers() {
       <Head title="Customers - Shop Owner" />
 
       <div className="space-y-6 p-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <h1 className="mb-1 text-2xl font-semibold text-gray-900 dark:text-white">Customers</h1>
-            <p className="text-gray-600 dark:text-gray-400">
-              {isRetailCapable && isRepairCapable
-                ? "View, edit, and track customer orders, service requests, payments, and staff notes."
-                : isRetailCapable
-                ? "View, edit, and track customer orders, payments, and staff notes."
-                : "View, edit, and track customer service requests, payments, and staff notes."}
-            </p>
-          </div>
-          <div className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-300">
-            Shop Owner Workspace
-          </div>
-        </div>
+        <h1 className="sr-only">Customers</h1>
 
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
           <div className={metricCardClasses}>

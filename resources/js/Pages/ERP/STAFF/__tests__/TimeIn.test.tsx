@@ -42,10 +42,7 @@ it('keeps the attendance page mobile-safe and the live clock accessible', async 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
 
     expect(screen.getByTestId('time-in-page')).toHaveClass('min-h-screen', 'overflow-x-hidden');
-    expect(screen.getByRole('heading', { name: 'Attendance Tracking' })).toHaveClass(
-        'text-xl',
-        'sm:text-2xl',
-    );
+    expect(screen.getByRole('heading', { name: 'Attendance Tracking' })).toHaveClass('sr-only');
     expect(screen.getByTestId('attendance-dashboard')).toHaveClass(
         'xl:grid-cols-5',
         'xl:items-stretch',

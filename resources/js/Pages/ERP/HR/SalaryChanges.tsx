@@ -809,10 +809,7 @@ const SalaryChanges: React.FC = () => {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Salary Change Requests</h1>
-          <p className="mt-2 text-gray-600 dark:text-gray-400">Propose, review, and track employee salary adjustments.</p>
-        </div>
+        <h1 className="sr-only">Salary Change Requests</h1>
         {canManage && (
           <button
             onClick={openNewChangeModal}

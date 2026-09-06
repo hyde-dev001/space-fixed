@@ -285,10 +285,7 @@ export default function HistoryRejection() {
 						>
 							<ArrowLeftIcon className="w-5 h-5 text-gray-600 dark:text-gray-400" />
 						</Link>
-						<div>
-							<h1 className="text-2xl font-semibold text-gray-900 dark:text-white">All Rejection Requests History</h1>
-							<p className="text-gray-600 dark:text-gray-400">Complete timeline of all rejection requests</p>
-						</div>
+						<h1 className="sr-only">All Rejection Requests History</h1>
 					</div>
 				</div>
 

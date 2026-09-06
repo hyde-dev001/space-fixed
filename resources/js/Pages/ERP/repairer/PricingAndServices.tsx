@@ -460,12 +460,7 @@ export default function ERPPricingAndServices() {
       <Head title="Repair Pricing - Solespace" />
       <div className="p-6 space-y-6">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold mb-1">Repair Pricing</h1>
-            <p className="text-gray-600 dark:text-gray-400">
-              Manage repair service pricing and submit for approval.
-            </p>
-          </div>
+          <h1 className="sr-only">Repair Pricing</h1>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

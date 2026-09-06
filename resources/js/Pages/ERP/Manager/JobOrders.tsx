@@ -328,11 +328,7 @@ export default function JobOrders() {
 
             <main className="space-y-6 py-6 md:py-8" aria-labelledby="manager-job-orders-title">
                 <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-                    <div>
-                        <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600 dark:text-blue-400">Operations</p>
-                        <h1 id="manager-job-orders-title" className="mt-2 text-3xl font-bold tracking-tight text-gray-900 dark:text-white">Job Orders</h1>
-                        <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-600 dark:text-gray-400">Monitor the shop-wide order workload. A claimed order remains locked to its handler until an inactive or unavailable handler is formally replaced.</p>
-                    </div>
+                    <h1 id="manager-job-orders-title" className="sr-only">Job Orders</h1>
                     <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
                         <p className="font-semibold text-gray-900 dark:text-white">{payload?.total ?? 0} orders in view</p>
                         <p className="mt-1 text-gray-500 dark:text-gray-400">Last updated: {formatDateTime(orders.data?.last_updated_at)}</p>

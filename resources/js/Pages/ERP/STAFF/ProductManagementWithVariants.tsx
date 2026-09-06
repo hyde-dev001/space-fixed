@@ -1604,12 +1604,7 @@ export default function ProductManagement() {
         <div className="space-y-6">
           {/* Header */}
           <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Product Management</h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-1">
-                Manage your shoe inventory with variant-based stock control
-              </p>
-            </div>
+            <h1 className="sr-only">Product Management</h1>
             <div className="flex items-center gap-3">
               <Link
                 href="/services/product-image-spin-tutorial?from=product-uploader"

@@ -294,19 +294,7 @@ export default function ERPInventoryOverview() {
       <div className="p-6 space-y-6">
         {/* Header */}
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold mb-1">Stocks Overview</h1>
-            <p className="text-gray-600 dark:text-gray-400">
-              {isRepairer
-                ? "Monitor repair-material stock levels and item availability"
-                : isStaff
-                ? "Monitor product stock levels and item availability"
-                : "Monitor stock levels across products and repair materials"}
-            </p>
-          </div>
-          <span className="px-3 py-1 text-xs font-semibold rounded-full bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200 w-fit">
-            {isRepairer ? "Repair Materials" : isStaff ? "Products" : "Products + Repair Materials"}
-          </span>
+          <h1 className="sr-only">Stocks Overview</h1>
           <div className="flex items-center gap-3">
             {lastUpdatedAt && (
               <span className="text-xs text-gray-500 dark:text-gray-400">

@@ -412,14 +412,8 @@ export default function ERPReports() {
 
       <div className="space-y-6 p-4 sm:p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <h1 className="mb-1 text-2xl font-semibold">Reports &amp; Analytics</h1>
-            <p className="text-gray-600 dark:text-gray-400">Review operational reports for your authorized shop.</p>
-          </div>
+          <h1 className="sr-only">Reports &amp; Analytics</h1>
           <div className="flex flex-wrap items-center gap-3">
-            <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 dark:bg-blue-900/40 dark:text-blue-200">
-              {ownerMode ? "Shop Owner View" : "Manager Access"}
-            </span>
             <button
               type="button"
               onClick={fetchReports}

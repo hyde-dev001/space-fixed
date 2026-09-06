@@ -195,10 +195,7 @@ export default function StockMovement() {
 
 			<div className="p-6 space-y-6">
 				<div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-					<div>
-						<h1 className="text-2xl font-semibold mb-1">Stock Movement</h1>
-						<p className="text-gray-600 dark:text-gray-400">Track stock changes across purchase/restock, sales, adjustments, returns, and repair materials usage</p>
-					</div>
+					<h1 className="sr-only">Stock Movement</h1>
 					<div className="flex flex-wrap items-center justify-end gap-3">
 						<button
 							type="button"
@@ -209,7 +206,6 @@ export default function StockMovement() {
 						>
 							Refresh
 						</button>
-						<span className="px-3 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200">Inventory Tracking</span>
 					</div>
 				</div>
 

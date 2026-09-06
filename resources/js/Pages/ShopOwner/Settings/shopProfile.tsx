@@ -1172,15 +1172,7 @@ const ShopProfile: React.FC = () => {
           </div>
 
           <div className="hidden lg:block">
-            {/* Page Header */}
-            <div className="mb-8">
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-                Profile Settings
-              </h1>
-              <p className="text-gray-600 dark:text-gray-400">
-                Manage your shop profile and personal information
-              </p>
-            </div>
+            <h1 className="sr-only">Profile Settings</h1>
 
             {/* Profile Header Card */}
             <div className="bg-white dark:bg-gray-800 dark:bg-opacity-50 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 dark:border-opacity-50 overflow-hidden mb-6">

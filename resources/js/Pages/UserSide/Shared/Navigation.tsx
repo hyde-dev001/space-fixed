@@ -1553,7 +1553,13 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                     aria-label={`${accountDrawerOpen ? 'Collapse' : 'Expand'} Account`}
                     className="flex min-h-12 w-full items-center justify-between text-left text-base font-medium transition-opacity hover:opacity-55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111]"
                   >
-                    <span>Account</span>
+                    <span className="flex items-center gap-3">
+                      <svg className="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <circle cx="12" cy="8" r="3" strokeWidth={2} />
+                        <path strokeLinecap="round" strokeWidth={2} d="M5 20a7 7 0 0 1 14 0" />
+                      </svg>
+                      <span>Account</span>
+                    </span>
                     <svg className={`h-4 w-4 transition-transform duration-300 ease-out motion-reduce:transition-none ${accountDrawerOpen ? 'rotate-45' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeWidth={2} d="M12 5v14M5 12h14" />
                     </svg>
@@ -1573,7 +1579,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                           <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={1.9} d="M16 21v-2a4 4 0 00-4-4H6a2 2 0 00-2 2v2m8-8a4 4 0 100-8 4 4 0 000 8zm6-3v6m3-3h-6" /></svg>
                           <span>Join Our Team</span>
                         </Link>
-                        <button type="button" onClick={() => { setAccountDrawerOpen(false); handleLogout(); }} className="flex min-h-10 w-full items-center gap-3 text-left text-sm font-medium text-red-600 hover:text-red-700 dark:hover:text-red-400">
+                        <button type="button" onClick={() => { setAccountDrawerOpen(false); handleLogout(); }} className="flex min-h-10 w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium text-red-600 transition-colors hover:bg-red-50 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 dark:text-red-400 dark:hover:bg-red-900/20 dark:hover:text-red-300">
                           <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={1.9} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
                           <span>Log out</span>
                         </button>

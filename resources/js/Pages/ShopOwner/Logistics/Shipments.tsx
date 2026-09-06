@@ -10,7 +10,7 @@ export default function Shipments() {
     <AppLayoutShopOwner>
       <Head title="Logistics Shipments" />
       <div className="space-y-4">
-        <h1 className="text-2xl font-bold text-gray-950">Shipments</h1>
+        <h1 className="sr-only">Shipments</h1>
         <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
           <table className="min-w-full divide-y divide-gray-200 text-sm">
             <thead className="bg-gray-50 text-left text-xs font-semibold uppercase text-gray-500">

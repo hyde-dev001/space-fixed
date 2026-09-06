@@ -867,10 +867,7 @@ const Invoice: React.FC = () => {
         <>
           {/* Header */}
           <div className="flex justify-between items-start">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Invoices</h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-2">Your most recent invoices list</p>
-            </div>
+            <h1 className="sr-only">Invoices</h1>
             <div className="flex gap-3">
               {canCreateInvoice && (
                 <button

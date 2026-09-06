@@ -434,12 +434,7 @@ export default function WarrantyQueue() {
 
       <div className="space-y-6 p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <h1 className="mb-1 text-2xl font-semibold text-gray-900 dark:text-white">Warranty Queue</h1>
-            <p className="text-gray-600 dark:text-gray-400">
-              Dedicated review page for warranty claims assigned to repair workflow.
-            </p>
-          </div>
+          <h1 className="sr-only">Warranty Queue</h1>
           <button
             type="button"
             onClick={() => {

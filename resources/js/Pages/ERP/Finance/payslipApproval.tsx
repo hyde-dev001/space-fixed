@@ -1122,10 +1122,7 @@ export default function PayslipApproval({
 			<Head title={headTitle} />
 			<div className="p-6 space-y-6">
 				<div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-					<div>
-						<h1 className="text-2xl font-semibold mb-1 text-gray-900 dark:text-white">Payslip Approvals</h1>
-						<p className="text-gray-600 dark:text-gray-400">Review HR-generated payslips before employee release.</p>
-					</div>
+					<h1 className="sr-only">Payslip Approvals</h1>
 					<div className="flex flex-wrap items-center justify-end gap-3">
 						{pendingCount > 0 && canCheckerApprove && (
 							<button
@@ -1157,12 +1154,6 @@ export default function PayslipApproval({
 								Approve All Ready ({readyForDisbursementCount})
 							</button>
 						)}
-						<span className="px-3 py-1 text-xs font-semibold rounded-full bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200">
-							Finance Review
-						</span>
-						<span className="px-3 py-1 text-xs font-semibold rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200">
-							HR Generated
-						</span>
 					</div>
 				</div>
 

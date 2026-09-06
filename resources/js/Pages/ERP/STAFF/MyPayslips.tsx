@@ -445,18 +445,7 @@ export default function MyPayslips() {
 			<div className="min-h-screen bg-gray-50 dark:bg-gray-950 px-4 py-8">
 				<div className="max-w-3xl mx-auto">
 
-					{/* Page header */}
-					<div className="mb-6">
-						<div className="flex items-center gap-3 mb-1">
-							<div className="p-2 bg-gray-100 dark:bg-blue-900/30 rounded-lg text-gray-900 dark:text-blue-400">
-								<DocumentIcon />
-							</div>
-							<h1 className="text-2xl font-bold text-gray-900 dark:text-white">My Payslips</h1>
-						</div>
-						<p className="text-sm text-gray-500 dark:text-gray-400 ml-11">
-							View and print your salary payslips.
-						</p>
-					</div>
+					<h1 className="sr-only">My Payslips</h1>
 
 					{/* Search */}
 					<form onSubmit={handleSearch} className="flex gap-2 mb-6">

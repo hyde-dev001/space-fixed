@@ -252,13 +252,7 @@ export default function LeaveApprovals() {
 
             <main className="space-y-6 py-6 md:py-8" aria-labelledby="leave-approvals-title">
                 <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-                    <div>
-                        <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600 dark:text-blue-400">People &amp; approvals</p>
-                        <h1 id="leave-approvals-title" className="mt-2 text-3xl font-bold tracking-tight text-gray-900 dark:text-white">Leave Approvals</h1>
-                        <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-600 dark:text-gray-400">
-                            Review shop-scoped leave requests. Manager approval is terminal by default and applies the balance effect once.
-                        </p>
-                    </div>
+                    <h1 id="leave-approvals-title" className="sr-only">Leave Approvals</h1>
                     <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
                         <p className="font-semibold text-gray-900 dark:text-white">{payload?.total ?? 0} request(s)</p>
                         <p className="mt-1 text-gray-500 dark:text-gray-400">Latest request: {formatDateTime(payload?.data[0]?.created_at)}</p>

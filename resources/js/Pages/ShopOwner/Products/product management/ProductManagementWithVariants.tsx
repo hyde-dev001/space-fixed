@@ -1652,14 +1652,9 @@ export default function ProductManagement() {
           {/* Header */}
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+              <h1 className="sr-only">
                 {isCompanyOwner ? 'Product Catalog' : 'Product Management'}
               </h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-1">
-                {isCompanyOwner
-                  ? 'Review shoe products uploaded for your company.'
-                  : 'Manage your shoe inventory with variant-based stock control'}
-              </p>
             </div>
             <div className="flex items-center gap-3">
               <button
