@@ -113,6 +113,9 @@ describe('user-side navigation shell', () => {
     const accountPanelStart = navigationSource.indexOf('id="customer-account-submenu"');
     const utilityStart = navigationSource.indexOf('<div className="border-t border-[#cacacb] px-6 py-6 sm:px-8 dark:border-slate-700">');
     const cartStart = navigationSource.indexOf('>Cart {effectiveCartCount > 0', utilityStart);
+    const accountTriggerStart = navigationSource.indexOf('aria-controls="customer-account-submenu"');
+    const accountTriggerEnd = navigationSource.indexOf('>', accountTriggerStart);
+    const accountTriggerSource = navigationSource.slice(navigationSource.lastIndexOf('<button', accountTriggerStart), accountTriggerEnd);
     const accountPanelSource = navigationSource.slice(accountPanelStart, cartStart);
 
     expect(accountPanelStart).toBeGreaterThan(-1);
@@ -120,6 +123,8 @@ describe('user-side navigation shell', () => {
     expect(cartStart).toBeGreaterThan(-1);
     expect(accountPanelStart).toBeGreaterThan(utilityStart);
     expect(accountPanelStart).toBeLessThan(cartStart);
+    expect(accountTriggerSource).toContain('text-left text-base font-medium');
+    expect(accountTriggerSource).not.toContain('text-lg font-semibold');
     expect(navigationSource).toContain('const [accountDrawerOpen, setAccountDrawerOpen] = useState(false);');
     expect(navigationSource).toContain('aria-controls="customer-account-submenu"');
     expect(navigationSource).toContain('aria-expanded={accountDrawerOpen}');
