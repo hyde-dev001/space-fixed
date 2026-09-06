@@ -1,5 +1,22 @@
 export type LogisticsModule = 'retail' | 'repair';
 
+export type DeliveryType =
+  | 'retail_delivery'
+  | 'retail_return'
+  | 'repair_pickup'
+  | 'repair_return'
+  | 'return_to_shop'
+  | 'unknown'
+  | 'mixed';
+
+export type DeliveryTypePresentation = {
+  delivery_type?: DeliveryType | string | null;
+  delivery_label?: string | null;
+};
+
+export const logisticsDeliveryLabel = (value?: DeliveryTypePresentation | null): string =>
+  value?.delivery_label || 'Unknown Delivery Type';
+
 export type LogisticsSchedule = {
   operating_days: number[];
   blackout_dates: string[];
@@ -106,6 +123,8 @@ export type ProofReviewSummary = {
 
 export type TrackingShipmentLeg = {
   id: number;
+  delivery_type?: DeliveryType | string | null;
+  delivery_label?: string | null;
   delivery_batch_id?: number | null;
   return_for_leg_id?: number | null;
   sequence: number;
@@ -147,6 +166,8 @@ export type TrackingShipmentLeg = {
   shipment?: {
     id: number;
     shipment_number?: number | null;
+    delivery_type?: DeliveryType | string | null;
+    delivery_label?: string | null;
     source_type: string;
     source_id: number;
     source_summary?: LogisticsSourceSummary | null;
@@ -184,6 +205,8 @@ export type TrackingShipmentLeg = {
   incidents?: LogisticsIncident[];
   live_tracking?: {
     leg_id: number;
+    delivery_type?: DeliveryType | string | null;
+    delivery_label?: string | null;
     status: string | null;
     destination: Partial<DeliveryContactSnapshot> & Record<string, unknown>;
     location: {
@@ -222,6 +245,8 @@ export type TrackingShipmentEvent = {
 export type TrackingShipment = {
   id: number;
   shipment_number?: number | null;
+  delivery_type?: DeliveryType | string | null;
+  delivery_label?: string | null;
   purpose: string;
   status: string;
   source_type: string;
@@ -265,6 +290,8 @@ export type PaginatedResponse<T> = {
 export type LogisticsShipment = {
   id: number;
   shipment_number?: number | null;
+  delivery_type?: DeliveryType | string | null;
+  delivery_label?: string | null;
   purpose: string;
   status: string;
   source_type: string;
@@ -360,6 +387,8 @@ export type RiderDeliveryWorkItem = {
   group: 'offer' | 'current' | 'upcoming' | 'history' | 'conflict';
   business_types: Array<Exclude<RiderDeliveryBusiness, 'all'>>;
   business_label: string;
+  delivery_type?: DeliveryType | string | null;
+  delivery_label?: string | null;
   delivery_date?: string | null;
   delivery_window?: 'morning' | 'afternoon' | null;
   started_at?: string | null;
@@ -378,6 +407,8 @@ export type RiderDeliveryIssue = {
   delivery_id: number;
   parent_key: string;
   business_types: Array<Exclude<RiderDeliveryBusiness, 'all'>>;
+  delivery_type?: DeliveryType | string | null;
+  delivery_label?: string | null;
   reason?: string | null;
   proof_id?: number | null;
   replaces_proof_id?: number | null;

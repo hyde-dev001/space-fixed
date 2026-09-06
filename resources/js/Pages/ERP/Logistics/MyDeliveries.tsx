@@ -8,6 +8,7 @@ import type {
   RiderDeliveryWorkItem,
   TrackingShipmentLeg,
 } from '@/types/logistics';
+import { logisticsDeliveryLabel } from '@/types/logistics';
 import { workflowFeedback } from '@/utils/workflowFeedback';
 import { GPS_POSITION_OPTIONS, getCurrentPositionWithTimeout } from '@/utils/geolocation';
 import { Head, router, usePage } from '@inertiajs/react';
@@ -1537,6 +1538,7 @@ function CurrentDeliveryCard({
   const progress = completedProgress(item.deliveries);
   const actionable = nextActionableDelivery(item.deliveries);
   const isReturnToShop = actionable?.leg_type === 'return_to_shop';
+  const deliveryLabel = logisticsDeliveryLabel(actionable ?? item);
 
   return (
     <section aria-labelledby="current-delivery-heading">
@@ -1548,13 +1550,13 @@ function CurrentDeliveryCard({
           <div className="flex flex-col items-start gap-3 xl:flex-row xl:justify-between">
             <div>
               <p className="text-xs font-bold uppercase tracking-wide text-blue-700 dark:text-blue-300">
-                {item.business_label}
+                {deliveryLabel}
               </p>
               <h3 className="mt-1 text-xl font-extrabold text-slate-950 dark:text-white">
-                {isReturnToShop ? `Return to shop #${actionable.id}` : itemTitle(item)}
+                {isReturnToShop ? `${deliveryLabel} #${actionable.id}` : itemTitle(item)}
               </h3>
             </div>
-            <StatusChip status={item.status} label={isReturnToShop ? 'Return to shop' : undefined} />
+            <StatusChip status={item.status} label={isReturnToShop ? deliveryLabel : undefined} />
           </div>
 
           <div>
@@ -1698,7 +1700,7 @@ function UpNextCard({
       <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900 xl:p-4">
         <div className="flex flex-col items-start gap-3 xl:flex-row xl:justify-between">
           <div>
-            <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{item.business_label}</p>
+            <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{logisticsDeliveryLabel(item)}</p>
             <h3 className="mt-1 font-bold text-slate-950 dark:text-white">{itemTitle(item)}</h3>
             <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
               {scheduleText(item)} · {deliveryCount(item)}
@@ -1791,6 +1793,7 @@ function OfferCard({
       <div className="flex flex-col items-start gap-3 xl:flex-row xl:justify-between">
         <div>
           <p className="text-xs font-bold uppercase tracking-wide text-slate-950 dark:text-white">New assignment</p>
+          <p className="text-xs font-bold uppercase tracking-wide text-slate-950 dark:text-white">{logisticsDeliveryLabel(item)}</p>
           <h3 className="mt-1 font-bold text-slate-950 dark:text-white">{itemTitle(item)}</h3>
           <p className="mt-1 text-sm text-slate-950 dark:text-white">
             {scheduleText(item)} · {deliveryCount(item)}
@@ -1975,7 +1978,7 @@ function CompactListItem({
           <div>
             <p className="font-bold text-slate-950 dark:text-white">{itemTitle(item)}</p>
             <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-              {item.business_label} · {scheduleText(item)} · {deliveryCount(item)}
+              {logisticsDeliveryLabel(item)} · {scheduleText(item)} · {deliveryCount(item)}
             </p>
           </div>
           <StatusChip status={item.status} />

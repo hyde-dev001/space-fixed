@@ -20,6 +20,7 @@ use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use App\Models\User;
 use App\Services\Logistics\ArrivalService;
+use App\Services\Logistics\DeliveryTypeResolver;
 use App\Services\Logistics\LogisticsActorPolicy;
 use App\Services\Logistics\ProofService;
 use App\Services\Logistics\RiderProfileSyncService;
@@ -41,6 +42,7 @@ class ErpLogisticsController extends Controller
 {
     public function __construct(
         private ArrivalService $arrivals,
+        private DeliveryTypeResolver $deliveryTypes,
         private LogisticsActorPolicy $logisticsPolicy,
         private ProofService $proofs,
     ) {}
@@ -462,6 +464,7 @@ class ErpLogisticsController extends Controller
             : 'declined';
         $deliveries = $batch->legs->map(fn (ShipmentLeg $leg) => $this->deliveryPayload($leg))->values();
         $businessTypes = $this->businessTypes($batch->legs->pluck('shipment.purpose'));
+        $deliverySummary = $this->deliverySummary($deliveries);
 
         return [
             'item_type' => 'work',
@@ -471,7 +474,9 @@ class ErpLogisticsController extends Controller
             'status' => $status,
             'group' => $group,
             'business_types' => $businessTypes,
-            'business_label' => $this->businessLabel($businessTypes, $batch->legs->first()?->shipment?->purpose),
+            'business_label' => $deliverySummary['delivery_label'],
+            'delivery_type' => $deliverySummary['delivery_type'],
+            'delivery_label' => $deliverySummary['delivery_label'],
             'delivery_date' => $batch->delivery_date?->toDateString(),
             'delivery_window' => $batch->delivery_window,
             'started_at' => $batch->started_at?->toISOString(),
@@ -544,6 +549,7 @@ class ErpLogisticsController extends Controller
         $purpose = $leg->shipment?->purpose;
         $businessTypes = $this->businessTypes([$purpose]);
         $deliveries = collect([$this->deliveryPayload($leg)]);
+        $deliverySummary = $this->deliverySummary($deliveries);
 
         return [
             'item_type' => 'work',
@@ -553,7 +559,9 @@ class ErpLogisticsController extends Controller
             'status' => $status,
             'group' => $group,
             'business_types' => $businessTypes,
-            'business_label' => $this->businessLabel($businessTypes, $purpose),
+            'business_label' => $deliverySummary['delivery_label'],
+            'delivery_type' => $deliverySummary['delivery_type'],
+            'delivery_label' => $deliverySummary['delivery_label'],
             'delivery_date' => $leg->scheduled_delivery_date?->toDateString(),
             'delivery_window' => $leg->delivery_window,
             'started_at' => $leg->out_for_delivery_at?->toISOString()
@@ -602,6 +610,7 @@ class ErpLogisticsController extends Controller
                     if ($proof && $proof->review_status === 'rejected' && $assignment) {
                         $businessTypes = $this->businessTypes([$leg->shipment?->purpose]);
                         $deliveries = collect([$this->deliveryPayload($leg)]);
+                        $deliverySummary = $this->deliverySummary($deliveries);
 
                         return [
                             'item_type' => 'issue',
@@ -611,6 +620,8 @@ class ErpLogisticsController extends Controller
                             'delivery_id' => $leg->id,
                             'parent_key' => $parentKey,
                             'business_types' => $businessTypes,
+                            'delivery_type' => $deliverySummary['delivery_type'],
+                            'delivery_label' => $deliverySummary['delivery_label'],
                             'reason' => $proof->rejection_reason,
                             'proof_id' => $proof->id,
                             'replaces_proof_id' => $proof->replaces_proof_id,
@@ -640,6 +651,7 @@ class ErpLogisticsController extends Controller
 
                 $businessTypes = $this->businessTypes([$leg->shipment?->purpose]);
                 $deliveries = collect([$this->deliveryPayload($leg)]);
+                $deliverySummary = $this->deliverySummary($deliveries);
 
                 return [
                     'item_type' => 'issue',
@@ -649,6 +661,8 @@ class ErpLogisticsController extends Controller
                     'delivery_id' => $leg->id,
                     'parent_key' => $parentKey,
                     'business_types' => $businessTypes,
+                    'delivery_type' => $deliverySummary['delivery_type'],
+                    'delivery_label' => $deliverySummary['delivery_label'],
                     'reason' => $attempt->reason_code,
                     'attempted_at' => $attempt->attempted_at?->toISOString(),
                     'delivery_date' => $leg->scheduled_delivery_date?->toDateString(),
@@ -685,6 +699,9 @@ class ErpLogisticsController extends Controller
     {
         $payload = $leg->toArray();
         unset($payload['events']);
+        $deliveryType = $this->deliveryTypes->resolve($leg->shipment, $leg);
+        $payload['delivery_type'] = $deliveryType['delivery_type'];
+        $payload['delivery_label'] = $deliveryType['delivery_label'];
         $payload['status'] = $leg->status->value;
         $payload['rider_progress_state'] = $leg->rider_progress_state->value;
         $payload['failed_attempt_count'] = $leg->attempts->count();
@@ -826,18 +843,23 @@ class ErpLogisticsController extends Controller
             ->all();
     }
 
-    private function businessLabel(array $businessTypes, ?string $purpose): string
+    /**
+     * @return array{delivery_type: string, delivery_label: string}
+     */
+    private function deliverySummary(Collection $deliveries): array
     {
-        if (count($businessTypes) > 1) {
-            return 'Mixed';
+        $types = $deliveries->map(fn (array $delivery) => [
+            'delivery_type' => $delivery['delivery_type'] ?? 'unknown',
+            'delivery_label' => $delivery['delivery_label'] ?? 'Unknown Delivery Type',
+        ])->unique(fn (array $delivery): string => $delivery['delivery_type'].'|'.$delivery['delivery_label']);
+
+        if ($types->count() === 1) {
+            return $types->first();
         }
 
-        return match ($purpose) {
-            'repair_pickup' => 'Repair pickup',
-            'repair_return' => 'Repair return',
-            'refund_return' => 'Retail return',
-            default => 'Retail delivery',
-        };
+        return $types->isEmpty()
+            ? ['delivery_type' => 'unknown', 'delivery_label' => 'Unknown Delivery Type']
+            : ['delivery_type' => 'mixed', 'delivery_label' => 'Mixed'];
     }
 
     private function workSearchText(string $prefix, Collection $deliveries): string
@@ -1032,6 +1054,10 @@ class ErpLogisticsController extends Controller
                 ->merge($unscheduled->pluck('shipment')),
             $shopOwnerId,
         );
+        $batches->flatMap->legs
+            ->merge($pool)
+            ->merge($unscheduled)
+            ->each(fn (ShipmentLeg $leg) => $this->attachDeliveryTypeToLeg($leg));
 
         return Inertia::render('ERP/Logistics/Batches', [
             'batches' => $batches,
@@ -1222,6 +1248,7 @@ class ErpLogisticsController extends Controller
         collect($shipments)
             ->filter(fn ($shipment) => $shipment instanceof Shipment)
             ->each(function (Shipment $shipment): void {
+                $this->attachDeliveryTypeToShipment($shipment);
                 $shipment->setAttribute('customer_disputes', $shipment->relationLoaded('deliveryDisputes')
                     ? $shipment->deliveryDisputes->map(fn (DeliveryDispute $dispute) => [
                         'id' => (int) $dispute->id,
@@ -1257,6 +1284,24 @@ class ErpLogisticsController extends Controller
             });
         $this->attachRepairSourceSummaries($shipments, $shopOwnerId);
         $this->attachRetailOrderSummaries($shipments, $shopOwnerId);
+    }
+
+    private function attachDeliveryTypeToShipment(Shipment $shipment): void
+    {
+        $resolved = $this->deliveryTypes->resolve($shipment);
+        $shipment->setAttribute('delivery_type', $resolved['delivery_type']);
+        $shipment->setAttribute('delivery_label', $resolved['delivery_label']);
+
+        if ($shipment->relationLoaded('legs')) {
+            $shipment->legs->each(fn (ShipmentLeg $leg) => $this->attachDeliveryTypeToLeg($leg));
+        }
+    }
+
+    private function attachDeliveryTypeToLeg(ShipmentLeg $leg): void
+    {
+        $resolved = $this->deliveryTypes->resolve($leg->shipment, $leg);
+        $leg->setAttribute('delivery_type', $resolved['delivery_type']);
+        $leg->setAttribute('delivery_label', $resolved['delivery_label']);
     }
 
     private function attachRetailOrderSummaries(iterable $shipments, int $shopOwnerId): void

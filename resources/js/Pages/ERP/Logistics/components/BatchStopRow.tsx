@@ -2,7 +2,7 @@ import React, { useRef } from 'react';
 import { usePage } from '@inertiajs/react';
 import { ArrowDown, ArrowUp, Flame, GripVertical, MapPin, Phone, Trash2 } from 'lucide-react';
 import { useDrag, useDrop } from 'react-dnd';
-import { logisticsModuleForSourceType, logisticsModuleLabel, logisticsSourceLabel, type TrackingShipmentLeg } from '@/types/logistics';
+import { logisticsDeliveryLabel, logisticsModuleForSourceType, logisticsModuleLabel, logisticsSourceLabel, type TrackingShipmentLeg } from '@/types/logistics';
 import ArrivalSummary from './ArrivalSummary';
 import RetailOrderSummary from './RetailOrderSummary';
 
@@ -48,6 +48,7 @@ export default function BatchStopRow({ leg, index, total, editable = false, busy
       <div data-testid="batch-stop-details" className="min-w-0 contents xl:block xl:flex-1">
         <div className="col-start-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 xl:gap-2">
           <p className="min-w-0 break-words font-semibold text-gray-950 dark:text-white">{destination?.name || source}</p>
+          <span className="rounded-full bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700 dark:bg-blue-950/30 dark:text-blue-300">{logisticsDeliveryLabel(leg)}</span>
           <span className="rounded-full bg-gray-100 px-2 py-1 text-xs font-medium text-gray-600 dark:bg-gray-700 dark:text-gray-200">{source}</span>
           <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">{logisticsModuleLabel(logisticsModuleForSourceType(leg.shipment?.source_type))}</span>
           {leg.urgent_at && <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-1 text-xs font-bold text-red-700"><Flame size={12} />Urgent</span>}

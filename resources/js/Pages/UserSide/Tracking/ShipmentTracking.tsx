@@ -2,14 +2,12 @@ import React from 'react';
 import { Head, usePage } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 import ShipmentTrackingPanel from '@/components/logistics/ShipmentTrackingPanel';
-import type { TrackingShipment } from '@/types/logistics';
+import { logisticsDeliveryLabel, type TrackingShipment } from '@/types/logistics';
 
 export default function ShipmentTracking() {
   const { shipment } = usePage<{ shipment: TrackingShipment }>().props;
 
-  const isReturn = shipment.purpose === 'refund_return';
-  const isRepair = shipment.source_type === 'repair_request';
-  const itemLabel = isReturn ? 'Return' : isRepair ? 'Repair Delivery' : 'Shipment';
+  const itemLabel = logisticsDeliveryLabel(shipment);
 
   return (
     <div className="min-h-screen bg-gray-50">

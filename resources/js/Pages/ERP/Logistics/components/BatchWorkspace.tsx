@@ -2,7 +2,7 @@ import React from 'react';
 import { AlertTriangle, PackageCheck } from 'lucide-react';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
-import { logisticsSourceLabel, type BatchSuggestion, type DeliveryBatch, type LogisticsRider, type TrackingShipmentLeg } from '@/types/logistics';
+import { logisticsDeliveryLabel, logisticsSourceLabel, type BatchSuggestion, type DeliveryBatch, type LogisticsRider, type TrackingShipmentLeg } from '@/types/logistics';
 import BatchStopRow from './BatchStopRow';
 
 const formatDate = (value: string) => new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium', timeZone: 'UTC' }).format(new Date(`${value.slice(0, 10)}T00:00:00Z`));
@@ -87,6 +87,7 @@ function SuggestionPreview({
                           {index + 1}
                         </span>
                         <span className="min-w-0">
+                          <span className="block text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300">{leg ? logisticsDeliveryLabel(leg) : 'Unknown Delivery Type'}</span>
                           <span className="block font-semibold">{destination?.name || (leg ? logisticsSourceLabel(leg.shipment) : 'Stop #' + legId)}</span>
                           <span className="block truncate text-xs text-gray-500 dark:text-gray-400">{destination?.address || 'Address unavailable'}</span>
                         </span>

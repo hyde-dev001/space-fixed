@@ -14,6 +14,7 @@ import { logisticsApi } from '@/services/logisticsApi';
 import { erpUrl } from '@/utils/erpCapabilities';
 import type { ErpCapabilities } from '@/types/erp';
 import {
+  logisticsDeliveryLabel,
   logisticsModuleForSourceType,
   logisticsModuleLabel,
   logisticsSourceLabel,
@@ -75,7 +76,7 @@ const noteIssueReasons = new Set([
 const purposeOptions: Array<[string, string, 'all' | LogisticsModule]> = [
   ['all', 'All Types', 'all'],
   ['retail_delivery', 'Retail Delivery', 'retail'],
-  ['refund_return', 'Refund Return', 'retail'],
+  ['refund_return', 'Retail Return', 'retail'],
   ['repair_pickup', 'Repair Pickup', 'repair'],
   ['repair_return', 'Repair Return', 'repair'],
 ];
@@ -637,7 +638,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                   <div className="flex flex-wrap items-center gap-2">
                     <strong className="text-gray-950 dark:text-white">Shipment #{shipmentNumber}</strong>
                     <span className={`rounded-full px-2 py-1 text-xs font-semibold ${statusClass(shipment.status)}`}>{label(shipment.status)}</span>
-                    <span className="rounded-full bg-gray-100 px-2 py-1 text-xs font-semibold text-gray-700 dark:bg-gray-700 dark:text-gray-200">{label(shipment.purpose)}</span>
+                    <span className="rounded-full bg-gray-100 px-2 py-1 text-xs font-semibold text-gray-700 dark:bg-gray-700 dark:text-gray-200">{logisticsDeliveryLabel(shipment)}</span>
                     <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">
                       {logisticsModuleLabel(logisticsModuleForSourceType(shipment.source_type))}
                     </span>
@@ -710,6 +711,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                     <div className="min-w-0">
                       <p className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500 dark:text-gray-400">Shipment #{shipmentNumber}</p>
                       <div className="mt-1 flex flex-wrap items-center gap-2">
+                        <span className="rounded-full bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700 dark:bg-blue-950/30 dark:text-blue-300">{logisticsDeliveryLabel(shipment)}</span>
                         <h2 id={`shipment-${shipment.id}-details-title`} aria-label={`Shipment ${shipmentNumber} delivery details`} className="text-xl font-bold tracking-tight text-gray-950 dark:text-white">Delivery details</h2>
                         <span className={`rounded-full px-2 py-1 text-xs font-semibold ${statusClass(shipment.status)}`}>{label(shipment.status)}</span>
                       </div>
@@ -828,7 +830,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                               <div key={leg.id} className="grid min-w-0 gap-5 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:shadow-none sm:p-5 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] lg:rounded-lg lg:p-4 lg:shadow-none">
                                 <div>
                                   <div className="flex flex-wrap items-start justify-between gap-2">
-                                    <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Delivery details · {label(leg.leg_type)} leg</h3>
+                                    <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Delivery details · {logisticsDeliveryLabel(leg)} · {label(leg.leg_type)} leg</h3>
                                     <span className="inline-flex rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-600 dark:bg-gray-700 dark:text-gray-200 lg:rounded-none lg:bg-transparent lg:px-0 lg:py-0 lg:font-normal lg:text-gray-500">{label(leg.status)}</span>
                                   </div>
                                   <div className="mt-4 grid gap-2 text-sm text-gray-700 dark:text-gray-200 sm:grid-cols-2 lg:mt-2 lg:block lg:space-y-1">

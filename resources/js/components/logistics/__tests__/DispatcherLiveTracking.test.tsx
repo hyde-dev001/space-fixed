@@ -33,6 +33,8 @@ it('loads scoped rider locations and shows stale status', async () => {
         leg_id: 42,
         shipment_id: 7,
         shipment_reference: 'Shipment #7',
+        delivery_type: 'repair_pickup',
+        delivery_label: 'Repair Pickup',
         rider: { id: 3, name: 'Rider Three' },
         status: 'in_transit',
         destination: { name: 'Customer Three', address: 'Manila' },
@@ -54,6 +56,7 @@ it('loads scoped rider locations and shows stale status', async () => {
 
   await waitFor(() => expect(mocks.liveLocations).toHaveBeenCalledTimes(1));
   expect(await screen.findByText('Rider Three')).toBeInTheDocument();
+  expect(screen.getByText('Repair Pickup')).toBeInTheDocument();
   expect(screen.getByText('Stale location')).toBeInTheDocument();
   expect(screen.getByTestId('live-tracking-map')).toHaveTextContent('1 markers');
 });

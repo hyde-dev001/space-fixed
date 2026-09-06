@@ -7,7 +7,7 @@ import Shipments from '../Shipments';
 const mocks = vi.hoisted(() => ({ post: vi.fn(() => Promise.resolve()), get: vi.fn(), reload: vi.fn(), props: {} as any }));
 
 const defaultProps = () => ({
-  shipments: { data: [{ id: 1, purpose: 'retail_delivery', status: 'active', source_type: 'order', source_id: 10, order_summary: {
+  shipments: { data: [{ id: 1, purpose: 'retail_delivery', delivery_type: 'retail_delivery', delivery_label: 'Retail Delivery', status: 'active', source_type: 'order', source_id: 10, order_summary: {
     available: true,
     order_id: 10,
     order_number: 'ORD-LOG-1001',
@@ -19,7 +19,7 @@ const defaultProps = () => ({
       { id: 102, brand: null, model: 'Classic Runner', image: null, color: 'White', size: '8', quantity: 3 },
     ],
   }, legs: [{
-    id: 2, leg_type: 'outbound', status: 'in_transit', assignments: [{ id: 3, status: 'accepted' }], proofs: [], attempts: [],
+    id: 2, leg_type: 'outbound', delivery_type: 'retail_delivery', delivery_label: 'Retail Delivery', status: 'in_transit', assignments: [{ id: 3, status: 'accepted' }], proofs: [], attempts: [],
     destination_snapshot: { name: 'Miguel Dela Rosa', address: 'Dasmariñas, Cavite', phone: '09053338826' },
   }] }], links: [], from: 1, to: 1, total: 1, current_page: 1, last_page: 1 },
   filters: { status: 'all', purpose: 'all', window: 'all', module: 'all' }, assignableRiders: [],
@@ -63,6 +63,7 @@ it('renders responsive shipment cards without a wide table', () => {
   expect(screen.getByRole('article')).toHaveClass('min-w-0');
   expect(screen.getByText('Batch panel')).toBeInTheDocument();
   expect(screen.getByText('Miguel Dela Rosa')).toBeInTheDocument();
+  expect(screen.getByText('Retail Delivery')).toBeInTheDocument();
   expect(screen.queryByRole('table')).not.toBeInTheDocument();
   expect(screen.getByText('Dasmariñas, Cavite')).toBeInTheDocument();
 });

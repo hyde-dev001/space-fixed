@@ -6,12 +6,16 @@ import ShipmentTrackingModal from '../ShipmentTrackingModal';
 const shipment = {
   id: 12,
   purpose: 'retail_delivery',
+  delivery_type: 'retail_delivery',
+  delivery_label: 'Retail Delivery',
   status: 'active',
   source_type: 'order',
   legs: [{
     id: 22,
     sequence: 1,
     leg_type: 'outbound',
+    delivery_type: 'retail_delivery',
+    delivery_label: 'Retail Delivery',
     status: 'in_transit',
     origin_snapshot: { name: 'Urban Kicks Store', address: 'Cavite' },
     destination_snapshot: { name: 'Mia Santos', address: 'Cavite' },
@@ -45,7 +49,7 @@ describe('ShipmentTrackingModal', () => {
     render(<ShipmentTrackingModal shipmentId={12} isOpen onClose={vi.fn()} />);
 
     expect(screen.getByText('Loading shipment tracking...')).toBeInTheDocument();
-    expect(await screen.findByText('Shipment Movement')).toBeInTheDocument();
+    expect(await screen.findByText('Retail Delivery Movement')).toBeInTheDocument();
     expect(screen.getByRole('dialog', { name: 'Shipment tracking' })).toHaveClass('userside-tracking-modal');
     expect(screen.getByText('Updates').closest('section')).toHaveClass('userside-tracking-section');
     expect(screen.getByText('SHP-12')).toBeInTheDocument();
@@ -59,7 +63,7 @@ describe('ShipmentTrackingModal', () => {
     const onClose = vi.fn();
     render(<ShipmentTrackingModal shipmentId={12} isOpen onClose={onClose} />);
 
-    await screen.findByText('Shipment Movement');
+    await screen.findByText('Retail Delivery Movement');
     fireEvent.click(screen.getByRole('button', { name: 'Close shipment tracking' }));
     fireEvent.keyDown(document, { key: 'Escape' });
 
