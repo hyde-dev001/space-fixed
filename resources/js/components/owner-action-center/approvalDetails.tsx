@@ -93,7 +93,7 @@ export const formatStatus = (value: unknown): string => {
 export const formatWorkflowVersion = (value: unknown): string => {
   const version = typeof value === "string" ? value.trim().toLowerCase() : "";
 
-  if (version === "v4_multi_level") return "V4 Multi-level Approval";
+  if (version === "v4_multi_level") return "Multi-level Approval";
   if (version === "v4") return "V4 Approval";
 
   return formatStatus(value ?? "standard_approval");

@@ -148,7 +148,7 @@ describe("owner approval renderer parity", () => {
     expect(screen.getByText('Jane Staff')).toBeInTheDocument();
     expect(screen.getByText('Product Price Change')).toBeInTheDocument();
     expect(screen.getByText('Shop Owner')).toBeInTheDocument();
-    expect(screen.getByText('V4 Multi-level Approval')).toBeInTheDocument();
+    expect(screen.getByText('Multi-level Approval')).toBeInTheDocument();
     expect(screen.queryByText('83')).not.toBeInTheDocument();
     expect(screen.queryByText('shop_owner')).not.toBeInTheDocument();
     expect(screen.queryByText('v4_multi_level')).not.toBeInTheDocument();
