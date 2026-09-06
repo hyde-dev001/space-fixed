@@ -298,6 +298,95 @@ class RepairPosPaymentFlowTest extends TestCase
     }
 
     #[Test]
+    public function failed_manual_checkout_rolls_back_repair_payment_receipt_and_notifications(): void
+    {
+        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        /** @var \App\Models\User $cashier */
+        $cashier = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+
+        $response = $this->actingAs($cashier, 'user')->postJson('/api/repair-pos/checkout', [
+            'repair_request_id' => null,
+            'due_type' => 'full',
+            'customer_type' => 'walk_in',
+            'walk_in_name' => 'Failed Walk-in Customer',
+            'walk_in_phone' => '09171234567',
+            'idempotency_key' => 'manual-failed-checkout-001',
+            'manual_repair_subtotal' => 499,
+            'manual_service_summary' => 'Failed package checkout',
+            'payment_lines' => [
+                ['tender_type' => 'cash', 'amount' => 498],
+            ],
+        ]);
+
+        $response->assertStatus(422)->assertJsonValidationErrors(['payment_lines']);
+        $this->assertDatabaseCount('repair_requests', 0);
+        $this->assertDatabaseCount('pos_transactions', 0);
+        $this->assertDatabaseCount('pos_payment_lines', 0);
+        $this->assertDatabaseCount('pos_receipts', 0);
+        $this->assertDatabaseCount('notifications', 0);
+    }
+
+    #[Test]
+    public function cash_checkout_records_tendered_amount_and_change_but_applies_only_the_due_amount(): void
+    {
+        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        /** @var \App\Models\User $cashier */
+        $cashier = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+
+        $response = $this->actingAs($cashier, 'user')->postJson('/api/repair-pos/checkout', [
+            'repair_request_id' => null,
+            'due_type' => 'full',
+            'customer_type' => 'walk_in',
+            'walk_in_name' => 'Cash Change Customer',
+            'walk_in_phone' => '09171234567',
+            'idempotency_key' => 'manual-cash-change-001',
+            'manual_repair_subtotal' => 499,
+            'manual_service_summary' => 'Cash change checkout',
+            'cash_received' => 500,
+            'payment_lines' => [
+                ['tender_type' => 'cash', 'amount' => 499],
+            ],
+        ]);
+
+        $response->assertOk()->assertJsonPath('success', true);
+        $transaction = \App\Models\PosTransaction::query()->findOrFail((int) $response->json('transaction_id'));
+        $this->assertSame('499.00', number_format((float) $transaction->paid_amount, 2, '.', ''));
+        $this->assertSame('500.00', number_format((float) data_get($transaction->metadata, 'cash_received'), 2, '.', ''));
+        $this->assertSame('1.00', number_format((float) data_get($transaction->metadata, 'change'), 2, '.', ''));
+        $this->assertSame('500.00', number_format((float) data_get($transaction->receipt?->print_payload, 'totals.cash_received'), 2, '.', ''));
+        $this->assertSame('1.00', number_format((float) data_get($transaction->receipt?->print_payload, 'totals.change'), 2, '.', ''));
+    }
+
+    #[Test]
+    public function repeated_manual_checkout_with_the_same_idempotency_key_reuses_one_repair_and_transaction(): void
+    {
+        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        /** @var \App\Models\User $cashier */
+        $cashier = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $payload = [
+            'repair_request_id' => null,
+            'due_type' => 'full',
+            'customer_type' => 'walk_in',
+            'walk_in_name' => 'Repeated Walk-in Customer',
+            'walk_in_phone' => '09171234567',
+            'idempotency_key' => 'manual-repeat-checkout-001',
+            'manual_repair_subtotal' => 499,
+            'manual_service_summary' => 'Repeated package checkout',
+            'payment_lines' => [
+                ['tender_type' => 'cash', 'amount' => 499],
+            ],
+        ];
+
+        $first = $this->actingAs($cashier, 'user')->postJson('/api/repair-pos/checkout', $payload);
+        $second = $this->actingAs($cashier, 'user')->postJson('/api/repair-pos/checkout', $payload);
+
+        $first->assertOk();
+        $second->assertOk()->assertJsonPath('meta.idempotency_replay', true);
+        $this->assertDatabaseCount('repair_requests', 1);
+        $this->assertDatabaseCount('pos_transactions', 1);
+    }
+
+    #[Test]
     public function manual_pos_package_add_ons_persist_after_ready_for_pickup_transition(): void
     {
         $shopOwner = \App\Models\ShopOwner::factory()->approved()->create([

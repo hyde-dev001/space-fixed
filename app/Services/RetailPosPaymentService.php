@@ -16,6 +16,10 @@ class RetailPosPaymentService
 {
     private const VAT_RATE_PERCENT = 12.0;
 
+    public function __construct(private InventoryCheckoutService $inventoryCheckoutService)
+    {
+    }
+
     public function checkout(int $shopOwnerId, array $payload, int $actorId): PosTransaction
     {
         $idempotencyKey = trim((string) ($payload['idempotency_key'] ?? ''));
@@ -66,17 +70,12 @@ class RetailPosPaymentService
                     ]);
                 }
 
-                if ((int) ($product->stock_quantity ?? 0) < $qty) {
-                    throw ValidationException::withMessages([
-                        "items.{$index}.qty" => ['Insufficient stock for selected item.'],
-                    ]);
-                }
-
                 $requestedSize = isset($line['size']) ? trim((string) $line['size']) : '';
                 $requestedColor = isset($line['color']) ? trim((string) $line['color']) : '';
+                $linkedInventoryAvailable = $this->inventoryCheckoutService->availableForCheckout($product, $requestedSize ?: null, $requestedColor ?: null);
                 $resolvedVariant = null;
 
-                if ($requestedSize !== '' && $requestedColor !== '') {
+                if ($linkedInventoryAvailable === null && $requestedSize !== '' && $requestedColor !== '') {
                     $normalizedRequestedSize = $this->normalizeVariantToken($requestedSize);
                     $normalizedRequestedColor = $this->normalizeVariantToken($requestedColor);
 
@@ -103,6 +102,14 @@ class RetailPosPaymentService
                     }
                 }
 
+                if ($linkedInventoryAvailable !== null && $linkedInventoryAvailable < $qty) {
+                    throw ValidationException::withMessages(['items.' . $index . '.qty' => ['Insufficient stock for selected item.']]);
+                }
+                if ($linkedInventoryAvailable === null && (int) ($product->stock_quantity ?? 0) < $qty) {
+                    throw ValidationException::withMessages([
+                        "items.{$index}.qty" => ['Insufficient stock for selected item.'],
+                    ]);
+                }
                 $lineSubtotal = round($unitPrice * $qty, 2);
                 $inclusiveSubtotal += $lineSubtotal;
 
@@ -115,6 +122,7 @@ class RetailPosPaymentService
                     'color' => $resolvedVariant?->color ?? ($requestedColor !== '' ? $requestedColor : null),
                     'image' => $line['image'] ?? null,
                     'variant' => $resolvedVariant,
+                    'linked_inventory' => $linkedInventoryAvailable !== null,
                 ];
             }
 
@@ -171,11 +179,20 @@ class RetailPosPaymentService
                     'product_image' => $item['image'] ?? $variant?->image ?? $product->main_image,
                 ]);
 
-                $product->decrement('stock_quantity', $item['qty']);
                 $product->increment('sales_count', $item['qty']);
 
-                if ($variant instanceof ProductVariant) {
-                    $variant->decrement('quantity', $item['qty']);
+                if ($item['linked_inventory']) {
+                    $deducted = $this->inventoryCheckoutService->deduct($product, $item, $variant, $actorId, 'order', (int) $order->id);
+                    if (! $deducted) {
+                        throw ValidationException::withMessages([
+                            'items' => ['Linked inventory could not be updated.'],
+                        ]);
+                    }
+                } else {
+                    $product->decrement('stock_quantity', $item['qty']);
+                    if ($variant instanceof ProductVariant) {
+                        $variant->decrement('quantity', $item['qty']);
+                    }
                 }
             }
 

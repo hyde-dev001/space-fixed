@@ -18,6 +18,7 @@ use App\Services\RepairPosRefundService;
 use App\Services\Manager\ManagerRepairService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
@@ -39,6 +40,7 @@ class RepairPosController extends Controller
             'walk_in_name' => ['required_if:customer_type,walk_in', 'nullable', 'string', 'max:255'],
             'walk_in_phone' => ['required_if:customer_type,walk_in', 'nullable', 'string', 'max:30'],
             'walk_in_email' => ['nullable', 'email', 'max:255'],
+            'cash_received' => ['nullable', 'numeric', 'min:0'],
             'manual_repair_subtotal' => ['nullable', 'numeric', 'min:0.01'],
             'manual_service_summary' => ['nullable', 'string', 'max:2000'],
             'manual_payment_policy' => ['nullable', 'string', 'in:deposit_50,full_upfront'],
@@ -99,12 +101,34 @@ class RepairPosController extends Controller
                 ], 422);
             }
 
-            $repair = $this->createManualRepairRequestFromPos($validated, $actor, $actorShopOwnerId);
         }
 
         $auditActorId = $this->resolveActorAuditUserId();
 
-        $transaction = $service->checkout($repair, $validated, $auditActorId);
+        $transaction = $repairRequestId > 0
+            ? $service->checkout($repair, $validated, $auditActorId)
+            : DB::transaction(function () use ($actor, $actorShopOwnerId, $auditActorId, $service, $validated) {
+                // Serialize manual checkouts per shop so the idempotency key can be
+                // checked before a repair reference exists.
+                ShopOwner::query()->lockForUpdate()->findOrFail($actorShopOwnerId);
+
+                $replay = PosTransaction::query()
+                    ->where('shop_owner_id', $actorShopOwnerId)
+                    ->where('module_type', 'repair')
+                    ->where('due_type', $validated['due_type'])
+                    ->where('idempotency_key', $validated['idempotency_key'])
+                    ->first();
+
+                if ($replay) {
+                    $replay->setAttribute('idempotency_replay', true);
+
+                    return $replay;
+                }
+
+                $manualRepair = $this->createManualRepairRequestFromPos($validated, $actor, $actorShopOwnerId);
+
+                return $service->checkout($manualRepair, $validated, $auditActorId);
+            });
 
         return response()->json([
             'success' => true,

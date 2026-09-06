@@ -111,6 +111,7 @@ describe("Cashier POS repair checkout", () => {
     expect(payload.manual_repair_subtotal).toBe(1000);
     expect(payload.manual_payment_policy).toBe("full_upfront");
     expect(payload.due_type).toBe("full");
+    expect(payload.cash_received).toBe(1000);
     expect(Array.isArray(payload.payment_lines)).toBe(true);
   });
   it('defaults standalone repair checkout to full payment', async () => {

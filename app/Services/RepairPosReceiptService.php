@@ -53,6 +53,10 @@ class RepairPosReceiptService
                 'discount' => (float) $transaction->discount_amount,
                 'total' => (float) $transaction->total_amount,
                 'paid' => (float) $transaction->paid_amount,
+                'cash_received' => data_get($transaction->metadata, 'cash_received') !== null
+                    ? (float) data_get($transaction->metadata, 'cash_received')
+                    : null,
+                'change' => (float) data_get($transaction->metadata, 'change', 0),
             ],
             'payment_lines' => $transaction->paymentLines->map(fn ($line) => [
                 'tender_type' => $line->tender_type,

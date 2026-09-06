@@ -565,18 +565,6 @@ class RepairRequestController extends Controller
                 }
             }
 
-            // Notify all staff with repair order permissions
-            if ($request->shop_owner_id) {
-                $notificationService->notifyAllStaffNewRepair($request->shop_owner_id, [
-                    'request_id' => $requestId,
-                    'order_number' => $requestId,
-                    'customer_name' => $request->customer_name,
-                    'service_type' => $request->service_type,
-                    'total' => $requestTotal,
-                    'service_count' => count($serviceIds),
-                ]);
-            }
-
             // AUTO-ASSIGN TO REPAIRER (Phase 2)
             $this->autoAssignRepairer($repairRequest);
 
@@ -2954,26 +2942,24 @@ class RepairRequestController extends Controller
                 ->withCount(['assignedRepairs as active_repairs_count' => function ($query) use ($activeStatuses) {
                     $query->whereIn('status', $activeStatuses);
                 }]);
+            $findAvailableRepairer = static fn ($query) => $query
+                ->orderBy('active_repairs_count', 'asc')
+                ->orderBy('id', 'asc')
+                ->get()
+                ->first(fn (User $candidate): bool => (int) $candidate->active_repairs_count < $shopWorkloadLimit);
 
             // STRATEGY 1: Least-busy repairer who is FREE on the preferred date (under capacity)
             $repairer = null;
             if ($preferredDate && $blockedRepairerIds->isNotEmpty()) {
                 // Some repairers have blocked the preferred date — exclude them
-                $repairer = $baseQuery()
-                    ->whereNotIn('id', $blockedRepairerIds)
-                    ->having('active_repairs_count', '<', $shopWorkloadLimit)
-                    ->orderBy('active_repairs_count', 'asc')
-                    ->orderBy('id', 'asc')
-                    ->first();
+                $repairer = $findAvailableRepairer(
+                    $baseQuery()->whereNotIn('id', $blockedRepairerIds)
+                );
             }
 
             // STRATEGY 2: Normal least-busy pick under capacity (preferred date either not set, or no one blocked it)
             if (! $repairer) {
-                $repairer = $baseQuery()
-                    ->having('active_repairs_count', '<', $shopWorkloadLimit)
-                    ->orderBy('active_repairs_count', 'asc')  // Assign to least busy first
-                    ->orderBy('id', 'asc')  // Tie-breaker: earliest hired repairer
-                    ->first();
+                $repairer = $findAvailableRepairer($baseQuery());
             }
 
             if ($repairer) {

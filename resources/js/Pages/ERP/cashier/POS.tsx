@@ -2649,6 +2649,7 @@ const PointOfSalePage = () => {
 					manual_payment_policy: hasRepairReference ? null : shopRepairPaymentPolicy,
 					manual_repair_package_id: hasRepairReference ? null : manualRepairPackageId,
 					manual_service_ids: hasRepairReference ? [] : manualServiceIds,
+					cash_received: paymentMethod === 'cash' ? Number(tenderedAmount.toFixed(2)) : null,
 					payment_lines: [
 						{
 							tender_type: mapTenderType(paymentMethod),

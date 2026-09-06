@@ -52,6 +52,16 @@ type ProductRow = {
 	discount: number;
 };
 
+// derived due date rules
+const deriveDueDate = (date: string, condition: string): string => {
+	let days = 0;
+	if (condition === 'Net 7') days = 7;
+	if (condition === 'Net 15') days = 15;
+	if (condition === 'Net 30') days = 30;
+	const value = new Date(date + 'T00:00:00Z');
+	value.setUTCDate(value.getUTCDate() + days);
+	return value.toISOString().slice(0, 10);
+};
 const paymentConditions = [
 	"Net 7",
 	"Net 15",
@@ -98,6 +108,10 @@ export default function FinanceCreateInvoice() {
 			}
 		}
 	}, [taxRates, selectedTaxId]);
+
+	useEffect(() => {
+		setDueDate(deriveDueDate(issueDate, paymentCondition));
+	}, [issueDate, paymentCondition]);
 
 	const totals = useMemo(() => {
 		const subtotal = rows.reduce((sum, row) => {
@@ -308,6 +322,7 @@ export default function FinanceCreateInvoice() {
 				customer_email: customerEmail || null,
 				date: issueDate,
 				due_date: dueDate || null,
+				payment_condition: paymentCondition,
 				notes: additionalInfo || null,
 				items: items,
 			};
@@ -458,6 +473,7 @@ export default function FinanceCreateInvoice() {
 								<input
 									type="date"
 									value={dueDate}
+									readOnly
 									onChange={(e) => {
 										setDueDate(e.target.value);
 										if (fieldErrors.dueDate) setFieldErrors((prev) => ({ ...prev, dueDate: false }));

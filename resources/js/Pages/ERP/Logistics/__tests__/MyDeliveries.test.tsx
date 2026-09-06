@@ -200,6 +200,19 @@ describe('MyDeliveries task-first hierarchy', () => {
     expect(screen.getByText('Single delivery #9')).toBeVisible();
   });
 
+  it('uses the shop-scoped shipment number for standalone delivery labels', () => {
+    const delivery = leg(9, null, 'assigned');
+    mocks.props.deliveryData.up_next = workItem('single', 'assigned', [{
+      ...delivery,
+      shipment: { ...delivery.shipment, shipment_number: 42 },
+    }], { group: 'upcoming' });
+
+    render(<MyDeliveries />);
+
+    expect(screen.getByText('Single delivery #42')).toBeVisible();
+    expect(screen.queryByText('Single delivery #9')).not.toBeInTheDocument();
+  });
+
   it('keeps Current delivery before new assignment offers', () => {
     mocks.props.deliveryData.current = workItem('single', 'in_transit', [
       leg(9, null, 'in_transit'),
