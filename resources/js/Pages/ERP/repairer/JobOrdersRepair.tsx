@@ -2655,8 +2655,8 @@ export default function JobOrdersRepair() {
                   onClick={() => setSelectedTab("all")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "all"
-                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                      ? "bg-[#111111] text-white dark:bg-[#111111] dark:text-white"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
                   All Services ({stats.total})
@@ -2665,8 +2665,8 @@ export default function JobOrdersRepair() {
                   onClick={() => setSelectedTab("under-review")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "under-review"
-                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                      ? "bg-[#111111] text-white dark:bg-[#111111] dark:text-white"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
                   New Request ({stats.underReview})
@@ -2675,8 +2675,8 @@ export default function JobOrdersRepair() {
                   onClick={() => setSelectedTab("pending")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "pending"
-                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                      ? "bg-[#111111] text-white dark:bg-[#111111] dark:text-white"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
                   Pending ({stats.pending})
@@ -2685,8 +2685,8 @@ export default function JobOrdersRepair() {
                   onClick={() => setSelectedTab("received")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "received"
-                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                      ? "bg-[#111111] text-white dark:bg-[#111111] dark:text-white"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
                   Received ({stats.received})
@@ -2695,8 +2695,8 @@ export default function JobOrdersRepair() {
                   onClick={() => setSelectedTab("in-progress")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "in-progress"
-                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                      ? "bg-[#111111] text-white dark:bg-[#111111] dark:text-white"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
                   In Progress ({stats.inProgress})
@@ -2705,8 +2705,8 @@ export default function JobOrdersRepair() {
                   onClick={() => setSelectedTab("ready-for-pickup")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "ready-for-pickup"
-                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                      ? "bg-[#111111] text-white dark:bg-[#111111] dark:text-white"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
                   Ready for Pickup ({stats.readyForPickup})
@@ -2715,8 +2715,8 @@ export default function JobOrdersRepair() {
                   onClick={() => setSelectedTab("warranty")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "warranty"
-                      ? "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                      ? "bg-[#111111] text-white dark:bg-[#111111] dark:text-white"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
                   Warranty ({stats.warranty})
@@ -2725,8 +2725,8 @@ export default function JobOrdersRepair() {
                   onClick={() => setSelectedTab("completed")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "completed"
-                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                      ? "bg-[#111111] text-white dark:bg-[#111111] dark:text-white"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
                   Completed ({stats.completedAll})
@@ -2735,8 +2735,8 @@ export default function JobOrdersRepair() {
                   onClick={() => setSelectedTab("rejected")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "rejected"
-                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                      ? "bg-[#111111] text-white dark:bg-[#111111] dark:text-white"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
                   Rejected ({stats.rejected})
@@ -2745,8 +2745,8 @@ export default function JobOrdersRepair() {
                   onClick={() => setSelectedTab("cancelled")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "cancelled"
-                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                      ? "bg-[#111111] text-white dark:bg-[#111111] dark:text-white"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
                   Cancelled ({stats.cancelled})

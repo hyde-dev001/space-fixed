@@ -88,20 +88,6 @@ const formatCategoryLabel = (category: string | null | undefined): string => {
     .join(" ");
 };
 
-const getCategoryBadgeClasses = (category: string | null | undefined): string => {
-  const normalized = String(category ?? "").toLowerCase();
-
-  if (normalized === "repair_materials") {
-    return "bg-sky-50 text-sky-700 ring-1 ring-sky-200 dark:bg-sky-900/30 dark:text-sky-200 dark:ring-sky-800";
-  }
-
-  if (normalized === "shoes") {
-    return "bg-violet-50 text-violet-700 ring-1 ring-violet-200 dark:bg-violet-900/30 dark:text-violet-200 dark:ring-violet-800";
-  }
-
-  return "bg-gray-100 text-gray-700 ring-1 ring-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:ring-gray-700";
-};
-
 const resolveImageUrl = (item: RepairMaterialInventoryItem): string | null => {
   const thumbnail = item.images?.find((image: { is_thumbnail?: boolean }) => image.is_thumbnail) ?? item.images?.[0];
   const path = thumbnail?.image_path;
@@ -236,7 +222,7 @@ export default function RepairStocksOverview() {
                         </div>
                       </td>
                       <td className="py-3">
-                        <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${getCategoryBadgeClasses(item.category)}`}>
+                        <span className="font-medium text-gray-900 dark:text-gray-100">
                           {formatCategoryLabel(item.category)}
                         </span>
                       </td>
@@ -289,7 +275,7 @@ export default function RepairStocksOverview() {
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Category</p>
-                  <span className={`mt-1 inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${getCategoryBadgeClasses(selectedItem.category)}`}>
+                  <span className="mt-1 font-medium text-gray-900 dark:text-white">
                     {formatCategoryLabel(selectedItem.category)}
                   </span>
                 </div>

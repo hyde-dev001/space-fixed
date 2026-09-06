@@ -62,6 +62,12 @@ describe("Finance procurement expenses", () => {
 		expect(mocks.reject).not.toHaveBeenCalled();
 	});
 
+	it("uses the monochrome active state for the expense status filter", () => {
+		render(<Expense />);
+
+		expect(screen.getByRole("button", { name: "All" })).toHaveClass("bg-[#111111]", "text-white");
+	});
+
 	it("hides expense creation from the shop owner while keeping the page readable", () => {
 		mocks.ownerMode = true;
 
