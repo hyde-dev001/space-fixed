@@ -1551,7 +1551,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                     aria-expanded={accountDrawerOpen}
                     aria-controls="customer-account-submenu"
                     aria-label={`${accountDrawerOpen ? 'Collapse' : 'Expand'} Account`}
-                    className="flex min-h-12 w-full items-center justify-between text-left text-lg font-semibold tracking-[-0.02em] transition-opacity hover:opacity-55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] sm:text-xl"
+                    className="flex min-h-12 w-full items-center justify-between text-left text-base font-medium transition-opacity hover:opacity-55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111]"
                   >
                     <span>Account</span>
                     <svg className={`h-4 w-4 transition-transform duration-300 ease-out motion-reduce:transition-none ${accountDrawerOpen ? 'rotate-45' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -160,11 +160,6 @@ export default function StaffDashboard() {
                             eyebrow="Assigned queue"
                             title="Recent work"
                             description="The latest orders assigned to your account."
-                            action={
-                                <Link href={dashboard.links.customers} className="text-sm font-semibold text-gray-700 underline underline-offset-4 hover:text-gray-950 dark:text-gray-300 dark:hover:text-white">
-                                    View customers
-                                </Link>
-                            }
                         >
                             {dashboard.recent_work.length === 0 ? (
                                 <DashboardState status="empty" title="No assigned orders yet" message="New assignments will appear here when work is routed to you." />

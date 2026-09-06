@@ -121,3 +121,67 @@ it('does not offer another lunch start after the employee ends lunch', async () 
         expect(screen.queryByRole('button', { name: /end lunch/i })).not.toBeInTheDocument();
     });
 });
+
+it('disables clock in when the shop is closed and uses red styling for late records', async () => {
+    const response = (body: unknown) => ({
+        ok: true,
+        json: async () => body,
+    });
+
+    fetchMock.mockImplementation(async (url: string) => {
+        if (url === '/api/staff/attendance/my-records') {
+            return response({
+                data: [
+                    {
+                        date: '2026-09-02',
+                        check_in_time: '10:18',
+                        check_out_time: '20:08',
+                        working_hours: 8.83,
+                        status: 'late',
+                        is_late: true,
+                        minutes_late: 18,
+                        expected_check_in: '10:00',
+                    },
+                ],
+            });
+        }
+
+        if (url === '/api/staff/shop-hours/today') {
+            return response({ open: '10:00', close: '20:00', is_open: false });
+        }
+
+        return response({ data: [] });
+    });
+
+    render(<TimeIn />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
+
+    expect(screen.getByRole('button', { name: /clock in/i })).toBeDisabled();
+    expect(screen.getAllByText('Late').some((node) => node.className.includes('bg-red-100'))).toBe(true);
+});
+
+it('keeps the leave modal and status filter monochrome', async () => {
+    render(<TimeIn />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
+
+    expect(screen.getByRole('combobox', { name: 'Filter attendance history by status' })).toHaveClass(
+        'bg-[#111111]',
+        'text-white',
+        'hover:bg-gray-100',
+        'hover:text-gray-900',
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Request Leave' }));
+
+    const dialog = screen.getByRole('dialog', { name: 'Request Leave' });
+    expect(dialog.querySelector('[class*="blue-"]')).toBeNull();
+    expect(screen.getByText('Request Summary')).toHaveClass('text-gray-900');
+    expect(screen.getByRole('button', { name: 'Submit Request' })).toHaveClass('bg-[#111111]');
+    expect(
+        screen
+            .getAllByRole('button', { name: /^Select \d{4}-\d{2}-\d{2}$/ })
+            .some((button) => button.className.includes('bg-[#111111]')),
+    ).toBe(true);
+});
