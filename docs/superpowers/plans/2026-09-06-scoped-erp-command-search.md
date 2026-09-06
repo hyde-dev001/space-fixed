@@ -35,7 +35,7 @@
 
 **Interfaces:**
 
-- Produces \`ErpSearchScope\`, \`ErpSearchViewer\`, \`ErpSearchPage\`, \`ErpSearchResult\`, \`resolveErpSearchScope(url, props)\`, \`readErpSearchViewer(props, scope)\`, \`getAccessibleErpSearchPages(scope, viewer)\`, and \`searchErpCommands({ scope, pages, articles, query, language, basePath })\` from \`resources/js/data/erpCommandSearch.ts\`.
+- Produces \`ErpSearchScope\`, \`ErpSearchViewer\`, \`ErpSearchPage\`, \`ErpSearchResult\`, \`resolveErpSearchScope(url, props)\`, \`readErpSearchViewer(props, scope)\`, \`getAccessibleErpSearchPages(scope, viewer)\`, and \`searchErpCommands({ scope, pages, catalog, query, language, basePath })\` from \`resources/js/data/erpCommandSearch.ts\`.
 - Produces \`readArticleViewer(props, audience)\` from \`resources/js/utils/articleViewer.ts\`; the Articles page and navbar search use this same parser.
 - \`searchErpCommands\` returns typed results with \`kind: "page" | "article"\`, \`label\`, \`href\`, \`scopeLabel\`, \`description\`, and \`recommended\` fields. It returns an empty array for blank queries.
 
@@ -46,9 +46,9 @@ Add tests covering the required contract before adding the model. The Staff fixt
     resolveErpSearchScope("/erp/staff/dashboard", staffProps) === "staff";
     getAccessibleErpSearchPages("staff", staffViewer) includes "Retail Job Orders";
     Staff page results never have a non-Staff scope;
-    searching Staff articles for "article" includes the exact result
+    searching the Staff catalog for "article" includes the exact result
     "Staff pages and access" at "/erp/articles/staff-workspace-permissions";
-    Manager catalog results are not returned from a Staff-scoped search;
+    a catalog whose audience does not match the Staff scope contributes no article results;
     recommended matching articles sort before non-recommended matching articles.
 
 Also add a small \`readArticleViewer\` test that verifies permissions, roles, legacy role, business type, registration type, and owner mode are safely read from a normal Inertia props object while malformed values become empty/null values.
@@ -138,7 +138,8 @@ In \`erpCommandSearch.ts\`:
 4. For \`shop-owner\`, flatten only \`ownerShell.groups\` items with
    \`available === true\`, recursively include available children, and add
    \`/shop-owner/erp/articles\`. Do not include unavailable management links.
-5. Filter article input with existing \`getAccessibleArticles\` before searching it.
+5. Reject a catalog whose \`audience\` does not match \`scope\`, then filter its
+   articles with existing \`getAccessibleArticles\` before searching it.
    Add the type aliases \`article\`, \`articles\`, \`guide\`, and \`guides\` to the
    article search fields in \`articleGuides.ts\`, so an article query intentionally
    returns article guides.
@@ -362,4 +363,3 @@ Commit the staged implementation and push the existing feature branch without fo
     git push origin feature/monochrome-erp-theme-clean
 
 Confirm the push output and final \`git status --short\`. The final report must distinguish task-owned commits/files from unrelated pre-existing working-tree changes and list every fresh verification command with its observed result.
-
