@@ -434,7 +434,7 @@ export default function RequestMaterials() {
       <div className="p-6 space-y-6">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <h1 className="sr-only">Request Material</h1>
-          <div className="flex gap-2">
+          <div className="ml-auto flex gap-2">
             {cart.length > 0 && (
               <button
                 onClick={() => setIsCartOpen(true)}

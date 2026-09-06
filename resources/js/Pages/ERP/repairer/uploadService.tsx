@@ -753,9 +753,9 @@ export default function UploadService() {
                     resetForm();
                     setIsAddModalOpen(true);
                   }}
-                  className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+                  className="inline-flex items-center gap-2 rounded-lg border border-[#111111] bg-[#111111] px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-gray-800"
                 >
-                  <PlusIcon className="w-5 h-5" />
+                  <PlusIcon className="size-4" />
                   Add Service
                 </button>
               )}
@@ -914,7 +914,7 @@ export default function UploadService() {
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400">
+                        <span className="font-medium text-gray-900 dark:text-white">
                           {service.category}
                         </span>
                       </td>

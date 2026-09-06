@@ -504,7 +504,7 @@ export default function ERPPricingAndServices() {
               }}
               className={`px-4 py-2 font-medium border-b-2 transition-colors ${
                 itemType === "services"
-                  ? "border-blue-600 text-blue-600 dark:text-blue-400"
+                  ? "border-gray-900 text-gray-900 dark:border-white dark:text-white"
                   : "border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300"
               }`}
             >
@@ -519,7 +519,7 @@ export default function ERPPricingAndServices() {
               }}
               className={`px-4 py-2 font-medium border-b-2 transition-colors ${
                 itemType === "packages"
-                  ? "border-blue-600 text-blue-600 dark:text-blue-400"
+                  ? "border-gray-900 text-gray-900 dark:border-white dark:text-white"
                   : "border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300"
               }`}
             >
