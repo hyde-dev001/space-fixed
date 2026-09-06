@@ -517,6 +517,7 @@ export default function ManagerAuditLogs() {
                   </p>
                   <div className="flex items-center gap-2">
                     <button
+                      aria-label="Previous page"
                       type="button"
                       disabled={page <= 1}
                       onClick={() => setPage((value) => Math.max(1, value - 1))}
@@ -526,6 +527,7 @@ export default function ManagerAuditLogs() {
                     </button>
                     <span aria-current="page">Page {pagination.current_page} of {pagination.last_page}</span>
                     <button
+                      aria-label="Next page"
                       type="button"
                       disabled={page >= pagination.last_page}
                       onClick={() => setPage((value) => value + 1)}

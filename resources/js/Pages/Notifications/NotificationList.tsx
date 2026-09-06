@@ -1304,6 +1304,7 @@ const NotificationList: React.FC<NotificationListProps> = ({
 
                   <div className="flex gap-2">
                     <button
+                      aria-label="Previous page"
                       onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                       disabled={currentPage === 1}
                       className={themeClasses('px-3 py-1 border border-gray-300 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors', 'dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700')}
@@ -1327,10 +1328,11 @@ const NotificationList: React.FC<NotificationListProps> = ({
                         return (
                           <button
                             key={pageNum}
+                            aria-current={currentPage === pageNum ? 'page' : undefined}
                             onClick={() => setCurrentPage(pageNum)}
                             className={`px-3 py-1 border rounded-lg transition-colors ${
                               currentPage === pageNum
-                                ? 'bg-blue-600 text-white border-blue-600'
+                                ? 'bg-[#111111] text-white border-[#111111]'
                                 : themeClasses('border-gray-300 hover:bg-gray-100', 'dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700')
                             }`}
                           >
@@ -1341,6 +1343,7 @@ const NotificationList: React.FC<NotificationListProps> = ({
                     </div>
 
                     <button
+                      aria-label="Next page"
                       onClick={() => setCurrentPage(prev => Math.min(lastPage, prev + 1))}
                       disabled={currentPage === lastPage}
                       className={themeClasses('px-3 py-1 border border-gray-300 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors', 'dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700')}

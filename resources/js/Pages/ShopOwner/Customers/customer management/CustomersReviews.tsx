@@ -362,6 +362,7 @@ export default function CustomerReviews() {
               </p>
               <div className="flex items-center gap-2">
                 <button
+                  aria-label="Previous page"
                   onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
                   disabled={safeCurrentPage === 1}
                   className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
@@ -369,6 +370,7 @@ export default function CustomerReviews() {
                   Previous
                 </button>
                 <button
+                  aria-label="Next page"
                   onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
                   disabled={safeCurrentPage === totalPages}
                   className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"

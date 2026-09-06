@@ -187,9 +187,9 @@ export default function AuditLogs({ title, description, capabilityKey }: AuditLo
             <div className="flex items-center justify-between border-t border-gray-200 px-4 py-3 text-sm dark:border-gray-800">
               <span className="text-gray-500">{auditPage.total} total records</span>
               <div className="flex gap-2">
-                <button type="button" disabled={page <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))} className="rounded border px-3 py-1 disabled:opacity-50">Previous</button>
+                <button type="button" aria-label="Previous page" disabled={page <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))} className="rounded border px-3 py-1 disabled:opacity-50">Previous</button>
                 <span className="px-2 py-1">Page {auditPage.current_page} of {auditPage.last_page}</span>
-                <button type="button" disabled={page >= auditPage.last_page} onClick={() => setPage((current) => Math.min(auditPage.last_page, current + 1))} className="rounded border px-3 py-1 disabled:opacity-50">Next</button>
+                <button type="button" aria-label="Next page" disabled={page >= auditPage.last_page} onClick={() => setPage((current) => Math.min(auditPage.last_page, current + 1))} className="rounded border px-3 py-1 disabled:opacity-50">Next</button>
               </div>
             </div>
           )}

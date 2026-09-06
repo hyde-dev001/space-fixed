@@ -362,8 +362,8 @@ const DocumentRenewalQueue: React.FC<DocumentRenewalQueueProps> = ({
           <nav aria-label="Document renewal pages" className="flex items-center justify-between">
             <p className="text-sm text-slate-500">Page {pagination.current_page} of {pagination.last_page}</p>
             <div className="flex gap-2">
-              <button type="button" onClick={() => goToPage(pagination.current_page - 1)} disabled={pagination.current_page <= 1} className="rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:opacity-50 dark:border-slate-700">Previous</button>
-              <button type="button" onClick={() => goToPage(pagination.current_page + 1)} disabled={pagination.current_page >= pagination.last_page} className="rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:opacity-50 dark:border-slate-700">Next</button>
+              <button type="button" aria-label="Previous page" onClick={() => goToPage(pagination.current_page - 1)} disabled={pagination.current_page <= 1} className="rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:opacity-50 dark:border-slate-700">Previous</button>
+              <button type="button" aria-label="Next page" onClick={() => goToPage(pagination.current_page + 1)} disabled={pagination.current_page >= pagination.last_page} className="rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:opacity-50 dark:border-slate-700">Next</button>
             </div>
           </nav>
         ) : null}
