@@ -40,7 +40,8 @@ export const stringValue = (value: unknown, fallback = "—"): string => {
 };
 
 export const personName = (value: unknown, fallback = "—"): string => {
-  if (!isRecord(value)) return stringValue(value, fallback);
+  if (typeof value === "string" && value.trim() !== "") return value;
+  if (!isRecord(value)) return fallback;
 
   const named = pick(value, "name", "full_name", "display_name");
   if (named !== null) return stringValue(named, fallback);
@@ -87,6 +88,15 @@ export const formatDate = (value: unknown): string => {
 export const formatStatus = (value: unknown): string => {
   const status = stringValue(value, "Unknown").replace(/[_-]+/g, " ");
   return status.replace(/\b\w/g, (character) => character.toUpperCase());
+};
+
+export const formatWorkflowVersion = (value: unknown): string => {
+  const version = typeof value === "string" ? value.trim().toLowerCase() : "";
+
+  if (version === "v4_multi_level") return "Multi-level Approval";
+  if (version === "v4") return "V4 Approval";
+
+  return formatStatus(value ?? "standard_approval");
 };
 
 export const displayValue = (value: unknown): string => {
