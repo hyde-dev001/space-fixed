@@ -230,3 +230,37 @@ it('shows employee account actions immediately in the compact application menu',
   expect(within(menu).getByText('Sign Out')).toBeInTheDocument();
   expect(screen.getByTestId('user-dropdown').parentElement).toHaveClass('hidden', 'xl:contents');
 });
+
+it('shows Staff article suggestions from the ERP navbar search', async () => {
+  state.url = '/erp/staff/dashboard';
+  state.props = {
+    auth: {
+      erpActor: { type: 'employee', ownerMode: false },
+      permissions: [
+        'access-staff-dashboard',
+        'access-staff-job-orders',
+        'access-product-management',
+        'access-product-upload-staff',
+        'access-shoe-pricing',
+        'access-staff-time',
+        'access-view-payslip',
+      ],
+      user: {
+        role: 'STAFF',
+        roles: ['Staff'],
+        shop_owner: { business_type: 'retail' },
+      },
+    },
+  };
+
+  render(<AppHeaderERP />);
+  fireEvent.change(screen.getByRole('combobox', { name: /search or type command/i }), {
+    target: { value: 'article' },
+  });
+
+  const suggestion = await screen.findByRole('option', { name: /staff pages and access/i });
+  expect(within(suggestion).getByRole('link')).toHaveAttribute(
+    'href',
+    '/erp/articles/staff-workspace-permissions',
+  );
+});

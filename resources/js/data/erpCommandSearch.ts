@@ -28,6 +28,7 @@ export type ErpSearchViewer = {
 export type ErpSearchPage = {
   id: string;
   scope: ErpSearchScope;
+  scopeLabel: string;
   label: string;
   href: string;
   keywords: readonly string[];
@@ -128,6 +129,7 @@ const definePage = (
 ): PageDefinition => ({
   id,
   scope,
+  scopeLabel: SCOPE_LABELS[scope],
   label,
   href,
   keywords,
@@ -429,6 +431,7 @@ export const searchErpCommands = ({
       return score < 0 ? [] : [{
         id: `article-${article.slug}`,
         scope,
+        scopeLabel: SCOPE_LABELS[scope],
         kind: "article" as const,
         label: translation.title,
         href: `${basePath}/${article.slug}`,
@@ -451,6 +454,7 @@ export const searchErpCommands = ({
 const ownerPage = (label: string, href: string, groupLabel: string): ErpSearchPage => ({
   id: `owner-${href}`,
   scope: "shop-owner",
+  scopeLabel: SCOPE_LABELS["shop-owner"],
   label,
   href,
   keywords: [groupLabel, "owner", "shop"],
@@ -467,7 +471,8 @@ export const getOwnerShellSearchPages = (metadata: unknown): ErpSearchPage[] => 
       if (typeof value.label === "string" && typeof value.canonical_url === "string") {
         pages.push(ownerPage(value.label, value.canonical_url, groupLabel));
       }
-      if (Array.isArray(value.children)) addItems(value.children, value.label as string ?? groupLabel);
+      const childGroupLabel = typeof value.label === "string" ? value.label : groupLabel;
+      if (Array.isArray(value.children)) addItems(value.children, childGroupLabel);
     });
   };
 
