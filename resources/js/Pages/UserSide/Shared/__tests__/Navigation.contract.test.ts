@@ -111,10 +111,15 @@ describe('user-side navigation shell', () => {
 
   it('opens authenticated Account as an inline animated accordion with a plus control', () => {
     const accountPanelStart = navigationSource.indexOf('id="customer-account-submenu"');
-    const accountPanelEnd = navigationSource.indexOf('</nav>', accountPanelStart);
-    const accountPanelSource = navigationSource.slice(accountPanelStart, accountPanelEnd);
+    const utilityStart = navigationSource.indexOf('<div className="border-t border-[#cacacb] px-6 py-6 sm:px-8 dark:border-slate-700">');
+    const cartStart = navigationSource.indexOf('>Cart {effectiveCartCount > 0', utilityStart);
+    const accountPanelSource = navigationSource.slice(accountPanelStart, cartStart);
 
     expect(accountPanelStart).toBeGreaterThan(-1);
+    expect(utilityStart).toBeGreaterThan(-1);
+    expect(cartStart).toBeGreaterThan(-1);
+    expect(accountPanelStart).toBeGreaterThan(utilityStart);
+    expect(accountPanelStart).toBeLessThan(cartStart);
     expect(navigationSource).toContain('const [accountDrawerOpen, setAccountDrawerOpen] = useState(false);');
     expect(navigationSource).toContain('aria-controls="customer-account-submenu"');
     expect(navigationSource).toContain('aria-expanded={accountDrawerOpen}');
@@ -134,6 +139,10 @@ describe('user-side navigation shell', () => {
     const siteMenuSource = navigationSource.slice(siteMenuStart, siteMenuEnd);
     expect(siteMenuSource).toContain('text-xl font-semibold');
     expect(siteMenuSource).not.toContain('font-black');
+    const siteNavStart = navigationSource.indexOf('<nav className="flex-1 px-6 py-7 sm:px-8">', siteMenuStart);
+    const siteNavEnd = navigationSource.indexOf('</nav>', siteNavStart);
+    const siteNavSource = navigationSource.slice(siteNavStart, siteNavEnd);
+    expect(siteNavSource).not.toContain('id="customer-account-submenu"');
   });
 
   it('animates sidebar plus submenus and exposes their expanded state', () => {
