@@ -21,6 +21,7 @@ use App\Models\ShopOwner;
 use App\Models\User;
 use App\Services\Logistics\ArrivalService;
 use App\Services\Logistics\LogisticsActorPolicy;
+use App\Services\Logistics\ProofService;
 use App\Services\Logistics\RiderProfileSyncService;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Http\RedirectResponse;
@@ -41,6 +42,7 @@ class ErpLogisticsController extends Controller
     public function __construct(
         private ArrivalService $arrivals,
         private LogisticsActorPolicy $logisticsPolicy,
+        private ProofService $proofs,
     ) {}
 
     public function dashboard(): Response|RedirectResponse
@@ -744,16 +746,9 @@ class ErpLogisticsController extends Controller
 
     private function proofUrl(HandoffProof $proof): ?string
     {
-        $path = $proof->getRawOriginal('file_path');
-        if (! is_string($path)
-            || ! str_starts_with($path, 'logistics-proof/')
-            || str_contains($path, '..')
-            || str_contains($path, '\\')
-            || ! Storage::disk('local')->exists($path)) {
-            return null;
-        }
-
-        return '/api/logistics/proofs/' . $proof->id . '/file';
+        return $this->proofs->storageDisk($proof)
+            ? '/api/logistics/proofs/' . $proof->id . '/file'
+            : null;
     }
 
     private function attachArrivalPayload(ShipmentLeg $leg): void
@@ -804,6 +799,7 @@ class ErpLogisticsController extends Controller
             ->map(fn ($event) => [
                 'id' => $event->id,
                 'arrival_type' => $event->event_type === 'pickup_arrived' ? 'pickup' : 'dropoff',
+                'place' => in_array($leg->leg_type, ['inbound', 'return_to_shop'], true) ? 'shop' : 'customer',
                 'result' => data_get($event->metadata, 'result'),
                 'distance_m' => data_get($event->metadata, 'distance_m'),
                 'radius_m' => data_get($event->metadata, 'radius_m'),

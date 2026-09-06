@@ -70,6 +70,7 @@ export type DeliveryContactSnapshot = {
 export type DeliveryArrival = {
   id: number;
   arrival_type: 'pickup' | 'dropoff';
+  place?: 'shop' | 'customer';
   result: 'verified' | 'recorded' | 'outside_geofence' | 'low_accuracy' | 'location_unavailable';
   distance_m?: number | null;
   radius_m: number;

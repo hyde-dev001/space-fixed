@@ -207,6 +207,31 @@ it('shows dispatcher pickup and customer arrival checks with reasons', () => {
   expect(screen.getByText('Customer met rider at the gate.')).toBeInTheDocument();
 });
 
+it('labels a repair pickup dropoff as shop arrival', () => {
+  const props = defaultProps();
+  props.riderMode = false;
+  props.canRecordProof = false;
+  props.shipments.data[0].purpose = 'repair_pickup';
+  props.shipments.data[0].source_type = 'repair_request';
+  props.shipments.data[0].legs[0] = {
+    ...props.shipments.data[0].legs[0],
+    leg_type: 'inbound',
+    arrivals: {
+      dropoff: {
+        place: 'shop', result: 'verified', distance_m: 70, radius_m: 100, accuracy_m: 12,
+        recorded_at: '2026-07-15T03:45:00Z',
+      },
+    },
+  };
+  mocks.props = props;
+  render(<Shipments />);
+  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+
+  expect(screen.getByText('Shop arrival')).toBeInTheDocument();
+  expect(screen.getByText('70 m from shop')).toBeInTheDocument();
+  expect(screen.queryByText('Customer arrival')).not.toBeInTheDocument();
+});
+
 it('distinguishes low GPS accuracy from unavailable location', () => {
   setDispatcherLeg({
     ...defaultProps().shipments.data[0].legs[0],

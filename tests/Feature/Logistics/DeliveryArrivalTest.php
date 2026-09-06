@@ -91,6 +91,21 @@ class DeliveryArrivalTest extends TestCase
         $this->assertSame('in_transit', $leg->fresh()->status->value);
     }
 
+    public function test_inbound_repair_dropoff_describes_shop_arrival(): void
+    {
+        [$leg, $rider] = $this->fixture('in_transit');
+        $leg->update([
+            'leg_type' => 'inbound',
+            'destination_snapshot' => ['type' => 'shop', 'latitude' => 14.301, 'longitude' => 120.951],
+        ]);
+
+        $this->actingAs($rider, 'user')
+            ->postJson("/api/logistics/legs/{$leg->id}/arrivals", $this->arrivalPayload('dropoff'))
+            ->assertCreated();
+
+        $this->assertSame('Rider arrived at the shop.', $leg->events()->sole()->message);
+    }
+
     public function test_only_the_canonical_active_batch_can_record_arrival_when_legacy_work_conflicts(): void
     {
         [$currentLeg, $rider, $shop] = $this->fixture('in_transit');
