@@ -1540,40 +1540,49 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                     </div>
                   );
                 })}
+                {isAuthenticated && (
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => { setCartDrawerOpen(false); setAccountDrawerOpen((open) => !open); }}
+                      aria-expanded={accountDrawerOpen}
+                      aria-controls="customer-account-submenu"
+                      aria-label={`${accountDrawerOpen ? 'Collapse' : 'Expand'} Account`}
+                      className="flex min-h-12 w-full items-center justify-between text-left text-lg font-semibold tracking-[-0.02em] transition-opacity hover:opacity-55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] sm:text-xl"
+                    >
+                      <span>Account</span>
+                      <svg className={`h-4 w-4 transition-transform duration-300 ease-out motion-reduce:transition-none ${accountDrawerOpen ? 'rotate-45' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeWidth={2} d="M12 5v14M5 12h14" />
+                      </svg>
+                    </button>
+                    <div
+                      id="customer-account-submenu"
+                      aria-hidden={!accountDrawerOpen}
+                      className={`grid transition-[grid-template-rows,opacity,transform] duration-300 ease-out motion-reduce:transition-none ${accountDrawerOpen ? 'grid-rows-[1fr] translate-y-0 opacity-100' : 'grid-rows-[0fr] -translate-y-1 opacity-0 pointer-events-none'}`}
+                    >
+                      <div className="min-h-0 overflow-hidden">
+                        <div className="mb-3 ml-4 border-l border-[#cacacb] pl-4 dark:border-slate-700">
+                          <Link href="/customer-profile" onClick={() => { setAccountDrawerOpen(false); setLandingSidebarOpen(false); }} className={`flex min-h-10 items-center gap-3 text-sm font-medium text-[#707072] hover:text-[#111111] dark:text-slate-400 dark:hover:text-white ${isMyProfileActive ? 'text-[#111111] dark:text-white' : ''}`}>
+                            <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={1.9} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                            <span>Edit Profile</span>
+                          </Link>
+                          <Link href={route('shop-owner-register')} onClick={() => { setAccountDrawerOpen(false); setLandingSidebarOpen(false); }} className={`flex min-h-10 items-center gap-3 text-sm font-medium text-[#707072] hover:text-[#111111] dark:text-slate-400 dark:hover:text-white ${isMobileServicesActive ? 'text-[#111111] dark:text-white' : ''}`}>
+                            <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={1.9} d="M16 21v-2a4 4 0 00-4-4H6a2 2 0 00-2 2v2m8-8a4 4 0 100-8 4 4 0 000 8zm6-3v6m3-3h-6" /></svg>
+                            <span>Join Our Team</span>
+                          </Link>
+                          <button type="button" onClick={() => { setAccountDrawerOpen(false); handleLogout(); }} className="flex min-h-10 w-full items-center gap-3 text-left text-sm font-medium text-red-600 hover:text-red-700 dark:hover:text-red-400">
+                            <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={1.9} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+                            <span>Log out</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </nav>
-            <div className="relative border-t border-[#cacacb] px-6 py-6 sm:px-8 dark:border-slate-700">
-              {isAuthenticated ? (
-                <>
-                  <div
-                    id="customer-account-menu"
-                    aria-hidden={!accountDrawerOpen}
-                    className={`absolute bottom-full left-0 right-0 z-[120] mb-3 overflow-hidden rounded-2xl border border-white/60 bg-white/90 text-[#111111] shadow-2xl backdrop-blur-2xl transition-[transform,opacity] duration-300 ease-out motion-reduce:transition-none dark:border-slate-700 dark:bg-slate-900/95 dark:text-white ${accountDrawerOpen ? 'visible translate-y-0 opacity-100' : 'invisible translate-y-2 opacity-0 pointer-events-none'}`}
-                  >
-                    <div className="border-b border-white/50 px-4 py-3 dark:border-slate-700">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#777777] dark:text-slate-400">Account</p>
-                    </div>
-                    <nav aria-label="Account actions" className="divide-y divide-white/50 dark:divide-slate-700">
-                      <Link href="/customer-profile" onClick={() => setAccountDrawerOpen(false)} className={`flex min-h-12 items-center gap-3 px-4 text-sm font-medium text-gray-900 transition-colors hover:bg-white/35 dark:text-white dark:hover:bg-slate-800 ${isMyProfileActive ? 'bg-white/35 dark:bg-slate-800' : ''}`}>
-                        <svg className="h-4 w-4 text-gray-500 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={1.9} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-                        <span>Edit Profile</span>
-                      </Link>
-                      <Link href={route('shop-owner-register')} onClick={() => setAccountDrawerOpen(false)} className={`flex min-h-12 items-center gap-3 px-4 text-sm font-medium text-gray-900 transition-colors hover:bg-white/35 dark:text-white dark:hover:bg-slate-800 ${isMobileServicesActive ? 'bg-white/35 dark:bg-slate-800' : ''}`}>
-                        <svg className="h-4 w-4 text-gray-500 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={1.9} d="M16 21v-2a4 4 0 00-4-4H6a2 2 0 00-2 2v2m8-8a4 4 0 100-8 4 4 0 000 8zm6-3v6m3-3h-6" /></svg>
-                        <span>Join Our Team</span>
-                      </Link>
-                      <button type="button" onClick={() => { setAccountDrawerOpen(false); handleLogout(); }} className="flex min-h-12 w-full cursor-pointer items-center gap-3 px-4 text-left text-sm font-medium text-red-600 transition-colors hover:bg-red-50/60 dark:hover:bg-red-950/40">
-                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={1.9} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
-                        <span>Log out</span>
-                      </button>
-                    </nav>
-                  </div>
-                  <button type="button" onClick={() => { setCartDrawerOpen(false); setAccountDrawerOpen((open) => !open); }} aria-expanded={accountDrawerOpen} aria-controls="customer-account-menu" className="flex min-h-12 w-full cursor-pointer items-center gap-3 text-left text-base font-medium hover:opacity-55">
-                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3" strokeWidth={2}/><path strokeLinecap="round" strokeWidth={2} d="M5 20a7 7 0 0 1 14 0"/></svg>
-                    Account
-                  </button>
-                </>
-              ) : (
+            <div className="border-t border-[#cacacb] px-6 py-6 sm:px-8 dark:border-slate-700">
+              {!isAuthenticated && (
                 <Link href={route('login')} onClick={() => setLandingSidebarOpen(false)} className="flex min-h-12 items-center gap-3 text-base font-medium hover:opacity-55">
                   <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3" strokeWidth={2}/><path strokeLinecap="round" strokeWidth={2} d="M5 20a7 7 0 0 1 14 0"/></svg>
                   Sign in

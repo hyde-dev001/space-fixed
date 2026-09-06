@@ -109,25 +109,25 @@ describe('user-side navigation shell', () => {
     expect(navigationSource).not.toContain('fixed right-0 top-full z-50 mt-1 w-52');
   });
 
-  it('opens authenticated Account as an animated bottom-anchored dropup', () => {
-    const accountPanelStart = navigationSource.indexOf('id="customer-account-menu"');
+  it('opens authenticated Account as an inline animated accordion with a plus control', () => {
+    const accountPanelStart = navigationSource.indexOf('id="customer-account-submenu"');
     const accountPanelEnd = navigationSource.indexOf('</nav>', accountPanelStart);
     const accountPanelSource = navigationSource.slice(accountPanelStart, accountPanelEnd);
 
     expect(accountPanelStart).toBeGreaterThan(-1);
     expect(navigationSource).toContain('const [accountDrawerOpen, setAccountDrawerOpen] = useState(false);');
-    expect(navigationSource).toContain('aria-controls="customer-account-menu"');
+    expect(navigationSource).toContain('aria-controls="customer-account-submenu"');
     expect(navigationSource).toContain('aria-expanded={accountDrawerOpen}');
-    expect(navigationSource).toContain('absolute bottom-full left-0 right-0');
+    expect(navigationSource).toContain('aria-label={`${accountDrawerOpen ? \'Collapse\' : \'Expand\'} Account`}');
+    expect(navigationSource).toContain('transition-[grid-template-rows,opacity,transform] duration-300 ease-out');
     expect(accountPanelSource).toContain('aria-hidden={!accountDrawerOpen}');
-    expect(accountPanelSource).toContain('transition-[transform,opacity] duration-300 ease-out');
-    expect(navigationSource).toContain("accountDrawerOpen ? 'visible translate-y-0 opacity-100' : 'invisible translate-y-2 opacity-0 pointer-events-none'");
+    expect(accountPanelSource).toContain("accountDrawerOpen ? 'grid-rows-[1fr] translate-y-0 opacity-100' : 'grid-rows-[0fr] -translate-y-1 opacity-0 pointer-events-none'");
     expect(accountPanelSource).toContain('<span>Edit Profile</span>');
     expect(accountPanelSource).toContain('<span>Join Our Team</span>');
     expect(accountPanelSource).toContain('<span>Log out</span>');
     expect(accountPanelSource).toContain("href={route('shop-owner-register')}");
-    expect(navigationSource).not.toContain('aria-label="Account submenu"');
-    expect(navigationSource).not.toContain('fixed left-[min(88vw,31rem)] top-0 z-[110]');
+    expect(navigationSource).not.toContain('id="customer-account-menu"');
+    expect(navigationSource).not.toContain('absolute bottom-full left-0 right-0');
 
     const siteMenuStart = navigationSource.indexOf('aria-label="Site menu"');
     const siteMenuEnd = navigationSource.indexOf('</aside>', siteMenuStart);
