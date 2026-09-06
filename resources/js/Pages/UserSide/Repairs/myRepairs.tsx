@@ -7,6 +7,7 @@ import CustomerAddressManager, { type CustomerAddress } from '@/components/addre
 import type { TrackingShipment } from '@/types/logistics';
 import { refundStageLabel } from './refundWorkflow';
 import { buildRepairBreakdown, type RepairTaxMode } from '../../../utils/repairPricing';
+import { getPaidRepairDeliveryFees } from '../../../utils/deliveryRevenue';
 import type { PreferredReturnChannel } from './refundPayloadBuilder';
 import { CustomerFooterReveal } from '../../../components/common/CustomerFooter';
 import { useScrollReveal } from '../Shared/useScrollReveal';
@@ -390,6 +391,15 @@ const getOrderDisplayedPaidAmount = (order: RepairOrder) => {
 
   return Number.isFinite(paid) && paid > 0 ? paid : 0;
 };
+
+const getOrderPaidDeliveryFees = (order: RepairOrder) => getPaidRepairDeliveryFees({
+  intakeDeliveryMethod: order.intake_delivery_method,
+  intakeDeliveryFee: order.intake_delivery_fee,
+  intakeLogisticsLockedAt: order.intake_logistics_locked_at,
+  returnDeliveryMethod: order.return_delivery_method,
+  returnDeliveryFee: order.return_delivery_fee,
+  returnLogisticsLockedAt: order.return_logistics_locked_at,
+});
 
 const getOrderOutstandingBalance = (order: RepairOrder): number => {
   const outstanding = Number(
@@ -2296,8 +2306,6 @@ const MyRepairs: React.FC = () => {
       const pendingRepairIdFromQuery = Number(urlParams.get('pending_repair_id') || '0');
       const returnTs = Number(urlParams.get('return_ts') || '0');
       const returnSig = String(urlParams.get('return_sig') || '');
-      const usedSessionPendingId = Number.isFinite(pendingRepairIdFromSession) && pendingRepairIdFromSession > 0;
-      const usedQueryFallback = !usedSessionPendingId && Number.isFinite(pendingRepairIdFromQuery) && pendingRepairIdFromQuery > 0;
       const parsedPendingRepairId = Number.isFinite(pendingRepairIdFromSession) && pendingRepairIdFromSession > 0
         ? pendingRepairIdFromSession
         : (Number.isFinite(pendingRepairIdFromQuery) && pendingRepairIdFromQuery > 0 ? pendingRepairIdFromQuery : null);
@@ -2316,17 +2324,6 @@ const MyRepairs: React.FC = () => {
 
       if (isPaymongoFailed) {
         sessionStorage.removeItem('pendingRepairId');
-        if (usedQueryFallback) {
-          await Swal.fire({
-            icon: 'warning',
-            title: 'Payment Not Completed',
-            text: 'You can continue browsing now. Sign in later if you want to retry this repair payment.',
-            confirmButtonColor: '#000000',
-          });
-          window.location.href = '/';
-          return;
-        }
-
         fetchRepairs();
         const retryResult = await Swal.fire({
           icon: 'error',
@@ -2394,39 +2391,20 @@ const MyRepairs: React.FC = () => {
             }
           }
 
-          if (!usedQueryFallback) {
-            void fetchRepairs();
-          }
+          void fetchRepairs();
 
           if (result?.success && result?.payment_verified) {
             await Swal.fire({
               icon: 'success',
               title: 'Payment Confirmed!',
-              text: usedQueryFallback
-                ? 'Your payment has been confirmed. You can continue browsing now and sign in later to view full repair details.'
-                : 'Your payment has been received. Your repair will begin shortly.',
+              text: 'Your payment has been received. Your repair will begin shortly.',
               confirmButtonColor: '#000000',
               timer: 3000,
               timerProgressBar: true,
             });
 
-            if (usedQueryFallback) {
-              window.location.href = '/';
-            } else {
-              window.location.reload();
-            }
+            window.location.reload();
           } else if (result?.expired) {
-            if (usedQueryFallback) {
-              await Swal.fire({
-                icon: 'warning',
-                title: 'Payment Session Expired',
-                text: 'Your payment session expired. Sign in later to create a new payment session.',
-                confirmButtonColor: '#000000',
-              });
-              window.location.href = '/';
-              return;
-            }
-
             const retryResult = await Swal.fire({
               icon: 'warning',
               title: 'Payment Session Expired',
@@ -2447,16 +2425,10 @@ const MyRepairs: React.FC = () => {
               text: result?.message || 'We could not confirm your payment yet. Please try again or contact support.',
               confirmButtonColor: '#000000',
             });
-
-            if (usedQueryFallback) {
-              window.location.href = '/';
-            }
           }
         } catch (error) {
           console.error('Payment verification error:', error);
-          if (!usedQueryFallback) {
-            void fetchRepairs();
-          }
+          void fetchRepairs();
           await Swal.fire({
             icon: 'error',
             title: 'Verification Error',
@@ -2464,9 +2436,6 @@ const MyRepairs: React.FC = () => {
             confirmButtonColor: '#000000',
           });
 
-          if (usedQueryFallback) {
-            window.location.href = '/';
-          }
         }
       } else {
         sessionStorage.removeItem('pendingRepairId');
@@ -4763,6 +4732,22 @@ const MyRepairs: React.FC = () => {
                           )}
                         </div>
                         <div className="text-right">
+                          {!isWarrantyNoChargeOrder(order) && (
+                            <div className='mb-2 space-y-1 text-xs text-gray-500'>
+                              {getOrderPaidDeliveryFees(order).intake > 0 && (
+                                <div className='flex items-center justify-end gap-3'>
+                                  <span>Intake pickup shipping fee</span>
+                                  <span className='text-gray-700'>{formatCurrency(getOrderPaidDeliveryFees(order).intake)}</span>
+                                </div>
+                              )}
+                              {getOrderPaidDeliveryFees(order).return > 0 && (
+                                <div className='flex items-center justify-end gap-3'>
+                                  <span>Return delivery plan shipping fee</span>
+                                  <span className='text-gray-700'>{formatCurrency(getOrderPaidDeliveryFees(order).return)}</span>
+                                </div>
+                              )}
+                            </div>
+                          )}
                           {isWarrantyNoChargeOrder(order) ? (
                             <div className="mb-2 space-y-1 text-xs text-gray-600">
                               <p className="font-semibold text-emerald-700">Warranty repair: Free</p>

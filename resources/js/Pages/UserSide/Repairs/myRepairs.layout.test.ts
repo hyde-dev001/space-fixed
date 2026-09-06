@@ -21,4 +21,9 @@ describe('My Repairs page layout', () => {
     expect(source).toContain('data-repair-id={order.id}');
     expect(source).toContain('className={`scroll-reveal border overflow-hidden');
   });
+
+  it('keeps authenticated PayMongo repair returns on the repair page', () => {
+    expect(source).not.toMatch(/window\.location\.href\s*=\s*'\/'/);
+    expect(source).toContain('window.location.reload();');
+  });
 });

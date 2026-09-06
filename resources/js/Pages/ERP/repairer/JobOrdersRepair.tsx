@@ -9,6 +9,7 @@ import { MoneyIcon } from "../../../components/common/MoneyIcon";
 import { buildRepairBreakdown, type RepairTaxMode } from "../../../utils/repairPricing";
 import repairMaterialsApi, { type RepairMaterialUsage, type RepairMaterialInventoryItem, type RepairMaterialPlanItem } from "../../../services/repairMaterialsApi";
 
+import { getPaidRepairDeliveryFees } from '../../../utils/deliveryRevenue';
 type IntakeHandoffEvent = {
   id?: number | string;
   label?: string;
@@ -3332,6 +3333,22 @@ export default function JobOrdersRepair() {
                         {formatReturnDeliveryMethod(viewOrder)}
                       </span>
                     </div>
+                    {getPaidRepairDeliveryFees(viewOrder).intake > 0 && (
+                      <div className='flex items-center justify-between'>
+                        <span className='text-sm text-gray-600 dark:text-gray-400'>Intake pickup shipping fee</span>
+                        <span className='text-sm font-medium text-gray-900 dark:text-white'>
+                          {formatPesoAmount(getPaidRepairDeliveryFees(viewOrder).intake) ?? '₱0.00'}
+                        </span>
+                      </div>
+                    )}
+                    {getPaidRepairDeliveryFees(viewOrder).return > 0 && (
+                      <div className='flex items-center justify-between'>
+                        <span className='text-sm text-gray-600 dark:text-gray-400'>Return delivery plan shipping fee</span>
+                        <span className='text-sm font-medium text-gray-900 dark:text-white'>
+                          {formatPesoAmount(getPaidRepairDeliveryFees(viewOrder).return) ?? '₱0.00'}
+                        </span>
+                      </div>
+                    )}
                     {(viewOrder.packagePrice || viewOrder.addOnsSubtotal || viewOrder.finalPrice) && (
                       <>
                         <div className="flex items-center justify-between">

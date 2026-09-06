@@ -47,7 +47,11 @@ const repair = (intakeDeliveryMethod: string, canConfirmReceipt = false) => ({
   fully_paid: true,
   created_at: '2026-07-20T08:00:00.000Z',
   intake_delivery_method: intakeDeliveryMethod,
+  intake_delivery_fee: 250,
+  intake_logistics_locked_at: '2026-07-26T10:00:00.000Z',
   return_delivery_method: 'customer_pickup',
+  return_delivery_fee: 135,
+  return_logistics_locked_at: null,
   intake_handoff: {
     shipment_id: 401,
     shipment_status: 'active',
@@ -164,6 +168,24 @@ describe('JobOrdersRepair intake logistics', () => {
     const paymentLabel = screen.getByText('Payment', { exact: true });
     expect(paymentLabel).toBeInTheDocument();
     expect(paymentLabel.parentElement).toHaveTextContent('Paid');
+  });
+
+  it('shows paid intake and return shipping fees in repair details', async () => {
+    mocks.repair = {
+      ...repair('shop_pickup'),
+      return_delivery_method: 'shop_delivery',
+      return_logistics_locked_at: '2026-07-26T11:00:00.000Z',
+    };
+
+    render(<JobOrdersRepair />);
+    await openDetails();
+
+    const modal = screen.getByRole('heading', { name: 'Repair Service Details' }).closest('div.fixed');
+    expect(modal).not.toBeNull();
+    expect(within(modal as HTMLElement).getByText('Intake pickup shipping fee')).toBeInTheDocument();
+    expect(within(modal as HTMLElement).getByText('Return delivery plan shipping fee')).toBeInTheDocument();
+    expect(within(modal as HTMLElement).getByText('₱250.00')).toBeInTheDocument();
+    expect(within(modal as HTMLElement).getByText('₱135.00')).toBeInTheDocument();
   });
 
   it('confirms an approved handoff and refreshes the repair from the server', async () => {
