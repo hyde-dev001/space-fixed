@@ -1258,17 +1258,23 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
+                      aria-label="Previous page"
                       onClick={() => setCurrentReviewPage((page) => Math.max(1, page - 1))}
                       disabled={safeReviewPage === 1}
                       className="rounded-full border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 transition-colors hover:border-[#16233b] hover:text-[#16233b] disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       Previous
                     </button>
-                    <div className="rounded-full bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700">
-                      Page {safeReviewPage} of {totalReviewPages}
+                    <div
+                      aria-current="page"
+                      aria-label={`Page ${safeReviewPage} of ${totalReviewPages}`}
+                      className="min-h-11 min-w-11 rounded-full bg-[#111111] px-3 py-1.5 text-center text-sm font-semibold leading-8 text-white"
+                    >
+                      {safeReviewPage}
                     </div>
                     <button
                       type="button"
+                      aria-label="Next page"
                       onClick={() => setCurrentReviewPage((page) => Math.min(totalReviewPages, page + 1))}
                       disabled={safeReviewPage === totalReviewPages}
                       className="rounded-full border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 transition-colors hover:border-[#16233b] hover:text-[#16233b] disabled:cursor-not-allowed disabled:opacity-40"

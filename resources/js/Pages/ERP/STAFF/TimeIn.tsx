@@ -62,6 +62,15 @@ interface AttendanceRecord {
     autoClockoutReason?: string;
 }
 
+interface ShopHours {
+    open: string;
+    close: string;
+    is_open?: boolean;
+    day?: string;
+    geofence_enabled?: boolean;
+    geofence_radius?: number;
+}
+
 const normalizeAttendanceStatus = (status?: string | null, hasCheckOut?: boolean) => {
     if (!status) {
         return hasCheckOut ? 'Completed' : 'In Progress';
@@ -158,6 +167,25 @@ const extractTimeParts = (timeValue?: string | null): { hour: number; minute: nu
     return { hour, minute, second };
 };
 
+export const isClockInAllowedAtTime = (now: Date, shopHours: ShopHours | null): boolean => {
+    if (!shopHours || shopHours.is_open === false) return false;
+
+    const open = extractTimeParts(shopHours.open);
+    const close = extractTimeParts(shopHours.close);
+    if (!open || !close) return false;
+
+    const currentSeconds = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+    const openSeconds = open.hour * 3600 + open.minute * 60 + open.second;
+    const closeSeconds = close.hour * 3600 + close.minute * 60 + close.second;
+    const earliestCheckIn = openSeconds - 30 * 60;
+
+    if (closeSeconds < openSeconds) {
+        return currentSeconds >= earliestCheckIn || currentSeconds <= closeSeconds;
+    }
+
+    return currentSeconds >= earliestCheckIn && currentSeconds <= closeSeconds;
+};
+
 const parseAttendanceTimeToDate = (timeValue?: string | null): Date | null => {
     const parts = extractTimeParts(timeValue);
     if (!parts) return null;
@@ -196,7 +224,7 @@ export default function TimeIn() {
     const [overtimeHours, setOvertimeHours] = useState('');
     const [overtimeReason, setOvertimeReason] = useState('');
     const [overtimeCustomReason, setOvertimeCustomReason] = useState('');
-    const [shopHours, setShopHours] = useState<{open: string; close: string; is_open?: boolean; day?: string; geofence_enabled?: boolean; geofence_radius?: number} | null>(null);
+    const [shopHours, setShopHours] = useState<ShopHours | null>(null);
     const [latenessStats, setLatenessStats] = useState<any>(null);
     const [todayOvertimeRequests, setTodayOvertimeRequests] = useState<any[]>([]);
     const [activeOvertimeId, setActiveOvertimeId] = useState<number | null>(null);
@@ -603,22 +631,9 @@ export default function TimeIn() {
             return;
         }
 
-        // Parse shop hours and current time
         const now = getPHTime();
-        const currentMinutes = now.getHours() * 60 + now.getMinutes();
 
-        // Parse shop open/close times (format: "HH:MM:SS" or "HH:MM")
-        const [openHour, openMinute] = shopHours.open.split(':').map(Number);
-        const [closeHour, closeMinute] = shopHours.close.split(':').map(Number);
-        const shopOpenTime = openHour * 60 + openMinute;
-        const shopCloseTime = closeHour * 60 + closeMinute;
-
-        // Allow check-in 30 minutes before opening (grace period)
-        const gracePeriod = 30;
-        const earliestCheckIn = shopOpenTime - gracePeriod;
-
-        // Check if current time is before allowed time or after closing
-        if (currentMinutes < earliestCheckIn || currentMinutes > shopCloseTime) {
+        if (!isClockInAllowedAtTime(now, shopHours)) {
             const openTimeDisplay = formatTimeFromString(shopHours.open);
             const closeTimeDisplay = formatTimeFromString(shopHours.close);
             
@@ -1162,7 +1177,8 @@ export default function TimeIn() {
         || todayMinutesLate > 0;
     const isOnApprovedLeaveToday = Boolean(todayAttendance?.on_leave_today);
     const isShopClosed = shopHours?.is_open === false;
-    const isClockInDisabled = isClockedIn || isLoading || isOnApprovedLeaveToday || isShopClosed;
+    const isOutsideShopHours = !isClockInAllowedAtTime(currentTime, shopHours);
+    const isClockInDisabled = isClockedIn || isLoading || isOnApprovedLeaveToday || isOutsideShopHours;
     const attendanceRecordsPerPage = 10;
     const attendanceStatusOptions = ['all', ...Array.from(new Set(attendanceRecords.map((record) => record.status)))];
     const normalizedAttendanceSearchQuery = attendanceSearchQuery.trim().toLowerCase();
@@ -1272,36 +1288,7 @@ export default function TimeIn() {
             <div data-testid="time-in-page" className="min-h-screen overflow-x-hidden text-gray-900 dark:text-white">
                 {!showOvertimeModal && !showLeaveModal ? (
                 <>
-                {/* Header Section */}
-                <div className="mb-6 sm:mb-8">
-                    <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
-                        <h1 className="sr-only">Attendance Tracking</h1>
-                        <div className="grid w-full grid-cols-2 gap-2 xl:w-auto xl:min-w-[280px]">
-                            <button
-                                onClick={handleOvertimeClick}
-                                disabled={isOnApprovedLeaveToday || todayOvertimeRequests.some(ot => ['pending', 'approved', 'assigned'].includes(ot.status))}
-                                className="flex min-h-12 w-full items-center justify-center gap-2 rounded-full bg-gray-100 px-3 py-3 text-sm font-semibold text-gray-900 transition-colors hover:bg-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-800 dark:text-white dark:hover:bg-gray-700"
-                                title={
-                                    isOnApprovedLeaveToday
-                                        ? 'Overtime requests are disabled while on approved leave'
-                                        : todayOvertimeRequests.some(ot => ['pending', 'approved', 'assigned'].includes(ot.status))
-                                        ? 'You already have an active overtime request today'
-                                        : 'Request overtime'
-                                }
-                            >
-                                <OvertimeIcon />
-                                Overtime
-                            </button>
-                            <button
-                                onClick={handleRequestLeaveClick}
-                                className="flex min-h-12 w-full items-center justify-center gap-2 rounded-full bg-gray-100 px-3 py-3 text-sm font-semibold text-gray-900 transition-colors hover:bg-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 dark:bg-gray-800 dark:text-white dark:hover:bg-gray-700"
-                            >
-                                <LeaveIcon />
-                                Request Leave
-                            </button>
-                        </div>
-                    </div>
-                </div>
+                <h1 className="sr-only">Attendance Tracking</h1>
 
                 <div data-testid="attendance-dashboard" className="mb-8 grid gap-4 xl:mb-12 xl:grid-cols-5 xl:items-stretch xl:gap-6">
                 {/* Main Clock Section */}
@@ -1376,7 +1363,9 @@ export default function TimeIn() {
                                     <button
                                         onClick={handleClockIn}
                                         disabled={isClockInDisabled}
-                                        title={isShopClosed ? 'Clock in is disabled while the shop is closed' : undefined}
+                                        title={isClockInDisabled && (isShopClosed || isOutsideShopHours)
+                                            ? 'Clock in is disabled outside shop hours'
+                                            : undefined}
                                         className={`min-h-12 w-full rounded-full px-6 py-3 text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 ${
                                             isClockInDisabled
                                                 ? 'cursor-not-allowed bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-600'
@@ -1619,15 +1608,42 @@ export default function TimeIn() {
                 )}
 
                 {/* Attendance Records */}
-                <div className="min-w-0 overflow-hidden rounded-3xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900/50">
+                <div data-testid="attendance-history-card" className="min-w-0 overflow-hidden rounded-3xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900/50">
                     <div className="border-b border-gray-200 p-4 dark:border-gray-800 sm:p-6">
                         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-                            <h2 className="flex items-center gap-3 text-xl font-semibold tracking-tight text-gray-900 dark:text-white sm:text-2xl">
-                                <div className="rounded-full bg-gray-100 p-2.5 dark:bg-gray-800">
-                                    <CalendarIcon />
+                            <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center">
+                                <h2 className="flex items-center gap-3 text-xl font-semibold tracking-tight text-gray-900 dark:text-white sm:text-2xl">
+                                    <div className="rounded-full bg-gray-100 p-2.5 dark:bg-gray-800">
+                                        <CalendarIcon />
+                                    </div>
+                                    Attendance History
+                                </h2>
+
+                                <div data-testid="attendance-actions" className="grid w-full grid-cols-2 gap-2 sm:w-auto">
+                                    <button
+                                        onClick={handleOvertimeClick}
+                                        disabled={isOnApprovedLeaveToday || todayOvertimeRequests.some(ot => ['pending', 'approved', 'assigned'].includes(ot.status))}
+                                        className="flex min-h-11 w-full items-center justify-center gap-2 rounded-full bg-gray-100 px-3 py-2 text-sm font-semibold text-gray-900 transition-colors hover:bg-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-800 dark:text-white dark:hover:bg-gray-700"
+                                        title={
+                                            isOnApprovedLeaveToday
+                                                ? 'Overtime requests are disabled while on approved leave'
+                                                : todayOvertimeRequests.some(ot => ['pending', 'approved', 'assigned'].includes(ot.status))
+                                                ? 'You already have an active overtime request today'
+                                                : 'Request overtime'
+                                        }
+                                    >
+                                        <OvertimeIcon />
+                                        Overtime
+                                    </button>
+                                    <button
+                                        onClick={handleRequestLeaveClick}
+                                        className="flex min-h-11 w-full items-center justify-center gap-2 rounded-full bg-gray-100 px-3 py-2 text-sm font-semibold text-gray-900 transition-colors hover:bg-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 dark:bg-gray-800 dark:text-white dark:hover:bg-gray-700"
+                                    >
+                                        <LeaveIcon />
+                                        Request Leave
+                                    </button>
                                 </div>
-                                Attendance History
-                            </h2>
+                            </div>
 
                             <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 xl:flex xl:w-auto">
                                 <input
@@ -1642,10 +1658,14 @@ export default function TimeIn() {
                                     onChange={(e) => setAttendanceStatusFilter(e.target.value)}
                                     aria-label="Filter attendance history by status"
                                     title="Filter attendance history by status"
-                                    className="min-h-12 w-full rounded-full border border-[#111111] bg-[#111111] px-4 py-2 text-sm text-white transition-colors hover:bg-gray-100 hover:text-gray-900 focus:border-[#111111] focus:outline-none focus:ring-2 focus:ring-[#111111] focus:ring-offset-2 dark:border-white dark:bg-black dark:text-white dark:hover:bg-gray-100 dark:hover:text-gray-900 xl:w-auto"
+                                    className={`min-h-12 w-full rounded-full px-4 py-2 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-[#111111] focus:ring-offset-2 xl:w-auto ${
+                                        attendanceStatusFilter === 'all'
+                                            ? 'border border-gray-300 bg-white text-gray-900 hover:bg-gray-100 focus:border-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:hover:bg-gray-800'
+                                            : 'border border-[#111111] bg-[#111111] text-white hover:bg-gray-200 hover:text-gray-900 focus:border-[#111111] dark:border-white dark:bg-black dark:text-white dark:hover:bg-gray-700 dark:hover:text-white'
+                                    }`}
                                 >
                                     {attendanceStatusOptions.map((statusOption) => (
-                                        <option key={statusOption} value={statusOption} className="bg-white text-gray-900 hover:bg-gray-100">
+                                        <option key={statusOption} value={statusOption} className="bg-white text-gray-900 checked:bg-[#111111] checked:text-white hover:bg-gray-100">
                                             {statusOption === 'all' ? 'All Statuses' : statusOption}
                                         </option>
                                     ))}
@@ -1778,7 +1798,7 @@ export default function TimeIn() {
                             <p className="min-w-0 break-words text-sm text-gray-600 dark:text-gray-400">
                                 Showing {attendanceStartIndex + 1} to {Math.min(attendanceEndIndex, filteredAttendanceRecords.length)} of {filteredAttendanceRecords.length} records
                             </p>
-                            <div className="flex flex-wrap items-center gap-2">
+                            <div data-pagination="attendance" className="flex flex-wrap items-center gap-2">
                                 <button
                                     type="button"
                                     onClick={() => setAttendanceCurrentPage((prev) => Math.max(prev - 1, 1))}
@@ -1793,6 +1813,7 @@ export default function TimeIn() {
                                         key={page}
                                         type="button"
                                         onClick={() => setAttendanceCurrentPage(page)}
+                                        aria-current={attendanceCurrentPage === page ? 'page' : undefined}
                                         className={`min-h-11 min-w-11 rounded-full px-3 py-1.5 text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 ${
                                             attendanceCurrentPage === page
                                                 ? 'bg-[#111111] text-white'

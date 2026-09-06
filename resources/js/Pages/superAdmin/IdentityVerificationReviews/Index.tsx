@@ -430,8 +430,8 @@ const IdentityReviewQueue: React.FC<Props> = ({ reviews, stats, filters }) => {
 						<div className="flex items-center justify-between text-sm text-gray-600">
 							<span>Page {reviews.current_page} of {reviews.last_page}</span>
 							<div className="flex gap-2">
-								{reviews.current_page > 1 && <button type="button" onClick={() => router.get('/admin/identity-verification-reviews', { ...filters, page: reviews.current_page - 1 }, { preserveState: true, preserveScroll: true, replace: true })} className="rounded-lg border border-gray-300 bg-white px-3 py-2 hover:bg-gray-50">Previous</button>}
-								{reviews.current_page < reviews.last_page && <button type="button" onClick={() => router.get('/admin/identity-verification-reviews', { ...filters, page: reviews.current_page + 1 }, { preserveState: true, preserveScroll: true, replace: true })} className="rounded-lg border border-gray-300 bg-white px-3 py-2 hover:bg-gray-50">Next</button>}
+								{reviews.current_page > 1 && <button type="button" aria-label="Previous page" onClick={() => router.get('/admin/identity-verification-reviews', { ...filters, page: reviews.current_page - 1 }, { preserveState: true, preserveScroll: true, replace: true })} className="rounded-lg border border-gray-300 bg-white px-3 py-2 hover:bg-gray-50">Previous</button>}
+								{reviews.current_page < reviews.last_page && <button type="button" aria-label="Next page" onClick={() => router.get('/admin/identity-verification-reviews', { ...filters, page: reviews.current_page + 1 }, { preserveState: true, preserveScroll: true, replace: true })} className="rounded-lg border border-gray-300 bg-white px-3 py-2 hover:bg-gray-50">Next</button>}
 							</div>
 						</div>
 					)}
