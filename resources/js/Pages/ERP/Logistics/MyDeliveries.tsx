@@ -246,9 +246,9 @@ function CompactModalPicker({
                     role="option"
                     aria-selected={value === option}
                     onClick={() => choose(option)}
-                    className={`min-h-12 w-full touch-manipulation rounded-2xl border px-4 text-left text-sm font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-inset dark:focus:ring-white ${
+                    className={`min-h-12 w-full touch-manipulation rounded-2xl border px-4 text-left text-sm font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-inset dark:focus:ring-gray-300 ${
                       value === option
-                        ? 'border-slate-950 bg-slate-950 text-white dark:border-white dark:bg-white dark:text-slate-950'
+                        ? 'border-slate-950 bg-slate-950 text-white hover:bg-black dark:border-slate-950 dark:bg-slate-950 dark:text-white dark:hover:bg-black'
                         : 'border-slate-200 bg-white text-slate-950 hover:bg-gray-100 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:hover:bg-gray-800'
                     }`}
                   >
@@ -453,7 +453,7 @@ function DeliveryPhotoUpload({
             <button
               type="button"
               onClick={openFilePicker}
-              className="mt-1 inline-flex min-h-11 items-center rounded-lg px-1 text-xs font-bold text-slate-700 underline decoration-slate-400 underline-offset-2 transition-colors hover:text-slate-950 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:text-slate-200 dark:hover:text-white dark:focus:ring-white"
+              className="mt-1 inline-flex min-h-11 items-center rounded-lg px-1 text-xs font-bold text-slate-700 underline decoration-slate-400 underline-offset-2 transition-colors hover:text-slate-950 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:text-slate-200 dark:hover:text-white dark:focus:ring-gray-300"
             >
               Replace photo
             </button>
@@ -463,7 +463,7 @@ function DeliveryPhotoUpload({
             aria-label={`Remove ${inputLabel}`}
             title="Remove photo"
             onClick={removeFile}
-            className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-950 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-white dark:focus:ring-white"
+            className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-950 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-white dark:focus:ring-gray-300"
           >
             <svg aria-hidden="true" className="h-5 w-5" viewBox="0 0 24 24" fill="none">
               <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7l1-3h4l1 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
@@ -486,7 +486,7 @@ function DeliveryPhotoUpload({
           <button
             type="button"
             onClick={openFilePicker}
-            className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-bold text-white transition-colors hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 sm:w-auto dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200 dark:focus:ring-white"
+            className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-bold text-white transition-colors hover:bg-black focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 sm:w-auto dark:bg-slate-950 dark:text-white dark:hover:bg-black dark:focus:ring-gray-300"
           >
             Upload photo
           </button>
@@ -665,7 +665,7 @@ function DeliveryContact({ delivery }: { delivery: TrackingShipmentLeg }) {
             href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(contact.address)}`}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-950 transition-colors hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-slate-600 dark:text-white dark:hover:bg-slate-800 dark:focus:ring-white xl:min-h-11"
+            className="inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-950 transition-colors hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-slate-600 dark:text-white dark:hover:bg-slate-800 dark:focus:ring-gray-300 xl:min-h-11"
           >
             Directions
           </a>
@@ -764,9 +764,9 @@ function DeliveryActions({
   const proofKeys = useRef<Record<string, string>>({});
   const mutationDisabled = locked || !online || pendingAction !== null;
   const buttonClass =
-    'min-h-12 w-full touch-manipulation rounded-xl bg-blue-600 px-4 text-sm font-bold text-white transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 xl:min-h-11';
+    'min-h-12 w-full touch-manipulation rounded-xl bg-slate-950 px-4 text-sm font-bold text-white transition-colors hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 xl:min-h-11';
   const compactPrimaryButtonClass =
-    'min-h-12 w-full touch-manipulation rounded-2xl bg-slate-950 px-4 text-sm font-bold text-white transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-slate-950 xl:min-h-11 xl:rounded-xl';
+    'min-h-12 w-full touch-manipulation rounded-2xl bg-slate-950 px-4 text-sm font-bold text-white transition-colors hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-950 dark:text-white dark:hover:bg-black xl:min-h-11 xl:rounded-xl';
   const compactSecondaryButtonClass =
     'min-h-12 w-full touch-manipulation rounded-2xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-950 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-white xl:min-h-11 xl:rounded-xl';
 
@@ -1467,7 +1467,7 @@ function ProofCorrectionAction({
             type="button"
             disabled={!online || !proofFile || pendingAction !== null}
             onClick={submitReplacement}
-            className="min-h-12 w-full touch-manipulation rounded-xl bg-blue-600 px-4 text-sm font-bold text-white transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 xl:min-h-11"
+            className="min-h-12 w-full touch-manipulation rounded-xl bg-slate-950 px-4 text-sm font-bold text-white transition-colors hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 xl:min-h-11"
           >
             Submit replacement proof
           </button>
@@ -1785,7 +1785,7 @@ function OfferCard({
     ? logisticsApi.rejectBatch(item.id, reason.trim())
     : logisticsApi.rejectLeg(item.id, reason.trim());
   const declineCancelClass = 'min-h-12 w-full touch-manipulation rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-950 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-white sm:w-auto';
-  const declineSubmitClass = 'min-h-12 w-full touch-manipulation rounded-xl bg-slate-950 px-4 text-sm font-bold text-white transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-slate-950 sm:w-auto';
+  const declineSubmitClass = 'min-h-12 w-full touch-manipulation rounded-xl bg-slate-950 px-4 text-sm font-bold text-white transition-colors hover:bg-black focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-950 dark:text-white dark:hover:bg-black dark:focus:ring-gray-300 sm:w-auto';
 
   return (
     <>
@@ -1814,7 +1814,7 @@ function OfferCard({
               confirmButtonText: `Accept ${offerLabel}`,
             })
           }
-          className="min-h-12 touch-manipulation rounded-xl bg-blue-600 px-4 text-sm font-bold text-white transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 disabled:opacity-50 xl:min-h-11"
+          className="min-h-12 touch-manipulation rounded-xl bg-slate-950 px-4 text-sm font-bold text-white transition-colors hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 disabled:opacity-50 xl:min-h-11"
         >
           Accept {offerLabel}
         </button>
@@ -1822,7 +1822,7 @@ function OfferCard({
           type="button"
           disabled={!online}
           onClick={openDeclineModal}
-          className="min-h-12 touch-manipulation rounded-xl border border-slate-950 bg-white px-4 text-sm font-bold text-slate-950 transition-colors hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white dark:bg-slate-950 dark:text-white dark:hover:bg-slate-900 dark:focus:ring-white xl:min-h-11"
+          className="min-h-12 touch-manipulation rounded-xl border border-slate-950 bg-white px-4 text-sm font-bold text-slate-950 transition-colors hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-600 dark:bg-slate-950 dark:text-white dark:hover:bg-slate-900 dark:focus:ring-gray-300 xl:min-h-11"
         >
           Decline {offerLabel}
         </button>
@@ -1845,9 +1845,9 @@ function OfferCard({
                 type="button"
                 aria-pressed={reason === option}
                 onClick={() => setReason(option)}
-                className={`min-h-12 rounded-xl border px-3 text-left text-sm font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:focus:ring-white ${
+                className={`min-h-12 rounded-xl border px-3 text-left text-sm font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:focus:ring-gray-300 ${
                   reason === option
-                    ? 'border-slate-950 bg-slate-950 text-white dark:border-white dark:bg-white dark:text-slate-950'
+                    ? 'border-slate-950 bg-slate-950 text-white dark:border-slate-950 dark:bg-slate-950 dark:text-white'
                     : 'border-slate-300 bg-white text-slate-950 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:hover:bg-slate-900'
                 }`}
               >

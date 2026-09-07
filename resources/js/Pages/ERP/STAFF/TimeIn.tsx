@@ -2047,9 +2047,9 @@ export default function TimeIn() {
                                             <button
                                                 key={hours}
                                                 onClick={() => setOvertimeHours(hours.toString())}
-                                                className={`min-h-11 rounded-lg px-2 py-3 font-semibold transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
+                                                className={`min-h-11 rounded-lg px-2 py-3 font-semibold transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 focus-visible:ring-offset-2 ${
                                                     overtimeHours === hours.toString()
-                                                        ? 'bg-blue-600 text-white shadow-lg'
+                                                        ? 'bg-gray-950 text-white shadow-lg dark:bg-gray-950 dark:text-white'
                                                         : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
                                                 }`}
                                             >
@@ -2071,7 +2071,7 @@ export default function TimeIn() {
                                                 setOvertimeCustomReason('');
                                             }
                                         }}
-                                        className="min-h-11 w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-gray-900 transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                                        className="min-h-11 w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-gray-900 transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-gray-950 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
                                     >
                                         <option value="">Select a reason</option>
                                         <option value="Work backlog">Work backlog</option>
@@ -2092,7 +2092,7 @@ export default function TimeIn() {
                                             onChange={(e) => setOvertimeCustomReason(e.target.value)}
                                             placeholder="Enter your reason for overtime..."
                                             rows={3}
-                                            className="min-h-11 w-full resize-none rounded-xl border border-gray-300 bg-white px-4 py-3 text-gray-900 transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                                            className="min-h-11 w-full resize-none rounded-xl border border-gray-300 bg-white px-4 py-3 text-gray-900 transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-gray-950 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
                                         />
                                     </div>
                                 )}
@@ -2101,14 +2101,14 @@ export default function TimeIn() {
                                     <button
                                         onClick={() => setShowOvertimeModal(false)}
                                         disabled={isLoading}
-                                        className="min-h-11 flex-1 rounded-xl bg-gray-100 px-6 py-3 font-semibold text-gray-700 transition-all duration-300 hover:bg-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+                                        className="min-h-11 flex-1 rounded-xl bg-gray-100 px-6 py-3 font-semibold text-gray-700 transition-all duration-300 hover:bg-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
                                     >
                                         Cancel
                                     </button>
                                     <button
                                         onClick={handleOvertimeRequest}
                                         disabled={isLoading || !overtimeHours || !overtimeReason || (overtimeReason === 'Others' && !overtimeCustomReason)}
-                                        className="min-h-11 flex-1 rounded-xl bg-blue-600 px-6 py-3 font-semibold text-white shadow-lg transition-all duration-300 hover:bg-blue-700 hover:shadow-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 flex items-center justify-center gap-2"
+                                        className="min-h-11 flex-1 rounded-xl bg-gray-950 px-6 py-3 font-semibold text-white shadow-lg transition-all duration-300 hover:bg-black hover:shadow-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 focus-visible:ring-offset-2 dark:bg-gray-950 dark:hover:bg-black disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 flex items-center justify-center gap-2"
                                     >
                                         {isLoading ? (
                                             <>

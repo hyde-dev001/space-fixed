@@ -207,7 +207,7 @@ const PayslipDetail: React.FC<PayslipDetailProps> = ({ slip, employeeName, shopN
 			<div className="flex justify-end mb-4 no-print">
 				<button
 					onClick={handlePrint}
-					className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+					className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-gray-950 rounded-lg hover:bg-black dark:bg-gray-950 dark:hover:bg-black transition-colors"
 				>
 					<PrintIcon />
 					Print Payslip
@@ -454,11 +454,11 @@ export default function MyPayslips() {
 							value={searchPeriod}
 							onChange={e => setSearchPeriod(e.target.value)}
 							placeholder="Search by period (e.g. February 2026)…"
-							className="flex-1 px-4 py-2.5 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+							className="flex-1 px-4 py-2.5 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-950"
 						/>
 						<button
 							type="submit"
-							className="px-4 py-2.5 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+							className="px-4 py-2.5 text-sm font-medium text-white bg-gray-950 rounded-lg hover:bg-black dark:bg-gray-950 dark:hover:bg-black transition-colors"
 						>
 							Search
 						</button>

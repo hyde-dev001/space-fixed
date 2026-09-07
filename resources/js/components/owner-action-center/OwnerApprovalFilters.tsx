@@ -110,8 +110,8 @@ export default function OwnerApprovalFilters({ result, availableResult, availabl
             href={actionCenterUrl(result.bucket, filter.key, 1, perPage, view)}
             aria-current={active ? "page" : undefined}
             className={active
-              ? "inline-flex min-h-11 items-center rounded-full bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
-              : "inline-flex min-h-11 items-center rounded-full border border-gray-300 px-3 py-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/[0.06]"}
+              ? "inline-flex min-h-11 items-center rounded-full bg-gray-950 px-3 py-1.5 text-sm font-semibold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 focus-visible:ring-offset-2"
+              : "inline-flex min-h-11 items-center rounded-full border border-gray-300 px-3 py-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 focus-visible:ring-offset-2 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/[0.06]"}
           >
             {filter.label}
           </a>

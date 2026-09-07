@@ -429,7 +429,7 @@ export default function Batches() {
           <option value="all">All modules</option>
           {availableModules.map((available) => <option key={available} value={available}>{logisticsModuleLabel(available)}</option>)}
         </select>}
-        <button type="button" onClick={startNewBatch} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 font-semibold text-white hover:bg-blue-700 xl:flex-none"><Plus size={18} />New Batch</button>
+        <button type="button" onClick={startNewBatch} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-gray-950 px-4 font-semibold text-white hover:bg-black dark:bg-gray-950 dark:hover:bg-black xl:flex-none"><Plus size={18} />New Batch</button>
       </div>
     </div>
     {error && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-red-700">{error}</p>}
@@ -455,7 +455,7 @@ export default function Batches() {
       <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-bold text-gray-950 dark:text-white">Active batches</h2><div data-testid="active-batch-filters" className="w-full min-w-0 overflow-x-auto pb-1 xl:w-auto xl:overflow-visible xl:pb-0"><div className="flex w-max min-w-full gap-2 xl:w-auto xl:min-w-0 xl:flex-wrap xl:gap-1">{(['all', 'draft', 'offered', 'accepted', 'in_progress'] as const).map((tab) => {
         const count = tab === 'all' ? activeBatches.length : activeBatches.filter((batch) => batch.status === tab).length;
         const tabLabel = tab === 'all' ? 'All' : tab.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
-        return <button key={tab} type="button" aria-pressed={activeStatus === tab} onClick={() => setActiveStatus(tab)} className={`min-h-11 shrink-0 rounded-lg px-3 text-sm font-semibold xl:min-h-10 ${activeStatus === tab ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'}`}>{tabLabel} ({count})</button>;
+        return <button key={tab} type="button" aria-pressed={activeStatus === tab} onClick={() => setActiveStatus(tab)} className={`min-h-11 shrink-0 rounded-lg px-3 text-sm font-semibold xl:min-h-10 ${activeStatus === tab ? 'bg-gray-950 text-white dark:bg-gray-950 dark:text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}`}>{tabLabel} ({count})</button>;
       })}<button type="button" onClick={(event) => openHistory(event.currentTarget)} className="min-h-11 shrink-0 rounded-lg border border-gray-200 bg-white px-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 xl:min-h-10">History ({historyBatches.length})</button></div></div></div>
       <BatchTable batches={visibleActiveBatches} onOpen={openBatch} onDetails={openDetails} onReview={openReview} onCancel={cancelBatch} />
       {!visibleActiveBatches.length && <p className="rounded-xl border border-dashed p-6 text-center text-sm text-gray-500">No active batches in this status.</p>}

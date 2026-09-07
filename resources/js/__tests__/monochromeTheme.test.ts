@@ -8,6 +8,15 @@ const appSidebarShopOwner = readFileSync(resolve('resources/js/layout/AppSidebar
 const canonicalOwnerSidebar = readFileSync(resolve('resources/js/layout/CanonicalOwnerSidebar.tsx'), 'utf8');
 const customSelect = readFileSync(resolve('resources/js/components/form/Select.tsx'), 'utf8');
 const multiSelect = readFileSync(resolve('resources/js/components/form/MultiSelect.tsx'), 'utf8');
+const erpCommandSearch = readFileSync(resolve('resources/js/components/header/ErpCommandSearch.tsx'), 'utf8');
+const globalSearch = readFileSync(resolve('resources/js/Pages/ERP/Common/GlobalSearch.tsx'), 'utf8');
+const timePicker = readFileSync(resolve('resources/js/Pages/ERP/Logistics/components/TimePickerModal.tsx'), 'utf8');
+const ownerModuleTabs = readFileSync(resolve('resources/js/components/owner-shell/OwnerModuleTabs.tsx'), 'utf8');
+const ownerApprovalFilters = readFileSync(resolve('resources/js/components/owner-action-center/OwnerApprovalFilters.tsx'), 'utf8');
+const customOptionStyles = appCss.slice(
+  appCss.indexOf('/* Apply the same selection language to accessible custom dropdowns. */'),
+  appCss.indexOf('@utility no-scrollbar'),
+);
 
 describe('shared monochrome Light Mode theme', () => {
   it('scopes shared metric card styling away from Dark Mode', () => {
@@ -34,35 +43,43 @@ describe('shared monochrome Light Mode theme', () => {
     expect(appCss).toContain("[class~='text-blue-600']");
   });
 
-  it('keeps Light Mode native and custom filter options readable', () => {
-    expect(appCss).toContain("html:not(.dark) #app .erp-theme select option");
-    expect(appCss).toContain("html:not(.dark) #app .erp-theme select option:checked");
-    expect(appCss).toContain("html:not(.dark) #app .erp-theme select option:hover");
-    expect(appCss).toContain("html:not(.dark) #app .erp-theme [role='option'][aria-selected='true']");
-    expect(appCss).toContain("html:not(.dark) #app .erp-theme [role='option'][data-highlighted='true']");
+  it('keeps custom filter options readable with black selected states and neutral hover', () => {
+    expect(customOptionStyles).toContain("html:not(.dark) #app .erp-theme [role='option'][aria-selected='true'] {");
+    expect(customOptionStyles).toContain("html:not(.dark) #app .erp-theme [role='option'][data-highlighted='true']");
+    expect(customOptionStyles).toContain("background-color: #111111 !important;\n  color: #ffffff !important;");
+    expect(customOptionStyles).toContain("html.dark #app .erp-theme [role='option'][aria-selected='true'] {");
+    expect(customOptionStyles).toContain("background-color: #111111 !important;\n  color: #ffffff !important;");
   });
 
-  it('keeps native select popovers theme-aware with neutral selected and hover states', () => {
+  it('normalizes legacy blue interaction utilities only on ERP controls', () => {
+    expect(appCss).toContain("#app .erp-theme :is(button, a, [role='button'], [role='option']");
+    expect(appCss).toContain("[role='tab'], [role='menuitem']");
+    expect(appCss).toContain("[class*='hover:bg-blue-']");
+    expect(appCss).toContain("[class*='hover:bg-indigo-']");
+    expect(appCss).toContain("[class*='hover:bg-purple-']");
+    expect(appCss).toContain("background-color: #e5e7eb !important;");
+    expect(appCss).toContain("[data-state='active']");
+    expect(appCss).toContain(":not(option):not(:disabled):hover");
+  });
+
+  it('leaves native select option popovers to the browser while keeping field focus neutral', () => {
     expect(appCss).toContain('html:not(.dark) #app .erp-theme select {');
     expect(appCss).toContain('color-scheme: light;');
     expect(appCss).toContain('html.dark #app .erp-theme select {');
     expect(appCss).toContain('color-scheme: dark;');
-    expect(appCss).toContain(`html:not(.dark) #app .erp-theme select option:checked,
-html:not(.dark) #app .erp-theme select option:checked:hover {
-  background-color: #f3f4f6 !important;
-  color: #111111 !important;
-}`);
-    expect(appCss).toContain(`html.dark #app .erp-theme select option:checked,
-html.dark #app .erp-theme select option:checked:hover {
-  background-color: #334155 !important;
-  color: #f8fafc !important;
-}`);
+    expect(appCss).not.toContain("html:not(.dark) #app .erp-theme select option");
+    expect(appCss).not.toContain("html.dark #app .erp-theme select option");
   });
 
-  it('keeps custom select choices in the same gray hover language', () => {
-    expect(customSelect).toContain('selectedValue === "" ? "bg-gray-100 text-gray-900 dark:bg-gray-700 dark:text-white"');
-    expect(customSelect).not.toContain('selectedValue === "" ? "bg-gray-900 text-white"');
-    expect(multiSelect).toContain('isSelected ? "bg-gray-100 dark:bg-gray-700"');
+  it('uses black selected treatments and neutral hover treatments in shared controls', () => {
+    expect(customSelect).toContain('selectedValue === "" ? "bg-gray-950 text-white dark:bg-gray-950 dark:text-white"');
+    expect(customSelect).toContain('selectedValue === option.value ? "bg-gray-950 text-white dark:bg-gray-950 dark:text-white"');
+    expect(multiSelect).toContain('bg-gray-950 text-white hover:bg-black dark:bg-gray-950 dark:text-white');
+    expect(erpCommandSearch).toContain('bg-gray-950 text-white dark:bg-gray-950');
+    expect(globalSearch).toContain("bg-gray-950 text-white hover:bg-black dark:bg-gray-950");
+    expect(timePicker).toContain("border-gray-950 bg-gray-950 font-bold text-white");
+    expect(ownerModuleTabs).toContain('dark:border-[#111111] dark:bg-[#111111] dark:text-white');
+    expect(ownerApprovalFilters).toContain('bg-gray-950');
     expect(multiSelect).not.toContain('bg-primary/10');
     expect(multiSelect).not.toContain('hover:bg-primary/5');
   });

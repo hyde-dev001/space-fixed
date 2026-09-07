@@ -194,11 +194,11 @@ export default function UserDropdown({ inline = false, businessStyle = false }: 
             <li>
               <button
                 onClick={goToProfile}
-                className="flex items-center justify-between w-full gap-3 px-3 py-2.5 font-medium text-gray-700 rounded-lg group text-sm hover:bg-blue-50 hover:text-blue-700 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-blue-400 transition"
+                className="flex items-center justify-between w-full gap-3 px-3 py-2.5 font-medium text-gray-700 rounded-lg group text-sm hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white transition"
               >
                 <span className="flex items-center gap-3">
                   <svg
-                    className="w-5 h-5 text-gray-400 group-hover:text-blue-600 dark:group-hover:text-blue-400"
+                    className="w-5 h-5 text-gray-400 group-hover:text-gray-900 dark:group-hover:text-white"
                     fill="currentColor"
                     viewBox="0 0 20 20"
                   >

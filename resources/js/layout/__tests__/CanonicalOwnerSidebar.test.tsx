@@ -181,7 +181,7 @@ it("uses canonical URLs for Home, Reports, Audit, and Settings", () => {
     .toHaveClass("text-[#111111]", "dark:text-gray-100");
   expect(screen.getByRole("link", { name: "Home" })).toHaveAttribute("href", "/shop-owner/home");
   expect(screen.getByRole("link", { name: "Home" }))
-    .toHaveClass("bg-[#111111]", "text-white", "dark:bg-blue-500/15", "dark:text-blue-300");
+    .toHaveClass("bg-[#111111]", "text-white", "dark:bg-[#111111]", "dark:text-white");
   expect(screen.getByRole("link", { name: "Reports" })).toHaveAttribute("href", "/shop-owner/reports");
   expect(screen.getByRole("link", { name: "Audit" })).toHaveAttribute("href", "/shop-owner/audit");
   expect(screen.queryByRole("link", { name: "Profile" })).not.toBeInTheDocument();

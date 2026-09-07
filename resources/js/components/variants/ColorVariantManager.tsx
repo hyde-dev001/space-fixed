@@ -574,7 +574,7 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
                   onClick={() => setSizeSystem('US')}
                   className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${
                     sizeSystem === 'US'
-                      ? 'bg-black text-white dark:bg-white dark:text-gray-900'
+                      ? 'bg-black text-white dark:bg-gray-950 dark:text-white'
                       : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'
                   }`}
                 >
@@ -585,7 +585,7 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
                   onClick={() => setSizeSystem('UK')}
                   className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${
                     sizeSystem === 'UK'
-                      ? 'bg-black text-white dark:bg-white dark:text-gray-900'
+                      ? 'bg-black text-white dark:bg-gray-950 dark:text-white'
                       : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'
                   }`}
                 >
@@ -596,7 +596,7 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
                   onClick={() => setSizeSystem('EU')}
                   className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${
                     sizeSystem === 'EU'
-                      ? 'bg-black text-white dark:bg-white dark:text-gray-900'
+                      ? 'bg-black text-white dark:bg-gray-950 dark:text-white'
                       : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'
                   }`}
                 >
@@ -607,7 +607,7 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
                   onClick={() => setSizeSystem('AU')}
                   className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${
                     sizeSystem === 'AU'
-                      ? 'bg-black text-white dark:bg-white dark:text-gray-900'
+                      ? 'bg-black text-white dark:bg-gray-950 dark:text-white'
                       : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'
                   }`}
                 >
@@ -618,7 +618,7 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
                   onClick={() => setSizeSystem('CN')}
                   className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${
                     sizeSystem === 'CN'
-                      ? 'bg-black text-white dark:bg-white dark:text-gray-900'
+                      ? 'bg-black text-white dark:bg-gray-950 dark:text-white'
                       : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'
                   }`}
                 >

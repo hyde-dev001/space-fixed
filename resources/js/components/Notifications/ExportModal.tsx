@@ -110,7 +110,7 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => {
                   onClick={() => setFormat('json')}
                   className={`flex-1 py-3 px-4 rounded-lg border-2 font-medium transition-all ${
                     format === 'json'
-                      ? 'border-blue-500 bg-blue-50 text-blue-700'
+                      ? 'border-gray-950 bg-gray-950 text-white dark:border-gray-950 dark:bg-gray-950 dark:text-white'
                       : 'border-gray-300 hover:border-gray-400 text-gray-700'
                   }`}
                 >
@@ -120,7 +120,7 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => {
                   onClick={() => setFormat('csv')}
                   className={`flex-1 py-3 px-4 rounded-lg border-2 font-medium transition-all ${
                     format === 'csv'
-                      ? 'border-blue-500 bg-blue-50 text-blue-700'
+                      ? 'border-gray-950 bg-gray-950 text-white dark:border-gray-950 dark:bg-gray-950 dark:text-white'
                       : 'border-gray-300 hover:border-gray-400 text-gray-700'
                   }`}
                 >
@@ -138,7 +138,7 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => {
                 </h3>
                 <button
                   onClick={handleClearFilters}
-                  className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+                  className="text-sm text-gray-700 hover:text-gray-950 font-medium dark:text-gray-300 dark:hover:text-white"
                 >
                   Clear All
                 </button>
@@ -155,7 +155,7 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => {
                     type="date"
                     value={filters.startDate}
                     onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-950 focus:border-gray-950"
                   />
                 </div>
                 <div>
@@ -167,7 +167,7 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => {
                     type="date"
                     value={filters.endDate}
                     onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-950 focus:border-gray-950"
                   />
                 </div>
 
@@ -177,7 +177,7 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => {
                   <select
                     value={filters.priority}
                     onChange={(e) => setFilters({ ...filters, priority: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-950 focus:border-gray-950"
                   >
                     <option value="">All Priorities</option>
                     <option value="high">🔴 High</option>
@@ -192,7 +192,7 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => {
                   <select
                     value={filters.type}
                     onChange={(e) => setFilters({ ...filters, type: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-950 focus:border-gray-950"
                   >
                     <option value="">All Types</option>
                     <option value="order">Order</option>
@@ -214,7 +214,7 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => {
                         onClick={() => setFilters({ ...filters, status })}
                         className={`flex-1 py-2 px-4 rounded-lg border font-medium transition-all ${
                           filters.status === status
-                            ? 'border-blue-500 bg-blue-50 text-blue-700'
+                            ? 'border-gray-950 bg-gray-950 text-white dark:border-gray-950 dark:bg-gray-950 dark:text-white'
                             : 'border-gray-300 hover:border-gray-400 text-gray-700'
                         }`}
                       >
@@ -247,7 +247,7 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => {
             <button
               onClick={handleExport}
               disabled={isExporting}
-              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              className="px-6 py-2 bg-gray-950 text-white rounded-lg hover:bg-black dark:bg-gray-950 dark:hover:bg-black font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
               {isExporting ? (
                 <>

@@ -350,7 +350,7 @@ export default function ERPShoePricing() {
                   setSearchQuery(e.target.value);
                   setCurrentPage(1);
                 }}
-                className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
+                className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-gray-950 dark:focus:border-gray-300"
               />
             </div>
             <div className="sm:w-48">
@@ -360,7 +360,7 @@ export default function ERPShoePricing() {
                   setStatusFilter(e.target.value);
                   setCurrentPage(1);
                 }}
-                className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
+                className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-gray-950 dark:focus:border-gray-300"
               >
                 <option value="All">All Status</option>
                 <option value="Active">Active</option>
@@ -434,7 +434,7 @@ export default function ERPShoePricing() {
                       <div className="flex items-center gap-2">
                         <button 
                           onClick={() => handleViewClick(item)} 
-                          className="p-2 rounded-lg text-blue-600 hover:text-blue-700 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                          className="p-2 rounded-lg text-gray-700 hover:text-gray-950 dark:text-gray-300 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
                           title="View details"
                         >
                           <EyeIcon className="w-5 h-5" />
@@ -444,7 +444,7 @@ export default function ERPShoePricing() {
                           className={`p-2 rounded-lg transition-colors ${
                             item.pendingRequest && item.status !== 'Rejected'
                               ? 'text-gray-400 dark:text-gray-600 cursor-not-allowed'
-                              : 'text-blue-600 hover:text-blue-700 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20'
+                              : 'text-gray-700 hover:text-gray-950 dark:text-gray-300 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800'
                           }`}
                           title={item.pendingRequest && item.status !== 'Rejected' ? 'Pending request exists' : 'Edit price'}
                         >
@@ -474,7 +474,7 @@ export default function ERPShoePricing() {
                   {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
                     if (page === 1 || page === totalPages || (page >= currentPage - 1 && page <= currentPage + 1)) {
                       return (
-                        <button key={page} onClick={() => setCurrentPage(page)} className={`min-w-[40px] h-10 px-3 rounded-lg font-medium transition-colors ${currentPage === page ? "bg-blue-600 text-white" : "border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"}`}>{page}</button>
+                        <button key={page} onClick={() => setCurrentPage(page)} className={`min-w-[40px] h-10 px-3 rounded-lg font-medium transition-colors ${currentPage === page ? "bg-gray-950 text-white dark:bg-gray-950 dark:text-white" : "border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"}`}>{page}</button>
                       );
                     } else if (page === currentPage - 2 || page === currentPage + 2) {
                       return (<span key={page} className="px-2 text-gray-500 dark:text-gray-400">...</span>);
@@ -687,7 +687,7 @@ export default function ERPShoePricing() {
                             const digitsOnly = e.target.value.replace(/\D/g, "");
                             setEditFormData({ ...editFormData, price: digitsOnly });
                           }} 
-                          className="w-full pl-10 pr-4 py-3 text-lg rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="w-full pl-10 pr-4 py-3 text-lg rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-semibold focus:outline-none focus:ring-2 focus:ring-gray-950"
                           placeholder="0"
                         />
                       </div>
@@ -728,14 +728,14 @@ export default function ERPShoePricing() {
                         onChange={(e) => setEditFormData({ ...editFormData, reason: e.target.value })} 
                         rows={4} 
                         placeholder="Explain why this price change is needed (e.g., market adjustment, competitor pricing, seasonal discount)..." 
-                        className="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                        className="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-gray-950 resize-none"
                       />
                       <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">This reason will be reviewed by the finance team</p>
                     </div>
                   </div>
                   <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex gap-3">
                     <button onClick={() => setEditModalOpen(false)} className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg font-medium transition-colors">Cancel</button>
-                    <button onClick={handleSaveEdit} className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors">Submit Request</button>
+                    <button onClick={handleSaveEdit} className="flex-1 px-4 py-2 bg-gray-950 hover:bg-black dark:bg-gray-950 dark:hover:bg-black text-white rounded-lg font-medium transition-colors">Submit Request</button>
                   </div>
                 </div>
               </div>

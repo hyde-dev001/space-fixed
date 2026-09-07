@@ -1255,7 +1255,7 @@ export default function UploadInventory() {
                                   onClick={() => setEditSizeSystem(system)}
                                   className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors ${
                                     editSizeSystem === system
-                                      ? 'bg-black text-white dark:bg-white dark:text-gray-900'
+                                      ? 'bg-black text-white dark:bg-gray-950 dark:text-white'
                                       : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'
                                   }`}
                                 >
