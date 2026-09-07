@@ -279,22 +279,8 @@ export default function ERPInventoryOverview() {
       <div className="p-6 space-y-6" data-last-updated-at={lastUpdatedAt ?? undefined}>
         {/* Header */}
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <h1 className="sr-only">Stocks Overview</h1>
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => {
-                if (isManager) {
-                  void managerInventoryQuery.refetch();
-                } else {
-                  setRefreshTick((value) => value + 1);
-                }
-              }}
-              disabled={displayLoading}
-              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
-            >
-              Refresh
-            </button>
+          <div>
+            <h1 className="sr-only">Stocks Overview</h1>
           </div>
         </div>
 

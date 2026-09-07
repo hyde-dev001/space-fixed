@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Head, usePage } from '@inertiajs/react';
-import { Activity, Clock3, Repeat2 } from 'lucide-react';
+import { Activity, ChevronLeft, ChevronRight, Clock3, Repeat2 } from 'lucide-react';
 import AppLayoutERP from '../../../layout/AppLayout_ERP';
 import { DashboardMetricCard } from '../../../components/dashboard';
 import { erpUrl } from '@/utils/erpCapabilities';
@@ -323,6 +323,22 @@ export default function ManagerAuditLogs() {
     return !Number.isNaN(parsed) && Date.now() - parsed > 5 * 60 * 1000;
   }, [lastUpdated]);
 
+  const pageItems = useMemo<Array<number | 'ellipsis'>>(() => {
+    if (!pagination) return [];
+    if (pagination.last_page <= 5) return Array.from({ length: pagination.last_page }, (_, index) => index + 1);
+
+    const pages = new Set([1, pagination.last_page, pagination.current_page - 1, pagination.current_page, pagination.current_page + 1]);
+    const items: Array<number | 'ellipsis'> = [];
+    for (let pageNumber = 1; pageNumber <= pagination.last_page; pageNumber += 1) {
+      if (pages.has(pageNumber)) {
+        items.push(pageNumber);
+      } else if (items[items.length - 1] !== 'ellipsis') {
+        items.push('ellipsis');
+      }
+    }
+    return items;
+  }, [pagination]);
+
   const updateFilter = (key: keyof AuditFilters, value: string) => {
     setFilters((current) => ({ ...current, [key]: value }));
     setPage(1);
@@ -339,14 +355,13 @@ export default function ManagerAuditLogs() {
 
       <main className="space-y-6 p-4 sm:p-6" data-snapshot-stale={isStale ? 'true' : 'false'}>
         <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <h1 className="sr-only">Audit Logs</h1>
-          <button
-            type="button"
-            onClick={() => setRefreshToken((value) => value + 1)}
-            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
-          >
-            Refresh
-          </button>
+          <div>
+            <p className="text-sm font-semibold uppercase tracking-wide text-blue-600 dark:text-blue-400">Review</p>
+            <h1 className="mt-1 text-2xl font-bold text-slate-900 dark:text-white sm:text-3xl">Audit Logs</h1>
+            <p className="mt-2 max-w-3xl text-sm text-slate-600 dark:text-slate-400">
+              Read-only operational history for your authorized shop, including assignments, decisions, and approval changes.
+            </p>
+          </div>
         </header>
 
         <section className="grid gap-4 sm:grid-cols-3" aria-label="Audit summary">
@@ -501,33 +516,19 @@ export default function ManagerAuditLogs() {
                 </table>
               </div>
 
-              {pagination && (
-                <div className="flex flex-col gap-3 border-t border-slate-200 px-4 py-4 text-sm text-slate-600 dark:border-slate-800 dark:text-slate-300 sm:flex-row sm:items-center sm:justify-between">
-                  <p>
-                    Showing {pagination.from ?? 0}–{pagination.to ?? 0} of {pagination.total.toLocaleString()}
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <button
-                      aria-label="Previous page"
-                      type="button"
-                      disabled={page <= 1}
-                      onClick={() => setPage((value) => Math.max(1, value - 1))}
-                      className="rounded-lg border border-slate-300 px-3 py-2 font-semibold disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700"
-                    >
-                      Previous
-                    </button>
-                    <span aria-current="page">Page {pagination.current_page} of {pagination.last_page}</span>
-                    <button
-                      aria-label="Next page"
-                      type="button"
-                      disabled={page >= pagination.last_page}
-                      onClick={() => setPage((value) => value + 1)}
-                      className="rounded-lg border border-slate-300 px-3 py-2 font-semibold disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700"
-                    >
-                      Next
-                    </button>
+              {pagination && pagination.last_page > 1 && (
+                <nav className="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between dark:border-gray-800 dark:bg-white/[0.03]" aria-label="Audit log pagination">
+                  <p className="text-sm text-gray-600 dark:text-gray-400">Showing {pagination.from ?? 0}-{pagination.to ?? 0} of {pagination.total.toLocaleString()}</p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button type="button" onClick={() => setPage((value) => Math.max(1, value - 1))} disabled={page <= 1 || loading} aria-label="Previous page" className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-lg border border-gray-300 px-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"><ChevronLeft className="h-4 w-4" aria-hidden="true" /></button>
+                    {pageItems.map((pageItem, index) => pageItem === 'ellipsis' ? <span key={`ellipsis-${index}`} className="px-1 text-sm text-gray-500" aria-hidden="true">…</span> : (
+                      <button key={pageItem} type="button" onClick={() => setPage(pageItem)} disabled={loading} aria-current={pagination.current_page === pageItem ? "page" : undefined} aria-label={`Page ${pageItem}`} className={`inline-flex min-h-10 min-w-10 items-center justify-center rounded-lg border px-3 text-sm font-semibold transition-colors ${pagination.current_page === pageItem ? "border-gray-900 bg-gray-900 text-white dark:border-white dark:bg-white dark:text-gray-900" : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"}`}>
+                        {pageItem}
+                      </button>
+                    ))}
+                    <button type="button" onClick={() => setPage((value) => Math.min(pagination.last_page, value + 1))} disabled={page >= pagination.last_page || loading} aria-label="Next page" className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-lg border border-gray-300 px-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"><ChevronRight className="h-4 w-4" aria-hidden="true" /></button>
                   </div>
-                </div>
+                </nav>
               )}
             </>
           )}

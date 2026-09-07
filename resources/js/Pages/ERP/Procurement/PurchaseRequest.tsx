@@ -877,7 +877,7 @@ export default function PurchaseRequest() {
 							>
 								<option value="">Select supplier</option>
 								{suppliers.map((supplier) => (
-									<option key={supplier.id} value={supplier.id}>{supplier.name} ({supplier.contact_email})</option>
+					<option key={supplier.id} value={supplier.id}>{supplier.name}{supplier.contact_email ? ` (${supplier.contact_email})` : ""}</option>
 								))}
 							</select>
 						</div>

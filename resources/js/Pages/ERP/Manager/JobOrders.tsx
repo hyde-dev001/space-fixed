@@ -313,14 +313,6 @@ export default function JobOrders() {
             <Head title="Job Orders - Solespace ERP" />
 
             <main className="space-y-6 py-6 md:py-8" aria-labelledby="manager-job-orders-title">
-                <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-                    <div>
-                        <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600 dark:text-blue-400">Operations</p>
-                        <h1 id="manager-job-orders-title" className="mt-2 text-3xl font-bold tracking-tight text-gray-900 dark:text-white">Job Orders</h1>
-                        <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-600 dark:text-gray-400">Monitor the shop-wide order workload. A claimed order remains locked to its handler until an inactive or unavailable handler is formally replaced.</p>
-                    </div>
-                </header>
-
                 <ManagerFilterPanel
                     title="Filter job orders"
                     titleId="order-filters-title"

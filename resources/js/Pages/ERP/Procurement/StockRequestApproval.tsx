@@ -778,8 +778,8 @@ export default function StockRequest() {
 									</div>
 								)}
 
-								<div className="rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
-									<p className="text-xs font-semibold uppercase tracking-wide text-blue-600 dark:text-blue-400">Inventory Notes</p>
+								<div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
+									<p className="text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-400">Inventory Notes</p>
 									<p className="mt-1 text-sm font-medium whitespace-pre-wrap text-gray-900 dark:text-white">{viewingRequest.notes || "No notes provided."}</p>
 								</div>
 							</div>

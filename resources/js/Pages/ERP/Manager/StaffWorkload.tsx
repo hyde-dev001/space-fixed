@@ -258,18 +258,6 @@ export default function StaffWorkload() {
             <Head title="Staff & Workload - Solespace ERP" />
 
             <main className="space-y-6 py-6 md:py-8" aria-labelledby="staff-workload-title">
-                <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-                    <div>
-                        <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600 dark:text-blue-400">People & approvals</p>
-                        <h1 id="staff-workload-title" className="mt-2 text-3xl font-bold tracking-tight text-gray-900 dark:text-white">
-                            Staff &amp; Workload
-                        </h1>
-                        <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-600 dark:text-gray-400">
-                            Monitor current assignments, availability, and operational exceptions. Off-shift alone does not trigger reassignment.
-                        </p>
-                    </div>
-                </header>
-
                 <section className={`grid grid-cols-1 gap-4 ${canRetail && canRepair ? "sm:grid-cols-3" : "sm:grid-cols-2"}`} aria-label="Visible workload summary">
                     {canRetail && (
                         <DashboardMetricCard
