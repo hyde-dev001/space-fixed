@@ -735,18 +735,18 @@ export default function StockRequest() {
 
 								{shouldShowVariantRequestDetails(viewingRequest) && (
 									<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-										<div className="rounded-xl border border-indigo-200 bg-indigo-50 p-4 dark:border-indigo-800 dark:bg-indigo-900/20">
-											<p className="text-xs font-semibold uppercase tracking-wide text-indigo-600 dark:text-indigo-400">Requested Size</p>
+										<div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
+											<p className="text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">Requested Size</p>
 											<p className="mt-1 text-base font-semibold text-gray-900 dark:text-white">{getRequestedSizeLabel(viewingRequest.requested_size)}</p>
 										</div>
 										{(viewingRequest as any).requested_color ? (
-											<div className="rounded-xl border border-purple-200 bg-purple-50 p-4 dark:border-purple-800 dark:bg-purple-900/20">
-												<p className="text-xs font-semibold uppercase tracking-wide text-purple-600 dark:text-purple-400">Requested Color</p>
+											<div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
+											<p className="text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">Requested Color</p>
 												<p className="mt-1 text-base font-semibold text-gray-900 dark:text-white">{(viewingRequest as any).requested_color}</p>
 											</div>
 										) : (
-											<div className="rounded-xl border border-purple-200 bg-purple-50 p-4 dark:border-purple-800 dark:bg-purple-900/20">
-												<p className="text-xs font-semibold uppercase tracking-wide text-purple-600 dark:text-purple-400">Requested Color</p>
+											<div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
+											<p className="text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">Requested Color</p>
 												<p className="mt-1 text-base font-semibold text-gray-900 dark:text-white">Not specified</p>
 											</div>
 										)}
@@ -754,8 +754,8 @@ export default function StockRequest() {
 								)}
 
 								{isAllSizesRequest(viewingRequest.requested_size) && getAvailableSizeLabelsForRequest(viewingRequest).length > 0 && (
-									<div className="rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
-										<p className="text-xs font-semibold uppercase tracking-wide text-blue-600 dark:text-blue-400">
+									<div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
+										<p className="text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">
 											Available Sizes {viewingRequest.requested_color ? `for ${viewingRequest.requested_color}` : ""}
 										</p>
 										<p className="mt-1 text-sm font-medium text-gray-900 dark:text-white">

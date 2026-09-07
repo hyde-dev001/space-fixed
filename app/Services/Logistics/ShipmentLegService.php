@@ -66,6 +66,7 @@ class ShipmentLegService
         private RiderActiveWorkGuard $activeWork,
         private NotificationService $notifications,
         private RepairDeliveryService $repairDelivery,
+        private ArrivalService $arrivals,
     ) {}
 
     public function markPickedUp(ShipmentLeg $leg, ?RiderProfile $rider = null): ShipmentLeg
@@ -837,6 +838,11 @@ class ShipmentLegService
                 $this->assertTransitionAllowed($leg, ['assigned', 'pickup_scheduled'], 'reported as a failed pickup');
                 if ($leg->picked_up_at) {
                     throw ValidationException::withMessages(['status' => 'This pickup was already confirmed.']);
+                }
+                if (! $this->arrivals->eventForAssignment($leg, 'pickup_arrived', $assignment)) {
+                    throw ValidationException::withMessages([
+                        'arrival' => 'Record your arrival at the pickup location before reporting a failed pickup.',
+                    ]);
                 }
             } else {
                 $this->assertTransitionAllowed(

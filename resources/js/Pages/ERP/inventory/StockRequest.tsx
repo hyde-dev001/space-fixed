@@ -818,12 +818,12 @@ export default function StockRequest() {
 
 								{/* Current stock info card */}
 								{selectedItem && (
-									<div className="mt-2 flex items-center gap-2 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 px-3 py-2 text-sm">
-										<svg className="h-4 w-4 text-blue-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+									<div className="mt-2 flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800/40">
+										<svg className="h-4 w-4 shrink-0 text-gray-500 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
 											<circle cx="12" cy="12" r="9" />
 											<path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01" />
 										</svg>
-										<span className="text-blue-700 dark:text-blue-300">
+										<span className="text-gray-700 dark:text-gray-300">
 											Current stock: <strong>{selectedItem.available_quantity ?? 0} {selectedItem.unit ?? "pcs"}</strong>
 
 										</span>
@@ -900,12 +900,12 @@ export default function StockRequest() {
 						)}
 
 						{selectedColorOption && (
-							<div className="mt-2 flex items-center gap-2 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 px-3 py-2 text-sm">
-								<svg className="h-4 w-4 text-emerald-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+							<div className="mt-2 flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800/40">
+								<svg className="h-4 w-4 shrink-0 text-gray-500 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
 									<circle cx="12" cy="12" r="9" />
 									<path strokeLinecap="round" strokeLinejoin="round" d="M8 12h8" />
 								</svg>
-								<span className="text-emerald-700 dark:text-emerald-300">
+								<span className="text-gray-700 dark:text-gray-300">
 									Variant stock: <strong>{selectedColorOption.colorName}{formData.requestSize ? ` / ${formatRequestedSizeDisplay(formData.requestSize)}` : ""} = {formData.requestSize ? (selectedSizeOption?.quantity ?? 0) : selectedColorOption.quantity} {selectedItem?.unit ?? "pcs"}</strong>
 								</span>
 							</div>
@@ -1025,22 +1025,22 @@ export default function StockRequest() {
 							</div>
 
 							{shouldShowRequestedSizeBlock(viewingRequest) && (
-								<div className="rounded-xl bg-indigo-50 dark:bg-indigo-900/20 p-4 border border-indigo-200 dark:border-indigo-800">
-									<p className="text-sm font-medium text-indigo-600 dark:text-indigo-400 mb-1">Requested Size</p>
+								<div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
+									<p className="mb-1 text-sm font-medium text-gray-700 dark:text-gray-300">Requested Size</p>
 									<p className="text-base font-semibold text-gray-900 dark:text-white">{getRequestedSizeLabel(viewingRequest.requested_size)}</p>
 								</div>
 							)}
 
 							{getAvailableSizeLabelsForRequest(viewingRequest).length > 0 && (
-								<div className="rounded-xl bg-blue-50 dark:bg-blue-900/20 p-4 border border-blue-200 dark:border-blue-800">
-									<p className="text-sm font-medium text-blue-600 dark:text-blue-400 mb-1">Available Sizes {viewingRequest.requested_color ? `(${viewingRequest.requested_color})` : ""}</p>
+								<div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
+									<p className="mb-1 text-sm font-medium text-gray-700 dark:text-gray-300">Available Sizes {viewingRequest.requested_color ? `(${viewingRequest.requested_color})` : ""}</p>
 									<p className="text-base font-semibold text-gray-900 dark:text-white">{getAvailableSizeLabelsForRequest(viewingRequest).join(", ")}</p>
 								</div>
 							)}
 
 							{viewingRequest.requested_color && (
-								<div className="rounded-xl bg-purple-50 dark:bg-purple-900/20 p-4 border border-purple-200 dark:border-purple-800">
-									<p className="text-sm font-medium text-purple-600 dark:text-purple-400 mb-1">Requested Color</p>
+								<div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
+									<p className="mb-1 text-sm font-medium text-gray-700 dark:text-gray-300">Requested Color</p>
 									<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingRequest.requested_color}</p>
 								</div>
 							)}
@@ -1133,7 +1133,7 @@ export default function StockRequest() {
 													setIsCreateModalOpen(true);
 													setProductPickerSearch("");
 												}}
-												className="w-full px-6 py-4 hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-all duration-200 hover:shadow-md hover:scale-[1.01] text-left transform"
+														className="w-full px-6 py-4 text-left transition-colors hover:bg-gray-50 focus:bg-gray-50 dark:hover:bg-gray-800/60 dark:focus:bg-gray-800/60"
 											>
 												<div className="flex items-start justify-between">
 													<div className="flex-1">
@@ -1143,8 +1143,8 @@ export default function StockRequest() {
 														</p>
 													</div>
 													<div className="ml-4 shrink-0">
-														<div className="inline-flex items-center px-3 py-1 rounded-full bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
-															<span className="text-xs font-semibold text-blue-700 dark:text-blue-300">
+														<div className="inline-flex items-center rounded-full border border-gray-950 bg-gray-950 px-3 py-1 dark:border-gray-300 dark:bg-gray-100">
+															<span className="text-xs font-semibold text-white dark:text-gray-900">
 																{item.available_quantity ?? 0} {item.unit ?? "pcs"}
 															</span>
 														</div>
