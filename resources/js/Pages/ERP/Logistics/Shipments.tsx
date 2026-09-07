@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import React, { useEffect, useRef, useState } from 'react';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import axios from 'axios';
@@ -553,23 +554,23 @@ export default function Shipments({ children }: React.PropsWithChildren) {
             <button type="submit" className="min-h-11 shrink-0 rounded-xl bg-gray-950 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 focus-visible:ring-offset-2 dark:bg-gray-950 dark:hover:bg-black xl:rounded-lg">Search</button>
           </form>
           <div className="grid w-full min-w-0 grid-cols-2 gap-2 sm:gap-3 xl:flex xl:w-auto xl:flex-wrap xl:items-center xl:gap-3">
-            <select
+            <MonochromeSelect
               value={filters.status}
               onChange={(event) => updateFilter('status', event.target.value)}
               className="min-h-11 min-w-0 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition-colors focus:border-gray-950 focus:ring-2 focus:ring-gray-950/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:focus:border-gray-300 dark:focus:ring-gray-300/20 xl:w-auto xl:rounded-lg"
               aria-label="Filter shipments by status"
             >
               {(riderMode ? riderStatusOptions : statusOptions).map(([value, text]) => <option key={value} value={value}>{text}</option>)}
-            </select>
-            {!riderMode && <select
+            </MonochromeSelect>
+            {!riderMode && <MonochromeSelect
               value={filters.purpose ?? 'all'}
               onChange={(event) => updateFilter('purpose', event.target.value)}
               className="min-h-11 min-w-0 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition-colors focus:border-gray-950 focus:ring-2 focus:ring-gray-950/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:focus:border-gray-300 dark:focus:ring-gray-300/20 xl:w-auto xl:rounded-lg"
               aria-label="Filter shipments by type"
             >
               {visiblePurposeOptions.map(([value, text]) => <option key={value} value={value}>{text}</option>)}
-            </select>}
-            {!riderMode && showModuleFilter && <select
+            </MonochromeSelect>}
+            {!riderMode && showModuleFilter && <MonochromeSelect
               value={selectedModule}
               onChange={(event) => updateFilter('module', event.target.value)}
               className="min-h-11 min-w-0 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition-colors focus:border-gray-950 focus:ring-2 focus:ring-gray-950/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:focus:border-gray-300 dark:focus:ring-gray-300/20 xl:w-auto xl:rounded-lg"
@@ -577,8 +578,8 @@ export default function Shipments({ children }: React.PropsWithChildren) {
             >
               <option value="all">All modules</option>
               {availableModules.map((module) => <option key={module} value={module}>{logisticsModuleLabel(module)}</option>)}
-            </select>}
-            {!riderMode && <select
+            </MonochromeSelect>}
+            {!riderMode && <MonochromeSelect
               value={filters.window ?? 'all'}
               onChange={(event) => updateFilter('window', event.target.value)}
               className="min-h-11 min-w-0 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition-colors focus:border-gray-950 focus:ring-2 focus:ring-gray-950/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:focus:border-gray-300 dark:focus:ring-gray-300/20 xl:w-auto xl:rounded-lg"
@@ -587,8 +588,8 @@ export default function Shipments({ children }: React.PropsWithChildren) {
               <option value="all">All windows</option>
               <option value="morning">Morning</option>
               <option value="afternoon">Afternoon</option>
-            </select>}
-            {riderMode && <select
+            </MonochromeSelect>}
+            {riderMode && <MonochromeSelect
               value={filters.window}
               onChange={(event) => updateFilter('window', event.target.value)}
               className="min-h-11 min-w-0 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition-colors focus:border-gray-950 focus:ring-2 focus:ring-gray-950/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:focus:border-gray-300 dark:focus:ring-gray-300/20 xl:w-auto xl:rounded-lg"
@@ -597,7 +598,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
               <option value="all">All time</option>
               <option value="today">Today</option>
               <option value="week">This week</option>
-            </select>}
+            </MonochromeSelect>}
           </div>
         </div>
 
@@ -864,7 +865,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                         <p className="font-semibold text-emerald-800 dark:text-emerald-300">Resolution: {label(incident.resolution ?? 'resolved')}</p>
                                       ) : !riderMode && canAssign ? (
                                         <div className="space-y-2">
-                                          <select
+                                          <MonochromeSelect
                                             aria-label={`Resolution for incident ${incident.id}`}
                                             value={incidentResolutions[incident.id] ?? ''}
                                             onChange={(event) => setIncidentResolutions({ ...incidentResolutions, [incident.id]: event.target.value })}
@@ -877,7 +878,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                               <option value="retry">Authorize retry</option>
                                               <option value="return_required">Require return to shop</option>
                                             </>}
-                                          </select>
+                                          </MonochromeSelect>
                                           <textarea
                                             aria-label={`Resolution note for incident ${incident.id}`}
                                             value={incidentNotes[incident.id] ?? ''}
@@ -989,7 +990,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                       </div>
                                       <label className="block text-xs font-semibold text-gray-700 dark:text-gray-200">
                                         Reason
-                                        <select
+                                        <MonochromeSelect
                                           value={issueForm.reason_code}
                                           onChange={(event) => setIssueForms({ ...issueForms, [leg.id]: { ...issueForm, reason_code: event.target.value } })}
                                           className="mt-1 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
@@ -1003,7 +1004,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                           <option value="unsafe_location">Unsafe location</option>
                                           <option value="vehicle_or_delivery_problem">Vehicle or delivery problem</option>
                                           <option value="other">Other</option>
-                                        </select>
+                                        </MonochromeSelect>
                                       </label>
                                       <label className="block text-xs font-semibold text-gray-700 dark:text-gray-200">
                                         Attempt photo <span className={requiresIssuePhoto ? 'text-red-600' : 'font-normal text-gray-500'}>({requiresIssuePhoto ? 'required' : 'optional'})</span>
@@ -1058,14 +1059,14 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                           disabled={assigningLegId === leg.id}
                                         />
                                       </label>
-                                      <label className="block text-xs font-semibold text-gray-700 dark:text-gray-200">Delivery window<select aria-label="Delivery window" value={schedule.window} onChange={(event) => setDeliverySchedules({ ...deliverySchedules, [leg.id]: { ...schedule, window: event.target.value } })} className="mt-1 min-h-11 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-white lg:rounded-lg"><option value="">Choose a window</option><option value="morning">Morning</option><option value="afternoon">Afternoon</option></select></label>
+                                      <label className="block text-xs font-semibold text-gray-700 dark:text-gray-200">Delivery window<MonochromeSelect aria-label="Delivery window" value={schedule.window} onChange={(event) => setDeliverySchedules({ ...deliverySchedules, [leg.id]: { ...schedule, window: event.target.value } })} className="mt-1 min-h-11 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-white lg:rounded-lg"><option value="">Choose a window</option><option value="morning">Morning</option><option value="afternoon">Afternoon</option></MonochromeSelect></label>
                                     </div>
                                     {activeAssignment ? (
                                       <button type="button" disabled={!schedule.date || !schedule.window || assigningLegId === leg.id} onClick={() => void scheduleLeg(leg.id, false)} className="min-h-11 w-full rounded-xl bg-gray-950 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-black dark:bg-gray-950 dark:hover:bg-black disabled:cursor-not-allowed disabled:opacity-50 lg:w-auto lg:rounded-lg">Save schedule</button>
                                     ) : (
                                       <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
                                         <label className="block min-w-0 flex-1 text-xs font-semibold text-gray-700 dark:text-gray-200">Available rider
-                                          <select
+                                          <MonochromeSelect
                                             value={selectedRiders[leg.id] ?? ''}
                                             onChange={(event) => setSelectedRiders({ ...selectedRiders, [leg.id]: event.target.value })}
                                             className="mt-1 min-h-11 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-white lg:rounded-lg"
@@ -1073,7 +1074,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                           >
                                             <option value="">Choose available rider</option>
                                             {assignableRiders.map((rider) => <option key={rider.id} value={rider.id}>{rider.name}{rider.phone ? ` (${rider.phone})` : ''}</option>)}
-                                          </select>
+                                          </MonochromeSelect>
                                         </label>
                                         <button type="button" disabled={!schedule.date || !schedule.window || !selectedRiders[leg.id] || assigningLegId === leg.id} onClick={() => void scheduleLeg(leg.id, true)} className="min-h-11 w-full rounded-xl bg-gray-950 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-black dark:bg-gray-950 dark:hover:bg-black disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto lg:rounded-lg">{assigningLegId === leg.id ? 'Scheduling...' : 'Schedule & assign rider'}</button>
                                       </div>
@@ -1082,7 +1083,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                 )}
                                 {!canScheduleLeg && (activeAssignment ? null : canAssignLeg ? (
                                   <div className="flex flex-col gap-2 sm:flex-row">
-                                    <select
+                                    <MonochromeSelect
                                       value={selectedRiders[leg.id] ?? ''}
                                       onChange={(event) => setSelectedRiders({ ...selectedRiders, [leg.id]: event.target.value })}
                                       className="rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
@@ -1090,7 +1091,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                     >
                                       <option value="">Choose available rider</option>
                                       {assignableRiders.map((rider) => <option key={rider.id} value={rider.id}>{rider.name}{rider.phone ? ` (${rider.phone})` : ''}</option>)}
-                                    </select>
+                                    </MonochromeSelect>
                                     <button
                                       type="button"
                                       disabled={!selectedRiders[leg.id] || assigningLegId === leg.id}

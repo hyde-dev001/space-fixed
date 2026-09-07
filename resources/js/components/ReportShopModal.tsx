@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import React, { useState } from 'react';
 import { usePage } from '@inertiajs/react';
 
@@ -224,7 +225,7 @@ const ReportShopModal: React.FC<Props> = ({ shopId, shopName, isOpen, onClose })
                 <label className="block text-sm font-semibold text-gray-800 mb-2">
                   Reason for report <span className="text-red-500">*</span>
                 </label>
-                <select
+                <MonochromeSelect
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
                   required
@@ -236,7 +237,7 @@ const ReportShopModal: React.FC<Props> = ({ shopId, shopName, isOpen, onClose })
                   {REASONS.map((r) => (
                     <option key={r.value} value={r.value}>{r.label}</option>
                   ))}
-                </select>
+                </MonochromeSelect>
               </div>
 
               {/* Description */}

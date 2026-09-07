@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import React from 'react';
 import { ChevronDown, ChevronUp, Search, X } from 'lucide-react';
 import {
@@ -72,15 +73,15 @@ export default function AvailableDeliveriesPanel({
       </label>
       <div data-testid="batch-filter-grid" className="mt-3 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <DeliveryDatePicker value={date} minDate={today} operatingDays={logisticsSchedule?.operating_days} blackoutDates={logisticsSchedule?.blackout_dates} onChange={onDateChange} />
-        <select aria-label="Delivery window" value={window} onChange={(event) => onWindowChange(event.target.value)} className="min-h-11 rounded-xl border border-gray-300 px-3 text-sm">
+        <MonochromeSelect aria-label="Delivery window" value={window} onChange={(event) => onWindowChange(event.target.value)} className="min-h-11 rounded-xl border border-gray-300 px-3 text-sm">
           <option value="morning">Morning</option>
           <option value="afternoon">Afternoon</option>
-        </select>
-        <select aria-label="Schedule status" value={status} onChange={(event) => onStatusChange(event.target.value)} className="min-h-11 rounded-xl border border-gray-300 px-3 text-sm">
+        </MonochromeSelect>
+        <MonochromeSelect aria-label="Schedule status" value={status} onChange={(event) => onStatusChange(event.target.value)} className="min-h-11 rounded-xl border border-gray-300 px-3 text-sm">
           <option value="all">All statuses</option>
           <option value="unscheduled">Needs scheduling</option>
           <option value="scheduled">Scheduled</option>
-        </select>
+        </MonochromeSelect>
       </div>
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm">
         <div className="flex flex-wrap items-center gap-3">

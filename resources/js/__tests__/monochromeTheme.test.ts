@@ -14,7 +14,7 @@ const timePicker = readFileSync(resolve('resources/js/Pages/ERP/Logistics/compon
 const ownerModuleTabs = readFileSync(resolve('resources/js/components/owner-shell/OwnerModuleTabs.tsx'), 'utf8');
 const ownerApprovalFilters = readFileSync(resolve('resources/js/components/owner-action-center/OwnerApprovalFilters.tsx'), 'utf8');
 const customOptionStyles = appCss.slice(
-  appCss.indexOf('/* Apply the same selection language to accessible custom dropdowns. */'),
+  appCss.indexOf('/* Apply the same selection language to accessible custom dropdowns across'),
   appCss.indexOf('@utility no-scrollbar'),
 );
 
@@ -44,10 +44,12 @@ describe('shared monochrome Light Mode theme', () => {
   });
 
   it('keeps custom filter options readable with black selected states and neutral hover', () => {
-    expect(customOptionStyles).toContain("html:not(.dark) #app .erp-theme [role='option'][aria-selected='true'] {");
-    expect(customOptionStyles).toContain("html:not(.dark) #app .erp-theme [role='option'][data-highlighted='true']");
+    expect(customOptionStyles).toContain("html:not(.dark) #app :is([role='combobox'], [aria-haspopup='listbox']):is(:focus, :focus-within)");
+    expect(customOptionStyles).toContain("html:not(.dark) #app :is([role='combobox'], [aria-haspopup='listbox']):hover");
+    expect(customOptionStyles).toContain("html:not(.dark) #app [role='listbox'] [role='option'][aria-selected='true'] {");
+    expect(customOptionStyles).toContain("html:not(.dark) #app [role='listbox'] [role='option'][data-highlighted='true']");
     expect(customOptionStyles).toContain("background-color: #111111 !important;\n  color: #ffffff !important;");
-    expect(customOptionStyles).toContain("html.dark #app .erp-theme [role='option'][aria-selected='true'] {");
+    expect(customOptionStyles).toContain("html.dark #app [role='listbox'] [role='option'][aria-selected='true'] {");
     expect(customOptionStyles).toContain("background-color: #111111 !important;\n  color: #ffffff !important;");
   });
 

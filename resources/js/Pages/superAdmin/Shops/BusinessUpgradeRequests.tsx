@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { Head, router } from '@inertiajs/react';
@@ -356,7 +357,7 @@ const BusinessUpgradeRequests: React.FC<BusinessUpgradeRequestsProps> = ({
         <form onSubmit={applyFilters} className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:grid-cols-2 lg:grid-cols-5 dark:border-slate-800 dark:bg-slate-900">
           <label className="text-sm font-medium text-slate-700 dark:text-slate-200">
             Status
-            <select
+            <MonochromeSelect
               aria-label="Filter status"
               value={filterForm.status}
               onChange={(event) => setFilterForm((previous) => ({ ...previous, status: event.target.value as QueueFilters['status'] }))}
@@ -364,7 +365,7 @@ const BusinessUpgradeRequests: React.FC<BusinessUpgradeRequestsProps> = ({
             >
               <option value="">All statuses</option>
               {(Object.keys(statusLabels) as RequestStatus[]).map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}
-            </select>
+            </MonochromeSelect>
           </label>
           <label className="text-sm font-medium text-slate-700 dark:text-slate-200">
             Search

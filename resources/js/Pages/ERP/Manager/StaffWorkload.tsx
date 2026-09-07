@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head, Link, usePage } from "@inertiajs/react";
 import { useMemo, useState } from "react";
 import type { FormEvent } from "react";
@@ -312,7 +313,7 @@ export default function StaffWorkload() {
                         </div>
                         <div>
                             <label htmlFor="staff-role" className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Role</label>
-                            <select
+                            <MonochromeSelect
                                 id="staff-role"
                                 value={form.role}
                                 onChange={(event) => setForm((current) => ({ ...current, role: event.target.value }))}
@@ -321,11 +322,11 @@ export default function StaffWorkload() {
                                 <option value="">All roles</option>
                                 {canRetail && <option value="staff">Staff</option>}
                                 {canRepair && <option value="repairer">Repairer</option>}
-                            </select>
+                            </MonochromeSelect>
                         </div>
                         <div>
                             <label htmlFor="staff-status" className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Status</label>
-                            <select
+                            <MonochromeSelect
                                 id="staff-status"
                                 value={form.status}
                                 onChange={(event) => setForm((current) => ({ ...current, status: event.target.value }))}
@@ -337,7 +338,7 @@ export default function StaffWorkload() {
                                 <option value="suspended">Suspended</option>
                                 <option value="terminated">Terminated</option>
                                 <option value="offboarded">Offboarded</option>
-                            </select>
+                            </MonochromeSelect>
                         </div>
                         <div>
                             <label htmlFor="staff-date-from" className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Period from</label>

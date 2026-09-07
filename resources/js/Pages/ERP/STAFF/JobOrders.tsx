@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Swal from "sweetalert2";
 import { X } from "lucide-react";
@@ -2473,7 +2474,7 @@ export default function JobOrdersPage() {
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                       Estimated Delivery Date *
                     </label>
-                    <select
+                    <MonochromeSelect
                       value={etaPreset}
                       onChange={(e) => setEtaPreset(e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -2482,14 +2483,14 @@ export default function JobOrdersPage() {
                       <option value="1-3 business days">1-3 business days</option>
                       <option value="2-4 business days">2-4 business days</option>
                       <option value="3-6 business days">3-6 business days</option>
-                    </select>
+                    </MonochromeSelect>
                   </div>
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                       Shipping Business *
                     </label>
-                    <select
+                    <MonochromeSelect
                       value={carrierCompany}
                       onChange={(e) => setCarrierCompany(e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -2499,7 +2500,7 @@ export default function JobOrdersPage() {
                       <option value="Lalamove">Lalamove</option>
                       <option value="J&T">J&amp;T</option>
                       <option value="Express Padala">Express Padala</option>
-                    </select>
+                    </MonochromeSelect>
                     <div
                       role="status"
                       aria-live="polite"

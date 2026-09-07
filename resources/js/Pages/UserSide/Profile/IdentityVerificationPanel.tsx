@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { router } from '@inertiajs/react';
 import Swal from '../Shared/UserModal';
@@ -320,14 +321,14 @@ const IdentityResubmission = ({ firstName, lastName, current }: {
 			</div>
 			<label className="block text-xs font-semibold text-gray-600">
 				Document type
-				<select
+				<MonochromeSelect
 					value={documentType}
 					onChange={event => reset(event.target.value)}
 					className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-normal text-gray-900 focus:border-gray-500 focus:outline-none"
 					disabled={isSubmitting}
 				>
 					{DOCUMENT_OPTIONS.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
-				</select>
+				</MonochromeSelect>
 			</label>
 			<p className="text-xs text-gray-500">{option.guidance}</p>
 			<div className="grid gap-3 sm:grid-cols-2">

@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { useMemo, useState, useEffect, useRef } from "react";
 import Swal from "sweetalert2";
 import { Head, usePage } from "@inertiajs/react";
@@ -3187,7 +3188,7 @@ export default function JobOrdersRepair() {
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
-                      <select
+                      <MonochromeSelect
                         title="Select material"
                         aria-label="Select material"
                         value={materialForm.inventory_item_id}
@@ -3200,7 +3201,7 @@ export default function JobOrdersRepair() {
                             {material.name} ({material.sku || 'N/A'}) — Available: {material.available_quantity}
                           </option>
                         ))}
-                      </select>
+                      </MonochromeSelect>
 
                       <input
                         type="number"
@@ -3525,7 +3526,7 @@ export default function JobOrdersRepair() {
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                       Estimated Delivery Date *
                     </label>
-                    <select
+                    <MonochromeSelect
                       value={etaPreset}
                       onChange={(e) => setEtaPreset(e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -3535,14 +3536,14 @@ export default function JobOrdersRepair() {
                       <option value="1-3 business days">1-3 business days</option>
                       <option value="2-4 business days">2-4 business days</option>
                       <option value="3-6 business days">3-6 business days</option>
-                    </select>
+                    </MonochromeSelect>
                   </div>
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                       Shipping Business *
                     </label>
-                    <select
+                    <MonochromeSelect
                       ref={carrierCompanySelectRef}
                       value={carrierCompany}
                       onChange={(e) => setCarrierCompany(e.target.value.trim())}
@@ -3554,7 +3555,7 @@ export default function JobOrdersRepair() {
                       <option value="Lalamove">Lalamove</option>
                       <option value="J&T">J&amp;T</option>
                       <option value="Express Padala">Express Padala</option>
-                    </select>
+                    </MonochromeSelect>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -3675,7 +3676,7 @@ export default function JobOrdersRepair() {
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                       Rejection Reason *
                     </label>
-                    <select
+                    <MonochromeSelect
                       value={selectedRejectionReason}
                       onChange={(e) => setSelectedRejectionReason(e.target.value)}
                       title="Rejection Reason"
@@ -3687,7 +3688,7 @@ export default function JobOrdersRepair() {
                           {reason}
                         </option>
                       ))}
-                    </select>
+                    </MonochromeSelect>
                   </div>
 
                   <div>

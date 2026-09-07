@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
                                 /**
  * NotificationList Page Component - Phase 7 Enhanced
  * Full notification management with advanced filters, bulk actions, and Phase 6 features
@@ -1098,7 +1099,7 @@ const NotificationList: React.FC<NotificationListProps> = ({
                   <label className={themeClasses('block text-sm font-medium text-gray-700 mb-2', 'dark:text-gray-300')}>
                     Category
                   </label>
-                  <select
+                  <MonochromeSelect
                     value={filters.category || ''}
                     onChange={(e) => handleFilterChange('category', e.target.value || undefined)}
                     title="Filter by category"
@@ -1111,7 +1112,7 @@ const NotificationList: React.FC<NotificationListProps> = ({
                     {categories.map(cat => (
                       <option key={cat.value} value={cat.value}>{cat.label}</option>
                     ))}
-                  </select>
+                  </MonochromeSelect>
                 </div>
 
                 {/* Priority Filter */}
@@ -1119,7 +1120,7 @@ const NotificationList: React.FC<NotificationListProps> = ({
                   <label className={themeClasses('block text-sm font-medium text-gray-700 mb-2', 'dark:text-gray-300')}>
                     Priority Level
                   </label>
-                  <select
+                  <MonochromeSelect
                     value={filters.priority || ''}
                     onChange={(e) => handleFilterChange('priority', e.target.value || undefined)}
                     title="Filter by priority"
@@ -1132,7 +1133,7 @@ const NotificationList: React.FC<NotificationListProps> = ({
                     {priorities.map(pri => (
                       <option key={pri.value} value={pri.value}>{pri.label}</option>
                     ))}
-                  </select>
+                  </MonochromeSelect>
                 </div>
 
                 {/* Start Date */}

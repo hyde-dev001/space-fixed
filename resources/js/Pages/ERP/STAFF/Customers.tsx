@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import React, { useState, useMemo } from 'react';
 import { Head, usePage } from '@inertiajs/react';
 import AppLayoutERP from '../../../layout/AppLayout_ERP';
@@ -230,7 +231,7 @@ export default function CustomersPage() {
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Filter by Status
                 </label>
-                <select
+                <MonochromeSelect
                   value={filterStatus}
                   onChange={(e) => { setFilterStatus(e.target.value as 'all' | 'active' | 'inactive'); setCurrentPage(1); }}
                   className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
@@ -238,7 +239,7 @@ export default function CustomersPage() {
                   <option value="all">All Customers</option>
                   <option value="active">Active</option>
                   <option value="inactive">Inactive</option>
-                </select>
+                </MonochromeSelect>
               </div>
             </div>
           </div>

@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useMemo, useState } from "react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
@@ -340,7 +341,7 @@ export default function ERPInventoryOverview() {
             </div>
             {isManager && (
             <div className="sm:w-48">
-              <select
+              <MonochromeSelect
                 value={categoryFilter}
                 onChange={(e) => {
                   setCategoryFilter(e.target.value);
@@ -354,11 +355,11 @@ export default function ERPInventoryOverview() {
                 {availableCategories.map((category) => (
                   <option key={category} value={category}>{formatCategoryLabel(category)}</option>
                 ))}
-              </select>
+              </MonochromeSelect>
             </div>
             )}
             <div className="sm:w-48">
-              <select
+              <MonochromeSelect
                 value={statusFilter}
                 onChange={(e) => {
                   setStatusFilter(e.target.value);
@@ -372,7 +373,7 @@ export default function ERPInventoryOverview() {
                 <option value="In Stock">In Stock</option>
                 <option value="Low Stock">Low Stock</option>
                 <option value="Out of Stock">Out of Stock</option>
-              </select>
+              </MonochromeSelect>
             </div>
           </div>
 

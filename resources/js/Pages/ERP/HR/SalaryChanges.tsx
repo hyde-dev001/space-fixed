@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import React, { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { usePage } from "@inertiajs/react";
@@ -878,7 +879,7 @@ const SalaryChanges: React.FC = () => {
           </div>
           <div>
             <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">Status</label>
-            <select
+            <MonochromeSelect
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as "All" | ChangeStatus)}
               title="Filter by status"
@@ -890,7 +891,7 @@ const SalaryChanges: React.FC = () => {
               <option value="applied">Applied</option>
               <option value="rejected">Rejected</option>
               <option value="cancelled">Cancelled</option>
-            </select>
+            </MonochromeSelect>
           </div>
         </div>
       </div>
@@ -1034,7 +1035,7 @@ const SalaryChanges: React.FC = () => {
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
                       Employee <span className="text-red-500">*</span>
                     </label>
-                    <select
+                    <MonochromeSelect
                       value={newChangeForm.employee_id}
                       onChange={(e) => setNewChangeForm((prev) => ({ ...prev, employee_id: e.target.value }))}
                       title="Select employee"
@@ -1046,7 +1047,7 @@ const SalaryChanges: React.FC = () => {
                           {employee.name || `#${employee.id}`}{employee.department ? ` - ${employee.department}` : ""}
                         </option>
                       ))}
-                    </select>
+                    </MonochromeSelect>
                   </div>
 
                   {selectedEmployee && (

@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useMemo, useState } from "react";
 import type { ComponentType } from "react";
@@ -519,7 +520,7 @@ export default function StockRequest() {
 							/>
 						</div>
 						<div className="sm:w-52">
-							<select
+							<MonochromeSelect
 								title="Filter by status"
 								aria-label="Filter by status"
 								value={statusFilter}
@@ -534,10 +535,10 @@ export default function StockRequest() {
 								<option value="accepted">Approved</option>
 								<option value="rejected">Rejected</option>
 								<option value="needs_details">Needs Details</option>
-							</select>
+							</MonochromeSelect>
 						</div>
 						<div className="sm:w-44">
-							<select
+							<MonochromeSelect
 								title="Filter by priority"
 								aria-label="Filter by priority"
 								value={priorityFilter}
@@ -551,7 +552,7 @@ export default function StockRequest() {
 								<option value="high">High</option>
 								<option value="medium">Medium</option>
 								<option value="low">Low</option>
-							</select>
+							</MonochromeSelect>
 						</div>
 					</div>
 

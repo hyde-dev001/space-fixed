@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useMemo, useState } from "react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
@@ -144,7 +145,7 @@ export default function AuditLogs({ title, description, capabilityKey }: AuditLo
              placeholder="Filter by area"
              className="rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800"
            />
-          <select
+          <MonochromeSelect
             value={severity}
             onChange={(event) => { setSeverity(event.target.value); setPage(1); }}
             className="rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800"
@@ -153,7 +154,7 @@ export default function AuditLogs({ title, description, capabilityKey }: AuditLo
             <option value="info">Info</option>
             <option value="warning">Warning</option>
             <option value="critical">Critical</option>
-          </select>
+          </MonochromeSelect>
         </div>
 
         {error && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}

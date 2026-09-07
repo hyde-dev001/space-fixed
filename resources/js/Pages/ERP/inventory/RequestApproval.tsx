@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useMemo, useState } from "react";
 import type { ComponentType } from "react";
@@ -398,7 +399,7 @@ export default function RequestApproval() {
 							/>
 						</div>
 						<div className="sm:w-56">
-							<select
+							<MonochromeSelect
 								title="Filter by status"
 								aria-label="Filter by status"
 								value={statusFilter}
@@ -413,7 +414,7 @@ export default function RequestApproval() {
 								<option value="accepted">Approved</option>
 								<option value="rejected">Rejected</option>
 								<option value="needs_details">Needs Details</option>
-							</select>
+							</MonochromeSelect>
 						</div>
 					</div>
 

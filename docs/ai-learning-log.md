@@ -84,3 +84,8 @@
 ## 2026-09-06 - Article entitlement boundaries
 
 - Normalize legacy business-type labels through the shared business access service at both server and client boundaries; direct article URLs must enforce the same feature and account-configuration scope as the filtered article hub.
+
+## 2026-09-08 - Monochrome dropdown ownership
+
+- Native `<select>` option highlight colors belong to the browser/OS; consistent monochrome selection requires shared custom trigger/listbox rendering across pages, while retaining a hidden native control only when a real form contract (`name`, `required`, `form`, or `multiple`) needs it.
+- SweetAlert selects are injected after React renders, so they need a document observer and DOM enhancer to receive the same selected, hover, and focus treatments.

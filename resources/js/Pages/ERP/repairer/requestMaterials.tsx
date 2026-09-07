@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head } from "@inertiajs/react";
 import { useEffect, useMemo, useState } from "react";
 import type { ComponentType } from "react";
@@ -479,7 +480,7 @@ export default function RequestMaterials() {
               />
             </div>
             <div className="sm:w-56">
-              <select
+              <MonochromeSelect
                 title="Filter by request status"
                 aria-label="Filter by request status"
                 value={statusFilter}
@@ -494,7 +495,7 @@ export default function RequestMaterials() {
                 <option value="accepted">Approved</option>
                 <option value="rejected">Rejected</option>
                 <option value="needs_details">Needs Details</option>
-              </select>
+              </MonochromeSelect>
             </div>
           </div>
 
@@ -593,7 +594,7 @@ export default function RequestMaterials() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Material</label>
-                <select
+                <MonochromeSelect
                   value={formData.materialId}
                   onChange={(event) => setFormData((prev) => ({ ...prev, materialId: event.target.value }))}
                   title="Select material"
@@ -606,7 +607,7 @@ export default function RequestMaterials() {
                       {material.name} ({material.sku || "N/A"})
                     </option>
                   ))}
-                </select>
+                </MonochromeSelect>
                 {selectedMaterial && (
                   <p className="mt-1 text-xs text-gray-500">Available stock: {selectedMaterial.available_quantity} {selectedMaterial.unit || "unit"}(s)</p>
                 )}
@@ -626,7 +627,7 @@ export default function RequestMaterials() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Priority</label>
-                <select
+                <MonochromeSelect
                   value={formData.priority}
                   onChange={(event) => setFormData((prev) => ({ ...prev, priority: event.target.value as Priority }))}
                   title="Select priority"
@@ -636,7 +637,7 @@ export default function RequestMaterials() {
                   <option value="High">High</option>
                   <option value="Medium">Medium</option>
                   <option value="Low">Low</option>
-                </select>
+                </MonochromeSelect>
               </div>
 
               <div className="md:col-span-2">
@@ -735,7 +736,7 @@ export default function RequestMaterials() {
 
                       <div>
                         <label className="text-xs font-medium text-gray-600 dark:text-gray-400">Priority</label>
-                        <select
+                        <MonochromeSelect
                           value={item.priority}
                           onChange={(e) =>
                             handleUpdateCartItem(item.id, {
@@ -750,7 +751,7 @@ export default function RequestMaterials() {
                           <option value="High">High</option>
                           <option value="Medium">Medium</option>
                           <option value="Low">Low</option>
-                        </select>
+                        </MonochromeSelect>
                       </div>
                     </div>
 

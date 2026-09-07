@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head, usePage } from "@inertiajs/react";
 import type { ComponentType } from "react";
 import { useState, useEffect } from "react";
@@ -542,7 +543,7 @@ export default function ERPPricingAndServices() {
               />
             </div>
             <div className="sm:w-48">
-              <select
+              <MonochromeSelect
                 value={statusFilter}
                 onChange={(e) => {
                   setStatusFilter(e.target.value);
@@ -555,7 +556,7 @@ export default function ERPPricingAndServices() {
                 <option value="Active">Active</option>
                 <option value="Under Review">Under Review</option>
                 <option value="Rejected">Rejected</option>
-              </select>
+              </MonochromeSelect>
             </div>
           </div>
 
@@ -714,7 +715,7 @@ export default function ERPPricingAndServices() {
                   </div>
                   <div>
                     <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Category</p>
-                    <select
+                    <MonochromeSelect
                       value={addFormData.category}
                       onChange={(e) => setAddFormData({ ...addFormData, category: e.target.value })}
                       title="Select service category"
@@ -723,7 +724,7 @@ export default function ERPPricingAndServices() {
                       <option value="Care">Care</option>
                       <option value="Restoration">Restoration</option>
                       <option value="Repair">Repair</option>
-                    </select>
+                    </MonochromeSelect>
                   </div>
                   <div>
                     <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Price</p>

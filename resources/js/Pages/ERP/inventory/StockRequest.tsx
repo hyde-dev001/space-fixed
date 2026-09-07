@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useMemo, useState } from "react";
 import type { ComponentType } from "react";
@@ -630,7 +631,7 @@ export default function StockRequest() {
 						/>
 					</div>
 					<div className="sm:w-56">
-						<select
+						<MonochromeSelect
 							title="Filter by status"
 							aria-label="Filter by status"
 							value={statusFilter}
@@ -645,10 +646,10 @@ export default function StockRequest() {
 							<option value="accepted">Approved</option>
 							<option value="rejected">Rejected</option>
 							<option value="needs_details">Needs Details</option>
-						</select>
+						</MonochromeSelect>
 					</div>
 					<div className="sm:w-56">
-						<select
+						<MonochromeSelect
 							title="Filter by priority"
 							aria-label="Filter by priority"
 							value={priorityFilter}
@@ -662,7 +663,7 @@ export default function StockRequest() {
 							<option value="low">Low</option>
 							<option value="medium">Medium</option>
 							<option value="high">High</option>
-						</select>
+						</MonochromeSelect>
 					</div>
 				</div>
 
@@ -834,7 +835,7 @@ export default function StockRequest() {
 						{selectedItem && allowColorSelection && (
 							<div className="mt-3">
 								<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Color *</label>
-								<select
+								<MonochromeSelect
 									title="Select color"
 									aria-label="Select color"
 									value={formData.requestColor}
@@ -847,7 +848,7 @@ export default function StockRequest() {
 											{colorOption.colorName} — {colorOption.quantity} in stock
 										</option>
 									))}
-								</select>
+								</MonochromeSelect>
 								<p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Select color first, then choose from sizes available under that color.</p>
 							</div>
 						)}
@@ -857,7 +858,7 @@ export default function StockRequest() {
 								<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
 									Specific Size <span className="text-gray-400 font-normal">(optional — leave blank to request all sizes for this color)</span>
 								</label>
-								<select
+								<MonochromeSelect
 									title="Select specific size"
 									aria-label="Select specific size"
 									value={formData.requestSize}
@@ -870,7 +871,7 @@ export default function StockRequest() {
 											{formatRequestedSizeDisplay(sizeOption.label)} — {sizeOption.quantity} in stock
 										</option>
 									))}
-								</select>
+								</MonochromeSelect>
 							</div>
 						)}
 
@@ -879,7 +880,7 @@ export default function StockRequest() {
 								<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
 									Specific Size <span className="text-gray-400 font-normal">(optional — leave blank to request all sizes)</span>
 								</label>
-								<select
+								<MonochromeSelect
 									title="Select specific size"
 									aria-label="Select specific size"
 									value={formData.requestSize}
@@ -895,7 +896,7 @@ export default function StockRequest() {
 											</option>
 										);
 									})}
-								</select>
+								</MonochromeSelect>
 							</div>
 						)}
 
@@ -934,7 +935,7 @@ export default function StockRequest() {
 							</div>
 							<div>
 								<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Priority *</label>
-								<select
+								<MonochromeSelect
 									title="Select request priority"
 									aria-label="Select request priority"
 									value={formData.priority}
@@ -944,7 +945,7 @@ export default function StockRequest() {
 									<option value="high">High</option>
 									<option value="medium">Medium</option>
 									<option value="low">Low</option>
-								</select>
+								</MonochromeSelect>
 							</div>
 							</div>
 

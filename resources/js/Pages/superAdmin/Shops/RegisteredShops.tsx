@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { router } from '@inertiajs/react';
@@ -534,7 +535,7 @@ function RegisteredShops({ shops, stats, filters = {} }) {
             {/* Lifecycle Filter */}
             <div className="relative">
               <FilterIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-              <select
+              <MonochromeSelect
                 aria-label="Filter by Lifecycle"
                 value={filterLifecycle}
                 onChange={(e) => {
@@ -546,13 +547,13 @@ function RegisteredShops({ shops, stats, filters = {} }) {
                 <option value="all">All Lifecycles</option>
                 <option value="active">Active</option>
                 <option value="archived">Archived</option>
-              </select>
+              </MonochromeSelect>
             </div>
 
             {/* Status Filter */}
             <div className="relative">
               <FilterIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-              <select
+              <MonochromeSelect
                 value={filterStatus}
                 onChange={(e) => {
                   setFilterStatus(e.target.value);
@@ -564,7 +565,7 @@ function RegisteredShops({ shops, stats, filters = {} }) {
                 <option value="approved">Active</option>
                 <option value="suspended">Suspended</option>
                 <option value="archived">Archived Shops</option>
-              </select>
+              </MonochromeSelect>
             </div>
           </div>
 

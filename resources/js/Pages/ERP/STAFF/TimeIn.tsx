@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head, usePage } from '@inertiajs/react';
 import AppLayoutERP from '../../../layout/AppLayout_ERP';
 import { useState, useEffect } from 'react';
@@ -1652,7 +1653,7 @@ export default function TimeIn() {
                                         placeholder="Search date, time, hours, status..."
                                         className="min-h-12 w-full rounded-full border border-gray-300 bg-white px-4 py-2 text-sm text-gray-900 transition-colors focus:border-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900/20 dark:border-gray-700 dark:bg-gray-800 dark:text-white xl:w-72"
                                     />
-                                    <select
+                                    <MonochromeSelect
                                         value={attendanceStatusFilter}
                                         onChange={(e) => setAttendanceStatusFilter(e.target.value)}
                                         aria-label="Filter attendance history by status"
@@ -1668,7 +1669,7 @@ export default function TimeIn() {
                                                 {statusOption === 'all' ? 'All Statuses' : statusOption}
                                             </option>
                                         ))}
-                                    </select>
+                                    </MonochromeSelect>
                                 </div>
                             </div>
                         </div>
@@ -2063,7 +2064,7 @@ export default function TimeIn() {
                                     <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
                                         Reason for Overtime <span className="text-red-500">*</span>
                                     </label>
-                                    <select
+                                    <MonochromeSelect
                                         value={overtimeReason}
                                         onChange={(e) => {
                                             setOvertimeReason(e.target.value);
@@ -2079,7 +2080,7 @@ export default function TimeIn() {
                                         <option value="Client requirement">Client requirement</option>
                                         <option value="System issue">System issue</option>
                                         <option value="Others">Others</option>
-                                    </select>
+                                    </MonochromeSelect>
                                 </div>
 
                                 {overtimeReason === 'Others' && (

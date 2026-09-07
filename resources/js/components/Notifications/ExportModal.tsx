@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 /**
  * ExportModal Component - Phase 7
  * Modal for exporting notifications with filter options
@@ -174,7 +175,7 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => {
                 {/* Priority */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Priority</label>
-                  <select
+                  <MonochromeSelect
                     value={filters.priority}
                     onChange={(e) => setFilters({ ...filters, priority: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-950 focus:border-gray-950"
@@ -183,13 +184,13 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => {
                     <option value="high">🔴 High</option>
                     <option value="medium">🔵 Medium</option>
                     <option value="low">⚪ Low</option>
-                  </select>
+                  </MonochromeSelect>
                 </div>
 
                 {/* Type */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Type</label>
-                  <select
+                  <MonochromeSelect
                     value={filters.type}
                     onChange={(e) => setFilters({ ...filters, type: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-950 focus:border-gray-950"
@@ -201,7 +202,7 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => {
                     <option value="promotion">Promotion</option>
                     <option value="system">System</option>
                     <option value="account">Account</option>
-                  </select>
+                  </MonochromeSelect>
                 </div>
 
                 {/* Status */}

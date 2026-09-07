@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { useMemo, useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { usePage } from "@inertiajs/react";
@@ -1638,7 +1639,7 @@ export default function GenerateSlip() {
 						</p>
 					</div>
 					<div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-						<select
+						<MonochromeSelect
 							value={thirteenthYear}
 							onChange={(e) => setThirteenthYear(Number(e.target.value))}
 							aria-label="Select 13th-month year"
@@ -1647,7 +1648,7 @@ export default function GenerateSlip() {
 							{thirteenthYearOptions.map((year) => (
 								<option key={year} value={year}>{year}</option>
 							))}
-						</select>
+						</MonochromeSelect>
 						<button
 							onClick={handleReleaseThirteenthMonth}
 							disabled={ownerMode || isProcessingThirteenth}
@@ -1710,7 +1711,7 @@ export default function GenerateSlip() {
 				</div>
 				<div>
 					<label className="text-sm text-gray-600 dark:text-gray-300">Department</label>
-					<select
+					<MonochromeSelect
 						value={department}
 						onChange={(e) => handleDepartment(e.target.value)}
 						aria-label="Filter by department"
@@ -1720,7 +1721,7 @@ export default function GenerateSlip() {
 						{departments.map((d) => (
 							<option key={d} value={d}>{d}</option>
 						))}
-					</select>
+					</MonochromeSelect>
 				</div>
 			</div>
 

@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
@@ -3028,7 +3029,7 @@ useEffect(() => {
 													<p className="mt-3 line-clamp-2 text-xl font-semibold text-slate-900">{product.name}</p>
 													{product.variants.length > 0 && (
 														<div className="mt-2 grid grid-cols-2 gap-2">
-															<select
+															<MonochromeSelect
 																title={`Select size for ${product.name}`}
 																value={selectedSize}
 																onChange={(event) => {
@@ -3050,8 +3051,8 @@ useEffect(() => {
 																{sizeOptions.map((size) => (
 																		<option key={size} value={size}>{size}</option>
 																))}
-															</select>
-															<select
+															</MonochromeSelect>
+															<MonochromeSelect
 																title={`Select color for ${product.name}`}
 																value={selectedColor}
 																onChange={(event) => {
@@ -3073,7 +3074,7 @@ useEffect(() => {
 																{colorOptions.map((color) => (
 																		<option key={color} value={color}>{color}</option>
 																	))}
-															</select>
+															</MonochromeSelect>
 															</div>
 													)}
 													<div className="mt-auto flex items-center justify-between border-t border-slate-200 pt-3">
@@ -3160,7 +3161,7 @@ useEffect(() => {
 
 													return (
 														<>
-															<select
+															<MonochromeSelect
 																title={`Cart size for ${item.name}`}
 																value={selectedSize}
 																onChange={(event) => {
@@ -3179,8 +3180,8 @@ useEffect(() => {
 																{sizeOptions.map((size) => (
 																		<option key={size} value={size}>{size}</option>
 																	))}
-															</select>
-															<select
+															</MonochromeSelect>
+															<MonochromeSelect
 																title={`Cart color for ${item.name}`}
 																value={selectedColor}
 																onChange={(event) => {
@@ -3199,7 +3200,7 @@ useEffect(() => {
 																{colorOptions.map((color) => (
 																		<option key={color} value={color}>{color}</option>
 																	))}
-																</select>
+																</MonochromeSelect>
 															</>
 													);
 												})()}
@@ -3235,7 +3236,7 @@ useEffect(() => {
 							</div>
 
 							<label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Payment Method</label>
-							<select
+							<MonochromeSelect
 								title="Retail payment method"
 								value={retailPaymentMethod}
 								onChange={(event) => setRetailPaymentMethod(event.target.value as PaymentMethod)}
@@ -3244,7 +3245,7 @@ useEffect(() => {
 								<option value="cash">Cash</option>
 								<option value="gcash">GCash</option>
 								<option value="card">Card</option>
-							</select>
+							</MonochromeSelect>
 
 							<label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Cash Received</label>
 							<input
@@ -3718,7 +3719,7 @@ useEffect(() => {
 							</div>
 
 							<label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Payment Method</label>
-							<select
+							<MonochromeSelect
 								title="Payment method"
 								value={paymentMethod}
 								onChange={(event) => setPaymentMethod(event.target.value as PaymentMethod)}
@@ -3727,7 +3728,7 @@ useEffect(() => {
 								<option value="cash">Cash</option>
 								<option value="gcash">GCash</option>
 								<option value="card">Card</option>
-							</select>
+							</MonochromeSelect>
 
 							<label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Cash Received</label>
 							<input
@@ -4172,7 +4173,7 @@ useEffect(() => {
 
 															<div>
 																<label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Inspection</label>
-																<select
+																<MonochromeSelect
 																	title={`Inspection for ${item.label}`}
 																	value={draft.inspectionDisposition}
 																	onChange={(event) => updateRetailRefundDisposition(item.orderItemId, event.target.value === "damaged" ? "damaged" : "resellable")}
@@ -4181,7 +4182,7 @@ useEffect(() => {
 																>
 																	<option value="resellable">Resellable (restock)</option>
 																	<option value="damaged">Damaged (write-off)</option>
-																</select>
+																</MonochromeSelect>
 															</div>
 														</div>
 

@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import React, { useMemo, useState } from "react";
 import { usePage } from "@inertiajs/react";
 import Swal from "sweetalert2";
@@ -1115,14 +1116,14 @@ const Expense: React.FC = () => {
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Settlement</label>
-                <select
+                <MonochromeSelect
                   value={addForm.payment_mode}
                   onChange={(e) => setAddForm({ ...addForm, payment_mode: e.target.value as "paid_now" | "pay_later" })}
                   className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
                 >
                   <option value="paid_now">Paid now</option>
                   <option value="pay_later">Pay later</option>
-                </select>
+                </MonochromeSelect>
               </div>
               {addForm.payment_mode === "pay_later" ? (
                 <div className="space-y-2">
@@ -1138,7 +1139,7 @@ const Expense: React.FC = () => {
                 <>
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Payment method</label>
-                    <select
+                    <MonochromeSelect
                       value={addForm.payment_method}
                       onChange={(e) => setAddForm({ ...addForm, payment_method: e.target.value })}
                       className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
@@ -1150,7 +1151,7 @@ const Expense: React.FC = () => {
                       <option value="maya">Maya</option>
                       <option value="paypal">PayPal</option>
                       <option value="other">Other</option>
-                    </select>
+                    </MonochromeSelect>
                   </div>
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Payment reference (optional)</label>
@@ -1204,7 +1205,7 @@ const Expense: React.FC = () => {
               
               <div className="space-y-2">
                 <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Tax Rate (Optional)</label>
-                <select
+                <MonochromeSelect
                   value={addForm.tax_rate_id}
                   onChange={(e) => {
                     const taxRateId = e.target.value;
@@ -1223,7 +1224,7 @@ const Expense: React.FC = () => {
                       {tax.name} - {tax.rate}% {tax.is_inclusive ? '(Inclusive)' : ''}
                     </option>
                   ))}
-                </select>
+                </MonochromeSelect>
               </div>
               
               {addForm.tax_amount > 0 && (

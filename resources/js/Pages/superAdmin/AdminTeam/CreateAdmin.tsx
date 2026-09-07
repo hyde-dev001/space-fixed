@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Link, router } from '@inertiajs/react';
 import { useState } from 'react';
 import Swal from 'sweetalert2';
@@ -125,10 +126,10 @@ export default function CreateAdmin() {
 
             <div>
               <label htmlFor="invite-role" className="mb-2 block text-sm font-semibold text-gray-800 dark:text-gray-200">Administrator role</label>
-              <select id="invite-role" value={form.role} onChange={(event) => update('role', event.target.value)} className={inputClassName}>
+              <MonochromeSelect id="invite-role" value={form.role} onChange={(event) => update('role', event.target.value)} className={inputClassName}>
                 <option value="admin">Admin</option>
                 <option value="super_admin">Super Admin</option>
-              </select>
+              </MonochromeSelect>
               {errorText(errors, 'role') && <p className="mt-1 text-sm text-red-600">{errorText(errors, 'role')}</p>}
             </div>
 

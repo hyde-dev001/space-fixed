@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useMemo, useState } from "react";
 import type { ComponentType } from "react";
@@ -235,7 +236,7 @@ export default function StockMovement() {
 							/>
 						</div>
 						<div className="sm:w-56">
-							<select
+							<MonochromeSelect
 								title="Filter by movement action type"
 								aria-label="Filter stock movement by action type"
 								value={trackFilter}
@@ -251,7 +252,7 @@ export default function StockMovement() {
 								<option value="Adjustments">Adjustments</option>
 								<option value="Returns">Returns</option>
 								<option value="Repairs usage">Repairs usage (materials used)</option>
-							</select>
+							</MonochromeSelect>
 						</div>
 					</div>
 

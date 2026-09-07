@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 																																								import React, { useEffect, useRef, useState } from 'react';
 import { Head, router, usePage } from '@inertiajs/react';
 import axios from 'axios';
@@ -2034,7 +2035,7 @@ const ShopSetting: React.FC = () => {
 							<div className={`grid grid-cols-1 gap-4 p-6 ${payCycle === 'semi_monthly' ? 'md:grid-cols-3' : 'md:grid-cols-1'}`}>
 								<div>
 									<label className="mb-1.5 block text-sm font-medium text-gray-700">Pay Cycle</label>
-									<select
+									<MonochromeSelect
 										value={payCycle}
 										onChange={(e) => {
 											setPayCycle(e.target.value as 'monthly' | 'semi_monthly');
@@ -2045,7 +2046,7 @@ const ShopSetting: React.FC = () => {
 									>
 										<option value="monthly">Monthly</option>
 										<option value="semi_monthly">Semi-monthly</option>
-									</select>
+									</MonochromeSelect>
 								</div>
 								{payCycle === 'semi_monthly' && (
 									<>

@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Head, router } from '@inertiajs/react';
 import Swal from 'sweetalert2';
@@ -368,7 +369,7 @@ export default function SuspensionAppeals({ appeals = [], stats, filters }: Prop
                 className="w-full rounded-xl border border-gray-300 py-2.5 pl-9 pr-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               />
             </div>
-            <select
+            <MonochromeSelect
               value={statusFilter}
               onChange={(e) => {
                 const nextStatus = e.target.value as 'all' | AppealItem['status'];
@@ -386,7 +387,7 @@ export default function SuspensionAppeals({ appeals = [], stats, filters }: Prop
               <option value="expired">Expired</option>
               <option value="superseded">Superseded</option>
               <option value="stale">Stale</option>
-            </select>
+            </MonochromeSelect>
           </div>
         </div>
 

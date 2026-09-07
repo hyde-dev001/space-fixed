@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head } from "@inertiajs/react";
 import { useState } from "react";
 import type { FormEvent } from "react";
@@ -277,16 +278,16 @@ export default function LeaveApprovals() {
                         </div>
                         <div>
                             <label htmlFor="leave-status" className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Status</label>
-                            <select id="leave-status" value={form.status} onChange={(event) => setForm((current) => ({ ...current, status: event.target.value }))} className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-white">
+                            <MonochromeSelect id="leave-status" value={form.status} onChange={(event) => setForm((current) => ({ ...current, status: event.target.value }))} className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-white">
                                 <option value="">All statuses</option>
                                 <option value="pending">Pending</option>
                                 <option value="approved">Approved</option>
                                 <option value="rejected">Rejected</option>
-                            </select>
+                            </MonochromeSelect>
                         </div>
                         <div>
                             <label htmlFor="leave-type" className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Leave type</label>
-                            <select id="leave-type" value={form.leave_type} onChange={(event) => setForm((current) => ({ ...current, leave_type: event.target.value }))} className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-white">
+                            <MonochromeSelect id="leave-type" value={form.leave_type} onChange={(event) => setForm((current) => ({ ...current, leave_type: event.target.value }))} className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-white">
                                 <option value="">All leave types</option>
                                 <option value="vacation">Vacation</option>
                                 <option value="sick">Sick Leave</option>
@@ -294,7 +295,7 @@ export default function LeaveApprovals() {
                                 <option value="maternity">Maternity Leave</option>
                                 <option value="paternity">Paternity Leave</option>
                                 <option value="unpaid">Unpaid Leave</option>
-                            </select>
+                            </MonochromeSelect>
                         </div>
                         <div>
                             <label htmlFor="leave-date-from" className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Date from</label>

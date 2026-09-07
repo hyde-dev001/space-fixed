@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head, usePage } from "@inertiajs/react";
 import axios from "axios";
 import { useMemo, useState } from "react";
@@ -256,7 +257,7 @@ export default function CustomerReviews() {
                 className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white"
               />
 
-              <select
+              <MonochromeSelect
                 value={orderTypeFilter}
                 onChange={(event) => {
                   setOrderTypeFilter(event.target.value as "all" | OrderType);
@@ -268,7 +269,7 @@ export default function CustomerReviews() {
                 <option value="all">All order types</option>
                 <option value="product">Product</option>
                 <option value="repair">Repair</option>
-              </select>
+              </MonochromeSelect>
 
             </div>
           </div>
@@ -438,7 +439,7 @@ export default function CustomerReviews() {
                     <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">
                       Reason <span className="text-red-500">*</span>
                     </label>
-                    <select
+                    <MonochromeSelect
                       value={reportReason}
                       onChange={(e) => setReportReason(e.target.value)}
                       title="Select report reason"
@@ -449,7 +450,7 @@ export default function CustomerReviews() {
                       <option value="spam">Spam</option>
                       <option value="inappropriate_content">Inappropriate Content</option>
                       <option value="other">Other</option>
-                    </select>
+                    </MonochromeSelect>
                   </div>
 
                   <div>

@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head, usePage } from "@inertiajs/react";
 import { useState, useEffect } from "react";
 import type { ComponentType } from "react";
@@ -274,7 +275,7 @@ export default function InventoryOverview() {
               />
             </div>
             <div className="sm:w-48">
-              <select
+              <MonochromeSelect
                 value={categoryFilter}
                 onChange={(e) => {
                   setCategoryFilter(e.target.value);
@@ -289,10 +290,10 @@ export default function InventoryOverview() {
                     {formatCategoryLabel(category)}
                   </option>
                 ))}
-              </select>
+              </MonochromeSelect>
             </div>
             <div className="sm:w-48">
-              <select
+              <MonochromeSelect
                 value={statusFilter}
                 onChange={(e) => {
                   setStatusFilter(e.target.value);
@@ -305,7 +306,7 @@ export default function InventoryOverview() {
                 <option value="In Stock">In Stock</option>
                 <option value="Low Stock">Low Stock</option>
                 <option value="Out of Stock">Out of Stock</option>
-              </select>
+              </MonochromeSelect>
             </div>
           </div>
 
