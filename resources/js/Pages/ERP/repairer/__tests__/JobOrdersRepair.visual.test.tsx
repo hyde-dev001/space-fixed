@@ -29,7 +29,7 @@ describe("Repair job orders visual presentation", () => {
     expect(statusCell).not.toContain("rounded-full");
   });
 
-  it("keeps repair detail logistics neutral while preserving refresh and status labels", () => {
+  it("keeps repair detail logistics neutral without a refresh control", () => {
     const collectionAddress = source.slice(
       source.indexOf("Customer's Collection Address"),
       source.indexOf("{/* Repair Tasks */}"),
@@ -39,11 +39,12 @@ describe("Repair job orders visual presentation", () => {
       source.indexOf('"under-review":'),
     );
 
-    expect(source).toContain("Refresh delivery status");
+    expect(source).not.toContain("Refresh delivery status");
     expect(source).not.toContain('rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm');
     expect(source).not.toContain('rounded-lg border border-purple-200 bg-purple-50 p-4 text-sm');
     expect(collectionAddress).not.toContain("bg-amber-50");
     expect(assignedStatus).not.toContain("bg-blue");
+    expect(source).toContain('className="mt-1 text-gray-900 dark:text-white"');
     expect(source).toContain('"assigned_to_repairer":');
     expect(source).toContain('Assigned to Repairer');
   });
