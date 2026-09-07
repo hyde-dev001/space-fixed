@@ -46,13 +46,6 @@ const BoxIcon = ({ className = '' }: { className?: string }) => (
     </svg>
 );
 
-const AlertIcon = ({ className = '' }: { className?: string }) => (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-        <path d="M12 3 2.8 19h18.4L12 3Z" />
-        <path d="M12 9v4M12 16h.01" />
-    </svg>
-);
-
 const rangeOptions = [
     { value: 'last_7_days', label: 'Last 7 days' },
     { value: 'last_30_days', label: 'Last 30 days' },
@@ -214,15 +207,7 @@ export default function ManagerDashboard() {
                 }
             >
 
-                {isStaleSnapshot && typedStats && (
-                    <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-950 dark:bg-amber-950/30 dark:text-amber-200" role="status">
-                        <AlertIcon className="mt-0.5 h-5 w-5 shrink-0" />
-                        <div>
-                            <p className="font-semibold">This snapshot may be stale.</p>
-                            <p className="mt-1">Refresh to load one consistent set of KPI, approval, and operational-signal data.</p>
-                        </div>
-                    </div>
-                )}
+                <div className="contents" data-snapshot-stale={isStaleSnapshot ? 'true' : 'false'}>
 
                 {isLoading && <DashboardState status="loading" title="Loading manager dashboard" />}
 
@@ -333,6 +318,7 @@ export default function ManagerDashboard() {
                         </div>
                     </>
                 )}
+                </div>
             </DashboardShell>
         </AppLayoutERP>
     );

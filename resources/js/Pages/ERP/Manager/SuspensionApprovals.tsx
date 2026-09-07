@@ -1,7 +1,9 @@
 import { Head } from "@inertiajs/react";
 import { useState } from "react";
 import type { FormEvent } from "react";
+import { CheckCircle2, Clock3, Store, XCircle } from "lucide-react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
+import { DashboardMetricCard } from "../../../components/dashboard";
 import { workflowFeedback } from "../../../utils/workflowFeedback";
 import {
     decideManagerSuspensionRequest,
@@ -69,13 +71,6 @@ const formatDateTime = (value: string | null | undefined): string => {
         timeStyle: "short",
     });
 };
-
-const MetricCard = ({ label, value }: { label: string; value: number }) => (
-    <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
-        <p className="text-sm font-medium text-gray-600 dark:text-gray-400">{label}</p>
-        <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{value.toLocaleString()}</p>
-    </div>
-);
 
 const LoadingState = () => (
     <div className="space-y-3" aria-label="Loading suspension approvals" aria-busy="true">
@@ -261,10 +256,10 @@ export default function SuspensionApprovals() {
                 </header>
 
                 <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label="Suspension approval summary">
-                    <MetricCard label="Pending Manager review" value={metrics.pending} />
-                    <MetricCard label="Waiting for Shop Owner" value={metrics.awaiting_owner} />
-                    <MetricCard label="Approved" value={metrics.approved} />
-                    <MetricCard label="Rejected" value={metrics.rejected} />
+                    <DashboardMetricCard label="Pending Manager review" value={metrics.pending.toLocaleString()} description="Awaiting manager action" context="Approvals" icon={Clock3} tone="neutral" />
+                    <DashboardMetricCard label="Waiting for Shop Owner" value={metrics.awaiting_owner.toLocaleString()} description="Awaiting Shop Owner review" context="Approvals" icon={Store} tone="neutral" />
+                    <DashboardMetricCard label="Approved" value={metrics.approved.toLocaleString()} description="Approved requests" context="Approvals" icon={CheckCircle2} tone="neutral" />
+                    <DashboardMetricCard label="Rejected" value={metrics.rejected.toLocaleString()} description="Rejected requests" context="Approvals" icon={XCircle} tone="neutral" />
                 </section>
 
                 <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]" aria-labelledby="suspension-filters-title">
@@ -321,7 +316,6 @@ export default function SuspensionApprovals() {
                                 <h2 id="suspension-results-title" className="text-lg font-semibold text-gray-900 dark:text-white">Suspension request queue</h2>
                                 <p className="text-sm text-gray-500 dark:text-gray-400">{page?.total.toLocaleString()} request(s) in the selected view.</p>
                             </div>
-                            {approvals.isStale && !approvals.isFetching && <p className="text-sm font-medium text-amber-700 dark:text-amber-300">Snapshot may be stale</p>}
                         </div>
 
                         <div className="hidden overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm lg:block dark:border-gray-800 dark:bg-white/[0.03]">

@@ -2,6 +2,7 @@ import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
+import { DashboardMetricCard } from "../../../components/dashboard";
 import { erpUrl } from "@/utils/erpCapabilities";
 import { fetchWithCsrf } from "@/utils/fetch-with-csrf";
 
@@ -34,12 +35,6 @@ const CheckIcon: IconComponent = ({ className }) => (
 const DownloadIcon: IconComponent = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-  </svg>
-);
-
-const RefreshIcon: IconComponent = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h5M20 20v-5h-5M5.5 9A7 7 0 0118.5 6.5L20 9M18.5 15A7 7 0 015.5 17.5L4 15" />
   </svg>
 );
 
@@ -82,31 +77,6 @@ interface ReportsPayload {
   report_types: ReportTypeCard[];
   recent_reports: ReportRecord[];
 }
-
-interface MetricCardProps {
-  title: string;
-  value: number | string;
-  icon: IconComponent;
-  colorClass: string;
-  description: string;
-}
-
-const MetricCard = ({ title, value, icon: Icon, colorClass, description }: MetricCardProps) => (
-  <div className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-300 hover:shadow-lg dark:border-gray-800 dark:bg-white/3">
-    <div className="relative">
-      <div className="mb-4 flex items-center justify-between">
-        <div className={`flex h-14 w-14 items-center justify-center rounded-2xl ${colorClass}`}>
-          <Icon className="size-7 text-white" />
-        </div>
-      </div>
-      <div className="space-y-2">
-        <p className="text-sm font-medium text-gray-600 dark:text-gray-400">{title}</p>
-        <h3 className="text-3xl font-bold text-gray-900 dark:text-white">{value}</h3>
-        <p className="text-xs text-gray-500 dark:text-gray-400">{description}</p>
-      </div>
-    </div>
-  </div>
-);
 
 const reportStyleMap: Record<string, { cardBg: string; iconColor: string }> = {
   sales: { cardBg: "bg-blue-50 dark:bg-blue-900/20", iconColor: "text-blue-600 dark:text-blue-400" },
@@ -420,16 +390,6 @@ export default function ERPReports() {
             <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 dark:bg-blue-900/40 dark:text-blue-200">
               {ownerMode ? "Shop Owner View" : "Manager Access"}
             </span>
-            <button
-              type="button"
-              onClick={fetchReports}
-              disabled={loading}
-              className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
-              aria-label="Refresh reports"
-            >
-              <RefreshIcon className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-              Refresh
-            </button>
           </div>
         </div>
 
@@ -441,26 +401,28 @@ export default function ERPReports() {
         )}
 
         <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-          <MetricCard
-            title="Reports Generated"
+          <DashboardMetricCard
+            label="Reports Generated"
             value={reportsData.metrics.reports_generated}
+            context="Current"
+            description="This month"
             icon={DocumentIcon}
-            colorClass="bg-linear-to-br from-blue-500 to-indigo-600"
-            description="This month"
           />
-          <MetricCard
-            title="Pending Issues"
+          <DashboardMetricCard
+            label="Pending Issues"
             value={reportsData.metrics.pending_issues}
-            icon={AlertIcon}
-            colorClass="bg-linear-to-br from-yellow-500 to-orange-600"
+            context="Current"
             description="Low or out-of-stock inventory"
+            icon={AlertIcon}
+            tone="warning"
           />
-          <MetricCard
-            title="Reports Reviewed"
+          <DashboardMetricCard
+            label="Reports Reviewed"
             value={reportsData.metrics.reports_reviewed}
-            icon={CheckIcon}
-            colorClass="bg-linear-to-br from-green-500 to-emerald-600"
+            context="Current"
             description="This month"
+            icon={CheckIcon}
+            tone="success"
           />
         </div>
 

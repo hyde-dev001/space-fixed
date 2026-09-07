@@ -291,7 +291,7 @@ export default function ERPInventoryOverview() {
   return (
     <AppLayoutERP>
       <Head title="Inventory Overview - Solespace" />
-      <div className="p-6 space-y-6">
+      <div className="p-6 space-y-6" data-last-updated-at={lastUpdatedAt ?? undefined}>
         {/* Header */}
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
@@ -308,11 +308,6 @@ export default function ERPInventoryOverview() {
             {isRepairer ? "Repair Materials" : isStaff ? "Products" : "Products + Repair Materials"}
           </span>
           <div className="flex items-center gap-3">
-            {lastUpdatedAt && (
-              <span className="text-xs text-gray-500 dark:text-gray-400">
-                Updated {new Date(lastUpdatedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
-              </span>
-            )}
             <button
               type="button"
               onClick={() => {

@@ -2,6 +2,7 @@ import { Head } from "@inertiajs/react";
 import { useState } from "react";
 import type { FormEvent } from "react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
+import ManagerFilterPanel, { ManagerFilterActions } from "../../../components/manager/ManagerFilterPanel";
 import { decideManagerLeaveRequest, useManagerLeaveApprovals } from "../../../hooks/useManagerApi";
 import type {
     ManagerLeaveApprovalFilters,
@@ -259,17 +260,19 @@ export default function LeaveApprovals() {
                             Review shop-scoped leave requests. Manager approval is terminal by default and applies the balance effect once.
                         </p>
                     </div>
-                    <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
-                        <p className="font-semibold text-gray-900 dark:text-white">{payload?.total ?? 0} request(s)</p>
-                        <p className="mt-1 text-gray-500 dark:text-gray-400">Latest request: {formatDateTime(payload?.data[0]?.created_at)}</p>
-                    </div>
                 </header>
 
-                <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]" aria-labelledby="leave-filters-title">
-                    <div className="mb-4">
-                        <h2 id="leave-filters-title" className="text-base font-semibold text-gray-900 dark:text-white">Filter requests</h2>
-                        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Age and overdue status are calculated from the request creation time. Formal SLA appears only when configured.</p>
-                    </div>
+                <ManagerFilterPanel
+                    title="Filter requests"
+                    titleId="leave-filters-title"
+                    description="Age and overdue status are calculated from the request creation time. Formal SLA appears only when configured."
+                    metadata={(
+                        <>
+                            <p className="font-semibold text-gray-900 dark:text-white">{payload?.total ?? 0} request(s)</p>
+                            <p className="mt-1 text-gray-500 dark:text-gray-400">Latest request: {formatDateTime(payload?.data[0]?.created_at)}</p>
+                        </>
+                    )}
+                >
                     <form onSubmit={applyFilters} className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
                         <div className="xl:col-span-2">
                             <label htmlFor="leave-search" className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Search</label>
@@ -311,12 +314,12 @@ export default function LeaveApprovals() {
                             <label htmlFor="leave-date-to" className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Date to</label>
                             <input id="leave-date-to" type="date" value={form.date_to} onChange={(event) => setForm((current) => ({ ...current, date_to: event.target.value }))} className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-white" />
                         </div>
-                        <div className="flex items-end gap-2 md:col-span-2 xl:col-span-6">
+                        <ManagerFilterActions>
                             <button type="submit" className="min-h-11 rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200 dark:focus:ring-offset-gray-950">Apply filters</button>
                             <button type="button" onClick={clearFilters} className="min-h-11 rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800 dark:focus:ring-offset-gray-950">Clear</button>
-                        </div>
+                        </ManagerFilterActions>
                     </form>
-                </section>
+                </ManagerFilterPanel>
 
                 {actionError && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">{actionError}</div>}
                 {approvals.isError && payload && <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">The latest refresh failed. Showing the last successful snapshot. <button type="button" onClick={() => approvals.refetch()} className="ml-1 font-semibold underline underline-offset-2">Retry</button></div>}
@@ -338,7 +341,6 @@ export default function LeaveApprovals() {
                                 <h2 id="leave-results-title" className="text-lg font-semibold text-gray-900 dark:text-white">Leave request queue</h2>
                                 <p className="text-sm text-gray-500 dark:text-gray-400">{payload.total.toLocaleString()} request(s) in the selected view.</p>
                             </div>
-                            {approvals.isStale && !approvals.isFetching && <p className="text-sm font-medium text-amber-700 dark:text-amber-300">Snapshot may be stale</p>}
                         </div>
 
                         <div className="hidden overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm lg:block dark:border-gray-800 dark:bg-white/[0.03]">

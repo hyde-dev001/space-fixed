@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Head, usePage } from '@inertiajs/react';
+import { Activity, Clock3, Repeat2 } from 'lucide-react';
 import AppLayoutERP from '../../../layout/AppLayout_ERP';
+import { DashboardMetricCard } from '../../../components/dashboard';
 import { erpUrl } from '@/utils/erpCapabilities';
 
 type AuditState = Record<string, unknown>;
@@ -335,7 +337,7 @@ export default function ManagerAuditLogs() {
     <AppLayoutERP>
       <Head title="Manager - Audit Logs" />
 
-      <main className="space-y-6 p-4 sm:p-6">
+      <main className="space-y-6 p-4 sm:p-6" data-snapshot-stale={isStale ? 'true' : 'false'}>
         <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <p className="text-sm font-semibold uppercase tracking-wide text-blue-600 dark:text-blue-400">Review</p>
@@ -353,27 +355,16 @@ export default function ManagerAuditLogs() {
           </button>
         </header>
 
-        {isStale && (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-200" role="status">
-            This snapshot may be stale. Refresh to load the latest audit history.
-          </div>
-        )}
-
         <section className="grid gap-4 sm:grid-cols-3" aria-label="Audit summary">
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <p className="text-sm text-slate-500 dark:text-slate-400">Matching events</p>
-            <p className="mt-1 text-2xl font-bold text-slate-900 dark:text-white">{stats.total_logs.toLocaleString()}</p>
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <p className="text-sm text-slate-500 dark:text-slate-400">Last 24 hours</p>
-            <p className="mt-1 text-2xl font-bold text-slate-900 dark:text-white">{stats.logs_last_24h.toLocaleString()}</p>
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <p className="text-sm text-slate-500 dark:text-slate-400">Reassignment events</p>
-            <p className="mt-1 text-2xl font-bold text-slate-900 dark:text-white">
-              {((stats.action_counts.order_reassigned ?? 0) + (stats.action_counts.repair_reassigned ?? 0)).toLocaleString()}
-            </p>
-          </div>
+          <DashboardMetricCard label="Matching events" value={stats.total_logs.toLocaleString()} description="Events in the selected view" context="Audit" icon={Activity} />
+          <DashboardMetricCard label="Last 24 hours" value={stats.logs_last_24h.toLocaleString()} description="Recent operational events" context="Audit" icon={Clock3} />
+          <DashboardMetricCard
+            label="Reassignment events"
+            value={((stats.action_counts.order_reassigned ?? 0) + (stats.action_counts.repair_reassigned ?? 0)).toLocaleString()}
+            description="Order and repair reassignments"
+            context="Audit"
+            icon={Repeat2}
+          />
         </section>
 
         <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900" aria-label="Audit filters">
