@@ -61,17 +61,18 @@ afterEach(() => {
 });
 
 describe('Repair services visual controls', () => {
-  it('keeps the Add Service action compact and category text unfilled', async () => {
+  it('aligns service actions with the Services and Packages switch', async () => {
     render(<UploadService />);
 
     const archiveButton = screen.getByRole('button', { name: 'Show Archived' });
     const addServiceButton = screen.getByRole('button', { name: 'Add Service' });
-    expect(addServiceButton.parentElement).toHaveClass('w-full', 'justify-end', 'items-center', 'gap-3');
+    const controlsRow = addServiceButton.parentElement?.parentElement;
+    expect(controlsRow).toHaveClass('flex', 'flex-wrap', 'items-center', 'justify-between', 'gap-3');
     expect(archiveButton).toHaveClass('h-10', 'px-4');
     expect(addServiceButton).toHaveClass('h-10', 'px-4');
 
     const servicesTab = screen.getByRole('button', { name: 'Services' });
-    expect(servicesTab.parentElement).toHaveClass('self-start');
+    expect(servicesTab.parentElement?.parentElement).toBe(controlsRow);
 
     const table = await screen.findByRole('table');
     const category = within(table).getByText('Care');
