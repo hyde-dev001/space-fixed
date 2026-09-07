@@ -112,18 +112,18 @@ export default function DeliveryDatePicker({ value, minDate, onChange, operating
       aria-controls={calendarId}
       disabled={disabled}
       onClick={() => setOpen((isOpen) => !isOpen)}
-      className="flex min-h-11 w-full items-center justify-between gap-3 rounded-xl border border-gray-300 bg-white px-3 text-left text-sm text-gray-700 shadow-sm transition hover:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"
+      className="flex min-h-11 w-full items-center justify-between gap-3 rounded-xl border border-gray-300 bg-white px-3 text-left text-sm text-gray-700 shadow-sm transition hover:border-gray-400 hover:bg-gray-100 hover:text-gray-950 focus:outline-none focus:ring-2 focus:ring-gray-950 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:border-gray-500 dark:hover:bg-gray-700 dark:hover:text-white dark:focus:ring-gray-300"
     >
       <span className={value ? 'text-gray-900 dark:text-white' : 'text-gray-500'}>{displayDate(value)}</span>
       <CalendarDays aria-hidden="true" size={17} className="shrink-0 text-gray-500" />
     </button>
     {open && <div id={calendarId} role="dialog" aria-label="Delivery date calendar" className={calendarClassName}>
       <div className="flex items-center justify-between gap-3">
-        <button type="button" aria-label="Previous month" disabled={previousMonthDisabled} onClick={() => setVisibleMonth(new Date(Date.UTC(visibleMonth.getUTCFullYear(), visibleMonth.getUTCMonth() - 1, 1)))} className="inline-flex min-h-9 min-w-9 items-center justify-center rounded-lg border border-gray-300 text-gray-600 transition hover:border-blue-400 hover:text-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-600 dark:text-gray-300">
+        <button type="button" aria-label="Previous month" disabled={previousMonthDisabled} onClick={() => setVisibleMonth(new Date(Date.UTC(visibleMonth.getUTCFullYear(), visibleMonth.getUTCMonth() - 1, 1)))} className="inline-flex min-h-9 min-w-9 items-center justify-center rounded-lg border border-gray-300 text-gray-600 transition hover:border-gray-400 hover:bg-gray-100 hover:text-gray-950 focus:outline-none focus:ring-2 focus:ring-gray-950 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-600 dark:text-gray-300 dark:hover:border-gray-500 dark:hover:bg-gray-800 dark:hover:text-white">
           <ChevronLeft aria-hidden="true" size={17} />
         </button>
         <h3 className="text-base font-bold text-gray-900 dark:text-white">{monthFormatter.format(visibleMonth)}</h3>
-        <button type="button" aria-label="Next month" onClick={() => setVisibleMonth(new Date(Date.UTC(visibleMonth.getUTCFullYear(), visibleMonth.getUTCMonth() + 1, 1)))} className="inline-flex min-h-9 min-w-9 items-center justify-center rounded-lg border border-gray-300 text-gray-600 transition hover:border-blue-400 hover:text-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:text-gray-300">
+        <button type="button" aria-label="Next month" onClick={() => setVisibleMonth(new Date(Date.UTC(visibleMonth.getUTCFullYear(), visibleMonth.getUTCMonth() + 1, 1)))} className="inline-flex min-h-9 min-w-9 items-center justify-center rounded-lg border border-gray-300 text-gray-600 transition hover:border-gray-400 hover:bg-gray-100 hover:text-gray-950 focus:outline-none focus:ring-2 focus:ring-gray-950 dark:border-gray-600 dark:text-gray-300 dark:hover:border-gray-500 dark:hover:bg-gray-800 dark:hover:text-white">
           <ChevronRight aria-hidden="true" size={17} />
         </button>
       </div>
@@ -146,7 +146,7 @@ export default function DeliveryDatePicker({ value, minDate, onChange, operating
             title={isPast ? 'Past date' : isShopClosedDate ? 'Shop closed' : undefined}
             aria-pressed={isSelected}
             onClick={() => chooseDate(day)}
-            className={`min-h-10 rounded-lg border text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-blue-500 ${isSelected ? 'border-blue-600 bg-blue-600 text-white shadow-sm' : unavailable ? 'cursor-not-allowed border-gray-100 bg-gray-100 text-gray-400 dark:border-gray-700 dark:bg-gray-700 dark:text-gray-500' : 'border-gray-200 text-gray-700 hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700'}`}
+            className={`min-h-10 rounded-lg border text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-gray-950 dark:focus:ring-gray-300 ${isSelected ? 'border-gray-950 bg-gray-950 text-white shadow-sm hover:bg-black dark:border-gray-950 dark:bg-gray-950 dark:hover:bg-black' : unavailable ? 'cursor-not-allowed border-gray-100 bg-gray-100 text-gray-400 dark:border-gray-700 dark:bg-gray-700 dark:text-gray-500' : 'border-gray-200 text-gray-700 hover:border-gray-400 hover:bg-gray-100 hover:text-gray-950 dark:border-gray-600 dark:text-gray-200 dark:hover:border-gray-500 dark:hover:bg-gray-700 dark:hover:text-white'}`}
           >{day.getUTCDate()}</button>;
         })}
       </div>
@@ -155,7 +155,7 @@ export default function DeliveryDatePicker({ value, minDate, onChange, operating
           <span>Past dates are unavailable.</span>
           <span>Shop-closed dates are unavailable.</span>
         </div>
-        <button type="button" aria-label="Clear date" disabled={!value} onClick={() => { onChange(''); setOpen(false); }} className="text-xs font-bold text-blue-600 hover:text-blue-700 disabled:cursor-not-allowed disabled:text-gray-400">Clear date</button>
+        <button type="button" aria-label="Clear date" disabled={!value} onClick={() => { onChange(''); setOpen(false); }} className="text-xs font-bold text-gray-700 hover:text-gray-950 disabled:cursor-not-allowed disabled:text-gray-400 dark:text-gray-300 dark:hover:text-white">Clear date</button>
       </div>
     </div>}
   </div>;

@@ -131,9 +131,9 @@ it('updates the active wheel option while the column is scrolled', () => {
   fireEvent.scroll(periodWheel);
 
   expect(within(periodWheel).getByRole('option', { name: 'PM', exact: true }))
-    .toHaveClass('border-blue-200', 'bg-blue-50/70');
+    .toHaveClass('border-gray-950', 'bg-gray-950', 'text-white');
   expect(within(periodWheel).getByRole('option', { name: 'AM', exact: true }))
-    .not.toHaveClass('border-blue-200', 'bg-blue-50/70');
+    .not.toHaveClass('border-gray-950', 'bg-gray-950');
   expect(screen.getByText('Selected 03:00 PM')).toBeInTheDocument();
 });
 
@@ -145,9 +145,9 @@ it('centers and clearly marks the active value in every wheel column', () => {
   const minuteWheel = screen.getByTestId('time-picker-minute');
   const periodWheel = screen.getByTestId('time-picker-period');
 
-  expect(within(hourWheel).getByRole('option', { name: '08', exact: true })).toHaveClass('text-gray-950');
-  expect(within(minuteWheel).getByRole('option', { name: '00', exact: true })).toHaveClass('text-gray-950');
-  expect(within(periodWheel).getByRole('option', { name: 'AM', exact: true })).toHaveClass('text-gray-950');
+  expect(within(hourWheel).getByRole('option', { name: '08', exact: true })).toHaveClass('border-gray-950', 'bg-gray-950', 'text-white');
+  expect(within(minuteWheel).getByRole('option', { name: '00', exact: true })).toHaveClass('border-gray-950', 'bg-gray-950', 'text-white');
+  expect(within(periodWheel).getByRole('option', { name: 'AM', exact: true })).toHaveClass('border-gray-950', 'bg-gray-950', 'text-white');
   expect(hourWheel).toHaveProperty('scrollTop', 7 * 48);
 });
 

@@ -109,4 +109,10 @@ describe("HR UI consistency presentation", () => {
     expect(submitSection).toContain("text-white");
     expect(submitSection).not.toContain("bg-blue-600");
   });
+
+  it("uses a neutral informational treatment for the current daily rate", () => {
+    expect(salaryChanges).toContain("rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/60 px-4 py-3");
+    expect(salaryChanges).toContain("text-sm text-gray-800 dark:text-gray-200");
+    expect(salaryChanges).not.toContain("rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 px-4 py-3");
+  });
 });

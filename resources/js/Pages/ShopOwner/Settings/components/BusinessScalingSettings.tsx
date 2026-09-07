@@ -415,7 +415,7 @@ const BusinessScalingSettings: React.FC<BusinessScalingSettingsProps> = ({ busin
                         setSelectedTransitionKey(transition.key);
                         setIsTransitionDropdownOpen(false);
                       }}
-                      className={`w-full rounded-md px-3 py-2 text-left text-sm transition-colors ${selectedTransitionKey === transition.key ? 'bg-slate-900 font-semibold text-white dark:bg-white dark:text-slate-900' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-200 dark:hover:bg-slate-700 dark:hover:text-white'}`}
+                      className={`w-full rounded-md px-3 py-2 text-left text-sm transition-colors ${selectedTransitionKey === transition.key ? 'bg-gray-950 font-semibold text-white dark:bg-gray-950 dark:text-white' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-200 dark:hover:bg-slate-700 dark:hover:text-white'}`}
                     >
                       {transition.label}
                     </button>

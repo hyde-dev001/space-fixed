@@ -547,16 +547,16 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Shipment, order, customer, or product"
-                className="min-h-11 w-full rounded-xl border border-gray-300 py-2 pl-10 pr-3 text-sm text-gray-900 outline-none transition-colors placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder:text-gray-400 xl:rounded-lg"
+                className="min-h-11 w-full rounded-xl border border-gray-300 py-2 pl-10 pr-3 text-sm text-gray-900 outline-none transition-colors placeholder:text-gray-400 focus:border-gray-950 focus:ring-2 focus:ring-gray-950/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder:text-gray-400 dark:focus:border-gray-300 dark:focus:ring-gray-300/20 xl:rounded-lg"
               />
             </label>
-            <button type="submit" className="min-h-11 shrink-0 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 xl:rounded-lg">Search</button>
+            <button type="submit" className="min-h-11 shrink-0 rounded-xl bg-gray-950 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 focus-visible:ring-offset-2 dark:bg-gray-950 dark:hover:bg-black xl:rounded-lg">Search</button>
           </form>
           <div className="grid w-full min-w-0 grid-cols-2 gap-2 sm:gap-3 xl:flex xl:w-auto xl:flex-wrap xl:items-center xl:gap-3">
             <select
               value={filters.status}
               onChange={(event) => updateFilter('status', event.target.value)}
-              className="min-h-11 min-w-0 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white xl:w-auto xl:rounded-lg"
+              className="min-h-11 min-w-0 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition-colors focus:border-gray-950 focus:ring-2 focus:ring-gray-950/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:focus:border-gray-300 dark:focus:ring-gray-300/20 xl:w-auto xl:rounded-lg"
               aria-label="Filter shipments by status"
             >
               {(riderMode ? riderStatusOptions : statusOptions).map(([value, text]) => <option key={value} value={value}>{text}</option>)}
@@ -564,7 +564,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
             {!riderMode && <select
               value={filters.purpose ?? 'all'}
               onChange={(event) => updateFilter('purpose', event.target.value)}
-              className="min-h-11 min-w-0 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white xl:w-auto xl:rounded-lg"
+              className="min-h-11 min-w-0 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition-colors focus:border-gray-950 focus:ring-2 focus:ring-gray-950/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:focus:border-gray-300 dark:focus:ring-gray-300/20 xl:w-auto xl:rounded-lg"
               aria-label="Filter shipments by type"
             >
               {visiblePurposeOptions.map(([value, text]) => <option key={value} value={value}>{text}</option>)}
@@ -572,7 +572,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
             {!riderMode && showModuleFilter && <select
               value={selectedModule}
               onChange={(event) => updateFilter('module', event.target.value)}
-              className="min-h-11 min-w-0 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white xl:w-auto xl:rounded-lg"
+              className="min-h-11 min-w-0 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition-colors focus:border-gray-950 focus:ring-2 focus:ring-gray-950/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:focus:border-gray-300 dark:focus:ring-gray-300/20 xl:w-auto xl:rounded-lg"
               aria-label="Filter shipments by module"
             >
               <option value="all">All modules</option>
@@ -581,7 +581,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
             {!riderMode && <select
               value={filters.window ?? 'all'}
               onChange={(event) => updateFilter('window', event.target.value)}
-              className="min-h-11 min-w-0 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white xl:w-auto xl:rounded-lg"
+              className="min-h-11 min-w-0 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition-colors focus:border-gray-950 focus:ring-2 focus:ring-gray-950/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:focus:border-gray-300 dark:focus:ring-gray-300/20 xl:w-auto xl:rounded-lg"
               aria-label="Filter shipments by delivery window"
             >
               <option value="all">All windows</option>
@@ -591,7 +591,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
             {riderMode && <select
               value={filters.window}
               onChange={(event) => updateFilter('window', event.target.value)}
-              className="min-h-11 min-w-0 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white xl:w-auto xl:rounded-lg"
+              className="min-h-11 min-w-0 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition-colors focus:border-gray-950 focus:ring-2 focus:ring-gray-950/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:focus:border-gray-300 dark:focus:ring-gray-300/20 xl:w-auto xl:rounded-lg"
               aria-label="Filter deliveries by time"
             >
               <option value="all">All time</option>
@@ -683,7 +683,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                   aria-label={shipments.data.length > 1 ? `Open delivery for Shipment ${shipmentNumber}` : undefined}
                   aria-haspopup="dialog"
                   onClick={(event) => openShipment(shipment.id, event.currentTarget)}
-                  className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 transition-colors hover:bg-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-300 dark:hover:bg-blue-950/50 xl:w-auto xl:shrink-0 xl:rounded-lg"
+                  className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-gray-300 bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-800 transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700 dark:focus-visible:ring-gray-300 xl:w-auto xl:shrink-0 xl:rounded-lg"
                 >
                   Open delivery
                   <ExternalLink aria-hidden="true" size={16} />
@@ -725,7 +725,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                       type="button"
                       aria-label={`Close delivery details for Shipment ${shipmentNumber}`}
                       onClick={closeShipment}
-                      className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                      className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700 dark:focus-visible:ring-gray-300"
                     >
                       <X aria-hidden="true" size={20} />
                     </button>
@@ -914,14 +914,14 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                           <p>Failed pickup · {failedPickupCount} {failedPickupCount === 1 ? 'attempt' : 'attempts'}</p>
                                           {latestAttempt.reason_code && <p>{label(latestAttempt.reason_code)}</p>}
                                           {formatDateTime(latestAttempt.attempted_at) && <p>Reported {formatDateTime(latestAttempt.attempted_at)}</p>}
-                                          {latestAttempt.proof_url && <a href={latestAttempt.proof_url} target="_blank" rel="noreferrer" className="inline-block font-semibold text-blue-600 hover:underline">View failed-pickup photo</a>}
+                                          {latestAttempt.proof_url && <a href={latestAttempt.proof_url} target="_blank" rel="noreferrer" className="inline-block font-semibold text-gray-700 hover:text-gray-950 hover:underline dark:text-gray-300 dark:hover:text-white">View failed-pickup photo</a>}
                                         </div>
                                       : <div className="mt-2 space-y-1 text-xs text-gray-600 dark:text-gray-300">
                                           <span className="inline-flex rounded-full bg-amber-100 px-2 py-1 font-semibold text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">Failed attempt - {failedAttemptCount}/{maxDeliveryAttempts}</span>
                                           {attemptsMaxed && leg.status === 'needs_resolution' && !leg.resolution_type && <p className="font-semibold text-red-600">Resolution required</p>}
                                           {latestAttempt.reason_code && <p>{label(latestAttempt.reason_code)}</p>}
                                           {latestAttempt.notes && <p>Internal note: {latestAttempt.notes}</p>}
-                                          {latestAttempt.proof_url && <a href={latestAttempt.proof_url} target="_blank" rel="noreferrer" className="inline-block font-semibold text-blue-600 hover:underline">View failed-attempt photo</a>}
+                                          {latestAttempt.proof_url && <a href={latestAttempt.proof_url} target="_blank" rel="noreferrer" className="inline-block font-semibold text-gray-700 hover:text-gray-950 hover:underline dark:text-gray-300 dark:hover:text-white">View failed-attempt photo</a>}
                                         </div>
                                   )}
                                 </div>
@@ -931,7 +931,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                   </div>}
                                   {canAssign && !riderMode && isFailedPickup && (
                                     <div className="grid gap-2 sm:grid-cols-2">
-                                      <button type="button" onClick={() => void resolveFailedPickup(leg.id, 'retry')} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white">Reschedule Pickup</button>
+                                      <button type="button" onClick={() => void resolveFailedPickup(leg.id, 'retry')} className="rounded-lg bg-gray-950 px-3 py-2 text-sm font-semibold text-white hover:bg-black dark:bg-gray-950 dark:hover:bg-black">Reschedule Pickup</button>
                                       <button type="button" onClick={() => void resolveFailedPickup(leg.id, 'cancel')} className="rounded-lg border border-red-600 px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50">Cancel Pickup</button>
                                     </div>
                                   )}
@@ -943,7 +943,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                       <button
                                         type="button"
                                         onClick={() => void resolveFailedDelivery(leg.id, 'retry')}
-                                        className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                                        className="rounded-lg bg-gray-950 px-3 py-2 text-sm font-semibold text-white hover:bg-black dark:bg-gray-950 dark:hover:bg-black"
                                       >
                                         Retry delivery
                                       </button>
@@ -956,13 +956,13 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                       </button>
                                     </div>
                                   )}
-                                  {canUpdateStatus && leg.status === 'assigned' && <button type="button" onClick={() => void act(`/api/logistics/legs/${leg.id}/picked-up`)} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white">Picked up</button>}
-                                  {canUpdateStatus && leg.status === 'picked_up' && <button type="button" onClick={() => void act(`/api/logistics/legs/${leg.id}/in-transit`)} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white">In transit</button>}
-                                  {showOutcomeChoice && <div role="group" aria-label="Choose delivery outcome" className="rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-900/40"><p className="mb-2 text-sm font-semibold text-gray-900 dark:text-white">What happened with this delivery?</p><div className="grid gap-2 sm:grid-cols-2"><button type="button" onClick={() => chooseDeliveryOutcome(leg.id, 'proof')} className={`rounded-lg border px-3 py-2 text-sm font-semibold transition-colors ${deliveryOutcome === 'proof' ? 'border-blue-600 bg-blue-600 text-white' : 'border-gray-300 bg-white text-gray-700 hover:border-blue-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200'}`}>Delivered successfully</button><button type="button" onClick={() => chooseDeliveryOutcome(leg.id, 'issue')} className={`rounded-lg border px-3 py-2 text-sm font-semibold transition-colors ${deliveryOutcome === 'issue' ? 'border-amber-600 bg-amber-600 text-white' : 'border-gray-300 bg-white text-gray-700 hover:border-amber-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200'}`}>Couldn't deliver</button></div></div>}
-                                  {canSubmitProof && (!showOutcomeChoice || deliveryOutcome === 'proof') && <div className="space-y-3 rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-950/30"><div><p className="text-sm font-semibold text-blue-950 dark:text-blue-100">Delivery proof</p><p className="text-xs text-blue-700 dark:text-blue-300">Upload a clear photo showing the successful handoff.</p></div><input type="file" accept="image/jpeg,image/png,image/webp" aria-label="Delivery proof photo" onChange={(event) => setProofFiles({ ...proofFiles, [leg.id]: event.target.files?.[0] ?? null })} className="block w-full text-sm text-gray-700 file:mr-3 file:rounded-lg file:border-0 file:bg-white file:px-3 file:py-2 file:font-semibold file:text-blue-700 dark:text-gray-200 dark:file:bg-gray-800 dark:file:text-blue-300" /><div className="flex flex-wrap gap-2"><button type="button" onClick={() => submitProof(leg.id)} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">Submit proof</button>{proofFiles[leg.id] && <button type="button" onClick={(event) => { setProofFiles({ ...proofFiles, [leg.id]: null }); const input = event.currentTarget.closest('div.space-y-3')?.querySelector<HTMLInputElement>('input[type="file"]'); if (input) input.value = ''; }} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200">Clear photo</button>}</div></div>}
-                                  {canSubmitReturnHandoff && <div className="space-y-3 rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-950/30"><div><p className="text-sm font-semibold text-blue-950 dark:text-blue-100">Return handoff</p><p className="text-xs text-blue-700 dark:text-blue-300">At the shop, upload a clear photo of the parcel handoff. The dispatcher will confirm physical receipt.</p></div><input type="file" accept="image/jpeg,image/png,image/webp" aria-label="Return handoff photo" onChange={(event) => setProofFiles({ ...proofFiles, [leg.id]: event.target.files?.[0] ?? null })} className="block w-full text-sm text-gray-700 file:mr-3 file:rounded-lg file:border-0 file:bg-white file:px-3 file:py-2 file:font-semibold file:text-blue-700 dark:text-gray-200 dark:file:bg-gray-800 dark:file:text-blue-300" /><button type="button" disabled={!proofFiles[leg.id]} onClick={() => void submitReturnHandoff(leg.id)} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">Confirm return handoff</button></div>}
-                                  {canSubmitReturnHandoff && <div className="space-y-3 rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-950/30"><div><p className="text-sm font-semibold text-blue-950 dark:text-blue-100">Return handoff</p><p className="text-xs text-blue-700 dark:text-blue-300">At the shop, upload a clear photo of the parcel handoff. Staff will confirm physical receipt.</p></div><input type="file" accept="image/jpeg,image/png,image/webp" aria-label="Return handoff photo" onChange={(event) => setProofFiles({ ...proofFiles, [leg.id]: event.target.files?.[0] ?? null })} className="block w-full text-sm text-gray-700 file:mr-3 file:rounded-lg file:border-0 file:bg-white file:px-3 file:py-2 file:font-semibold file:text-blue-700 dark:text-gray-200 dark:file:bg-gray-800 dark:file:text-blue-300" /><button type="button" disabled={!proofFiles[leg.id]} onClick={() => void submitReturnHandoff(leg.id)} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">Confirm return handoff</button></div>}
-                                  {riderMode && canRecordProof && isReturnToShop && returnProof?.review_status === 'pending' && <button type="button" onClick={() => void confirmAct(`/api/logistics/legs/${leg.id}/return-proofs/${returnProof.id}/handoff`, 'Confirm return handoff?', 'Confirm that the parcel was handed to shop staff.')} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white">Confirm return handoff</button>}
+                                  {canUpdateStatus && leg.status === 'assigned' && <button type="button" onClick={() => void act(`/api/logistics/legs/${leg.id}/picked-up`)} className="rounded-lg bg-gray-950 px-3 py-2 text-sm font-semibold text-white hover:bg-black dark:bg-gray-950 dark:hover:bg-black">Picked up</button>}
+                                  {canUpdateStatus && leg.status === 'picked_up' && <button type="button" onClick={() => void act(`/api/logistics/legs/${leg.id}/in-transit`)} className="rounded-lg bg-gray-950 px-3 py-2 text-sm font-semibold text-white hover:bg-black dark:bg-gray-950 dark:hover:bg-black">In transit</button>}
+                                  {showOutcomeChoice && <div role="group" aria-label="Choose delivery outcome" className="rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-900/40"><p className="mb-2 text-sm font-semibold text-gray-900 dark:text-white">What happened with this delivery?</p><div className="grid gap-2 sm:grid-cols-2"><button type="button" onClick={() => chooseDeliveryOutcome(leg.id, 'proof')} className={`rounded-lg border px-3 py-2 text-sm font-semibold transition-colors ${deliveryOutcome === 'proof' ? 'border-gray-950 bg-gray-950 text-white hover:bg-black dark:border-gray-950 dark:bg-gray-950 dark:text-white dark:hover:bg-black' : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:border-gray-500 dark:hover:bg-gray-700'}`}>Delivered successfully</button><button type="button" onClick={() => chooseDeliveryOutcome(leg.id, 'issue')} className={`rounded-lg border px-3 py-2 text-sm font-semibold transition-colors ${deliveryOutcome === 'issue' ? 'border-amber-600 bg-amber-600 text-white' : 'border-gray-300 bg-white text-gray-700 hover:border-amber-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200'}`}>Couldn't deliver</button></div></div>}
+                                  {canSubmitProof && (!showOutcomeChoice || deliveryOutcome === 'proof') && <div className="space-y-3 rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-950/30"><div><p className="text-sm font-semibold text-blue-950 dark:text-blue-100">Delivery proof</p><p className="text-xs text-blue-700 dark:text-blue-300">Upload a clear photo showing the successful handoff.</p></div><input type="file" accept="image/jpeg,image/png,image/webp" aria-label="Delivery proof photo" onChange={(event) => setProofFiles({ ...proofFiles, [leg.id]: event.target.files?.[0] ?? null })} className="block w-full text-sm text-gray-700 file:mr-3 file:rounded-lg file:border-0 file:bg-white file:px-3 file:py-2 file:font-semibold file:text-gray-800 dark:text-gray-200 dark:file:bg-gray-800 dark:file:text-gray-200" /><div className="flex flex-wrap gap-2"><button type="button" onClick={() => submitProof(leg.id)} className="rounded-lg bg-gray-950 px-4 py-2 text-sm font-semibold text-white hover:bg-black dark:bg-gray-950 dark:hover:bg-black">Submit proof</button>{proofFiles[leg.id] && <button type="button" onClick={(event) => { setProofFiles({ ...proofFiles, [leg.id]: null }); const input = event.currentTarget.closest('div.space-y-3')?.querySelector<HTMLInputElement>('input[type="file"]'); if (input) input.value = ''; }} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200">Clear photo</button>}</div></div>}
+                                  {canSubmitReturnHandoff && <div className="space-y-3 rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-950/30"><div><p className="text-sm font-semibold text-blue-950 dark:text-blue-100">Return handoff</p><p className="text-xs text-blue-700 dark:text-blue-300">At the shop, upload a clear photo of the parcel handoff. The dispatcher will confirm physical receipt.</p></div><input type="file" accept="image/jpeg,image/png,image/webp" aria-label="Return handoff photo" onChange={(event) => setProofFiles({ ...proofFiles, [leg.id]: event.target.files?.[0] ?? null })} className="block w-full text-sm text-gray-700 file:mr-3 file:rounded-lg file:border-0 file:bg-white file:px-3 file:py-2 file:font-semibold file:text-gray-800 dark:text-gray-200 dark:file:bg-gray-800 dark:file:text-gray-200" /><button type="button" disabled={!proofFiles[leg.id]} onClick={() => void submitReturnHandoff(leg.id)} className="rounded-lg bg-gray-950 px-4 py-2 text-sm font-semibold text-white hover:bg-black dark:bg-gray-950 dark:hover:bg-black disabled:cursor-not-allowed disabled:opacity-50">Confirm return handoff</button></div>}
+                                  {canSubmitReturnHandoff && <div className="space-y-3 rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-950/30"><div><p className="text-sm font-semibold text-blue-950 dark:text-blue-100">Return handoff</p><p className="text-xs text-blue-700 dark:text-blue-300">At the shop, upload a clear photo of the parcel handoff. Staff will confirm physical receipt.</p></div><input type="file" accept="image/jpeg,image/png,image/webp" aria-label="Return handoff photo" onChange={(event) => setProofFiles({ ...proofFiles, [leg.id]: event.target.files?.[0] ?? null })} className="block w-full text-sm text-gray-700 file:mr-3 file:rounded-lg file:border-0 file:bg-white file:px-3 file:py-2 file:font-semibold file:text-gray-800 dark:text-gray-200 dark:file:bg-gray-800 dark:file:text-gray-200" /><button type="button" disabled={!proofFiles[leg.id]} onClick={() => void submitReturnHandoff(leg.id)} className="rounded-lg bg-gray-950 px-4 py-2 text-sm font-semibold text-white hover:bg-black dark:bg-gray-950 dark:hover:bg-black disabled:cursor-not-allowed disabled:opacity-50">Confirm return handoff</button></div>}
+                                  {riderMode && canRecordProof && isReturnToShop && returnProof?.review_status === 'pending' && <button type="button" onClick={() => void confirmAct(`/api/logistics/legs/${leg.id}/return-proofs/${returnProof.id}/handoff`, 'Confirm return handoff?', 'Confirm that the parcel was handed to shop staff.')} className="rounded-lg bg-gray-950 px-3 py-2 text-sm font-semibold text-white hover:bg-black dark:bg-gray-950 dark:hover:bg-black">Confirm return handoff</button>}
                                   {riderMode && isReturnToShop && returnProof?.review_status === 'rider_confirmed' && <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">Awaiting shop receipt confirmation</p>}
                                   {!riderMode && leg.proofs?.filter((proof) => ['delivery', 'receive'].includes(proof.handoff_type)).map((proof) => (
                                     <div key={proof.id} className="space-y-2">
@@ -1061,7 +1061,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                       <label className="block text-xs font-semibold text-gray-700 dark:text-gray-200">Delivery window<select aria-label="Delivery window" value={schedule.window} onChange={(event) => setDeliverySchedules({ ...deliverySchedules, [leg.id]: { ...schedule, window: event.target.value } })} className="mt-1 min-h-11 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-white lg:rounded-lg"><option value="">Choose a window</option><option value="morning">Morning</option><option value="afternoon">Afternoon</option></select></label>
                                     </div>
                                     {activeAssignment ? (
-                                      <button type="button" disabled={!schedule.date || !schedule.window || assigningLegId === leg.id} onClick={() => void scheduleLeg(leg.id, false)} className="min-h-11 w-full rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 lg:w-auto lg:rounded-lg">Save schedule</button>
+                                      <button type="button" disabled={!schedule.date || !schedule.window || assigningLegId === leg.id} onClick={() => void scheduleLeg(leg.id, false)} className="min-h-11 w-full rounded-xl bg-gray-950 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-black dark:bg-gray-950 dark:hover:bg-black disabled:cursor-not-allowed disabled:opacity-50 lg:w-auto lg:rounded-lg">Save schedule</button>
                                     ) : (
                                       <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
                                         <label className="block min-w-0 flex-1 text-xs font-semibold text-gray-700 dark:text-gray-200">Available rider
@@ -1075,7 +1075,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                             {assignableRiders.map((rider) => <option key={rider.id} value={rider.id}>{rider.name}{rider.phone ? ` (${rider.phone})` : ''}</option>)}
                                           </select>
                                         </label>
-                                        <button type="button" disabled={!schedule.date || !schedule.window || !selectedRiders[leg.id] || assigningLegId === leg.id} onClick={() => void scheduleLeg(leg.id, true)} className="min-h-11 w-full rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto lg:rounded-lg">{assigningLegId === leg.id ? 'Scheduling...' : 'Schedule & assign rider'}</button>
+                                        <button type="button" disabled={!schedule.date || !schedule.window || !selectedRiders[leg.id] || assigningLegId === leg.id} onClick={() => void scheduleLeg(leg.id, true)} className="min-h-11 w-full rounded-xl bg-gray-950 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-black dark:bg-gray-950 dark:hover:bg-black disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto lg:rounded-lg">{assigningLegId === leg.id ? 'Scheduling...' : 'Schedule & assign rider'}</button>
                                       </div>
                                     )}
                                   </div>
@@ -1095,7 +1095,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                       type="button"
                                       disabled={!selectedRiders[leg.id] || assigningLegId === leg.id}
                                       onClick={() => assignRider(leg.id)}
-                                      className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                      className="rounded-lg bg-gray-950 px-3 py-2 text-sm font-semibold text-white hover:bg-black dark:bg-gray-950 dark:hover:bg-black disabled:cursor-not-allowed disabled:opacity-50"
                                     >
                                       {assigningLegId === leg.id ? 'Assigning...' : 'Assign'}
                                     </button>
@@ -1154,7 +1154,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                       preserveState
                       className={`min-h-11 min-w-[40px] rounded-lg px-3 py-2 text-center text-sm font-medium transition-colors xl:min-h-0 ${
                         link.active
-                          ? 'bg-blue-600 text-white'
+                          ? 'bg-gray-950 text-white dark:bg-gray-950'
                           : 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800'
                       }`}
                       dangerouslySetInnerHTML={{ __html: link.label }}

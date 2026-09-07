@@ -173,7 +173,7 @@ function WheelColumn({ label, options, selectedIndex, testId, onChange }: WheelC
             role="option"
             aria-selected={index === activeIndex}
             tabIndex={index === activeIndex ? 0 : -1}
-            className={`relative z-10 flex h-12 min-h-12 w-full shrink-0 snap-center items-center justify-center rounded-xl border px-2 text-base transition-colors duration-150 hover:text-gray-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${index === activeIndex ? 'border-blue-200 bg-blue-50/70 font-bold text-gray-950 dark:border-blue-400/30 dark:bg-blue-950/40 dark:text-white' : 'border-transparent font-semibold text-gray-500 dark:text-gray-400 dark:hover:text-white'}`}
+            className={`relative z-10 flex h-12 min-h-12 w-full shrink-0 snap-center items-center justify-center rounded-xl border px-2 text-base transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 dark:focus-visible:ring-gray-300 ${index === activeIndex ? 'border-gray-950 bg-gray-950 font-bold text-white hover:bg-black dark:border-gray-950 dark:bg-gray-950 dark:text-white dark:hover:bg-black' : 'border-transparent font-semibold text-gray-500 hover:bg-gray-100 hover:text-gray-950 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white'}`}
             onClick={() => {
               if (suppressClickRef.current) {
                 suppressClickRef.current = false;
@@ -233,7 +233,7 @@ export function TimePickerModal({ isOpen, label, value, onCancel, onConfirm }: T
             type="button"
             aria-label="Close time picker"
             onClick={onCancel}
-            className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-xl border border-gray-200 text-gray-500 transition-colors duration-150 hover:border-gray-400 hover:text-gray-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:border-gray-700 dark:text-gray-400 dark:hover:border-gray-500 dark:hover:text-white"
+            className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-xl border border-gray-200 text-gray-500 transition-colors duration-150 hover:border-gray-400 hover:bg-gray-100 hover:text-gray-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 dark:border-gray-700 dark:text-gray-400 dark:hover:border-gray-500 dark:hover:bg-gray-800 dark:hover:text-white"
           >
             <svg aria-hidden="true" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
               <path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" />
@@ -282,14 +282,14 @@ export function TimePickerModal({ isOpen, label, value, onCancel, onConfirm }: T
           <button
             type="button"
             onClick={onCancel}
-            className="min-h-11 rounded-xl border border-gray-200 px-5 font-semibold text-gray-700 transition-colors duration-150 hover:border-gray-400 hover:text-gray-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:border-gray-700 dark:text-gray-300 dark:hover:border-gray-500 dark:hover:text-white"
+            className="min-h-11 rounded-xl border border-gray-200 px-5 font-semibold text-gray-700 transition-colors duration-150 hover:border-gray-400 hover:bg-gray-100 hover:text-gray-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 dark:border-gray-700 dark:text-gray-300 dark:hover:border-gray-500 dark:hover:bg-gray-800 dark:hover:text-white"
           >
             Cancel
           </button>
           <button
             type="button"
             onClick={() => onConfirm(toTimeValue(draft))}
-            className="min-h-11 rounded-xl bg-blue-600 px-5 font-semibold text-white transition-colors duration-150 hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:bg-blue-500 dark:hover:bg-blue-400 dark:focus-visible:ring-offset-gray-900"
+            className="min-h-11 rounded-xl bg-gray-950 px-5 font-semibold text-white transition-colors duration-150 hover:bg-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 focus-visible:ring-offset-2 dark:bg-gray-950 dark:hover:bg-black dark:focus-visible:ring-offset-gray-900"
           >
             Done
           </button>

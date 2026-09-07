@@ -555,11 +555,6 @@ html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden
     opacity: 1;
   }
 
-  .dark #app .erp-theme .cashier-pos-page option {
-    background-color: #0f172a;
-    color: #f8fafc;
-  }
-
   .dark #app .erp-theme .cashier-pos-page [class~="hover:bg-white"]:hover {
     background-color: #1f2937 !important;
   }
@@ -2071,7 +2066,7 @@ html.userside-dark #app .userside-auth-ghost:hover {
 }
 
 @utility menu-item-active {
-  @apply bg-brand-50 text-brand-500 dark:bg-brand-500/[0.12] dark:text-brand-400;
+  @apply bg-gray-950 text-white dark:bg-gray-950 dark:text-white;
 }
 
 @utility menu-item-inactive {
@@ -2086,7 +2081,7 @@ html.userside-dark #app .userside-auth-ghost:hover {
 }
 
 @utility menu-item-icon-active {
-  @apply text-brand-500 dark:text-brand-400;
+  @apply text-gray-950 dark:text-white;
 }
 
 @utility menu-item-icon-inactive {
@@ -2098,7 +2093,7 @@ html.userside-dark #app .userside-auth-ghost:hover {
 }
 
 @utility menu-dropdown-item-active {
-  @apply bg-brand-50 text-brand-500 dark:bg-brand-500/[0.12] dark:text-brand-400;
+  @apply bg-gray-950 text-white dark:bg-gray-950 dark:text-white;
 }
 
 @utility menu-dropdown-item-inactive {
@@ -2110,7 +2105,7 @@ html.userside-dark #app .userside-auth-ghost:hover {
 }
 
 @utility menu-dropdown-badge-active {
-  @apply bg-brand-100 text-brand-600 dark:bg-brand-500/[0.2] dark:text-brand-300;
+  @apply bg-gray-200 text-gray-900 dark:bg-gray-700 dark:text-gray-100;
 }
 
 @utility menu-dropdown-badge-inactive {
@@ -2260,9 +2255,8 @@ html:not(.dark) .erp-theme :is(a, [role='tab']):is(
   color: #111111 !important;
 }
 
-/* Keep native select interaction states neutral across browsers. Native
-   option popovers remain OS-controlled in some browsers, but these styles
-   cover the selected option and field focus where the browser allows it. */
+/* Keep native select fields neutral. Native option popovers remain
+   browser/OS-controlled and are intentionally not styled here. */
 html:not(.dark) #app .erp-theme select {
   color-scheme: light;
 }
@@ -2277,38 +2271,6 @@ html:not(.dark) #app .erp-theme select:focus {
   --tw-ring-color: rgb(17 17 17 / 0.16) !important;
 }
 
-html:not(.dark) #app .erp-theme select option {
-  background-color: #ffffff !important;
-  color: #111111 !important;
-}
-
-html:not(.dark) #app .erp-theme select option:checked,
-html:not(.dark) #app .erp-theme select option:checked:hover {
-  background-color: #f3f4f6 !important;
-  color: #111111 !important;
-}
-
-html:not(.dark) #app .erp-theme select option:hover {
-  background-color: #e5e7eb !important;
-  color: #111111 !important;
-}
-
-html.dark #app .erp-theme select option {
-  background-color: #111827 !important;
-  color: #f8fafc !important;
-}
-
-html.dark #app .erp-theme select option:checked,
-html.dark #app .erp-theme select option:checked:hover {
-  background-color: #334155 !important;
-  color: #f8fafc !important;
-}
-
-html.dark #app .erp-theme select option:hover {
-  background-color: #475569 !important;
-  color: #ffffff !important;
-}
-
 /* Apply the same selection language to accessible custom dropdowns. */
 html:not(.dark) #app .erp-theme [role='combobox']:focus-within > div {
   border-color: #111111 !important;
@@ -2321,8 +2283,8 @@ html:not(.dark) #app .erp-theme [role='option'] {
 }
 
 html:not(.dark) #app .erp-theme [role='option'][aria-selected='true'] {
-  background-color: #f3f4f6 !important;
-  color: #111111 !important;
+  background-color: #111111 !important;
+  color: #ffffff !important;
 }
 
 html:not(.dark) #app .erp-theme [role='option']:not([aria-selected='true']):hover,
@@ -2337,14 +2299,183 @@ html.dark #app .erp-theme [role='option'] {
 }
 
 html.dark #app .erp-theme [role='option'][aria-selected='true'] {
-  background-color: #334155 !important;
-  color: #f8fafc !important;
+  background-color: #111111 !important;
+  color: #ffffff !important;
 }
 
 html.dark #app .erp-theme [role='option']:not([aria-selected='true']):hover,
 html.dark #app .erp-theme [role='option'][data-highlighted='true']:not([aria-selected='true']) {
   background-color: #475569 !important;
   color: #ffffff !important;
+}
+
+/* Selected tabs, filter chips, and list rows may use state attributes instead
+   of a colored utility class. Keep their selected treatment consistent too. */
+html:not(.dark) #app .erp-theme :is(
+  [aria-selected='true'], [aria-pressed='true'], [aria-current='page'],
+  [data-state='active'], [data-selected='true']
+):not(option):not(:disabled) {
+  background-color: #111111 !important;
+  color: #ffffff !important;
+  border-color: #111111 !important;
+}
+
+html.dark #app .erp-theme :is(
+  [aria-selected='true'], [aria-pressed='true'], [aria-current='page'],
+  [data-state='active'], [data-selected='true']
+):not(option):not(:disabled) {
+  background-color: #111111 !important;
+  color: #ffffff !important;
+  border-color: #111111 !important;
+}
+
+/* Keep non-filled interactive controls neutral by default. Status badges and
+   informational surfaces are outside this interactive-element selector. */
+html:not(.dark) #app .erp-theme :is(button, a, [role='button'], [role='option'], [role='tab'], [role='menuitem'], [class*='cursor-pointer']):is(
+  [class^='text-blue-'], [class*=' text-blue-'], [class^='text-indigo-'], [class*=' text-indigo-'],
+  [class^='text-purple-'], [class*=' text-purple-'], [class^='text-brand-'], [class*=' text-brand-']
+) {
+  color: #374151 !important;
+}
+
+html.dark #app .erp-theme :is(button, a, [role='button'], [role='option'], [role='tab'], [role='menuitem'], [class*='cursor-pointer']):is(
+  [class^='text-blue-'], [class*=' text-blue-'], [class^='text-indigo-'], [class*=' text-indigo-'],
+  [class^='text-purple-'], [class*=' text-purple-'], [class^='text-brand-'], [class*=' text-brand-']
+) {
+  color: #d1d5db !important;
+}
+
+html:not(.dark) #app .erp-theme :is(button, a, [role='button'], [role='option'], [role='tab'], [role='menuitem'], [class*='cursor-pointer']):is(
+  [class^='border-blue-'], [class*=' border-blue-'], [class^='border-indigo-'], [class*=' border-indigo-'],
+  [class^='border-purple-'], [class*=' border-purple-'], [class^='border-brand-'], [class*=' border-brand-']
+) {
+  border-color: #d1d5db !important;
+}
+
+html.dark #app .erp-theme :is(button, a, [role='button'], [role='option'], [role='tab'], [role='menuitem'], [class*='cursor-pointer']):is(
+  [class^='border-blue-'], [class*=' border-blue-'], [class^='border-indigo-'], [class*=' border-indigo-'],
+  [class^='border-purple-'], [class*=' border-purple-'], [class^='border-brand-'], [class*=' border-brand-']
+) {
+  border-color: #4b5563 !important;
+}
+
+/* Normalize legacy colored interaction utilities on ERP controls. */
+html:not(.dark) #app .erp-theme :is(button, a, [role='button'], [role='option'], [role='tab'], [role='menuitem'], [aria-current='page'], [aria-pressed='true'], [class*='cursor-pointer']):not(:disabled):is(
+  [class^='bg-blue-'], [class*=' bg-blue-'], [class^='bg-indigo-'], [class*=' bg-indigo-'],
+  [class^='bg-purple-'], [class*=' bg-purple-'], [class^='bg-brand-'], [class*=' bg-brand-']
+) {
+  background-color: #111111 !important;
+  color: #ffffff !important;
+  border-color: #111111 !important;
+}
+
+html.dark #app .erp-theme :is(button, a, [role='button'], [role='option'], [role='tab'], [role='menuitem'], [aria-current='page'], [aria-pressed='true'], [class*='cursor-pointer']):not(:disabled):is(
+  [class^='bg-blue-'], [class*=' bg-blue-'], [class^='bg-indigo-'], [class*=' bg-indigo-'],
+  [class^='bg-purple-'], [class*=' bg-purple-'], [class^='bg-brand-'], [class*=' bg-brand-'],
+  [class*='dark:bg-blue-'], [class*='dark:bg-indigo-'], [class*='dark:bg-purple-'], [class*='dark:bg-brand-']
+) {
+  background-color: #111111 !important;
+  color: #ffffff !important;
+  border-color: #111111 !important;
+}
+
+html.dark #app .erp-theme :is(button, a, [role='button'], [role='option'], [role='tab'], [role='menuitem'], [aria-current='page'], [aria-pressed='true'], [class*='cursor-pointer']):not(:disabled):is(
+  [class~='dark:bg-white'], [class~='dark:bg-brand-500'], [class~='dark:bg-brand-600']
+) {
+  background-color: #111111 !important;
+  color: #ffffff !important;
+  border-color: #111111 !important;
+}
+
+html.dark #app .erp-theme :is(button, a, [role='button'], [role='option'], [role='tab'], [role='menuitem'], [class*='cursor-pointer']):not(:disabled):is(
+  [class*='dark:hover:bg-blue-'], [class*='dark:hover:bg-indigo-'], [class*='dark:hover:bg-purple-'],
+  [class*='dark:hover:bg-brand-'], [class*='dark:hover:bg-gray-200'], [class*='dark:hover:bg-gray-100']
+):hover {
+  background-color: #374151 !important;
+  color: #ffffff !important;
+  border-color: #4b5563 !important;
+}
+
+html:not(.dark) #app .erp-theme :is(button, a, [role='button'], [role='option'], [role='tab'], [role='menuitem'], [class*='cursor-pointer']):is(
+  [class*='hover:bg-blue-'], [class*='hover:bg-indigo-'], [class*='hover:bg-purple-'], [class*='hover:bg-brand-']
+):hover {
+  background-color: #e5e7eb !important;
+  color: #111111 !important;
+  border-color: #d1d5db !important;
+}
+
+html.dark #app .erp-theme :is(button, a, [role='button'], [role='option'], [role='tab'], [role='menuitem'], [class*='cursor-pointer']):is(
+  [class*='hover:bg-blue-'], [class*='hover:bg-indigo-'], [class*='hover:bg-purple-'], [class*='hover:bg-brand-']
+):hover {
+  background-color: #374151 !important;
+  color: #ffffff !important;
+  border-color: #4b5563 !important;
+}
+
+html:not(.dark) #app .erp-theme :is(button, a, [role='button'], [role='option'], [role='tab'], [role='menuitem'], [class*='cursor-pointer']):is(
+  [class*='focus:ring-blue-'], [class*='focus:ring-indigo-'], [class*='focus:ring-purple-'], [class*='focus:ring-brand-']
+):focus {
+  outline-color: #111111 !important;
+  border-color: #111111 !important;
+  --tw-ring-color: rgb(17 17 17 / 0.16) !important;
+}
+
+html.dark #app .erp-theme :is(button, a, [role='button'], [role='option'], [role='tab'], [role='menuitem'], [class*='cursor-pointer']):is(
+  [class*='focus:ring-blue-'], [class*='focus:ring-indigo-'], [class*='focus:ring-purple-'], [class*='focus:ring-brand-']
+):focus {
+  outline-color: #d1d5db !important;
+  border-color: #d1d5db !important;
+  --tw-ring-color: rgb(209 213 219 / 0.3) !important;
+}
+
+html:not(.dark) #app .erp-theme :is(input, select, textarea, button, a, [role='button'], [role='option'], [role='tab'], [role='menuitem']):is(
+  [class*='focus:border-blue-'], [class*='focus:border-indigo-'], [class*='focus:border-purple-'],
+  [class*='focus:border-brand-'], [class*='focus-visible:ring-blue-'], [class*='focus-visible:ring-indigo-'], [class*='focus-visible:ring-purple-'], [class*='focus-visible:ring-brand-']
+):focus {
+  outline-color: #111111 !important;
+  border-color: #111111 !important;
+  --tw-ring-color: rgb(17 17 17 / 0.16) !important;
+}
+
+html.dark #app .erp-theme :is(input, select, textarea, button, a, [role='button'], [role='option'], [role='tab'], [role='menuitem']):is(
+  [class*='focus:border-blue-'], [class*='focus:border-indigo-'], [class*='focus:border-purple-'],
+  [class*='focus:border-brand-'], [class*='focus-visible:ring-blue-'], [class*='focus-visible:ring-indigo-'], [class*='focus-visible:ring-purple-'], [class*='focus-visible:ring-brand-']
+):focus {
+  outline-color: #d1d5db !important;
+  border-color: #d1d5db !important;
+  --tw-ring-color: rgb(209 213 219 / 0.3) !important;
+}
+
+html:not(.dark) #app .erp-theme :is(button, a, [role='button'], [role='option'], [role='tab'], [role='menuitem'], [class*='cursor-pointer']):is(
+  [class*='hover:text-blue-'], [class*='hover:text-indigo-'], [class*='hover:text-purple-'],
+  [class*='hover:text-brand-'], [class*='hover:border-blue-'], [class*='hover:border-indigo-'], [class*='hover:border-purple-'],
+  [class*='hover:border-brand-']
+):hover {
+  color: #111111 !important;
+  border-color: #d1d5db !important;
+}
+
+html.dark #app .erp-theme :is(button, a, [role='button'], [role='option'], [role='tab'], [role='menuitem'], [class*='cursor-pointer']):is(
+  [class*='hover:text-blue-'], [class*='hover:text-indigo-'], [class*='hover:text-purple-'],
+  [class*='hover:text-brand-'], [class*='hover:border-blue-'], [class*='hover:border-indigo-'], [class*='hover:border-purple-'],
+  [class*='hover:border-brand-']
+):hover {
+  color: #ffffff !important;
+  border-color: #4b5563 !important;
+}
+
+/* A selected control stays selected while it is hovered. */
+html:not(.dark) #app .erp-theme :is(
+  [aria-selected='true'], [aria-pressed='true'], [aria-current='page'],
+  [data-state='active'], [data-selected='true']
+):not(option):not(:disabled):hover,
+html.dark #app .erp-theme :is(
+  [aria-selected='true'], [aria-pressed='true'], [aria-current='page'],
+  [data-state='active'], [data-selected='true']
+):not(option):not(:disabled):hover {
+  background-color: #111111 !important;
+  color: #ffffff !important;
+  border-color: #111111 !important;
 }
 
 @utility no-scrollbar {
@@ -2773,11 +2904,6 @@ html.userside-dark #app .userside-shop-owner-registration-page [class~="text-gra
   background-color: #111827 !important;
   border-color: #3a4b64 !important;
   color: #f8fafc !important;
-}
-
-.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) option {
-  background-color: #111827;
-  color: #f8fafc;
 }
 
 .dark #app .shopowner-premium-page [class~="text-[#0f1b33]"],

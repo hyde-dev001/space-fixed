@@ -35,7 +35,7 @@ const Quickstart: React.FC<QuickstartProps> = ({ title, steps, onDismiss }) => {
               <div key={idx} className="bg-white dark:bg-gray-800 rounded-lg overflow-hidden">
                 <button
                   onClick={() => setExpandedStep(expandedStep === idx ? -1 : idx)}
-                  className="w-full px-4 py-3 flex items-center gap-3 hover:bg-blue-50 dark:hover:bg-gray-700 transition-colors text-left"
+                  className="w-full px-4 py-3 flex items-center gap-3 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-left"
                   aria-expanded={expandedStep === idx}
                 >
                   <span className="flex items-center justify-center w-6 h-6 bg-blue-500 text-white rounded-full text-xs font-bold">
@@ -59,7 +59,7 @@ const Quickstart: React.FC<QuickstartProps> = ({ title, steps, onDismiss }) => {
 
         <button
           onClick={handleDismiss}
-          className="text-blue-500 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-bold text-lg"
+          className="text-gray-700 dark:text-gray-300 hover:text-gray-950 dark:hover:text-white font-bold text-lg"
           aria-label="Dismiss quickstart guide"
         >
           ✕

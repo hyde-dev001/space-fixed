@@ -139,7 +139,7 @@ export default function LogisticsSettings() {
         <ul className="space-y-2">{form.blackout_dates.map((date) => <li key={date} className="flex items-center justify-between gap-3 rounded-xl bg-gray-50 px-3 py-2 text-sm dark:bg-gray-800"><span className="font-medium">{date}</span><button type="button" className="min-h-11 shrink-0 px-2 font-semibold text-gray-600 underline-offset-2 hover:underline dark:text-gray-300" onClick={() => set('blackout_dates', form.blackout_dates.filter((value) => value !== date))}>Remove</button></li>)}</ul>
       </fieldset>
       <div className="flex flex-col gap-3 sm:flex-row">
-        <button disabled={saving} className="min-h-11 w-full rounded-xl bg-blue-600 px-4 py-2 font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto">{saving ? 'Saving...' : 'Save'}</button>
+        <button disabled={saving} className="min-h-11 w-full rounded-xl bg-gray-950 px-4 py-2 font-semibold text-white transition-colors hover:bg-black dark:bg-gray-950 dark:hover:bg-black disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto">{saving ? 'Saving...' : 'Save'}</button>
         <button type="button" disabled={!changed || saving} onClick={discard} className="min-h-11 w-full rounded-xl border border-gray-300 px-4 py-2 font-semibold text-gray-700 transition-colors hover:border-gray-500 hover:text-gray-950 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto dark:border-gray-700 dark:text-gray-300 dark:hover:border-gray-500 dark:hover:text-white">Discard changes</button>
       </div>
     </form>

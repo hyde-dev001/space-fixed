@@ -106,7 +106,7 @@ export default function OwnerAttentionList({ items, onReview, selectedAttentionK
                 data-attention-key={item.attention_key}
                 aria-current={selectedAttentionKey === item.attention_key ? "true" : undefined}
                 onClick={() => onReview(item)}
-                className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg border border-gray-300 bg-white p-2 text-blue-600 transition-colors hover:border-blue-300 hover:bg-blue-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:border-gray-700 dark:bg-gray-900 dark:text-blue-400 dark:hover:border-blue-700 dark:hover:bg-blue-950/30 dark:focus-visible:ring-offset-gray-900"
+                className={`inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg border p-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-900 ${selectedAttentionKey === item.attention_key ? "border-gray-950 bg-gray-950 text-white hover:border-black hover:bg-black dark:border-gray-950 dark:bg-gray-950 dark:text-white dark:hover:border-gray-950 dark:hover:bg-black" : "border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-500 dark:hover:bg-gray-800"}`}
               >
                 <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12s3.5-6 9.75-6 9.75 6 9.75 6-3.5 6-9.75 6-9.75-6-9.75-6Z" />
@@ -116,7 +116,7 @@ export default function OwnerAttentionList({ items, onReview, selectedAttentionK
             ) : (
               <a
                 href={item.destination_url}
-                className="inline-flex min-h-11 shrink-0 items-center text-sm font-semibold text-blue-600 underline-offset-4 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:text-blue-400 dark:focus-visible:ring-offset-gray-900"
+                className="inline-flex min-h-11 shrink-0 items-center text-sm font-semibold text-gray-900 underline-offset-4 hover:text-black hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 focus-visible:ring-offset-2 dark:text-gray-200 dark:hover:text-white dark:focus-visible:ring-offset-gray-900"
               >
                 Open workflow
               </a>

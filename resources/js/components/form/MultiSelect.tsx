@@ -126,7 +126,7 @@ const MultiSelect: React.FC<MultiSelectProps> = ({
             tabIndex={disabled ? -1 : 0}
           >
             <div
-              className={`mb-2 flex min-h-11  rounded-lg border border-gray-300 py-1.5 pl-3 pr-3 shadow-theme-xs outline-hidden transition focus:border-brand-300 focus:shadow-focus-ring dark:border-gray-700 dark:bg-gray-900 dark:focus:border-brand-300 ${
+              className={`mb-2 flex min-h-11  rounded-lg border border-gray-300 py-1.5 pl-3 pr-3 shadow-theme-xs outline-hidden transition focus:border-gray-950 focus:shadow-focus-ring dark:border-gray-700 dark:bg-gray-900 dark:focus:border-gray-300 ${
                 disabled
                   ? "opacity-50 cursor-not-allowed bg-gray-50 dark:bg-gray-800"
                   : "cursor-pointer"
@@ -223,15 +223,19 @@ const MultiSelect: React.FC<MultiSelectProps> = ({
                 return (
                   <div
                     key={option.value}
-                    className={`w-full cursor-pointer rounded-t border-b border-gray-200 transition-colors hover:bg-gray-100 dark:border-gray-800 dark:hover:bg-gray-800 ${
-                      isFocused ? "bg-gray-100 dark:bg-gray-700" : ""
-                    } ${isSelected ? "bg-gray-100 dark:bg-gray-700" : ""}`}
+                    className={`w-full cursor-pointer rounded-t border-b border-gray-200 transition-colors ${
+                      isSelected
+                        ? "bg-gray-950 text-white hover:bg-black dark:bg-gray-950 dark:text-white dark:hover:bg-black"
+                        : "hover:bg-gray-100 dark:hover:bg-gray-800"
+                    } dark:border-gray-800 ${
+                      isFocused && !isSelected ? "bg-gray-100 dark:bg-gray-700" : ""
+                    }`}
                     onClick={() => handleSelect(option.value)}
                     role="option"
                     aria-selected={isSelected}
                   >
                     <div className="relative flex w-full items-center p-2 pl-2">
-                      <div className="mx-2 leading-6 text-gray-800 dark:text-white/90">
+                      <div className={`mx-2 leading-6 ${isSelected ? "text-white" : "text-gray-800 dark:text-white/90"}`}>
                         {option.text}
                       </div>
                     </div>

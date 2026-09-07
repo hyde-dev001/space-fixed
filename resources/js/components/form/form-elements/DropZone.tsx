@@ -56,7 +56,7 @@ const DropzoneComponent: React.FC<DropzoneProps> = ({
         ? "border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900"
         : isUploaded
           ? "border-green-500 bg-green-50 dark:border-green-500 dark:bg-green-900/20"
-          : "border-gray-300 dark:border-gray-700 hover:border-brand-500 dark:hover:border-brand-500"
+        : "border-gray-300 dark:border-gray-700 hover:border-gray-950 dark:hover:border-gray-300"
     }`}>
       <div
         {...getRootProps()}
@@ -64,14 +64,14 @@ const DropzoneComponent: React.FC<DropzoneProps> = ({
           compact
             ? `flex min-h-[208px] items-center justify-center p-4 sm:min-h-[208px] sm:p-5 ${
                 isDragActive
-                  ? "border-brand-500 bg-blue-50 dark:bg-gray-800"
+                  ? "border-gray-950 bg-gray-100 dark:border-gray-300 dark:bg-gray-800"
                   : "border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900"
               }`
             : `p-7 lg:p-10 ${
                 isUploaded
                   ? "border-green-500 bg-green-50 dark:bg-green-900/20"
                   : isDragActive
-                  ? "border-brand-500 bg-gray-100 dark:bg-gray-800"
+                  ? "border-gray-950 bg-gray-100 dark:border-gray-300 dark:bg-gray-800"
                   : "border-gray-300 bg-gray-50 dark:border-gray-700 dark:bg-gray-900"
               }`
         }`}
@@ -128,7 +128,7 @@ const DropzoneComponent: React.FC<DropzoneProps> = ({
                   {isDragActive ? 'Drop image here' : uploadLabel}
                 </h4>
               )}
-              <span className="inline-flex min-h-11 items-center justify-center px-2 text-xs font-medium text-brand-500 underline">
+              <span className="inline-flex min-h-11 items-center justify-center px-2 text-xs font-medium text-gray-950 underline dark:text-gray-200">
                 {isUploaded ? 'Change File' : 'Browse file'}
               </span>
             </>
@@ -147,7 +147,7 @@ const DropzoneComponent: React.FC<DropzoneProps> = ({
               )}
 
               <span className={`font-medium underline text-theme-sm ${
-                isUploaded ? "text-green-600 dark:text-green-400" : "text-brand-500"
+                isUploaded ? "text-green-600 dark:text-green-400" : "text-gray-950 dark:text-gray-200"
               }`}>
                 {isUploaded ? "Change File" : "Browse File"}
               </span>

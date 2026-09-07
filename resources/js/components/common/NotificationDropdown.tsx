@@ -289,7 +289,7 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
           <button
             onClick={handleMarkAllAsRead}
             disabled={unreadCount === 0 || markAllAsRead.isPending}
-            className="rounded p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-blue-400"
+            className="rounded p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
             aria-label="Mark all as read"
             title="Mark all as read"
           >
@@ -298,7 +298,7 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
           {isCustomerView && <ThemeToggleButton />}
           <button
             onClick={onClose}
-            className="rounded p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+            className="rounded p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
             aria-label="Close notifications"
             title="Close notifications"
           >
@@ -341,7 +341,7 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
           <div className="flex items-center justify-between gap-2">
             <Link
               href={basePath.includes('shop-owner') ? '/shop-owner/notifications/settings' : (basePath.includes('staff') || basePath.includes('hr')) ? '/erp/notifications/settings' : '/notifications/settings'}
-              className="flex-1 text-center text-sm font-medium text-gray-600 transition-colors hover:text-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-gray-300 dark:hover:text-white"
+              className="flex-1 text-center text-sm font-medium text-gray-600 transition-colors hover:text-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 dark:text-gray-300 dark:hover:text-white"
               onClick={onClose}
             >
               Settings
@@ -349,7 +349,7 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
             <span className="text-gray-300 dark:text-gray-600">|</span>
             <Link
               href={notificationsListHref}
-              className="flex-1 text-center text-sm font-medium text-blue-600 transition-colors hover:text-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              className="flex-1 text-center text-sm font-medium text-gray-900 transition-colors hover:text-black focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-950"
               onClick={onClose}
             >
               View All

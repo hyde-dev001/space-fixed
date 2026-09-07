@@ -446,7 +446,7 @@ export default function RequestMaterials() {
             )}
             <button
               onClick={() => setIsCreateModalOpen(true)}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors w-fit"
+              className="px-4 py-2 bg-gray-950 hover:bg-black dark:bg-gray-950 dark:hover:bg-black text-white rounded-lg font-medium transition-colors w-fit"
             >
               + New Material Request
             </button>
@@ -475,7 +475,7 @@ export default function RequestMaterials() {
                   setSearchQuery(event.target.value);
                   setCurrentPage(1);
                 }}
-                className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
+                className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-gray-950 dark:focus:border-gray-300"
               />
             </div>
             <div className="sm:w-56">
@@ -487,7 +487,7 @@ export default function RequestMaterials() {
                   setStatusFilter(event.target.value as "All" | RequestStatus);
                   setCurrentPage(1);
                 }}
-                className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
+                className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-gray-950 dark:focus:border-gray-300"
               >
                 <option value="All">All Status</option>
                 <option value="pending">Pending</option>
@@ -667,7 +667,7 @@ export default function RequestMaterials() {
               </button>
               <button
                 onClick={handleAddToCart}
-                className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium"
+                className="px-4 py-2 rounded-lg bg-gray-950 hover:bg-black dark:bg-gray-950 dark:hover:bg-black text-white font-medium"
                 title="Add to cart for bulk submission"
               >
                 + Add to Cart
@@ -790,7 +790,7 @@ export default function RequestMaterials() {
                 <button
                   onClick={handleSubmitCart}
                   disabled={isSubmittingCart || cart.length === 0}
-                  className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-4 py-2 rounded-lg bg-gray-950 hover:bg-black dark:bg-gray-950 dark:hover:bg-black text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isSubmittingCart ? "Submitting..." : "Submit All Requests"}
                 </button>

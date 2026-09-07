@@ -1050,8 +1050,8 @@ const SalaryChanges: React.FC = () => {
                   </div>
 
                   {selectedEmployee && (
-                    <div className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 px-4 py-3">
-                      <p className="text-sm text-blue-900 dark:text-blue-300">
+                    <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/60 px-4 py-3">
+                      <p className="text-sm text-gray-800 dark:text-gray-200">
                         Current daily rate: <span className="font-semibold">{fmtCurrency(selectedEmployee.salary)}</span>
                       </p>
                     </div>

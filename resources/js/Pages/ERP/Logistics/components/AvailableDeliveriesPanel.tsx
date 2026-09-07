@@ -58,7 +58,7 @@ export default function AvailableDeliveriesPanel({
           aria-controls="available-deliveries-content"
           title={collapsed ? 'Show available deliveries' : 'Collapse available deliveries'}
           onClick={collapsed ? onExpand : onCollapse}
-          className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:hover:bg-gray-700 dark:hover:text-white"
+          className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-950 dark:hover:bg-gray-700 dark:hover:text-white dark:focus:ring-gray-300"
         >
           {collapsed ? <ChevronDown aria-hidden="true" size={20} /> : <ChevronUp aria-hidden="true" size={20} />}
         </button>
@@ -99,7 +99,7 @@ export default function AvailableDeliveriesPanel({
         const scheduled = Boolean(leg.scheduled_delivery_date);
         const module = logisticsModuleForSourceType(leg.shipment?.source_type);
         const incompatible = Boolean(selectedModule && module !== selectedModule);
-        return <label key={leg.id} className={`flex min-h-20 min-w-0 items-start gap-3 rounded-2xl border border-gray-200 p-3 shadow-sm dark:border-gray-700 sm:p-4 xl:rounded-xl xl:p-3 xl:shadow-none ${incompatible ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:border-blue-300 hover:bg-blue-50/40'}`}>
+        return <label key={leg.id} className={`flex min-h-20 min-w-0 items-start gap-3 rounded-2xl border border-gray-200 p-3 shadow-sm dark:border-gray-700 sm:p-4 xl:rounded-xl xl:p-3 xl:shadow-none ${incompatible ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:border-gray-400 hover:bg-gray-100 dark:hover:border-gray-600 dark:hover:bg-gray-800'}`}>
           <input type="checkbox" disabled={incompatible} checked={selectedIds.includes(leg.id)} onChange={(event) => onToggle(leg.id, event.target.checked)} className="mt-1" />
           <span className="min-w-0 flex-1">
             <span className="flex flex-wrap items-center gap-2">

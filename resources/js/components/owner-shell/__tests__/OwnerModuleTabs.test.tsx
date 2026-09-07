@@ -28,7 +28,7 @@ it('renders only server-derived module links and marks the current page', () => 
   expect(screen.getByRole('link', { name: 'Customers' }))
     .toHaveClass('border-[#111111]', 'bg-[#111111]', 'text-white');
   expect(screen.getByRole('link', { name: 'Customers' }))
-    .toHaveClass('dark:border-blue-300', 'dark:bg-blue-500/10', 'dark:text-blue-200');
+    .toHaveClass('dark:border-[#111111]', 'dark:bg-[#111111]', 'dark:text-white');
   expect(screen.getByRole('link', { name: 'Customer Reviews' })).toHaveAttribute('href', '/shop-owner/erp/crm/customer-reviews');
   expect(screen.queryByRole('link', { name: /invoice|expense|approval|audit|create/i })).not.toBeInTheDocument();
 });

@@ -21,7 +21,7 @@ type ErpCommandSearchProps = {
   className?: string;
 };
 
-const DEFAULT_INPUT_CLASS = "dark:bg-dark-900 h-11 w-full rounded-lg border border-gray-200 bg-transparent py-2.5 pl-12 pr-14 text-sm text-gray-800 shadow-theme-xs placeholder:text-gray-400 focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-800 dark:bg-gray-900 dark:bg-white/[0.03] dark:text-white/90 dark:placeholder:text-white/30 dark:focus:border-brand-800 xl:w-[430px]";
+const DEFAULT_INPUT_CLASS = "dark:bg-dark-900 h-11 w-full rounded-lg border border-gray-200 bg-transparent py-2.5 pl-12 pr-14 text-sm text-gray-800 shadow-theme-xs placeholder:text-gray-400 focus:border-gray-950 focus:outline-hidden focus:ring-3 focus:ring-gray-950/10 dark:border-gray-800 dark:bg-gray-900 dark:bg-white/[0.03] dark:text-white/90 dark:placeholder:text-white/30 dark:focus:border-gray-300 xl:w-[430px]";
 const DEFAULT_SHORTCUT_CLASS = "absolute right-2.5 top-1/2 inline-flex -translate-y-1/2 items-center gap-0.5 rounded-lg border border-gray-200 bg-gray-50 px-[7px] py-[4.5px] text-xs -tracking-[0.2px] text-gray-500 dark:border-gray-800 dark:bg-white/[0.03] dark:text-gray-400";
 
 const resultId = (result: ErpSearchResult): string => `erp-search-result-${result.id}`;
@@ -169,6 +169,7 @@ export default function ErpCommandSearch({
 
   const renderResult = (result: ErpSearchResult, index: number) => {
     const Icon = result.kind === "article" ? BookOpen : LayoutDashboard;
+    const isActive = activeIndex === index;
 
     return (
       <div
@@ -177,20 +178,20 @@ export default function ErpCommandSearch({
         role="option"
         aria-selected={activeIndex === index}
         data-kind={result.kind}
-        className={activeIndex === index ? "bg-gray-100 dark:bg-white/10" : ""}
+        className={isActive ? "bg-gray-950 text-white dark:bg-gray-950" : "hover:bg-gray-100 dark:hover:bg-gray-800"}
       >
         <Link
           href={result.href}
-          className="flex items-start gap-3 px-4 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gray-950 dark:focus-visible:ring-white"
+          className={`flex items-start gap-3 px-4 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gray-950 dark:focus-visible:ring-white ${isActive ? "text-white" : ""}`}
           onClick={() => {
             setIsOpen(false);
             setActiveIndex(-1);
           }}
         >
-          <Icon aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-gray-500 dark:text-gray-400" />
+          <Icon aria-hidden="true" className={`mt-0.5 h-4 w-4 shrink-0 ${isActive ? "text-gray-200" : "text-gray-500 dark:text-gray-400"}`} />
           <span className="min-w-0">
-            <span className="block truncate text-sm font-semibold text-gray-900 dark:text-white">{result.label}</span>
-            <span className="mt-0.5 block truncate text-xs text-gray-500 dark:text-gray-400">{result.scopeLabel} {result.kind === "article" ? "article" : "page"} · {result.description}</span>
+            <span className={`block truncate text-sm font-semibold ${isActive ? "text-white" : "text-gray-900 dark:text-white"}`}>{result.label}</span>
+            <span className={`mt-0.5 block truncate text-xs ${isActive ? "text-gray-200" : "text-gray-500 dark:text-gray-400"}`}>{result.scopeLabel} {result.kind === "article" ? "article" : "page"} · {result.description}</span>
           </span>
         </Link>
       </div>

@@ -71,7 +71,7 @@ const CanonicalOwnerHeader: React.FC<CanonicalOwnerHeaderProps> = ({ menuButtonR
           <button
             ref={menuButtonRef}
             type="button"
-            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-200 text-gray-500 transition-colors motion-reduce:transition-none hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800"
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-200 text-gray-500 transition-colors motion-reduce:transition-none hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800"
             onClick={handleToggle}
             aria-label="Toggle Sidebar"
             aria-expanded={isMobileOpen || isExpanded}
@@ -81,7 +81,7 @@ const CanonicalOwnerHeader: React.FC<CanonicalOwnerHeaderProps> = ({ menuButtonR
           </button>
           <Link
             href="/shop-owner/home"
-            className="hidden truncate text-lg font-bold tracking-tight text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:inline-flex dark:text-white"
+            className="hidden truncate text-lg font-bold tracking-tight text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 dark:inline-flex dark:text-white"
             aria-label="SoleSpace"
           >
             SoleSpace
@@ -90,14 +90,14 @@ const CanonicalOwnerHeader: React.FC<CanonicalOwnerHeaderProps> = ({ menuButtonR
             <ErpCommandSearch
               id="canonical-owner-search"
               inputRef={inputRef}
-              inputClassName="h-10 w-72 rounded-lg border border-gray-200 bg-transparent py-2.5 pl-11 pr-14 text-sm text-gray-800 outline-none transition-colors motion-reduce:transition-none focus:border-[#111111] focus:ring-2 focus:ring-[#111111]/10 dark:border-gray-800 dark:text-white dark:focus:border-blue-400 dark:focus:ring-blue-500/20"
+              inputClassName="h-10 w-72 rounded-lg border border-gray-200 bg-transparent py-2.5 pl-11 pr-14 text-sm text-gray-800 outline-none transition-colors motion-reduce:transition-none focus:border-[#111111] focus:ring-2 focus:ring-[#111111]/10 dark:border-gray-800 dark:text-white dark:focus:border-gray-300 dark:focus:ring-gray-300/20"
             />
           </div>
         </div>
 
         <button
           type="button"
-          className="rounded-lg p-2 text-gray-500 transition-colors motion-reduce:transition-none hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-gray-300 dark:hover:bg-gray-800 lg:hidden"
+          className="rounded-lg p-2 text-gray-500 transition-colors motion-reduce:transition-none hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 dark:text-gray-300 dark:hover:bg-gray-800 lg:hidden"
           aria-label="Toggle Search"
           aria-expanded={isMobileSearchOpen}
           onClick={() => {
@@ -115,7 +115,7 @@ const CanonicalOwnerHeader: React.FC<CanonicalOwnerHeaderProps> = ({ menuButtonR
 
         <button
           type="button"
-          className="rounded-lg p-2 text-gray-500 transition-colors motion-reduce:transition-none hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-gray-300 dark:hover:bg-gray-800 lg:hidden"
+          className="rounded-lg p-2 text-gray-500 transition-colors motion-reduce:transition-none hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 dark:text-gray-300 dark:hover:bg-gray-800 lg:hidden"
           aria-label="Toggle Application Menu"
           aria-expanded={isApplicationMenuOpen}
           onClick={() => setApplicationMenuOpen((current) => !current)}
@@ -139,7 +139,7 @@ const CanonicalOwnerHeader: React.FC<CanonicalOwnerHeaderProps> = ({ menuButtonR
           <ErpCommandSearch
             id="canonical-owner-search-mobile"
             inputRef={mobileInputRef}
-            inputClassName="h-10 w-full rounded-lg border border-gray-200 bg-transparent py-2.5 pl-11 pr-14 text-sm text-gray-800 outline-none transition-colors motion-reduce:transition-none focus:border-[#111111] focus:ring-2 focus:ring-[#111111]/10 dark:border-gray-800 dark:text-white dark:focus:border-blue-400 dark:focus:ring-blue-500/20"
+            inputClassName="h-10 w-full rounded-lg border border-gray-200 bg-transparent py-2.5 pl-11 pr-14 text-sm text-gray-800 outline-none transition-colors motion-reduce:transition-none focus:border-[#111111] focus:ring-2 focus:ring-[#111111]/10 dark:border-gray-800 dark:text-white dark:focus:border-gray-300 dark:focus:ring-gray-300/20"
           />
         </div>
       )}

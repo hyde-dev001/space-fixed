@@ -173,8 +173,8 @@ const CanonicalOwnerSidebar = ({ metadata }: CanonicalOwnerSidebarProps) => {
     const active = item.available && isItemActive(currentPath, item);
     const activeChild = item.available && hasActiveChild(currentPath, item);
     const Icon = ITEM_ICONS[item.key] ?? FileText;
-    const itemClassName = `flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] dark:focus-visible:ring-blue-300 ${active
-      ? "menu-item-active bg-[#111111] text-white dark:bg-blue-500/15 dark:text-blue-300"
+    const itemClassName = `flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] dark:focus-visible:ring-gray-300 ${active
+      ? "menu-item-active bg-[#111111] text-white dark:bg-[#111111] dark:text-white"
       : "text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white"
       }`;
 
@@ -235,7 +235,7 @@ const CanonicalOwnerSidebar = ({ metadata }: CanonicalOwnerSidebarProps) => {
                   type="button"
                   data-testid={`canonical-owner-group-${group.key}`}
                   data-group-key={group.key}
-                  className="flex min-h-9 w-full items-center justify-between rounded-lg px-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-400 transition-colors motion-reduce:transition-none hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:hover:bg-gray-800"
+                  className="flex min-h-9 w-full items-center justify-between rounded-lg px-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-400 transition-colors motion-reduce:transition-none hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 dark:hover:bg-gray-800"
                   aria-expanded={expanded}
                   aria-controls={itemsId}
                   title={showLabels ? undefined : group.label}
@@ -261,8 +261,8 @@ const CanonicalOwnerSidebar = ({ metadata }: CanonicalOwnerSidebarProps) => {
           <li>
             <Link
               href={OWNER_ARTICLES_PATH}
-              className={`flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] dark:focus-visible:ring-blue-300 ${currentPath === OWNER_ARTICLES_PATH || currentPath.startsWith(`${OWNER_ARTICLES_PATH}/`)
-                ? "menu-item-active bg-[#111111] text-white dark:bg-blue-500/15 dark:text-blue-300"
+              className={`flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] dark:focus-visible:ring-gray-300 ${currentPath === OWNER_ARTICLES_PATH || currentPath.startsWith(`${OWNER_ARTICLES_PATH}/`)
+                ? "menu-item-active bg-[#111111] text-white dark:bg-[#111111] dark:text-white"
                 : "text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white"
                 }`}
               aria-current={currentPath === OWNER_ARTICLES_PATH || currentPath.startsWith(`${OWNER_ARTICLES_PATH}/`) ? "page" : undefined}

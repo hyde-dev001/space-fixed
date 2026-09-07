@@ -71,7 +71,7 @@ function SuggestionPreview({
                     type="button"
                     onClick={() => onApply?.(suggestion.legIds)}
                     aria-label={'Use nearest-stop suggestion for ' + riderName}
-                    className="min-h-11 w-full rounded-xl border border-blue-600 px-3 text-sm font-bold text-blue-700 hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 sm:w-auto dark:text-blue-300 dark:hover:bg-blue-950/40"
+                    className="min-h-11 w-full rounded-xl border border-gray-400 px-3 text-sm font-bold text-gray-700 hover:bg-gray-100 hover:text-gray-950 focus:outline-none focus:ring-2 focus:ring-gray-950 focus:ring-offset-2 sm:w-auto dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800 dark:hover:text-white dark:focus:ring-gray-300"
                   >
                     Use suggestion
                   </button>
@@ -193,7 +193,7 @@ export default function BatchWorkspace({
       {batch?.status === 'draft' && <button type="button" onClick={onReview} className="min-h-11 w-full rounded-xl border border-blue-600 px-4 text-sm font-semibold text-blue-700 sm:w-auto">Review &amp; Offer</button>}
       {batch && batch.status !== 'draft' && <span className="mr-auto text-sm font-medium text-gray-500">This route is read-only at the {batch.status.replaceAll('_', ' ')} stage.</span>}
       {!batch && legs.length < 2 && <span className="mr-auto text-sm font-semibold text-amber-700">Select at least 2 deliveries</span>}
-      {!batch && <button type="button" disabled={!canSave} onClick={onSave} className="min-h-11 w-full rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-40 sm:w-auto">{submitting ? 'Saving Draft...' : 'Save Draft'}</button>}
+      {!batch && <button type="button" disabled={!canSave} onClick={onSave} className="min-h-11 w-full rounded-xl bg-gray-950 px-5 text-sm font-semibold text-white hover:bg-black dark:bg-gray-950 dark:hover:bg-black disabled:opacity-40 sm:w-auto">{submitting ? 'Saving Draft...' : 'Save Draft'}</button>}
     </div>
   </section>;
 }
