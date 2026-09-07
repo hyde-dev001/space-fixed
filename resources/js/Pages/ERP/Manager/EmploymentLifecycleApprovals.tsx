@@ -1,7 +1,9 @@
 import { Head } from "@inertiajs/react";
 import { useCallback, useEffect, useState } from "react";
 import type { FormEvent } from "react";
+import { CheckCircle2, Clock3, Store, XCircle } from "lucide-react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
+import { DashboardMetricCard } from "../../../components/dashboard";
 import { workflowFeedback } from "../../../utils/workflowFeedback";
 
 type RequestType = "termination" | "rehire";
@@ -93,13 +95,6 @@ const readError = async (response: Response): Promise<string> => {
   }
   return "The request could not be completed. Please refresh and try again.";
 };
-
-const Metric = ({ label, value }: { label: string; value: number }) => (
-  <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
-    <p className="text-sm text-gray-500 dark:text-gray-400">{label}</p>
-    <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{value.toLocaleString()}</p>
-  </div>
-);
 
 export default function EmploymentLifecycleApprovals() {
   const type: RequestType = typeof window !== "undefined" && window.location.pathname.includes("rehire") ? "rehire" : "termination";
@@ -225,10 +220,10 @@ export default function EmploymentLifecycleApprovals() {
         </header>
 
         <section className="grid grid-cols-2 gap-4 lg:grid-cols-4" aria-label={label + " approval summary"}>
-          <Metric label="Pending Manager review" value={payload?.metrics.pending ?? 0} />
-          <Metric label="Waiting for Shop Owner" value={payload?.metrics.awaiting_owner ?? 0} />
-          <Metric label="Approved" value={payload?.metrics.approved ?? 0} />
-          <Metric label="Rejected" value={payload?.metrics.rejected ?? 0} />
+          <DashboardMetricCard label="Pending Manager review" value={(payload?.metrics.pending ?? 0).toLocaleString()} description="Awaiting manager action" context="Approvals" icon={Clock3} tone="neutral" />
+          <DashboardMetricCard label="Waiting for Shop Owner" value={(payload?.metrics.awaiting_owner ?? 0).toLocaleString()} description="Awaiting Shop Owner review" context="Approvals" icon={Store} tone="neutral" />
+          <DashboardMetricCard label="Approved" value={(payload?.metrics.approved ?? 0).toLocaleString()} description="Approved requests" context="Approvals" icon={CheckCircle2} tone="neutral" />
+          <DashboardMetricCard label="Rejected" value={(payload?.metrics.rejected ?? 0).toLocaleString()} description="Rejected requests" context="Approvals" icon={XCircle} tone="neutral" />
         </section>
 
         <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]" aria-labelledby="lifecycle-filters-title">

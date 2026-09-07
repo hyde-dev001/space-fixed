@@ -1,7 +1,10 @@
 import { Head, Link, usePage } from "@inertiajs/react";
 import { useMemo, useState } from "react";
 import type { FormEvent } from "react";
+import { AlertTriangle, ClipboardList, Wrench } from "lucide-react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
+import { DashboardMetricCard } from "../../../components/dashboard";
+import ManagerFilterPanel, { ManagerFilterActions } from "../../../components/manager/ManagerFilterPanel";
 import { useManagerStaffWorkload } from "../../../hooks/useManagerApi";
 import type { ManagerStaffWorkload, ManagerStaffWorkloadFilters } from "../../../hooks/useManagerApi";
 import { getManagerBusinessCapabilities } from "../../../utils/managerBusinessCapabilities";
@@ -256,36 +259,57 @@ export default function StaffWorkload() {
 
             <main className="space-y-6 py-6 md:py-8" aria-labelledby="staff-workload-title">
                 <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-                    <h1 id="staff-workload-title" className="sr-only">Staff &amp; Workload</h1>
-                    <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
-                        <p className="font-semibold text-gray-900 dark:text-white">{pagination?.total ?? 0} staff in view</p>
-                        <p className="mt-1 text-gray-500 dark:text-gray-400">
-                            Snapshot: {formatDateTime(payload?.last_updated_at)}
+                    <div>
+                        <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600 dark:text-blue-400">People & approvals</p>
+                        <h1 id="staff-workload-title" className="mt-2 text-3xl font-bold tracking-tight text-gray-900 dark:text-white">
+                            Staff &amp; Workload
+                        </h1>
+                        <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-600 dark:text-gray-400">
+                            Monitor current assignments, availability, and operational exceptions. Off-shift alone does not trigger reassignment.
                         </p>
                     </div>
                 </header>
 
                 <section className={`grid grid-cols-1 gap-4 ${canRetail && canRepair ? "sm:grid-cols-3" : "sm:grid-cols-2"}`} aria-label="Visible workload summary">
                     {canRetail && (
-                        <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
-                            <NumberMetric label="Visible active orders" value={visibleSummary.activeOrders} />
-                        </div>
+                        <DashboardMetricCard
+                            label="Visible active orders"
+                            value={visibleSummary.activeOrders.toLocaleString()}
+                            description="Active orders in the selected view"
+                            context="Current"
+                            icon={ClipboardList}
+                        />
                     )}
                     {canRepair && (
-                        <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
-                            <NumberMetric label="Visible active repairs" value={visibleSummary.activeRepairs} />
-                        </div>
+                        <DashboardMetricCard
+                            label="Visible active repairs"
+                            value={visibleSummary.activeRepairs.toLocaleString()}
+                            description="Active repairs in the selected view"
+                            context="Current"
+                            icon={Wrench}
+                        />
                     )}
-                    <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
-                        <NumberMetric label="Staff with exceptions" value={visibleSummary.exceptions} alert={visibleSummary.exceptions > 0} />
-                    </div>
+                    <DashboardMetricCard
+                        label="Staff with exceptions"
+                        value={visibleSummary.exceptions.toLocaleString()}
+                        description="Staff requiring workload review"
+                        context="Current"
+                        icon={AlertTriangle}
+                        tone={visibleSummary.exceptions > 0 ? "warning" : "neutral"}
+                    />
                 </section>
 
-                <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]" aria-labelledby="workload-filters-title">
-                    <div className="mb-4">
-                        <h2 id="workload-filters-title" className="text-base font-semibold text-gray-900 dark:text-white">Filter workload</h2>
-                        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Period fields affect the work totals shown for the selected reporting window.</p>
-                    </div>
+                <ManagerFilterPanel
+                    title="Filter workload"
+                    titleId="workload-filters-title"
+                    description="Period fields affect the work totals shown for the selected reporting window."
+                    metadata={
+                        <>
+                            <p className="font-semibold text-gray-900 dark:text-white">{pagination?.total ?? 0} staff in view</p>
+                            <p className="mt-1 text-gray-500 dark:text-gray-400">Snapshot: {formatDateTime(payload?.last_updated_at)}</p>
+                        </>
+                    }
+                >
                     <form onSubmit={applyFilters} className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
                         <div className="xl:col-span-2">
                             <label htmlFor="staff-search" className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Search staff</label>
@@ -347,7 +371,7 @@ export default function StaffWorkload() {
                                 className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-white"
                             />
                         </div>
-                        <div className="flex items-end gap-2 md:col-span-2 xl:col-span-6">
+                        <ManagerFilterActions>
                             <button
                                 type="submit"
                                 className="min-h-11 rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200 dark:focus:ring-offset-gray-950"
@@ -361,9 +385,9 @@ export default function StaffWorkload() {
                             >
                                 Clear
                             </button>
-                        </div>
+                        </ManagerFilterActions>
                     </form>
-                </section>
+                </ManagerFilterPanel>
 
                 {workload.isError && payload && (
                     <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
@@ -402,7 +426,6 @@ export default function StaffWorkload() {
                                     Period: {formatDateTime(payload.period.start)} – {formatDateTime(payload.period.end)}
                                 </p>
                             </div>
-                            {workload.isStale && !workload.isFetching && <p className="text-sm font-medium text-amber-700 dark:text-amber-300">Snapshot may be stale</p>}
                         </div>
 
                         <div className="hidden overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm lg:block dark:border-gray-800 dark:bg-white/[0.03]">
