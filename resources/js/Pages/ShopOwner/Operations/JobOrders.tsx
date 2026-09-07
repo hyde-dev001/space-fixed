@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head, usePage } from "@inertiajs/react";
 import { useState } from "react";
 import type { FormEvent } from "react";
@@ -198,7 +199,7 @@ export default function JobOrders() {
           <form onSubmit={applyFilters} className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
             <div className="xl:col-span-2">
               <label htmlFor="owner-order-status" className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Status</label>
-              <select id="owner-order-status" value={form.status} onChange={(event) => setForm((current) => ({ ...current, status: event.target.value }))} className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-white">
+              <MonochromeSelect id="owner-order-status" value={form.status} onChange={(event) => setForm((current) => ({ ...current, status: event.target.value }))} className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-white">
                 <option value="">All statuses</option>
                 <option value="pending">Pending</option>
                 <option value="processing">Processing</option>
@@ -206,16 +207,16 @@ export default function JobOrders() {
                 <option value="delivered">Delivered</option>
                 <option value="completed">Completed</option>
                 <option value="cancelled">Cancelled</option>
-              </select>
+              </MonochromeSelect>
             </div>
             <div className="xl:col-span-2">
               <label htmlFor="owner-order-assignment" className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Assignment</label>
-              <select id="owner-order-assignment" value={form.assignment_state} onChange={(event) => setForm((current) => ({ ...current, assignment_state: event.target.value }))} className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-white">
+              <MonochromeSelect id="owner-order-assignment" value={form.assignment_state} onChange={(event) => setForm((current) => ({ ...current, assignment_state: event.target.value }))} className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-white">
                 <option value="">All assignments</option>
                 <option value="unassigned">Pending / unassigned</option>
                 <option value="assigned">Assigned and locked</option>
                 <option value="reassignment_required">Exception required</option>
-              </select>
+              </MonochromeSelect>
             </div>
             <div>
               <label htmlFor="owner-order-handler" className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Handler ID</label>

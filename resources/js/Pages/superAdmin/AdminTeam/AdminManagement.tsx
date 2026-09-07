@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head, Link, router } from '@inertiajs/react';
 import { useRef, useState } from 'react';
 import Swal from 'sweetalert2';
@@ -209,14 +210,14 @@ export default function AdminManagement({ admins = [], stats = {}, filters = {} 
                 searchTimer.current = setTimeout(() => visitAdminPage(value, filter, 1, roleFilter), 250);
               }} placeholder="Search by name or email" className="w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-gray-900 outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10 lg:max-w-sm" />
               <label className="sr-only" htmlFor="admin-role-filter">Filter administrators by role</label>
-              <select id="admin-role-filter" value={roleFilter} onChange={(event) => {
+              <MonochromeSelect id="admin-role-filter" value={roleFilter} onChange={(event) => {
                 setRoleFilter(event.target.value);
                 visitAdminPage(search, filter, 1, event.target.value);
               }} className="rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-white">
                 <option value="all">All roles</option>
                 <option value="admin">Admin</option>
                 <option value="super_admin">Super Admin</option>
-              </select>
+              </MonochromeSelect>
               <div className="flex flex-wrap gap-2" aria-label="Filter administrators">
                 {['all', 'active', 'pending_setup', 'suspended', 'inactive'].map((value) => (
                   <button key={value} type="button" onClick={() => {
@@ -259,10 +260,10 @@ export default function AdminManagement({ admins = [], stats = {}, filters = {} 
                         </td>
                         <td className="px-5 py-5 align-top">
                           <label className="sr-only" htmlFor={`admin-role-${admin.id}`}>Role for {admin.email}</label>
-                          <select id={`admin-role-${admin.id}`} value={admin.role} onChange={(event) => runPatchAction(admin, event.target.value)} disabled={actionBusy} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-white">
+                          <MonochromeSelect id={`admin-role-${admin.id}`} value={admin.role} onChange={(event) => runPatchAction(admin, event.target.value)} disabled={actionBusy} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-white">
                             <option value="admin">Admin</option>
                             <option value="super_admin">Super Admin</option>
-                          </select>
+                          </MonochromeSelect>
                           <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">Current: {roleLabel(admin.role)}</p>
                         </td>
                         <td className="px-5 py-5 align-top">

@@ -11,6 +11,7 @@ import { QueryProvider } from './providers/QueryProvider';
 import { CartProvider } from './contexts/CartContext';
 import { dismissAppLoader } from './utils/appLoader';
 import { syncPageTheme } from './utils/pageTheme';
+import { installSweetAlertSelectObserver } from './utils/monochromeSweetAlertSelect';
 import { CustomerPageTransition } from './components/common/CustomerPageTransition';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
@@ -109,6 +110,7 @@ createInertiaApp({
 
         const component = props.initialPage.component ?? '';
         syncPagePresentation(component);
+        installSweetAlertSelectObserver();
 
         root.render(
             <ApplicationProviders initialComponent={component}>

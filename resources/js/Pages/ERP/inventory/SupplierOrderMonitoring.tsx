@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head, usePage } from "@inertiajs/react";
 import { useMemo, useState } from "react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
@@ -59,14 +60,14 @@ export default function SupplierOrderMonitoring() {
 				<div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
 					<div className="mb-4 flex flex-col gap-3 sm:flex-row">
 						<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search PO, supplier, product, or status" className="min-h-11 flex-1 rounded-lg border border-gray-300 bg-white px-4 py-2 dark:border-gray-600 dark:bg-gray-800" />
-						<select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="Filter supplier orders by status" className="min-h-11 rounded-lg border border-gray-300 bg-white px-4 py-2 dark:border-gray-600 dark:bg-gray-800">
+						<MonochromeSelect value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="Filter supplier orders by status" className="min-h-11 rounded-lg border border-gray-300 bg-white px-4 py-2 dark:border-gray-600 dark:bg-gray-800">
 							<option value="All">All statuses</option>
 							{Array.from(new Set(orders.map((order) => order.status))).map((status) => <option key={status} value={status}>{label(status)}</option>)}
-						</select>
-						<select value={supplierFilter} onChange={(event) => setSupplierFilter(event.target.value)} aria-label="Filter supplier orders by supplier" className="min-h-11 rounded-lg border border-gray-300 bg-white px-4 py-2 dark:border-gray-600 dark:bg-gray-800">
+						</MonochromeSelect>
+						<MonochromeSelect value={supplierFilter} onChange={(event) => setSupplierFilter(event.target.value)} aria-label="Filter supplier orders by supplier" className="min-h-11 rounded-lg border border-gray-300 bg-white px-4 py-2 dark:border-gray-600 dark:bg-gray-800">
 							<option value="All">All suppliers</option>
 							{suppliers.map((supplier) => <option key={supplier.id} value={String(supplier.id)}>{supplier.name}</option>)}
-						</select>
+						</MonochromeSelect>
 					</div>
 					<div className="overflow-x-auto">
 						<table className="min-w-full text-sm">

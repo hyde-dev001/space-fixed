@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 /**
  * NotificationArchive Page Component - Phase 7
  * Manage archived notifications with restore and permanent delete
@@ -107,7 +108,7 @@ const NotificationArchive: React.FC = () => {
             </div>
 
             {/* Type Filter */}
-            <select
+            <MonochromeSelect
               value={selectedType}
               onChange={(e) => setSelectedType(e.target.value)}
               className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
@@ -118,7 +119,7 @@ const NotificationArchive: React.FC = () => {
               <option value="shipping">Shipping</option>
               <option value="promotion">Promotion</option>
               <option value="system">System</option>
-            </select>
+            </MonochromeSelect>
 
             {/* Start Date */}
             <div className="relative">

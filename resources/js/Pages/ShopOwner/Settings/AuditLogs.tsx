@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import React, { useState } from "react";
 import { Head, usePage } from "@inertiajs/react";
 import AppLayoutShopOwner from "../../../layout/AppLayout_shopOwner";
@@ -399,7 +400,7 @@ export default function ShopOwnerAuditLogs() {
 
               <div>
                 <label htmlFor="shop-audit-event-filter" className="block text-sm font-medium text-gray-700 mb-1">Activity</label>
-                <select
+                <MonochromeSelect
                   id="shop-audit-event-filter"
                   value={String(filters.event || "")}
                   onChange={(e) => setFilter("event", e.target.value || null)}
@@ -411,12 +412,12 @@ export default function ShopOwnerAuditLogs() {
                   <option value="created">Created</option>
                   <option value="updated">Updated</option>
                   <option value="deleted">Deleted</option>
-                </select>
+                </MonochromeSelect>
               </div>
 
               <div>
                 <label htmlFor="shop-audit-subject-filter" className="block text-sm font-medium text-gray-700 mb-1">Record type</label>
-                <select
+                <MonochromeSelect
                   id="shop-audit-subject-filter"
                   value={String(filters.subject_type || "")}
                   onChange={(e) => setFilter("subject_type", e.target.value || null)}
@@ -437,7 +438,7 @@ export default function ShopOwnerAuditLogs() {
                   {canManageStaff && <option value="Payroll">Payroll</option>}
                   {canManageStaff && <option value="LeaveRequest">Leave Requests</option>}
                   {canManageStaff && <option value="AttendanceRecord">Attendance</option>}
-                </select>
+                </MonochromeSelect>
               </div>
 
               <div className="md:col-span-4">

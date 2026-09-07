@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import React, { useEffect, useRef, useState } from "react";
 import { Head, Link, router } from "@inertiajs/react";
 import AppLayout from "../../../layout/AppLayout";
@@ -638,7 +639,7 @@ export default function ShopOwnerRegistrationView({
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Filter by Status
                 </label>
-                <select
+                <MonochromeSelect
                   value={filterStatus}
                   onChange={(e) => {
                     const nextStatus = e.target.value as 'all' | 'pending' | 'approved' | 'rejected';
@@ -654,7 +655,7 @@ export default function ShopOwnerRegistrationView({
                   <option value="pending">Pending</option>
                   <option value="approved">Approved</option>
                   <option value="rejected">Rejected</option>
-                </select>
+                </MonochromeSelect>
               </div>
             </div>
           </div>
@@ -952,7 +953,7 @@ export default function ShopOwnerRegistrationView({
                                     {document.logicalSlot === 'business_registration' && (
                                       <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">
                                         Verified authority
-                                        <select
+                                        <MonochromeSelect
                                           value={reviewMetadata[document.id]?.documentType ?? document.documentType ?? ''}
                                           onChange={(event) => updateReviewMetadata(document.id!, {
                                             documentType: event.target.value,
@@ -961,7 +962,7 @@ export default function ShopOwnerRegistrationView({
                                         >
                                           <option value="dti_registration">DTI</option>
                                           <option value="sec_registration">SEC</option>
-                                        </select>
+                                        </MonochromeSelect>
                                       </label>
                                     )}
                                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -978,7 +979,7 @@ export default function ShopOwnerRegistrationView({
                                       </label>
                                       <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">
                                         Verified expiration
-                                        <select
+                                        <MonochromeSelect
                                           value={reviewMetadata[document.id]?.expirationMode ?? document.expirationMode ?? ''}
                                           onChange={(event) => updateReviewMetadata(document.id!, {
                                             expirationMode: event.target.value as RegistrationExpirationMode,
@@ -991,7 +992,7 @@ export default function ShopOwnerRegistrationView({
                                           <option value="">Select…</option>
                                           <option value="dated">Dated</option>
                                           <option value="none">No expiration</option>
-                                        </select>
+                                        </MonochromeSelect>
                                       </label>
                                     </div>
                                     {(reviewMetadata[document.id]?.expirationMode ?? document.expirationMode) === 'dated' && (

@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useMemo, useState } from "react";
 import AppLayoutShopOwner from "../../../../layout/AppLayout_shopOwner";
@@ -403,7 +404,7 @@ export default function Customers() {
                 placeholder="Search by name, email, or phone"
                 className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white"
               />
-              <select
+              <MonochromeSelect
                 value={statusFilter}
                 onChange={(event) => {
                   setStatusFilter(event.target.value as "all" | CustomerStatus);
@@ -415,7 +416,7 @@ export default function Customers() {
                 <option value="all">All status</option>
                 <option value="active">Active</option>
                 <option value="inactive">Inactive</option>
-              </select>
+              </MonochromeSelect>
             </div>
             <p className="text-sm text-gray-500 dark:text-gray-400">{customers.length} customers</p>
           </div>
@@ -654,7 +655,7 @@ export default function Customers() {
                       <div className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
                         <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">Status</p>
                         {editing ? (
-                          <select
+                          <MonochromeSelect
                             value={formData.status}
                             onChange={(event) => setFormData((prev) => ({ ...prev, status: event.target.value as CustomerStatus }))}
                             title="Customer status"
@@ -662,7 +663,7 @@ export default function Customers() {
                           >
                             <option value="active">Active</option>
                             <option value="inactive">Inactive</option>
-                          </select>
+                          </MonochromeSelect>
                         ) : (
                           <span
                             className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${

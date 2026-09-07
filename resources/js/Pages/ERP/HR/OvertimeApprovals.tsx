@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import React, { useMemo, useState, useEffect, useCallback } from "react";
 import { usePage } from "@inertiajs/react";
 import { createPortal } from "react-dom";
@@ -673,7 +674,7 @@ export function OvertimeRequests() {
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Status
             </label>
-            <select
+            <MonochromeSelect
               value={selectedStatus}
               onChange={(e) => setSelectedStatus(e.target.value as OvertimeStatus | "")}
               className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-300"
@@ -682,7 +683,7 @@ export function OvertimeRequests() {
               <option value="pending">Pending</option>
               <option value="approved">Approved</option>
               <option value="rejected">Rejected</option>
-            </select>
+            </MonochromeSelect>
           </div>
         </div>
       </div>
@@ -1057,7 +1058,7 @@ export function OvertimeRequests() {
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Reason for Rejection
                   </label>
-                  <select
+                  <MonochromeSelect
                     value={rejectionReason}
                     onChange={(e) => setRejectionReason(e.target.value)}
                     className="w-full px-4 py-2 border-2 border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
@@ -1068,7 +1069,7 @@ export function OvertimeRequests() {
                     <option value="Insufficient Justification">Insufficient Justification</option>
                     <option value="Duplicate Request">Duplicate Request</option>
                     <option value="Other">Other</option>
-                  </select>
+                  </MonochromeSelect>
 
                   {rejectionReason === "Other" && (
                     <textarea
@@ -1155,7 +1156,7 @@ export function OvertimeRequests() {
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                       Employee <span className="text-red-500">*</span>
                     </label>
-                    <select
+                    <MonochromeSelect
                       value={assignData.employee_id}
                       onChange={(e) => setAssignData({ ...assignData, employee_id: e.target.value })}
                       className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
@@ -1173,7 +1174,7 @@ export function OvertimeRequests() {
                           </option>
                         );
                       })}
-                    </select>
+                    </MonochromeSelect>
                   </div>
 
                   {/* Overtime Date */}

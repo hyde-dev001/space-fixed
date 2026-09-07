@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import React, { useState, useEffect, useRef } from 'react';
 import { Head, Link, router } from '@inertiajs/react';
 import AppLayout from '../../../layout/AppLayout';
@@ -764,7 +765,7 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Filter by Status
               </label>
-              <select
+              <MonochromeSelect
                 value={filterStatus}
                 onChange={(e) => {
                   const value = e.target.value as UserStatusFilter;
@@ -782,14 +783,14 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
                 <option value="suspended">Suspended</option>
                 <option value="deactivated">Deactivated</option>
                 <option value="archived">Archived</option>
-              </select>
+              </MonochromeSelect>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2" htmlFor="filter-user-lifecycle">
                 Filter by Lifecycle
               </label>
-              <select
+              <MonochromeSelect
                 id="filter-user-lifecycle"
                 value={filterLifecycle}
                 onChange={(e) => {
@@ -801,7 +802,7 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
                 <option value="all">All Lifecycles</option>
                 <option value="active">Active</option>
                 <option value="archived">Archived</option>
-              </select>
+              </MonochromeSelect>
             </div>
 
           </div>
@@ -1119,7 +1120,7 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                       Reason for Suspension
                     </label>
-                    <select
+                    <MonochromeSelect
                       value={suspendReason}
                       onChange={(e) => setSuspendReason(e.target.value)}
                       aria-label="Select Reason"
@@ -1132,7 +1133,7 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
                       <option value="User Request">User Request</option>
                       <option value="Maintenance">Maintenance</option>
                       <option value="Other">Other</option>
-                    </select>
+                    </MonochromeSelect>
                   </div>
 
                   <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-md p-4">

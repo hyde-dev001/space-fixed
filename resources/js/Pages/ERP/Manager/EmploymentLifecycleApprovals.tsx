@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head } from "@inertiajs/react";
 import { useCallback, useEffect, useState } from "react";
 import type { FormEvent } from "react";
@@ -238,13 +239,13 @@ export default function EmploymentLifecycleApprovals() {
             </div>
             <div>
               <label htmlFor="lifecycle-status" className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Workflow status</label>
-              <select id="lifecycle-status" value={form.status} onChange={(event) => setForm((current) => ({ ...current, status: event.target.value }))} className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-white">
+              <MonochromeSelect id="lifecycle-status" value={form.status} onChange={(event) => setForm((current) => ({ ...current, status: event.target.value }))} className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-white">
                 <option value="pending_manager">Pending Manager review</option>
                 <option value="pending_owner">Waiting for Shop Owner</option>
                 <option value="approved">Approved</option>
                 <option value="rejected">Rejected</option>
                 <option value="">All statuses</option>
-              </select>
+              </MonochromeSelect>
             </div>
             <div className="flex items-end gap-2 md:col-span-3">
               <button type="submit" className="min-h-11 rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-700 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200">Apply filters</button>

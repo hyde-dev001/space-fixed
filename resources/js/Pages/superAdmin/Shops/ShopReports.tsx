@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import React, { useEffect, useRef, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import axios from 'axios';
@@ -728,7 +729,7 @@ export default function ShopReports() {
               className="w-full pl-9 pr-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
             />
           </div>
-          <select
+          <MonochromeSelect
             value={priorityFilter}
             onChange={(e) => {
               const nextPriority = e.target.value;
@@ -741,8 +742,8 @@ export default function ShopReports() {
             <option value="high">🔴 High Priority (5+ reports)</option>
             <option value="medium">🟡 Needs Review (3–4 reports)</option>
             <option value="normal">⚪ Normal</option>
-          </select>
-          <select
+          </MonochromeSelect>
+          <MonochromeSelect
             value={statusFilter}
             aria-label="Filter reports by status"
             onChange={(e) => {
@@ -755,7 +756,7 @@ export default function ShopReports() {
             <option value="all">All statuses</option>
             <option value="open">Open</option>
             <option value="resolved">Resolved</option>
-          </select>
+          </MonochromeSelect>
         </div>
 
         {/* ── Results count ── */}

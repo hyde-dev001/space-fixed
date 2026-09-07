@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { useMemo, useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { usePage } from "@inertiajs/react";
@@ -399,7 +400,7 @@ export default function ViewSlip() {
                 </div>
                 <div>
                     <label className="text-sm text-gray-600 dark:text-gray-300">Status</label>
-                    <select
+                    <MonochromeSelect
                         value={status}
                         onChange={(e) => handleStatus(e.target.value)}
                         aria-label="Filter by status"
@@ -410,11 +411,11 @@ export default function ViewSlip() {
                         <option value="approved">Approved</option>
                         <option value="paid">Paid</option>
                         <option value="rejected">Rejected</option>
-                    </select>
+                    </MonochromeSelect>
                 </div>
                 <div>
                     <label className="text-sm text-gray-600 dark:text-gray-300">Month</label>
-                    <select
+                    <MonochromeSelect
                         value={month}
                         onChange={(e) => handleMonth(e.target.value)}
                         aria-label="Filter by month"
@@ -424,7 +425,7 @@ export default function ViewSlip() {
                         {months.map((m) => (
                             <option key={m} value={m}>{m}</option>
                         ))}
-                    </select>
+                    </MonochromeSelect>
                 </div>
             </div>
 

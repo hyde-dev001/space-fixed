@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import React, { useState } from 'react';
 import { Head, router } from '@inertiajs/react';
 import AppLayout from '../../../layout/AppLayout';
@@ -266,7 +267,7 @@ const DocumentRenewalQueue: React.FC<DocumentRenewalQueueProps> = ({
             </div>
             <div>
               <label htmlFor="renewal-status" className="text-xs font-semibold uppercase tracking-wide text-slate-500">Filter by Status</label>
-              <select
+              <MonochromeSelect
                 id="renewal-status"
                 aria-label="Filter by Status"
                 value={filterStatus}
@@ -277,7 +278,7 @@ const DocumentRenewalQueue: React.FC<DocumentRenewalQueueProps> = ({
                 <option value="pending">Pending</option>
                 <option value="approved">Approved</option>
                 <option value="rejected">Rejected</option>
-              </select>
+              </MonochromeSelect>
             </div>
             <button type="submit" className="rounded-xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800">Apply filters</button>
             <button type="button" onClick={resetFilters} className="rounded-xl border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Reset filters</button>

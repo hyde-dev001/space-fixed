@@ -2271,40 +2271,66 @@ html:not(.dark) #app .erp-theme select:focus {
   --tw-ring-color: rgb(17 17 17 / 0.16) !important;
 }
 
-/* Apply the same selection language to accessible custom dropdowns. */
-html:not(.dark) #app .erp-theme [role='combobox']:focus-within > div {
-  border-color: #111111 !important;
-  --tw-ring-color: rgb(17 17 17 / 0.16) !important;
+/* Apply the same selection language to accessible custom dropdowns across
+   ERP, Shop Owner, and User Side listboxes. */
+html:not(.dark) #app [role='combobox']:focus-within > div {
+  border-color: #6b7280 !important;
+  --tw-ring-color: rgb(107 114 128 / 0.2) !important;
 }
 
-html:not(.dark) #app .erp-theme [role='option'] {
+html:not(.dark) #app :is([role='combobox'], [aria-haspopup='listbox']):is(:focus, :focus-within) {
+  border-color: #6b7280 !important;
+  outline-color: #6b7280 !important;
+  --tw-ring-color: rgb(107 114 128 / 0.2) !important;
+}
+
+html:not(.dark) #app :is([role='combobox'], [aria-haspopup='listbox']):hover {
+  background-color: #f3f4f6 !important;
+}
+
+html:not(.dark) #app [role='listbox'] [role='option'] {
   background-color: #ffffff !important;
   color: #111111 !important;
 }
 
-html:not(.dark) #app .erp-theme [role='option'][aria-selected='true'] {
+html:not(.dark) #app [role='listbox'] [role='option'][aria-selected='true'] {
   background-color: #111111 !important;
   color: #ffffff !important;
 }
 
-html:not(.dark) #app .erp-theme [role='option']:not([aria-selected='true']):hover,
-html:not(.dark) #app .erp-theme [role='option'][data-highlighted='true']:not([aria-selected='true']) {
+html:not(.dark) #app [role='listbox'] [role='option']:not([aria-selected='true']):hover,
+html:not(.dark) #app [role='listbox'] [role='option'][data-highlighted='true']:not([aria-selected='true']) {
   background-color: #e5e7eb !important;
   color: #111111 !important;
 }
 
-html.dark #app .erp-theme [role='option'] {
+html.dark #app [role='listbox'] [role='option'] {
   background-color: #111827 !important;
   color: #f8fafc !important;
 }
 
-html.dark #app .erp-theme [role='option'][aria-selected='true'] {
+html.dark #app [role='combobox']:focus-within > div {
+  border-color: #9ca3af !important;
+  --tw-ring-color: rgb(156 163 175 / 0.24) !important;
+}
+
+html.dark #app :is([role='combobox'], [aria-haspopup='listbox']):is(:focus, :focus-within) {
+  border-color: #9ca3af !important;
+  outline-color: #9ca3af !important;
+  --tw-ring-color: rgb(156 163 175 / 0.24) !important;
+}
+
+html.dark #app :is([role='combobox'], [aria-haspopup='listbox']):hover {
+  background-color: #374151 !important;
+}
+
+html.dark #app [role='listbox'] [role='option'][aria-selected='true'] {
   background-color: #111111 !important;
   color: #ffffff !important;
 }
 
-html.dark #app .erp-theme [role='option']:not([aria-selected='true']):hover,
-html.dark #app .erp-theme [role='option'][data-highlighted='true']:not([aria-selected='true']) {
+html.dark #app [role='listbox'] [role='option']:not([aria-selected='true']):hover,
+html.dark #app [role='listbox'] [role='option'][data-highlighted='true']:not([aria-selected='true']) {
   background-color: #475569 !important;
   color: #ffffff !important;
 }

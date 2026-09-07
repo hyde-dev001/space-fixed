@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import React, { FormEvent, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Head, usePage } from '@inertiajs/react';
@@ -1022,7 +1023,7 @@ export default function UploadInventory() {
                 {showArchived ? 'Archived items' : 'Filter by category'}
               </p>
               <div className="sm:w-56">
-                <select
+                <MonochromeSelect
                   title="Filter stock category"
                   aria-label="Filter stock category"
                   value={categoryFilter}
@@ -1035,7 +1036,7 @@ export default function UploadInventory() {
                   <option value="all">All Categories</option>
                   {canUploadRepair && <option value="repair_materials">Repair Materials</option>}
                   {canUploadShoes && <option value="shoes">Shoes</option>}
-                </select>
+                </MonochromeSelect>
               </div>
             </div>
             <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
@@ -1469,7 +1470,7 @@ export default function UploadInventory() {
                                     <div className="grid grid-cols-1 md:grid-cols-[1fr_130px_auto] gap-2 items-end">
                                       <div>
                                         <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Shoe Size</label>
-                                        <select
+                                        <MonochromeSelect
                                           title="Select size for this color"
                                           value={draft.size}
                                           onChange={(e) =>
@@ -1488,7 +1489,7 @@ export default function UploadInventory() {
                                           {SIZE_OPTIONS.map((size) => (
                                             <option key={size} value={size}>{getDisplaySizeLabel(size, editSizeSystem)}</option>
                                           ))}
-                                        </select>
+                                        </MonochromeSelect>
                                       </div>
                                       <div>
                                         <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Quantity</label>
@@ -1699,7 +1700,7 @@ export default function UploadInventory() {
                   {!isShoesMode && (
                     <div>
                       <label htmlFor="stock-unit" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Unit</label>
-                      <select
+                      <MonochromeSelect
                         id="stock-unit"
                         title="Unit of measurement"
                         value={formData.unit}
@@ -1716,7 +1717,7 @@ export default function UploadInventory() {
                         <option value="tubes">tubes</option>
                         <option value="boxes">boxes</option>
                         <option value="pairs">pairs</option>
-                      </select>
+                      </MonochromeSelect>
                     </div>
                   )}
 

@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head } from "@inertiajs/react";
 import type { ComponentType } from "react";
 import { useEffect, useState } from "react";
@@ -354,7 +355,7 @@ export default function ERPShoePricing() {
               />
             </div>
             <div className="sm:w-48">
-              <select
+              <MonochromeSelect
                 value={statusFilter}
                 onChange={(e) => {
                   setStatusFilter(e.target.value);
@@ -367,7 +368,7 @@ export default function ERPShoePricing() {
                 <option value="Under Review">Under Review</option>
                 <option value="Awaiting Owner">Awaiting Owner</option>
                 <option value="Rejected">Rejected</option>
-              </select>
+              </MonochromeSelect>
             </div>
           </div>
 

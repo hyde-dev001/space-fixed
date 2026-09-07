@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head } from "@inertiajs/react";
 import { useEffect, useMemo, useState } from "react";
 import type { ComponentType } from "react";
@@ -170,7 +171,7 @@ export default function RepairStocksOverview() {
               />
             </div>
             <div className="sm:w-48">
-              <select
+              <MonochromeSelect
                 title="Filter by stock status"
                 aria-label="Filter by stock status"
                 value={statusFilter}
@@ -181,7 +182,7 @@ export default function RepairStocksOverview() {
                 <option value="In Stock">In Stock</option>
                 <option value="Low Stock">Low Stock</option>
                 <option value="Out of Stock">Out of Stock</option>
-              </select>
+              </MonochromeSelect>
             </div>
           </div>
 

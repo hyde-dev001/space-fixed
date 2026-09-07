@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head, usePage } from "@inertiajs/react";
 import type { ComponentType } from "react";
 import { useState, useEffect } from "react";
@@ -1208,7 +1209,7 @@ export default function PayslipApproval({
 							/>
 						</div>
 						<div className="sm:w-48">
-							<select
+							<MonochromeSelect
 								value={statusFilter}
 								onChange={(event) => {
 									setStatusFilter(event.target.value as any);
@@ -1223,7 +1224,7 @@ export default function PayslipApproval({
 								<option value="ready_for_disbursement">Ready For Disbursement</option>
 								<option value="paid">Paid</option>
 								<option value="rejected">Rejected</option>
-							</select>
+							</MonochromeSelect>
 						</div>
 					</div>
 

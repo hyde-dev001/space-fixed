@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head, usePage } from "@inertiajs/react";
 import type { ComponentType } from "react";
 import { useEffect, useMemo, useState } from "react";
@@ -1472,7 +1473,7 @@ export default function RefundApproval() {
 							/>
 						</div>
 						<div className="sm:w-48">
-							<select
+							<MonochromeSelect
 								aria-label="Filter refund requests by status"
 								value={statusFilter}
 								onChange={(e) => {
@@ -1485,7 +1486,7 @@ export default function RefundApproval() {
 								<option value="Pending">Pending</option>
 								<option value="Approved">Approved</option>
 								<option value="Rejected">Rejected</option>
-							</select>
+							</MonochromeSelect>
 						</div>
 					</div>
 

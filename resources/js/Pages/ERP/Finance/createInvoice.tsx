@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head, router, usePage } from "@inertiajs/react";
 import React, { useMemo, useState, useEffect } from "react";
 import Swal from "sweetalert2";
@@ -433,7 +434,7 @@ export default function FinanceCreateInvoice() {
 						<div className="grid grid-cols-1 md:grid-cols-1 gap-4">
 							<div className="flex flex-col gap-2">
 								<label className="text-sm text-gray-700 dark:text-gray-300">Payment Condition</label>
-								<select
+								<MonochromeSelect
 									value={paymentCondition}
 									onChange={(e) => {
 										setPaymentCondition(e.target.value);
@@ -446,7 +447,7 @@ export default function FinanceCreateInvoice() {
 											{pc}
 										</option>
 									))}
-								</select>
+								</MonochromeSelect>
 							</div>
 						</div>
 
@@ -600,7 +601,7 @@ export default function FinanceCreateInvoice() {
 							{taxRates.length > 0 && (
 								<div className="col-span-full mt-3">
 									<label className="text-xs text-gray-600 dark:text-gray-400">Tax Rate</label>
-									<select
+									<MonochromeSelect
 										value={selectedTaxId}
 										onChange={(e) => setSelectedTaxId(e.target.value)}
 										className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white mt-1"
@@ -624,7 +625,7 @@ export default function FinanceCreateInvoice() {
 														</option>
 													);
 												})}
-									</select>
+									</MonochromeSelect>
 								</div>
 							)}
 						</div>

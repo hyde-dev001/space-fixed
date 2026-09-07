@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import type { RegistrationDocumentMetadata } from '@/Pages/UserSide/Auth/registrationDocumentPayload';
 
 type RegistrationDocumentMetadataFieldsProps = {
@@ -33,7 +34,7 @@ export default function RegistrationDocumentMetadataFields({
         <label htmlFor={`${idPrefix}_expiration_mode`} className="mb-1 block text-xs font-semibold text-gray-700">
           {label} expiration
         </label>
-        <select
+        <MonochromeSelect
           id={`${idPrefix}_expiration_mode`}
           value={metadata.expirationMode}
           onChange={(event) => {
@@ -44,7 +45,7 @@ export default function RegistrationDocumentMetadataFields({
         >
           <option value="dated">Has an expiration date</option>
           <option value="none">No expiration</option>
-        </select>
+        </MonochromeSelect>
         {metadata.expirationMode === 'dated' && (
           <div className="mt-2">
             <label htmlFor={`${idPrefix}_expiration_date`} className="mb-1 block text-xs font-semibold text-gray-700">

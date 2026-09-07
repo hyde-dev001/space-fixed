@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useState } from "react";
 import type { ComponentType } from "react";
@@ -322,7 +323,7 @@ export default function ERPInventoryOverview() {
               />
             </div>
             <div className="sm:w-48">
-              <select
+              <MonochromeSelect
                 title="Filter by category"
                 aria-label="Filter inventory by category"
                 value={categoryFilter}
@@ -335,10 +336,10 @@ export default function ERPInventoryOverview() {
                 {categories.map((cat) => (
                   <option key={cat} value={cat}>{cat === "All" ? "All Categories" : formatCategoryLabel(cat)}</option>
                 ))}
-              </select>
+              </MonochromeSelect>
             </div>
             <div className="sm:w-48">
-              <select
+              <MonochromeSelect
                 title="Filter by stock status"
                 aria-label="Filter inventory by stock status"
                 value={statusFilter}
@@ -352,7 +353,7 @@ export default function ERPInventoryOverview() {
                 <option value="In Stock">In Stock</option>
                 <option value="Low Stock">Low Stock</option>
                 <option value="Out of Stock">Out of Stock</option>
-              </select>
+              </MonochromeSelect>
             </div>
           </div>
 

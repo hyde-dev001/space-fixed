@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import React, { useState, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { usePage, router } from '@inertiajs/react';
@@ -988,7 +989,7 @@ const Invoice: React.FC = () => {
               </div>
 
               {/* Job Type Filter */}
-              <select
+              <MonochromeSelect
                 value={hasJobFilter}
                 onChange={(e) => setHasJobFilter(e.target.value)}
                 className="px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-300"
@@ -997,10 +998,10 @@ const Invoice: React.FC = () => {
                 <option value="all">All Sources</option>
                 <option value="true">Job Orders</option>
                 <option value="false">Manual Entry</option>
-              </select>
+              </MonochromeSelect>
 
               {/* Job Status Filter */}
-              <select
+              <MonochromeSelect
                 value={jobStatusFilter}
                 onChange={(e) => setJobStatusFilter(e.target.value)}
                 className="px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-300"
@@ -1013,7 +1014,7 @@ const Invoice: React.FC = () => {
                 <option value="completed">Completed</option>
                 <option value="shipped">Shipped</option>
                 <option value="delivered">Delivered</option>
-              </select>
+              </MonochromeSelect>
 
               {/* Filter Button */}
               <button

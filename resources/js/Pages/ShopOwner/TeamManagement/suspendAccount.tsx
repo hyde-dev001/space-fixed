@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import React, { useState, useMemo, useEffect } from "react";
 import { Head, usePage } from "@inertiajs/react";
 import Swal from "sweetalert2";
@@ -375,7 +376,7 @@ const SuspendAccount: React.FC = () => {
               <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
                 Status
               </label>
-              <select
+              <MonochromeSelect
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value as any)}
                 className="w-full px-4 py-2 border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500"
@@ -384,7 +385,7 @@ const SuspendAccount: React.FC = () => {
                 <option value="pending">Pending</option>
                 <option value="approved">Approved</option>
                 <option value="rejected">Rejected</option>
-              </select>
+              </MonochromeSelect>
             </div>
           </div>
         </div>

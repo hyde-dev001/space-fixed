@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head, usePage } from "@inertiajs/react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
@@ -1053,7 +1054,7 @@ export default function VouchersDiscountPage() {
 								) : (
 									<label className="space-y-2 text-sm text-slate-600">
 										<span className="font-medium text-slate-800">Select product</span>
-									<select
+									<MonochromeSelect
 										value={form.productId}
 										onChange={(event) => handleChange("productId", event.target.value)}
 										className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-slate-900 focus:ring-4 focus:ring-slate-200"
@@ -1064,21 +1065,21 @@ export default function VouchersDiscountPage() {
 												{product.name} · {product.category}
 											</option>
 										))}
-									</select>
+									</MonochromeSelect>
 									</label>
 								)}
 
 								{!isProductDiscountMode ? (
 									<label className="space-y-2 text-sm text-slate-600">
 										<span className="font-medium text-slate-800">Discount type</span>
-										<select
+										<MonochromeSelect
 											value={form.discountMode}
 											onChange={(event) => handleChange("discountMode", event.target.value)}
 											className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-slate-900 focus:ring-4 focus:ring-slate-200"
 										>
 											<option value="percentage">Percentage off</option>
 											<option value="fixed">Fixed peso off</option>
-										</select>
+										</MonochromeSelect>
 									</label>
 								) : (
 									<label className="space-y-2 text-sm text-slate-600">

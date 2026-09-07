@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { useEffect, useMemo, useState } from "react";
 import { Head } from "@inertiajs/react";
 import Swal from "sweetalert2";
@@ -483,7 +484,7 @@ export default function WarrantyQueue() {
               />
             </div>
             <div className="sm:w-52">
-              <select
+              <MonochromeSelect
                 aria-label="Filter warranty claims by status"
                 value={statusFilter}
                 onChange={(event) => setStatusFilter(event.target.value as WarrantyStatusFilter)}
@@ -494,7 +495,7 @@ export default function WarrantyQueue() {
                     {option.label}
                   </option>
                 ))}
-              </select>
+              </MonochromeSelect>
             </div>
           </div>
 

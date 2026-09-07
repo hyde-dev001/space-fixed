@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
@@ -572,12 +573,12 @@ export default function ERPReports() {
               <div className="space-y-4 p-6">
                 <div>
                   <label htmlFor="manager-report-range" className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">Date range</label>
-                  <select id="manager-report-range" value={dateRange} onChange={(event) => setDateRange(event.target.value)} className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 focus:border-blue-500 focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:focus:border-blue-400">
+                  <MonochromeSelect id="manager-report-range" value={dateRange} onChange={(event) => setDateRange(event.target.value)} className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 focus:border-blue-500 focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:focus:border-blue-400">
                     <option value="week">Last 7 days</option>
                     <option value="month">Last 30 days</option>
                     <option value="quarter">Last 3 months</option>
                     <option value="year">Last year</option>
-                  </select>
+                  </MonochromeSelect>
                 </div>
 
                 <div>

@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head, usePage } from "@inertiajs/react";
 import { useState, useEffect } from "react";
 import Swal from "sweetalert2";
@@ -795,7 +796,7 @@ export default function UploadService() {
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Category
                   </label>
-                  <select
+                  <MonochromeSelect
                     title="Filter by category"
                     value={filterCategory}
                     onChange={(e) => setFilterCategory(e.target.value)}
@@ -807,14 +808,14 @@ export default function UploadService() {
                         {cat}
                       </option>
                     ))}
-                  </select>
+                  </MonochromeSelect>
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Status
                   </label>
-                  <select
+                  <MonochromeSelect
                     title="Filter by status"
                     value={filterStatus}
                     onChange={(e) => setFilterStatus(e.target.value)}
@@ -824,7 +825,7 @@ export default function UploadService() {
                     <option value="Active">Active</option>
                     <option value="Inactive">Inactive</option>
                     <option value="Pending">Pending</option>
-                  </select>
+                  </MonochromeSelect>
                 </div>
               </div>
             </div>
@@ -997,7 +998,7 @@ export default function UploadService() {
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Category *
                   </label>
-                  <select
+                  <MonochromeSelect
                     title="Select service category"
                     value={formData.category}
                     onChange={(e) => setFormData({ ...formData, category: e.target.value, categoryCustom: e.target.value === "Others" ? formData.categoryCustom : "" })}
@@ -1010,14 +1011,14 @@ export default function UploadService() {
                       </option>
                     ))}
                     <option value="Others">Others</option>
-                  </select>
+                  </MonochromeSelect>
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Status *
                   </label>
-                  <select
+                  <MonochromeSelect
                     title="Select service status"
                     value={formData.status}
                     onChange={(e) => setFormData({ ...formData, status: e.target.value as "Active" | "Inactive" | "Pending" })}
@@ -1026,7 +1027,7 @@ export default function UploadService() {
                     <option value="Active">Active</option>
                     <option value="Inactive">Inactive</option>
                     <option value="Pending">Pending</option>
-                  </select>
+                  </MonochromeSelect>
                 </div>
               </div>
 
@@ -1088,7 +1089,7 @@ export default function UploadService() {
                       />
                     </div>
                     <div>
-                      <select
+                      <MonochromeSelect
                         title="Select duration unit"
                         value={formData.durationUnit}
                         onChange={(e) => setFormData({ ...formData, durationUnit: e.target.value as "minutes" | "hours" | "days" })}
@@ -1097,7 +1098,7 @@ export default function UploadService() {
                         <option value="minutes">Minutes</option>
                         <option value="hours">Hours</option>
                         <option value="days">Days</option>
-                      </select>
+                      </MonochromeSelect>
                     </div>
                   </div>
                   <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
@@ -1150,7 +1151,7 @@ export default function UploadService() {
                       <div key={`add-service-material-${index}`} className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 grid grid-cols-1 md:grid-cols-8 gap-2 items-end">
                         <div className="md:col-span-5">
                           <label className="block text-[11px] font-medium text-gray-600 dark:text-gray-300 mb-1">Inventory Material</label>
-                          <select
+                          <MonochromeSelect
                             title="Select inventory material"
                             value={line.inventory_item_id || ""}
                             onChange={(e) => updateMaterialTemplateLine(index, 'inventory_item_id', Number(e.target.value || 0))}
@@ -1162,7 +1163,7 @@ export default function UploadService() {
                                 {material.name} (Available: {material.available_quantity})
                               </option>
                             ))}
-                          </select>
+                          </MonochromeSelect>
                         </div>
 
                         <div className="md:col-span-2">
@@ -1243,7 +1244,7 @@ export default function UploadService() {
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Category *
                   </label>
-                  <select
+                  <MonochromeSelect
                     title="Select service category"
                     value={formData.category}
                     onChange={(e) => setFormData({ ...formData, category: e.target.value })}
@@ -1253,14 +1254,14 @@ export default function UploadService() {
                     <option value="Care">Care</option>
                     <option value="Repair">Repair</option>
                     <option value="Restoration">Restoration</option>
-                  </select>
+                  </MonochromeSelect>
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Status *
                   </label>
-                  <select
+                  <MonochromeSelect
                     title="Select service status"
                     value={formData.status}
                     onChange={(e) => setFormData({ ...formData, status: e.target.value as "Active" | "Inactive" | "Pending" })}
@@ -1269,7 +1270,7 @@ export default function UploadService() {
                     <option value="Active">Active</option>
                     <option value="Inactive">Inactive</option>
                     <option value="Pending">Pending</option>
-                  </select>
+                  </MonochromeSelect>
                 </div>
               </div>
 
@@ -1316,7 +1317,7 @@ export default function UploadService() {
                       />
                     </div>
                     <div>
-                      <select
+                      <MonochromeSelect
                         title="Select duration unit"
                         value={formData.durationUnit}
                         onChange={(e) => setFormData({ ...formData, durationUnit: e.target.value as "minutes" | "hours" | "days" })}
@@ -1325,7 +1326,7 @@ export default function UploadService() {
                         <option value="minutes">Minutes</option>
                         <option value="hours">Hours</option>
                         <option value="days">Days</option>
-                      </select>
+                      </MonochromeSelect>
                     </div>
                   </div>
                   <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
@@ -1378,7 +1379,7 @@ export default function UploadService() {
                       <div key={`edit-service-material-${index}`} className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 grid grid-cols-1 md:grid-cols-8 gap-2 items-end">
                         <div className="md:col-span-5">
                           <label className="block text-[11px] font-medium text-gray-600 dark:text-gray-300 mb-1">Inventory Material</label>
-                          <select
+                          <MonochromeSelect
                             title="Select inventory material"
                             value={line.inventory_item_id || ""}
                             onChange={(e) => updateMaterialTemplateLine(index, 'inventory_item_id', Number(e.target.value || 0))}
@@ -1390,7 +1391,7 @@ export default function UploadService() {
                                 {material.name} (Available: {material.available_quantity})
                               </option>
                             ))}
-                          </select>
+                          </MonochromeSelect>
                         </div>
 
                         <div className="md:col-span-2">

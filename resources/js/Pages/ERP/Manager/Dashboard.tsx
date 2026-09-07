@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head, Link, usePage } from '@inertiajs/react';
 import type { ComponentType } from 'react';
 import { useState } from 'react';
@@ -195,14 +196,14 @@ export default function ManagerDashboard() {
                 actions={
                     <label className="flex min-h-11 items-center gap-2 rounded-full border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 dark:border-gray-700 dark:bg-transparent dark:text-gray-200">
                         <span className="sr-only">Period</span>
-                        <select
+                        <MonochromeSelect
                             id="dashboard-range"
                             value={range}
                             onChange={(event) => setRange(event.target.value)}
                             className="bg-transparent text-sm font-semibold text-gray-800 outline-none dark:text-gray-100"
                         >
                             {rangeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                        </select>
+                        </MonochromeSelect>
                     </label>
                 }
             >

@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
@@ -2009,7 +2010,7 @@ const PointOfSalePage = () => {
 									Manual policy from Shop Settings: Full Payment Upfront
 								</p>
 							)}
-							<select
+							<MonochromeSelect
 								title="Payment method"
 								value={paymentMethod}
 								onChange={(event) => setPaymentMethod(event.target.value as PaymentMethod)}
@@ -2018,7 +2019,7 @@ const PointOfSalePage = () => {
 								<option value="cash">Cash</option>
 								<option value="gcash">GCash</option>
 								<option value="card">Card</option>
-							</select>
+							</MonochromeSelect>
 
 							<label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Cash Received</label>
 							<input

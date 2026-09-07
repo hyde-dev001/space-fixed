@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head, usePage } from "@inertiajs/react";
 import { useMemo, useState, useEffect } from "react";
 import type { ComponentType } from "react";
@@ -624,7 +625,7 @@ export default function PurchaseRequest() {
 							/>
 						</div>
 						<div className="sm:w-56">
-							<select
+							<MonochromeSelect
 								title="Filter by status"
 								aria-label="Filter by status"
 								value={statusFilter}
@@ -641,10 +642,10 @@ export default function PurchaseRequest() {
 								<option value="pending_finance_final">Pending Finance Final</option>
 								<option value="approved">Approved</option>
 								<option value="rejected">Rejected</option>
-							</select>
+							</MonochromeSelect>
 						</div>
 						<div className="sm:w-48">
-							<select
+							<MonochromeSelect
 								title="Filter by priority"
 								aria-label="Filter by priority"
 								value={priorityFilter}
@@ -658,7 +659,7 @@ export default function PurchaseRequest() {
 								<option value="high">High</option>
 								<option value="medium">Medium</option>
 								<option value="low">Low</option>
-							</select>
+							</MonochromeSelect>
 						</div>
 					</div>
 
@@ -795,7 +796,7 @@ export default function PurchaseRequest() {
 									Approved Stock Request *
 									<span className="ml-1 text-xs text-gray-400 font-normal">(auto-fills product, quantity &amp; priority)</span>
 								</label>
-								<select
+								<MonochromeSelect
 									title="Select approved stock request"
 									aria-label="Select approved stock request"
 									value={formData.stockRequestId}
@@ -821,7 +822,7 @@ export default function PurchaseRequest() {
 												{sr.request_number} — {sr.product_name} (Qty: {sr.quantity_needed}{isAllSizesRequest(sr.requested_size, sr.inventory_item?.category) ? " total units across All Sizes" : shouldShowRequestedSize(sr.requested_size, sr.inventory_item?.category) ? `, ${getRequestedSizeLabel(sr.requested_size)}` : " units"}{sr.requested_color ? `, Color ${sr.requested_color}` : ""})
 											</option>
 										))}
-								</select>
+								</MonochromeSelect>
 								{acceptedStockRequests.length === 0 && (
 									<p className="mt-1 text-xs text-amber-600 dark:text-amber-400">⚠ No approved stock requests yet. Inventory staff must submit and get approval first.</p>
 								)}
@@ -868,7 +869,7 @@ export default function PurchaseRequest() {
 						)}
 						<div>
 							<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Supplier (from Suppliers Management) *</label>
-							<select
+							<MonochromeSelect
 								title="Select supplier"
 								aria-label="Select supplier"
 								value={formData.supplierId}
@@ -879,7 +880,7 @@ export default function PurchaseRequest() {
 								{suppliers.map((supplier) => (
 					<option key={supplier.id} value={supplier.id}>{supplier.name}{supplier.contact_email ? ` (${supplier.contact_email})` : ""}</option>
 								))}
-							</select>
+							</MonochromeSelect>
 						</div>
 
 							<div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -911,7 +912,7 @@ export default function PurchaseRequest() {
 								</div>
 								<div>
 									<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Priority *</label>
-									<select
+									<MonochromeSelect
 										title="Select priority"
 										aria-label="Select priority"
 										value={formData.priority}
@@ -921,7 +922,7 @@ export default function PurchaseRequest() {
 										<option value="high">High</option>
 										<option value="medium">Medium</option>
 										<option value="low">Low</option>
-									</select>
+									</MonochromeSelect>
 								</div>
 							</div>
 

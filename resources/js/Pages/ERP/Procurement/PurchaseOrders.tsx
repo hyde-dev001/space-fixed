@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head, usePage } from "@inertiajs/react";
 import { useMemo, useState, useEffect, useRef } from "react";
 import type { ComponentType } from "react";
@@ -764,7 +765,7 @@ export default function PurchaseOrders() {
 							/>
 						</div>
 						<div className="sm:w-56">
-							<select
+							<MonochromeSelect
 								title="Filter by status"
 								value={statusFilter}
 								onChange={(event) => {
@@ -782,7 +783,7 @@ export default function PurchaseOrders() {
 								<option value="delivered">Delivered</option>
 								<option value="completed">Completed</option>
 								<option value="cancelled">Cancelled</option>
-							</select>
+							</MonochromeSelect>
 						</div>
 					</div>
 
@@ -878,7 +879,7 @@ export default function PurchaseOrders() {
 						<div className="p-6 space-y-4">
 							<div>
 								<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Select Approved PR *</label>
-								<select
+								<MonochromeSelect
 									title="Select approved purchase request"
 									aria-label="Select approved purchase request"
 									value={formData.selectedPrId || ""}
@@ -898,7 +899,7 @@ export default function PurchaseOrders() {
 												: pr.requested_size ? `, ${formatRequestedSizeDisplay(pr.requested_size)}` : " units"}, {currency.format(pr.total_cost)})
 										</option>
 									))}
-								</select>
+								</MonochromeSelect>
 								{approvedPRs.length === 0 && (
 									<p className="mt-1 text-xs text-amber-600 dark:text-amber-400">&#9888; No approved PRs available. All approved PRs may already have purchase orders.</p>
 								)}
@@ -1035,7 +1036,7 @@ export default function PurchaseOrders() {
 								</div>
 								<div>
 									<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Payment Terms *</label>
-									<select
+									<MonochromeSelect
 										title="Payment terms"
 										aria-label="Payment terms"
 										value={formData.paymentTerms}
@@ -1047,7 +1048,7 @@ export default function PurchaseOrders() {
 										<option value="50% down, 50% on delivery">50% down, 50% on delivery</option>
 										<option value="Net 15">Net 15</option>
 										<option value="Net 60">Net 60</option>
-									</select>
+									</MonochromeSelect>
 								</div>
 							</div>
 

@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Head, Link } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
@@ -809,7 +810,7 @@ const SponsoredIntakeReplanCard: React.FC<{
           </label>
           <label className="text-sm font-semibold text-gray-800">
             Pickup window
-            <select
+            <MonochromeSelect
               value={deliveryWindow}
               onChange={(event) => setDeliveryWindow(event.target.value)}
               className="mt-1 min-h-12 w-full rounded-xl border border-gray-300 bg-white px-3 text-base text-gray-900"
@@ -817,7 +818,7 @@ const SponsoredIntakeReplanCard: React.FC<{
               <option value="">Choose a time</option>
               <option value="morning">Morning</option>
               <option value="afternoon">Afternoon</option>
-            </select>
+            </MonochromeSelect>
           </label>
         </div>
       )}
@@ -925,7 +926,7 @@ const CustomerReturnRecoveryActions: React.FC<{
         </label>
         <label className="text-sm font-semibold text-gray-800">
           Delivery window
-          <select
+          <MonochromeSelect
             value={deliveryWindow}
             onChange={(event) => setDeliveryWindow(event.target.value)}
             className="mt-1 min-h-12 w-full rounded-xl border border-gray-300 bg-white px-3 text-base text-gray-900"
@@ -933,7 +934,7 @@ const CustomerReturnRecoveryActions: React.FC<{
             <option value="">Choose a time</option>
             <option value="morning">Morning</option>
             <option value="afternoon">Afternoon</option>
-          </select>
+          </MonochromeSelect>
         </label>
       </div>
 

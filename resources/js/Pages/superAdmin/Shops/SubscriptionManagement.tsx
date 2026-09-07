@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { router, useForm, usePage } from '@inertiajs/react';
@@ -678,7 +679,7 @@ export default function SubscriptionManagement() {
                 className="w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
               />
 
-              <select
+              <MonochromeSelect
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value as 'all' | UiStatus)}
                 aria-label="Filter subscriptions by status"
@@ -688,9 +689,9 @@ export default function SubscriptionManagement() {
                 <option value="ongoing">Ongoing</option>
                 <option value="end">End</option>
                 <option value="deactivated">Deactivated</option>
-              </select>
+              </MonochromeSelect>
 
-              <select
+              <MonochromeSelect
                 value={changeTypeFilter}
                 onChange={(e) => setChangeTypeFilter(e.target.value as ChangeTypeFilter)}
                 aria-label="Filter subscriptions by change type"
@@ -699,9 +700,9 @@ export default function SubscriptionManagement() {
                 <option value="all">All Types</option>
                 <option value="upgraded">Upgraded Only</option>
                 <option value="regular">Regular Only</option>
-              </select>
+              </MonochromeSelect>
 
-              <select
+              <MonochromeSelect
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value as SortValue)}
                 aria-label="Sort subscriptions"
@@ -711,7 +712,7 @@ export default function SubscriptionManagement() {
                 <option value="oldest">Oldest First</option>
                 <option value="amount_high">Amount High to Low</option>
                 <option value="amount_low">Amount Low to High</option>
-              </select>
+              </MonochromeSelect>
             </div>
 
             <p className="mt-3 text-sm text-gray-500 dark:text-gray-400">
@@ -1014,10 +1015,10 @@ export default function SubscriptionManagement() {
                   <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">Only the status, effective end date, and correction reason can change. Billing and paid history stay untouched.</p>
                   <div className="mt-4 grid gap-3 sm:grid-cols-3">
                     <label className="text-sm font-medium text-gray-700 dark:text-gray-200">Target status
-                      <select value={correctionStatus} onChange={(event) => setCorrectionStatus(event.target.value as 'cancelled' | 'expired')} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 dark:border-gray-600 dark:bg-gray-700">
+                      <MonochromeSelect value={correctionStatus} onChange={(event) => setCorrectionStatus(event.target.value as 'cancelled' | 'expired')} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 dark:border-gray-600 dark:bg-gray-700">
                         <option value="expired">Expired</option>
                         <option value="cancelled">Cancelled</option>
-                      </select>
+                      </MonochromeSelect>
                     </label>
                     <label className="text-sm font-medium text-gray-700 dark:text-gray-200">Effective end date
                       <input type="date" required value={correctionDate} onChange={(event) => setCorrectionDate(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 dark:border-gray-600 dark:bg-gray-700" />

@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Head, usePage } from "@inertiajs/react";
 import AppLayoutShopOwner from "../../layout/AppLayout_shopOwner";
@@ -864,7 +865,7 @@ const DssInsights: React.FC = () => {
             )}
           </div>
 
-          <select
+          <MonochromeSelect
             aria-label="Analysis period"
             value={period}
             onChange={e => setPeriod(Number(e.target.value))}
@@ -873,7 +874,7 @@ const DssInsights: React.FC = () => {
             {PERIOD_OPTIONS.map(o => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
-          </select>
+          </MonochromeSelect>
           <button
             onClick={fetchData}
             disabled={loading}

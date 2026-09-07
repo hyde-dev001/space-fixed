@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Head, router, usePage } from '@inertiajs/react';
 import { Plus } from 'lucide-react';
@@ -420,7 +421,7 @@ export default function Batches() {
     <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
       <h1 className="sr-only">Delivery Batches</h1>
       <div data-testid="batch-page-header-controls" className="flex w-full min-w-0 flex-wrap items-center gap-2 xl:w-auto">
-        {showModuleFilter && <select
+        {showModuleFilter && <MonochromeSelect
           aria-label="Filter batches by module"
           value={module}
           onChange={(event) => changeModule(event.target.value as 'all' | LogisticsModule)}
@@ -428,7 +429,7 @@ export default function Batches() {
         >
           <option value="all">All modules</option>
           {availableModules.map((available) => <option key={available} value={available}>{logisticsModuleLabel(available)}</option>)}
-        </select>}
+        </MonochromeSelect>}
         <button type="button" onClick={startNewBatch} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-gray-950 px-4 font-semibold text-white hover:bg-black dark:bg-gray-950 dark:hover:bg-black xl:flex-none"><Plus size={18} />New Batch</button>
       </div>
     </div>

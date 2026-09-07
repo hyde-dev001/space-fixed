@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import React, { useEffect, useMemo, useState } from 'react';
 import { Head, usePage } from '@inertiajs/react';
 import { Activity, ChevronLeft, ChevronRight, Clock3, Repeat2 } from 'lucide-react';
@@ -381,7 +382,7 @@ export default function ManagerAuditLogs() {
             </label>
             <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
               Activity
-              <select
+              <MonochromeSelect
                 value={filters.action}
                 onChange={(event) => updateFilter('action', event.target.value)}
                 className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
@@ -390,7 +391,7 @@ export default function ManagerAuditLogs() {
                 {actionOptions.map((action) => (
                   <option key={action} value={action}>{formatAction(action)}</option>
                 ))}
-              </select>
+              </MonochromeSelect>
             </label>
             <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
               Record / reference
@@ -403,7 +404,7 @@ export default function ManagerAuditLogs() {
             </label>
             <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
               Severity
-              <select
+              <MonochromeSelect
                 value={filters.severity}
                 onChange={(event) => updateFilter('severity', event.target.value)}
                 className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
@@ -412,7 +413,7 @@ export default function ManagerAuditLogs() {
                 <option value="info">Info</option>
                 <option value="warning">Warning</option>
                 <option value="critical">Critical</option>
-              </select>
+              </MonochromeSelect>
             </label>
             <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
               From

@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import React, { useState, useEffect } from 'react';
 import { Head, usePage } from '@inertiajs/react';
 import AppLayoutERP from '../../../layout/AppLayout_ERP';
@@ -453,7 +454,7 @@ const LeaveManagement: React.FC = () => {
                 <label htmlFor="leave-type" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Leave Type
                 </label>
-                <select
+                <MonochromeSelect
                   id="leave-type"
                   value={formData.leave_type}
                   onChange={(e) => setFormData({ ...formData, leave_type: e.target.value })}
@@ -466,7 +467,7 @@ const LeaveManagement: React.FC = () => {
                   <option value="maternity">Maternity Leave</option>
                   <option value="paternity">Paternity Leave</option>
                   <option value="unpaid">Unpaid Leave</option>
-                </select>
+                </MonochromeSelect>
               </div>
 
               <div className="grid grid-cols-2 gap-4">

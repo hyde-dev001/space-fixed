@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import Swal from "sweetalert2";
@@ -536,7 +537,7 @@ export default function RepairPackageManager({
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Status</label>
-                <select
+                <MonochromeSelect
                   title="Package status"
                   value={formState.status}
                   onChange={(e) => setFormState((prev) => ({ ...prev, status: e.target.value as "active" | "inactive" }))}
@@ -544,7 +545,7 @@ export default function RepairPackageManager({
                 >
                   <option value="active">Active</option>
                   <option value="inactive">Inactive</option>
-                </select>
+                </MonochromeSelect>
               </div>
             </div>
 
@@ -680,7 +681,7 @@ export default function RepairPackageManager({
                     <div key={`material-template-${index}`} className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 grid grid-cols-1 md:grid-cols-8 gap-2 items-end">
                       <div className="md:col-span-5">
                         <label className="block text-[11px] font-medium text-gray-600 dark:text-gray-300 mb-1">Inventory Material</label>
-                        <select
+                        <MonochromeSelect
                           title="Select inventory material"
                           value={line.inventory_item_id || ""}
                           onChange={(e) => updateMaterialTemplateLine(index, "inventory_item_id", Number(e.target.value || 0))}
@@ -692,7 +693,7 @@ export default function RepairPackageManager({
                               {material.name} (Available: {material.available_quantity})
                             </option>
                           ))}
-                        </select>
+                        </MonochromeSelect>
                       </div>
 
                       <div className="md:col-span-2">
@@ -912,7 +913,7 @@ export default function RepairPackageManager({
           placeholder="Search package name or description"
           className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
         />
-        <select
+        <MonochromeSelect
           title="Package status filter"
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value as "all" | "active" | "inactive")}
@@ -921,7 +922,7 @@ export default function RepairPackageManager({
           <option value="all">All statuses</option>
           <option value="active">Active</option>
           <option value="inactive">Inactive</option>
-        </select>
+        </MonochromeSelect>
       </div>
 
       <div className="overflow-x-auto">

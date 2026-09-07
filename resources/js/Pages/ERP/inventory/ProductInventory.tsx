@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head, usePage } from "@inertiajs/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ComponentType } from "react";
@@ -305,7 +306,7 @@ export default function ProductInventory() {
 							className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
 						/>
 
-						<select
+						<MonochromeSelect
 							value={categoryFilter}
 							title="Filter by category"
 							onChange={(event) => {
@@ -319,9 +320,9 @@ export default function ProductInventory() {
 									Category: {category}
 								</option>
 							))}
-						</select>
+						</MonochromeSelect>
 
-						<select
+						<MonochromeSelect
 							value={brandFilter}
 							title="Filter by brand"
 							onChange={(event) => {
@@ -335,9 +336,9 @@ export default function ProductInventory() {
 									Brand: {brand}
 								</option>
 							))}
-						</select>
+						</MonochromeSelect>
 
-						<select
+						<MonochromeSelect
 							value={stockSort}
 							title="Sort by stock level"
 							onChange={(event) => {
@@ -348,7 +349,7 @@ export default function ProductInventory() {
 						>
 							<option value="low-to-high">Sort stock: Low to High</option>
 							<option value="high-to-low">Sort stock: High to Low</option>
-						</select>
+						</MonochromeSelect>
 					</div>
 
 					<div className="overflow-x-auto">

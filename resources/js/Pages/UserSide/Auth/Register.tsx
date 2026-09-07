@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { useEffect, useRef, useState } from 'react';
 import 'leaflet/dist/leaflet.css';
 import { Head, router } from '@inertiajs/react';
@@ -1447,7 +1448,7 @@ export default function Register() {
                 <>
                   <div>
                     <Label htmlFor="documentType" className="text-[12px] font-medium text-gray-700 mb-1.5">ID Type</Label>
-                    <select
+                    <MonochromeSelect
                       id="documentType"
                       name="documentType"
                       value={formData.documentType}
@@ -1459,7 +1460,7 @@ export default function Register() {
                       {DOCUMENT_TYPE_OPTIONS.map((option) => (
                         <option key={option.value} value={option.value}>{option.label}</option>
                       ))}
-                    </select>
+                    </MonochromeSelect>
                     {errors.documentType && <p className="mt-1 text-sm text-red-600">{errors.documentType}</p>}
                     {selectedDocumentOption && (
                       <p className="mt-2 text-[12px] leading-5 text-gray-600">

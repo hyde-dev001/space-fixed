@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head, usePage } from "@inertiajs/react";
 import type { ComponentType } from "react";
 import { useState, useEffect } from "react";
@@ -573,7 +574,7 @@ export default function ShoePriceApproval() {
               />
             </div>
             <div>
-              <select
+              <MonochromeSelect
                 value={statusFilter}
                 onChange={(e) => {
                   setStatusFilter(e.target.value as StatusCategory);
@@ -588,7 +589,7 @@ export default function ShoePriceApproval() {
                 <option value="forwarded">Forwarded to Owner</option>
                 <option value="approved">Approved</option>
                 <option value="rejected">Rejected</option>
-              </select>
+              </MonochromeSelect>
             </div>
           </div>
 

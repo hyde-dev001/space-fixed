@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head, usePage } from "@inertiajs/react";
 import type { ComponentType } from "react";
 import { useEffect, useMemo, useState } from "react";
@@ -487,7 +488,7 @@ export default function PurchaseRequestApproval({ onModalStateChange, requests: 
 							/>
 						</div>
 						<div className="sm:w-64">
-							<select
+							<MonochromeSelect
 								aria-label="Filter by status"
 								value={statusFilter}
 								onChange={(event) => {
@@ -502,7 +503,7 @@ export default function PurchaseRequestApproval({ onModalStateChange, requests: 
 								<option value="pending_finance_final">Pending Finance Final</option>
 								<option value="approved">Approved</option>
 								<option value="rejected">Rejected</option>
-							</select>
+							</MonochromeSelect>
 						</div>
 					</div>
 

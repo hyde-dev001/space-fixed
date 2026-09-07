@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import React, { useMemo, useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { usePage } from "@inertiajs/react";
@@ -651,7 +652,7 @@ const ViewAttendance: React.FC = () => {
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Status
             </label>
-            <select
+            <MonochromeSelect
               value={selectedStatus}
               onChange={(e) => setSelectedStatus(e.target.value)}
               className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-300"
@@ -661,7 +662,7 @@ const ViewAttendance: React.FC = () => {
               <option value="late">Late</option>
               <option value="absent">Absent</option>
               <option value="on_leave">On Leave</option>
-            </select>
+            </MonochromeSelect>
           </div>
         </div>
         {geofenceEnabled && (
@@ -1049,7 +1050,7 @@ const ViewAttendance: React.FC = () => {
               {/* Status */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Status</label>
-                <select
+                <MonochromeSelect
                   value={editForm.status}
                   onChange={(e) => setEditForm(f => ({ ...f, status: e.target.value }))}
                   className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -1058,7 +1059,7 @@ const ViewAttendance: React.FC = () => {
                   <option value="late">Late</option>
                   <option value="absent">Absent</option>
                   <option value="leave">Leave</option>
-                </select>
+                </MonochromeSelect>
               </div>
 
               {/* Check-in / Check-out */}

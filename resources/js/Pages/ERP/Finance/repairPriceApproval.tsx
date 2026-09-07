@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head, usePage } from "@inertiajs/react";
 import type { ComponentType } from "react";
 import { useState, useEffect } from "react";
@@ -644,7 +645,7 @@ export default function RepairPriceApproval() {
               />
             </div>
             <div className="sm:w-64">
-              <select
+              <MonochromeSelect
                 aria-label="Filter by status"
                 value={statusFilter}
                 onChange={(e) => {
@@ -659,7 +660,7 @@ export default function RepairPriceApproval() {
                 <option value="owner_review">Pending Owner</option>
                 <option value="approved">Approved</option>
                 <option value="rejected">Rejected</option>
-              </select>
+              </MonochromeSelect>
             </div>
           </div>
 

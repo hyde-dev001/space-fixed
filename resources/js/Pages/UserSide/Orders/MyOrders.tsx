@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
@@ -2837,7 +2838,7 @@ const MyOrders: React.FC = () => {
                   <label htmlFor="report-reason" className="block text-sm font-medium text-gray-700 mb-2">
                     Choose a problem <span className="text-red-500">*</span>
                   </label>
-                  <select
+                  <MonochromeSelect
                     id="report-reason"
                     aria-label="Report reason"
                     value={reportReason}
@@ -2854,7 +2855,7 @@ const MyOrders: React.FC = () => {
                     <option value="incomplete">Incomplete order</option>
                     <option value="wrong_item">Wrong item received</option>
                     <option value="other">Other</option>
-                  </select>
+                  </MonochromeSelect>
                 </div>
 
                 {reportReason === 'item_not_received' ? (

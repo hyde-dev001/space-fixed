@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import React from 'react';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import AppLayoutERP from '@/layout/AppLayout_ERP';
@@ -112,22 +113,22 @@ export default function Riders() {
 
         <div className="flex flex-col gap-3 sm:gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div data-testid="riders-filter-bar" className="mx-auto grid w-full max-w-md grid-cols-1 gap-3 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-800 sm:grid-cols-2 sm:p-4 xl:mx-0 xl:w-auto xl:max-w-none xl:flex xl:flex-wrap xl:items-center xl:gap-3 xl:rounded-none xl:border-0 xl:bg-transparent xl:p-0 xl:shadow-none">
-            <select
+            <MonochromeSelect
               value={filters.availability}
               onChange={(event) => updateFilter('availability', event.target.value)}
               className="min-h-11 w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:border-transparent focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white sm:w-auto xl:min-h-0 xl:rounded-lg"
               aria-label="Filter riders by availability"
             >
               {availabilityOptions.map(([value, text]) => <option key={value} value={value}>{text}</option>)}
-            </select>
-            <select
+            </MonochromeSelect>
+            <MonochromeSelect
               value={filters.type}
               onChange={(event) => updateFilter('type', event.target.value)}
               className="min-h-11 w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:border-transparent focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white sm:w-auto xl:min-h-0 xl:rounded-lg"
               aria-label="Filter riders by type"
             >
               {typeOptions.map(([value, text]) => <option key={value} value={value}>{text}</option>)}
-            </select>
+            </MonochromeSelect>
           </div>
         </div>
 

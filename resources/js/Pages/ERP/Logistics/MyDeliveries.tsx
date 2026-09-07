@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import AppLayoutERP from '@/layout/AppLayout_ERP';
 import { logisticsApi } from '@/services/logisticsApi';
 import RiderGpsTracker from '@/components/logistics/RiderGpsTracker';
@@ -185,7 +186,7 @@ function CompactModalPicker({
           </svg>
         </button>
       ) : (
-        <select
+        <MonochromeSelect
           id={pickerId}
           aria-label={label}
           value={value}
@@ -195,7 +196,7 @@ function CompactModalPicker({
           {pickerOptions.map(([option, optionLabel]) => (
             <option key={option || 'empty'} value={option}>{optionLabel}</option>
           ))}
-        </select>
+        </MonochromeSelect>
       )}
       {modalIsOpen && (
         <div
@@ -2040,9 +2041,8 @@ function DeliveryLists({
       </div>
 
       <div className="grid gap-4 xl:grid-cols-3 xl:gap-3">
-        <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-          Business type
-          <select
+        <MonochromeSelect
+            label="Business type"
             aria-label="Business type"
             value={deliveryData.filters.business}
             onChange={(event) =>
@@ -2050,16 +2050,15 @@ function DeliveryLists({
                 business: event.target.value as RiderDeliveryPageData['filters']['business'],
               })
             }
-            className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-base transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-slate-700 dark:bg-slate-900 xl:mt-1 xl:min-h-11 xl:px-3 xl:text-sm"
+            className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-base transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-slate-700 dark:bg-slate-900 xl:min-h-11 xl:px-3 xl:text-sm"
           >
             <option value="all">All businesses</option>
             <option value="retail">Retail</option>
             <option value="repair">Repair</option>
-          </select>
-        </label>
+        </MonochromeSelect>
         <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
           Time
-          <select
+          <MonochromeSelect
             aria-label="Delivery time"
             value={deliveryData.filters.window}
             onChange={(event) =>
@@ -2072,7 +2071,7 @@ function DeliveryLists({
             <option value="all">All time</option>
             <option value="today">Today</option>
             <option value="week">This week</option>
-          </select>
+          </MonochromeSelect>
         </label>
         <form
           role="search"

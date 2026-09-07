@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Head, router, usePage } from '@inertiajs/react';
 import AppLayoutShopOwner from '../../../layout/AppLayout_shopOwner';
@@ -1780,7 +1781,7 @@ const UserAccessControl: React.FC = () => {
                   className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white w-64"
                 />
                 <label htmlFor="admin-filter-select" className="sr-only">Filter admins</label>
-                <select
+                <MonochromeSelect
                   id="employee-filter-select"
                   value={employeeFilter}
                   onChange={(e) => setEmployeeFilter(e.target.value)}
@@ -1793,7 +1794,7 @@ const UserAccessControl: React.FC = () => {
                     <option key={role.value} value={role.value}>{role.value}</option>
                   ))}
                   <option value="recent">Recent (7 days)</option>
-                </select>
+                </MonochromeSelect>
               </div>
               <button
                 onClick={openAddEmployeeModal}
@@ -2227,7 +2228,7 @@ const UserAccessControl: React.FC = () => {
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                             Department / Role <span className="text-red-500">*</span>
                           </label>
-                          <select 
+                          <MonochromeSelect
                             value={employeeForm.department} 
                             onChange={(e) => setEmployeeForm({ ...employeeForm, department: e.target.value })} 
                             title="Department or role"
@@ -2237,7 +2238,7 @@ const UserAccessControl: React.FC = () => {
                             {availableRoleOptions.map(role => (
                               <option key={role.value} value={role.value}>{role.label}</option>
                             ))}
-                          </select>
+                          </MonochromeSelect>
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Position / Job Title</label>

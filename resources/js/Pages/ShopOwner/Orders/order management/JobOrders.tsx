@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import React, { useMemo, useRef, useState } from "react";
 import Swal from "sweetalert2";
 import { Head, usePage } from "@inertiajs/react";
@@ -2073,7 +2074,7 @@ export default function JobOrdersPage() {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Carrier Company *</label>
-                    <select
+                    <MonochromeSelect
                       title="Carrier company"
                       value={returnCarrierCompany}
                       onChange={(e) => setReturnCarrierCompany(e.target.value)}
@@ -2082,7 +2083,7 @@ export default function JobOrdersPage() {
                       {returnCarrierCompanyOptions.map((option) => (
                         <option key={option} value={option}>{option}</option>
                       ))}
-                    </select>
+                    </MonochromeSelect>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -2197,7 +2198,7 @@ export default function JobOrdersPage() {
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                       Estimated Delivery Date *
                     </label>
-                    <select
+                    <MonochromeSelect
                       title="Estimated delivery date"
                       value={etaPreset}
                       onChange={(e) => setEtaPreset(e.target.value)}
@@ -2207,14 +2208,14 @@ export default function JobOrdersPage() {
                       <option value="1-3 business days">1-3 business days</option>
                       <option value="2-4 business days">2-4 business days</option>
                       <option value="3-6 business days">3-6 business days</option>
-                    </select>
+                    </MonochromeSelect>
                   </div>
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                       Shipping Business *
                     </label>
-                    <select
+                    <MonochromeSelect
                       title="Shipping business"
                       value={carrierCompany}
                       onChange={(e) => setCarrierCompany(e.target.value)}
@@ -2223,7 +2224,7 @@ export default function JobOrdersPage() {
                       <option value="Lalamove">Lalamove</option>
                       <option value="J&T">J&amp;T</option>
                       <option value="Express Padala">Express Padala</option>
-                    </select>
+                    </MonochromeSelect>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

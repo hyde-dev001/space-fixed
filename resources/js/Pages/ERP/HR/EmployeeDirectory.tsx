@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import React, { useMemo, useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import Swal from "sweetalert2";
@@ -2894,7 +2895,7 @@ export const EmployeeManagement: React.FC<{
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                       Reason for Suspension <span className="text-red-500">*</span>
                     </label>
-                    <select
+                    <MonochromeSelect
                       value={suspensionRequestForm.reason}
                       onChange={(e) => setSuspensionRequestForm({ ...suspensionRequestForm, reason: e.target.value })}
                       className="w-full px-4 py-2 border-2 border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
@@ -2909,7 +2910,7 @@ export const EmployeeManagement: React.FC<{
                       <option value="Theft or Fraud">Theft or Fraud</option>
                       <option value="Safety Violations">Safety Violations</option>
                       <option value="Other">Other</option>
-                    </select>
+                    </MonochromeSelect>
                   </div>
 
                   <div className="mb-4">
@@ -3120,7 +3121,7 @@ export const EmployeeManagement: React.FC<{
                             Department / Role <span className="text-red-500">*</span>
                           </label>
                           {availableRoles.length > 0 ? (
-                            <select
+                            <MonochromeSelect
                               id="rehire-role"
                               value={rehireRequestForm.rehireRole}
                               onChange={(event) => setRehireRequestForm({ ...rehireRequestForm, rehireRole: event.target.value, rehireDepartment: event.target.value })}
@@ -3132,7 +3133,7 @@ export const EmployeeManagement: React.FC<{
                                 .map((role) => (
                                   <option key={role.name} value={role.name}>{role.name}</option>
                                 ))}
-                            </select>
+                            </MonochromeSelect>
                           ) : (
                             <input
                               id="rehire-role"
@@ -3413,7 +3414,7 @@ export const EmployeeManagement: React.FC<{
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
                             Department / Role <span className="text-red-500">*</span>
                           </label>
-                          <select
+                          <MonochromeSelect
                             value={addEmployeeForm.department}
                             onChange={(e) =>
                               setAddEmployeeForm({
@@ -3440,7 +3441,7 @@ export const EmployeeManagement: React.FC<{
                             <option value="Logistics Dispatcher">Logistics Dispatcher</option>
                             <option value="Logistics Rider">Logistics Rider</option>
                             {isRetailCapableBusiness && <option value="Staff">Staff</option>}
-                          </select>
+                          </MonochromeSelect>
                         </div>
 
                         <div>
