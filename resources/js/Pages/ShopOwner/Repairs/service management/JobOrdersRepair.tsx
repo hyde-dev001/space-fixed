@@ -2978,13 +2978,6 @@ export default function JobOrdersRepair() {
                           ))}
                         </ol>
                       )}
-                      <button
-                        type="button"
-                        onClick={() => fetchOrders()}
-                        className="mt-4 inline-flex items-center justify-center rounded-md border border-blue-300 bg-white px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 dark:border-blue-700 dark:bg-gray-900 dark:text-blue-300 dark:hover:bg-blue-900/40"
-                      >
-                        Refresh delivery status
-                      </button>
                     </div>
                   </div>
                 )}
@@ -3027,7 +3020,7 @@ export default function JobOrdersRepair() {
                             {formatReturnDeliveryMethod(viewOrder)}
                           </p>
                           {viewOrder.returnHandoff.blocked_reason && !viewOrder.returnHandoff.can_release && (
-                            <p className="mt-1 text-amber-700 dark:text-amber-300">
+                            <p className="mt-1 text-gray-900 dark:text-white">
                               {viewOrder.returnHandoff.blocked_reason}
                             </p>
                           )}

@@ -168,10 +168,7 @@ describe("ShopOwner JobOrdersRepair intake logistics", () => {
       screen.queryByText(/contact (?:a )?(?:delivery service|carrier|rider)|manually (?:enter|add) (?:carrier|rider)/i),
     ).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Refresh delivery status" }));
-    await waitFor(() => {
-      expect(mocks.get.mock.calls.filter(([url]) => url === "/api/shop-owner/repairs")).toHaveLength(2);
-    });
+    expect(screen.queryByRole("button", { name: "Refresh delivery status" })).not.toBeInTheDocument();
   });
 
   it.each([
