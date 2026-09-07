@@ -22,6 +22,7 @@ export interface InventoryItem {
     total_quantity: number;
     reorder_level: number;
     reorder_quantity: number;
+    auto_stock_request_enabled: boolean;
     price?: number;
     cost_price?: number;
     weight?: number;
@@ -221,6 +222,7 @@ export interface CreateInventoryItemData {
     reserved_quantity?: number;
     reorder_level: number;
     reorder_quantity: number;
+    auto_stock_request_enabled?: boolean;
     price?: number;
     cost_price?: number;
     weight?: number;

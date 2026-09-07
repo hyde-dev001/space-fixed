@@ -294,39 +294,25 @@ class StockRequestApprovalController extends Controller
             ], 422);
         }
 
-        // Generate request number SR-YYYY-NNN
-        $year = now()->year;
-        $last = StockRequestApproval::where('request_number', 'LIKE', "SR-{$year}-%")
-            ->orderBy('request_number', 'desc')
-            ->first();
-        $nextNum = $last ? intval(substr($last->request_number, -3)) + 1 : 1;
-        $requestNumber = "SR-{$year}-" . str_pad($nextNum, 3, '0', STR_PAD_LEFT);
-
         $user = Auth::user();
 
-        $stockRequest = StockRequestApproval::create([
-            'request_number'    => $requestNumber,
+        $stockRequest = $this->stockRequestApprovalService->createStockRequest([
             'shop_owner_id'     => $user->shop_owner_id,
             'inventory_item_id' => $validated['inventory_item_id'],
             'repair_request_id' => $validated['repair_request_id'] ?? null,
-            'product_name'      => $inventoryItem->name,
-            'sku_code'          => $inventoryItem->sku ?? '',
             'quantity_needed'   => $quantityNeeded,
             'requested_size'    => $requestedSize,
             'requested_color'   => $validated['requested_color'] ?? null,
             'priority'          => $validated['priority'],
             'request_source'    => $validated['request_source'] ?? 'manual',
-            'status'            => 'pending',
             'requested_by'      => $user->id,
             'requested_date'    => now(),
             'notes'             => $validated['notes'] ?? null,
         ]);
 
-        $this->stockRequestApprovalService->notifyStockRequestSubmitted($stockRequest->fresh());
-
         return response()->json([
             'message'       => 'Stock request submitted successfully.',
-            'stock_request' => $stockRequest->load(['inventoryItem', 'requester']),
+            'stock_request' => $stockRequest,
         ], 201);
     }
     public function approve(ApproveStockRequestRequest $request, $id)

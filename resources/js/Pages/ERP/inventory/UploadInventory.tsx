@@ -24,6 +24,7 @@ type StockItem = {
   notes: string;
   reorderLevel: number;
   reorderQuantity: number;
+  autoStockRequestEnabled: boolean;
   costPrice: number | null;
   sellingPrice: number | null;
   colorVariants: ColorVariant[];
@@ -276,6 +277,7 @@ const mapApiItemToStock = (item: ApiInventoryItem): StockItem | null => {
     notes: item.notes ?? '',
     reorderLevel: item.reorder_level,
     reorderQuantity: item.reorder_quantity,
+    autoStockRequestEnabled: item.auto_stock_request_enabled ?? false,
     costPrice: item.cost_price ?? null,
     sellingPrice: item.price ?? null,
     colorVariants,
@@ -334,6 +336,8 @@ export default function UploadInventory() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingStock, setEditingStock] = useState<StockItem | null>(null);
+  const userPermissions: string[] = Array.isArray(auth?.permissions) ? auth.permissions : [];
+  const canConfigureAutoStock = userPermissions.includes(editingStock ? 'inventory.edit' : 'inventory.create');
   const [colorVariants, setColorVariants] = useState<ColorVariant[]>([]);
   const [newColorVariants, setNewColorVariants] = useState<ColorVariant[]>([]);
   const [repairImages, setRepairImages] = useState<ColorVariantImage[]>([]);
@@ -420,6 +424,9 @@ export default function UploadInventory() {
     quantity: '',
     unit: 'pcs',
     notes: '',
+    reorderLevel: canUploadShoes ? '5' : '10',
+    reorderQuantity: canUploadShoes ? '10' : '50',
+    autoStockRequestEnabled: false,
   });
 
   const fetchStocks = async (archived = showArchived) => {
@@ -642,6 +649,9 @@ export default function UploadInventory() {
       quantity: '',
       unit: 'pcs',
       notes: '',
+      reorderLevel: canUploadShoes ? '5' : '10',
+      reorderQuantity: canUploadShoes ? '10' : '50',
+      autoStockRequestEnabled: false,
     });
     setSelectedShoeTypes([]);
     setColorVariants([]);
@@ -667,6 +677,9 @@ export default function UploadInventory() {
         quantity: stock.quantity.toString(),
         unit: stock.unit,
         notes: stock.notes,
+        reorderLevel: stock.reorderLevel.toString(),
+        reorderQuantity: stock.reorderQuantity.toString(),
+        autoStockRequestEnabled: stock.autoStockRequestEnabled,
       });
       setSelectedShoeTypes(stock.shoeType ? stock.shoeType.split(',').filter(Boolean) : []);
       setColorVariants(stock.colorVariants || []);
@@ -794,8 +807,17 @@ export default function UploadInventory() {
       return;
     }
 
-    const reorderLevelNumber = isShoesMode ? 5 : 10;
-    const reorderQuantityNumber = isShoesMode ? 10 : 50;
+    const reorderLevelNumber = Number(formData.reorderLevel);
+    const reorderQuantityNumber = Number(formData.reorderQuantity);
+    if (!Number.isInteger(reorderLevelNumber) || reorderLevelNumber < 0) {
+      await showValidationWarning('Invalid reorder level', 'Reorder level must be a whole number of 0 or more.');
+      return;
+    }
+
+    if (!Number.isInteger(reorderQuantityNumber) || reorderQuantityNumber <= 0) {
+      await showValidationWarning('Invalid request quantity', 'Quantity to request must be a whole number greater than 0.');
+      return;
+    }
     const costPriceNumber = undefined;
     const sellingPriceNumber = undefined;
 
@@ -868,6 +890,7 @@ export default function UploadInventory() {
           available_quantity: quantityAsNumber,
           reorder_level: reorderLevelNumber,
           reorder_quantity: reorderQuantityNumber,
+          auto_stock_request_enabled: formData.autoStockRequestEnabled,
           cost_price: isShoesMode ? undefined : costPriceNumber,
           price: isShoesMode ? undefined : sellingPriceNumber,
         });
@@ -901,6 +924,7 @@ export default function UploadInventory() {
           available_quantity: quantityAsNumber,
           reorder_level: reorderLevelNumber,
           reorder_quantity: reorderQuantityNumber,
+          auto_stock_request_enabled: formData.autoStockRequestEnabled,
           cost_price: isShoesMode ? undefined : costPriceNumber,
           price: isShoesMode ? undefined : sellingPriceNumber,
           images: imageFiles.length > 0 ? imageFiles : undefined,
@@ -1519,6 +1543,78 @@ export default function UploadInventory() {
                     />
                   )}
                 </div>
+                )}
+
+                {canConfigureAutoStock && (
+                  <div className='rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-900/50'>
+                    <div className='mb-4'>
+                      <h3 className='text-base font-semibold text-gray-900 dark:text-white'>Automatic Replenishment</h3>
+                      <p className='mt-1 text-sm text-gray-600 dark:text-gray-400'>
+                        Configure when this item should create a Stock Request automatically.
+                      </p>
+                    </div>
+
+                    <label className='flex items-center gap-3 text-sm font-medium text-gray-800 dark:text-gray-200'>
+                      <input
+                        type='checkbox'
+                        checked={formData.autoStockRequestEnabled}
+                        onChange={(event) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            autoStockRequestEnabled: event.target.checked,
+                          }))
+                        }
+                        className='h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-gray-900'
+                      />
+                      Enable Auto Stock Request
+                    </label>
+
+                    <div className='mt-4 grid grid-cols-1 gap-4 md:grid-cols-2'>
+                      <div>
+                        <label htmlFor='stock-reorder-level' className='mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300'>
+                          Reorder Level
+                        </label>
+                        <input
+                          id='stock-reorder-level'
+                          type='number'
+                          min='0'
+                          step='1'
+                          value={formData.reorderLevel}
+                          onChange={(event) => {
+                            const nextValue = event.target.value;
+                            if (/^\d*$/.test(nextValue)) {
+                              setFormData((prev) => ({ ...prev, reorderLevel: nextValue }));
+                            }
+                          }}
+                          className='w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-white'
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor='stock-reorder-quantity' className='mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300'>
+                          Quantity to Request
+                        </label>
+                        <input
+                          id='stock-reorder-quantity'
+                          type='number'
+                          min='1'
+                          step='1'
+                          value={formData.reorderQuantity}
+                          disabled={!formData.autoStockRequestEnabled}
+                          onChange={(event) => {
+                            const nextValue = event.target.value;
+                            if (/^\d*$/.test(nextValue)) {
+                              setFormData((prev) => ({ ...prev, reorderQuantity: nextValue }));
+                            }
+                          }}
+                          className='w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500 dark:border-gray-600 dark:bg-gray-900 dark:text-white dark:disabled:bg-gray-800 dark:disabled:text-gray-500'
+                        />
+                      </div>
+                    </div>
+
+                    <p className='mt-3 text-xs text-gray-500 dark:text-gray-400'>
+                      When available stock reaches {formData.reorderLevel || '0'} units or below, the system will automatically create a Stock Request for {formData.reorderQuantity || '0'} units.
+                    </p>
+                  </div>
                 )}
 
                 {!isShoesMode && (

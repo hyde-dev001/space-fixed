@@ -24,7 +24,9 @@ class StockMovementTest extends TestCase
         $this->shopOwner = ShopOwner::factory()->create();
         $this->user = User::factory()->create(['shop_owner_id' => $this->shopOwner->id]);
         Permission::findOrCreate('access-stock-movement', 'user');
+        Permission::findOrCreate('inventory.adjust_stock', 'user');
         $this->user->givePermissionTo('access-stock-movement');
+        $this->user->givePermissionTo('inventory.adjust_stock');
         $this->actingAs($this->user, 'user');
     }
 

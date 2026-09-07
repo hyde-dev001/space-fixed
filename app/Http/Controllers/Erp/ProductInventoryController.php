@@ -10,9 +10,12 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use App\Support\Erp\ErpActorContext;
+use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 
 class ProductInventoryController extends Controller
 {
+    use AuthorizesRequests;
+
     public function __construct(
         private readonly ShopOwnerInventoryReadService $ownerInventoryRead,
     ) {}
@@ -144,6 +147,8 @@ class ProductInventoryController extends Controller
         
         $item = InventoryItem::where('shop_owner_id', $shopOwnerId)
             ->findOrFail($id);
+
+        $this->authorize('adjustStock', $item);
         
         DB::transaction(function () use ($item, $validated, $request) {
             $quantityBefore = $item->available_quantity;
@@ -204,6 +209,8 @@ class ProductInventoryController extends Controller
                     ->find($itemData['id']);
                 
                 if (!$item) continue;
+
+                $this->authorize('adjustStock', $item);
                 
                 $quantityBefore = $item->available_quantity;
                 $quantityAfter = $itemData['available_quantity'];

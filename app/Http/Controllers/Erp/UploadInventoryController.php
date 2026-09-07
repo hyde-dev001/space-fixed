@@ -18,9 +18,13 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
+use App\Models\User;
 
 class UploadInventoryController extends Controller
 {
+    use AuthorizesRequests;
+
     private const CATEGORY_SHOES = 'shoes';
     private const CATEGORY_REPAIR_MATERIALS = 'repair_materials';
     private const SIZE_SYSTEMS = ['US', 'UK', 'EU', 'AU', 'CN'];
@@ -121,7 +125,8 @@ class UploadInventoryController extends Controller
             'unit' => 'nullable|string|max:50',
             'available_quantity' => 'required|integer|min:1',
             'reorder_level' => 'nullable|integer|min:0',
-            'reorder_quantity' => 'nullable|integer|min:0',
+            'reorder_quantity' => 'nullable|integer|min:1',
+            'auto_stock_request_enabled' => 'nullable|boolean',
             'price' => 'nullable|numeric|min:0',
             'cost_price' => 'nullable|numeric|min:0',
             'weight' => 'nullable|numeric|min:0',
@@ -196,6 +201,8 @@ class UploadInventoryController extends Controller
             ], 403);
         }
 
+        $this->authorizeInventoryItem($request, 'create', InventoryItem::class);
+
         $actorUserId = $this->resolveActorUserId($request);
         
         // Generate SKU if not provided
@@ -218,6 +225,7 @@ class UploadInventoryController extends Controller
                 'available_quantity' => $validated['available_quantity'],
                 'reorder_level' => $validated['reorder_level'] ?? 10,
                 'reorder_quantity' => $validated['reorder_quantity'] ?? 50,
+                'auto_stock_request_enabled' => (bool) ($validated['auto_stock_request_enabled'] ?? false),
                 'price' => $validated['price'] ?? null,
                 'cost_price' => $validated['cost_price'] ?? null,
                 'weight' => $validated['weight'] ?? null,
@@ -359,7 +367,8 @@ class UploadInventoryController extends Controller
             'unit' => 'nullable|string|max:50',
             'available_quantity' => 'nullable|integer|min:0',
             'reorder_level' => 'nullable|integer|min:0',
-            'reorder_quantity' => 'nullable|integer|min:0',
+            'reorder_quantity' => 'nullable|integer|min:1',
+            'auto_stock_request_enabled' => 'nullable|boolean',
             'price' => 'nullable|numeric|min:0',
             'cost_price' => 'nullable|numeric|min:0',
             'weight' => 'nullable|numeric|min:0',
@@ -381,6 +390,8 @@ class UploadInventoryController extends Controller
         
         $item = InventoryItem::where('shop_owner_id', $shopOwnerId)
             ->findOrFail($id);
+
+        $this->authorizeInventoryItem($request, 'update', $item);
 
         if ($authorizationError = $this->authorizeCategoryForBusinessType($request, $item->category)) {
             return $authorizationError;
@@ -435,6 +446,8 @@ class UploadInventoryController extends Controller
         $item = InventoryItem::where('shop_owner_id', $shopOwnerId)
             ->findOrFail($id);
 
+        $this->authorizeInventoryItem($request, 'delete', $item);
+
         if ($authorizationError = $this->authorizeCategoryForBusinessType($request, $item->category)) {
             return $authorizationError;
         }
@@ -462,6 +475,8 @@ class UploadInventoryController extends Controller
             ->where('shop_owner_id', $shopOwnerId)
             ->onlyTrashed()
             ->findOrFail($id);
+
+        $this->authorizeInventoryItem($request, 'restore', $item);
 
         if ($authorizationError = $this->authorizeCategoryForBusinessType($request, $item->category)) {
             return $authorizationError;
@@ -496,6 +511,8 @@ class UploadInventoryController extends Controller
         
         $item = InventoryItem::where('shop_owner_id', $shopOwnerId)
             ->findOrFail($request->inventory_item_id);
+
+        $this->authorizeInventoryItem($request, 'update', $item);
 
         if ($authorizationError = $this->authorizeCategoryForBusinessType($request, $item->category)) {
             return $authorizationError;
@@ -536,6 +553,8 @@ class UploadInventoryController extends Controller
             })
             ->findOrFail($imageId);
 
+        $this->authorizeInventoryItem($request, 'update', $image->inventoryItem);
+
         if ($authorizationError = $this->authorizeCategoryForBusinessType($request, $image->inventoryItem->category)) {
             return $authorizationError;
         }
@@ -570,6 +589,8 @@ class UploadInventoryController extends Controller
                 $query->where('shop_owner_id', $shopOwnerId);
             })
             ->findOrFail($imageId);
+
+        $this->authorizeInventoryItem($request, 'update', $image->inventoryItem);
 
         if ($authorizationError = $this->authorizeCategoryForBusinessType($request, $image->inventoryItem->category)) {
             return $authorizationError;
@@ -627,6 +648,8 @@ class UploadInventoryController extends Controller
 
         $item = InventoryItem::where('shop_owner_id', $shopOwnerId)
             ->findOrFail($id);
+
+        $this->authorizeInventoryItem($request, 'update', $item);
 
         if ($authorizationError = $this->authorizeCategoryForBusinessType($request, $item->category)) {
             return $authorizationError;
@@ -827,6 +850,8 @@ class UploadInventoryController extends Controller
         $item = InventoryItem::where('shop_owner_id', $shopOwnerId)
             ->findOrFail($id);
 
+        $this->authorizeInventoryItem($request, 'update', $item);
+
         if ($authorizationError = $this->authorizeCategoryForBusinessType($request, $item->category)) {
             return $authorizationError;
         }
@@ -958,6 +983,8 @@ class UploadInventoryController extends Controller
         $item = InventoryItem::where('shop_owner_id', $shopOwnerId)
             ->findOrFail($id);
 
+        $this->authorizeInventoryItem($request, 'update', $item);
+
         if ($authorizationError = $this->authorizeCategoryForBusinessType($request, $item->category)) {
             return $authorizationError;
         }
@@ -1028,6 +1055,15 @@ class UploadInventoryController extends Controller
                 'message' => 'Error updating size quantity',
                 'error'   => $e->getMessage(),
             ], 500);
+        }
+    }
+
+    protected function authorizeInventoryItem(Request $request, string $ability, InventoryItem|string $item): void
+    {
+        // Shop-owner compatibility routes use a different guard and retain
+        // their existing tenant/business-type authorization.
+        if ($request->user() instanceof User) {
+            $this->authorize($ability, $item);
         }
     }
 

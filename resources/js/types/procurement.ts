@@ -148,9 +148,12 @@ export interface StockRequestApproval {
     priority: 'high' | 'medium' | 'low';
     priority_label?: string;
     request_source?: 'manual' | 'repair';
+    is_auto_generated?: boolean;
+    source_label?: string;
+    source_reason?: string | null;
     status: 'pending' | 'accepted' | 'rejected' | 'needs_details';
     status_label?: string;
-    requested_by: number;
+    requested_by: number | null;
     requester?: User;
     requested_date: string;
     approved_by?: number;

@@ -8,9 +8,12 @@ use App\Models\InventoryItem;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use App\Support\Erp\ErpActorContext;
+use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 
 class StockMovementController extends Controller
 {
+    use AuthorizesRequests;
+
     /**
      * List all stock movements with filters
      */
@@ -81,6 +84,8 @@ class StockMovementController extends Controller
         
         $item = InventoryItem::where('shop_owner_id', $shopOwnerId)
             ->findOrFail($validated['inventory_item_id']);
+
+        $this->authorize('adjustStock', $item);
         
         DB::transaction(function () use ($item, $validated, $request) {
             $quantityBefore = $item->available_quantity;
