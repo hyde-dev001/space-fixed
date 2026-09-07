@@ -86,9 +86,9 @@ export default function HighValueRepairs() {
 					<p style="margin-bottom: 0.5rem;"><strong>Repairer:</strong> ${repair.repairer?.first_name} ${repair.repairer?.last_name}</p>
 					<p style="margin-bottom: 1rem;"><strong>Description:</strong> ${repair.description}</p>
 					<label for="approval-notes" style="display: block; margin-bottom: 0.5rem; font-weight: 500;">Approval Notes (optional):</label>
-					<textarea 
-						id="approval-notes" 
-						class="swal2-textarea" 
+					<textarea
+						id="approval-notes"
+						class="swal2-textarea"
 						placeholder="Add any notes about this approval..."
 						style="width: 100%; height: 80px;"
 					></textarea>
@@ -140,9 +140,9 @@ export default function HighValueRepairs() {
 					<p style="margin-bottom: 0.5rem;"><strong>Estimated Price:</strong> ₱${repair.estimated_price?.toLocaleString()}</p>
 					<p style="margin-bottom: 1rem; color: #ef4444;"><strong>Warning:</strong> This will cancel the repair request.</p>
 					<label for="rejection-notes" style="display: block; margin-bottom: 0.5rem; font-weight: 500;">Rejection Reason (required, min 10 characters):</label>
-					<textarea 
-						id="rejection-notes" 
-						class="swal2-textarea" 
+					<textarea
+						id="rejection-notes"
+						class="swal2-textarea"
 						placeholder="Explain why this repair is being rejected..."
 						style="width: 100%; height: 100px;"
 						required
