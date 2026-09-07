@@ -23,4 +23,15 @@ describe('Manager Reports page contract', () => {
     expect(source).toContain('fetchWithCsrf("/api/manager/reports/generate"');
     expect(source).toContain('fetchWithCsrf(`/api/manager/reports/${reviewTarget.id}/review`');
   });
+
+  it('uses dense available-report cards with black icons and accessible icon-only table actions', () => {
+    expect(source).toContain('flex-[1_1_240px]');
+    expect(source).toContain('text-gray-950 dark:text-white');
+    expect(source).toContain('aria-label={`Mark ${report.report_title} as reviewed`}');
+    expect(source).toContain('aria-label={`Download ${report.report_title}`}');
+    expect(source).toContain('<CheckIcon className="h-4 w-4" />');
+    expect(source).toContain('<DownloadIcon className="h-4 w-4" />');
+    expect(source).not.toContain('>Mark as reviewed</button>');
+    expect(source).not.toContain('>Download</button>');
+  });
 });

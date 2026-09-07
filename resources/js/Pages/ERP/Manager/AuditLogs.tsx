@@ -354,15 +354,7 @@ export default function ManagerAuditLogs() {
       <Head title="Manager - Audit Logs" />
 
       <main className="space-y-6 p-4 sm:p-6" data-snapshot-stale={isStale ? 'true' : 'false'}>
-        <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <p className="text-sm font-semibold uppercase tracking-wide text-blue-600 dark:text-blue-400">Review</p>
-            <h1 className="mt-1 text-2xl font-bold text-slate-900 dark:text-white sm:text-3xl">Audit Logs</h1>
-            <p className="mt-2 max-w-3xl text-sm text-slate-600 dark:text-slate-400">
-              Read-only operational history for your authorized shop, including assignments, decisions, and approval changes.
-            </p>
-          </div>
-        </header>
+        <h1 className="sr-only">Audit Logs</h1>
 
         <section className="grid gap-4 sm:grid-cols-3" aria-label="Audit summary">
           <DashboardMetricCard label="Matching events" value={stats.total_logs.toLocaleString()} description="Events in the selected view" context="Audit" icon={Activity} />
