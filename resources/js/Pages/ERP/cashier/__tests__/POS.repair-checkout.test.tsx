@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -78,6 +78,17 @@ describe("Cashier POS repair checkout", () => {
         params: { scope: "pos_checkout" },
       });
     });
+  });
+
+  it("uses a black active state for repair service pagination", async () => {
+    render(<CashierPOS />);
+
+    const paginationSummary = await screen.findByText("Showing 1 to 1 of 1 individual services");
+    const pagination = paginationSummary.parentElement;
+    const activePage = within(pagination as HTMLElement).getByText("1", { exact: true });
+
+    expect(activePage).toHaveClass("bg-[#111111]", "text-white");
+    expect(activePage).not.toHaveClass("bg-blue-600");
   });
 
   it("submits walk-in repair checkout payload to repair-pos endpoint", async () => {

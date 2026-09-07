@@ -3184,7 +3184,7 @@ const PointOfSalePage = () => {
 											>
 												&#8249;
 											</button>
-											<div aria-current="page" className="h-9 min-w-10 rounded-lg bg-blue-600 px-3 text-center text-sm font-semibold leading-9 text-white">
+											<div aria-current="page" className="h-9 min-w-10 rounded-lg bg-[#111111] px-3 text-center text-sm font-semibold leading-9 text-white">
 												{retailPage}
 											</div>
 											<button
@@ -3395,7 +3395,7 @@ const PointOfSalePage = () => {
 								/>
 
 								{!retailCanPay && retailPayDisableReason.length > 0 && (
-									<div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
+									<div className="rounded-xl border border-gray-300 bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-700">
 										{retailPayDisableReason}
 									</div>
 								)}
@@ -3685,7 +3685,7 @@ const PointOfSalePage = () => {
 										>
 											&#8249;
 										</button>
-										<div className="h-9 min-w-10 rounded-lg bg-blue-600 px-3 text-center text-sm font-semibold leading-9 text-white">
+										<div className="h-9 min-w-10 rounded-lg bg-[#111111] px-3 text-center text-sm font-semibold leading-9 text-white">
 											{servicePage}
 										</div>
 										<button
