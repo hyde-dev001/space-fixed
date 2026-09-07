@@ -28,4 +28,23 @@ describe("Repair job orders visual presentation", () => {
     expect(statusCell).not.toMatch(/bg-[a-z0-9/-]+/);
     expect(statusCell).not.toContain("rounded-full");
   });
+
+  it("keeps repair detail logistics neutral while preserving refresh and status labels", () => {
+    const collectionAddress = source.slice(
+      source.indexOf("Customer's Collection Address"),
+      source.indexOf("{/* Repair Tasks */}"),
+    );
+    const assignedStatus = source.slice(
+      source.indexOf('"assigned_to_repairer":'),
+      source.indexOf('"under-review":'),
+    );
+
+    expect(source).toContain("Refresh delivery status");
+    expect(source).not.toContain('rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm');
+    expect(source).not.toContain('rounded-lg border border-purple-200 bg-purple-50 p-4 text-sm');
+    expect(collectionAddress).not.toContain("bg-amber-50");
+    expect(assignedStatus).not.toContain("bg-blue");
+    expect(source).toContain('"assigned_to_repairer":');
+    expect(source).toContain('Assigned to Repairer');
+  });
 });

@@ -602,7 +602,7 @@ export function OvertimeRequests() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex justify-between items-center">
+      <div className="flex justify-end">
         <h1 className="sr-only">Overtime Requests</h1>
         {!ownerMode && (
           <button
