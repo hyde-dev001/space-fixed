@@ -210,14 +210,15 @@ export default function LiveTrackingMap({ locations, label = 'Live rider map', f
       }
 
       const geometry = entry.route?.source === 'direct' ? [] : entry.route?.geometry ?? [];
+      const routeGeometry = geometry.length >= 2 ? [point, ...geometry.slice(1)] : geometry;
       const existingRoute = routesRef.current.get(entry.leg_id);
-      if (geometry.length >= 2) {
+      if (routeGeometry.length >= 2) {
         if (existingRoute) {
-          existingRoute.setLatLngs(geometry).setStyle({
+          existingRoute.setLatLngs(routeGeometry).setStyle({
             color: entry.stale ? '#94a3b8' : '#1677e8',
           });
         } else {
-          routesRef.current.set(entry.leg_id, L.polyline(geometry, {
+          routesRef.current.set(entry.leg_id, L.polyline(routeGeometry, {
             color: entry.stale ? '#94a3b8' : '#1677e8',
             weight: 5,
             opacity: 0.9,
