@@ -1,6 +1,10 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import StockRequest from "../StockRequest";
+
+const source = readFileSync(resolve("resources/js/Pages/ERP/inventory/StockRequest.tsx"), "utf8");
 
 const mocks = vi.hoisted(() => ({
 	createFromInventory: vi.fn(),
@@ -108,5 +112,33 @@ describe("Stock Request details", () => {
 			quantity_needed: 50,
 			quantity_basis: "per_size",
 		})));
+	});
+
+	it("keeps stock request UI surfaces neutral without changing their values", () => {
+		const createModal = source.slice(source.indexOf("{/* ── Create Request Modal ── */}"), source.indexOf("{viewingRequest && ("));
+		const detailsModal = source.slice(source.indexOf("{viewingRequest && ("), source.indexOf("{/* ── Product Picker Modal ── */}"));
+		const productPicker = source.slice(source.indexOf("{/* ── Product Picker Modal ── */}"));
+
+		expect(createModal).toContain("border border-gray-200 bg-gray-50");
+		expect(createModal).toContain("dark:border-gray-700 dark:bg-gray-800/40");
+		expect(createModal).toContain("Current stock:");
+		expect(createModal).toContain("Variant stock:");
+		expect(createModal).not.toContain("bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 px-3 py-2 text-sm");
+		expect(createModal).not.toContain("bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 px-3 py-2 text-sm");
+
+		expect(detailsModal).toContain("rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900");
+		expect(detailsModal).toContain("Requested Size");
+		expect(detailsModal).toContain("Available Sizes");
+		expect(detailsModal).toContain("Requested Color");
+		expect(detailsModal).not.toContain("bg-indigo-50");
+		expect(detailsModal).not.toContain("bg-blue-50");
+		expect(detailsModal).not.toContain("bg-purple-50");
+
+		expect(productPicker).toContain("hover:bg-gray-50 focus:bg-gray-50");
+		expect(productPicker).toContain("dark:hover:bg-gray-800/60 dark:focus:bg-gray-800/60");
+		expect(productPicker).toContain("border border-gray-950 bg-gray-950 px-3 py-1 dark:border-gray-300 dark:bg-gray-100");
+		expect(productPicker).toContain("text-xs font-semibold text-white dark:text-gray-900");
+		expect(productPicker).not.toContain("hover:bg-blue-100");
+		expect(productPicker).not.toContain("bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800");
 	});
 });
