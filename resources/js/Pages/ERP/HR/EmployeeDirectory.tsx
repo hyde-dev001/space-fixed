@@ -3523,7 +3523,7 @@ export const EmployeeManagement: React.FC<{
                   <button
                     onClick={handleSaveNewEmployee}
                     disabled={isAdding}
-                    className={`px-5 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-all duration-200 hover:shadow-md active:shadow-sm ${isAdding ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    className={`px-5 py-2.5 text-sm font-semibold text-white bg-black hover:bg-gray-800 rounded-lg transition-all duration-200 hover:shadow-md active:shadow-sm ${isAdding ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
                     {isAdding ? 'Processing...' : 'Add Employee'}
                   </button>
@@ -3740,7 +3740,7 @@ export const EmployeeManagement: React.FC<{
                   <button
                     onClick={savePermissions}
                     disabled={isSavingPermissions}
-                    className="px-5 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center"
+                    className="px-5 py-2.5 text-sm font-semibold text-white bg-black hover:bg-gray-800 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center"
                   >
                     {isSavingPermissions && (
                       <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">

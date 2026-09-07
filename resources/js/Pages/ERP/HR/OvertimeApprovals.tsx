@@ -725,8 +725,8 @@ export function OvertimeRequests() {
                   <td className="px-6 py-4">
                     <div className="flex items-center space-x-3">
                       <div className="flex-shrink-0 h-10 w-10">
-                        <div className="h-10 w-10 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
-                          <span className="text-blue-600 dark:text-blue-300 font-medium text-sm">
+                        <div className="h-10 w-10 rounded-full bg-gray-950 flex items-center justify-center">
+                          <span className="text-white font-medium text-sm">
                             {request.employeeName
                               .split(" ")
                               .map((n) => n[0])
@@ -902,8 +902,8 @@ export function OvertimeRequests() {
                   <div className="border border-gray-200 dark:border-gray-700 rounded-xl p-5">
                     <div className="flex items-start gap-4">
                       <div className="flex-shrink-0">
-                        <div className="h-12 w-12 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
-                          <span className="text-blue-600 dark:text-blue-300 font-bold text-sm">
+                        <div className="h-12 w-12 rounded-full bg-gray-950 flex items-center justify-center">
+                          <span className="text-white font-bold text-sm">
                             {selectedRequest.employeeName
                               .split(" ")
                               .map((n) => n[0])
@@ -1279,7 +1279,7 @@ export function OvertimeRequests() {
                   </button>
                   <button
                     onClick={handleAssignOvertime}
-                    className="px-6 py-2.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+                    className="px-6 py-2.5 text-sm font-medium text-white bg-black hover:bg-gray-800 rounded-lg transition-colors"
                   >
                     Assign Overtime
                   </button>

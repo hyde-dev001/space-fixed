@@ -258,7 +258,7 @@ export default function SuppliersManagement() {
 		const { name, value } = e.target;
 		setFormData((prev) => ({
 			...prev,
-			[name]: value,
+			[name]: name === "phone" ? value.replace(/\D/g, "").slice(0, 11) : value,
 		}));
 	};
 
@@ -528,11 +528,14 @@ export default function SuppliersManagement() {
 									Phone
 								</label>
 								<input
-									type="text"
-									name="phone"
-									value={formData.phone}
-									onChange={handleFormChange}
-									placeholder="e.g., 0917-456-1188"
+									 type="tel"
+									 name="phone"
+									 value={formData.phone}
+									 onChange={handleFormChange}
+									 inputMode="numeric"
+									 maxLength={11}
+									 pattern="[0-9]{1,11}"
+									 placeholder="e.g., 09174561188"
 									className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
 								/>
 							</div>
@@ -720,11 +723,14 @@ export default function SuppliersManagement() {
 									Phone
 								</label>
 								<input
-									type="text"
-									name="phone"
-									value={formData.phone}
-									onChange={handleFormChange}
-									placeholder="e.g., 0917-456-1188"
+									 type="tel"
+									 name="phone"
+									 value={formData.phone}
+									 onChange={handleFormChange}
+									 inputMode="numeric"
+									 maxLength={11}
+									 pattern="[0-9]{1,11}"
+									 placeholder="e.g., 09174561188"
 									className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
 								/>
 							</div>

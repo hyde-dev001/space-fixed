@@ -905,13 +905,13 @@ export default function PurchaseOrders() {
 							</div>
 
 							{selectedPrOption && (
-								<div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-									<p className="text-sm text-blue-900 dark:text-blue-200"><strong>Supplier:</strong> {selectedPrOption.supplier?.name || "N/A"}</p>
-									<p className="text-sm text-blue-900 dark:text-blue-200"><strong>{isAllSizesRequest(selectedPrOption.requested_size, selectedPrOption.inventory_item?.category) ? "Total Quantity Across All Sizes" : "Quantity"}:</strong> {selectedPrEffectiveQuantity} units</p>
-									<p className="text-sm text-blue-900 dark:text-blue-200"><strong>Unit Cost:</strong> {currency.format(selectedPrOption.unit_cost)}</p>
-									<p className="text-sm text-blue-900 dark:text-blue-200"><strong>Total:</strong> {currency.format(selectedPrOption.total_cost)}</p>
+								<div className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
+									<p className="text-sm text-gray-900 dark:text-gray-100"><strong>Supplier:</strong> {selectedPrOption.supplier?.name || "N/A"}</p>
+									<p className="text-sm text-gray-900 dark:text-gray-100"><strong>{isAllSizesRequest(selectedPrOption.requested_size, selectedPrOption.inventory_item?.category) ? "Total Quantity Across All Sizes" : "Quantity"}:</strong> {selectedPrEffectiveQuantity} units</p>
+									<p className="text-sm text-gray-900 dark:text-gray-100"><strong>Unit Cost:</strong> {currency.format(selectedPrOption.unit_cost)}</p>
+									<p className="text-sm text-gray-900 dark:text-gray-100"><strong>Total:</strong> {currency.format(selectedPrOption.total_cost)}</p>
 									{selectedPrAvailableSizeLabels.length > 0 && (
-										<p className="text-sm text-blue-900 dark:text-blue-200">
+										<p className="text-sm text-gray-900 dark:text-gray-100">
 											<strong>Available Sizes{selectedPrOption.requested_color ? ` (${selectedPrOption.requested_color})` : ""}:</strong> {selectedPrAvailableSizeLabels.join(", ")}
 										</p>
 									)}
