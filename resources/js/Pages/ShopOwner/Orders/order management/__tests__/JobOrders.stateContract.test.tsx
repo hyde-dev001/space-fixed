@@ -33,7 +33,7 @@ describe('shop owner order state contract', () => {
     expect(source).toContain('isIndividualRegistration && viewOrder.status === "pending"');
     expect(source).toContain('isIndividualRegistration && viewOrder.status === "shipped"');
     expect(source).toContain('title="View order details"');
-    expect(source).toContain('Monitor customer shoe orders');
+    expect(source).toContain('<h1 className="sr-only">Customer Orders</h1>');
     expect(source).not.toContain('Open Approval');
   });
 });

@@ -146,7 +146,6 @@ export default function ERPInventoryOverview() {
   const [categoryFilter, setCategoryFilter] = useState(initialQuery.get("category") || "All");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [refreshTick, setRefreshTick] = useState(0);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
   const [categories, setCategories] = useState<string[]>([]);
   const [metrics, setMetrics] = useState<MetricsPayload>({
@@ -252,7 +251,7 @@ export default function ERPInventoryOverview() {
     };
 
     fetchInventoryOverview();
-  }, [currentPage, searchQuery, statusFilter, forceCategory, inventoryApiBasePath, isManager, refreshTick]);
+  }, [currentPage, searchQuery, statusFilter, forceCategory, inventoryApiBasePath, isManager]);
 
   const displayLoading = isManager ? managerInventoryQuery.isLoading : loading;
   const displayError = isManager ? managerInventoryQuery.error?.message || null : error;
@@ -269,20 +268,6 @@ export default function ERPInventoryOverview() {
       .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
       .join(" ");
 
-  const getCategoryBadgeClasses = (category: string) => {
-    const normalized = normalizeCategory(category);
-
-    if (normalized === "repair_materials") {
-      return "bg-sky-50 text-sky-700 ring-1 ring-sky-200 dark:bg-sky-900/30 dark:text-sky-200 dark:ring-sky-800";
-    }
-
-    if (normalized === "shoes" || normalized === "products" || normalized === "product") {
-      return "bg-violet-50 text-violet-700 ring-1 ring-violet-200 dark:bg-violet-900/30 dark:text-violet-200 dark:ring-violet-800";
-    }
-
-    return "bg-gray-100 text-gray-700 ring-1 ring-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:ring-gray-700";
-  };
-
   const handleViewClick = (item: InventoryItem) => {
     setSelectedItem(item);
     setViewModalOpen(true);
@@ -294,19 +279,7 @@ export default function ERPInventoryOverview() {
       <div className="p-6 space-y-6" data-last-updated-at={lastUpdatedAt ?? undefined}>
         {/* Header */}
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold mb-1">Stocks Overview</h1>
-            <p className="text-gray-600 dark:text-gray-400">
-              {isRepairer
-                ? "Monitor repair-material stock levels and item availability"
-                : isStaff
-                ? "Monitor product stock levels and item availability"
-                : "Monitor stock levels across products and repair materials"}
-            </p>
-          </div>
-          <span className="px-3 py-1 text-xs font-semibold rounded-full bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200 w-fit">
-            {isRepairer ? "Repair Materials" : isStaff ? "Products" : "Products + Repair Materials"}
-          </span>
+          <h1 className="sr-only">Stocks Overview</h1>
           <div className="flex items-center gap-3">
             <button
               type="button"
@@ -461,7 +434,7 @@ export default function ERPInventoryOverview() {
                       </div>
                     </td>
                     <td className="py-3">
-                      <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${getCategoryBadgeClasses(item.category)}`}>
+                      <span className="font-medium text-gray-900 dark:text-gray-100">
                         {formatCategoryLabel(item.category)}
                       </span>
                     </td>
@@ -469,15 +442,7 @@ export default function ERPInventoryOverview() {
                       <span className="font-semibold text-gray-900 dark:text-gray-100">{item.quantity}</span>
                     </td>
                     <td className="py-3">
-                      <span
-                        className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                          item.status === "In Stock"
-                            ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200"
-                            : item.status === "Low Stock"
-                            ? "bg-amber-50 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200"
-                            : "bg-red-50 text-red-700 dark:bg-red-900/40 dark:text-red-200"
-                        }`}
-                      >
+                      <span className="font-medium text-gray-900 dark:text-gray-100">
                         {item.status}
                       </span>
                     </td>
@@ -561,7 +526,7 @@ export default function ERPInventoryOverview() {
                   </div>
                   <div>
                     <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Category</p>
-                    <span className={`mt-1 inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${getCategoryBadgeClasses(selectedItem.category)}`}>
+                    <span className="mt-1 font-medium text-gray-900 dark:text-gray-100">
                       {formatCategoryLabel(selectedItem.category)}
                     </span>
                   </div>
@@ -571,15 +536,7 @@ export default function ERPInventoryOverview() {
                   </div>
                   <div>
                     <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Status</p>
-                    <span
-                      className={`inline-block px-2 py-1 rounded-full text-xs font-semibold ${
-                        selectedItem.status === "In Stock"
-                          ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200"
-                          : selectedItem.status === "Low Stock"
-                          ? "bg-amber-50 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200"
-                          : "bg-red-50 text-red-700 dark:bg-red-900/40 dark:text-red-200"
-                      }`}
-                    >
+                    <span className="font-medium text-gray-900 dark:text-gray-100">
                       {selectedItem.status}
                     </span>
                   </div>

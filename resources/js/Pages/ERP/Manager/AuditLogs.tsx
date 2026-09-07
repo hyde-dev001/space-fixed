@@ -339,13 +339,7 @@ export default function ManagerAuditLogs() {
 
       <main className="space-y-6 p-4 sm:p-6" data-snapshot-stale={isStale ? 'true' : 'false'}>
         <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <p className="text-sm font-semibold uppercase tracking-wide text-blue-600 dark:text-blue-400">Review</p>
-            <h1 className="mt-1 text-2xl font-bold text-slate-900 dark:text-white sm:text-3xl">Audit Logs</h1>
-            <p className="mt-2 max-w-3xl text-sm text-slate-600 dark:text-slate-400">
-              Read-only operational history for your authorized shop, including assignments, decisions, and approval changes.
-            </p>
-          </div>
+          <h1 className="sr-only">Audit Logs</h1>
           <button
             type="button"
             onClick={() => setRefreshToken((value) => value + 1)}
@@ -514,6 +508,7 @@ export default function ManagerAuditLogs() {
                   </p>
                   <div className="flex items-center gap-2">
                     <button
+                      aria-label="Previous page"
                       type="button"
                       disabled={page <= 1}
                       onClick={() => setPage((value) => Math.max(1, value - 1))}
@@ -523,6 +518,7 @@ export default function ManagerAuditLogs() {
                     </button>
                     <span aria-current="page">Page {pagination.current_page} of {pagination.last_page}</span>
                     <button
+                      aria-label="Next page"
                       type="button"
                       disabled={page >= pagination.last_page}
                       onClick={() => setPage((value) => value + 1)}

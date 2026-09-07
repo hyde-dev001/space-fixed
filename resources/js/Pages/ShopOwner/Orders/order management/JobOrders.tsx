@@ -1604,15 +1604,7 @@ export default function JobOrdersPage() {
         </div>
       ) : (
         <div className="space-y-6">
-        {/* Header */}
-        <div className="flex justify-between items-start">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Customer Orders</h1>
-            <p className="text-gray-600 dark:text-gray-400 mt-2">
-              {isIndividualRegistration ? 'Process and manage customer shoe orders' : 'Monitor customer shoe orders'}
-            </p>
-          </div>
-        </div>
+          <h1 className="sr-only">Customer Orders</h1>
 
         {/* Metrics */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -1657,8 +1649,8 @@ export default function JobOrdersPage() {
                   onClick={() => setSelectedTab("all")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "all"
-                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                      ? "bg-[#111111] text-white hover:bg-gray-800 dark:bg-[#111111] dark:text-white dark:hover:bg-gray-800"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
                   All Orders ({stats.total})
@@ -1667,8 +1659,8 @@ export default function JobOrdersPage() {
                   onClick={() => setSelectedTab("pending")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "pending"
-                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                      ? "bg-[#111111] text-white hover:bg-gray-800 dark:bg-[#111111] dark:text-white dark:hover:bg-gray-800"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
                   {ORDER_STATUS_PRESENTATION.pending.label} ({stats.pending})
@@ -1677,8 +1669,8 @@ export default function JobOrdersPage() {
                   onClick={() => setSelectedTab("processing")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "processing"
-                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                      ? "bg-[#111111] text-white hover:bg-gray-800 dark:bg-[#111111] dark:text-white dark:hover:bg-gray-800"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
                   {ORDER_STATUS_PRESENTATION.processing.label} ({stats.processing})
@@ -1687,8 +1679,8 @@ export default function JobOrdersPage() {
                   onClick={() => setSelectedTab("shipped")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "shipped"
-                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                      ? "bg-[#111111] text-white hover:bg-gray-800 dark:bg-[#111111] dark:text-white dark:hover:bg-gray-800"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
                   {ORDER_STATUS_PRESENTATION.shipped.label} ({stats.shipped})
@@ -1697,8 +1689,8 @@ export default function JobOrdersPage() {
                   onClick={() => setSelectedTab("delivered")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "delivered"
-                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                      ? "bg-[#111111] text-white hover:bg-gray-800 dark:bg-[#111111] dark:text-white dark:hover:bg-gray-800"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
                   {ORDER_STATUS_PRESENTATION.delivered.label} ({stats.delivered})
@@ -1707,8 +1699,8 @@ export default function JobOrdersPage() {
                   onClick={() => setSelectedTab("completed")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "completed"
-                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                      ? "bg-[#111111] text-white hover:bg-gray-800 dark:bg-[#111111] dark:text-white dark:hover:bg-gray-800"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
                   {ORDER_STATUS_PRESENTATION.completed.label} ({stats.completed})
@@ -1717,8 +1709,8 @@ export default function JobOrdersPage() {
                   onClick={() => setSelectedTab("refund")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "refund"
-                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                      ? "bg-[#111111] text-white hover:bg-gray-800 dark:bg-[#111111] dark:text-white dark:hover:bg-gray-800"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
                   {ORDER_STATUS_PRESENTATION.refund.label} ({stats.refund})
@@ -1851,8 +1843,7 @@ export default function JobOrdersPage() {
                       </td>
                       <td className="box-border px-4 py-4 align-top">
                         <div className="flex flex-col items-start gap-2 min-h-12">
-                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-full whitespace-nowrap ${getOrderStatusPresentation(order.status).badgeClass}`}>
-                            <span className="size-1.5 rounded-full bg-current opacity-70" aria-hidden="true" />
+                          <span className="inline-flex items-center text-xs font-semibold whitespace-nowrap text-gray-900 dark:text-gray-100">
                             {getOrderStatusPresentation(order.status).label}
                           </span>
                         </div>
@@ -1861,11 +1852,11 @@ export default function JobOrdersPage() {
                         {(() => {
                           const refundReturn = getRefundReturnDisplay(order);
                           if (refundReturn.label === '-') {
-                            return <span className={refundReturn.className}>-</span>;
+                            return <span className="text-gray-900 dark:text-gray-100">-</span>;
                           }
 
                           return (
-                            <span className={`inline-flex items-center px-2.5 py-1 text-xs font-semibold rounded-full whitespace-nowrap ${refundReturn.className}`}>
+                            <span className="inline-flex items-center text-xs font-semibold whitespace-nowrap text-gray-900 dark:text-gray-100">
                               {refundReturn.label}
                             </span>
                           );

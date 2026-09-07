@@ -1603,14 +1603,9 @@ export default function ProductManagement() {
 
         <div className="space-y-6">
           {/* Header */}
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Product Management</h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-1">
-                Manage your shoe inventory with variant-based stock control
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
+          <div className="flex w-full items-center justify-end">
+            <h1 className="sr-only">Product Management</h1>
+            <div className="flex items-center justify-end gap-3">
               <Link
                 href="/services/product-image-spin-tutorial?from=product-uploader"
                 onClick={() => { setTutorialVisited(true); sessionStorage.setItem('tutorial_visited', JSON.stringify({ v: true, c: getCsrfToken() })); }}
@@ -2211,7 +2206,7 @@ export default function ProductManagement() {
                         value={customCategoryInput}
                         onChange={(e) => setCustomCategoryInput(sanitizeCustomCategoryInput(e.target.value))}
                         placeholder="Enter custom category"
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#111111] dark:border-gray-600 dark:bg-gray-900 dark:text-white dark:placeholder-gray-500"
                       />
                     </div>
                   )}
@@ -2265,7 +2260,7 @@ export default function ProductManagement() {
                 value={stockSearch}
                 onChange={(e) => setStockSearch(e.target.value)}
                 placeholder="Search by name or SKU..."
-                className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#111111] dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:placeholder-gray-500"
                 autoFocus
               />
             </div>
@@ -2306,7 +2301,7 @@ export default function ProductManagement() {
                           key={stock.id}
                           type="button"
                           onClick={() => handleSelectStock(stock)}
-                          className="text-left rounded-xl border-2 border-gray-200 dark:border-gray-700 hover:border-blue-500 dark:hover:border-blue-400 bg-white dark:bg-gray-900 p-4 transition-all duration-200 hover:shadow-md group focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="group rounded-xl border-2 border-gray-200 bg-white p-4 text-left transition-all duration-200 hover:border-gray-900 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[#111111] dark:border-gray-700 dark:bg-gray-900 dark:hover:border-gray-300"
                         >
                           <div className="h-36 w-full rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-800 mb-3 flex items-center justify-center">
                             {thumb ? (

@@ -808,11 +808,8 @@ const SalaryChanges: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Salary Change Requests</h1>
-          <p className="mt-2 text-gray-600 dark:text-gray-400">Propose, review, and track employee salary adjustments.</p>
-        </div>
+      <div className="flex justify-end">
+        <h1 className="sr-only">Salary Change Requests</h1>
         {canManage && (
           <button
             onClick={openNewChangeModal}
@@ -1122,7 +1119,7 @@ const SalaryChanges: React.FC = () => {
                 <button
                   onClick={handleSubmitNewChange}
                   disabled={isSubmittingNewChange}
-                  className={`px-5 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-all duration-200 hover:shadow-md active:shadow-sm ${isSubmittingNewChange ? "opacity-50 cursor-not-allowed" : ""}`}
+                  className={`px-5 py-2.5 text-sm font-semibold text-white bg-black hover:bg-gray-800 rounded-lg transition-all duration-200 hover:shadow-md active:shadow-sm ${isSubmittingNewChange ? "opacity-50 cursor-not-allowed" : ""}`}
                 >
                   {isSubmittingNewChange ? "Submitting..." : "Submit Salary Change"}
                 </button>

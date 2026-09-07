@@ -486,6 +486,7 @@ export default function StaffWorkload() {
                                 </p>
                                 <div className="flex items-center gap-2">
                                     <button
+                                        aria-label="Previous page"
                                         type="button"
                                         onClick={() => goToPage(pagination.current_page - 1)}
                                         disabled={pagination.current_page <= 1 || workload.isFetching}
@@ -497,6 +498,7 @@ export default function StaffWorkload() {
                                         Page {pagination.current_page} of {pagination.last_page}
                                     </span>
                                     <button
+                                        aria-label="Next page"
                                         type="button"
                                         onClick={() => goToPage(pagination.current_page + 1)}
                                         disabled={pagination.current_page >= pagination.last_page || workload.isFetching}

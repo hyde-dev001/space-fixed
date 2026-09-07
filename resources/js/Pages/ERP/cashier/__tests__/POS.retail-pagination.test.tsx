@@ -67,9 +67,15 @@ describe('Cashier retail catalog pagination', () => {
 
     const pagination = screen.getByRole('navigation', { name: 'Retail product pagination' });
     expect(pagination).toHaveTextContent('Showing 1 to 9 of 11 products');
+    expect(within(pagination).getByText('1', { exact: true })).toHaveClass('bg-[#111111]', 'text-white');
+    expect(within(pagination).getByText('1', { exact: true })).not.toHaveClass('bg-blue-600');
     expect(within(pagination).getByRole('button', { name: 'Previous retail product page' })).toBeDisabled();
     expect(within(pagination).getByRole('button', { name: 'Next retail product page' })).toBeEnabled();
     expect(screen.queryByText('Retail Product 10', { exact: true })).not.toBeInTheDocument();
+
+    const checkoutWarning = screen.getByText('Add at least one product before checkout.', { exact: true });
+    expect(checkoutWarning).toHaveClass('bg-gray-100', 'border-gray-300', 'text-gray-700');
+    expect(checkoutWarning).not.toHaveClass('bg-amber-50', 'border-amber-200', 'text-amber-700');
 
     fireEvent.click(within(pagination).getByRole('button', { name: 'Next retail product page' }));
 

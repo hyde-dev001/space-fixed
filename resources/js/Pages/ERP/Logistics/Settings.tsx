@@ -100,7 +100,7 @@ export default function LogisticsSettings() {
   return <AppLayoutERP>
     <Head title="Logistics Settings" />
     <form onSubmit={submit} className="mx-auto w-full max-w-3xl space-y-5 p-4 sm:p-5 md:p-6">
-      <h1 className="text-2xl font-bold">Logistics Settings</h1>
+      <h1 className="sr-only">Logistics Settings</h1>
       <fieldset><legend className="font-semibold">Operating days</legend><div className="flex flex-wrap gap-3">{['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((day, index) => <label key={day}><input type="checkbox" checked={form.operating_days.includes(index + 1)} onChange={(e) => set('operating_days', e.target.checked ? [...form.operating_days, index + 1].sort() : form.operating_days.filter((value) => value !== index + 1))} /> {day}</label>)}</div></fieldset>
       <div className="grid gap-4 sm:grid-cols-2">
         {renderTimeField('cutoff_time')}

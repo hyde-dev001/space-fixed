@@ -36,7 +36,7 @@ beforeEach(() => {
     staffState.reload.mockReset();
 });
 
-it('renders the staff workload snapshot and its existing destinations', () => {
+it('renders the staff workload snapshot without CRM-only destinations', () => {
     render(<StaffDashboard />);
 
     expect(screen.getByRole('heading', { name: 'Staff Dashboard' })).toBeInTheDocument();
@@ -44,7 +44,7 @@ it('renders the staff workload snapshot and its existing destinations', () => {
     expect(screen.getByText('3')).toBeInTheDocument();
     expect(screen.getByText('ORD-1')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /open job orders/i })).toHaveAttribute('href', '/erp/staff/job-orders');
-    expect(screen.getByRole('link', { name: /view customers/i })).toHaveAttribute('href', '/erp/staff/customers');
+    expect(screen.queryByRole('link', { name: /view customers/i })).not.toBeInTheDocument();
 });
 
 it('refreshes through the Inertia dashboard prop', () => {

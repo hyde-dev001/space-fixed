@@ -265,6 +265,7 @@ final class ManagerOrderService
             ->where('shop_owner_id', $shopOwnerId)
             ->where('status', 'active')
             ->whereKeyNot($excludedStaffId)
+            ->with('roles')
             ->where(function ($query): void {
                 $query
                     ->whereRaw('UPPER(role) = ?', ['STAFF'])

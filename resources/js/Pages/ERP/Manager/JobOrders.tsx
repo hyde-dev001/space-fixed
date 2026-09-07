@@ -43,26 +43,10 @@ const statusLabel = (value: string): string => {
         .replace(/\b\w/g, (character) => character.toUpperCase());
 };
 
-const statusClasses = (value: string): string => {
-    const normalized = value.toLowerCase();
-
-    if (["completed", "delivered"].includes(normalized)) {
-        return "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300";
-    }
-
-    if (["cancelled", "refund"].includes(normalized)) {
-        return "border-gray-200 bg-gray-100 text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300";
-    }
-
-    if (normalized === "reassignment_required") {
-        return "border-red-200 bg-red-50 text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300";
-    }
-
-    return "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-300";
-};
+const statusClasses = (_value: string): string => "text-gray-900 dark:text-gray-100";
 
 const StatusBadge = ({ value }: { value: string }) => (
-    <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${statusClasses(value)}`}>
+    <span className={`inline-flex text-sm font-semibold ${statusClasses(value)}`}>
         {statusLabel(value)}
     </span>
 );
@@ -375,7 +359,7 @@ export default function JobOrders() {
 
                     <div className="space-y-3 lg:hidden">{rows.map((order) => <article key={order.id} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]"><div className="flex items-start justify-between gap-3"><div><h3 className="font-semibold text-gray-900 dark:text-white">{order.order_number}</h3><p className="mt-1 text-sm text-gray-600 dark:text-gray-400">{order.customer_name}</p></div><StatusBadge value={order.status} /></div><dl className="mt-4 grid grid-cols-2 gap-3 text-sm"><div><dt className="text-xs uppercase tracking-wide text-gray-500">Handler</dt><dd className="mt-1 text-gray-700 dark:text-gray-300">{order.assigned_staff?.name || "Unassigned"}</dd></div><div><dt className="text-xs uppercase tracking-wide text-gray-500">Age</dt><dd className={`mt-1 ${order.overdue ? "font-semibold text-red-700" : "text-gray-700 dark:text-gray-300"}`}>{formatAge(order.age_minutes)}</dd></div><div className="col-span-2"><dt className="text-xs uppercase tracking-wide text-gray-500">Next action</dt><dd className="mt-1 text-gray-700 dark:text-gray-300">{order.next_action}</dd></div></dl><div className="mt-4 flex flex-wrap items-center gap-2"><button type="button" onClick={() => setDetailOrder(order)} aria-label="View details" title="View details" className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"><Eye className="h-4 w-4" aria-hidden="true" /></button>{order.assignment_state === "reassignment_required" && <button type="button" onClick={() => openReassign(order)} className="min-h-11 rounded-lg bg-blue-700 px-3 py-2 text-sm font-semibold text-white">Reassign</button>}</div></article>)}</div>
 
-                    <div className="flex items-center justify-between gap-3"><p className="text-sm text-gray-500 dark:text-gray-400">Page {payload.current_page} of {payload.last_page}</p><div className="flex gap-2"><button type="button" disabled={payload.current_page <= 1} onClick={() => goToPage(payload.current_page - 1)} className="min-h-11 rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-300">Previous</button><button type="button" disabled={payload.current_page >= payload.last_page} onClick={() => goToPage(payload.current_page + 1)} className="min-h-11 rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-300">Next</button></div></div>
+                    <div className="flex items-center justify-between gap-3"><p className="text-sm text-gray-500 dark:text-gray-400">Page {payload.current_page} of {payload.last_page}</p><div className="flex gap-2"><button type="button" aria-label="Previous page" disabled={payload.current_page <= 1} onClick={() => goToPage(payload.current_page - 1)} className="min-h-11 rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-300">Previous</button><button type="button" aria-label="Next page" disabled={payload.current_page >= payload.last_page} onClick={() => goToPage(payload.current_page + 1)} className="min-h-11 rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-300">Next</button></div></div>
                 </section>}
             </main>
 

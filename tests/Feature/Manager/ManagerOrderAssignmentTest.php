@@ -30,6 +30,7 @@ final class ManagerOrderAssignmentTest extends TestCase
         Permission::findOrCreate('access-staff-job-orders', 'user');
         Permission::findOrCreate('access-manager-job-orders', 'user');
         Permission::findOrCreate('reassign-manager-job-orders', 'user');
+        Role::findOrCreate('Logistics Rider', 'user');
 
         $this->shop = ShopOwner::factory()->approved()->create([
             'business_type' => 'retail',
@@ -198,6 +199,49 @@ final class ManagerOrderAssignmentTest extends TestCase
             ->assertStatus(422);
 
         $this->assertSame($staffA->id, (int) $order->fresh()->assigned_staff_id);
+    }
+
+    public function test_replacement_candidates_exclude_logistics_roles_with_a_legacy_staff_value(): void
+    {
+        $manager = $this->managerWithPermissions([
+            'access-manager-job-orders',
+            'reassign-manager-job-orders',
+        ]);
+        [$currentStaff, $currentEmployee] = $this->staffWithEmployee();
+        $order = $this->assignedOrder($currentStaff);
+        $currentEmployee->update(['status' => 'inactive']);
+        [$retailStaff] = $this->staffWithEmployee();
+
+        $riderEmail = fake()->unique()->safeEmail();
+        Employee::factory()->for($this->shop)->create([
+            'email' => $riderEmail,
+            'position' => 'Logistics Rider',
+            'department' => 'Logistics Rider',
+            'status' => 'active',
+        ]);
+        $rider = User::factory()->for($this->shop)->create([
+            'email' => $riderEmail,
+            'role' => 'STAFF',
+            'status' => 'active',
+        ]);
+        $rider->assignRole('Logistics Rider');
+
+        $response = $this->actingAs($manager, 'user')
+            ->getJson("/api/manager/orders/{$order->id}/eligible-replacements");
+
+        $response->assertOk();
+        $candidateIds = collect($response->json('data'))->pluck('id')->map(fn ($id): int => (int) $id)->all();
+
+        $this->assertContains($retailStaff->id, $candidateIds);
+        $this->assertNotContains($rider->id, $candidateIds);
+
+        $this->actingAs($manager, 'user')
+            ->postJson("/api/manager/orders/{$order->id}/reassign", [
+                'replacement_staff_id' => $rider->id,
+                'reason' => 'A logistics rider must not handle a retail order.',
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('replacement_staff_id');
     }
 
     /**

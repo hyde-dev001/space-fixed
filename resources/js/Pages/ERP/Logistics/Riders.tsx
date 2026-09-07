@@ -107,8 +107,7 @@ export default function Riders() {
       <Head title="ERP Logistics Riders" />
       <div className="space-y-5 sm:space-y-6">
         <div data-testid="riders-page-intro" className="text-center xl:text-left">
-          <h1 className="text-2xl font-bold text-gray-950 dark:text-white">Riders</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400">View rider availability and delivery capacity.</p>
+          <h1 className="sr-only">Riders</h1>
         </div>
 
         <div className="flex flex-col gap-3 sm:gap-4 sm:flex-row sm:items-center sm:justify-between">

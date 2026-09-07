@@ -418,7 +418,7 @@ export default function Batches() {
 
   return <AppLayoutERP><Head title="Delivery Batches" /><main data-testid="batch-page-main" className="min-w-0 overflow-x-clip space-y-6 p-4 sm:p-6 xl:overflow-x-visible">
     <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
-      <div className="min-w-0"><h1 className="text-2xl font-bold text-gray-950 dark:text-white">Delivery Batches</h1><p className="mt-1 text-sm text-gray-500">Build, organize, and offer efficient delivery routes.</p></div>
+      <h1 className="sr-only">Delivery Batches</h1>
       <div data-testid="batch-page-header-controls" className="flex w-full min-w-0 flex-wrap items-center gap-2 xl:w-auto">
         {showModuleFilter && <select
           aria-label="Filter batches by module"

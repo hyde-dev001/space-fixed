@@ -103,52 +103,81 @@ describe('user-side navigation shell', () => {
     expect(navigationSource).toContain('fixed inset-0 z-[100]');
     expect(navigationSource).toContain('fixed right-0 top-0 z-[110]');
     expect(navigationSource).toContain('fixed left-0 top-0 z-[110]');
-    expect(navigationSource).toContain('fixed left-[min(88vw,31rem)] top-0 z-[110]');
     expect(navigationSource).toContain('bg-white/60');
     expect(navigationSource).toContain('bg-black/35');
     expect(navigationSource).toContain('backdrop-blur-2xl');
     expect(navigationSource).not.toContain('fixed right-0 top-full z-50 mt-1 w-52');
   });
 
-  it('opens Account as a click-driven glass child panel with profile actions', () => {
-    const accountLabelIndex = navigationSource.indexOf('aria-label="Account submenu"');
-    const accountPanelStart = navigationSource.lastIndexOf('<aside', accountLabelIndex);
-    const accountPanelEnd = navigationSource.indexOf('</aside>', accountPanelStart);
-    const accountPanelSource = navigationSource.slice(accountPanelStart, accountPanelEnd);
-    const accountUtilityLabelIndex = navigationSource.lastIndexOf("{isAuthenticated ? 'Account' : 'Sign in'}</button>");
-    const accountUtilityStart = navigationSource.lastIndexOf('<button', accountUtilityLabelIndex);
-    const accountUtilitySource = navigationSource.slice(accountUtilityStart, accountUtilityLabelIndex);
+  it('opens authenticated Account as an inline animated accordion with a plus control', () => {
+    const accountPanelStart = navigationSource.indexOf('id="customer-account-submenu"');
+    const utilityStart = navigationSource.indexOf('<div className="border-t border-[#cacacb] px-6 py-6 sm:px-8 dark:border-slate-700">');
+    const cartStart = navigationSource.indexOf('>Cart {effectiveCartCount > 0', utilityStart);
+    const accountTriggerStart = navigationSource.indexOf('aria-controls="customer-account-submenu"');
+    const accountTriggerEnd = navigationSource.indexOf('</button>', accountTriggerStart);
+    const accountTriggerSource = navigationSource.slice(navigationSource.lastIndexOf('<button', accountTriggerStart), accountTriggerEnd);
+    const accountPanelSource = navigationSource.slice(accountPanelStart, cartStart);
 
-    expect(accountLabelIndex).toBeGreaterThan(-1);
-    expect(accountUtilityLabelIndex).toBeGreaterThan(-1);
+    expect(accountPanelStart).toBeGreaterThan(-1);
+    expect(utilityStart).toBeGreaterThan(-1);
+    expect(cartStart).toBeGreaterThan(-1);
+    expect(accountPanelStart).toBeGreaterThan(utilityStart);
+    expect(accountPanelStart).toBeLessThan(cartStart);
+    expect(accountTriggerSource).toContain('text-left text-base font-medium');
+    expect(accountTriggerSource).not.toContain('text-lg font-semibold');
     expect(navigationSource).toContain('const [accountDrawerOpen, setAccountDrawerOpen] = useState(false);');
+    expect(navigationSource).toContain('aria-controls="customer-account-submenu"');
     expect(navigationSource).toContain('aria-expanded={accountDrawerOpen}');
-    expect(navigationSource).not.toContain('/* Dropdown Menu */');
-    expect(accountPanelSource).toContain('role="dialog"');
-    expect(accountPanelSource).toContain('aria-modal="true"');
-    expect(accountPanelSource).toContain('fixed left-[min(88vw,31rem)] top-0 z-[110]');
-    expect(accountPanelSource).toContain('bg-white/60');
-    expect(accountPanelSource).toContain('transition-[transform,opacity] duration-300 ease-out');
-    expect(accountPanelSource).not.toContain('transition-[transform,opacity,visibility]');
-    expect(accountPanelSource).toContain('accountDrawerOpen ? \'visible translate-x-0 opacity-100\' : \'invisible translate-x-full opacity-0 pointer-events-none\'');
-    expect(accountPanelSource).toContain('aria-label="Close account"');
-    expect(accountPanelSource).toContain('<div className="border-y border-white/50">');
-    expect(accountPanelSource).not.toContain('rounded-2xl border border-white/60 bg-white/30');
-    expect(accountPanelSource).not.toContain('shadow-[0_20px_45px_-32px_rgba(15,23,42,0.55)]');
+    expect(navigationSource).toContain('aria-label={`${accountDrawerOpen ? \'Collapse\' : \'Expand\'} Account`}');
+    expect(navigationSource).toContain('transition-[grid-template-rows,opacity,transform] duration-300 ease-out');
+    expect(accountPanelSource).toContain('aria-hidden={!accountDrawerOpen}');
+    expect(accountPanelSource).toContain("accountDrawerOpen ? 'grid-rows-[1fr] translate-y-0 opacity-100' : 'grid-rows-[0fr] -translate-y-1 opacity-0 pointer-events-none'");
     expect(accountPanelSource).toContain('<span>Edit Profile</span>');
     expect(accountPanelSource).toContain('<span>Join Our Team</span>');
     expect(accountPanelSource).toContain('<span>Log out</span>');
     expect(accountPanelSource).toContain("href={route('shop-owner-register')}");
-    expect(accountPanelSource).not.toContain('<span>Orders</span>');
-    expect(accountPanelSource).not.toContain('<span>Repair</span>');
-    expect(accountUtilitySource).not.toContain('setLandingSidebarOpen(false)');
-    expect(accountUtilitySource).toContain('setAccountDrawerOpen(true)');
+    expect(navigationSource).not.toContain('id="customer-account-menu"');
+    expect(navigationSource).not.toContain('absolute bottom-full left-0 right-0');
 
     const siteMenuStart = navigationSource.indexOf('aria-label="Site menu"');
     const siteMenuEnd = navigationSource.indexOf('</aside>', siteMenuStart);
     const siteMenuSource = navigationSource.slice(siteMenuStart, siteMenuEnd);
     expect(siteMenuSource).toContain('text-xl font-semibold');
     expect(siteMenuSource).not.toContain('font-black');
+    const siteNavStart = navigationSource.indexOf('<nav className="flex-1 px-6 py-7 sm:px-8">', siteMenuStart);
+    const siteNavEnd = navigationSource.indexOf('</nav>', siteNavStart);
+    const siteNavSource = navigationSource.slice(siteNavStart, siteNavEnd);
+    expect(siteNavSource).not.toContain('id="customer-account-submenu"');
+  });
+
+  it('keeps Account identifiable and makes Logout visibly interactive', () => {
+    const accountTriggerStart = navigationSource.indexOf('aria-controls="customer-account-submenu"');
+    const accountTriggerEnd = navigationSource.indexOf('</button>', accountTriggerStart);
+    const accountTriggerSource = navigationSource.slice(
+      navigationSource.lastIndexOf('<button', accountTriggerStart),
+      accountTriggerEnd,
+    );
+    const accountPanelStart = navigationSource.indexOf('id="customer-account-submenu"');
+    const logoutStart = navigationSource.indexOf('>Log out</span>', accountPanelStart);
+    const logoutSource = navigationSource.slice(
+      navigationSource.lastIndexOf('<button', logoutStart),
+      navigationSource.indexOf('</button>', logoutStart),
+    );
+
+    expect(accountTriggerSource).toContain('h-5 w-5');
+    expect(accountTriggerSource).toContain('aria-hidden="true"');
+    expect(logoutSource).toContain('hover:bg-red-50');
+    expect(logoutSource).toContain('focus-visible:ring-2');
+    expect(logoutSource).toContain('focus-visible:ring-red-500');
+  });
+
+  it('animates sidebar plus submenus and exposes their expanded state', () => {
+    expect(navigationSource).toContain('aria-controls={`sidebar-submenu-${item.dropdownKey}`}');
+    expect(navigationSource).toContain('aria-expanded={isExpanded}');
+    expect(navigationSource).toContain('transition-[grid-template-rows,opacity,transform] duration-300 ease-out');
+    expect(navigationSource).toContain('grid-rows-[1fr] translate-y-0 opacity-100');
+    expect(navigationSource).toContain('grid-rows-[0fr] -translate-y-1 opacity-0 pointer-events-none');
+    expect(navigationSource).toContain('transition-transform duration-300 ease-out motion-reduce:transition-none');
   });
 
   it('removes the desktop People control and keeps header icon spacing consistent', () => {

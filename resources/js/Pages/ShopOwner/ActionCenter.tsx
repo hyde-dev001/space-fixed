@@ -194,12 +194,9 @@ export default function ActionCenter() {
       <Head title="Approval Center - Shop Owner" />
       <main className="space-y-6" aria-labelledby="approval-center-title">
         <header>
-          <h1 id="approval-center-title" className="text-2xl font-bold text-gray-800 dark:text-white/90">
+          <h1 id="approval-center-title" className="sr-only">
             Approval Center
           </h1>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            {view === "history" ? "Review decisions you have already made." : "Approvals that currently require your decision."}
-          </p>
           <p className="mt-4 inline-flex rounded-full bg-blue-50 px-3 py-1.5 text-sm font-semibold text-blue-700 dark:bg-blue-900/30 dark:text-blue-200">
             {approvalSummary}
           </p>

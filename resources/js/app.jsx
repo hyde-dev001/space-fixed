@@ -15,6 +15,7 @@ import { CustomerPageTransition } from './components/common/CustomerPageTransiti
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 const USER_SIDE_SCROLLBAR_CLASS = 'userside-hide-scrollbar';
+const BACKOFFICE_SCROLLBAR_CLASS = 'backoffice-hide-scrollbar';
 
 const syncUserSideScrollbar = (componentName = '') => {
     const isUserSidePage = componentName.startsWith('UserSide/');
@@ -22,8 +23,15 @@ const syncUserSideScrollbar = (componentName = '') => {
     document.body.classList.toggle(USER_SIDE_SCROLLBAR_CLASS, isUserSidePage);
 };
 
+const syncBackofficeScrollbar = (componentName = '') => {
+    const isBackofficePage = componentName.startsWith('ERP/') || componentName.startsWith('ShopOwner/');
+    document.documentElement.classList.toggle(BACKOFFICE_SCROLLBAR_CLASS, isBackofficePage);
+    document.body.classList.toggle(BACKOFFICE_SCROLLBAR_CLASS, isBackofficePage);
+};
+
 const syncPagePresentation = (componentName = '') => {
     syncUserSideScrollbar(componentName);
+    syncBackofficeScrollbar(componentName);
     syncPageTheme(componentName);
 };
 

@@ -730,27 +730,45 @@ export default function UploadService() {
 
       <div className="p-6 space-y-6">
         {/* Header */}
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Upload Services</h1>
-            <p className="mt-2 text-gray-600 dark:text-gray-400">
-              {activeTab === "services"
-                ? "Manage and upload repair services for your shop"
-                : "Create and manage bundled repair packages for your shop"}
-            </p>
+        <h1 className="sr-only">Upload Services</h1>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="inline-flex w-full rounded-xl border border-gray-200 bg-white p-1 dark:border-gray-800 dark:bg-white/[0.03] md:w-auto">
+            <button
+              type="button"
+              onClick={() => setActiveTab("services")}
+              className={`flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-colors md:flex-none ${
+                activeTab === "services"
+                  ? "bg-blue-600 text-white shadow-sm"
+                  : "text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800"
+              }`}
+            >
+              Services
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("packages")}
+              className={`flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-colors md:flex-none ${
+                activeTab === "packages"
+                  ? "bg-blue-600 text-white shadow-sm"
+                  : "text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800"
+              }`}
+            >
+              Packages
+            </button>
           </div>
+
           {activeTab === "services" && (
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center justify-end gap-3">
               <button
                 type="button"
                 onClick={() => setShowArchivedServices((prev) => !prev)}
-                className={`inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${
+                className={`inline-flex h-10 items-center gap-2 rounded-lg border px-4 text-sm font-medium transition-colors ${
                   showArchivedServices
                     ? "border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100 dark:border-purple-700 dark:bg-purple-900/20 dark:text-purple-300"
                     : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
                 }`}
               >
-                {showArchivedServices ? <ArchiveRestoreIcon className="w-5 h-5" /> : <ArchiveBoxIcon className="w-5 h-5" />}
+                {showArchivedServices ? <ArchiveRestoreIcon className="size-4" /> : <ArchiveBoxIcon className="size-4" />}
                 {showArchivedServices ? "Show Active" : "Show Archived"}
               </button>
 
@@ -760,39 +778,14 @@ export default function UploadService() {
                     resetForm();
                     setIsAddModalOpen(true);
                   }}
-                  className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+                  className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#111111] bg-[#111111] px-4 text-sm font-medium text-white shadow-sm transition-colors hover:bg-gray-800"
                 >
-                  <PlusIcon className="w-5 h-5" />
+                  <PlusIcon className="size-4" />
                   Add Service
                 </button>
               )}
             </div>
           )}
-        </div>
-
-        <div className="inline-flex w-full rounded-xl border border-gray-200 bg-white p-1 dark:border-gray-800 dark:bg-white/[0.03] md:w-auto">
-          <button
-            type="button"
-            onClick={() => setActiveTab("services")}
-            className={`flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-colors md:flex-none ${
-              activeTab === "services"
-                ? "bg-blue-600 text-white shadow-sm"
-                : "text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800"
-            }`}
-          >
-            Services
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab("packages")}
-            className={`flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-colors md:flex-none ${
-              activeTab === "packages"
-                ? "bg-blue-600 text-white shadow-sm"
-                : "text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800"
-            }`}
-          >
-            Packages
-          </button>
         </div>
 
         {activeTab === "services" ? (
@@ -921,7 +914,7 @@ export default function UploadService() {
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400">
+                        <span className="font-medium text-gray-900 dark:text-white">
                           {service.category}
                         </span>
                       </td>

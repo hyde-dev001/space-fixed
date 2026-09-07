@@ -32,26 +32,10 @@ const statusLabel = (value: string): string => value
   ? value.replace(/[_-]+/g, " ").replace(/\b\w/g, (character) => character.toUpperCase())
   : "Unknown";
 
-const statusClasses = (value: string): string => {
-  const normalized = value.toLowerCase();
-
-  if (["completed", "delivered"].includes(normalized)) {
-    return "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300";
-  }
-
-  if (["cancelled", "refund"].includes(normalized)) {
-    return "border-gray-200 bg-gray-100 text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300";
-  }
-
-  if (["reassignment_required", "failed"].includes(normalized)) {
-    return "border-red-200 bg-red-50 text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300";
-  }
-
-  return "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-300";
-};
+const statusClasses = (_value: string): string => "text-gray-900 dark:text-gray-100";
 
 const StatusBadge = ({ value }: { value: string }) => (
-  <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${statusClasses(value)}`}>
+  <span className={`inline-flex text-sm font-semibold ${statusClasses(value)}`}>
     {statusLabel(value)}
   </span>
 );
@@ -199,11 +183,7 @@ export default function JobOrders() {
 
       <main className="space-y-6 py-6 md:py-8" aria-labelledby="owner-job-orders-title">
         <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600 dark:text-blue-400">Operations</p>
-            <h1 id="owner-job-orders-title" className="mt-2 text-3xl font-bold tracking-tight text-gray-900 dark:text-white">Job Orders</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-600 dark:text-gray-400">Monitor the shop-wide order workload. A claimed order remains locked to its handler until an inactive or unavailable handler is formally replaced.</p>
-          </div>
+          <h1 id="owner-job-orders-title" className="sr-only">Job Orders</h1>
           <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
             <p className="font-semibold text-gray-900 dark:text-white">{payload?.total ?? 0} orders in view</p>
             <p className="mt-1 text-gray-500 dark:text-gray-400">Last updated: {formatDateTime(orders.data?.last_updated_at)}</p>
@@ -277,7 +257,7 @@ export default function JobOrders() {
               </table>
             </div>
             <div className="space-y-3 p-4 lg:hidden">{rows.map((order) => <article key={order.id} className="rounded-2xl border border-gray-200 p-4 dark:border-gray-800"><div className="flex items-start justify-between gap-3"><div><h3 className="font-semibold text-gray-900 dark:text-white">{order.order_number}</h3><p className="mt-1 text-sm text-gray-600 dark:text-gray-400">{order.customer_name}</p></div><StatusBadge value={order.status} /></div><dl className="mt-4 grid grid-cols-2 gap-3 text-sm"><div><dt className="text-xs uppercase tracking-wide text-gray-500">Handler</dt><dd className="mt-1 text-gray-700 dark:text-gray-300">{order.assigned_staff?.name || "Unassigned"}</dd></div><div><dt className="text-xs uppercase tracking-wide text-gray-500">Age</dt><dd className={`mt-1 ${order.overdue ? "font-semibold text-red-700" : "text-gray-700 dark:text-gray-300"}`}>{formatAge(order.age_minutes)}</dd></div><div className="col-span-2"><dt className="text-xs uppercase tracking-wide text-gray-500">Next action</dt><dd className="mt-1 text-gray-700 dark:text-gray-300">{order.next_action}</dd></div></dl><button type="button" onClick={() => setDetailOrder(order)} className="mt-4 min-h-11 rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">View details</button></article>)}</div>
-            <div className="flex items-center justify-between gap-3 border-t border-gray-200 px-5 py-4 dark:border-gray-800"><p className="text-sm text-gray-500 dark:text-gray-400">Showing {payload.from ?? 0}–{payload.to ?? 0} of {payload.total}</p><div className="flex gap-2"><button type="button" disabled={payload.current_page <= 1} onClick={() => goToPage(payload.current_page - 1)} className="min-h-11 rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-300">Previous</button><button type="button" disabled={payload.current_page >= payload.last_page} onClick={() => goToPage(payload.current_page + 1)} className="min-h-11 rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-300">Next</button></div></div>
+            <div className="flex items-center justify-between gap-3 border-t border-gray-200 px-5 py-4 dark:border-gray-800"><p className="text-sm text-gray-500 dark:text-gray-400">Showing {payload.from ?? 0}–{payload.to ?? 0} of {payload.total}</p><div className="flex gap-2"><button type="button" aria-label="Previous page" disabled={payload.current_page <= 1} onClick={() => goToPage(payload.current_page - 1)} className="min-h-11 rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-300">Previous</button><button type="button" aria-label="Next page" disabled={payload.current_page >= payload.last_page} onClick={() => goToPage(payload.current_page + 1)} className="min-h-11 rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-300">Next</button></div></div>
           </section>
         )}
       </main>

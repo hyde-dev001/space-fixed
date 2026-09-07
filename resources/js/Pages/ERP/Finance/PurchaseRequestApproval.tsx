@@ -459,13 +459,7 @@ export default function PurchaseRequestApproval({ onModalStateChange, requests: 
 			{isAnyModalOpen && <div className="fixed inset-0 z-40" />}
 
 			<div className="p-6 space-y-6">
-				<div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-					<div>
-						<h1 className="text-2xl font-semibold mb-1">Purchase Request Approval</h1>
-						<p className="text-gray-600 dark:text-gray-400">Review Procurement purchase requests and approve budget before purchasing</p>
-					</div>
-					<span className="px-3 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200 w-fit">Finance Review</span>
-				</div>
+				<h1 className="sr-only">Purchase Request Approval</h1>
 
 				<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
 					<MetricCard title="Total Requests" value={totalRequests} description="All PR submissions" icon={ClipboardIcon} color="info" />

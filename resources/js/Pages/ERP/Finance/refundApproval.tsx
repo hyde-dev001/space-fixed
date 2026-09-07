@@ -1342,20 +1342,7 @@ export default function RefundApproval() {
 		<>
 			<Head title="Refund Approvals - Solespace ERP" />
 			<div className="p-6 space-y-6">
-				<div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-					<div>
-						<h1 className="text-2xl font-semibold mb-1 text-gray-900 dark:text-white">Refund Approvals</h1>
-						<p className="text-gray-600 dark:text-gray-400">Review and approve refund requests from customers</p>
-					</div>
-					<div className="flex flex-wrap items-center justify-end gap-3">
-						<span className="px-3 py-1 text-xs font-semibold rounded-full bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200">
-							Finance Only
-						</span>
-						<span className="px-3 py-1 text-xs font-semibold rounded-full bg-purple-50 text-purple-700 dark:bg-purple-900/40 dark:text-purple-200">
-							Approval Required
-						</span>
-					</div>
-				</div>
+				<h1 className="sr-only">Refund Approvals</h1>
 
 				<div className="grid grid-cols-1 md:grid-cols-4 gap-6">
 					<MetricCard
@@ -1390,7 +1377,7 @@ export default function RefundApproval() {
 
 				<section
 					aria-labelledby="delivery-fee-adjustments-heading"
-					className="bg-white dark:bg-gray-900 border border-amber-200 dark:border-amber-900/60 rounded-2xl p-6 shadow-sm"
+					className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900"
 				>
 					<div className="mb-4">
 						<h2 id="delivery-fee-adjustments-heading" className="text-lg font-semibold text-gray-900 dark:text-white">

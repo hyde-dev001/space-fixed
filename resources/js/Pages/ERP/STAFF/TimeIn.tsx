@@ -62,6 +62,15 @@ interface AttendanceRecord {
     autoClockoutReason?: string;
 }
 
+interface ShopHours {
+    open: string;
+    close: string;
+    is_open?: boolean;
+    day?: string;
+    geofence_enabled?: boolean;
+    geofence_radius?: number;
+}
+
 const normalizeAttendanceStatus = (status?: string | null, hasCheckOut?: boolean) => {
     if (!status) {
         return hasCheckOut ? 'Completed' : 'In Progress';
@@ -97,7 +106,7 @@ const getAttendanceStatusBadgeClass = (status: string) => {
         case 'Absent':
             return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
         case 'Late':
-            return 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400';
+            return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
         case 'Half Day':
             return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400';
         default:
@@ -158,6 +167,25 @@ const extractTimeParts = (timeValue?: string | null): { hour: number; minute: nu
     return { hour, minute, second };
 };
 
+export const isClockInAllowedAtTime = (now: Date, shopHours: ShopHours | null): boolean => {
+    if (!shopHours || shopHours.is_open === false) return false;
+
+    const open = extractTimeParts(shopHours.open);
+    const close = extractTimeParts(shopHours.close);
+    if (!open || !close) return false;
+
+    const currentSeconds = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+    const openSeconds = open.hour * 3600 + open.minute * 60 + open.second;
+    const closeSeconds = close.hour * 3600 + close.minute * 60 + close.second;
+    const earliestCheckIn = openSeconds - 30 * 60;
+
+    if (closeSeconds < openSeconds) {
+        return currentSeconds >= earliestCheckIn || currentSeconds <= closeSeconds;
+    }
+
+    return currentSeconds >= earliestCheckIn && currentSeconds <= closeSeconds;
+};
+
 const parseAttendanceTimeToDate = (timeValue?: string | null): Date | null => {
     const parts = extractTimeParts(timeValue);
     if (!parts) return null;
@@ -196,7 +224,7 @@ export default function TimeIn() {
     const [overtimeHours, setOvertimeHours] = useState('');
     const [overtimeReason, setOvertimeReason] = useState('');
     const [overtimeCustomReason, setOvertimeCustomReason] = useState('');
-    const [shopHours, setShopHours] = useState<{open: string; close: string; is_open?: boolean; day?: string; geofence_enabled?: boolean; geofence_radius?: number} | null>(null);
+    const [shopHours, setShopHours] = useState<ShopHours | null>(null);
     const [latenessStats, setLatenessStats] = useState<any>(null);
     const [todayOvertimeRequests, setTodayOvertimeRequests] = useState<any[]>([]);
     const [activeOvertimeId, setActiveOvertimeId] = useState<number | null>(null);
@@ -593,7 +621,7 @@ export default function TimeIn() {
 
     const handleClockIn = async () => {
         // Check if shop is open
-        if (!shopHours || !shopHours.open || !shopHours.close) {
+        if (!shopHours || shopHours.is_open === false || !shopHours.open || !shopHours.close) {
             await Swal.fire({
                 icon: 'error',
                 title: 'Shop Closed',
@@ -603,22 +631,9 @@ export default function TimeIn() {
             return;
         }
 
-        // Parse shop hours and current time
         const now = getPHTime();
-        const currentMinutes = now.getHours() * 60 + now.getMinutes();
 
-        // Parse shop open/close times (format: "HH:MM:SS" or "HH:MM")
-        const [openHour, openMinute] = shopHours.open.split(':').map(Number);
-        const [closeHour, closeMinute] = shopHours.close.split(':').map(Number);
-        const shopOpenTime = openHour * 60 + openMinute;
-        const shopCloseTime = closeHour * 60 + closeMinute;
-
-        // Allow check-in 30 minutes before opening (grace period)
-        const gracePeriod = 30;
-        const earliestCheckIn = shopOpenTime - gracePeriod;
-
-        // Check if current time is before allowed time or after closing
-        if (currentMinutes < earliestCheckIn || currentMinutes > shopCloseTime) {
+        if (!isClockInAllowedAtTime(now, shopHours)) {
             const openTimeDisplay = formatTimeFromString(shopHours.open);
             const closeTimeDisplay = formatTimeFromString(shopHours.close);
             
@@ -978,7 +993,7 @@ export default function TimeIn() {
                 icon: 'warning',
                 title: 'Incomplete Form',
                 text: 'Please complete all required fields.',
-                confirmButtonColor: '#2563eb'
+                confirmButtonColor: '#111111'
             });
             return;
         }
@@ -988,7 +1003,7 @@ export default function TimeIn() {
                 icon: 'warning',
                 title: 'Invalid Date Range',
                 text: 'End date must be the same as or after start date.',
-                confirmButtonColor: '#2563eb'
+                confirmButtonColor: '#111111'
             });
             return;
         }
@@ -1017,7 +1032,7 @@ export default function TimeIn() {
             </div>`,
             icon: 'question',
             showCancelButton: true,
-            confirmButtonColor: '#2563eb',
+            confirmButtonColor: '#111111',
             cancelButtonColor: '#6b7280',
             confirmButtonText: 'Yes, submit it!',
             cancelButtonText: 'Cancel'
@@ -1060,7 +1075,7 @@ export default function TimeIn() {
                                 <p class="text-sm text-gray-600">Available: <strong>${responseData.available_balance ?? '0'} day(s)</strong></p>
                                 <p class="text-sm text-gray-600">Requested: <strong>${responseData.requested_days ?? dayCount} day(s)</strong></p>
                             </div>`,
-                            confirmButtonColor: '#2563eb'
+                            confirmButtonColor: '#111111'
                         });
                         return;
                     }
@@ -1078,7 +1093,7 @@ export default function TimeIn() {
                     icon: 'success',
                     title: 'Request Submitted!',
                     html: '<p>Your leave request has been submitted successfully and is now under review by the Human Resources department.</p><p class="text-sm text-gray-600 mt-2">You will be notified once your request has been processed.</p>',
-                    confirmButtonColor: '#2563eb',
+                    confirmButtonColor: '#111111',
                     timer: 3000
                 });
             } catch (error: any) {
@@ -1087,7 +1102,7 @@ export default function TimeIn() {
                     icon: 'error',
                     title: 'Submission Failed',
                     text: error.message || 'An error occurred while submitting your leave request. Please try again.',
-                    confirmButtonColor: '#2563eb'
+                    confirmButtonColor: '#111111'
                 });
             } finally {
                 setIsLoading(false);
@@ -1161,6 +1176,9 @@ export default function TimeIn() {
         || String(todayAttendance?.status ?? '').toLowerCase() === 'late'
         || todayMinutesLate > 0;
     const isOnApprovedLeaveToday = Boolean(todayAttendance?.on_leave_today);
+    const isShopClosed = shopHours?.is_open === false;
+    const isOutsideShopHours = !isClockInAllowedAtTime(currentTime, shopHours);
+    const isClockInDisabled = isClockedIn || isLoading || isOnApprovedLeaveToday || isOutsideShopHours;
     const attendanceRecordsPerPage = 10;
     const attendanceStatusOptions = ['all', ...Array.from(new Set(attendanceRecords.map((record) => record.status)))];
     const normalizedAttendanceSearchQuery = attendanceSearchQuery.trim().toLowerCase();
@@ -1270,48 +1288,7 @@ export default function TimeIn() {
             <div data-testid="time-in-page" className="min-h-screen overflow-x-hidden text-gray-900 dark:text-white">
                 {!showOvertimeModal && !showLeaveModal ? (
                 <>
-                {/* Header Section */}
-                <div className="mb-6 sm:mb-8">
-                    <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
-                        <div className="flex min-w-0 items-start gap-3">
-                            <div className="shrink-0 rounded-full bg-gray-100 p-2.5 text-gray-900 dark:bg-gray-800 dark:text-white">
-                                <ClockIcon />
-                            </div>
-                            <div className="min-w-0">
-                                <h1 className="text-xl font-semibold leading-tight tracking-tight text-gray-900 dark:text-white sm:text-2xl">
-                                    Attendance Tracking
-                                </h1>
-                                <p className="mt-1 text-sm leading-6 text-gray-500 dark:text-gray-400 sm:text-base">
-                                    Manage your daily work hours efficiently
-                                </p>
-                            </div>
-                        </div>
-                        <div className="grid w-full grid-cols-2 gap-2 xl:w-auto xl:min-w-[280px]">
-                            <button
-                                onClick={handleOvertimeClick}
-                                disabled={isOnApprovedLeaveToday || todayOvertimeRequests.some(ot => ['pending', 'approved', 'assigned'].includes(ot.status))}
-                                className="flex min-h-12 w-full items-center justify-center gap-2 rounded-full bg-gray-100 px-3 py-3 text-sm font-semibold text-gray-900 transition-colors hover:bg-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-800 dark:text-white dark:hover:bg-gray-700"
-                                title={
-                                    isOnApprovedLeaveToday
-                                        ? 'Overtime requests are disabled while on approved leave'
-                                        : todayOvertimeRequests.some(ot => ['pending', 'approved', 'assigned'].includes(ot.status))
-                                        ? 'You already have an active overtime request today'
-                                        : 'Request overtime'
-                                }
-                            >
-                                <OvertimeIcon />
-                                Overtime
-                            </button>
-                            <button
-                                onClick={handleRequestLeaveClick}
-                                className="flex min-h-12 w-full items-center justify-center gap-2 rounded-full bg-gray-100 px-3 py-3 text-sm font-semibold text-gray-900 transition-colors hover:bg-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 dark:bg-gray-800 dark:text-white dark:hover:bg-gray-700"
-                            >
-                                <LeaveIcon />
-                                Request Leave
-                            </button>
-                        </div>
-                    </div>
-                </div>
+                <h1 className="sr-only">Attendance Tracking</h1>
 
                 <div data-testid="attendance-dashboard" className="mb-8 grid gap-4 xl:mb-12 xl:grid-cols-5 xl:items-stretch xl:gap-6">
                 {/* Main Clock Section */}
@@ -1385,9 +1362,12 @@ export default function TimeIn() {
                                 <div className="grid w-full grid-cols-1 gap-2.5 min-[420px]:grid-cols-2">
                                     <button
                                         onClick={handleClockIn}
-                                        disabled={isClockedIn || isLoading || isOnApprovedLeaveToday}
+                                        disabled={isClockInDisabled}
+                                        title={isClockInDisabled && (isShopClosed || isOutsideShopHours)
+                                            ? 'Clock in is disabled outside shop hours'
+                                            : undefined}
                                         className={`min-h-12 w-full rounded-full px-6 py-3 text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 ${
-                                            isClockedIn || isLoading || isOnApprovedLeaveToday
+                                            isClockInDisabled
                                                 ? 'cursor-not-allowed bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-600'
                                                 : 'bg-[#111111] text-white hover:bg-black'
                                         }`}
@@ -1628,7 +1608,7 @@ export default function TimeIn() {
                 )}
 
                 {/* Attendance Records */}
-                <div className="min-w-0 overflow-hidden rounded-3xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900/50">
+                <div data-testid="attendance-history-card" className="min-w-0 overflow-hidden rounded-3xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900/50">
                     <div className="border-b border-gray-200 p-4 dark:border-gray-800 sm:p-6">
                         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
                             <h2 className="flex items-center gap-3 text-xl font-semibold tracking-tight text-gray-900 dark:text-white sm:text-2xl">
@@ -1638,27 +1618,58 @@ export default function TimeIn() {
                                 Attendance History
                             </h2>
 
-                            <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 xl:flex xl:w-auto">
-                                <input
-                                    type="text"
-                                    value={attendanceSearchQuery}
-                                    onChange={(e) => setAttendanceSearchQuery(e.target.value)}
-                                    placeholder="Search date, time, hours, status..."
-                                    className="min-h-12 w-full rounded-full border border-gray-300 bg-white px-4 py-2 text-sm text-gray-900 transition-colors focus:border-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900/20 dark:border-gray-700 dark:bg-gray-800 dark:text-white xl:w-72"
-                                />
-                                <select
-                                    value={attendanceStatusFilter}
-                                    onChange={(e) => setAttendanceStatusFilter(e.target.value)}
-                                    aria-label="Filter attendance history by status"
-                                    title="Filter attendance history by status"
-                                    className="min-h-12 w-full rounded-full border border-gray-300 bg-white px-4 py-2 text-sm text-gray-900 transition-colors focus:border-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900/20 dark:border-gray-700 dark:bg-gray-800 dark:text-white xl:w-auto"
-                                >
-                                    {attendanceStatusOptions.map((statusOption) => (
-                                        <option key={statusOption} value={statusOption}>
-                                            {statusOption === 'all' ? 'All Statuses' : statusOption}
-                                        </option>
-                                    ))}
-                                </select>
+                            <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+                                <div data-testid="attendance-actions" className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto xl:justify-end">
+                                    <button
+                                        onClick={handleOvertimeClick}
+                                        disabled={isOnApprovedLeaveToday || todayOvertimeRequests.some(ot => ['pending', 'approved', 'assigned'].includes(ot.status))}
+                                        className="flex min-h-10 w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-full bg-gray-100 px-3 py-1.5 text-xs font-semibold text-gray-900 transition-colors hover:bg-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-800 dark:text-white dark:hover:bg-gray-700 sm:w-auto"
+                                        title={
+                                            isOnApprovedLeaveToday
+                                                ? 'Overtime requests are disabled while on approved leave'
+                                                : todayOvertimeRequests.some(ot => ['pending', 'approved', 'assigned'].includes(ot.status))
+                                                ? 'You already have an active overtime request today'
+                                                : 'Request overtime'
+                                        }
+                                    >
+                                        <OvertimeIcon />
+                                        Overtime
+                                    </button>
+                                    <button
+                                        onClick={handleRequestLeaveClick}
+                                        className="flex min-h-10 w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-full bg-gray-100 px-3 py-1.5 text-xs font-semibold text-gray-900 transition-colors hover:bg-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 dark:bg-gray-800 dark:text-white dark:hover:bg-gray-700 sm:w-auto"
+                                    >
+                                        <LeaveIcon />
+                                        Request Leave
+                                    </button>
+                                </div>
+
+                                <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 xl:flex xl:w-auto">
+                                    <input
+                                        type="text"
+                                        value={attendanceSearchQuery}
+                                        onChange={(e) => setAttendanceSearchQuery(e.target.value)}
+                                        placeholder="Search date, time, hours, status..."
+                                        className="min-h-12 w-full rounded-full border border-gray-300 bg-white px-4 py-2 text-sm text-gray-900 transition-colors focus:border-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900/20 dark:border-gray-700 dark:bg-gray-800 dark:text-white xl:w-72"
+                                    />
+                                    <select
+                                        value={attendanceStatusFilter}
+                                        onChange={(e) => setAttendanceStatusFilter(e.target.value)}
+                                        aria-label="Filter attendance history by status"
+                                        title="Filter attendance history by status"
+                                        className={`min-h-12 w-full rounded-full px-4 py-2 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-[#111111] focus:ring-offset-2 xl:w-auto ${
+                                            attendanceStatusFilter === 'all'
+                                                ? 'border border-gray-300 bg-white text-gray-900 hover:bg-gray-100 focus:border-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:hover:bg-gray-800'
+                                                : 'border border-[#111111] bg-[#111111] text-white hover:bg-gray-200 hover:text-gray-900 focus:border-[#111111] dark:border-white dark:bg-black dark:text-white dark:hover:bg-gray-700 dark:hover:text-white'
+                                        }`}
+                                    >
+                                        {attendanceStatusOptions.map((statusOption) => (
+                                            <option key={statusOption} value={statusOption} className="bg-white text-gray-900 checked:bg-[#111111] checked:text-white hover:bg-gray-100">
+                                                {statusOption === 'all' ? 'All Statuses' : statusOption}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1787,7 +1798,7 @@ export default function TimeIn() {
                             <p className="min-w-0 break-words text-sm text-gray-600 dark:text-gray-400">
                                 Showing {attendanceStartIndex + 1} to {Math.min(attendanceEndIndex, filteredAttendanceRecords.length)} of {filteredAttendanceRecords.length} records
                             </p>
-                            <div className="flex flex-wrap items-center gap-2">
+                            <div data-pagination="attendance" className="flex flex-wrap items-center gap-2">
                                 <button
                                     type="button"
                                     onClick={() => setAttendanceCurrentPage((prev) => Math.max(prev - 1, 1))}
@@ -1802,6 +1813,7 @@ export default function TimeIn() {
                                         key={page}
                                         type="button"
                                         onClick={() => setAttendanceCurrentPage(page)}
+                                        aria-current={attendanceCurrentPage === page ? 'page' : undefined}
                                         className={`min-h-11 min-w-11 rounded-full px-3 py-1.5 text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 ${
                                             attendanceCurrentPage === page
                                                 ? 'bg-[#111111] text-white'
@@ -1830,11 +1842,16 @@ export default function TimeIn() {
                 {/* Leave Request Modal */}
                 {showLeaveModal && (
                     <div className="fixed inset-0 z-[999999] flex items-start justify-center overflow-y-auto bg-black/60 p-3 backdrop-blur-sm sm:items-center sm:p-4">
-                        <div className="my-3 max-h-[calc(100dvh-1.5rem)] w-full max-w-4xl overflow-y-auto rounded-3xl border border-gray-200 bg-white p-4 shadow-2xl dark:border-gray-800 dark:bg-gray-900 sm:my-4 sm:max-h-[calc(100dvh-2rem)] sm:p-6 md:p-8 xl:p-10">
+                        <div
+                            role="dialog"
+                            aria-modal="true"
+                            aria-labelledby="leave-request-title"
+                            className="my-3 max-h-[calc(100dvh-1.5rem)] w-full max-w-4xl overflow-y-auto rounded-3xl border border-gray-200 bg-white p-4 shadow-2xl dark:border-gray-800 dark:bg-gray-900 sm:my-4 sm:max-h-[calc(100dvh-2rem)] sm:p-6 md:p-8 xl:p-10"
+                        >
                             <div className="mb-6 flex items-start justify-between gap-4">
                                 <div>
-                                <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-                                    <div className="p-2 rounded-lg bg-gray-100 text-gray-900 dark:bg-blue-900/30">
+                                <h2 id="leave-request-title" className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
+                                    <div className="p-2 rounded-lg bg-gray-100 text-gray-900 dark:bg-gray-800">
                                         <LeaveIcon />
                                     </div>
                                     Request Leave
@@ -1847,7 +1864,7 @@ export default function TimeIn() {
                                     onClick={() => setShowLeaveModal(false)}
                                     title="Close leave request modal"
                                     aria-label="Close leave request modal"
-                                    className="min-h-11 min-w-11 shrink-0 rounded-lg p-2 transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:hover:bg-gray-800"
+                                    className="min-h-11 min-w-11 shrink-0 rounded-lg p-2 transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 dark:hover:bg-gray-800"
                                 >
                                     <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -1861,7 +1878,7 @@ export default function TimeIn() {
                                         <button
                                             type="button"
                                             onClick={() => setLeaveCalendarMonth(new Date(leaveCalendarYear, leaveCalendarMonthIndex - 1, 1))}
-                                            className="h-11 w-11 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+                                            className="h-11 w-11 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
                                             aria-label="Previous month"
                                             title="Previous month"
                                         >
@@ -1871,7 +1888,7 @@ export default function TimeIn() {
                                         <button
                                             type="button"
                                             onClick={() => setLeaveCalendarMonth(new Date(leaveCalendarYear, leaveCalendarMonthIndex + 1, 1))}
-                                            className="h-11 w-11 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+                                            className="h-11 w-11 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
                                             aria-label="Next month"
                                             title="Next month"
                                         >
@@ -1915,11 +1932,11 @@ export default function TimeIn() {
                                                             ? 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 border border-gray-200 dark:border-gray-700 cursor-not-allowed opacity-70'
                                                             :
                                                         isStart || isEnd
-                                                            ? 'bg-blue-600 text-white shadow-md'
+                                                            ? 'bg-[#111111] text-white shadow-md'
                                                             : isInRange
-                                                            ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
-                                                            : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-900/20 border border-gray-200 dark:border-gray-700'
-                                                    } ${isToday && !(isStart || isEnd) ? 'ring-2 ring-blue-400' : ''}`}
+                                                            ? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100'
+                                                            : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700'
+                                                    } ${isToday && !(isStart || isEnd) ? 'ring-2 ring-gray-900 dark:ring-gray-300' : ''}`}
                                                     title={isPastDate ? `${cellDateValue} (past date)` : `Select ${cellDateValue}`}
                                                     aria-label={isPastDate ? `${cellDateValue} is disabled` : `Select ${cellDateValue}`}
                                                 >
@@ -1931,15 +1948,15 @@ export default function TimeIn() {
 
                                     <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-gray-600 dark:text-gray-400">
                                         <span className="inline-flex items-center gap-1">
-                                            <span className="h-3 w-3 rounded bg-blue-600" /> Start/End
+                                            <span className="h-3 w-3 rounded bg-[#111111]" /> Start/End
                                         </span>
                                         <span className="inline-flex items-center gap-1">
-                                            <span className="h-3 w-3 rounded bg-blue-100 dark:bg-blue-900/30" /> In Range
+                                            <span className="h-3 w-3 rounded bg-gray-200 dark:bg-gray-700" /> In Range
                                         </span>
                                         <button
                                             type="button"
                                             onClick={() => setLeaveEndDate('')}
-                                            className="min-h-11 ml-auto text-left font-semibold text-blue-600 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:text-blue-400"
+                                            className="min-h-11 ml-auto text-left font-semibold text-gray-900 hover:text-black hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 dark:text-white"
                                         >
                                             Clear End Date
                                         </button>
@@ -1947,9 +1964,9 @@ export default function TimeIn() {
                                 </div>
 
                                 <div className="space-y-4 xl:col-span-2">
-                                    <div className="rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50/70 dark:bg-blue-900/20 p-4">
-                                        <p className="text-sm font-semibold text-blue-700 dark:text-blue-300">Request Summary</p>
-                                        <p className="mt-1 text-sm text-blue-700/90 dark:text-blue-200">
+                                    <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 p-4">
+                                        <p className="text-sm font-semibold text-gray-900 dark:text-white">Request Summary</p>
+                                        <p className="mt-1 text-sm text-gray-700 dark:text-gray-200">
                                             {leavePreviewStartDate && leavePreviewEndDate && !leaveRangeIsInvalid
                                                 ? leaveRequestType === 'single'
                                                     ? `${new Date(`${leavePreviewStartDate}T00:00:00`).toLocaleDateString('en-US', {
@@ -1979,7 +1996,7 @@ export default function TimeIn() {
                                             onChange={(e) => setLeaveReason(e.target.value)}
                                             placeholder="Briefly explain your leave request..."
                                             rows={8}
-                                            className="min-h-11 w-full resize-none rounded-xl border border-gray-300 bg-white px-4 py-3 text-gray-900 transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                                            className="min-h-11 w-full resize-none rounded-xl border border-gray-300 bg-white px-4 py-3 text-gray-900 transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
                                         />
                                     </div>
 
@@ -1987,7 +2004,7 @@ export default function TimeIn() {
                                         <button
                                             onClick={() => setShowLeaveModal(false)}
                                             disabled={isLoading}
-                                            className="min-h-11 flex-1 rounded-xl bg-gray-100 px-5 py-2.5 text-sm font-semibold text-gray-700 transition-all duration-300 hover:bg-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+                                            className="min-h-11 flex-1 rounded-xl bg-gray-100 px-5 py-2.5 text-sm font-semibold text-gray-700 transition-all duration-300 hover:bg-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
                                         >
                                             Cancel
                                         </button>
@@ -2000,7 +2017,7 @@ export default function TimeIn() {
                                                 !leavePreviewEndDate ||
                                                 leaveRangeIsInvalid
                                             }
-                                            className="min-h-11 flex-1 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg transition-all duration-300 hover:bg-blue-700 hover:shadow-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50"
+                                            className="min-h-11 flex-1 rounded-xl bg-[#111111] px-5 py-2.5 text-sm font-semibold text-white shadow-lg transition-all duration-300 hover:bg-black hover:shadow-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50"
                                         >
                                             {isLoading ? 'Submitting...' : 'Submit Request'}
                                         </button>

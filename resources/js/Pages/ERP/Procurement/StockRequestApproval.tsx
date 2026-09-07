@@ -480,12 +480,7 @@ export default function StockRequest() {
 			{isAnyModalOpen && <div className="fixed inset-0 z-40" />}
 
 			<div className="p-6 space-y-6">
-				<div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-					<div>
-						<h1 className="text-2xl font-semibold mb-1">Stock Replenishment Approval</h1>
-						<p className="text-gray-600 dark:text-gray-400">Review Inventory replenishment requests and decide next sourcing action</p>
-					</div>
-				</div>
+				<h1 className="sr-only">Stock Replenishment Approval</h1>
 
 				<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
 					<MetricCard title="Total Requests" value={metrics.total} description="All stock requests received" icon={ClipboardIcon} color="info" />

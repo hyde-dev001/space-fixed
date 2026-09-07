@@ -2351,15 +2351,8 @@ export const EmployeeManagement: React.FC<{
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <div className="w-full">
-        <div className="flex justify-between items-start mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Employee Management</h1>
-            <p className="text-gray-600 dark:text-gray-400">
-              {ownerReadOnly
-                ? 'Review your shop workforce and add employees without changing account permissions.'
-                : 'Manage employee accounts, access, and lifecycle'}
-            </p>
-          </div>
+        <div className="flex justify-end mb-8">
+          <h1 className="sr-only">Employee Management</h1>
           {(!ownerReadOnly || ownerCanCreate) && (
           <div className="flex gap-3">
             <button
@@ -2932,12 +2925,12 @@ export const EmployeeManagement: React.FC<{
                     />
                   </div>
 
-                  {!ownerMode && <div className="mb-6 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                  {!ownerMode && <div className="mb-6 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
                     <div className="flex items-start gap-2">
-                      <InfoIcon className="h-5 w-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+                      <InfoIcon className="h-5 w-5 text-gray-500 dark:text-gray-400 flex-shrink-0 mt-0.5" />
                       <div>
-                        <p className="text-sm font-semibold text-blue-900 dark:text-blue-300 mb-1">Approval Process</p>
-                        <p className="text-sm text-blue-700 dark:text-blue-400">
+                        <p className="text-sm font-semibold text-gray-900 dark:text-white mb-1">Approval Process</p>
+                        <p className="text-sm text-gray-700 dark:text-gray-300">
                           This request will be sent to the Manager for initial review. If approved by the Manager, 
                           it will then be forwarded to the Shop Owner for final approval. The employee's account 
                           will only be suspended after receiving both approvals.
@@ -3028,9 +3021,9 @@ export const EmployeeManagement: React.FC<{
                     />
                   </div>
 
-                  <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-900/60 dark:bg-red-900/20">
-                    <p className="text-sm font-semibold text-red-900 dark:text-red-300">What happens after approval</p>
-                    <p className="text-sm text-red-800 dark:text-red-200 mt-1">
+                  <div className="mb-6 rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800/50">
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white">What happens after approval</p>
+                    <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">
                       The employment period is closed, the account is disabled, and the termination remains in employment history. Reopening later requires Request Rehire.
                     </p>
                   </div>
@@ -3237,9 +3230,9 @@ export const EmployeeManagement: React.FC<{
                     />
                   </div>
 
-                  <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-900/60 dark:bg-blue-900/20">
-                    <p className="text-sm font-semibold text-blue-900 dark:text-blue-300">Approval Process</p>
-                    <p className="text-sm text-blue-800 dark:text-blue-200 mt-1">
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800/50">
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white">Approval Process</p>
+                    <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">
                       The Manager reviews this request first. The Company Shop Owner gives final approval, then the account is enabled with only the newly approved role and permissions.
                     </p>
                   </div>
@@ -3864,7 +3857,7 @@ export const EmployeeManagement: React.FC<{
                   <button
                     onClick={sendInvitationToPersonalEmail}
                     disabled={invitationModal.isSendingEmail || (!invitationModal.employeeId && !invitationModal.employeeUserId)}
-                    className={`px-5 py-2.5 rounded-md text-base font-medium text-white ${invitationModal.isSendingEmail ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
+                    className={`px-5 py-2.5 rounded-md text-base font-medium text-white ${invitationModal.isSendingEmail ? 'bg-gray-400 cursor-not-allowed' : 'bg-gray-950 hover:bg-gray-800'}`}
                   >
                     {invitationModal.isSendingEmail ? 'Sending...' : 'Email to Personal Address'}
                   </button>

@@ -1034,6 +1034,7 @@ const Products: React.FC<Props> = () => {
           {!loading && products.length > 0 && lastPage > 1 && sortBy !== 'near_me' && (
             <div className="mt-10 flex items-center justify-center gap-2">
               <button
+                aria-label="Previous page"
                 onClick={() => goToPage(currentPage - 1)}
                 disabled={currentPage === 1}
                 className={`px-4 py-2 border rounded-full text-xs font-semibold uppercase tracking-[0.12em] transition-colors ${
@@ -1055,10 +1056,11 @@ const Products: React.FC<Props> = () => {
                     return (
                       <button
                         key={page}
+                        aria-current={currentPage === page ? 'page' : undefined}
                         onClick={() => goToPage(page)}
                         className={`min-w-9 px-3 py-2 border rounded-full text-xs font-semibold uppercase tracking-[0.12em] transition-colors ${
                           currentPage === page
-                            ? 'bg-[#16233b] text-white border-[#16233b]'
+                            ? 'bg-[#111111] text-white border-[#111111]'
                             : 'border-gray-300 text-black hover:bg-gray-50'
                         }`}
                       >
@@ -1075,6 +1077,7 @@ const Products: React.FC<Props> = () => {
               </div>
 
               <button
+                aria-label="Next page"
                 onClick={() => goToPage(currentPage + 1)}
                 disabled={currentPage === lastPage}
                 className={`px-4 py-2 border rounded-full text-xs font-semibold uppercase tracking-[0.12em] transition-colors ${

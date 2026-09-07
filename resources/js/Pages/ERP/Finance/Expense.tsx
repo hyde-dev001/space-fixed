@@ -676,14 +676,9 @@ const Expense: React.FC = () => {
           <LoadingSpinner message="Loading expenses..." />
         ) : (
           <>
-            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <div>
-                <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Expense Management</h1>
-                <p className="text-gray-600 dark:text-gray-400 mt-2">
-                  {ownerMode ? 'Review team spending across the ERP suite.' : 'Add and track team spending across the ERP suite.'}
-                </p>
-              </div>
-              <div className="flex items-center gap-3">
+            <div className="flex flex-col items-end gap-4 md:flex-row md:items-center md:justify-end">
+              <h1 className="sr-only">Expense Management</h1>
+              <div className="flex items-center justify-end gap-3">
                 <button
                   type="button"
                   onClick={() => setShowArchived((prev) => !prev)}
@@ -795,8 +790,8 @@ const Expense: React.FC = () => {
                 onClick={() => setStatusFilter(tab as Expense["status"] | "all")}
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                   statusFilter === tab
-                    ? "bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400"
-                    : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800"
+                    ? "bg-[#111111] text-white dark:bg-[#111111] dark:text-white"
+                    : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                 }`}
               >
                 {tab === "all"
@@ -962,8 +957,8 @@ const Expense: React.FC = () => {
               </div>
 
               {activeExpense.procurement_details && (
-                <div className="rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 p-3 space-y-2">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300">Procured Stock Details</p>
+                <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3 space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">Procured Stock Details</p>
                   {activeExpense.procurement_details.po_number && (
                     <div className="flex justify-between text-sm text-gray-700 dark:text-gray-300">
                       <span className="text-gray-500 dark:text-gray-400">PO Number</span>

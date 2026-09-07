@@ -2,7 +2,7 @@
 import { Head, router, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import 'leaflet/dist/leaflet.css';
-import { AlertTriangle, Building2, CalendarDays, Check, CheckCircle2, ChevronDown, Eye, EyeOff, MapPin, Settings, Store, Trash2, User, Wrench } from 'lucide-react';
+import { AlertTriangle, Building2, CalendarDays, Check, CheckCircle2, ChevronDown, Eye, EyeOff, MapPin, Store, Trash2, User, Wrench } from 'lucide-react';
 																																								import UserSwal from '../../UserSide/Shared/UserModal';
 import BusinessScalingSettings, { type BusinessScalingPayload } from './components/BusinessScalingSettings';
 import BusinessDocumentCompliance, { type ComplianceSlot } from './components/BusinessDocumentCompliance';
@@ -1592,13 +1592,7 @@ const ShopSetting: React.FC = () => {
 						)}
 					</div>
 
-					<div className="mb-6 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-						<div className="mb-2 flex items-center gap-3">
-							<Settings size={28} className="text-gray-700" />
-							<h1 className="text-3xl font-bold text-gray-900">Shop Settings</h1>
-						</div>
-						<p className="text-sm text-gray-600">Manage payments, approvals, attendance geofence, compliance documents, and repair workflows from one place.</p>
-					</div>
+					<h1 className="sr-only">Shop Settings</h1>
 
 					<div
 						data-testid="settings-desktop-shell"

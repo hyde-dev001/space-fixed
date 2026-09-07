@@ -326,15 +326,7 @@ const SuspendAccount: React.FC = () => {
       <Head title="Suspend Accounts" />
 
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 p-6">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-2">
-            Suspend Accounts
-          </h1>
-          <p className="text-gray-600 dark:text-gray-400">
-            Review and approve/reject account suspension requests
-          </p>
-        </div>
+        <h1 className="sr-only">Suspend Accounts</h1>
 
         {/* Metrics */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">

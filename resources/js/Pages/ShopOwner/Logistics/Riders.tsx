@@ -10,7 +10,7 @@ export default function Riders() {
     <AppLayoutShopOwner>
       <Head title="Logistics Riders" />
       <div className="space-y-4">
-        <h1 className="text-2xl font-bold text-gray-950">Riders</h1>
+        <h1 className="sr-only">Riders</h1>
         <div className="grid gap-3">
           {riders.length === 0 ? <p className="rounded-lg border border-gray-200 bg-white p-5 text-sm text-gray-500">No riders yet.</p> : riders.map((rider) => (
             <div key={rider.id} className="rounded-lg border border-gray-200 bg-white p-5">

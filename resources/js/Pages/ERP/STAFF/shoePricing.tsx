@@ -324,10 +324,7 @@ export default function ERPShoePricing() {
     <AppLayoutERP>
       <Head title="Shoe Pricing - Solespace" />
       <div className="p-6 space-y-6">
-        <div>
-          <h1 className="text-2xl font-semibold mb-1">Shoe Pricing</h1>
-          <p className="text-gray-600 dark:text-gray-400">Manager controls for shoe pricing and margins.</p>
-        </div>
+        <h1 className="sr-only">Shoe Pricing</h1>
 
         <div className="mb-12 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <MetricCard title="Active Stocks" value={activeCount} icon={TagIcon} color="info" description="Live pricing" />

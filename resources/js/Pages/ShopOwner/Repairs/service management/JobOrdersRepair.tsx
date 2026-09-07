@@ -2217,10 +2217,7 @@ export default function JobOrdersRepair() {
       <div className="space-y-6">
         {/* Header */}
         <div className="flex justify-between items-start">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Shoe Repair & Cleaning Services</h1>
-            <p className="text-gray-600 dark:text-gray-400 mt-2">Manage shoe cleaning and repair service orders</p>
-          </div>
+          <h1 className="sr-only">Shoe Repair &amp; Cleaning Services</h1>
           <div className="flex flex-col items-end gap-2">
             <p className="text-xs text-gray-600 dark:text-gray-400">
               Active workload: <span className={`font-semibold ${activeRepairCount >= repairRequestLimit ? 'text-red-600 dark:text-red-400' : ''}`}>{activeRepairCount}</span> / {repairRequestLimit}
@@ -2981,13 +2978,6 @@ export default function JobOrdersRepair() {
                           ))}
                         </ol>
                       )}
-                      <button
-                        type="button"
-                        onClick={() => fetchOrders()}
-                        className="mt-4 inline-flex items-center justify-center rounded-md border border-blue-300 bg-white px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 dark:border-blue-700 dark:bg-gray-900 dark:text-blue-300 dark:hover:bg-blue-900/40"
-                      >
-                        Refresh delivery status
-                      </button>
                     </div>
                   </div>
                 )}
@@ -3030,7 +3020,7 @@ export default function JobOrdersRepair() {
                             {formatReturnDeliveryMethod(viewOrder)}
                           </p>
                           {viewOrder.returnHandoff.blocked_reason && !viewOrder.returnHandoff.can_release && (
-                            <p className="mt-1 text-amber-700 dark:text-amber-300">
+                            <p className="mt-1 text-gray-900 dark:text-white">
                               {viewOrder.returnHandoff.blocked_reason}
                             </p>
                           )}

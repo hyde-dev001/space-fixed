@@ -117,6 +117,17 @@ const openDetails = async () => {
 };
 
 describe('JobOrdersRepair intake logistics', () => {
+  it('uses the monochrome active state for repair service tabs', async () => {
+    render(<JobOrdersRepair />);
+
+    const newRequestTab = await screen.findByRole('button', { name: /^New Request \(0\)$/ });
+    expect(newRequestTab).toHaveClass('bg-[#111111]', 'text-white');
+
+    const allServicesTab = screen.getByRole('button', { name: /^All Services \(1\)$/ });
+    fireEvent.click(allServicesTab);
+    expect(allServicesTab).toHaveClass('bg-[#111111]', 'text-white');
+  });
+
   it('shows payment activation in accepted repair details when needed', async () => {
     mocks.repair = {
       ...repair('shop_pickup'),

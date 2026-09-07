@@ -216,11 +216,7 @@ export default function EmploymentLifecycleApprovals() {
       <Head title={label + " Approvals - Solespace ERP"} />
       <main className="space-y-6 py-6 md:py-8" aria-labelledby="lifecycle-approvals-title">
         <header>
-          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600 dark:text-blue-400">People &amp; approvals</p>
-          <h1 id="lifecycle-approvals-title" className="mt-2 text-3xl font-bold tracking-tight text-gray-900 dark:text-white">{label} Approvals</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-600 dark:text-gray-400">
-            Review the HR -&gt; Manager -&gt; Company Shop Owner {label.toLowerCase()} workflow. Manager approval only forwards the request; the employment/account state changes after Company Shop Owner approval.
-          </p>
+          <h1 id="lifecycle-approvals-title" className="sr-only">{label} Approvals</h1>
         </header>
 
         <section className="grid grid-cols-2 gap-4 lg:grid-cols-4" aria-label={label + " approval summary"}>
@@ -289,9 +285,9 @@ export default function EmploymentLifecycleApprovals() {
           <nav className="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between dark:border-gray-800 dark:bg-white/[0.03]" aria-label={label + " approval pagination"}>
             <p className="text-sm text-gray-600 dark:text-gray-400">Showing {payload.data.from ?? 0}-{payload.data.to ?? 0} of {payload.data.total.toLocaleString()}</p>
             <div className="flex items-center gap-2">
-              <button type="button" onClick={() => goToPage(payload.data.current_page - 1)} disabled={payload.data.current_page <= 1 || loading} className="min-h-11 rounded-lg border border-gray-300 px-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Previous</button>
+              <button type="button" aria-label="Previous page" onClick={() => goToPage(payload.data.current_page - 1)} disabled={payload.data.current_page <= 1 || loading} className="min-h-11 rounded-lg border border-gray-300 px-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Previous</button>
               <span className="px-2 text-sm font-medium text-gray-700 dark:text-gray-300" aria-current="page">Page {payload.data.current_page} of {payload.data.last_page}</span>
-              <button type="button" onClick={() => goToPage(payload.data.current_page + 1)} disabled={payload.data.current_page >= payload.data.last_page || loading} className="min-h-11 rounded-lg border border-gray-300 px-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Next</button>
+              <button type="button" aria-label="Next page" onClick={() => goToPage(payload.data.current_page + 1)} disabled={payload.data.current_page >= payload.data.last_page || loading} className="min-h-11 rounded-lg border border-gray-300 px-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Next</button>
             </div>
           </nav>
         )}

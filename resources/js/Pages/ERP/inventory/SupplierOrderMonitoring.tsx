@@ -38,7 +38,7 @@ export default function SupplierOrderMonitoring() {
 		<AppLayoutERP hideHeader={Boolean(viewingOrder)}>
 			<Head title="Supplier Order Monitoring - Solespace" />
 			<div className="p-6 space-y-6">
-				<div><h1 className="text-2xl font-semibold">Supplier Order Monitoring</h1><p className="text-sm text-gray-500">Track deliveries and receive goods into Inventory.</p></div>
+				<h1 className="sr-only">Supplier Order Monitoring</h1>
 
 				<div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
 					<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search PO, supplier, product, or status" className="mb-4 w-full rounded-lg border border-gray-300 bg-white px-4 py-2 dark:border-gray-600 dark:bg-gray-800" />

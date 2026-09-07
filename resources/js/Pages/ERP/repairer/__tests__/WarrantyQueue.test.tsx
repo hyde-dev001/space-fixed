@@ -75,6 +75,14 @@ describe("Repairer Warranty Queue", () => {
     fireEvent.click(screen.getByTitle("View Details"));
   };
 
+  it("removes the manual refresh queue control", async () => {
+    render(<WarrantyQueue />);
+
+    await waitFor(() => expect(screen.getByText("WCLM-TEST-001")).toBeInTheDocument());
+
+    expect(screen.queryByRole("button", { name: "Refresh Queue" })).not.toBeInTheDocument();
+  });
+
   it("opens a separate rejection reason dialog and does not post when cancelled", async () => {
     await openClaimDetails();
 

@@ -433,24 +433,7 @@ export default function WarrantyQueue() {
       {error && <ErrorModal message={error} onClose={() => setError(null)} />}
 
       <div className="space-y-6 p-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <h1 className="mb-1 text-2xl font-semibold text-gray-900 dark:text-white">Warranty Queue</h1>
-            <p className="text-gray-600 dark:text-gray-400">
-              Dedicated review page for warranty claims assigned to repair workflow.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              void fetchWarrantyClaimQueue(statusFilter);
-              void fetchWarrantyKpi();
-            }}
-            className="w-fit rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
-          >
-            Refresh Queue
-          </button>
-        </div>
+        <h1 className="sr-only">Warranty Queue</h1>
 
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
           <MetricCard

@@ -1339,7 +1339,7 @@ export default function JobOrdersRepair() {
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
       "new_request": "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300",
-      "assigned_to_repairer": "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300",
+      "assigned_to_repairer": "border border-gray-300 bg-transparent text-gray-900 dark:border-gray-600 dark:bg-transparent dark:text-gray-100",
       "under-review": "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400",
       "pending": "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400",
       "received": "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400",
@@ -2600,11 +2600,8 @@ export default function JobOrdersRepair() {
       
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex justify-between items-start">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Shoe Repair & Cleaning Services</h1>
-            <p className="text-gray-600 dark:text-gray-400 mt-2">Manage shoe cleaning and repair service orders</p>
-          </div>
+        <div className="flex justify-end">
+          <h1 className="sr-only">Shoe Repair &amp; Cleaning Services</h1>
           <div className="flex flex-col items-end gap-2">
             <p className="text-xs text-gray-600 dark:text-gray-400">
               Active workload: <span className={`font-semibold ${activeRepairCount > repairRequestLimit ? 'text-red-600 dark:text-red-400' : ''}`}>{activeRepairCount}</span> / {repairRequestLimit}
@@ -2658,8 +2655,8 @@ export default function JobOrdersRepair() {
                   onClick={() => setSelectedTab("all")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "all"
-                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                      ? "bg-[#111111] text-white dark:bg-[#111111] dark:text-white"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
                   All Services ({stats.total})
@@ -2668,8 +2665,8 @@ export default function JobOrdersRepair() {
                   onClick={() => setSelectedTab("under-review")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "under-review"
-                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                      ? "bg-[#111111] text-white dark:bg-[#111111] dark:text-white"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
                   New Request ({stats.underReview})
@@ -2678,8 +2675,8 @@ export default function JobOrdersRepair() {
                   onClick={() => setSelectedTab("pending")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "pending"
-                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                      ? "bg-[#111111] text-white dark:bg-[#111111] dark:text-white"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
                   Pending ({stats.pending})
@@ -2688,8 +2685,8 @@ export default function JobOrdersRepair() {
                   onClick={() => setSelectedTab("received")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "received"
-                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                      ? "bg-[#111111] text-white dark:bg-[#111111] dark:text-white"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
                   Received ({stats.received})
@@ -2698,8 +2695,8 @@ export default function JobOrdersRepair() {
                   onClick={() => setSelectedTab("in-progress")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "in-progress"
-                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                      ? "bg-[#111111] text-white dark:bg-[#111111] dark:text-white"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
                   In Progress ({stats.inProgress})
@@ -2708,8 +2705,8 @@ export default function JobOrdersRepair() {
                   onClick={() => setSelectedTab("ready-for-pickup")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "ready-for-pickup"
-                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                      ? "bg-[#111111] text-white dark:bg-[#111111] dark:text-white"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
                   Ready for Pickup ({stats.readyForPickup})
@@ -2718,8 +2715,8 @@ export default function JobOrdersRepair() {
                   onClick={() => setSelectedTab("warranty")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "warranty"
-                      ? "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                      ? "bg-[#111111] text-white dark:bg-[#111111] dark:text-white"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
                   Warranty ({stats.warranty})
@@ -2728,8 +2725,8 @@ export default function JobOrdersRepair() {
                   onClick={() => setSelectedTab("completed")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "completed"
-                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                      ? "bg-[#111111] text-white dark:bg-[#111111] dark:text-white"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
                   Completed ({stats.completedAll})
@@ -2738,8 +2735,8 @@ export default function JobOrdersRepair() {
                   onClick={() => setSelectedTab("rejected")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "rejected"
-                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                      ? "bg-[#111111] text-white dark:bg-[#111111] dark:text-white"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
                   Rejected ({stats.rejected})
@@ -2748,8 +2745,8 @@ export default function JobOrdersRepair() {
                   onClick={() => setSelectedTab("cancelled")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "cancelled"
-                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                      ? "bg-[#111111] text-white dark:bg-[#111111] dark:text-white"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
                   Cancelled ({stats.cancelled})
@@ -2773,7 +2770,7 @@ export default function JobOrdersRepair() {
           </div>
 
           {/* Table */}
-          <div className="h-135 overflow-y-auto overflow-x-hidden">
+          <div className="h-135 overflow-y-auto overflow-x-auto">
             {isLoading ? (
               <div className="flex items-center justify-center py-12">
                 <div className="flex flex-col items-center gap-3">
@@ -2782,49 +2779,49 @@ export default function JobOrdersRepair() {
                 </div>
               </div>
             ) : (
-              <table className="w-full table-fixed divide-y divide-gray-200 dark:divide-gray-800">
+              <table className="min-w-[1100px] w-full table-fixed divide-y divide-gray-200 dark:divide-gray-800">
               <colgroup>
-                <col className="w-[13%]" />
-                <col className="w-[8%]" />
                 <col className="w-[14%]" />
-                <col className="w-[10%]" />
-                <col className="w-[10%]" />
-                <col className="w-[7%]" />
-                <col className="w-[7%]" />
                 <col className="w-[9%]" />
-                <col className="w-[8%]" />
+                <col className="w-[12%]" />
                 <col className="w-[14%]" />
+                <col className="w-[12%]" />
+                <col className="w-[8%]" />
+                <col className="w-[8%]" />
+                <col className="w-[9%]" />
+                <col className="w-[9%]" />
+                <col className="w-[5%]" />
               </colgroup>
               <thead className="bg-gray-50 dark:bg-gray-900/50">
                 <tr>
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th scope="col" className="px-5 py-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Customer
                   </th>
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th scope="col" className="px-5 py-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Item
                   </th>
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th scope="col" className="px-5 py-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Service
                   </th>
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th scope="col" className="px-5 py-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Status
                   </th>
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th scope="col" className="px-5 py-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Intake Method
                   </th>
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th scope="col" className="px-5 py-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Price
                   </th>
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th scope="col" className="px-5 py-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Paid
                   </th>
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th scope="col" className="px-5 py-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Created
                   </th>
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th scope="col" className="px-5 py-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Preferred Date
                   </th>
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th scope="col" className="px-5 py-4 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Actions
                   </th>
                 </tr>
@@ -2850,16 +2847,16 @@ export default function JobOrdersRepair() {
                         isHighlighted ? 'border-l-4 border-l-black bg-gray-50 dark:bg-gray-900/50' : ''
                       }`}
                     >
-                      <td className="px-4 py-4">
+                      <td className="px-5 py-5 align-top">
                         <div className="text-sm">
                           <div className="font-medium text-gray-900 dark:text-white">{order.customer}</div>
                           <div className="text-gray-500 dark:text-gray-400 break-all">{order.phone}</div>
                         </div>
                       </td>
-                      <td className="px-4 py-4">
+                      <td className="px-5 py-5 align-top">
                         <span className="text-sm text-gray-900 dark:text-white wrap-break-word">{order.item}</span>
                       </td>
-                      <td className="px-4 py-4">
+                      <td className="px-5 py-5 align-top">
                         <div className="space-y-1">
                           <span className="block text-sm font-medium text-gray-700 dark:text-gray-300">{order.service}</span>
                           {order.packageName && (
@@ -2874,42 +2871,42 @@ export default function JobOrdersRepair() {
                           )}
                         </div>
                       </td>
-                      <td className="px-4 py-4">
-                        <div className="flex flex-col gap-1">
-                          <span className={`px-2.5 py-1 inline-flex w-fit max-w-max whitespace-nowrap text-xs leading-5 font-semibold rounded-full ${getStatusColor(order.status)}`}>
+                      <td className="px-5 py-5 align-top">
+                        <div className="flex flex-col gap-2">
+                          <span className="text-sm leading-5 font-semibold text-gray-900 dark:text-white">
                             {getRepairStatusLabel(order.status)}
                           </span>
                           {isWaitingForPayment(order) && (
-                            <span className="px-2.5 py-1 inline-flex w-fit max-w-max whitespace-nowrap text-xs leading-5 font-semibold rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                            <span className="text-sm leading-5 font-semibold text-gray-900 dark:text-white">
                               Waiting for Payment
                             </span>
                           )}
                           {getPaymentStatusBadgeLabel(order.payment_status) && (
-                            <span className="px-2.5 py-1 inline-flex w-fit max-w-max whitespace-nowrap text-xs leading-5 font-semibold rounded-full bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300">
+                            <span className="text-sm leading-5 font-semibold text-gray-900 dark:text-white">
                               {getPaymentStatusBadgeLabel(order.payment_status)}
                             </span>
                           )}
                           {isInShopPaymentRecorded(order) && (
-                            <span className="px-2.5 py-1 inline-flex w-fit max-w-max whitespace-nowrap text-xs leading-5 font-semibold rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
+                            <span className="text-sm leading-5 font-semibold text-gray-900 dark:text-white">
                               In-Shop Payment
                             </span>
                           )}
                           {isWarrantyNoChargeOrder(order) && (
-                            <span className="px-2.5 py-1 inline-flex w-fit max-w-max whitespace-nowrap text-xs leading-5 font-semibold rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                            <span className="text-sm leading-5 font-semibold text-gray-900 dark:text-white">
                               Warranty
                             </span>
                           )}
                           {pendingRefund && (
-                            <span className="px-2.5 py-1 inline-flex w-fit max-w-max whitespace-nowrap text-xs leading-5 font-semibold rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                            <span className="text-sm leading-5 font-semibold text-gray-900 dark:text-white">
                               Refund Review Pending
                             </span>
                           )}
                         </div>
                       </td>
-                      <td className="px-4 py-4 text-sm text-gray-900 dark:text-white">
+                      <td className="px-5 py-5 align-top text-sm text-gray-900 dark:text-white">
                         {formatIntakeDeliveryMethod(order)}
                       </td>
-                      <td className="px-4 py-4 text-sm text-gray-900 dark:text-white font-medium">
+                      <td className="px-5 py-5 align-top text-sm text-gray-900 dark:text-white font-medium">
                         {isWarrantyNoChargeOrder(order) ? (
                           <div className="space-y-0.5">
                             <span className="block text-emerald-700 dark:text-emerald-300">No Charge</span>
@@ -2921,7 +2918,7 @@ export default function JobOrdersRepair() {
                           order.grandTotal || order.total
                         )}
                       </td>
-                      <td className="px-4 py-4 text-sm font-semibold">
+                      <td className="px-5 py-5 align-top text-sm font-semibold">
                         {order.payment_status === 'refunded' ? (
                           <span className="text-rose-600 dark:text-rose-400">Refunded</span>
                         ) : order.payment_status === 'partially_refunded' ? (
@@ -2944,16 +2941,16 @@ export default function JobOrdersRepair() {
                           })()
                         )}
                       </td>
-                      <td className="px-4 py-4 text-sm text-gray-500 dark:text-gray-400 wrap-break-word">
+                      <td className="px-5 py-5 align-top text-sm text-gray-500 dark:text-gray-400 wrap-break-word">
                         {order.createdAt}
                       </td>
-                      <td className="px-4 py-4 text-sm wrap-break-word">
+                      <td className="px-5 py-5 align-top text-sm wrap-break-word">
                         {order.preferredDate
                           ? <span className="font-medium text-blue-700 dark:text-blue-400">{order.preferredDate}</span>
                           : <span className="text-gray-400 dark:text-gray-500">—</span>}
                       </td>
-                      <td className="px-4 py-4 text-sm font-medium whitespace-nowrap">
-                        <div className="flex items-center gap-1 whitespace-nowrap [&>button]:inline-flex [&>button]:size-10 [&>button]:items-center [&>button]:justify-center [&>button]:rounded-lg [&>button>svg]:size-5">
+                      <td className="px-5 py-5 align-top text-sm font-medium whitespace-nowrap">
+                        <div className="flex items-center gap-2 whitespace-nowrap [&>button]:inline-flex [&>button]:size-10 [&>button]:items-center [&>button]:justify-center [&>button]:rounded-lg [&>button>svg]:size-5">
                           <button
                             onClick={() => handleViewOrder(order)}
                             className="inline-flex items-center justify-center p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:text-blue-300 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
@@ -3366,7 +3363,7 @@ export default function JobOrdersRepair() {
                     <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
                       Intake logistics
                     </p>
-                    <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm dark:border-blue-800 dark:bg-blue-900/20">
+                    <div className="rounded-lg border border-gray-200 bg-white p-4 text-sm dark:border-gray-700 dark:bg-gray-900">
                       <p className="font-semibold text-gray-900 dark:text-white">Delivery progress</p>
                       <dl className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
                         <div>
@@ -3420,13 +3417,6 @@ export default function JobOrdersRepair() {
                           ))}
                         </ol>
                       )}
-                      <button
-                        type="button"
-                        onClick={() => fetchOrders()}
-                        className="mt-4 inline-flex items-center justify-center rounded-md border border-blue-300 bg-white px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 dark:border-blue-700 dark:bg-gray-900 dark:text-blue-300 dark:hover:bg-blue-900/40"
-                      >
-                        Refresh delivery status
-                      </button>
                     </div>
                   </div>
                 )}
@@ -3452,14 +3442,14 @@ export default function JobOrdersRepair() {
                         </p>
                       </div>
                     ) : (
-                    <div className="rounded-lg border border-purple-200 bg-purple-50 p-4 text-sm dark:border-purple-800 dark:bg-purple-900/20">
+                    <div className="rounded-lg border border-gray-200 bg-white p-4 text-sm dark:border-gray-700 dark:bg-gray-900">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
                           <p className="font-semibold text-gray-900 dark:text-white">
                             {formatReturnDeliveryMethod(viewOrder)}
                           </p>
                           {viewOrder.returnHandoff.blocked_reason && !viewOrder.returnHandoff.can_release && (
-                            <p className="mt-1 text-amber-700 dark:text-amber-300">
+                            <p className="mt-1 text-gray-900 dark:text-white">
                               {viewOrder.returnHandoff.blocked_reason}
                             </p>
                           )}
@@ -3731,7 +3721,7 @@ export default function JobOrdersRepair() {
                     <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
                       🚚 Customer's Collection Address
                     </p>
-                    <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-4 border border-amber-200 dark:border-amber-800">
+                    <div className="bg-white dark:bg-gray-900 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
                       {viewOrder.pickupAddressLine || viewOrder.pickupBarangay || viewOrder.pickupCity ? (
                         <div className="space-y-2">
                           {viewOrder.pickupAddressLine && (

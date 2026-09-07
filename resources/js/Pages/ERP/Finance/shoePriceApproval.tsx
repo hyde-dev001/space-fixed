@@ -491,12 +491,9 @@ export default function ShoePriceApproval() {
     <>
       <Head title="Shoe Price Approvals - Solespace ERP" />
       <div className="p-6 space-y-6">
-        {/* Header */}
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Price Approval Requests</h1>
-            <p className="text-gray-600 dark:text-gray-400 mt-1">Review and approve price changes from STAFF</p>
-          </div>
+          {/* Header */}
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+          <h1 className="sr-only">Price Approval Requests</h1>
           {/* View Toggle */}
           <div className="flex gap-2 bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
             <button
