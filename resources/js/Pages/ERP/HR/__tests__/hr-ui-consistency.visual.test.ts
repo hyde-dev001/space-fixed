@@ -22,6 +22,47 @@ const sectionBetween = (source: string, startMarker: string, endMarker: string) 
 };
 
 describe("HR UI consistency presentation", () => {
+  it("uses neutral primary and informational treatments in lifecycle modals", () => {
+    const invitationAction = employeeDirectory.slice(
+      employeeDirectory.lastIndexOf("className=", employeeDirectory.indexOf("Email to Personal Address")),
+      employeeDirectory.indexOf("</button>", employeeDirectory.indexOf("Email to Personal Address")),
+    );
+
+    expect(invitationAction).toContain("bg-gray-950");
+    expect(invitationAction).toContain("text-white");
+    expect(invitationAction).not.toContain("bg-blue-600");
+    expect(employeeDirectory).toContain("mb-6 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg p-4");
+    expect(employeeDirectory).toContain("rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800/50");
+    expect(employeeDirectory).not.toContain("mb-6 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4");
+    expect(employeeDirectory).not.toContain("mb-6 rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-900/60 dark:bg-red-900/20");
+    expect(employeeDirectory).not.toContain("rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-900/60 dark:bg-blue-900/20");
+  });
+
+  it("uses compact black actions for attendance and overtime", () => {
+    const saveCorrectionIndex = attendanceRecords.indexOf("Save Correction");
+    const saveCorrectionAction = attendanceRecords.slice(
+      attendanceRecords.lastIndexOf("className=", saveCorrectionIndex),
+      attendanceRecords.indexOf("</button>", saveCorrectionIndex),
+    );
+    const overtimeHeader = sectionBetween(overtimeApprovals, "{/* Header */}", "{/* Metrics */}");
+
+    expect(saveCorrectionAction).toContain("bg-gray-950");
+    expect(saveCorrectionAction).toContain("text-white");
+    expect(saveCorrectionAction).not.toContain("bg-blue-600");
+    expect(overtimeHeader).toContain("inline-flex items-center gap-2");
+    expect(overtimeHeader).toContain("px-4 py-2");
+    expect(overtimeHeader).toContain("text-sm");
+    expect(overtimeHeader).toContain("bg-gray-950");
+    expect(overtimeHeader).not.toContain("px-6 py-3");
+    expect(overtimeHeader).not.toContain("shadow-md");
+  });
+
+  it("reuses the shared statistic card for payroll release authorization", () => {
+    expect(generateSlip).toContain('import { DashboardMetricCard } from "../../../components/dashboard";');
+    expect(generateSlip.match(/<DashboardMetricCard/g) ?? []).toHaveLength(2);
+    expect(generateSlip).not.toContain("rounded-lg border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50 px-4 py-3");
+  });
+
   it("right-aligns page actions without changing their guarded handlers", () => {
     const overtimeHeader = sectionBetween(overtimeApprovals, "{/* Header */}", "{/* Metrics */}");
     const salaryHeader = sectionBetween(salaryChanges, "{/* Header */}", "{/* Metrics */}");

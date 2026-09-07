@@ -957,8 +957,8 @@ const Expense: React.FC = () => {
               </div>
 
               {activeExpense.procurement_details && (
-                <div className="rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 p-3 space-y-2">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300">Procured Stock Details</p>
+                <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3 space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">Procured Stock Details</p>
                   {activeExpense.procurement_details.po_number && (
                     <div className="flex justify-between text-sm text-gray-700 dark:text-gray-300">
                       <span className="text-gray-500 dark:text-gray-400">PO Number</span>

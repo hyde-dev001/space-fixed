@@ -1106,7 +1106,7 @@ const ViewAttendance: React.FC = () => {
               <button
                 onClick={handleSaveEdit}
                 disabled={isSavingEdit}
-                className="flex-1 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white transition-colors font-medium"
+                className="flex-1 px-4 py-2.5 rounded-xl bg-gray-950 hover:bg-gray-800 disabled:bg-gray-400 text-white transition-colors font-medium"
               >
                 {isSavingEdit ? 'Saving…' : 'Save Correction'}
               </button>
