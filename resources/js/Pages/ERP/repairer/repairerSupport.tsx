@@ -789,7 +789,7 @@ export default function RepairerSupport() {
                   key={ticket.id}
                   onClick={() => setSelectedTicketId(ticket.id)}
                   className={`px-6 py-4 border-b border-gray-100 cursor-pointer transition-colors hover:bg-gray-50 ${
-                    selectedTicketId === ticket.id ? "bg-gray-50 border-l-4 border-l-blue-500" : ""
+                    selectedTicketId === ticket.id ? "bg-gray-50 border-l-4 border-l-black" : ""
                   }`}
                 >
                   <div className="flex items-start gap-3">
