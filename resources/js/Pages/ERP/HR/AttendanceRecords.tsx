@@ -518,9 +518,12 @@ const ViewAttendance: React.FC = () => {
       case "present":
         return "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300";
       case "late":
-        return "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300";
+        return "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300";
+      case "half_day":
+        return "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300";
       case "absent":
         return "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300";
+      case "on_leave":
       case "leave":
         return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300";
       default:
@@ -528,14 +531,37 @@ const ViewAttendance: React.FC = () => {
     }
   };
 
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case "half_day":
+        return "Half Day";
+      case "on_leave":
+      case "leave":
+        return "On Leave";
+      case "present":
+        return "Present";
+      case "late":
+        return "Late";
+      case "absent":
+        return "Absent";
+      default:
+        return status
+          .replace(/[_-]+/g, " ")
+          .replace(/\b\w/g, (character) => character.toUpperCase());
+    }
+  };
+
   const getStatusIcon = (status: string) => {
     switch (status) {
       case "present":
+        return <CheckCircleIcon className="size-4" />;
+      case "half_day":
         return <CheckCircleIcon className="size-4" />;
       case "late":
         return <ClockIcon className="size-4" />;
       case "absent":
         return <svg className="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>;
+      case "on_leave":
       case "leave":
         return <CalendarIcon className="size-4" />;
       default:
@@ -548,20 +574,7 @@ const ViewAttendance: React.FC = () => {
   return (
     <div className="w-full space-y-6">
       {/* Header */}
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-        <h1 className="sr-only">Attendance Records</h1>
-
-        <div className="mt-4 flex justify-end">
-          <button
-            onClick={handleDownloadCSV}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-            title="Download attendance (CSV)"
-          >
-            <DownloadIcon className="size-4 text-gray-600 dark:text-gray-300" />
-            <span>Download</span>
-          </button>
-        </div>
-      </div>
+      <h1 className="sr-only">Attendance Records</h1>
 
       {/* Metric Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
@@ -676,6 +689,16 @@ const ViewAttendance: React.FC = () => {
 
       {/* Attendance Table */}
       <div className="bg-white dark:bg-white/[0.03] border border-gray-200 dark:border-gray-800 rounded-2xl shadow-sm overflow-hidden">
+        <div className="flex justify-end border-b border-gray-200 dark:border-gray-800 px-6 py-4">
+          <button
+            onClick={handleDownloadCSV}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+            title="Download attendance (CSV)"
+          >
+            <DownloadIcon className="size-4 text-gray-600 dark:text-gray-300" />
+            <span>Download</span>
+          </button>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-800">
@@ -746,7 +769,7 @@ const ViewAttendance: React.FC = () => {
                     </td>
                     <td className="px-6 py-4">
                       <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium capitalize w-fit ${getStatusColor(record.status)}`}>
-                        {record.status}
+                        {getStatusLabel(record.status)}
                       </div>
                     </td>
                     <td className="px-6 py-4">
@@ -760,7 +783,7 @@ const ViewAttendance: React.FC = () => {
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      <span className="inline-flex items-center px-3 py-1.5 rounded-lg bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 text-sm font-medium">
+                      <span className="text-sm font-medium text-gray-900 dark:text-white">
                         {record.totalHours}h
                       </span>
                     </td>

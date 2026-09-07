@@ -1339,7 +1339,7 @@ export default function JobOrdersRepair() {
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
       "new_request": "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300",
-      "assigned_to_repairer": "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300",
+      "assigned_to_repairer": "border border-gray-300 bg-transparent text-gray-900 dark:border-gray-600 dark:bg-transparent dark:text-gray-100",
       "under-review": "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400",
       "pending": "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400",
       "received": "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400",
@@ -3363,7 +3363,7 @@ export default function JobOrdersRepair() {
                     <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
                       Intake logistics
                     </p>
-                    <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm dark:border-blue-800 dark:bg-blue-900/20">
+                    <div className="rounded-lg border border-gray-200 bg-white p-4 text-sm dark:border-gray-700 dark:bg-gray-900">
                       <p className="font-semibold text-gray-900 dark:text-white">Delivery progress</p>
                       <dl className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
                         <div>
@@ -3449,7 +3449,7 @@ export default function JobOrdersRepair() {
                         </p>
                       </div>
                     ) : (
-                    <div className="rounded-lg border border-purple-200 bg-purple-50 p-4 text-sm dark:border-purple-800 dark:bg-purple-900/20">
+                    <div className="rounded-lg border border-gray-200 bg-white p-4 text-sm dark:border-gray-700 dark:bg-gray-900">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
                           <p className="font-semibold text-gray-900 dark:text-white">
@@ -3728,7 +3728,7 @@ export default function JobOrdersRepair() {
                     <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
                       🚚 Customer's Collection Address
                     </p>
-                    <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-4 border border-amber-200 dark:border-amber-800">
+                    <div className="bg-white dark:bg-gray-900 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
                       {viewOrder.pickupAddressLine || viewOrder.pickupBarangay || viewOrder.pickupCity ? (
                         <div className="space-y-2">
                           {viewOrder.pickupAddressLine && (

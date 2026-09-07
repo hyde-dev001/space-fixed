@@ -1659,7 +1659,7 @@ export default function GenerateSlip() {
 			</div>
 
 			{/* Release Authorization Status */}
-			<div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm p-6">
+			<div className="space-y-3">
 				<div className="flex flex-col gap-3">
 					<div>
 						<h3 className="text-sm font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">Release Authorization Status</h3>
@@ -1746,7 +1746,7 @@ export default function GenerateSlip() {
 									onClick={() => setIsPeriodModalOpen(true)}
 									disabled={isLoadingPeriods || payrollPeriods.length === 0}
 									aria-label="Open payroll period picker"
-									className="min-w-64 h-14 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-4 text-left disabled:opacity-50 disabled:cursor-not-allowed hover:border-blue-300 dark:hover:border-blue-600 hover:shadow-sm transition-all"
+									className="min-w-56 h-10 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 text-left disabled:opacity-50 disabled:cursor-not-allowed hover:border-gray-300 dark:hover:border-gray-600 transition-colors"
 								>
 									<div className="flex items-center justify-between gap-3">
 										<div className="min-w-0">
@@ -1768,7 +1768,7 @@ export default function GenerateSlip() {
 								<button
 									onClick={handleGenerateAll}
 									disabled={selectedPendingEmployees.length === 0 || isGenerating}
-									className="h-14 px-5 rounded-xl bg-green-600 text-white text-sm font-semibold hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+									className="h-10 px-4 rounded-lg bg-black text-white text-sm font-semibold hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
 									title={selectedPendingEmployees.length === 0 ? "Select employees first" : `Generate ${selectedPendingEmployees.length} payslips`}
 								>
 									<CalculatorIcon className="size-4" />
@@ -1780,8 +1780,8 @@ export default function GenerateSlip() {
 				</div>
 
 				{selectedPendingEmployees.length > 0 && (
-					<div className="px-6 py-3 border-b border-blue-100 dark:border-blue-900/40 bg-blue-50/60 dark:bg-blue-900/10">
-						<p className="text-sm text-blue-800 dark:text-blue-300">
+					<div className="px-6 py-3 border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/40">
+						<p className="text-sm text-gray-700 dark:text-gray-300">
 							{selectedPendingEmployees.length} employee{selectedPendingEmployees.length > 1 ? "s" : ""} selected for payroll generation.
 						</p>
 					</div>
@@ -1796,7 +1796,7 @@ export default function GenerateSlip() {
 										checked={isAllFilteredSelected}
 										onChange={toggleAllFilteredSelection}
 										disabled={filteredSelectableIds.length === 0}
-										className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
+										className="rounded border-gray-300 text-gray-900 focus:ring-gray-500 disabled:opacity-50"
 										aria-label="Select all filtered employees"
 									/>
 								</th>
@@ -1829,7 +1829,7 @@ export default function GenerateSlip() {
 									key={employee.id}
 									className={`transition-colors ${
 										selectedEmployeeIds.includes(employee.id)
-											? "bg-blue-50/70 dark:bg-blue-900/10"
+											? "bg-gray-100 dark:bg-gray-800/70"
 											: "hover:bg-gray-50 dark:hover:bg-gray-800/50"
 									}`}
 								>
@@ -1839,7 +1839,7 @@ export default function GenerateSlip() {
 											checked={selectedEmployeeIds.includes(employee.id)}
 											onChange={() => toggleEmployeeSelection(employee.id)}
 											disabled={employee.hasSlipForPeriod || employee.status !== "active"}
-											className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-40"
+											className="rounded border-gray-300 text-gray-900 focus:ring-gray-500 disabled:opacity-40"
 											aria-label={`Select ${employee.firstName} ${employee.lastName}`}
 										/>
 									</td>
@@ -1893,12 +1893,12 @@ export default function GenerateSlip() {
 											className={`inline-flex items-center justify-center p-2 rounded-lg transition-colors ${
 												employee.hasSlipForPeriod
 													? "opacity-50 cursor-not-allowed bg-gray-100 dark:bg-gray-800"
-													: "hover:bg-blue-50 dark:hover:bg-blue-900/20"
+													: "hover:bg-gray-100 dark:hover:bg-gray-800"
 											}`}
 											title={employee.hasSlipForPeriod ? "Payslip already generated" : "Generate payslip for this employee"}
 											aria-label="Generate payslip"
 										>
-											<CalculatorIcon className={`size-5 ${employee.hasSlipForPeriod ? "text-gray-400" : "text-blue-600 dark:text-blue-400"}`} />
+											<CalculatorIcon className={`size-5 ${employee.hasSlipForPeriod ? "text-gray-400" : "text-gray-700 dark:text-gray-300"}`} />
 										</button>
 									</td>
 								</tr>
@@ -1934,8 +1934,8 @@ export default function GenerateSlip() {
 											onClick={() => setPage(p)}
 											className={`min-w-10 h-10 px-3 rounded-lg font-medium transition-colors ${
 												page === p
-													? "bg-blue-600 text-white"
-													: "border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
+												? "bg-black text-white"
+												: "border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
 											}`}
 										>
 											{p}
@@ -1975,10 +1975,10 @@ export default function GenerateSlip() {
 					}}
 				>
 					<div
-						className="w-full max-w-2xl rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-2xl overflow-hidden"
+						className="w-full max-w-xl rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-2xl overflow-hidden"
 						onClick={(event) => event.stopPropagation()}
 					>
-						<div className="flex items-start justify-between gap-4 p-5 border-b border-gray-100 dark:border-gray-800 bg-linear-to-r from-slate-50 to-white dark:from-gray-900 dark:to-gray-900">
+						<div className="flex items-start justify-between gap-4 p-4 border-b border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900">
 							<div>
 								<h3 className="text-lg font-semibold text-gray-900 dark:text-white">Select Payroll Period</h3>
 								<p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Choose the period for calculation and payslip generation.</p>
@@ -1996,7 +1996,7 @@ export default function GenerateSlip() {
 							</button>
 						</div>
 
-						<div className="p-5 space-y-4">
+						<div className="p-4 space-y-3">
 							<div className="relative">
 								<svg className="size-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
 									<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35m1.85-5.15a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -2006,11 +2006,11 @@ export default function GenerateSlip() {
 									value={periodSearch}
 									onChange={(event) => setPeriodSearch(event.target.value)}
 									placeholder="Search period (month or date)"
-									className="w-full rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 pl-9 pr-3 py-2.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-400"
+									className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 pl-9 pr-3 py-2.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-gray-500/40 focus:border-gray-500"
 								/>
 							</div>
 
-							<div className="max-h-[60vh] overflow-y-auto rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50/40 dark:bg-gray-900/20 p-2 space-y-2">
+							<div className="max-h-[60vh] overflow-y-auto rounded-lg border border-gray-100 dark:border-gray-800 bg-gray-50/40 dark:bg-gray-900/20 p-1.5 space-y-1.5">
 								{filteredPayrollPeriods.length === 0 ? (
 									<div className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-900 rounded-lg border border-dashed border-gray-200 dark:border-gray-700">
 										No payroll periods found.
@@ -2022,14 +2022,14 @@ export default function GenerateSlip() {
 
 										return (
 											<button
-												key={`${period.month}-${period.startDate}-${period.endDate}`}
-												type="button"
-												onClick={() => handlePeriodSelect(actualIndex)}
-												className={`w-full text-left px-4 py-3 rounded-xl border transition-all cursor-pointer ${
-													isSelected
-														? "bg-blue-50 border-blue-200 shadow-sm dark:bg-blue-900/20 dark:border-blue-800"
-														: "bg-white border-gray-200 hover:border-blue-300 hover:shadow-sm hover:-translate-y-px dark:bg-gray-900 dark:border-gray-800 dark:hover:border-blue-700"
-												}`}
+											key={`${period.month}-${period.startDate}-${period.endDate}`}
+											type="button"
+											onClick={() => handlePeriodSelect(actualIndex)}
+											className={`w-full text-left px-3 py-2.5 rounded-lg border transition-colors cursor-pointer ${
+												isSelected
+													? "bg-gray-100 border-gray-900 shadow-sm dark:bg-gray-800 dark:border-gray-500"
+													: "bg-white border-gray-200 hover:border-gray-400 hover:bg-gray-50 dark:bg-gray-900 dark:border-gray-800 dark:hover:border-gray-600"
+											}`}
 											>
 												<div className="flex items-start justify-between gap-3">
 													<div className="min-w-0">
@@ -2045,7 +2045,7 @@ export default function GenerateSlip() {
 															<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
 														</svg>
 														{isSelected && (
-															<CheckIcon className="size-4 text-blue-600 dark:text-blue-400" />
+															<CheckIcon className="size-4 text-gray-900 dark:text-white" />
 														)}
 													</div>
 												</div>
@@ -2056,7 +2056,7 @@ export default function GenerateSlip() {
 							</div>
 						</div>
 
-						<div className="flex justify-end p-5 border-t border-gray-100 dark:border-gray-800">
+						<div className="flex justify-end p-4 border-t border-gray-100 dark:border-gray-800">
 							<button
 								type="button"
 								onClick={() => {

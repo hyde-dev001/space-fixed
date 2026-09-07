@@ -2351,7 +2351,7 @@ export const EmployeeManagement: React.FC<{
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <div className="w-full">
-        <div className="flex justify-between items-start mb-8">
+        <div className="flex justify-end mb-8">
           <h1 className="sr-only">Employee Management</h1>
           {(!ownerReadOnly || ownerCanCreate) && (
           <div className="flex gap-3">
