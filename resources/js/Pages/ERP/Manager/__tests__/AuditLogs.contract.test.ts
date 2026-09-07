@@ -34,4 +34,10 @@ describe('Manager Audit Logs page contract', () => {
     expect(source).not.toContain('change={5}');
     expect(source).not.toContain('Complete oversight of all activities across departments');
   });
+
+  it('keeps the audit page heading accessible without showing the decorative intro copy', () => {
+    expect(source).toContain('<h1 className="sr-only">Audit Logs</h1>');
+    expect(source).not.toContain('>Review</p>');
+    expect(source).not.toContain('Read-only operational history for your authorized shop');
+  });
 });

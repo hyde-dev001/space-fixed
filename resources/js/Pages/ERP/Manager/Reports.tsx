@@ -78,14 +78,6 @@ interface ReportsPayload {
   recent_reports: ReportRecord[];
 }
 
-const reportStyleMap: Record<string, { cardBg: string; iconColor: string }> = {
-  sales: { cardBg: "bg-blue-50 dark:bg-blue-900/20", iconColor: "text-blue-600 dark:text-blue-400" },
-  stock: { cardBg: "bg-emerald-50 dark:bg-emerald-900/20", iconColor: "text-emerald-600 dark:text-emerald-400" },
-  damaged: { cardBg: "bg-red-50 dark:bg-red-900/20", iconColor: "text-red-600 dark:text-red-400" },
-  missing: { cardBg: "bg-orange-50 dark:bg-orange-900/20", iconColor: "text-orange-600 dark:text-orange-400" },
-  performance: { cardBg: "bg-purple-50 dark:bg-purple-900/20", iconColor: "text-purple-600 dark:text-purple-400" },
-};
-
 const reportIconMap: Record<string, IconComponent> = {
   sales: ChartIcon,
   stock: DocumentIcon,
@@ -434,17 +426,16 @@ export default function ERPReports() {
               No report definitions are available for this shop.
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+            <div className="flex flex-wrap gap-4">
               {reportsData.report_types.map((report) => {
-                const style = reportStyleMap[report.id] || reportStyleMap.sales;
                 const ReportIcon = reportIconMap[report.id] || DocumentIcon;
                 const latestReport = report.last_report;
 
                 return (
-                  <div key={report.id} className="rounded-xl border border-gray-200 p-5 transition-all duration-300 hover:border-blue-500 hover:shadow-lg dark:border-gray-700 dark:hover:border-blue-400">
+                  <div key={report.id} className="min-w-0 flex-[1_1_240px] rounded-xl border border-gray-200 p-5 transition-all duration-300 hover:border-gray-900 hover:shadow-lg dark:border-gray-700 dark:hover:border-gray-500">
                     <div className="mb-4 flex items-start justify-between">
-                      <div className={`rounded-lg p-3 ${style.cardBg}`}>
-                        <ReportIcon className={`h-6 w-6 ${style.iconColor}`} />
+                      <div className="rounded-lg bg-gray-100 p-3 dark:bg-gray-800">
+                        <ReportIcon className="h-6 w-6 text-gray-950 dark:text-white" />
                       </div>
                       {latestReport && (
                         <span className={`rounded-full px-2 py-1 text-xs font-semibold ${getStatusBadgeClass(latestReport.status)}`}>
@@ -474,8 +465,9 @@ export default function ERPReports() {
                           <button
                             type="button"
                             onClick={() => handleDownloadReport(latestReport.id)}
-                            className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
+                            className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-gray-300 text-gray-950 transition-colors hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-900 dark:border-gray-600 dark:text-white dark:hover:bg-gray-800 dark:focus:ring-white"
                             aria-label={`Download latest ${report.title}`}
+                            title={`Download latest ${report.title}`}
                           >
                             <DownloadIcon className="h-4 w-4" />
                           </button>
@@ -538,17 +530,21 @@ export default function ERPReports() {
                               <button
                                 type="button"
                                 onClick={() => openReviewModal(report)}
-                                className="rounded-lg border border-emerald-300 px-3 py-1.5 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-300 dark:hover:bg-emerald-950/30"
+                                className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-gray-300 text-gray-950 transition-colors hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-900 dark:border-gray-600 dark:text-white dark:hover:bg-gray-800 dark:focus:ring-white"
+                                aria-label={`Mark ${report.report_title} as reviewed`}
+                                title={`Mark ${report.report_title} as reviewed`}
                               >
-                                Mark as reviewed
+                                <CheckIcon className="h-4 w-4" />
                               </button>
                             )}
                             <button
                               type="button"
                               onClick={() => handleDownloadReport(report.id)}
-                              className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
+                              className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-gray-300 text-gray-950 transition-colors hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-900 dark:border-gray-600 dark:text-white dark:hover:bg-gray-800 dark:focus:ring-white"
+                              aria-label={`Download ${report.report_title}`}
+                              title={`Download ${report.report_title}`}
                             >
-                              Download
+                              <DownloadIcon className="h-4 w-4" />
                             </button>
                           </div>
                         </td>
