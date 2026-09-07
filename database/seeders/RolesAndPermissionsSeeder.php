@@ -90,6 +90,9 @@ class RolesAndPermissionsSeeder extends Seeder
             'access-stock-movement',
             'access-upload-inventory',
             'view-inventory', // Required for erp/inventory route group
+            'inventory.view',
+            'inventory.create',
+            'inventory.edit',
 
             // ===== PROCUREMENT MODULE =====
             'access-procurement-dashboard',
@@ -290,6 +293,9 @@ class RolesAndPermissionsSeeder extends Seeder
             'access-inventory-overview',
             'access-supplier-order-monitoring',
             'view-inventory', // Required for erp/inventory route group
+            'inventory.view',
+            'inventory.create',
+            'inventory.edit',
             'procurement.view',
             'procurement.receive_purchase_orders',
             // Global Access

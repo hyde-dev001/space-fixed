@@ -679,6 +679,7 @@ export default function StockRequest() {
 										<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Requested</th>
 										<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Status</th>
 										<th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider text-gray-500">Action</th>
+										<th className='px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500'>Source</th>
 									</tr>
 								</thead>
 								<tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -717,12 +718,22 @@ export default function StockRequest() {
 															</svg>
 														</button>
 													</td>
+													<td className='px-4 py-3 text-sm text-gray-700 dark:text-gray-300'>
+														<span className='font-medium text-gray-900 dark:text-white'>
+															{request.source_label ?? 'Manual Entry'}
+														</span>
+														{request.source_reason && (
+															<span className='mt-1 block text-xs text-gray-500 dark:text-gray-400'>
+																{request.source_reason}
+															</span>
+														)}
+													</td>
 												</tr>
 											);
 										})
 									) : (
 										<tr>
-											<td colSpan={6} className="px-4 py-10 text-center text-sm text-gray-500">No stock requests found.</td>
+											<td colSpan={7} className="px-4 py-10 text-center text-sm text-gray-500">No stock requests found.</td>
 										</tr>
 									)}
 								</tbody>

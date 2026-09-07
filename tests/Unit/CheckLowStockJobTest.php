@@ -15,6 +15,7 @@ use App\Models\PurchaseRequest;
 use App\Models\ReplenishmentRequest;
 use App\Models\ShopOwner;
 use App\Models\Supplier;
+use App\Models\StockRequestApproval;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
@@ -106,28 +107,32 @@ class CheckLowStockJobTest extends TestCase
     }
 
     /** @test */
-    public function it_creates_a_replenishment_request_for_low_stock_items()
+    public function it_creates_an_automatic_stock_request_for_low_stock_items()
     {
         $shopOwner = ShopOwner::factory()->create();
-        $requester = User::factory()->create(['shop_owner_id' => $shopOwner->id]);
 
         $lowStockItem = InventoryItem::factory()->create([
             'shop_owner_id' => $shopOwner->id,
             'available_quantity' => 5,
             'reorder_level' => 10,
             'reorder_quantity' => 50,
+            'auto_stock_request_enabled' => true,
         ]);
 
         (new CheckLowStockJob($shopOwner->id))->handle();
 
-        $this->assertDatabaseHas('replenishment_requests', [
+        $this->assertDatabaseHas('stock_request_approvals', [
             'shop_owner_id' => $shopOwner->id,
             'inventory_item_id' => $lowStockItem->id,
             'product_name' => $lowStockItem->name,
             'sku_code' => $lowStockItem->sku,
             'quantity_needed' => 50,
             'status' => 'pending',
-            'requested_by' => $requester->id,
+            'requested_by' => null,
+            'is_auto_generated' => true,
+        ]);
+        $this->assertDatabaseMissing('replenishment_requests', [
+            'inventory_item_id' => $lowStockItem->id,
         ]);
     }
 
@@ -143,6 +148,7 @@ class CheckLowStockJobTest extends TestCase
             'available_quantity' => 5,
             'reorder_level' => 10,
             'reorder_quantity' => 50,
+            'auto_stock_request_enabled' => true,
         ]);
 
         PurchaseRequest::factory()->create([
@@ -166,9 +172,10 @@ class CheckLowStockJobTest extends TestCase
 
         (new CheckLowStockJob($shopOwner->id))->handle();
 
-        $this->assertDatabaseHas('replenishment_requests', [
+        $this->assertDatabaseHas('stock_request_approvals', [
             'inventory_item_id' => $lowStockItem->id,
             'quantity_needed' => 20,
+            'is_auto_generated' => true,
         ]);
     }
 
@@ -184,6 +191,7 @@ class CheckLowStockJobTest extends TestCase
             'available_quantity' => 5,
             'reorder_level' => 10,
             'reorder_quantity' => 50,
+            'auto_stock_request_enabled' => true,
         ]);
 
         $purchaseOrder = PurchaseOrder::factory()->create([
@@ -214,14 +222,15 @@ class CheckLowStockJobTest extends TestCase
 
         (new CheckLowStockJob($shopOwner->id))->handle();
 
-        $this->assertDatabaseHas('replenishment_requests', [
+        $this->assertDatabaseHas('stock_request_approvals', [
             'inventory_item_id' => $lowStockItem->id,
             'quantity_needed' => 30,
+            'is_auto_generated' => true,
         ]);
     }
 
     /** @test */
-    public function it_does_not_create_duplicate_replenishment_requests_on_repeated_checks()
+    public function it_does_not_create_duplicate_automatic_stock_requests_on_repeated_checks()
     {
         $shopOwner = ShopOwner::factory()->create();
         User::factory()->create(['shop_owner_id' => $shopOwner->id]);
@@ -231,6 +240,7 @@ class CheckLowStockJobTest extends TestCase
             'available_quantity' => 0,
             'reorder_level' => 10,
             'reorder_quantity' => 50,
+            'auto_stock_request_enabled' => true,
         ]);
 
         $job = new CheckLowStockJob($shopOwner->id);
@@ -239,7 +249,102 @@ class CheckLowStockJobTest extends TestCase
 
         $this->assertSame(
             1,
-            ReplenishmentRequest::where('inventory_item_id', $lowStockItem->id)->count()
+            StockRequestApproval::where('inventory_item_id', $lowStockItem->id)->count()
         );
+    }
+
+    /** @test */
+    public function it_only_alerts_when_automatic_stock_request_is_disabled(): void
+    {
+        $shopOwner = ShopOwner::factory()->create();
+
+        $item = InventoryItem::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'available_quantity' => 5,
+            'reorder_level' => 10,
+            'reorder_quantity' => 40,
+            'auto_stock_request_enabled' => false,
+        ]);
+
+        (new CheckLowStockJob($shopOwner->id))->handle();
+
+        $this->assertDatabaseHas('inventory_alerts', [
+            'inventory_item_id' => $item->id,
+            'alert_type' => 'low_stock',
+            'is_resolved' => false,
+        ]);
+        $this->assertDatabaseMissing('stock_request_approvals', [
+            'inventory_item_id' => $item->id,
+        ]);
+        $this->assertDatabaseMissing('replenishment_requests', [
+            'inventory_item_id' => $item->id,
+        ]);
+    }
+
+    /** @test */
+    public function existing_open_stock_request_counts_as_incoming_coverage(): void
+    {
+        $shopOwner = ShopOwner::factory()->create();
+        $item = InventoryItem::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'available_quantity' => 5,
+            'reorder_level' => 10,
+            'reorder_quantity' => 40,
+            'auto_stock_request_enabled' => true,
+        ]);
+
+        StockRequestApproval::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'inventory_item_id' => $item->id,
+            'quantity_needed' => 40,
+            'status' => 'pending',
+        ]);
+
+        (new CheckLowStockJob($shopOwner->id))->handle();
+
+        $this->assertSame(1, StockRequestApproval::where('inventory_item_id', $item->id)->count());
+    }
+
+    /** @test */
+    public function backfilled_legacy_requests_are_counted_only_once(): void
+    {
+        $shopOwner = ShopOwner::factory()->create();
+        $requester = User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $item = InventoryItem::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'available_quantity' => 5,
+            'reorder_level' => 10,
+            'reorder_quantity' => 40,
+            'auto_stock_request_enabled' => true,
+        ]);
+        $requestNumber = 'SR-2026-LEGACY-001';
+
+        ReplenishmentRequest::create([
+            'request_number' => $requestNumber,
+            'shop_owner_id' => $shopOwner->id,
+            'inventory_item_id' => $item->id,
+            'product_name' => $item->name,
+            'sku_code' => $item->sku,
+            'quantity_needed' => 25,
+            'priority' => 'medium',
+            'status' => 'pending',
+            'requested_by' => $requester->id,
+            'requested_date' => now(),
+        ]);
+        StockRequestApproval::factory()->create([
+            'request_number' => $requestNumber,
+            'shop_owner_id' => $shopOwner->id,
+            'inventory_item_id' => $item->id,
+            'quantity_needed' => 25,
+            'requested_by' => $requester->id,
+        ]);
+
+        (new CheckLowStockJob($shopOwner->id))->handle();
+
+        $this->assertDatabaseHas('stock_request_approvals', [
+            'inventory_item_id' => $item->id,
+            'quantity_needed' => 15,
+            'is_auto_generated' => true,
+        ]);
     }
 }

@@ -25,6 +25,7 @@ class StockRequestApproval extends Model
         'requested_color',
         'priority',
         'request_source',
+        'is_auto_generated',
         'status',
         'requested_by',
         'requested_date',
@@ -44,6 +45,7 @@ class StockRequestApproval extends Model
         'inventory_approved_date' => 'datetime',
         'quantity_needed' => 'integer',
         'repair_request_id' => 'integer',
+        'is_auto_generated' => 'boolean',
     ];
 
     protected $appends = [
@@ -52,6 +54,8 @@ class StockRequestApproval extends Model
         'days_pending',
         'inventory_approval_status',
         'inventory_approval_status_label',
+        'source_label',
+        'source_reason',
     ];
 
     // Relationships
@@ -148,6 +152,21 @@ class StockRequestApproval extends Model
             default => 'Pending',
         };
     }
+
+    public function getSourceLabelAttribute(): string
+    {
+        if ($this->is_auto_generated) {
+            return 'Automatic Stock Request';
+        }
+
+        return $this->request_source === 'repair' ? 'Repair Job' : 'Manual Entry';
+    }
+
+    public function getSourceReasonAttribute(): ?string
+    {
+        return $this->is_auto_generated ? 'Stock reached reorder level' : null;
+    }
+
     public function getPriorityLabelAttribute(): string
     {
         return ucfirst($this->priority);

@@ -23,10 +23,12 @@ class ProductInventoryTest extends TestCase
 
         app(PermissionRegistrar::class)->forgetCachedPermissions();
         Permission::findOrCreate('access-product-inventory', 'user');
+        Permission::findOrCreate('inventory.adjust_stock', 'user');
         
         $this->shopOwner = ShopOwner::factory()->create();
         $this->user = User::factory()->create(['shop_owner_id' => $this->shopOwner->id]);
         $this->user->givePermissionTo('access-product-inventory');
+        $this->user->givePermissionTo('inventory.adjust_stock');
         $this->actingAs($this->user, 'user');
     }
 

@@ -226,7 +226,7 @@ export const inventoryItemAPI = {
             Object.entries(data).forEach(([key, value]) => {
                 if (['images', 'sizes', 'color_variants'].includes(key)) return;
                 if (value !== null && value !== undefined) {
-                    formData.append(key, String(value));
+                    formData.append(key, key === 'auto_stock_request_enabled' ? (value ? '1' : '0') : String(value));
                 }
             });
 

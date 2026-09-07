@@ -18,6 +18,9 @@ const mocks = vi.hoisted(() => ({
 	requested_date: "2026-08-02",
 	created_at: "2026-08-02",
 	updated_at: "2026-08-02",
+	is_auto_generated: true,
+	source_label: "Automatic Stock Request",
+	source_reason: "Stock reached reorder level",
 	inventory_item: {
 		category: "shoes",
 		sizes: [
@@ -78,6 +81,13 @@ describe("Stock Request details", () => {
 		expect(screen.getByText("Total Quantity (All Sizes)")).toBeInTheDocument();
 		expect(screen.getByText("200 units")).toBeInTheDocument();
 		expect(screen.getByText("US 3, US 5")).toBeInTheDocument();
+	});
+
+	it("renders the server-provided automatic request source", async () => {
+		render(<StockRequest />);
+
+		expect(await screen.findByText("Automatic Stock Request")).toBeInTheDocument();
+		expect(screen.getByText("Stock reached reorder level")).toBeInTheDocument();
 	});
 
 	it("previews the physical total and submits per-size basis for a new all-size request", async () => {
