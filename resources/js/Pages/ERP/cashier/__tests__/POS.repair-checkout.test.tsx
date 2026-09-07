@@ -91,6 +91,15 @@ describe("Cashier POS repair checkout", () => {
     expect(activePage).not.toHaveClass("bg-blue-600");
   });
 
+  it("uses a gray warning state when the repair cart is empty", async () => {
+    render(<CashierPOS />);
+
+    const checkoutWarning = await screen.findByText("Add at least one service before checkout.", { exact: true });
+
+    expect(checkoutWarning).toHaveClass("bg-gray-100", "border-gray-300", "text-gray-700");
+    expect(checkoutWarning).not.toHaveClass("bg-amber-50", "border-amber-200", "text-amber-700");
+  });
+
   it("submits walk-in repair checkout payload to repair-pos endpoint", async () => {
     render(<CashierPOS />);
 
