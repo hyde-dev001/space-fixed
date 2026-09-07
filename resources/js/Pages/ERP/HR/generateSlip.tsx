@@ -2,6 +2,7 @@ import { useMemo, useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { usePage } from "@inertiajs/react";
 import Swal from "sweetalert2";
+import { DashboardMetricCard } from "../../../components/dashboard";
 
 // ==================== Type Definitions ====================
 type EmployeeStatus = "active" | "inactive" | "suspended" | "terminated";
@@ -1667,35 +1668,31 @@ export default function GenerateSlip() {
 							{selectedPeriod ? `${selectedPeriod.month} readiness for release controls` : 'Select a payroll period to view release readiness'}
 						</p>
 					</div>
-					<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-						<div className="rounded-lg border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50 px-4 py-3">
-							<p className="text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wide">Checker Approved</p>
-							<p className="text-lg font-semibold text-gray-900 dark:text-white mt-2">
-								{isLoadingGovernanceStatus
-									? 'Loading…'
-									: `${governanceStatus.checkerApproved}/${governanceStatus.totalPayrolls} payrolls`}
-							</p>
-							<p className="text-xs text-gray-500 dark:text-gray-500 mt-2">
-								{governanceStatus.requireChecker
-									? `${governanceStatus.awaitingChecker} awaiting checker sign-off`
-									: 'Checker step is not required'}
-							</p>
-						</div>
-						<div className="rounded-lg border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50 px-4 py-3">
-							<p className="text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wide">Final Approver Required</p>
-							<p className="text-lg font-semibold text-gray-900 dark:text-white mt-2">
-								{isLoadingGovernanceStatus
-									? 'Loading…'
-									: governanceStatus.requireFinalApprover
-										? `${governanceStatus.awaitingFinalApprover} awaiting final release`
-										: 'Not required'}
-							</p>
-							<p className="text-xs text-gray-500 dark:text-gray-500 mt-2">
-								{isLoadingGovernanceStatus
-									? 'Fetching governance checks...'
-									: `${governanceStatus.paidPayrolls} already paid`}
-							</p>
-						</div>
+					<div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+						<DashboardMetricCard
+							label="Checker Approved"
+							value={isLoadingGovernanceStatus
+								? 'Loading…'
+								: `${governanceStatus.checkerApproved}/${governanceStatus.totalPayrolls} payrolls`}
+							description={governanceStatus.requireChecker
+								? `${governanceStatus.awaitingChecker} awaiting checker sign-off`
+								: 'Checker step is not required'}
+							context="Release"
+							icon={CheckCircleIcon}
+						/>
+						<DashboardMetricCard
+							label="Final Approver Required"
+							value={isLoadingGovernanceStatus
+								? 'Loading…'
+								: governanceStatus.requireFinalApprover
+								? `${governanceStatus.awaitingFinalApprover} awaiting final release`
+								: 'Not required'}
+							description={isLoadingGovernanceStatus
+								? 'Fetching governance checks...'
+								: `${governanceStatus.paidPayrolls} already paid`}
+							context="Release"
+							icon={LockIcon}
+						/>
 					</div>
 				</div>
 			</div>

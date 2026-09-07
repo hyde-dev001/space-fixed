@@ -1167,25 +1167,25 @@ const Invoice: React.FC = () => {
                             setSelectedInvoice(invoice);
                             setIsViewModalOpen(true);
                           }}
-                          className="p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                          className="p-2 rounded-lg transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
                           title="View Invoice"
                         >
-                          <EyeIcon className="size-5 text-blue-600 dark:text-blue-400" />
+                          <EyeIcon className="size-5 text-gray-700 dark:text-gray-300" />
                         </button>
                         {effectiveStatus === 'draft' && (
                           <button 
                             onClick={() => handleMarkInvoiceSent(invoice.id)}
                             disabled={markingSentId === invoice.id}
-                            className="p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="p-2 rounded-lg transition-colors hover:bg-gray-100 dark:hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
                             title={markingSentId === invoice.id ? "Marking as sent..." : "Mark as sent"}
                           >
                             {markingSentId === invoice.id ? (
                               <div className="size-5 relative">
                                 <div className="absolute inset-0 rounded-full border-2 border-gray-300"></div>
-                                <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-blue-600 animate-spin"></div>
+                                <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-gray-700"></div>
                               </div>
                             ) : (
-                              <svg className="size-5 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <svg className="size-5 text-gray-700 dark:text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                               </svg>
                             )}
@@ -1211,19 +1211,19 @@ const Invoice: React.FC = () => {
                         {showArchived ? (
                           <button 
                             onClick={() => handleRestoreInvoice(invoice)}
-                            className="p-2 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-lg transition-colors"
+                            className="p-2 rounded-lg transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
                             title="Restore Invoice"
                           >
-                            <ArchiveRestoreIcon className="size-5 text-purple-600 dark:text-purple-400" />
+                            <ArchiveRestoreIcon className="size-5 text-gray-700 dark:text-gray-300" />
                           </button>
                         ) : (
                           !invoice.deleted_at && (
                             <button 
                               onClick={() => handleArchiveInvoice(invoice)}
-                              className="p-2 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-lg transition-colors"
+                              className="p-2 rounded-lg transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
                               title="Archive Invoice"
                             >
-                              <ArchiveBoxIcon className="size-5 text-purple-600 dark:text-purple-400" />
+                              <ArchiveBoxIcon className="size-5 text-gray-700 dark:text-gray-300" />
                             </button>
                           )
                         )}
@@ -1441,7 +1441,7 @@ const Invoice: React.FC = () => {
                 <div className="mt-5 pt-4 border-t border-gray-200 dark:border-gray-700 flex gap-2">
                   <button
                     onClick={() => handleDownloadInvoicePdf(selectedInvoice)}
-                    className="p-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                    className="p-2.5 bg-gray-950 hover:bg-gray-800 text-white rounded-lg transition-colors"
                     title="Download PDF"
                   >
                     <ArrowDownTrayIcon className="size-4" />
@@ -1449,7 +1449,7 @@ const Invoice: React.FC = () => {
                   {!selectedInvoice.deleted_at ? (
                     <button
                       onClick={() => handleArchiveInvoice(selectedInvoice)}
-                      className="flex-1 px-3 py-2.5 border-2 border-purple-300 dark:border-purple-700 bg-white dark:bg-gray-800 hover:bg-purple-50 dark:hover:bg-purple-900/20 text-purple-700 dark:text-purple-300 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+                      className="flex-1 px-3 py-2.5 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
                     >
                       <ArchiveBoxIcon className="size-4" />
                       Archive
@@ -1457,7 +1457,7 @@ const Invoice: React.FC = () => {
                   ) : (
                     <button
                       onClick={() => handleRestoreInvoice(selectedInvoice)}
-                      className="flex-1 px-3 py-2.5 border-2 border-purple-300 dark:border-purple-700 bg-white dark:bg-gray-800 hover:bg-purple-50 dark:hover:bg-purple-900/20 text-purple-700 dark:text-purple-300 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+                      className="flex-1 px-3 py-2.5 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
                     >
                       <ArchiveRestoreIcon className="size-4" />
                       Restore

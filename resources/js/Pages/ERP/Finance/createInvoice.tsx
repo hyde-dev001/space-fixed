@@ -357,7 +357,7 @@ export default function FinanceCreateInvoice() {
 			<Head title="Create Invoice - Solespace ERP" />
 			<div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-6 px-4 sm:px-6 lg:px-8">
 				<div className="w-full space-y-6 pb-20">
-					<div>
+					<div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 						<a
 							href={invoicesUrl}
 							className="inline-flex items-center gap-2 text-sm font-semibold text-gray-600 hover:text-gray-700"
@@ -365,14 +365,12 @@ export default function FinanceCreateInvoice() {
 							<ArrowLeftIcon className="w-4 h-4" />
 							Back to invoice page
 						</a>
-					</div>
-					<div className="flex items-center justify-between">
-						<h1 className="sr-only">Create Invoice</h1>
-						<div className="flex items-center gap-3">
+						<div className="flex items-center gap-3 sm:ml-auto">
+							<h1 className="sr-only">Create Invoice</h1>
 							<button
 								onClick={handleSaveInvoice}
 								disabled={loading}
-								className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 shadow-sm inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+								className="inline-flex items-center gap-2 rounded-lg bg-gray-950 px-4 py-2 text-white shadow-sm hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
 							>
 								<PlusIcon className="w-4 h-4" />
 								{loading ? "Saving..." : "Save Invoice"}
