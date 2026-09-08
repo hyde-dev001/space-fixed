@@ -1660,68 +1660,33 @@ export default function GenerateSlip() {
 				</div>
 			</div>
 
-			{/* Release Authorization Status */}
+			{/* Release Authorization Cards */}
 			<div className="space-y-3">
-				<div className="flex flex-col gap-3">
-					<div>
-						<h3 className="text-sm font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">Release Authorization Status</h3>
-						<p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-							{selectedPeriod ? `${selectedPeriod.month} readiness for release controls` : 'Select a payroll period to view release readiness'}
-						</p>
-					</div>
-					<div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-						<DashboardMetricCard
-							label="Checker Approved"
-							value={isLoadingGovernanceStatus
-								? 'Loading…'
-								: `${governanceStatus.checkerApproved}/${governanceStatus.totalPayrolls} payrolls`}
-							description={governanceStatus.requireChecker
-								? `${governanceStatus.awaitingChecker} awaiting checker sign-off`
-								: 'Checker step is not required'}
-							context="Release"
-							icon={CheckCircleIcon}
-						/>
-						<DashboardMetricCard
-							label="Final Approver Required"
-							value={isLoadingGovernanceStatus
-								? 'Loading…'
-								: governanceStatus.requireFinalApprover
-								? `${governanceStatus.awaitingFinalApprover} awaiting final release`
-								: 'Not required'}
-							description={isLoadingGovernanceStatus
-								? 'Fetching governance checks...'
-								: `${governanceStatus.paidPayrolls} already paid`}
-							context="Release"
-							icon={LockIcon}
-						/>
-					</div>
-				</div>
-			</div>
-
-			{/* Filters */}
-			<div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-				<div className="md:col-span-2">
-					<label className="text-sm text-gray-600 dark:text-gray-300">Search</label>
-					<input
-						value={search}
-						onChange={(e) => handleSearch(e.target.value)}
-						placeholder="Search by name, ID, position, or department"
-						className="mt-1 w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white"
+				<div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+					<DashboardMetricCard
+						label="Checker Approved"
+						value={isLoadingGovernanceStatus
+							? 'Loading…'
+							: `${governanceStatus.checkerApproved}/${governanceStatus.totalPayrolls} payrolls`}
+						description={governanceStatus.requireChecker
+							? `${governanceStatus.awaitingChecker} awaiting checker sign-off`
+							: 'Checker step is not required'}
+						context="Release"
+						icon={CheckCircleIcon}
 					/>
-				</div>
-				<div>
-					<label className="text-sm text-gray-600 dark:text-gray-300">Department</label>
-					<MonochromeSelect
-						value={department}
-						onChange={(e) => handleDepartment(e.target.value)}
-						aria-label="Filter by department"
-						className="mt-1 w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white"
-					>
-						<option value="">All</option>
-						{departments.map((d) => (
-							<option key={d} value={d}>{d}</option>
-						))}
-					</MonochromeSelect>
+					<DashboardMetricCard
+						label="Final Approver Required"
+						value={isLoadingGovernanceStatus
+							? 'Loading…'
+							: governanceStatus.requireFinalApprover
+							? `${governanceStatus.awaitingFinalApprover} awaiting final release`
+							: 'Not required'}
+						description={isLoadingGovernanceStatus
+							? 'Fetching governance checks...'
+							: `${governanceStatus.paidPayrolls} already paid`}
+						context="Release"
+						icon={LockIcon}
+					/>
 				</div>
 			</div>
 
@@ -1773,6 +1738,32 @@ export default function GenerateSlip() {
 									Generate Selected ({selectedPendingEmployees.length})
 								</button>
 							</div>
+						</div>
+					</div>
+
+					<div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-5">
+						<div className="md:col-span-2">
+							<label className="text-sm text-gray-600 dark:text-gray-300">Search</label>
+							<input
+								value={search}
+								onChange={(e) => handleSearch(e.target.value)}
+								placeholder="Search by name, ID, position, or department"
+								className="mt-1 w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white"
+							/>
+						</div>
+						<div>
+							<label className="text-sm text-gray-600 dark:text-gray-300">Department</label>
+							<MonochromeSelect
+								value={department}
+								onChange={(e) => handleDepartment(e.target.value)}
+								aria-label="Filter by department"
+								className="mt-1 w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white"
+							>
+								<option value="">All</option>
+								{departments.map((d) => (
+									<option key={d} value={d}>{d}</option>
+								))}
+							</MonochromeSelect>
 						</div>
 					</div>
 				</div>
