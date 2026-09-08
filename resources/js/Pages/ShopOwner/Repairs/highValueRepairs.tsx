@@ -367,7 +367,7 @@ export default function HighValueRepairs() {
 
 				{/* View Details Modal */}
 				{viewModalOpen && selectedRepair && (
-					<div className="fixed inset-0 z-999 flex items-center justify-center bg-black bg-opacity-50">
+					<div className="fixed inset-0 z-999 flex items-center justify-center bg-black bg-opacity-50 erp-modal-backdrop">
 						<div className="relative max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-lg bg-white p-8 dark:bg-boxdark">
 							<button
 								onClick={closeViewModal}

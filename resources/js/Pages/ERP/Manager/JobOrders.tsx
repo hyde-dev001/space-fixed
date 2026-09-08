@@ -115,7 +115,7 @@ const OrderDetail = ({ order, onClose, onReassign }: {
     onClose: () => void;
     onReassign: () => void;
 }) => (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-gray-950/50 p-4" role="dialog" aria-modal="true" aria-labelledby="order-detail-title">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-gray-950/50 p-4 erp-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="order-detail-title">
         <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl dark:bg-gray-900">
             <div className="flex items-start justify-between gap-4">
                 <div>
@@ -173,7 +173,7 @@ const ReassignDialog = ({
     onSubmit: (event: FormEvent<HTMLFormElement>) => void;
     onClose: () => void;
 }) => (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-gray-950/50 p-4" role="dialog" aria-modal="true" aria-labelledby="reassign-order-title">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-gray-950/50 p-4 erp-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="reassign-order-title">
         <form onSubmit={onSubmit} className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl dark:bg-gray-900">
             <div className="flex items-start justify-between gap-4">
                 <div>

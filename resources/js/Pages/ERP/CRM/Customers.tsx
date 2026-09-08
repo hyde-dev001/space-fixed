@@ -485,7 +485,7 @@ export default function Customers() {
 
         {showDetailsModal && (
           <>
-            <div className="fixed inset-0 z-100000 bg-black/50" />
+            <div className="fixed inset-0 z-100000 bg-black/50 erp-modal-backdrop" />
             <div className="fixed inset-0 z-100001 flex items-center justify-center p-4">
               <div className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-2xl border border-gray-200 bg-white p-5 shadow-xl dark:border-gray-800 dark:bg-gray-900">
                 {/* Loading skeleton */}

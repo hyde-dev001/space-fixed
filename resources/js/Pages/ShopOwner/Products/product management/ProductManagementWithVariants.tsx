@@ -1887,7 +1887,7 @@ export default function ProductManagement() {
 
       {/* Add/Edit Product Modal with Variant Management */}
       {!isCompanyOwner && isModalOpen && createPortal(
-        <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-2">
+        <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-2 erp-modal-backdrop">
           <div className="bg-white dark:bg-gray-800 rounded-xl max-w-7xl w-full shadow-2xl relative flex flex-col" style={{ height: 'calc(100vh - 1rem)' }}>
             <div className="sticky top-0 p-6 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-t-xl z-10">
               <div className="flex items-start justify-between gap-4">
@@ -2149,7 +2149,7 @@ export default function ProductManagement() {
             </form>
 
             {isCategoryModalOpen && (
-              <div className="fixed inset-0 z-[1000000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+              <div className="fixed inset-0 z-[1000000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
                 <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-lg shadow-2xl border border-gray-200 dark:border-gray-700">
                   <div className="p-4 border-b border-gray-200 dark:border-gray-700">
                     <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Select Categories</h3>
@@ -2203,7 +2203,7 @@ export default function ProductManagement() {
 
       {/* Upload Loading Overlay */}
       {uploading && createPortal(
-        <div className="fixed inset-0 z-[9999999] flex items-center justify-center bg-black/80 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[9999999] flex items-center justify-center bg-black/80 backdrop-blur-sm erp-modal-backdrop">
           <div className="flex flex-col items-center gap-6">
             <div className="relative flex items-center justify-center">
               <span className="absolute inline-block h-36 w-36 rounded-full border-8 border-white/25" />

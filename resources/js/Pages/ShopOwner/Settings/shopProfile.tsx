@@ -199,7 +199,7 @@ const OperatingHoursModal: React.FC<{
   if (!isOpen) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
       <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white dark:bg-gray-900 shadow-2xl">
         <div className="sticky top-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 px-6 py-4 flex items-center justify-between">
           <h3 className="text-xl font-bold text-gray-900 dark:text-white">Set Operating Hours</h3>
@@ -411,7 +411,7 @@ const EditProfileModal: React.FC<{
   if (!isOpen) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
       <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white dark:bg-gray-900 shadow-2xl">
         <form onSubmit={handleSubmit}>
           {/* Modal Header */}

@@ -358,7 +358,7 @@ export default function CustomersPage() {
       {/* Customer Details Modal */}
       {showDetailsModal && selectedCustomer && (
         <>
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100000] pointer-events-auto" />
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100000] pointer-events-auto erp-modal-backdrop" />
           <div className="fixed inset-0 flex items-center justify-center z-[100001] p-4 pointer-events-auto">
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
               <div className="p-6 border-b border-gray-200 dark:border-gray-700">

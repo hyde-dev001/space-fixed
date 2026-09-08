@@ -687,7 +687,7 @@ export default function ERPPricingAndServices() {
 
           {/* Add Service Modal */}
           {addModalOpen && (
-            <div className="fixed inset-0 z-[999999] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="fixed inset-0 z-[999999] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
               <div className="bg-white dark:bg-gray-900 rounded-3xl shadow-[0_20px_60px_-20px_rgba(15,23,42,0.45)] max-w-lg w-full border border-gray-200/90 dark:border-gray-700/70 overflow-hidden">
                 <div className="flex items-center justify-between p-6 sm:p-7 bg-gray-50/80 dark:bg-gray-900/90 border-b border-gray-200 dark:border-gray-700">
                   <div>
@@ -775,7 +775,7 @@ export default function ERPPricingAndServices() {
 
         {/* View Modal */}
         {viewModalOpen && selectedService && (
-          <div className="fixed inset-0 z-[999999] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-[999999] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
             <div className="bg-white dark:bg-gray-900 rounded-3xl shadow-[0_20px_60px_-20px_rgba(15,23,42,0.45)] max-w-lg w-full border border-gray-200/90 dark:border-gray-700/70 overflow-hidden">
               <div className="flex items-center justify-between p-6 sm:p-7 bg-gray-50/80 dark:bg-gray-900/90 border-b border-gray-200 dark:border-gray-700">
                 <div>
@@ -848,7 +848,7 @@ export default function ERPPricingAndServices() {
 
         {/* Edit Modal */}
         {editModalOpen && selectedService && (
-          <div className="fixed inset-0 z-[999999] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-[999999] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
             <div className="bg-white dark:bg-gray-900 rounded-3xl shadow-[0_20px_60px_-20px_rgba(15,23,42,0.45)] max-w-lg w-full border border-gray-200/90 dark:border-gray-700/70 overflow-hidden">
               <div className="flex items-center justify-between p-6 sm:p-7 bg-gray-50/80 dark:bg-gray-900/90 border-b border-gray-200 dark:border-gray-700">
                 <div>

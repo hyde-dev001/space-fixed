@@ -1629,7 +1629,7 @@ export default function RefundApproval() {
 			</div>
 
 			{viewModalOpen && selectedRequest && (
-				<div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+				<div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
 					<div className="absolute inset-0" onClick={handleCloseModal} />
 					<div className="relative bg-white dark:bg-gray-900 rounded-2xl shadow-xl w-full max-w-5xl max-h-[90vh] overflow-hidden">
 						<div className="px-8 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
@@ -1806,7 +1806,7 @@ export default function RefundApproval() {
 			)}
 
 			{executeModalOpen && executeRequest && (
-				<div className="fixed inset-0 z-[1000001] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+				<div className="fixed inset-0 z-[1000001] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
 					<div className="absolute inset-0" onClick={() => closeExecuteModal()} />
 					<div className="relative bg-white dark:bg-gray-900 rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden">
 						<div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">

@@ -536,7 +536,7 @@ export default function UploadStockMaterial() {
       </div>
 
       {isModalOpen && (
-        <div className="fixed inset-0 z-999999 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+        <div className="fixed inset-0 z-999999 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm erp-modal-backdrop">
           <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-white shadow-2xl dark:bg-gray-900">
             <div className="border-b border-gray-200 p-6 dark:border-gray-800">
               <h2 className="text-2xl font-bold text-gray-900 dark:text-white">

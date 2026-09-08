@@ -2795,7 +2795,7 @@ html.dark #app .erp-theme :is(
   [class~='rounded-lg'][class~='shadow'],
   [class~='rounded-xl'][class~='shadow'],
   [class~='rounded-2xl'][class~='shadow']
-):not([data-critical], [data-critical] *) {
+):not(.erp-modal-backdrop, [data-critical], [data-critical] *) {
   background-color: var(--erp-surface) !important;
   border-color: var(--erp-border) !important;
   color: var(--erp-text) !important;
@@ -3998,7 +3998,7 @@ html:not(.dark) #app .erp-theme :is(
   [class~='rounded-lg'][class~='shadow'],
   [class~='rounded-xl'][class~='shadow'],
   [class~='rounded-2xl'][class~='shadow']
-):not([data-critical], [data-critical] *) {
+):not(.erp-modal-backdrop, [data-critical], [data-critical] *) {
   background-color: var(--erp-surface) !important;
   border-color: var(--erp-border) !important;
   color: var(--erp-text) !important;
@@ -4936,4 +4936,20 @@ html.dark:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .erp-swal2-info.sw
 #app .erp-theme [data-erp-icon-action][data-semantic-color='warning'] *,
 #app .erp-theme [data-erp-icon-action][data-semantic-color='danger'] * {
   color: inherit !important;
+}
+
+/* Canonical ERP/Shop Owner modal backdrop. Keep this after compatibility
+   rules so legacy palette utilities cannot turn a backdrop into a surface. */
+html:has(#app .erp-theme) .erp-modal-backdrop {
+  background: rgba(0, 0, 0, 0.28) !important;
+  background-color: rgba(0, 0, 0, 0.28) !important;
+  background-image: none !important;
+  backdrop-filter: blur(2px) !important;
+  -webkit-backdrop-filter: blur(2px) !important;
+}
+
+html:has(#app .erp-theme) body.swal2-shown:not(.swal2-toast-shown) .swal2-container {
+  --swal2-backdrop: rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
 }

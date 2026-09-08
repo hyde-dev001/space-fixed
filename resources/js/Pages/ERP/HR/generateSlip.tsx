@@ -1957,7 +1957,7 @@ export default function GenerateSlip() {
 
 			{isPeriodModalOpen && createPortal(
 				<div
-					className="fixed inset-0 z-999999 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4"
+					className="fixed inset-0 z-999999 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop"
 					onClick={() => {
 						setIsPeriodModalOpen(false);
 						setPeriodSearch("");
@@ -2064,7 +2064,7 @@ export default function GenerateSlip() {
 
 			{/* Generation Modal - Continued in next part due to length */}
 			{selectedEmployee && createPortal(
-				<div className="fixed inset-0 z-999999 bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
+				<div className="fixed inset-0 z-999999 bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8 erp-modal-backdrop">
 					<div className="relative bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto p-8">
 						<div className="flex items-start justify-between mb-6">
 							<div>
@@ -2496,7 +2496,7 @@ export default function GenerateSlip() {
 			)}
 
 			{showBatchPreviewModal && batchPreviewData && createPortal(
-				<div className="fixed inset-0 z-999999 bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
+				<div className="fixed inset-0 z-999999 bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8 erp-modal-backdrop">
 					<div className="relative max-h-[90vh] w-full max-w-6xl overflow-y-auto no-scrollbar rounded-2xl bg-white p-8 shadow-2xl dark:bg-gray-900">
 						<div className="flex items-start justify-between mb-6">
 							<div>
@@ -2602,7 +2602,7 @@ export default function GenerateSlip() {
 
 			{/* Generation Progress Overlay */}
 			{isGenerating && generationProgress.total > 0 && createPortal(
-				<div className="fixed inset-0 z-999999 bg-black/80 backdrop-blur-sm flex items-center justify-center">
+				<div className="fixed inset-0 z-999999 bg-black/80 backdrop-blur-sm flex items-center justify-center erp-modal-backdrop">
 					<div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl p-8 max-w-md w-full">
 						<div className="text-center">
 							<div className="mb-4">

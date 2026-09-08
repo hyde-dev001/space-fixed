@@ -453,7 +453,7 @@ export default function ProductInventory() {
 
 				{selectedProduct && (
 					<div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-						<button type="button" aria-label="Close product details" className="absolute inset-0 bg-black/50" onClick={closeDetailsModal} />
+						<button type="button" aria-label="Close product details" className="absolute inset-0 bg-black/50 erp-modal-backdrop" onClick={closeDetailsModal} />
 						<div className="relative w-full max-w-5xl max-h-[90vh] overflow-y-auto rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-xl">
 							<div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
 								<div>

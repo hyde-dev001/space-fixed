@@ -599,7 +599,7 @@ export default function WarrantyQueue() {
 
         {isClaimDetailsOpen && selectedClaim && (
           <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 erp-modal-backdrop"
             onClick={closeWarrantyClaimDetails}
           >
             <div
@@ -722,7 +722,7 @@ export default function WarrantyQueue() {
 
         {isRejectionModalOpen && selectedClaim?.status === "pending_repairer" && (
           <div
-            className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/60 px-4 py-6"
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/60 px-4 py-6 erp-modal-backdrop"
             onClick={closeRejectionModal}
           >
             <div

@@ -1316,7 +1316,7 @@ export default function RepairerSupport() {
       {/* Transfer Note Modal (View Only) */}
       {showTransferNoteModal && selectedTicket?.transferNote && (
         <div 
-          className="fixed inset-0 backdrop-blur-md flex items-center justify-center z-50"
+          className="fixed inset-0 backdrop-blur-md flex items-center justify-center z-50 erp-modal-backdrop"
           onClick={() => setShowTransferNoteModal(false)}
         >
           <div 

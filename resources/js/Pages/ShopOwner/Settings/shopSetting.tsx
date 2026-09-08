@@ -2433,7 +2433,7 @@ const ShopSetting: React.FC = () => {
 				</div>
 
 				{activePayoutPicker && (
-					<div className="fixed inset-0 z-50 flex items-end justify-center bg-gray-900/50 p-4 sm:items-center">
+					<div className="fixed inset-0 z-50 flex items-end justify-center bg-gray-900/50 p-4 sm:items-center erp-modal-backdrop">
 						<button
 							type="button"
 							onClick={closePayoutDayPicker}

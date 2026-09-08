@@ -777,7 +777,7 @@ export default function StockRequest() {
 						type="button"
 						aria-label="Close create request modal"
 						disabled={isSubmittingCreateRequest}
-						className="absolute inset-0 bg-black/50 disabled:cursor-not-allowed"
+						className="absolute inset-0 bg-black/50 disabled:cursor-not-allowed erp-modal-backdrop"
 						onClick={() => {
 							void requestCloseCreateModal();
 						}}
@@ -986,7 +986,7 @@ export default function StockRequest() {
 			{/* ── View Request Modal ── */}
 			{viewingRequest && (
 				<div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-					<button type="button" aria-label="Close request details modal" className="absolute inset-0 bg-black/50" onClick={() => setViewingRequest(null)} />
+					<button type="button" aria-label="Close request details modal" className="absolute inset-0 bg-black/50 erp-modal-backdrop" onClick={() => setViewingRequest(null)} />
 				<div className="relative w-full max-w-2xl rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-xl max-h-[90vh] overflow-y-auto">
 						<div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-800 sticky top-0 bg-white dark:bg-gray-900">
 							<h2 className="text-xl font-semibold text-gray-900 dark:text-white">Stock Request Details</h2>
@@ -1075,7 +1075,7 @@ export default function StockRequest() {
 						type="button"
 						aria-label="Close product picker modal"
 						disabled={isSubmittingCreateRequest}
-						className="absolute inset-0 bg-black/50 disabled:cursor-not-allowed"
+						className="absolute inset-0 bg-black/50 disabled:cursor-not-allowed erp-modal-backdrop"
 					onClick={() => { setIsProductPickerOpen(false); setIsCreateModalOpen(true); }}
 				/>
 				<div className="relative w-full max-w-2xl rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-xl max-h-[80vh] overflow-hidden flex flex-col">

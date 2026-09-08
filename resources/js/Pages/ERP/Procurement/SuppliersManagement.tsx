@@ -474,7 +474,7 @@ export default function SuppliersManagement() {
 			{/* Add Supplier Modal */}
 			{isModalOpen && (
 				<div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-					<button type="button" aria-label="Close add supplier modal" className="absolute inset-0 bg-black/50" onClick={handleCloseModal} />
+					<button type="button" aria-label="Close add supplier modal" className="absolute inset-0 bg-black/50 erp-modal-backdrop" onClick={handleCloseModal} />
 					<div className="relative w-full max-w-2xl rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-xl">
 						<div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-800">
 							<h2 className="text-xl font-semibold text-gray-900 dark:text-white">Add New Supplier</h2>
@@ -584,7 +584,7 @@ export default function SuppliersManagement() {
 			{/* View Supplier Modal */}
 			{viewingSupplier && (
 				<div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-					<button type="button" aria-label="Close view supplier modal" className="absolute inset-0 bg-black/50" onClick={() => setViewingSupplier(null)} />
+					<button type="button" aria-label="Close view supplier modal" className="absolute inset-0 bg-black/50 erp-modal-backdrop" onClick={() => setViewingSupplier(null)} />
 					<div className="relative w-full max-w-2xl rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-xl max-h-[90vh] overflow-y-auto">
 						<div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-800 sticky top-0 bg-white dark:bg-gray-900">
 							<h2 className="text-xl font-semibold text-gray-900 dark:text-white">Supplier Details</h2>
@@ -669,7 +669,7 @@ export default function SuppliersManagement() {
 			{/* Edit Supplier Modal */}
 			{editingSupplier && (
 				<div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-					<button type="button" aria-label="Close edit supplier modal" className="absolute inset-0 bg-black/50" onClick={() => { setEditingSupplier(null); setFormData(initialFormState); }} />
+					<button type="button" aria-label="Close edit supplier modal" className="absolute inset-0 bg-black/50 erp-modal-backdrop" onClick={() => { setEditingSupplier(null); setFormData(initialFormState); }} />
 					<div className="relative w-full max-w-2xl rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-xl">
 						<div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-800">
 							<h2 className="text-xl font-semibold text-gray-900 dark:text-white">Edit Supplier</h2>

@@ -3484,7 +3484,7 @@ const PointOfSalePage = () => {
 						<div data-testid="repair-pos-mode" className="hidden" />
 
 				{isRefundQueueOpen && (
-					<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
+					<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 erp-modal-backdrop">
 						<div className="w-full max-w-4xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
 							<div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
 								<h3 className="text-lg font-semibold text-slate-900">Repair Refund Queue</h3>
@@ -3967,7 +3967,7 @@ const PointOfSalePage = () => {
 				</div>
 
 				{isOrderModalOpen && (
-					<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
+					<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 erp-modal-backdrop">
 						<div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
 							<div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
 								<h3 className="text-lg font-semibold text-slate-900">Attach From Repair Orders</h3>
@@ -4022,7 +4022,7 @@ const PointOfSalePage = () => {
 				)}
 
 				{isHistoryModalOpen && (
-					<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
+					<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 erp-modal-backdrop">
 						<div className="w-full max-w-3xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
 							<div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
 								<h3 className="text-lg font-semibold text-slate-900">Receipt History</h3>
@@ -4154,7 +4154,7 @@ const PointOfSalePage = () => {
 				)}
 
 				{isReceiptModalOpen && receiptSnapshot && (
-					<div className="receipt-print-modal fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
+					<div className="receipt-print-modal fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 erp-modal-backdrop">
 						<div className="receipt-print-card w-full max-w-xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
 							<div className="receipt-modal-header flex items-center justify-between border-b border-slate-200 px-5 py-4">
 								<h3 className="text-lg font-semibold text-slate-900">Receipt (Thermal)</h3>

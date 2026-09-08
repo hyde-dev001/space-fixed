@@ -1390,7 +1390,7 @@ export default function PayslipApproval({
 			</div>
 
 			{viewModalOpen && selectedRequest && (
-				<div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+				<div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
 					<div className="w-full max-w-3xl rounded-2xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-xl">
 						<div className="flex items-start justify-between mb-4 px-6 py-4">
 							<div>
@@ -1552,7 +1552,7 @@ export default function PayslipApproval({
 
 			{/* Batch Approval Preview Modal */}
 			{showPreviewModal && (
-				<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+				<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm erp-modal-backdrop">
 					<div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
 						<div className="p-6 overflow-y-auto no-scrollbar max-h-[calc(90vh-120px)]">
 							{isLoadingPreview ? (
@@ -1632,7 +1632,7 @@ export default function PayslipApproval({
 
 			{/* Batch Approval Progress Modal */}
 			{isBatchApproving && approvalProgress.total > 0 && (
-				<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+				<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm erp-modal-backdrop">
 					<div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-md w-full p-8">
 						<div className="text-center">
 							<div className="mx-auto w-16 h-16 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mb-4">

@@ -1206,7 +1206,7 @@ export default function UploadInventory() {
       </AppLayoutERP>
 
       {isModalOpen && createPortal(
-        <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-2">
+        <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-2 erp-modal-backdrop">
           <div className="bg-white dark:bg-gray-800 rounded-xl max-w-6xl w-full shadow-2xl relative flex flex-col border border-gray-200 dark:border-gray-700" style={{ height: 'calc(100vh - 1rem)' }}>
             <div className="sticky top-0 p-6 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-t-xl z-10">
               <div className="flex items-center justify-between gap-4">
@@ -1691,7 +1691,7 @@ export default function UploadInventory() {
               </div>
 
               {isShoeTypePickerOpen && (
-                <div className="fixed inset-0 z-[1000001] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+                <div className="fixed inset-0 z-[1000001] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
                   <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-lg shadow-2xl border border-gray-200 dark:border-gray-700">
                     <div className="p-4 border-b border-gray-200 dark:border-gray-700">
                       <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Select Shoe Types</h3>
