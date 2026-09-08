@@ -3,6 +3,7 @@ import React, { useMemo, useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { usePage } from "@inertiajs/react";
 import Swal from "sweetalert2";
+import IconButton from "@/components/ui/icon-button/IconButton";
 
 // Icon Components
 const UsersIcon = ({ className }: { className?: string }) => (
@@ -809,18 +810,20 @@ const ViewAttendance: React.FC = () => {
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-1">
-                        <button
+                        <IconButton
+                          variant="neutral"
                           onClick={() => {
                             setSelectedRecord(record);
                             setIsViewModalOpen(true);
                           }}
-                          className="inline-flex items-center justify-center p-2 rounded-lg text-blue-600 hover:bg-blue-100 dark:text-blue-400 dark:hover:bg-blue-900/30 transition-colors duration-200"
                           title="View attendance details"
+                          label={`View attendance details for ${record.name}`}
                         >
                           <EyeIcon className="size-5" />
-                        </button>
+                        </IconButton>
                         {!ownerMode && (
-                          <button
+                          <IconButton
+                            variant="warning"
                             onClick={() => {
                               setEditRecord(record);
                               setEditForm({
@@ -831,11 +834,11 @@ const ViewAttendance: React.FC = () => {
                               });
                               setIsEditModalOpen(true);
                             }}
-                            className="inline-flex items-center justify-center p-2 rounded-lg text-amber-600 hover:bg-amber-100 dark:text-amber-400 dark:hover:bg-amber-900/30 transition-colors duration-200"
                             title="Correct attendance record"
+                            label={`Correct attendance record for ${record.name}`}
                           >
                             <PencilIcon className="size-5" />
-                          </button>
+                          </IconButton>
                         )}
                       </div>
                     </td>

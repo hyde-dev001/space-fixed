@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
 import { createPortal } from 'react-dom';
 import { Activity, AlertTriangle, Eye, MoreHorizontal, Pencil, RotateCcw, Send } from 'lucide-react';
 import { logisticsModuleLabel, type DeliveryBatch, type DeliveryBatchStatus } from '@/types/logistics';
+import IconButton from '@/components/ui/icon-button/IconButton';
 
 const formatDate = (value: string) => new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium', timeZone: 'UTC' })
   .format(new Date(`${value.slice(0, 10)}T00:00:00Z`));
@@ -32,7 +33,7 @@ function SecondaryActions({ batch, onReview, onCancel, onRestore }: Pick<Props, 
     || (['draft', 'offered', 'accepted'].includes(batch.status) && Boolean(onCancel));
 
   if (batch.status === 'cancelled' && onRestore) {
-    return <button type="button" aria-label={`Restore batch ${batch.id}`} title="Restore to draft" onClick={() => onRestore(batch.id)} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-gray-500 hover:text-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500"><RotateCcw aria-hidden="true" size={18} /></button>;
+    return <IconButton variant="success" aria-label={`Restore batch ${batch.id}`} title="Restore to draft" onClick={() => onRestore(batch.id)} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg"><RotateCcw aria-hidden="true" size={18} /></IconButton>;
   }
   if (!active || !hasActions) return null;
 
@@ -114,7 +115,7 @@ function FloatingActions({ batch, onReview, onCancel }: Pick<Props, 'onReview' |
   ) : null;
 
   return <>
-    <button ref={triggerRef} type="button" aria-label={`More actions for batch ${batch.id}`} aria-expanded={open} onClick={toggle} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-gray-500 hover:text-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500"><MoreHorizontal aria-hidden="true" size={18} /></button>
+    <IconButton ref={triggerRef} variant="neutral" aria-label={`More actions for batch ${batch.id}`} aria-expanded={open} onClick={toggle} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg"><MoreHorizontal aria-hidden="true" size={18} /></IconButton>
     {menu}
   </>;
 }
@@ -138,9 +139,9 @@ function BatchSummary({ batch }: { batch: DeliveryBatch }) {
 
 function BatchActions({ batch, onOpen, onDetails, onReview, onCancel, onRestore }: Pick<Props, 'onOpen' | 'onDetails' | 'onReview' | 'onCancel' | 'onRestore'> & { batch: DeliveryBatch }) {
   return <>
-    {batch.status === 'draft' && onOpen && <button type="button" aria-label={`Edit batch ${batch.id}`} title="Edit batch" onClick={() => onOpen(batch.id)} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-gray-500 hover:text-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500"><Pencil aria-hidden="true" size={18} /></button>}
-    {primaryActions[batch.status as keyof typeof primaryActions] && onOpen && <button type="button" aria-label={`${primaryActions[batch.status as keyof typeof primaryActions].label} ${batch.id}`} title={primaryActions[batch.status as keyof typeof primaryActions].label} onClick={() => onOpen(batch.id)} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-gray-500 hover:text-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500">{React.createElement(primaryActions[batch.status as keyof typeof primaryActions].Icon, { 'aria-hidden': true, size: 18 })}</button>}
-    <button type="button" aria-label={`View details for batch ${batch.id}`} title="View details" onClick={(event) => onDetails(batch.id, event.currentTarget)} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-gray-500 hover:text-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500"><Eye aria-hidden="true" size={18} /></button>
+    {batch.status === 'draft' && onOpen && <IconButton variant="neutral" aria-label={`Edit batch ${batch.id}`} title="Edit batch" onClick={() => onOpen(batch.id)} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg"><Pencil aria-hidden="true" size={18} /></IconButton>}
+    {primaryActions[batch.status as keyof typeof primaryActions] && onOpen && <IconButton variant="neutral" aria-label={`${primaryActions[batch.status as keyof typeof primaryActions].label} ${batch.id}`} title={primaryActions[batch.status as keyof typeof primaryActions].label} onClick={() => onOpen(batch.id)} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg">{React.createElement(primaryActions[batch.status as keyof typeof primaryActions].Icon, { 'aria-hidden': true, size: 18 })}</IconButton>}
+    <IconButton variant="neutral" aria-label={`View details for batch ${batch.id}`} title="View details" onClick={(event) => onDetails(batch.id, event.currentTarget)} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg"><Eye aria-hidden="true" size={18} /></IconButton>
     <SecondaryActions batch={batch} onReview={onReview} onCancel={onCancel} onRestore={onRestore} />
   </>;
 }

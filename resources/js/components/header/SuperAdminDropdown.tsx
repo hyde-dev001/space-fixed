@@ -4,6 +4,7 @@ import { Dropdown } from "../ui/dropdown/Dropdown";
 import Swal from "sweetalert2";
 import { LogOut, ShieldCheck, UserRound } from "lucide-react";
 import InlineAccountMenu from "./InlineAccountMenu";
+import { withSweetAlertSemantic } from "@/utils/semanticSweetAlert";
 
 type PrivilegedIdentity = {
   name: string;
@@ -41,7 +42,7 @@ export default function SuperAdminDropdown({ inline = false, compact = false }: 
     closeDropdown();
     setLogoutError(null);
     
-    const result = await Swal.fire({
+    const result = await Swal.fire(withSweetAlertSemantic({
       title: "Sign Out",
       text: "Are you sure you want to sign out?",
       icon: "warning",
@@ -49,7 +50,7 @@ export default function SuperAdminDropdown({ inline = false, compact = false }: 
       confirmButtonText: "Yes, sign out",
       cancelButtonText: "Cancel",
       reverseButtons: true,
-    });
+    }, "signout"));
 
     if (result.isConfirmed) {
       router.post('/admin/logout', {}, {

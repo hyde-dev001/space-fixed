@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ComponentType } from "react";
 import Swal from "sweetalert2";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
+import IconButton from "../../../components/ui/icon-button/IconButton";
 import { productInventoryAPI } from "@/services/inventoryAPI";
 import type { InventoryItem as ApiInventoryItem } from "@/types/inventory";
 import { erpUrl } from "@/utils/erpCapabilities";
@@ -391,18 +392,17 @@ export default function ProductInventory() {
 												</td>
 												<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{item.lastUpdated}</td>
 												<td className="px-4 py-3 text-center">
-													<button
-														type="button"
+													<IconButton
+														variant="neutral"
 														onClick={() => openDetailsModal(item)}
-														className="p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
 														title="View details"
-														aria-label={`View details for ${item.productName}`}
+														label={`View details for ${item.productName}`}
 													>
-														<svg className="h-5 w-5 text-blue-600 dark:text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+														<svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
 															<path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.27 2.943 9.542 7-1.272 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
 															<circle cx="12" cy="12" r="3" />
 														</svg>
-													</button>
+													</IconButton>
 												</td>
 											</tr>
 										);

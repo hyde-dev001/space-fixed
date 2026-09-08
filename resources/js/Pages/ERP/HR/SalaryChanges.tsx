@@ -3,6 +3,8 @@ import React, { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { usePage } from "@inertiajs/react";
 import Swal from "sweetalert2";
+import IconButton from "@/components/ui/icon-button/IconButton";
+import { withSweetAlertSemantic } from "@/utils/semanticSweetAlert";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -460,7 +462,7 @@ const SalaryChanges: React.FC = () => {
   };
 
   const handleApprove = async (change: SalaryChange) => {
-    const result = await Swal.fire({
+    const result = await Swal.fire(withSweetAlertSemantic({
       title: "Approve Salary Change?",
       html: `
         <p style="margin-bottom:12px;">Approve salary change for <strong>${change.employee?.name}</strong>?</p>
@@ -474,7 +476,7 @@ const SalaryChanges: React.FC = () => {
       confirmButtonText: "Approve",
       confirmButtonColor: "#10b981",
       preConfirm: () => ({ notes: (document.getElementById("approve-notes") as HTMLTextAreaElement).value.trim() }),
-    });
+    }, "success"));
 
     if (!result.isConfirmed) return;
 
@@ -499,7 +501,7 @@ const SalaryChanges: React.FC = () => {
   };
 
   const handleReject = async (change: SalaryChange) => {
-    const result = await Swal.fire({
+    const result = await Swal.fire(withSweetAlertSemantic({
       title: "Reject Salary Change",
       html: `
         <p style="margin-bottom:12px;">Reject salary change for <strong>${change.employee?.name}</strong>?</p>
@@ -514,7 +516,7 @@ const SalaryChanges: React.FC = () => {
         if (!notes) { Swal.showValidationMessage("Rejection reason is required."); return false; }
         return { notes };
       },
-    });
+    }, "danger"));
 
     if (!result.isConfirmed) return;
 
@@ -541,14 +543,14 @@ const SalaryChanges: React.FC = () => {
   const handleApply = async (change: SalaryChange) => {
     if (ownerMode) return;
 
-    const confirm = await Swal.fire({
+    const confirm = await Swal.fire(withSweetAlertSemantic({
       title: "Apply Salary Change?",
       text: `This will immediately update ${change.employee?.name}'s salary to ${fmtCurrency(change.new_salary)}.`,
       icon: "question",
       showCancelButton: true,
       confirmButtonText: "Apply Now",
       confirmButtonColor: "#3b82f6",
-    });
+    }, "info"));
     if (!confirm.isConfirmed) return;
 
     setIsActionProcessing(true);
@@ -574,14 +576,14 @@ const SalaryChanges: React.FC = () => {
   const handleCancel = async (change: SalaryChange) => {
     if (ownerMode) return;
 
-    const confirm = await Swal.fire({
+    const confirm = await Swal.fire(withSweetAlertSemantic({
       title: "Cancel Salary Change?",
       text: "This will cancel the pending proposal. This cannot be undone.",
       icon: "warning",
       showCancelButton: true,
       confirmButtonText: "Yes, Cancel It",
       confirmButtonColor: "#6b7280",
-    });
+    }, "warning"));
     if (!confirm.isConfirmed) return;
 
     setIsActionProcessing(true);
@@ -960,42 +962,46 @@ const SalaryChanges: React.FC = () => {
                     </td>
                     <td className="px-6 py-4 text-center">
                       <div className="flex items-center justify-center gap-2">
-                        <button
+                        <IconButton
+                          variant="neutral"
                           onClick={() => setViewChange(change)}
-                          className="rounded-lg p-2 transition-colors hover:bg-blue-50 dark:hover:bg-blue-900/20"
                           title="View details"
+                          label="View salary change details"
                         >
-                          <svg className="size-5 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                          <svg className="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
                             <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                             <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                           </svg>
-                        </button>
+                        </IconButton>
                         {canDecideChange(change) && (
-                          <button
+                          <IconButton
+                            variant="success"
                             onClick={() => handleApprove(change)}
-                            className="rounded-lg p-2 transition-colors hover:bg-green-50 dark:hover:bg-green-900/20"
                             title="Approve"
+                            label="Approve salary change"
                           >
-                            <CheckCircleIcon className="size-5 text-green-600 dark:text-green-400" />
-                          </button>
+                            <CheckCircleIcon className="size-5" />
+                          </IconButton>
                         )}
                         {canManage && change.status === "approved" && !change.applied_at && (
-                          <button
+                          <IconButton
+                            variant="primary"
                             onClick={() => handleApply(change)}
-                            className="rounded-lg p-2 transition-colors hover:bg-blue-50 dark:hover:bg-blue-900/20"
                             title="Apply now"
+                            label="Apply salary change now"
                           >
-                            <SparklesIcon className="size-5 text-blue-600 dark:text-blue-400" />
-                          </button>
+                            <SparklesIcon className="size-5" />
+                          </IconButton>
                         )}
                         {!ownerMode && change.status === "pending" && (change.proposed_by === currentUserId || canManage || canApprove) && (
-                          <button
+                          <IconButton
+                            variant="warning"
                             onClick={() => handleCancel(change)}
-                            className="rounded-lg p-2 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
                             title="Cancel"
+                            label="Cancel salary change"
                           >
-                            <BanIcon className="size-5 text-gray-500 dark:text-gray-400" />
-                          </button>
+                            <BanIcon className="size-5" />
+                          </IconButton>
                         )}
                       </div>
                     </td>

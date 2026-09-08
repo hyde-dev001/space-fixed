@@ -13,6 +13,7 @@ import NotificationCenter from '../../../components/header/NotificationCenter';
 import NotificationBell from '../../../components/common/NotificationBell';
 import { useBadgeCounts } from '../../../hooks/useBadgeCounts';
 import { getCustomerNavItems } from './navigationItems';
+import { withSweetAlertSemantic } from '@/utils/semanticSweetAlert';
 
 type SearchSuggestionProduct = {
   id: number;
@@ -274,7 +275,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
   };
 
   const handleLogout = async () => {
-    const result = await Swal.fire({
+    const result = await Swal.fire(withSweetAlertSemantic({
       title: 'Are you sure?',
       text: 'You will be logged out of your account.',
       icon: 'warning',
@@ -282,7 +283,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
       confirmButtonText: 'Log out',
       cancelButtonText: 'Cancel',
       reverseButtons: true,
-    });
+    }, 'signout'));
 
     if (!result.isConfirmed) return;
 

@@ -1,9 +1,11 @@
 import MonochromeSelect from "@/components/form/Select";
+import IconButton from "@/components/ui/icon-button/IconButton";
 import React, { useMemo, useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import Swal from "sweetalert2";
 import { Inertia } from "@inertiajs/inertia";
 import { router, usePage } from '@inertiajs/react';
+import { withSweetAlertSemantic } from "@/utils/semanticSweetAlert";
 
 type EmployeeStatus = "active" | "inactive" | "suspended" | "terminated";
 
@@ -1056,7 +1058,7 @@ export const EmployeeManagement: React.FC<{
   };
 
   const handleActivate = (employeeId: number, name: string) => {
-    Swal.fire({
+    Swal.fire(withSweetAlertSemantic({
       title: "Reactivate Account?",
       text: `Activate ${name}?`,
       icon: "question",
@@ -1064,7 +1066,7 @@ export const EmployeeManagement: React.FC<{
       confirmButtonColor: "#16a34a",
       cancelButtonColor: "#6b7280",
       confirmButtonText: "Yes, activate",
-    }).then((result) => {
+    }, "success")).then((result) => {
         if (result.isConfirmed) {
           (async () => {
             try {
@@ -1092,12 +1094,12 @@ export const EmployeeManagement: React.FC<{
               const apiResponse = await response.json();
               const updatedEmployee = transformEmployeeFromApi(apiResponse.employee || apiResponse.data || apiResponse);
               setRows((prev) => prev.map((row) => (row.id === employeeId ? updatedEmployee : row)));
-              Swal.fire({ title: "Reactivated", text: `${name} is now active.`, icon: "success", timer: 1400, showConfirmButton: false });
+              Swal.fire(withSweetAlertSemantic({ title: "Reactivated", text: `${name} is now active.`, icon: "success", timer: 1400, showConfirmButton: false }, "success"));
               setIsViewModalOpen(false);
               setSelectedEmployee(null);
             } catch (e: any) {
               setApiError(e?.message || "Failed to reactivate account.");
-              Swal.fire({ title: "Error", text: e?.message || "Failed to reactivate account.", icon: "error" });
+              Swal.fire(withSweetAlertSemantic({ title: "Error", text: e?.message || "Failed to reactivate account.", icon: "error" }, "danger"));
             } finally {
               setIsProcessingId(null);
             }
@@ -1160,23 +1162,23 @@ export const EmployeeManagement: React.FC<{
       }
 
       onSubmitted();
-      await Swal.fire({
+      await Swal.fire(withSweetAlertSemantic({
         icon: 'success',
         title: successTitle,
         text: data?.message || successFallback,
         confirmButtonColor: '#10b981',
-      });
+      }, 'success'));
     } catch (error: unknown) {
       const message = error instanceof Error
         ? error.message
         : 'Failed to submit employee lifecycle request.';
       setApiError(message);
-      await Swal.fire({
+      await Swal.fire(withSweetAlertSemantic({
         title: 'Error',
         text: message,
         icon: 'error',
         confirmButtonColor: '#ef4444',
-      });
+      }, 'danger'));
     } finally {
       setIsProcessingId(null);
     }
@@ -1671,7 +1673,7 @@ export const EmployeeManagement: React.FC<{
       return;
     }
 
-    const result = await Swal.fire({
+    const result = await Swal.fire(withSweetAlertSemantic({
       title: 'Reset employee password?',
       html: `This will invalidate the current password for <strong>${buildName(employee)}</strong> and generate a new account setup link.`,
       icon: 'warning',
@@ -1680,7 +1682,7 @@ export const EmployeeManagement: React.FC<{
       cancelButtonText: 'Cancel',
       confirmButtonColor: '#dc2626',
       cancelButtonColor: '#6b7280',
-    });
+    }, 'warning'));
 
     if (!result.isConfirmed) return;
 
@@ -2570,10 +2572,10 @@ export const EmployeeManagement: React.FC<{
                         <div className="ml-auto flex max-w-[340px] flex-wrap items-center justify-end gap-2">
                           {!ownerReadOnly && (
                             <>
-                          <button
-                            type="button"
+                          <IconButton
+                            variant="warning"
                             onClick={() => handleResetEmployeePassword(employee)}
-                            className={`${employeeActionButtonClass} text-red-600 hover:border-red-200 hover:bg-red-50 hover:text-red-900 dark:text-red-400 dark:hover:border-red-800 dark:hover:bg-red-900/20 dark:hover:text-red-300`}
+                            className={employeeActionButtonClass}
                             title={String(employee.email ?? '').trim().toLowerCase() === currentUserEmail ? "You cannot reset your own account password" : "Reset Employee Password"}
                             aria-label={String(employee.email ?? '').trim().toLowerCase() === currentUserEmail ? "You cannot reset your own account password" : `Reset password for ${buildName(employee)}`}
                             disabled={isProcessingId === employee.id || String(employee.email ?? '').trim().toLowerCase() === currentUserEmail}
@@ -2581,11 +2583,11 @@ export const EmployeeManagement: React.FC<{
                             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m6-10h-1V6a5 5 0 00-10 0v1H6a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V9a2 2 0 00-2-2zM9 7V6a3 3 0 016 0v1H9z" />
                             </svg>
-                          </button>
-                          <button
-                            type="button"
+                          </IconButton>
+                          <IconButton
+                            variant="primary"
                             onClick={() => viewInvitationLink(employee)}
-                            className={`${employeeActionButtonClass} text-green-600 hover:border-green-200 hover:bg-green-50 hover:text-green-900 dark:text-green-400 dark:hover:border-green-800 dark:hover:bg-green-900/20 dark:hover:text-green-300`}
+                            className={employeeActionButtonClass}
                             title={String(employee.email ?? '').trim().toLowerCase() === currentUserEmail ? "You cannot reset your own account password" : "View/Resend Invitation Link"}
                             aria-label={String(employee.email ?? '').trim().toLowerCase() === currentUserEmail ? "You cannot reset your own account password" : `View or resend invitation for ${buildName(employee)}`}
                             disabled={isProcessingId === employee.id || String(employee.email ?? '').trim().toLowerCase() === currentUserEmail}
@@ -2593,19 +2595,19 @@ export const EmployeeManagement: React.FC<{
                             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                             </svg>
-                          </button>
+                          </IconButton>
                             </>
                           )}
-                          <button
-                            type="button"
+                          <IconButton
+                            variant="neutral"
                             onClick={() => openViewModal(employee)}
-                            className={`${employeeActionButtonClass} text-blue-600 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-900 dark:text-blue-400 dark:hover:border-blue-800 dark:hover:bg-blue-900/20 dark:hover:text-blue-300`}
+                            className={employeeActionButtonClass}
                             title="View Details"
                             aria-label={`View details for ${buildName(employee)}`}
                             disabled={isProcessingId === employee.id}
                           >
                             <InfoIcon className="h-5 w-5" />
-                          </button>
+                          </IconButton>
                           {['inactive', 'suspended'].includes(employee.status) && (
                             <Button
                               variant="success"
@@ -2627,10 +2629,10 @@ export const EmployeeManagement: React.FC<{
                             </Button>
                           )}
                           {canRequestEmployeeLifecycle && employee.status !== 'terminated' && (
-                            <button
-                              type="button"
+                            <IconButton
+                              variant="danger"
                               onClick={() => handleTerminateClick(employee)}
-                              className={`${employeeActionButtonClass} text-red-600 hover:border-red-200 hover:bg-red-50 hover:text-red-900 dark:text-red-400 dark:hover:border-red-800 dark:hover:bg-red-900/20 dark:hover:text-red-300`}
+                              className={employeeActionButtonClass}
                               title="Request Termination"
                               aria-label={`Request termination for ${buildName(employee)}`}
                               disabled={isProcessingId === employee.id || isSelfEmployeeAccount(employee)}
@@ -2638,26 +2640,26 @@ export const EmployeeManagement: React.FC<{
                               <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19a6 6 0 00-12 0m6-8a4 4 0 100-8 4 4 0 000 8zm5-5h6" />
                               </svg>
-                            </button>
+                            </IconButton>
                           )}
                           {!ownerReadOnly && (
                             <>
-                          <button
-                            type="button"
+                          <IconButton
+                            variant="neutral"
                             onClick={() => openPermissionModal(employee)}
-                            className={`${employeeActionButtonClass} text-purple-600 hover:border-purple-200 hover:bg-purple-50 hover:text-purple-900 dark:text-purple-400 dark:hover:border-purple-800 dark:hover:bg-purple-900/20 dark:hover:text-purple-300`}
+                            className={employeeActionButtonClass}
                             title="Manage Permissions"
                             aria-label={`Manage permissions for ${buildName(employee)}`}
                             disabled={isProcessingId === employee.id}
                           >
                             <LockIcon className="h-5 w-5" />
-                          </button>
+                          </IconButton>
                           {!['inactive', 'suspended', 'terminated'].includes(employee.status) && (
                             <>
-                              <button
-                                type="button"
+                              <IconButton
+                                variant="warning"
                                 onClick={() => handleSuspendClick(employee)}
-                                className={`${employeeActionButtonClass} text-orange-600 hover:border-orange-200 hover:bg-orange-50 hover:text-orange-800 dark:text-orange-400 dark:hover:border-orange-800 dark:hover:bg-orange-900/20 dark:hover:text-orange-300`}
+                                className={employeeActionButtonClass}
                                 title={isSelfEmployeeAccount(employee)
                                   ? 'You cannot suspend your own account'
                                   : ownerMode ? 'Suspend Employee' : 'File Suspension Request'}
@@ -2667,7 +2669,7 @@ export const EmployeeManagement: React.FC<{
                                 disabled={isProcessingId === employee.id || isSelfEmployeeAccount(employee)}
                               >
                                 <AlertIcon className="h-5 w-5" />
-                              </button>
+                              </IconButton>
                             </>
                           )}
                           {/* Delete button removed per request */}

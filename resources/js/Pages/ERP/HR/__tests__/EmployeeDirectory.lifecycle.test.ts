@@ -41,9 +41,10 @@ describe('employee termination and rehire directory workflow', () => {
   });
 
   it('renders lifecycle actions as visible buttons in the directory', () => {
+    const actionColumnStart = source.indexOf('<td className="px-3 py-3 align-top text-right');
     const actionColumn = source.slice(
-      source.indexOf("{['inactive', 'suspended'].includes(employee.status) && ("),
-      source.indexOf('{!ownerReadOnly && (', source.indexOf("{['inactive', 'suspended'].includes(employee.status) && (")),
+      actionColumnStart,
+      source.indexOf('</td>', actionColumnStart),
     );
 
     expect(source).toContain('const employeeActionButtonClass =');
@@ -51,12 +52,19 @@ describe('employee termination and rehire directory workflow', () => {
     expect(source).toContain('w-[340px]');
     expect(source).toContain('flex flex-wrap items-center justify-end gap-2');
     expect(actionColumn).toContain('<Button');
+    expect(actionColumn).toContain('<IconButton');
+    expect(actionColumn).toContain('variant="neutral"');
+    expect(actionColumn).toContain('variant="primary"');
+    expect(actionColumn).toContain('variant="warning"');
+    expect(actionColumn).toContain('variant="danger"');
     expect(actionColumn).toContain('variant="success"');
     expect(actionColumn).toContain('Activate Account');
     expect(actionColumn).toContain('Request Rehire');
     expect(actionColumn).toContain('title="Request Termination"');
     expect(actionColumn).toContain('aria-label={`Request termination for ${buildName(employee)}`}');
     expect(actionColumn).not.toContain('>\n                              Request Termination\n');
+    expect(actionColumn).not.toContain('text-purple-600');
+    expect(actionColumn).not.toContain('text-orange-600');
   });
 
   it('does not offer Activate Account for terminated employee rows', () => {

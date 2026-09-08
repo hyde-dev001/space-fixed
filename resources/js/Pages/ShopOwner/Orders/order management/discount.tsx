@@ -4,6 +4,8 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
 import AppLayoutShopOwner from "../../../../layout/AppLayout_shopOwner";
 import AppLayoutERP from "../../../../layout/AppLayout_ERP";
+import IconButton from "../../../../components/ui/icon-button/IconButton";
+import { withSweetAlertSemantic } from "../../../../utils/semanticSweetAlert";
 
 type PromoKind = "voucher" | "discount";
 type DiscountMode = "percentage" | "fixed";
@@ -483,7 +485,7 @@ export default function VouchersDiscountPage() {
 	};
 
 	const handleDeleteCampaign = async (campaign: Campaign) => {
-		const confirmation = await Swal.fire({
+		const confirmation = await Swal.fire(withSweetAlertSemantic({
 			title: "Delete campaign?",
 			text: `This will permanently remove ${campaign.name}.`,
 			icon: "warning",
@@ -492,7 +494,7 @@ export default function VouchersDiscountPage() {
 			cancelButtonColor: "#9CA3AF",
 			confirmButtonText: "Yes, delete it",
 			cancelButtonText: "Cancel",
-		});
+		}, "danger"));
 
 		if (!confirmation.isConfirmed) {
 			return;
@@ -908,9 +910,17 @@ export default function VouchersDiscountPage() {
 			<div className="shopowner-vouchers-page space-y-6">
 				<section className="overflow-hidden rounded-[28px] border border-slate-200 bg-[radial-gradient(circle_at_top_left,_rgba(29,78,216,0.12),_transparent_32%),linear-gradient(135deg,#ffffff_0%,#f8fafc_55%,#eef2ff_100%)] p-6 shadow-sm md:p-8">
 					<div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
-                        <div className="max-w-2xl">
-                            <h1 className="sr-only">Vouchers &amp; Discount</h1>
-                        </div>
+						<div className="max-w-2xl">
+							<span className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-slate-600 ring-1 ring-slate-200 backdrop-blur">
+								Promo Management
+							</span>
+							<h1 className="mt-4 text-3xl font-bold tracking-tight text-slate-900 md:text-4xl">
+								Vouchers &amp; Discount
+							</h1>
+							<p className="mt-3 max-w-xl text-sm leading-6 text-slate-600 md:text-base">
+								Create product-based vouchers and discounts for your shop without leaving the dashboard flow. This page is tuned for fast setup, clear schedules, and cleaner promo monitoring.
+							</p>
+						</div>
 
 						<div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:min-w-[460px]">
 							<div className="rounded-2xl border border-white/70 bg-white/80 p-4 shadow-sm backdrop-blur">
@@ -1379,23 +1389,23 @@ export default function VouchersDiscountPage() {
 										</td>
 										<td className="py-4 text-right">
 											<div className="inline-flex items-center gap-2">
-												<button
-													type="button"
+												<IconButton
+													variant="neutral"
 													onClick={() => handleEditCampaign(campaign)}
-													className="rounded-lg p-2 text-blue-600 transition-colors hover:bg-blue-50"
 													title="View / Edit"
+													label={`View or edit ${campaign.name}`}
 												>
 													<EyeIcon className="h-5 w-5" />
-												</button>
-												<button
-													type="button"
+												</IconButton>
+												<IconButton
+													variant="danger"
 													onClick={() => handleDeleteCampaign(campaign)}
 													disabled={deletingCampaignId === campaign.id}
-													className="rounded-lg p-2 text-red-600 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
 													title="Delete"
+													label={`Delete ${campaign.name}`}
 												>
 													<TrashIcon className="h-5 w-5" />
-												</button>
+												</IconButton>
 											</div>
 										</td>
 									</tr>

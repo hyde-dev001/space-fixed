@@ -4490,3 +4490,450 @@ html.dark #app .erp-theme :is(button, [role='button']):not([data-catalog-card]):
   opacity: 0.55 !important;
   transform: none !important;
 }
+
+/* Semantic icon-only actions are the single exception to ERP's monochrome
+   controls. Their meaning is carried by a restrained tint, not by layout or
+   shape changes. */
+#app .erp-theme {
+  --erp-icon-neutral-fg: #475569;
+  --erp-icon-neutral-bg: #f8fafc;
+  --erp-icon-neutral-hover: #e2e8f0;
+  --erp-icon-neutral-active: #cbd5e1;
+  --erp-icon-primary-fg: #2563eb;
+  --erp-icon-primary-bg: #eff6ff;
+  --erp-icon-primary-hover: #dbeafe;
+  --erp-icon-primary-active: #bfdbfe;
+  --erp-icon-success-fg: #16a34a;
+  --erp-icon-success-bg: #f0fdf4;
+  --erp-icon-success-hover: #dcfce7;
+  --erp-icon-success-active: #bbf7d0;
+  --erp-icon-warning-fg: #b45309;
+  --erp-icon-warning-bg: #fffbeb;
+  --erp-icon-warning-hover: #fef3c7;
+  --erp-icon-warning-active: #fde68a;
+  --erp-icon-danger-fg: #dc2626;
+  --erp-icon-danger-bg: #fef2f2;
+  --erp-icon-danger-hover: #fee2e2;
+  --erp-icon-danger-active: #fecaca;
+}
+
+html.dark #app .erp-theme {
+  --erp-icon-neutral-fg: #cbd5e1;
+  --erp-icon-neutral-bg: #1f2937;
+  --erp-icon-neutral-hover: #334155;
+  --erp-icon-neutral-active: #475569;
+  --erp-icon-primary-fg: #93c5fd;
+  --erp-icon-primary-bg: #172554;
+  --erp-icon-primary-hover: #1e3a8a;
+  --erp-icon-primary-active: #1d4ed8;
+  --erp-icon-success-fg: #86efac;
+  --erp-icon-success-bg: #14532d;
+  --erp-icon-success-hover: #166534;
+  --erp-icon-success-active: #15803d;
+  --erp-icon-warning-fg: #fcd34d;
+  --erp-icon-warning-bg: #451a03;
+  --erp-icon-warning-hover: #78350f;
+  --erp-icon-warning-active: #92400e;
+  --erp-icon-danger-fg: #fca5a5;
+  --erp-icon-danger-bg: #450a0a;
+  --erp-icon-danger-hover: #7f1d1d;
+  --erp-icon-danger-active: #991b1b;
+}
+
+#app .erp-theme [data-erp-icon-action] {
+  border-color: color-mix(in srgb, var(--erp-icon-neutral-fg), transparent 72%) !important;
+  background-color: var(--erp-icon-neutral-bg) !important;
+  color: var(--erp-icon-neutral-fg) !important;
+}
+
+#app .erp-theme [data-erp-icon-action][data-semantic-color='neutral'] {
+  border-color: color-mix(in srgb, var(--erp-icon-neutral-fg), transparent 72%) !important;
+  background-color: var(--erp-icon-neutral-bg) !important;
+  color: var(--erp-icon-neutral-fg) !important;
+}
+
+#app .erp-theme [data-erp-icon-action][data-semantic-color='primary'] {
+  border-color: color-mix(in srgb, var(--erp-icon-primary-fg), transparent 72%) !important;
+  background-color: var(--erp-icon-primary-bg) !important;
+  color: var(--erp-icon-primary-fg) !important;
+}
+
+#app .erp-theme [data-erp-icon-action][data-semantic-color='success'] {
+  border-color: color-mix(in srgb, var(--erp-icon-success-fg), transparent 72%) !important;
+  background-color: var(--erp-icon-success-bg) !important;
+  color: var(--erp-icon-success-fg) !important;
+}
+
+#app .erp-theme [data-erp-icon-action][data-semantic-color='warning'] {
+  border-color: color-mix(in srgb, var(--erp-icon-warning-fg), transparent 72%) !important;
+  background-color: var(--erp-icon-warning-bg) !important;
+  color: var(--erp-icon-warning-fg) !important;
+}
+
+#app .erp-theme [data-erp-icon-action][data-semantic-color='danger'] {
+  border-color: color-mix(in srgb, var(--erp-icon-danger-fg), transparent 72%) !important;
+  background-color: var(--erp-icon-danger-bg) !important;
+  color: var(--erp-icon-danger-fg) !important;
+}
+
+#app .erp-theme [data-erp-icon-action][data-semantic-color='neutral']:not(:disabled):not([aria-disabled='true']):hover {
+  background-color: var(--erp-icon-neutral-hover) !important;
+  border-color: var(--erp-icon-neutral-fg) !important;
+  color: var(--erp-icon-neutral-fg) !important;
+}
+
+#app .erp-theme [data-erp-icon-action][data-semantic-color='primary']:not(:disabled):not([aria-disabled='true']):hover {
+  background-color: var(--erp-icon-primary-hover) !important;
+  border-color: var(--erp-icon-primary-fg) !important;
+  color: var(--erp-icon-primary-fg) !important;
+}
+
+#app .erp-theme [data-erp-icon-action][data-semantic-color='success']:not(:disabled):not([aria-disabled='true']):hover {
+  background-color: var(--erp-icon-success-hover) !important;
+  border-color: var(--erp-icon-success-fg) !important;
+  color: var(--erp-icon-success-fg) !important;
+}
+
+#app .erp-theme [data-erp-icon-action][data-semantic-color='warning']:not(:disabled):not([aria-disabled='true']):hover {
+  background-color: var(--erp-icon-warning-hover) !important;
+  border-color: var(--erp-icon-warning-fg) !important;
+  color: var(--erp-icon-warning-fg) !important;
+}
+
+#app .erp-theme [data-erp-icon-action][data-semantic-color='danger']:not(:disabled):not([aria-disabled='true']):hover {
+  background-color: var(--erp-icon-danger-hover) !important;
+  border-color: var(--erp-icon-danger-fg) !important;
+  color: var(--erp-icon-danger-fg) !important;
+}
+
+#app .erp-theme [data-erp-icon-action][data-semantic-color='neutral']:not(:disabled):not([aria-disabled='true']):active {
+  background-color: var(--erp-icon-neutral-active) !important;
+}
+
+#app .erp-theme [data-erp-icon-action][data-semantic-color='primary']:not(:disabled):not([aria-disabled='true']):active {
+  background-color: var(--erp-icon-primary-active) !important;
+}
+
+#app .erp-theme [data-erp-icon-action][data-semantic-color='success']:not(:disabled):not([aria-disabled='true']):active {
+  background-color: var(--erp-icon-success-active) !important;
+}
+
+#app .erp-theme [data-erp-icon-action][data-semantic-color='warning']:not(:disabled):not([aria-disabled='true']):active {
+  background-color: var(--erp-icon-warning-active) !important;
+}
+
+#app .erp-theme [data-erp-icon-action][data-semantic-color='danger']:not(:disabled):not([aria-disabled='true']):active {
+  background-color: var(--erp-icon-danger-active) !important;
+}
+
+#app .erp-theme [data-erp-icon-action]:is(:focus, :focus-visible):not(:disabled):not([aria-disabled='true']) {
+  outline: 2px solid color-mix(in srgb, currentColor, transparent 55%) !important;
+  outline-offset: 2px;
+  --tw-ring-color: transparent !important;
+}
+
+/* Disabled icon actions never enter a semantic hover/active treatment. Keep
+   the lower opacity distinct from enabled controls and make aria-disabled
+   actions visually identical when a native disabled attribute is unavailable. */
+#app .erp-theme [data-erp-icon-action]:is(:disabled, [aria-disabled='true']),
+#app .erp-theme [data-erp-icon-action]:is(:disabled, [aria-disabled='true']):hover,
+#app .erp-theme [data-erp-icon-action]:is(:disabled, [aria-disabled='true']):active,
+#app .erp-theme [data-erp-icon-action][aria-disabled='true']:hover {
+  background-color: var(--erp-surface-muted) !important;
+  border-color: var(--erp-border) !important;
+  color: var(--erp-text-muted) !important;
+  box-shadow: none !important;
+  cursor: not-allowed !important;
+  opacity: 0.38 !important;
+  outline: none !important;
+  pointer-events: none;
+  transform: none !important;
+}
+
+/* Package and individual-service cards are content selectors, not icon
+   actions. Keep their deliberate white surface, black border, and black copy
+   in both themes; disabled cards retain the same visual identity without a
+   hover state. */
+#app .erp-theme [data-catalog-card],
+#app .erp-theme [data-catalog-card]:not(:disabled):hover,
+#app .erp-theme [data-catalog-card]:disabled,
+#app .erp-theme [data-catalog-card]:disabled:hover {
+  background-color: #ffffff !important;
+  border-color: #111111 !important;
+  color: #111111 !important;
+}
+
+#app .erp-theme [data-catalog-card]:disabled,
+#app .erp-theme [data-catalog-card]:disabled:hover {
+  cursor: not-allowed !important;
+  opacity: 0.5 !important;
+  transform: none !important;
+}
+
+/* SweetAlert feedback keeps the popup monochrome while its icon communicates
+   the outcome. Confirmation buttons only become semantic when the caller opts
+   into a semantic popup class. */
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-icon.swal2-success,
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .erp-swal2-success.swal2-icon {
+  border-color: #16a34a !important;
+  color: #16a34a !important;
+}
+
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-icon.swal2-warning,
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .erp-swal2-warning.swal2-icon,
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .erp-swal2-signout.swal2-icon {
+  border-color: #b45309 !important;
+  color: #b45309 !important;
+}
+
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-icon.swal2-error,
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .erp-swal2-danger.swal2-icon {
+  border-color: #dc2626 !important;
+  color: #dc2626 !important;
+}
+
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-icon:is(.swal2-info, .swal2-question),
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .erp-swal2-info.swal2-icon {
+  border-color: #2563eb !important;
+  color: #2563eb !important;
+}
+
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast).erp-swal2-success .swal2-confirm,
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-confirm.erp-swal2-success {
+  background-color: #16a34a !important;
+  border-color: #16a34a !important;
+  color: #ffffff !important;
+}
+
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast).erp-swal2-warning .swal2-confirm,
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-confirm.erp-swal2-warning {
+  background-color: #b45309 !important;
+  border-color: #b45309 !important;
+  color: #ffffff !important;
+}
+
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast).erp-swal2-danger .swal2-confirm,
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-confirm.erp-swal2-danger {
+  background-color: #dc2626 !important;
+  border-color: #dc2626 !important;
+  color: #ffffff !important;
+}
+
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast).erp-swal2-info .swal2-confirm,
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-confirm.erp-swal2-info {
+  background-color: #2563eb !important;
+  border-color: #2563eb !important;
+  color: #ffffff !important;
+}
+
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast).erp-swal2-signout .swal2-confirm,
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-confirm.erp-swal2-signout {
+  background-color: #111111 !important;
+  border-color: #111111 !important;
+  color: #ffffff !important;
+}
+
+html.dark:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-icon.swal2-success,
+html.dark:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .erp-swal2-success.swal2-icon {
+  border-color: #4ade80 !important;
+  color: #4ade80 !important;
+}
+
+html.dark:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-icon.swal2-warning,
+html.dark:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .erp-swal2-warning.swal2-icon,
+html.dark:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .erp-swal2-signout.swal2-icon {
+  border-color: #fbbf24 !important;
+  color: #fbbf24 !important;
+}
+
+html.dark:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-icon.swal2-error,
+html.dark:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .erp-swal2-danger.swal2-icon {
+  border-color: #f87171 !important;
+  color: #f87171 !important;
+}
+
+html.dark:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-icon:is(.swal2-info, .swal2-question),
+html.dark:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .erp-swal2-info.swal2-icon {
+  border-color: #60a5fa !important;
+  color: #60a5fa !important;
+}
+
+/* Legacy icon-only actions can opt into the same contract from their existing
+   utility classes while they are gradually moved to IconButton. The selector
+   is deliberately limited to labelled buttons whose only direct content is an
+   SVG, so text buttons and decorative/status icons stay monochrome. */
+#app .erp-theme :is(button, [role='button']):has(> svg):not(:has(> :not(svg))):is([title], [aria-label]):not([data-erp-icon-action]) {
+  --erp-icon-action-fg: var(--erp-icon-neutral-fg);
+  --erp-icon-action-bg: var(--erp-icon-neutral-bg);
+  --erp-icon-action-hover: var(--erp-icon-neutral-hover);
+  --erp-icon-action-active: var(--erp-icon-neutral-active);
+}
+
+#app .erp-theme :is(button, [role='button']):has(> svg):not(:has(> :not(svg))):is([title], [aria-label]):not([data-erp-icon-action]):is(
+  [class*='text-blue-'], [class*='text-indigo-'], [class*='text-sky-'],
+  [class*='text-cyan-'], [class*='text-brand-'], [class*='border-blue-'],
+  [class*='border-indigo-'], [class*='border-sky-'], [class*='border-cyan-'],
+  [class*='border-brand-'], [class*='hover:text-blue-'], [class*='hover:text-indigo-'],
+  [class*='hover:text-sky-'], [class*='hover:text-cyan-'], [class*='hover:text-brand-'],
+  [class*='hover:bg-blue-'], [class*='hover:bg-indigo-'], [class*='hover:bg-sky-'],
+  [class*='hover:bg-cyan-'], [class*='hover:bg-brand-'],
+  :has(> svg:is([class*='text-blue-'], [class*='text-indigo-'], [class*='text-sky-'], [class*='text-cyan-'], [class*='text-brand-'], [class*='border-blue-'], [class*='border-indigo-'], [class*='border-sky-'], [class*='border-cyan-'], [class*='border-brand-'], [class*='hover:text-blue-'], [class*='hover:text-indigo-'], [class*='hover:text-sky-'], [class*='hover:text-cyan-'], [class*='hover:text-brand-']))
+) {
+  --erp-icon-action-fg: var(--erp-icon-primary-fg);
+  --erp-icon-action-bg: var(--erp-icon-primary-bg);
+  --erp-icon-action-hover: var(--erp-icon-primary-hover);
+  --erp-icon-action-active: var(--erp-icon-primary-active);
+}
+
+#app .erp-theme :is(button, [role='button']):has(> svg):not(:has(> :not(svg))):is([title], [aria-label]):not([data-erp-icon-action]):is(
+  [class*='text-green-'], [class*='text-emerald-'], [class*='text-teal-'],
+  [class*='text-lime-'], [class*='border-green-'], [class*='border-emerald-'],
+  [class*='border-teal-'], [class*='border-lime-'], [class*='hover:text-green-'],
+  [class*='hover:text-emerald-'], [class*='hover:text-teal-'], [class*='hover:text-lime-'],
+  [class*='hover:bg-green-'], [class*='hover:bg-emerald-'], [class*='hover:bg-teal-'],
+  [class*='hover:bg-lime-'],
+  :has(> svg:is([class*='text-green-'], [class*='text-emerald-'], [class*='text-teal-'], [class*='text-lime-'], [class*='border-green-'], [class*='border-emerald-'], [class*='border-teal-'], [class*='border-lime-'], [class*='hover:text-green-'], [class*='hover:text-emerald-'], [class*='hover:text-teal-'], [class*='hover:text-lime-']))
+) {
+  --erp-icon-action-fg: var(--erp-icon-success-fg);
+  --erp-icon-action-bg: var(--erp-icon-success-bg);
+  --erp-icon-action-hover: var(--erp-icon-success-hover);
+  --erp-icon-action-active: var(--erp-icon-success-active);
+}
+
+#app .erp-theme :is(button, [role='button']):has(> svg):not(:has(> :not(svg))):is([title], [aria-label]):not([data-erp-icon-action]):is(
+  [class*='text-amber-'], [class*='text-orange-'], [class*='text-yellow-'],
+  [class*='border-amber-'], [class*='border-orange-'], [class*='border-yellow-'],
+  [class*='hover:text-amber-'], [class*='hover:text-orange-'], [class*='hover:text-yellow-'],
+  [class*='hover:bg-amber-'], [class*='hover:bg-orange-'], [class*='hover:bg-yellow-'],
+  :has(> svg:is([class*='text-amber-'], [class*='text-orange-'], [class*='text-yellow-'], [class*='border-amber-'], [class*='border-orange-'], [class*='border-yellow-'], [class*='hover:text-amber-'], [class*='hover:text-orange-'], [class*='hover:text-yellow-']))
+) {
+  --erp-icon-action-fg: var(--erp-icon-warning-fg);
+  --erp-icon-action-bg: var(--erp-icon-warning-bg);
+  --erp-icon-action-hover: var(--erp-icon-warning-hover);
+  --erp-icon-action-active: var(--erp-icon-warning-active);
+}
+
+#app .erp-theme :is(button, [role='button']):has(> svg):not(:has(> :not(svg))):is([title], [aria-label]):not([data-erp-icon-action]):is(
+  [class*='text-red-'], [class*='text-rose-'], [class*='text-pink-'],
+  [class*='border-red-'], [class*='border-rose-'], [class*='border-pink-'],
+  [class*='hover:text-red-'], [class*='hover:text-rose-'], [class*='hover:text-pink-'],
+  [class*='hover:bg-red-'], [class*='hover:bg-rose-'], [class*='hover:bg-pink-'],
+  :has(> svg:is([class*='text-red-'], [class*='text-rose-'], [class*='text-pink-'], [class*='border-red-'], [class*='border-rose-'], [class*='border-pink-'], [class*='hover:text-red-'], [class*='hover:text-rose-'], [class*='hover:text-pink-']))
+) {
+  --erp-icon-action-fg: var(--erp-icon-danger-fg);
+  --erp-icon-action-bg: var(--erp-icon-danger-bg);
+  --erp-icon-action-hover: var(--erp-icon-danger-hover);
+  --erp-icon-action-active: var(--erp-icon-danger-active);
+}
+
+/* Action labels take precedence over legacy utility colors when the old
+   source class did not reflect the action's actual meaning (for example,
+   blue view icons). */
+#app .erp-theme :is(button, [role='button']):has(> svg):not(:has(> :not(svg))):is([title], [aria-label]):not([data-erp-icon-action]):is(
+  [title*='view' i], [title*='detail' i], [title*='preview' i], [title*='open' i],
+  [title*='more' i], [title*='history' i], [title*='setting' i], [title*='search' i],
+  [title*='profile' i], [title*='edit' i], [title*='print' i], [title*='filter' i],
+  [title*='previous' i], [title*='next' i], [title*='month' i], [title*='drag' i],
+  [title*='move ' i], [title*='close' i], [title*='clear' i],
+  [aria-label*='view' i], [aria-label*='detail' i], [aria-label*='preview' i], [aria-label*='open' i],
+  [aria-label*='more' i], [aria-label*='history' i], [aria-label*='setting' i], [aria-label*='search' i],
+  [aria-label*='profile' i], [aria-label*='edit' i], [aria-label*='print' i], [aria-label*='filter' i],
+  [aria-label*='previous' i], [aria-label*='next' i], [aria-label*='month' i], [aria-label*='drag' i],
+  [aria-label*='move ' i], [aria-label*='close' i], [aria-label*='clear' i]
+) {
+  --erp-icon-action-fg: var(--erp-icon-neutral-fg);
+  --erp-icon-action-bg: var(--erp-icon-neutral-bg);
+  --erp-icon-action-hover: var(--erp-icon-neutral-hover);
+  --erp-icon-action-active: var(--erp-icon-neutral-active);
+}
+
+#app .erp-theme :is(button, [role='button']):has(> svg):not(:has(> :not(svg))):is([title], [aria-label]):not([data-erp-icon-action]):is(
+  [title*='send' i], [title*='resend' i], [title*='invitation' i], [title*='invite' i],
+  [title*='message' i], [title*='reply' i], [title*='upload' i], [title*='assign' i], [title*='link' i],
+  [aria-label*='send' i], [aria-label*='resend' i], [aria-label*='invitation' i], [aria-label*='invite' i],
+  [aria-label*='message' i], [aria-label*='reply' i], [aria-label*='upload' i], [aria-label*='assign' i], [aria-label*='link' i]
+) {
+  --erp-icon-action-fg: var(--erp-icon-primary-fg);
+  --erp-icon-action-bg: var(--erp-icon-primary-bg);
+  --erp-icon-action-hover: var(--erp-icon-primary-hover);
+  --erp-icon-action-active: var(--erp-icon-primary-active);
+}
+
+#app .erp-theme :is(button, [role='button']):has(> svg):not(:has(> :not(svg))):is([title], [aria-label]):not([data-erp-icon-action]):is(
+  [title*='approve' i], [title*='activate' i], [title*='reactivate' i], [title*='restore' i], [title*='receive' i],
+  [title*='confirm' i], [title*='complete' i], [title*='verify' i], [title*='process' i], [title*='ship' i],
+  [aria-label*='approve' i], [aria-label*='activate' i], [aria-label*='reactivate' i], [aria-label*='restore' i], [aria-label*='receive' i],
+  [aria-label*='confirm' i], [aria-label*='complete' i], [aria-label*='verify' i], [aria-label*='process' i], [aria-label*='ship' i]
+) {
+  --erp-icon-action-fg: var(--erp-icon-success-fg);
+  --erp-icon-action-bg: var(--erp-icon-success-bg);
+  --erp-icon-action-hover: var(--erp-icon-success-hover);
+  --erp-icon-action-active: var(--erp-icon-success-active);
+}
+
+#app .erp-theme :is(button, [role='button']):has(> svg):not(:has(> :not(svg))):is([title], [aria-label]):not([data-erp-icon-action]):is(
+  [title*='reset' i], [title*='suspend' i], [title*='correct' i], [title*='flag' i], [title*='disable' i],
+  [title*='force' i], [title*='revoke' i], [title='cancel' i], [aria-label*='reset' i], [aria-label*='suspend' i],
+  [aria-label*='correct' i], [aria-label*='flag' i], [aria-label*='disable' i], [aria-label*='force' i], [aria-label*='revoke' i],
+  [aria-label='cancel' i]
+) {
+  --erp-icon-action-fg: var(--erp-icon-warning-fg);
+  --erp-icon-action-bg: var(--erp-icon-warning-bg);
+  --erp-icon-action-hover: var(--erp-icon-warning-hover);
+  --erp-icon-action-active: var(--erp-icon-warning-active);
+}
+
+#app .erp-theme :is(button, [role='button']):has(> svg):not(:has(> :not(svg))):is([title], [aria-label]):not([data-erp-icon-action]):is(
+  [title*='delete' i], [title*='remove' i], [title*='archive' i], [title*='terminate' i], [title*='reject' i], [title*='void' i],
+  [title*='cancel delivery' i], [aria-label*='delete' i], [aria-label*='remove' i], [aria-label*='archive' i],
+  [aria-label*='terminate' i], [aria-label*='reject' i], [aria-label*='void' i], [aria-label*='cancel delivery' i]
+) {
+  --erp-icon-action-fg: var(--erp-icon-danger-fg);
+  --erp-icon-action-bg: var(--erp-icon-danger-bg);
+  --erp-icon-action-hover: var(--erp-icon-danger-hover);
+  --erp-icon-action-active: var(--erp-icon-danger-active);
+}
+
+#app .erp-theme :is(button, [role='button']):has(> svg):not(:has(> :not(svg))):is([title], [aria-label]):not([data-erp-icon-action]):not([class*='gap-']):not([class*='px-']) {
+  border-color: color-mix(in srgb, var(--erp-icon-action-fg), transparent 72%) !important;
+  background-color: var(--erp-icon-action-bg) !important;
+  color: var(--erp-icon-action-fg) !important;
+}
+
+#app .erp-theme :is(button, [role='button']):has(> svg):not(:has(> :not(svg))):is([title], [aria-label]):not([data-erp-icon-action]):not([class*='gap-']):not([class*='px-']) > svg {
+  color: var(--erp-icon-action-fg) !important;
+}
+
+#app .erp-theme :is(button, [role='button']):has(> svg):not(:has(> :not(svg))):is([title], [aria-label]):not([data-erp-icon-action]):not([class*='gap-']):not([class*='px-']):not(:disabled):not([aria-disabled='true']):hover {
+  background-color: var(--erp-icon-action-hover) !important;
+  border-color: var(--erp-icon-action-fg) !important;
+  color: var(--erp-icon-action-fg) !important;
+}
+
+#app .erp-theme :is(button, [role='button']):has(> svg):not(:has(> :not(svg))):is([title], [aria-label]):not([data-erp-icon-action]):not([class*='gap-']):not([class*='px-']):not(:disabled):not([aria-disabled='true']):active {
+  background-color: var(--erp-icon-action-active) !important;
+}
+
+#app .erp-theme :is(button, [role='button']):has(> svg):not(:has(> :not(svg))):is([title], [aria-label]):not([data-erp-icon-action]):not([class*='gap-']):not([class*='px-']):is(:disabled, [aria-disabled='true']),
+#app .erp-theme :is(button, [role='button']):has(> svg):not(:has(> :not(svg))):is([title], [aria-label]):not([data-erp-icon-action]):not([class*='gap-']):not([class*='px-']):is(:disabled, [aria-disabled='true']):hover,
+#app .erp-theme :is(button, [role='button']):has(> svg):not(:has(> :not(svg))):is([title], [aria-label]):not([data-erp-icon-action]):not([class*='gap-']):not([class*='px-']):is(:disabled, [aria-disabled='true']):active {
+  background-color: var(--erp-surface-muted) !important;
+  border-color: var(--erp-border) !important;
+  color: var(--erp-text-muted) !important;
+  box-shadow: none !important;
+  cursor: not-allowed !important;
+  opacity: 0.38 !important;
+  outline: none !important;
+  pointer-events: none;
+  transform: none !important;
+}
+
+/* Explicit semantic buttons keep their child SVGs on the same semantic
+   foreground even when the source component still carries a legacy utility. */
+#app .erp-theme [data-erp-icon-action][data-semantic-color='neutral'] *,
+#app .erp-theme [data-erp-icon-action][data-semantic-color='primary'] *,
+#app .erp-theme [data-erp-icon-action][data-semantic-color='success'] *,
+#app .erp-theme [data-erp-icon-action][data-semantic-color='warning'] *,
+#app .erp-theme [data-erp-icon-action][data-semantic-color='danger'] * {
+  color: inherit !important;
+}
