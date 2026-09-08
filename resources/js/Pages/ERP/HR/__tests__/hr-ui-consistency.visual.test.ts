@@ -118,6 +118,16 @@ describe("HR UI consistency presentation", () => {
     expect(confirmAction).not.toContain("shadow-green-500/30");
   });
 
+  it("keeps the batch preview scrollable without showing a native scrollbar", () => {
+    const titleIndex = generateSlip.indexOf("Batch Payroll Preview");
+    const batchPreview = generateSlip.slice(
+      generateSlip.lastIndexOf("showBatchPreviewModal", titleIndex),
+      generateSlip.indexOf("{/* Generation Progress Overlay */}", titleIndex),
+    );
+
+    expect(batchPreview).toContain("overflow-y-auto no-scrollbar");
+  });
+
   it("uses the black primary action in the salary change modal", () => {
     const submitLabelIndex = salaryChanges.indexOf("Submit Salary Change");
     const submitClassStart = salaryChanges.lastIndexOf("className=", submitLabelIndex);

@@ -2506,7 +2506,7 @@ export default function GenerateSlip() {
 
 			{showBatchPreviewModal && batchPreviewData && createPortal(
 				<div className="fixed inset-0 z-999999 bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
-					<div className="relative bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-y-auto p-8">
+					<div className="relative max-h-[90vh] w-full max-w-6xl overflow-y-auto no-scrollbar rounded-2xl bg-white p-8 shadow-2xl dark:bg-gray-900">
 						<div className="flex items-start justify-between mb-6">
 							<div>
 								<h3 className="text-2xl font-bold text-gray-900 dark:text-white">Batch Payroll Preview</h3>
