@@ -1669,43 +1669,51 @@ html.userside-dark #app .userside-auth-ghost:hover {
   z-index: 11000000 !important;
 }
 
+.swal2-container.swal2-backdrop-show,
 .swal2-container.user-swal2-backdrop-show,
 .swal2-backdrop-show.user-swal2-backdrop-show {
   animation: userSwalBackdropIn 0.2s ease-out;
 }
 
+.swal2-container.swal2-backdrop-hide,
 .swal2-container.user-swal2-backdrop-hide,
 .swal2-backdrop-hide.user-swal2-backdrop-hide {
   animation: userSwalBackdropOut 0.16s ease-in;
 }
 
-.swal2-popup.user-swal2-popup {
+.swal2-popup:not(.swal2-toast) {
+  --swal2-confirm-button-background-color: #001339;
+  --swal2-confirm-button-color: #ffffff;
+  --swal2-cancel-button-background-color: #dde1e6;
+  --swal2-cancel-button-color: #344054;
   width: min(32rem, calc(100vw - 2rem)) !important;
   border-radius: 1.4rem !important;
   border: 0 !important;
+  background: #f3f4f6 !important;
+  color: #101828 !important;
   box-shadow: 0 26px 80px -42px rgba(15, 23, 42, 0.5) !important;
   padding: 2rem 1.85rem 1.5rem !important;
   animation: userSwalPopupIn 0.24s ease-out;
 }
 
-.swal2-popup.user-swal2-popup.user-swal2-hide {
+.swal2-popup:not(.swal2-toast).swal2-hide {
   animation: userSwalPopupOut 0.18s ease-in;
 }
 
-.swal2-popup.user-swal2-popup .swal2-icon {
+.swal2-popup:not(.swal2-toast) .swal2-icon {
   margin: 0 auto 0.75rem !important;
 }
 
-.swal2-popup.user-swal2-popup .swal2-icon.swal2-warning {
+.swal2-popup:not(.swal2-toast) .swal2-icon.swal2-warning {
   border-color: #e5b07f !important;
   color: #e5b07f !important;
 }
 
-.swal2-popup.user-swal2-popup .swal2-icon.swal2-warning [class^='swal2-icon-content'] {
+.swal2-popup:not(.swal2-toast) .swal2-icon.swal2-warning [class^='swal2-icon-content'] {
   color: #e5b07f !important;
 }
 
-.swal2-title.user-swal2-title {
+.swal2-popup:not(.swal2-toast) .swal2-title {
   margin: 0.15rem 0 0 !important;
   font-size: clamp(1.75rem, 2.6vw, 2.2rem) !important;
   font-weight: 800 !important;
@@ -1714,13 +1722,32 @@ html.userside-dark #app .userside-auth-ghost:hover {
   color: #0f172a !important;
 }
 
-.swal2-html-container.user-swal2-text {
+.swal2-popup:not(.swal2-toast) .swal2-html-container {
   margin: 0.65rem 0 0 !important;
   padding: 0 !important;
   font-size: 1.12rem !important;
   font-weight: 400 !important;
   line-height: 1.45 !important;
   color: #111827 !important;
+}
+
+.swal2-popup:not(.swal2-toast) .swal2-input-label {
+  margin: 0.9rem 0 0.35rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #344054;
+}
+
+.swal2-popup:not(.swal2-toast) .swal2-input,
+.swal2-popup:not(.swal2-toast) .swal2-textarea {
+  width: 100%;
+  margin: 0.4rem 0 0;
+  border: 1px solid #d0d5dd;
+  border-radius: 0.75rem;
+  background: #ffffff;
+  color: #101828;
+  box-shadow: inset 0 1px 2px rgba(16, 24, 40, 0.04);
+  font: inherit;
 }
 
 .swal2-html-container.user-swal2-text .user-swal2-summary {
@@ -1774,14 +1801,14 @@ html.userside-dark #app .userside-auth-ghost:hover {
   letter-spacing: 0.01em;
 }
 
-.swal2-actions.user-swal2-actions {
+.swal2-popup:not(.swal2-toast) .swal2-actions {
   width: 100% !important;
   margin-top: 1.45rem !important;
   gap: 0.8rem !important;
   justify-content: stretch !important;
 }
 
-.swal2-actions.user-swal2-actions button {
+.swal2-popup:not(.swal2-toast) .swal2-actions button {
   flex: 1 1 0 !important;
   margin: 0 !important;
   border-radius: 0.85rem !important;
@@ -1793,30 +1820,30 @@ html.userside-dark #app .userside-auth-ghost:hover {
   transition: all 0.16s ease;
 }
 
-.swal2-confirm.user-swal2-confirm {
-  background-color: #001339 !important;
-  color: #ffffff !important;
-  border-color: #001339 !important;
+.swal2-popup:not(.swal2-toast) .swal2-confirm {
+  background-color: var(--swal2-confirm-button-background-color, #001339) !important;
+  color: var(--swal2-confirm-button-color, #ffffff) !important;
+  border-color: var(--swal2-confirm-button-background-color, #001339) !important;
 }
 
-.swal2-confirm.user-swal2-confirm:hover {
-  background-color: #031d56 !important;
-  border-color: #031d56 !important;
+.swal2-popup:not(.swal2-toast) .swal2-confirm:hover {
+  background-color: color-mix(in srgb, var(--swal2-confirm-button-background-color, #001339), #000000 8%) !important;
+  border-color: color-mix(in srgb, var(--swal2-confirm-button-background-color, #001339), #000000 8%) !important;
 }
 
-.swal2-cancel.user-swal2-cancel {
-  background-color: #dde1e6 !important;
-  color: #344054 !important;
-  border-color: #dde1e6 !important;
+.swal2-popup:not(.swal2-toast) .swal2-cancel {
+  background-color: var(--swal2-cancel-button-background-color, #dde1e6) !important;
+  color: var(--swal2-cancel-button-color, #344054) !important;
+  border-color: var(--swal2-cancel-button-background-color, #dde1e6) !important;
 }
 
-.swal2-cancel.user-swal2-cancel:hover {
-  background-color: #cfd4db !important;
-  border-color: #cfd4db !important;
+.swal2-popup:not(.swal2-toast) .swal2-cancel:hover {
+  background-color: color-mix(in srgb, var(--swal2-cancel-button-background-color, #dde1e6), #000000 6%) !important;
+  border-color: color-mix(in srgb, var(--swal2-cancel-button-background-color, #dde1e6), #000000 6%) !important;
 }
 
-.swal2-confirm.user-swal2-confirm:focus-visible,
-.swal2-cancel.user-swal2-cancel:focus-visible {
+.swal2-popup:not(.swal2-toast) .swal2-confirm:focus-visible,
+.swal2-popup:not(.swal2-toast) .swal2-cancel:focus-visible {
   outline: none !important;
   box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.2) !important;
 }
@@ -1970,7 +1997,7 @@ html.userside-dark #app .userside-auth-ghost:hover {
 }
 
 @media (max-width: 640px) {
-  .swal2-popup.user-swal2-popup {
+  .swal2-popup:not(.swal2-toast) {
     padding: 1.6rem 1rem 1rem !important;
   }
 
@@ -1994,11 +2021,11 @@ html.userside-dark #app .userside-auth-ghost:hover {
     font-size: 0.72rem !important;
   }
 
-  .swal2-title.user-swal2-title {
+  .swal2-popup:not(.swal2-toast) .swal2-title {
     font-size: 1.9rem !important;
   }
 
-  .swal2-html-container.user-swal2-text {
+  .swal2-popup:not(.swal2-toast) .swal2-html-container {
     font-size: 1rem !important;
   }
 
@@ -2011,11 +2038,11 @@ html.userside-dark #app .userside-auth-ghost:hover {
     margin-bottom: 0.55rem;
   }
 
-  .swal2-actions.user-swal2-actions {
+  .swal2-popup:not(.swal2-toast) .swal2-actions {
     gap: 0.55rem !important;
   }
 
-  .swal2-actions.user-swal2-actions button {
+  .swal2-popup:not(.swal2-toast) .swal2-actions button {
     min-height: 2.7rem !important;
     font-size: 1rem !important;
   }

@@ -7,6 +7,21 @@ afterEach(() => {
 });
 
 describe('SweetAlert monochrome select enhancer', () => {
+  it('does not enhance SweetAlert2 hidden template selects', () => {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'swal2-container';
+    wrapper.innerHTML = '<select class="swal2-select" style="display: none"></select>';
+    document.body.appendChild(wrapper);
+
+    const select = wrapper.querySelector<HTMLSelectElement>('.swal2-select');
+    expect(select).not.toBeNull();
+
+    enhanceSweetAlertSelect(select as HTMLSelectElement);
+
+    expect(wrapper.querySelector('[role="combobox"]')).toBeNull();
+    expect(wrapper.querySelector('.swal2-select')).toBe(select);
+  });
+
   it('keeps the native value while presenting monochrome custom options', () => {
     const wrapper = document.createElement('div');
     wrapper.className = 'swal2-container';

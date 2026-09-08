@@ -91,10 +91,9 @@ export default function ShopOwnerDropdown({ actor, urls, inline = false, busines
       text: "Are you sure you want to sign out?",
       icon: "warning",
       showCancelButton: true,
-      confirmButtonColor: "#ef4444",
-      cancelButtonColor: "#6b7280",
       confirmButtonText: "Yes, sign out",
       cancelButtonText: "Cancel",
+      reverseButtons: true,
     });
 
     if (result.isConfirmed) {

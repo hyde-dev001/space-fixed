@@ -1,7 +1,9 @@
 import Swal, { type SweetAlertOptions, type SweetAlertResult } from "sweetalert2";
 
 const withDefaultConfirm = (options: SweetAlertOptions): SweetAlertOptions => ({
-	confirmButtonColor: "#2563eb",
+	confirmButtonColor: "#001339",
+	cancelButtonColor: "#dde1e6",
+	reverseButtons: true,
 	...options,
 });
 
@@ -32,7 +34,6 @@ export const workflowFeedback = {
 				icon: "question",
 				showCancelButton: true,
 				cancelButtonText: "Cancel",
-				cancelButtonColor: "#6b7280",
 				...options,
 			}),
 		);
@@ -47,7 +48,6 @@ export const workflowFeedback = {
 				showCancelButton: true,
 				confirmButtonText: "Retry",
 				cancelButtonText: "Cancel",
-				cancelButtonColor: "#6b7280",
 			}),
 		);
 
