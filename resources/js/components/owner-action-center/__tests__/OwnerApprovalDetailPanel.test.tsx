@@ -108,6 +108,8 @@ describe("OwnerApprovalDetailPanel", () => {
     expect(headings.indexOf("Decision summary")).toBeLessThan(headings.indexOf("Request details"));
     expect(headings.indexOf("Request details")).toBeLessThan(headings.indexOf("Workflow/history"));
     expect(headings.indexOf("Workflow/history")).toBeLessThan(headings.indexOf("Decision footer"));
+    expect(screen.getByText("Owner approval")).toHaveClass("text-gray-600", "dark:text-gray-300");
+    expect(screen.getByText("Owner approval")).not.toHaveClass("text-blue-600", "dark:text-blue-300");
 
     fireEvent.keyDown(dialog, { key: "Escape" });
     expect(onClose).toHaveBeenCalledTimes(1);
@@ -201,9 +203,11 @@ describe("OwnerApprovalDetailPanel", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     expect(fetchMock.mock.calls[1][0]).toBe("/api/shop-owner/expenses/12/approve");
     expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ approval_notes: "" });
-    expect(await screen.findByRole("alert")).toHaveTextContent(/changed before the decision was saved/i);
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/changed before the decision was saved/i);
+    expect(alert).toHaveClass("border-gray-200", "bg-gray-50", "text-gray-900");
     expect(screen.getByText("Supplier expense")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^Refresh$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Refresh$/i })).toHaveClass("border-gray-300", "focus-visible:ring-gray-500");
   });
 
   it("sends the required action with Shop Owner suspension decisions", async () => {

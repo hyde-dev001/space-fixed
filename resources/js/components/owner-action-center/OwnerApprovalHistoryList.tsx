@@ -46,7 +46,7 @@ export default function OwnerApprovalHistoryList({ items, onReview, selectedAtte
                 <div className={`flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-wide ${selected ? "text-gray-300" : "text-gray-500 dark:text-gray-400"}`}>
                   <span>{sourceLabels[item.coverage_source]}</span>
                   <span aria-hidden="true">&middot;</span>
-                  <span className={item.status === "approved" ? "text-emerald-700 dark:text-emerald-300" : "text-rose-700 dark:text-rose-300"}>
+                  <span className={selected ? "text-gray-300" : "text-gray-700 dark:text-gray-300"}>
                     {item.status === "approved" ? "Approved" : "Rejected"}
                   </span>
                 </div>

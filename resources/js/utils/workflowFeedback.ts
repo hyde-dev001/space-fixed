@@ -1,10 +1,16 @@
 import Swal, { type SweetAlertOptions, type SweetAlertResult } from "sweetalert2";
 
 const withDefaultConfirm = (options: SweetAlertOptions): SweetAlertOptions => ({
-	confirmButtonColor: "#001339",
-	cancelButtonColor: "#dde1e6",
+	confirmButtonColor: "#111111",
+	cancelButtonColor: "#f3f4f6",
 	reverseButtons: true,
 	...options,
+	customClass: {
+		popup: "erp-swal2-popup",
+		confirmButton: "erp-swal2-confirm",
+		cancelButton: "erp-swal2-cancel",
+		...options.customClass,
+	},
 });
 
 export const workflowFeedback = {

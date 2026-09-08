@@ -105,6 +105,22 @@ describe("ApprovalDecisionFooter", () => {
     expect(screen.getByRole("button", { name: /^Reject$/i })).toBeDisabled();
   });
 
+  it("uses neutral primary and secondary treatments for text decisions", () => {
+    render(
+      <ApprovalDecisionFooter
+        definition={approvalPanelRegistry.expense}
+        recordLabel="Expense #12"
+        submitting={false}
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: /^Approve$/i })).toHaveClass("bg-gray-950", "text-white");
+    expect(screen.getByRole("button", { name: /^Reject$/i })).toHaveClass("border-gray-300", "bg-white", "text-gray-900");
+    expect(screen.getByRole("button", { name: /^Approve$/i })).not.toHaveClass("bg-emerald-600");
+    expect(screen.getByRole("button", { name: /^Reject$/i })).not.toHaveClass("border-red-300", "text-red-700");
+  });
+
   it("preserves the repair rejection minimum reason length", async () => {
     const onSubmit = vi.fn();
     sweetAlertFire

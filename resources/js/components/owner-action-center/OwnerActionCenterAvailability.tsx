@@ -50,7 +50,7 @@ export default function OwnerActionCenterAvailability({ result, approvalOnly = f
 
   if (result === null || result.degradation_status === "unavailable") {
     return (
-      <div role="status" aria-live="polite" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-900/20 dark:text-amber-100">
+      <div role="status" aria-live="polite" className="rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
         <p className="font-semibold">{bucketLabel} currently unavailable</p>
         <p className="mt-1">Counts are not available while the supported sources recover.</p>
       </div>
@@ -88,7 +88,7 @@ export default function OwnerActionCenterAvailability({ result, approvalOnly = f
         <>
           <p>{total} {itemLabel} from currently available sources (partial coverage).</p>
           {failedSources.map((source) => (
-            <p key={source} className="text-amber-700 dark:text-amber-300">
+            <p key={source} className="text-gray-600 dark:text-gray-300">
               {source} temporarily unavailable
             </p>
           ))}

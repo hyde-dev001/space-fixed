@@ -74,7 +74,7 @@ export default function OwnerAttentionList({ items, onReview, selectedAttentionK
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
             <div className="min-w-0 space-y-1">
               <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-gray-500 dark:text-gray-400">
-                <span className="rounded-full bg-blue-50 px-2.5 py-1 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+                <span className="rounded-full bg-gray-100 px-2.5 py-1 text-gray-700 dark:bg-gray-800 dark:text-gray-200">
                   {sourceLabels[item.source_type]}
                 </span>
                 <span>Status: {statusLabel}</span>

@@ -630,6 +630,55 @@ html:not(.dark) #app .erp-theme .apexcharts-legend-marker[rel="3"] {
   background: #9ca3af !important;
 }
 
+/* Keep dark-mode ERP charts in the same monochrome system. ApexCharts writes
+   colors as SVG attributes, so the scoped rules need !important. */
+html.dark #app .erp-theme .apexcharts-series[rel="1"] path:not(.apexcharts-radialbar-area) {
+  stroke: #f9fafb !important;
+  fill: #f9fafb !important;
+}
+
+html.dark #app .erp-theme .apexcharts-series[rel="1"] .apexcharts-radialbar-area {
+  fill: none !important;
+  filter: grayscale(1) brightness(3);
+}
+
+html.dark #app .erp-theme .apexcharts-series[rel="2"] path {
+  stroke: #d1d5db !important;
+  fill: #d1d5db !important;
+}
+
+html.dark #app .erp-theme .apexcharts-series[rel="3"] path {
+  stroke: #9ca3af !important;
+  fill: #9ca3af !important;
+}
+
+html.dark #app .erp-theme .apexcharts-legend-marker[rel="1"] {
+  background: #f9fafb !important;
+}
+
+html.dark #app .erp-theme .apexcharts-legend-marker[rel="2"] {
+  background: #d1d5db !important;
+}
+
+html.dark #app .erp-theme .apexcharts-legend-marker[rel="3"] {
+  background: #9ca3af !important;
+}
+
+html.dark #app .erp-theme :is(.apexcharts-gridline, .apexcharts-xaxis line, .apexcharts-yaxis line) {
+  stroke: #374151 !important;
+}
+
+html.dark #app .erp-theme :is(.apexcharts-xaxis-label, .apexcharts-yaxis-label, .apexcharts-text) {
+  fill: #d1d5db !important;
+  color: #d1d5db !important;
+}
+
+html.dark #app .erp-theme :is(.apexcharts-tooltip, .apexcharts-xaxistooltip, .apexcharts-yaxistooltip) {
+  background: #111111 !important;
+  border-color: #4b5563 !important;
+  color: #f9fafb !important;
+}
+
 /* Hide viewport scrollbar UI on UserSide pages while keeping scroll behavior */
 html.userside-hide-scrollbar,
 body.userside-hide-scrollbar {
@@ -2531,6 +2580,424 @@ html.dark #app .erp-theme :is(
   border-color: #111111 !important;
 }
 
+/* ERP and Shop Owner monochrome design tokens. Keep this boundary below the
+   app root so customer/storefront pages retain their own visual language. */
+#app .erp-theme {
+  --erp-ink: #111111;
+  --erp-on-ink: #ffffff;
+  --erp-surface: #ffffff;
+  --erp-surface-muted: #f3f4f6;
+  --erp-border: #d1d5db;
+  --erp-text: #111111;
+  --erp-text-muted: #6b7280;
+  color: var(--erp-text);
+}
+
+html.dark #app .erp-theme {
+  --erp-ink: #ffffff;
+  --erp-on-ink: #111111;
+  --erp-surface: #111111;
+  --erp-surface-muted: #1f2937;
+  --erp-border: #4b5563;
+  --erp-text: #f9fafb;
+  --erp-text-muted: #d1d5db;
+}
+
+/* Ordinary colored surfaces/statuses become neutral. Explicit icon-only and
+   critical descendants are excluded so their semantic meaning remains. */
+#app .erp-theme :is(
+  [class^='bg-blue-'], [class*=' bg-blue-'],
+  [class^='bg-indigo-'], [class*=' bg-indigo-'],
+  [class^='bg-purple-'], [class*=' bg-purple-'],
+  [class^='bg-violet-'], [class*=' bg-violet-'],
+  [class^='bg-sky-'], [class*=' bg-sky-'],
+  [class^='bg-cyan-'], [class*=' bg-cyan-'],
+  [class^='bg-teal-'], [class*=' bg-teal-'],
+  [class^='bg-yellow-'], [class*=' bg-yellow-'],
+  [class^='bg-amber-'], [class*=' bg-amber-'],
+  [class^='bg-orange-'], [class*=' bg-orange-'],
+  [class^='bg-green-'], [class*=' bg-green-'],
+  [class^='bg-emerald-'], [class*=' bg-emerald-'],
+  [class^='bg-red-'], [class*=' bg-red-'],
+  [class^='bg-brand-'], [class*=' bg-brand-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+  background-color: var(--erp-surface-muted) !important;
+  border-color: var(--erp-border) !important;
+  color: var(--erp-text) !important;
+}
+
+#app .erp-theme :is(
+  [class^='text-blue-'], [class*=' text-blue-'],
+  [class^='text-indigo-'], [class*=' text-indigo-'],
+  [class^='text-purple-'], [class*=' text-purple-'],
+  [class^='text-violet-'], [class*=' text-violet-'],
+  [class^='text-sky-'], [class*=' text-sky-'],
+  [class^='text-cyan-'], [class*=' text-cyan-'],
+  [class^='text-teal-'], [class*=' text-teal-'],
+  [class^='text-yellow-'], [class*=' text-yellow-'],
+  [class^='text-amber-'], [class*=' text-amber-'],
+  [class^='text-orange-'], [class*=' text-orange-'],
+  [class^='text-green-'], [class*=' text-green-'],
+  [class^='text-emerald-'], [class*=' text-emerald-'],
+  [class^='text-red-'], [class*=' text-red-'],
+  [class^='text-brand-'], [class*=' text-brand-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+  color: var(--erp-text) !important;
+}
+
+#app .erp-theme :is(
+  [class^='border-blue-'], [class*=' border-blue-'],
+  [class^='border-indigo-'], [class*=' border-indigo-'],
+  [class^='border-purple-'], [class*=' border-purple-'],
+  [class^='border-violet-'], [class*=' border-violet-'],
+  [class^='border-sky-'], [class*=' border-sky-'],
+  [class^='border-cyan-'], [class*=' border-cyan-'],
+  [class^='border-teal-'], [class*=' border-teal-'],
+  [class^='border-yellow-'], [class*=' border-yellow-'],
+  [class^='border-amber-'], [class*=' border-amber-'],
+  [class^='border-orange-'], [class*=' border-orange-'],
+  [class^='border-green-'], [class*=' border-green-'],
+  [class^='border-emerald-'], [class*=' border-emerald-'],
+  [class^='border-red-'], [class*=' border-red-'],
+  [class^='border-brand-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+  border-color: var(--erp-border) !important;
+}
+
+/* Remove colored gradients from ordinary cards and banners without changing
+   layout, content, or the semantic marker exceptions. */
+#app .erp-theme :is(
+  [class*='bg-gradient-to-'], [class*='bg-linear-to-'],
+  [class^='from-blue-'], [class*=' from-blue-'],
+  [class^='from-indigo-'], [class*=' from-indigo-'],
+  [class^='from-purple-'], [class*=' from-purple-'],
+  [class^='from-violet-'], [class*=' from-violet-'],
+  [class^='from-sky-'], [class*=' from-sky-'],
+  [class^='from-cyan-'], [class*=' from-cyan-'],
+  [class^='from-teal-'], [class*=' from-teal-'],
+  [class^='from-yellow-'], [class*=' from-yellow-'],
+  [class^='from-amber-'], [class*=' from-amber-'],
+  [class^='from-orange-'], [class*=' from-orange-'],
+  [class^='from-green-'], [class*=' from-green-'],
+  [class^='from-emerald-'], [class*=' from-emerald-'],
+  [class^='from-red-'], [class*=' from-red-'],
+  [class^='from-brand-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+  background-image: none !important;
+}
+
+/* Colored background utilities on text-bearing controls are primary actions;
+   keep them black/white in light mode and the requested white/black pairing in
+   dark mode. */
+#app .erp-theme :is(button, a[href], [role='button'], [role='tab'], [role='menuitem']):not(
+  [data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *
+):is(
+  [class^='bg-blue-'], [class*=' bg-blue-'],
+  [class^='bg-indigo-'], [class*=' bg-indigo-'],
+  [class^='bg-purple-'], [class*=' bg-purple-'],
+  [class^='bg-violet-'], [class*=' bg-violet-'],
+  [class^='bg-sky-'], [class*=' bg-sky-'],
+  [class^='bg-cyan-'], [class*=' bg-cyan-'],
+  [class^='bg-teal-'], [class*=' bg-teal-'],
+  [class^='bg-yellow-'], [class*=' bg-yellow-'],
+  [class^='bg-amber-'], [class*=' bg-amber-'],
+  [class^='bg-orange-'], [class*=' bg-orange-'],
+  [class^='bg-green-'], [class*=' bg-green-'],
+  [class^='bg-emerald-'], [class*=' bg-emerald-'],
+  [class^='bg-red-'], [class*=' bg-red-'],
+  [class^='bg-brand-']
+) {
+  background-color: var(--erp-ink) !important;
+  border-color: var(--erp-ink) !important;
+  color: var(--erp-on-ink) !important;
+}
+
+#app .erp-theme :is(button, a[href], [role='button'], [role='tab'], [role='menuitem']):not(
+  [data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *
+):is(
+  [class^='bg-blue-'], [class*=' bg-blue-'],
+  [class^='bg-indigo-'], [class*=' bg-indigo-'],
+  [class^='bg-purple-'], [class*=' bg-purple-'],
+  [class^='bg-violet-'], [class*=' bg-violet-'],
+  [class^='bg-sky-'], [class*=' bg-sky-'],
+  [class^='bg-cyan-'], [class*=' bg-cyan-'],
+  [class^='bg-teal-'], [class*=' bg-teal-'],
+  [class^='bg-yellow-'], [class*=' bg-yellow-'],
+  [class^='bg-amber-'], [class*=' bg-amber-'],
+  [class^='bg-orange-'], [class*=' bg-orange-'],
+  [class^='bg-green-'], [class*=' bg-green-'],
+  [class^='bg-emerald-'], [class*=' bg-emerald-'],
+  [class^='bg-red-'], [class*=' bg-red-'],
+  [class^='bg-brand-']
+):hover {
+  background-color: var(--erp-ink) !important;
+  border-color: var(--erp-ink) !important;
+  color: var(--erp-on-ink) !important;
+}
+
+/* Colored hover-only utilities become the neutral hover treatment. */
+#app .erp-theme :is(button, a[href], [role='button'], [role='tab'], [role='menuitem']):not(
+  [data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *
+):is(
+  [class*='hover:bg-blue-'], [class*='hover:bg-indigo-'], [class*='hover:bg-purple-'],
+  [class*='hover:bg-violet-'], [class*='hover:bg-sky-'], [class*='hover:bg-cyan-'],
+  [class*='hover:bg-teal-'], [class*='hover:bg-yellow-'], [class*='hover:bg-amber-'],
+  [class*='hover:bg-orange-'], [class*='hover:bg-green-'], [class*='hover:bg-emerald-'],
+  [class*='hover:bg-red-'], [class*='hover:bg-brand-'],
+  [class*='dark:hover:bg-blue-'], [class*='dark:hover:bg-indigo-'],
+  [class*='dark:hover:bg-purple-'], [class*='dark:hover:bg-violet-'],
+  [class*='dark:hover:bg-sky-'], [class*='dark:hover:bg-cyan-'],
+  [class*='dark:hover:bg-teal-'], [class*='dark:hover:bg-yellow-'],
+  [class*='dark:hover:bg-amber-'], [class*='dark:hover:bg-orange-'],
+  [class*='dark:hover:bg-green-'], [class*='dark:hover:bg-emerald-'],
+  [class*='dark:hover:bg-red-'], [class*='dark:hover:bg-brand-']
+):hover {
+  background-color: var(--erp-surface-muted) !important;
+  border-color: var(--erp-border) !important;
+  color: var(--erp-text) !important;
+}
+
+/* Shared active/selected controls use the same ink surface in both modes. */
+#app .erp-theme :is(
+  [aria-selected='true'], [aria-pressed='true'], [aria-current='page'],
+  [data-state='active'], [data-selected='true']
+):not(option):not(:disabled):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+  background-color: var(--erp-ink) !important;
+  border-color: var(--erp-ink) !important;
+  color: var(--erp-on-ink) !important;
+}
+
+#app .erp-theme :is(
+  [aria-selected='true'], [aria-pressed='true'], [aria-current='page'],
+  [data-state='active'], [data-selected='true']
+):not(option):not(:disabled):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):hover {
+  background-color: var(--erp-ink) !important;
+  border-color: var(--erp-ink) !important;
+  color: var(--erp-on-ink) !important;
+}
+
+html.dark #app .erp-theme :is(
+  [aria-selected='true'], [aria-pressed='true'], [aria-current='page'],
+  [data-state='active'], [data-selected='true']
+):not(option):not(:disabled):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *),
+html.dark #app .erp-theme :is(
+  [aria-selected='true'], [aria-pressed='true'], [aria-current='page'],
+  [data-state='active'], [data-selected='true']
+):not(option):not(:disabled):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):hover {
+  background-color: var(--erp-ink) !important;
+  border-color: var(--erp-ink) !important;
+  color: var(--erp-on-ink) !important;
+}
+
+/* Cards, dialog surfaces, and forms inherit the same neutral surface tokens. */
+#app .erp-theme :is(
+  [role='dialog'], [data-modal], [data-card],
+  [class~='rounded-lg'][class~='shadow'],
+  [class~='rounded-xl'][class~='shadow'],
+  [class~='rounded-2xl'][class~='shadow']
+):not([data-critical], [data-critical] *) {
+  background-color: var(--erp-surface) !important;
+  border-color: var(--erp-border) !important;
+  color: var(--erp-text) !important;
+}
+
+#app .erp-theme :is(input, select, textarea) {
+  background-color: var(--erp-surface) !important;
+  border-color: var(--erp-border) !important;
+  color: var(--erp-text) !important;
+}
+
+#app .erp-theme :is(input, select, textarea)::placeholder {
+  color: var(--erp-text-muted) !important;
+}
+
+#app .erp-theme :is(input, select, textarea):focus {
+  border-color: var(--erp-ink) !important;
+  outline-color: var(--erp-ink) !important;
+  --tw-ring-color: rgb(17 17 17 / 0.18) !important;
+}
+
+html.dark #app .erp-theme :is(input, select, textarea):focus {
+  --tw-ring-color: rgb(255 255 255 / 0.28) !important;
+}
+
+#app .erp-theme :is(input, select, textarea):disabled {
+  background-color: var(--erp-surface-muted) !important;
+  color: var(--erp-text-muted) !important;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+#app .erp-theme :is(input[type='checkbox'], input[type='radio']) {
+  accent-color: var(--erp-ink);
+}
+
+/* Native select options remain browser/OS-controlled. Only the field is
+   themed, preserving the existing native-select regression contract. */
+html:not(.dark) #app .erp-theme select {
+  color-scheme: light;
+}
+
+html.dark #app .erp-theme select {
+  color-scheme: dark;
+}
+
+/* Accessible custom listboxes, dropdowns, and pagination stay neutral in both
+   modes without replacing native selects. */
+#app .erp-theme :is([role='combobox'], [aria-haspopup='listbox']):is(:focus, :focus-within) {
+  border-color: var(--erp-border) !important;
+  outline-color: var(--erp-border) !important;
+  --tw-ring-color: rgb(107 114 128 / 0.22) !important;
+}
+
+#app .erp-theme :is([role='combobox'], [aria-haspopup='listbox']):hover {
+  background-color: var(--erp-surface-muted) !important;
+}
+
+#app .erp-theme [role='listbox'] [role='option'] {
+  background-color: var(--erp-surface) !important;
+  color: var(--erp-text) !important;
+}
+
+#app .erp-theme [role='listbox'] [role='option'][aria-selected='true'] {
+  background-color: var(--erp-ink) !important;
+  color: var(--erp-on-ink) !important;
+}
+
+#app .erp-theme [role='listbox'] [role='option']:not([aria-selected='true']):is(:hover, [data-highlighted='true']) {
+  background-color: var(--erp-surface-muted) !important;
+  color: var(--erp-text) !important;
+}
+
+#app .erp-theme :is(nav[aria-label*='pagination' i], [data-pagination]) :is(a, button) {
+  border-color: var(--erp-border) !important;
+  background-color: var(--erp-surface) !important;
+  color: var(--erp-text) !important;
+}
+
+#app .erp-theme :is(nav[aria-label*='pagination' i], [data-pagination]) :is(a, button):not(:disabled):hover {
+  border-color: var(--erp-border) !important;
+  background-color: var(--erp-surface-muted) !important;
+  color: var(--erp-text) !important;
+}
+
+#app .erp-theme :is(nav[aria-label*='pagination' i], [data-pagination]) :is(a, button)[aria-current='page'] {
+  border-color: var(--erp-ink) !important;
+  background-color: var(--erp-ink) !important;
+  color: var(--erp-on-ink) !important;
+}
+
+#app .erp-theme :is(nav[aria-label*='pagination' i], [data-pagination]) :is(a, button)[aria-current='page']:hover {
+  border-color: var(--erp-ink) !important;
+  background-color: var(--erp-ink) !important;
+  color: var(--erp-on-ink) !important;
+}
+
+/* Deliberate semantic exceptions are explicit and limited to icon-only or
+   critical/safety treatments. */
+#app .erp-theme [data-erp-icon-action][data-semantic-color='danger'],
+#app .erp-theme [data-erp-icon-action][data-semantic-color='danger'] *,
+#app .erp-theme [data-critical][data-semantic-color='danger'],
+#app .erp-theme [data-critical][data-semantic-color='danger'] * {
+  color: #dc2626 !important;
+}
+
+#app .erp-theme [data-erp-icon-action][data-semantic-color='success'],
+#app .erp-theme [data-erp-icon-action][data-semantic-color='success'] *,
+#app .erp-theme [data-critical][data-semantic-color='success'],
+#app .erp-theme [data-critical][data-semantic-color='success'] * {
+  color: #16a34a !important;
+}
+
+#app .erp-theme [data-critical][data-semantic-color='danger'] {
+  background-color: #fef2f2 !important;
+  border-color: #fecaca !important;
+}
+
+#app .erp-theme [data-critical][data-semantic-color='success'] {
+  background-color: #f0fdf4 !important;
+  border-color: #bbf7d0 !important;
+}
+
+html.dark #app .erp-theme [data-critical][data-semantic-color='danger'] {
+  background-color: rgb(127 29 29 / 0.32) !important;
+  border-color: #7f1d1d !important;
+}
+
+html.dark #app .erp-theme [data-critical][data-semantic-color='success'] {
+  background-color: rgb(20 83 45 / 0.32) !important;
+  border-color: #166534 !important;
+}
+
+/* SweetAlert portals are mounted under body, so page-context scoping is used
+   instead of a global customer-facing override. */
+html:has(#app .erp-theme) .erp-swal2-popup,
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) {
+  --swal2-confirm-button-background-color: #111111;
+  --swal2-confirm-button-color: #ffffff;
+  --swal2-cancel-button-background-color: #f3f4f6;
+  --swal2-cancel-button-color: #111111;
+  background: #ffffff !important;
+  border-color: #d1d5db !important;
+  color: #111111 !important;
+}
+
+html.dark:has(#app .erp-theme) .erp-swal2-popup,
+html.dark:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) {
+  --swal2-confirm-button-background-color: #ffffff;
+  --swal2-confirm-button-color: #111111;
+  --swal2-cancel-button-background-color: #1f2937;
+  --swal2-cancel-button-color: #f9fafb;
+  background: #111111 !important;
+  border-color: #4b5563 !important;
+  color: #f9fafb !important;
+}
+
+html:has(#app .erp-theme) .erp-swal2-popup .swal2-title,
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-title,
+html:has(#app .erp-theme) .erp-swal2-popup .swal2-html-container,
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-html-container {
+  color: inherit !important;
+}
+
+html:has(#app .erp-theme) .erp-swal2-popup .swal2-confirm,
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-confirm {
+  background-color: var(--swal2-confirm-button-background-color, #111111) !important;
+  border-color: var(--swal2-confirm-button-background-color, #111111) !important;
+  color: var(--swal2-confirm-button-color, #ffffff) !important;
+}
+
+html:has(#app .erp-theme) .erp-swal2-popup .swal2-cancel,
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-cancel {
+  background-color: var(--swal2-cancel-button-background-color, #f3f4f6) !important;
+  border-color: var(--swal2-cancel-button-background-color, #f3f4f6) !important;
+  color: var(--swal2-cancel-button-color, #111111) !important;
+}
+
+html:has(#app .erp-theme) .erp-swal2-popup .swal2-confirm:hover,
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-confirm:hover {
+  background-color: color-mix(in srgb, var(--swal2-confirm-button-background-color, #111111), #000000 8%) !important;
+  border-color: color-mix(in srgb, var(--swal2-confirm-button-background-color, #111111), #000000 8%) !important;
+}
+
+html:has(#app .erp-theme) .erp-swal2-popup .swal2-cancel:hover,
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-cancel:hover {
+  background-color: color-mix(in srgb, var(--swal2-cancel-button-background-color, #f3f4f6), #000000 6%) !important;
+  border-color: color-mix(in srgb, var(--swal2-cancel-button-background-color, #f3f4f6), #000000 6%) !important;
+}
+
+html:has(#app .erp-theme) .erp-swal2-popup :is(.swal2-input, .swal2-textarea) {
+  background: #ffffff !important;
+  border-color: #d1d5db !important;
+  color: #111111 !important;
+}
+
+html.dark:has(#app .erp-theme) .erp-swal2-popup :is(.swal2-input, .swal2-textarea) {
+  background: #111111 !important;
+  border-color: #4b5563 !important;
+  color: #f9fafb !important;
+}
+
 @utility no-scrollbar {
   &::-webkit-scrollbar {
     display: none;
@@ -3323,4 +3790,685 @@ html:not(.dark) #app nav[aria-label*="pagination" i] [aria-current="page"]:hover
   border-color: #111111;
   background-color: #111111;
   color: #ffffff;
+}
+
+/* Final ERP/Owner compatibility pass for dark-prefixed and hover-only utility
+   classes used by older role pages. This remains after legacy page-local rules
+   so the requested monochrome system wins within the ERP boundary. */
+html.dark #app .erp-theme :is(
+  [class*='dark:bg-blue-'], [class*='dark:bg-indigo-'],
+  [class*='dark:bg-purple-'], [class*='dark:bg-violet-'],
+  [class*='dark:bg-sky-'], [class*='dark:bg-cyan-'],
+  [class*='dark:bg-teal-'], [class*='dark:bg-yellow-'],
+  [class*='dark:bg-amber-'], [class*='dark:bg-orange-'],
+  [class*='dark:bg-green-'], [class*='dark:bg-emerald-'],
+  [class*='dark:bg-red-'], [class*='dark:bg-brand-']
+):not(
+  [data-erp-icon-action], [data-erp-icon-action] *,
+  [data-critical], [data-critical] *,
+  [aria-selected='true'], [aria-pressed='true'], [aria-current='page'],
+  [data-state='active'], [data-selected='true']
+) {
+  background-color: var(--erp-surface-muted) !important;
+  border-color: var(--erp-border) !important;
+  color: var(--erp-text) !important;
+}
+
+html.dark #app .erp-theme :is(
+  [class*='dark:text-blue-'], [class*='dark:text-indigo-'],
+  [class*='dark:text-purple-'], [class*='dark:text-violet-'],
+  [class*='dark:text-sky-'], [class*='dark:text-cyan-'],
+  [class*='dark:text-teal-'], [class*='dark:text-yellow-'],
+  [class*='dark:text-amber-'], [class*='dark:text-orange-'],
+  [class*='dark:text-green-'], [class*='dark:text-emerald-'],
+  [class*='dark:text-red-'], [class*='dark:text-brand-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+  color: var(--erp-text) !important;
+}
+
+html.dark #app .erp-theme :is(
+  [class*='dark:border-blue-'], [class*='dark:border-indigo-'],
+  [class*='dark:border-purple-'], [class*='dark:border-violet-'],
+  [class*='dark:border-sky-'], [class*='dark:border-cyan-'],
+  [class*='dark:border-teal-'], [class*='dark:border-yellow-'],
+  [class*='dark:border-amber-'], [class*='dark:border-orange-'],
+  [class*='dark:border-green-'], [class*='dark:border-emerald-'],
+  [class*='dark:border-red-'], [class*='dark:border-brand-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+  border-color: var(--erp-border) !important;
+}
+
+html.dark #app .erp-theme :is(
+  [class*='dark:from-blue-'], [class*='dark:from-indigo-'],
+  [class*='dark:from-purple-'], [class*='dark:from-violet-'],
+  [class*='dark:from-sky-'], [class*='dark:from-cyan-'],
+  [class*='dark:from-teal-'], [class*='dark:from-yellow-'],
+  [class*='dark:from-amber-'], [class*='dark:from-orange-'],
+  [class*='dark:from-green-'], [class*='dark:from-emerald-'],
+  [class*='dark:from-red-'], [class*='dark:from-brand-'],
+  [class*='dark:via-blue-'], [class*='dark:via-indigo-'],
+  [class*='dark:via-purple-'], [class*='dark:via-violet-'],
+  [class*='dark:via-sky-'], [class*='dark:via-cyan-'],
+  [class*='dark:via-teal-'], [class*='dark:via-yellow-'],
+  [class*='dark:via-amber-'], [class*='dark:via-orange-'],
+  [class*='dark:via-green-'], [class*='dark:via-emerald-'],
+  [class*='dark:via-red-'], [class*='dark:via-brand-'],
+  [class*='dark:to-blue-'], [class*='dark:to-indigo-'],
+  [class*='dark:to-purple-'], [class*='dark:to-violet-'],
+  [class*='dark:to-sky-'], [class*='dark:to-cyan-'],
+  [class*='dark:to-teal-'], [class*='dark:to-yellow-'],
+  [class*='dark:to-amber-'], [class*='dark:to-orange-'],
+  [class*='dark:to-green-'], [class*='dark:to-emerald-'],
+  [class*='dark:to-red-'], [class*='dark:to-brand-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+  background-image: none !important;
+}
+
+html.dark #app .erp-theme :is(
+  button, a[href], [role='button'], [role='tab'], [role='menuitem']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):is(
+  [class*='dark:bg-blue-'], [class*='dark:bg-indigo-'],
+  [class*='dark:bg-purple-'], [class*='dark:bg-violet-'],
+  [class*='dark:bg-sky-'], [class*='dark:bg-cyan-'],
+  [class*='dark:bg-teal-'], [class*='dark:bg-yellow-'],
+  [class*='dark:bg-amber-'], [class*='dark:bg-orange-'],
+  [class*='dark:bg-green-'], [class*='dark:bg-emerald-'],
+  [class*='dark:bg-red-'], [class*='dark:bg-brand-']
+) {
+  background-color: var(--erp-ink) !important;
+  border-color: var(--erp-ink) !important;
+  color: var(--erp-on-ink) !important;
+}
+
+html.dark #app .erp-theme :is(
+  button, a[href], [role='button'], [role='tab'], [role='menuitem']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):is(
+  [class*='dark:bg-blue-'], [class*='dark:bg-indigo-'],
+  [class*='dark:bg-purple-'], [class*='dark:bg-violet-'],
+  [class*='dark:bg-sky-'], [class*='dark:bg-cyan-'],
+  [class*='dark:bg-teal-'], [class*='dark:bg-yellow-'],
+  [class*='dark:bg-amber-'], [class*='dark:bg-orange-'],
+  [class*='dark:bg-green-'], [class*='dark:bg-emerald-'],
+  [class*='dark:bg-red-'], [class*='dark:bg-brand-']
+):hover {
+  background-color: var(--erp-ink) !important;
+  border-color: var(--erp-ink) !important;
+  color: var(--erp-on-ink) !important;
+}
+
+html.dark #app .erp-theme :is(
+  [class*='dark:hover:bg-blue-'], [class*='dark:hover:bg-indigo-'],
+  [class*='dark:hover:bg-purple-'], [class*='dark:hover:bg-violet-'],
+  [class*='dark:hover:bg-sky-'], [class*='dark:hover:bg-cyan-'],
+  [class*='dark:hover:bg-teal-'], [class*='dark:hover:bg-yellow-'],
+  [class*='dark:hover:bg-amber-'], [class*='dark:hover:bg-orange-'],
+  [class*='dark:hover:bg-green-'], [class*='dark:hover:bg-emerald-'],
+  [class*='dark:hover:bg-red-'], [class*='dark:hover:bg-brand-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):hover {
+  background-color: var(--erp-surface-muted) !important;
+  border-color: var(--erp-border) !important;
+  color: var(--erp-text) !important;
+}
+
+html.dark #app .erp-theme :is(
+  [class*='dark:hover:text-blue-'], [class*='dark:hover:text-indigo-'],
+  [class*='dark:hover:text-purple-'], [class*='dark:hover:text-violet-'],
+  [class*='dark:hover:text-sky-'], [class*='dark:hover:text-cyan-'],
+  [class*='dark:hover:text-teal-'], [class*='dark:hover:text-yellow-'],
+  [class*='dark:hover:text-amber-'], [class*='dark:hover:text-orange-'],
+  [class*='dark:hover:text-green-'], [class*='dark:hover:text-emerald-'],
+  [class*='dark:hover:text-red-'], [class*='dark:hover:text-brand-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):hover {
+  color: var(--erp-text) !important;
+}
+
+html.dark #app .erp-theme :is(
+  [class*='dark:hover:border-blue-'], [class*='dark:hover:border-indigo-'],
+  [class*='dark:hover:border-purple-'], [class*='dark:hover:border-violet-'],
+  [class*='dark:hover:border-sky-'], [class*='dark:hover:border-cyan-'],
+  [class*='dark:hover:border-teal-'], [class*='dark:hover:border-yellow-'],
+  [class*='dark:hover:border-amber-'], [class*='dark:hover:border-orange-'],
+  [class*='dark:hover:border-green-'], [class*='dark:hover:border-emerald-'],
+  [class*='dark:hover:border-red-'], [class*='dark:hover:border-brand-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):hover {
+  border-color: var(--erp-border) !important;
+}
+
+html:not(.dark) #app .erp-theme :is(
+  [class*='hover:bg-blue-'], [class*='hover:bg-indigo-'],
+  [class*='hover:bg-purple-'], [class*='hover:bg-violet-'],
+  [class*='hover:bg-sky-'], [class*='hover:bg-cyan-'],
+  [class*='hover:bg-teal-'], [class*='hover:bg-yellow-'],
+  [class*='hover:bg-amber-'], [class*='hover:bg-orange-'],
+  [class*='hover:bg-green-'], [class*='hover:bg-emerald-'],
+  [class*='hover:bg-red-'], [class*='hover:bg-brand-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):hover {
+  background-color: var(--erp-surface-muted) !important;
+  border-color: var(--erp-border) !important;
+  color: var(--erp-text) !important;
+}
+
+html:not(.dark) #app .erp-theme :is(
+  [class*='hover:text-blue-'], [class*='hover:text-indigo-'],
+  [class*='hover:text-purple-'], [class*='hover:text-violet-'],
+  [class*='hover:text-sky-'], [class*='hover:text-cyan-'],
+  [class*='hover:text-teal-'], [class*='hover:text-yellow-'],
+  [class*='hover:text-amber-'], [class*='hover:text-orange-'],
+  [class*='hover:text-green-'], [class*='hover:text-emerald-'],
+  [class*='hover:text-red-'], [class*='hover:text-brand-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):hover {
+  color: var(--erp-text) !important;
+}
+
+html:not(.dark) #app .erp-theme :is(
+  [class*='hover:border-blue-'], [class*='hover:border-indigo-'],
+  [class*='hover:border-purple-'], [class*='hover:border-violet-'],
+  [class*='hover:border-sky-'], [class*='hover:border-cyan-'],
+  [class*='hover:border-teal-'], [class*='hover:border-yellow-'],
+  [class*='hover:border-amber-'], [class*='hover:border-orange-'],
+  [class*='hover:border-green-'], [class*='hover:border-emerald-'],
+  [class*='hover:border-red-'], [class*='hover:border-brand-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):hover {
+  border-color: var(--erp-border) !important;
+}
+
+/* Final selected-state rule is last so dark utility fallbacks cannot flatten
+   active tabs, filter choices, or current pagination. */
+#app .erp-theme :is(
+  [aria-selected='true'], [aria-pressed='true'], [aria-current='page'],
+  [data-state='active'], [data-selected='true']
+):not(option):not(:disabled):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+  background-color: var(--erp-ink) !important;
+  border-color: var(--erp-ink) !important;
+  color: var(--erp-on-ink) !important;
+}
+
+#app .erp-theme :is(
+  [aria-selected='true'], [aria-pressed='true'], [aria-current='page'],
+  [data-state='active'], [data-selected='true']
+):not(option):not(:disabled):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):hover {
+  background-color: var(--erp-ink) !important;
+  border-color: var(--erp-ink) !important;
+  color: var(--erp-on-ink) !important;
+}
+
+/* Re-assert shared surfaces and fields after utility compatibility rules. */
+#app .erp-theme :is(
+  [role='dialog'], [data-modal], [data-card],
+  [class~='rounded-lg'][class~='shadow'],
+  [class~='rounded-xl'][class~='shadow'],
+  [class~='rounded-2xl'][class~='shadow']
+):not([data-critical], [data-critical] *) {
+  background-color: var(--erp-surface) !important;
+  border-color: var(--erp-border) !important;
+  color: var(--erp-text) !important;
+}
+
+#app .erp-theme :is(input, select, textarea) {
+  background-color: var(--erp-surface) !important;
+  border-color: var(--erp-border) !important;
+  color: var(--erp-text) !important;
+}
+
+#app .erp-theme :is(input, select, textarea):disabled {
+  background-color: var(--erp-surface-muted) !important;
+  color: var(--erp-text-muted) !important;
+}
+
+/* ERP SweetAlert toasts are portal siblings too; keep the surface neutral while
+   their success/error icons retain their meaning. */
+html:has(#app .erp-theme) .swal2-popup.swal2-toast {
+  background: #ffffff !important;
+  border: 1px solid #d1d5db !important;
+  color: #111111 !important;
+}
+
+html.dark:has(#app .erp-theme) .swal2-popup.swal2-toast {
+  background: #111111 !important;
+  border-color: #4b5563 !important;
+  color: #f9fafb !important;
+}
+
+/* SweetAlert2 stores confirm/cancel/deny colors as inline custom properties on
+   each button. Important scoped variables ensure legacy call-site colors do
+   not reintroduce blue, purple, amber, red, or green text buttons in ERP. */
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-confirm,
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-deny {
+  --swal2-confirm-button-background-color: #111111 !important;
+  --swal2-confirm-button-color: #ffffff !important;
+  --swal2-deny-button-background-color: #111111 !important;
+  --swal2-deny-button-color: #ffffff !important;
+}
+
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-cancel {
+  --swal2-cancel-button-background-color: #f3f4f6 !important;
+  --swal2-cancel-button-color: #111111 !important;
+}
+
+html.dark:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-confirm,
+html.dark:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-deny {
+  --swal2-confirm-button-background-color: #ffffff !important;
+  --swal2-confirm-button-color: #111111 !important;
+  --swal2-deny-button-background-color: #ffffff !important;
+  --swal2-deny-button-color: #111111 !important;
+}
+
+html.dark:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-cancel {
+  --swal2-cancel-button-background-color: #1f2937 !important;
+  --swal2-cancel-button-color: #f9fafb !important;
+}
+
+/* A few Owner premium controls use arbitrary navy/red utilities instead of
+   palette names. Normalize those source-level exceptions at the same scoped
+   boundary, including their hover/focus variants. */
+#app .erp-theme :is(
+  [class*='bg-[#16233b]'], [class*='bg-[#16284a]'],
+  [class*='bg-[#213257]'], [class*='bg-[#13213d]'],
+  [class*='bg-[#2a3f6a]'], [class*='bg-[#b91c1c]'],
+  [class*='bg-[#9f1616]'], [class*='bg-[#007d48]'],
+  [class*='bg-[#243758]']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+  background-color: var(--erp-surface-muted) !important;
+  border-color: var(--erp-border) !important;
+  color: var(--erp-text) !important;
+}
+
+#app .erp-theme :is(
+  button, a[href], [role='button'], [role='tab'], [role='menuitem']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):is(
+  [class*='bg-[#16233b]'], [class*='bg-[#16284a]'],
+  [class*='bg-[#213257]'], [class*='bg-[#13213d]'],
+  [class*='bg-[#2a3f6a]'], [class*='bg-[#b91c1c]'],
+  [class*='bg-[#9f1616]'], [class*='bg-[#007d48]'],
+  [class*='bg-[#243758]']
+) {
+  background-color: var(--erp-ink) !important;
+  border-color: var(--erp-ink) !important;
+  color: var(--erp-on-ink) !important;
+}
+
+#app .erp-theme :is(
+  [class*='text-[#16233b]'], [class*='text-[#0f1b33]']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+  color: var(--erp-text) !important;
+}
+
+#app .erp-theme :is(
+  [class*='border-[#16233b]'], [class*='border-[#16284a]'],
+  [class*='border-[#213257]'], [class*='border-[#2a3f6a]'],
+  [class*='border-[#8f1212]']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+  border-color: var(--erp-border) !important;
+}
+
+#app .erp-theme :is(
+  [class*='from-[#16233b]'], [class*='via-[#16233b]'],
+  [class*='to-[#16233b]'], [class*='from-[#16284a]'],
+  [class*='to-[#13213d]']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+  background-image: none !important;
+}
+
+#app .erp-theme :is(
+  [class*='hover:bg-[#16233b]'], [class*='hover:bg-[#16284a]'],
+  [class*='hover:bg-[#213257]'], [class*='hover:bg-[#13213d]'],
+  [class*='hover:bg-[#2a3f6a]'], [class*='hover:bg-[#b91c1c]'],
+  [class*='hover:bg-[#9f1616]'], [class*='hover:bg-[#243758]']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):hover {
+  background-color: var(--erp-surface-muted) !important;
+  border-color: var(--erp-border) !important;
+  color: var(--erp-text) !important;
+}
+
+#app .erp-theme :is(
+  [class*='focus:ring-[#16233b]'], [class*='focus-visible:ring-[#16233b]'],
+  [class*='focus:ring-[#16284a]'], [class*='focus-visible:ring-[#16284a]']
+):focus,
+#app .erp-theme :is(
+  [class*='focus:ring-[#16233b]'], [class*='focus-visible:ring-[#16233b]'],
+  [class*='focus:ring-[#16284a]'], [class*='focus-visible:ring-[#16284a]']
+):focus-visible {
+  border-color: var(--erp-ink) !important;
+  outline-color: var(--erp-ink) !important;
+  --tw-ring-color: rgb(17 17 17 / 0.18) !important;
+}
+
+/* Inertia mounts its progress indicator outside the ERP layout. Override its
+   injected color only while an ERP/Owner shell is present. */
+html:has(#app .erp-theme) #nprogress .bar {
+  background: #111111 !important;
+}
+
+html:has(#app .erp-theme) #nprogress .peg {
+  box-shadow: 0 0 10px #111111, 0 0 5px #111111 !important;
+}
+
+html.dark:has(#app .erp-theme) #nprogress .bar {
+  background: #ffffff !important;
+}
+
+html.dark:has(#app .erp-theme) #nprogress .peg {
+  box-shadow: 0 0 10px #ffffff, 0 0 5px #ffffff !important;
+}
+
+/* Warning/info/question icons communicate through their copy and icon shape;
+   keep ordinary ERP dialog chrome neutral while success/error icons remain
+   semantic for critical outcomes. */
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) :is(.swal2-warning, .swal2-info, .swal2-question) {
+  border-color: #9ca3af !important;
+  color: #6b7280 !important;
+}
+
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) :is(.swal2-warning, .swal2-info, .swal2-question) [class^='swal2-icon-content'] {
+  color: #6b7280 !important;
+}
+
+html.dark:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) :is(.swal2-warning, .swal2-info, .swal2-question) {
+  border-color: #9ca3af !important;
+  color: #d1d5db !important;
+}
+
+html.dark:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) :is(.swal2-warning, .swal2-info, .swal2-question) [class^='swal2-icon-content'] {
+  color: #d1d5db !important;
+}
+
+/* Normalize the remaining palette utilities used by legacy ERP and Owner
+   pages. These include rose/pink accents, custom status tokens, and slate
+   variants that are outside the primary utility lists above. */
+#app .erp-theme :is(
+  [class^='bg-rose-'], [class*=' bg-rose-'], [class^='bg-pink-'], [class*=' bg-pink-'],
+  [class^='bg-fuchsia-'], [class*=' bg-fuchsia-'], [class^='bg-error-'], [class*=' bg-error-'],
+  [class^='bg-success-'], [class*=' bg-success-'], [class~='bg-success'],
+  [class^='bg-warning-'], [class*=' bg-warning-'], [class~='bg-warning'],
+  [class^='bg-meta-'], [class*=' bg-meta-'], [class^='bg-slate-'], [class*=' bg-slate-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+  background-color: var(--erp-surface-muted) !important;
+  border-color: var(--erp-border) !important;
+  color: var(--erp-text) !important;
+}
+
+#app .erp-theme :is(
+  [class^='text-rose-'], [class*=' text-rose-'], [class^='text-pink-'], [class*=' text-pink-'],
+  [class^='text-fuchsia-'], [class*=' text-fuchsia-'], [class^='text-error-'], [class*=' text-error-'],
+  [class^='text-success-'], [class*=' text-success-'], [class~='text-success'],
+  [class^='text-warning-'], [class*=' text-warning-'], [class~='text-warning'],
+  [class^='text-meta-'], [class*=' text-meta-'], [class^='text-slate-'], [class*=' text-slate-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+  color: var(--erp-text) !important;
+}
+
+#app .erp-theme :is(
+  [class^='border-rose-'], [class*=' border-rose-'], [class^='border-pink-'], [class*=' border-pink-'],
+  [class^='border-fuchsia-'], [class*=' border-fuchsia-'], [class^='border-error-'], [class*=' border-error-'],
+  [class^='border-success-'], [class*=' border-success-'], [class^='border-warning-'], [class*=' border-warning-'],
+  [class^='border-meta-'], [class*=' border-meta-'], [class^='border-slate-'], [class*=' border-slate-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+  border-color: var(--erp-border) !important;
+}
+
+#app .erp-theme :is(
+  [class^='from-rose-'], [class*=' from-rose-'], [class^='from-pink-'], [class*=' from-pink-'],
+  [class^='from-fuchsia-'], [class*=' from-fuchsia-'], [class^='from-error-'], [class*=' from-error-'],
+  [class^='from-success-'], [class*=' from-success-'], [class^='from-warning-'], [class*=' from-warning-'],
+  [class^='from-meta-'], [class*=' from-meta-'], [class^='from-slate-'], [class*=' from-slate-'],
+  [class^='via-rose-'], [class*=' via-rose-'], [class^='via-pink-'], [class*=' via-pink-'],
+  [class^='via-fuchsia-'], [class*=' via-fuchsia-'], [class^='via-error-'], [class*=' via-error-'],
+  [class^='via-success-'], [class*=' via-success-'], [class^='via-warning-'], [class*=' via-warning-'],
+  [class^='via-meta-'], [class*=' via-meta-'], [class^='via-slate-'], [class*=' via-slate-'],
+  [class^='to-rose-'], [class*=' to-rose-'], [class^='to-pink-'], [class*=' to-pink-'],
+  [class^='to-fuchsia-'], [class*=' to-fuchsia-'], [class^='to-error-'], [class*=' to-error-'],
+  [class^='to-success-'], [class*=' to-success-'], [class^='to-warning-'], [class*=' to-warning-'],
+  [class^='to-meta-'], [class*=' to-meta-'], [class^='to-slate-'], [class*=' to-slate-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+  background-image: none !important;
+}
+
+#app .erp-theme :is(button, a[href], [role='button'], [role='tab'], [role='menuitem']):not(
+  [data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *
+):is(
+  [class^='bg-rose-'], [class*=' bg-rose-'], [class^='bg-pink-'], [class*=' bg-pink-'],
+  [class^='bg-fuchsia-'], [class*=' bg-fuchsia-'], [class^='bg-error-'], [class*=' bg-error-'],
+  [class^='bg-success-'], [class*=' bg-success-'], [class~='bg-success'],
+  [class^='bg-warning-'], [class*=' bg-warning-'], [class~='bg-warning'],
+  [class^='bg-meta-'], [class*=' bg-meta-'], [class^='bg-slate-'], [class*=' bg-slate-']
+) {
+  background-color: var(--erp-ink) !important;
+  border-color: var(--erp-ink) !important;
+  color: var(--erp-on-ink) !important;
+}
+
+#app .erp-theme :is(
+  [class*='hover:bg-rose-'], [class*='hover:bg-pink-'], [class*='hover:bg-fuchsia-'],
+  [class*='hover:bg-error-'], [class*='hover:bg-success-'], [class*='hover:bg-warning-'],
+  [class*='hover:bg-meta-'], [class*='hover:bg-slate-']
+):not(
+  [data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *,
+  [aria-selected='true'], [aria-pressed='true'], [aria-current='page'],
+  [data-state='active'], [data-selected='true']
+):hover {
+  background-color: var(--erp-surface-muted) !important;
+  border-color: var(--erp-border) !important;
+  color: var(--erp-text) !important;
+}
+
+#app .erp-theme :is(
+  [class*='hover:text-rose-'], [class*='hover:text-pink-'], [class*='hover:text-fuchsia-'],
+  [class*='hover:text-error-'], [class*='hover:text-success-'], [class*='hover:text-warning-'],
+  [class*='hover:text-meta-'], [class*='hover:text-slate-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):hover {
+  color: var(--erp-text) !important;
+}
+
+#app .erp-theme :is(
+  [class*='hover:border-rose-'], [class*='hover:border-pink-'], [class*='hover:border-fuchsia-'],
+  [class*='hover:border-error-'], [class*='hover:border-success-'], [class*='hover:border-warning-'],
+  [class*='hover:border-meta-'], [class*='hover:border-slate-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):hover {
+  border-color: var(--erp-border) !important;
+}
+
+html.dark #app .erp-theme :is(
+  [class*='dark:bg-rose-'], [class*='dark:bg-pink-'], [class*='dark:bg-fuchsia-'],
+  [class*='dark:bg-error-'], [class*='dark:bg-success-'], [class*='dark:bg-warning-'],
+  [class*='dark:bg-meta-'], [class*='dark:bg-slate-'], [class~='dark:bg-success'],
+  [class~='dark:bg-warning']
+):not(
+  [data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *,
+  [aria-selected='true'], [aria-pressed='true'], [aria-current='page'],
+  [data-state='active'], [data-selected='true']
+) {
+  background-color: var(--erp-surface-muted) !important;
+  border-color: var(--erp-border) !important;
+  color: var(--erp-text) !important;
+}
+
+html.dark #app .erp-theme :is(
+  [class*='dark:text-rose-'], [class*='dark:text-pink-'], [class*='dark:text-fuchsia-'],
+  [class*='dark:text-error-'], [class*='dark:text-success-'], [class*='dark:text-warning-'],
+  [class*='dark:text-meta-'], [class*='dark:text-slate-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+  color: var(--erp-text) !important;
+}
+
+html.dark #app .erp-theme :is(
+  [class*='dark:border-rose-'], [class*='dark:border-pink-'], [class*='dark:border-fuchsia-'],
+  [class*='dark:border-error-'], [class*='dark:border-success-'], [class*='dark:border-warning-'],
+  [class*='dark:border-meta-'], [class*='dark:border-slate-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+  border-color: var(--erp-border) !important;
+}
+
+html.dark #app .erp-theme :is(
+  [class*='dark:from-rose-'], [class*='dark:from-pink-'], [class*='dark:from-fuchsia-'],
+  [class*='dark:from-error-'], [class*='dark:from-success-'], [class*='dark:from-warning-'],
+  [class*='dark:from-meta-'], [class*='dark:from-slate-'],
+  [class*='dark:via-rose-'], [class*='dark:via-pink-'], [class*='dark:via-fuchsia-'],
+  [class*='dark:via-error-'], [class*='dark:via-success-'], [class*='dark:via-warning-'],
+  [class*='dark:via-meta-'], [class*='dark:via-slate-'],
+  [class*='dark:to-rose-'], [class*='dark:to-pink-'], [class*='dark:to-fuchsia-'],
+  [class*='dark:to-error-'], [class*='dark:to-success-'], [class*='dark:to-warning-'],
+  [class*='dark:to-meta-'], [class*='dark:to-slate-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+  background-image: none !important;
+}
+
+html.dark #app .erp-theme :is(button, a[href], [role='button'], [role='tab'], [role='menuitem']):not(
+  [data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *
+):is(
+  [class*='dark:bg-rose-'], [class*='dark:bg-pink-'], [class*='dark:bg-fuchsia-'],
+  [class*='dark:bg-error-'], [class*='dark:bg-success-'], [class*='dark:bg-warning-'],
+  [class*='dark:bg-meta-'], [class*='dark:bg-slate-'], [class~='dark:bg-success'],
+  [class~='dark:bg-warning']
+) {
+  background-color: var(--erp-ink) !important;
+  border-color: var(--erp-ink) !important;
+  color: var(--erp-on-ink) !important;
+}
+
+html.dark #app .erp-theme :is(
+  [class*='dark:hover:bg-rose-'], [class*='dark:hover:bg-pink-'], [class*='dark:hover:bg-fuchsia-'],
+  [class*='dark:hover:bg-error-'], [class*='dark:hover:bg-success-'], [class*='dark:hover:bg-warning-'],
+  [class*='dark:hover:bg-meta-'], [class*='dark:hover:bg-slate-']
+):not(
+  [data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *,
+  [aria-selected='true'], [aria-pressed='true'], [aria-current='page'],
+  [data-state='active'], [data-selected='true']
+):hover {
+  background-color: var(--erp-surface-muted) !important;
+  border-color: var(--erp-border) !important;
+  color: var(--erp-text) !important;
+}
+
+html.dark #app .erp-theme :is(
+  [class*='dark:hover:text-rose-'], [class*='dark:hover:text-pink-'], [class*='dark:hover:text-fuchsia-'],
+  [class*='dark:hover:text-error-'], [class*='dark:hover:text-success-'], [class*='dark:hover:text-warning-'],
+  [class*='dark:hover:text-meta-'], [class*='dark:hover:text-slate-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):hover {
+  color: var(--erp-text) !important;
+}
+
+html.dark #app .erp-theme :is(
+  [class*='dark:hover:border-rose-'], [class*='dark:hover:border-pink-'], [class*='dark:hover:border-fuchsia-'],
+  [class*='dark:hover:border-error-'], [class*='dark:hover:border-success-'], [class*='dark:hover:border-warning-'],
+  [class*='dark:hover:border-meta-'], [class*='dark:hover:border-slate-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):hover {
+  border-color: var(--erp-border) !important;
+}
+
+/* Keep focus rings, accents, and separators within the same neutral system. */
+#app .erp-theme :is(
+  [class*='ring-rose-'], [class*='ring-pink-'], [class*='ring-fuchsia-'],
+  [class*='ring-error-'], [class*='ring-success-'], [class*='ring-warning-'],
+  [class*='ring-meta-'], [class*='ring-slate-'],
+  [class*='focus:ring-rose-'], [class*='focus:ring-pink-'], [class*='focus:ring-fuchsia-'],
+  [class*='focus:ring-error-'], [class*='focus:ring-success-'], [class*='focus:ring-warning-'],
+  [class*='focus:ring-meta-'], [class*='focus:ring-slate-'],
+  [class*='focus-visible:ring-rose-'], [class*='focus-visible:ring-pink-'],
+  [class*='focus-visible:ring-fuchsia-'], [class*='focus-visible:ring-error-'],
+  [class*='focus-visible:ring-success-'], [class*='focus-visible:ring-warning-'],
+  [class*='focus-visible:ring-meta-'], [class*='focus-visible:ring-slate-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):is(:focus, :focus-visible) {
+  --tw-ring-color: var(--erp-ink) !important;
+}
+
+html.dark #app .erp-theme :is(
+  [class*='dark:ring-rose-'], [class*='dark:ring-pink-'], [class*='dark:ring-fuchsia-'],
+  [class*='dark:ring-error-'], [class*='dark:ring-success-'], [class*='dark:ring-warning-'],
+  [class*='dark:ring-meta-'], [class*='dark:ring-slate-'],
+  [class*='dark:focus:ring-rose-'], [class*='dark:focus:ring-pink-'],
+  [class*='dark:focus:ring-fuchsia-'], [class*='dark:focus:ring-error-'],
+  [class*='dark:focus:ring-success-'], [class*='dark:focus:ring-warning-'],
+  [class*='dark:focus:ring-meta-'], [class*='dark:focus:ring-slate-'],
+  [class*='dark:focus-visible:ring-rose-'], [class*='dark:focus-visible:ring-pink-'],
+  [class*='dark:focus-visible:ring-fuchsia-'], [class*='dark:focus-visible:ring-error-'],
+  [class*='dark:focus-visible:ring-success-'], [class*='dark:focus-visible:ring-warning-'],
+  [class*='dark:focus-visible:ring-meta-'], [class*='dark:focus-visible:ring-slate-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):is(:focus, :focus-visible) {
+  --tw-ring-color: var(--erp-ink) !important;
+}
+
+#app .erp-theme :is(
+  [class*='divide-rose-'], [class*='divide-pink-'], [class*='divide-fuchsia-'],
+  [class*='divide-error-'], [class*='divide-success-'], [class*='divide-warning-'],
+  [class*='divide-meta-'], [class*='divide-slate-']
+) > :not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+  border-color: var(--erp-border) !important;
+}
+
+#app .erp-theme :is(
+  [class*='accent-rose-'], [class*='accent-pink-'], [class*='accent-fuchsia-'],
+  [class*='accent-error-'], [class*='accent-success-'], [class*='accent-warning-'],
+  [class*='accent-meta-'], [class*='accent-slate-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+  accent-color: var(--erp-ink) !important;
+}
+
+/* Normalize arbitrary multi-stop gradients used by one Owner management card. */
+#app .erp-theme :is(
+  [class*='bg-[radial-gradient'], [class*='bg-[linear-gradient']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+  background-color: var(--erp-surface) !important;
+  background-image: none !important;
+}
+
+/* A small legacy repair dashboard still uses unregistered palette names.
+   Keep those source classes functional without reintroducing color. */
+#app .erp-theme :is(
+  [class~='bg-primary'], [class~='bg-danger'], [class~='bg-gray-2']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+  background-color: var(--erp-surface-muted) !important;
+  border-color: var(--erp-border) !important;
+  color: var(--erp-text) !important;
+}
+
+#app .erp-theme :is(button, a[href], [role='button'], [role='tab'], [role='menuitem']):not(
+  [data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *
+):is([class~='bg-primary'], [class~='bg-danger']) {
+  background-color: var(--erp-ink) !important;
+  border-color: var(--erp-ink) !important;
+  color: var(--erp-on-ink) !important;
+}
+
+#app .erp-theme :is(
+  [class~='text-primary'], [class~='text-danger'], [class~='border-primary'], [class~='border-danger'],
+  [class~='border-stroke']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+  color: var(--erp-text) !important;
+  border-color: var(--erp-border) !important;
+}
+
+#app .erp-theme :is([class~='focus:border-primary'], [class~='focus:border-danger']):focus {
+  border-color: var(--erp-ink) !important;
+}
+
+html.dark #app .erp-theme :is([class~='dark:bg-boxdark']):not(
+  [data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *
+) {
+  background-color: var(--erp-surface) !important;
+  color: var(--erp-text) !important;
+}
+
+html.dark #app .erp-theme :is([class~='dark:border-strokedark']):not(
+  [data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *
+) {
+  border-color: var(--erp-border) !important;
+}
+
+/* Reassert active controls after the compatibility selectors above. */
+#app .erp-theme :is(
+  [aria-selected='true'], [aria-pressed='true'], [aria-current='page'],
+  [data-state='active'], [data-selected='true']
+):not(option):not(:disabled):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+  background-color: var(--erp-ink) !important;
+  border-color: var(--erp-ink) !important;
+  color: var(--erp-on-ink) !important;
+}
+
+#app .erp-theme :is(
+  [aria-selected='true'], [aria-pressed='true'], [aria-current='page'],
+  [data-state='active'], [data-selected='true']
+):not(option):not(:disabled):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):hover {
+  background-color: var(--erp-ink) !important;
+  border-color: var(--erp-ink) !important;
+  color: var(--erp-on-ink) !important;
 }

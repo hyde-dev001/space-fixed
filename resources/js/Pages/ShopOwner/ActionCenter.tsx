@@ -197,7 +197,7 @@ export default function ActionCenter() {
           <h1 id="approval-center-title" className="sr-only">
             Approval Center
           </h1>
-          <p className="mt-4 inline-flex rounded-full bg-blue-50 px-3 py-1.5 text-sm font-semibold text-blue-700 dark:bg-blue-900/30 dark:text-blue-200">
+          <p className="mt-4 inline-flex rounded-full bg-gray-100 px-3 py-1.5 text-sm font-semibold text-gray-800 dark:bg-gray-800 dark:text-gray-100">
             {approvalSummary}
           </p>
           <nav aria-label="Approval Center views" className="mt-5 flex flex-wrap gap-2 border-b border-gray-200 pb-3 dark:border-gray-800">
@@ -205,8 +205,8 @@ export default function ActionCenter() {
               href={actionCenterUrl(bucket, "all", 1, result?.pagination.per_page ?? 20)}
               aria-current={view === "pending" ? "page" : undefined}
               className={view === "pending"
-                ? "inline-flex min-h-11 items-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white"
-                : "inline-flex min-h-11 items-center rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 dark:border-gray-700 dark:text-gray-200"}
+                ? "inline-flex min-h-11 items-center rounded-lg bg-gray-950 px-4 py-2 text-sm font-semibold text-white hover:bg-black focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-500 focus-visible:ring-offset-2 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-100 dark:focus-visible:ring-gray-400 dark:focus-visible:ring-offset-gray-900"
+                : "inline-flex min-h-11 items-center rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-500 focus-visible:ring-offset-2 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/[0.06] dark:focus-visible:ring-offset-gray-900"}
             >
               Pending
             </a>
@@ -214,8 +214,8 @@ export default function ActionCenter() {
               href={actionCenterUrl(bucket, "all", 1, history?.pagination.per_page ?? 20, "history")}
               aria-current={view === "history" ? "page" : undefined}
               className={view === "history"
-                ? "inline-flex min-h-11 items-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white"
-                : "inline-flex min-h-11 items-center rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 dark:border-gray-700 dark:text-gray-200"}
+                ? "inline-flex min-h-11 items-center rounded-lg bg-gray-950 px-4 py-2 text-sm font-semibold text-white hover:bg-black focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-500 focus-visible:ring-offset-2 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-100 dark:focus-visible:ring-gray-400 dark:focus-visible:ring-offset-gray-900"
+                : "inline-flex min-h-11 items-center rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-500 focus-visible:ring-offset-2 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/[0.06] dark:focus-visible:ring-offset-gray-900"}
             >
               History
             </a>
@@ -236,7 +236,7 @@ export default function ActionCenter() {
               type="button"
               aria-label="Refresh Approval Center"
               onClick={() => router.reload({ preserveScroll: true, preserveState: true })}
-              className="inline-flex min-h-10 items-center justify-center rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/[0.06] dark:focus-visible:ring-offset-gray-900"
+              className="inline-flex min-h-10 items-center justify-center rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-500 focus-visible:ring-offset-2 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/[0.06] dark:focus-visible:ring-offset-gray-900"
             >
               Refresh
             </button>
@@ -249,7 +249,7 @@ export default function ActionCenter() {
           )}
 
           {hasInvalidApproval && (
-            <p role="alert" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-900/20 dark:text-amber-100">
+            <p role="alert" className="mt-4 rounded-xl border border-gray-300 bg-gray-100 p-4 text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100">
               This approval link is invalid. The Approval Center queue is still available below.
             </p>
           )}
@@ -303,7 +303,7 @@ export default function ActionCenter() {
                 <a
                   href={actionCenterUrl(bucket, source, page - 1, perPage, view)}
                   aria-label="Previous page"
-                  className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:border-gray-700 dark:text-gray-200"
+                  className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-500 focus-visible:ring-offset-2 dark:border-gray-700 dark:text-gray-200"
                 >
                   Previous
                 </a>
@@ -313,7 +313,7 @@ export default function ActionCenter() {
                 </button>
               )}
               {pageNumbers(page, lastPage).map((pageNumber) => pageNumber === page ? (
-                <span key={pageNumber} aria-current="page" className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white">
+                <span key={pageNumber} aria-current="page" className="rounded-lg bg-gray-950 px-3 py-2 text-sm font-semibold text-white dark:bg-white dark:text-gray-950">
                   Page {pageNumber}
                 </span>
               ) : (
@@ -321,7 +321,7 @@ export default function ActionCenter() {
                   key={pageNumber}
                   href={actionCenterUrl(bucket, source, pageNumber, perPage, view)}
                   aria-label={`Page ${pageNumber}`}
-                  className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:border-gray-700 dark:text-gray-200"
+                  className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-500 focus-visible:ring-offset-2 dark:border-gray-700 dark:text-gray-200"
                 >
                   {pageNumber}
                 </a>
@@ -330,7 +330,7 @@ export default function ActionCenter() {
                 <a
                   href={actionCenterUrl(bucket, source, page + 1, perPage, view)}
                   aria-label="Next page"
-                  className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:border-gray-700 dark:text-gray-200"
+                  className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-500 focus-visible:ring-offset-2 dark:border-gray-700 dark:text-gray-200"
                 >
                   Next
                 </a>

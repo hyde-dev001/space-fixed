@@ -19,4 +19,12 @@ describe("Cashier POS dark mode contract", () => {
 		expect(appStyles).toContain('[class~="text-slate-900"]');
 		expect(appStyles).toContain(":is(input, select, textarea)");
 	});
+
+	it("keeps icon-only cart removal actions explicitly destructive", () => {
+		for (const label of ["Remove product", "Unselect package", "Remove add-on", "Remove item"]) {
+			expect(posSource).toContain(`aria-label="${label}"`);
+		}
+		expect(posSource.match(/data-erp-icon-action="true"/g)).toHaveLength(4);
+		expect(posSource.match(/data-semantic-color="danger"/g)).toHaveLength(4);
+	});
 });

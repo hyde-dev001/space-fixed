@@ -132,7 +132,7 @@ export function DetailField({ label, value }: { label: string; value: ReactNode 
 
 export function StatusBadge({ value }: { value: unknown }) {
   return (
-    <span className="inline-flex rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+    <span className="inline-flex rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-800 dark:bg-gray-800 dark:text-gray-100">
       {formatStatus(value)}
     </span>
   );

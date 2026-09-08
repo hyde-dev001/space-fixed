@@ -1883,6 +1883,8 @@ export default function JobOrdersPage() {
                               type="button"
                               onClick={() => handleViewOrder(order)}
                               className="p-2 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition-colors"
+                              data-erp-icon-action="true"
+                              data-semantic-color="success"
                               title="Start processing"
                               aria-label="Start processing"
                             >
@@ -1894,6 +1896,8 @@ export default function JobOrdersPage() {
                               type="button"
                               onClick={() => handleShipOrder(order)}
                               className="p-2 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition-colors"
+                              data-erp-icon-action="true"
+                              data-semantic-color="success"
                               title="Mark as shipped"
                               aria-label="Mark as shipped"
                             >
@@ -1904,7 +1908,9 @@ export default function JobOrdersPage() {
                             <button
                               type="button"
                               onClick={() => handleConfirmReturnReceived(order)}
-                              className="p-2 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-lg transition-colors"
+                              className="p-2 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition-colors"
+                              data-erp-icon-action="true"
+                              data-semantic-color="success"
                               title="Confirm returned item received"
                               aria-label="Confirm returned item received"
                             >

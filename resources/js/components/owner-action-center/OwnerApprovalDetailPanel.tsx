@@ -276,7 +276,7 @@ export default function OwnerApprovalDetailPanel({
       >
       <header className="flex shrink-0 items-start justify-between gap-4 border-b border-gray-200 pb-4 dark:border-gray-800">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-blue-600 dark:text-blue-300">Owner approval</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">Owner approval</p>
           <h2 id="owner-approval-detail-title" className="mt-1 text-lg font-semibold text-gray-900 dark:text-white">{definition.label}</h2>
           <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">{item.title} · #{item.source_id}</p>
         </div>
@@ -294,12 +294,12 @@ export default function OwnerApprovalDetailPanel({
       <div aria-live="polite" className="sr-only">{announcement}</div>
 
       {error && (
-        <div role="alert" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-900/20 dark:text-amber-100">
+        <div role="alert" className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100">
           <p>{error.message}</p>
           <button
             type="button"
             onClick={() => setRefreshToken((value) => value + 1)}
-            className="mt-3 inline-flex min-h-11 items-center justify-center rounded-lg border border-amber-300 px-4 py-2 font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:border-amber-800"
+            className="mt-3 inline-flex min-h-11 items-center justify-center rounded-lg border border-gray-300 px-4 py-2 font-semibold text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-500 dark:border-gray-700 dark:text-gray-100 dark:focus-visible:ring-gray-400"
           >
             Refresh
           </button>
