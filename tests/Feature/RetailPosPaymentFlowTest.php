@@ -312,7 +312,7 @@ class RetailPosPaymentFlowTest extends TestCase
             'stock_quantity' => 10,
             'is_active' => true,
         ]);
-        ProductVariant::create([
+        $variant = ProductVariant::create([
             'product_id' => $product->id,
             'size' => '8',
             'color' => 'Black',
@@ -338,7 +338,7 @@ class RetailPosPaymentFlowTest extends TestCase
             'color_code' => '#000000',
             'quantity' => 1,
         ]);
-        InventorySize::create([
+        $size = InventorySize::create([
             'inventory_item_id' => $inventoryItem->id,
             'inventory_color_variant_id' => $color->id,
             'size' => '8',
@@ -352,6 +352,9 @@ class RetailPosPaymentFlowTest extends TestCase
             'walk_in_name' => 'Insufficient Inventory Buyer',
             'items' => [[
                 'product_id' => $product->id,
+                'variant_id' => $variant->id,
+                'inventory_color_variant_id' => $color->id,
+                'inventory_size_id' => $size->id,
                 'qty' => 2,
                 'unit_price' => 100,
                 'size' => '8',
@@ -404,5 +407,168 @@ class RetailPosPaymentFlowTest extends TestCase
 
         $this->assertSame('89.29', $summary['supporting']['gross_revenue']);
         $this->assertSame('100.00', $summary['primary']['net_cash_movement']);
+    }
+    #[Test]
+    public function retail_pos_product_listing_returns_exact_live_linked_variant_stock_and_ids(): void
+    {
+        ['product' => $product] = $this->createLinkedRetailCatalog();
+
+        $response = $this->actingAs(User::query()->where('shop_owner_id', $product->shop_owner_id)->firstOrFail(), 'user')
+            ->getJson('/api/retail-pos/products');
+
+        $response->assertOk();
+        $row = collect($response->json('data'))->firstWhere('id', $product->id);
+        $this->assertNotNull($row);
+        $this->assertSame(36, (int) $row['stock_quantity']);
+
+        $variants = collect($row['variants'])->keyBy(fn (array $variant): string => $variant['color'] . '/' . $variant['size']);
+        $this->assertSame(4, (int) $variants['Black/8']['quantity']);
+        $this->assertSame(12, (int) $variants['Black/9']['quantity']);
+        $this->assertSame(20, (int) $variants['White/8']['quantity']);
+        $this->assertNotNull($variants['Black/8']['inventory_color_variant_id']);
+        $this->assertNotNull($variants['Black/8']['inventory_size_id']);
+        $this->assertNotSame($variants['Black/8']['inventory_size_id'], $variants['Black/9']['inventory_size_id']);
+    }
+
+    #[Test]
+    public function retail_pos_listing_reflects_post_sale_linked_variant_stock_without_hard_refresh(): void
+    {
+        ['cashier' => $cashier, 'product' => $product, 'blackEight' => $blackEight, 'blackEightSize' => $blackEightSize] = $this->createLinkedRetailCatalog();
+
+        $this->actingAs($cashier, 'user')->postJson('/api/retail-pos/checkout', [
+            'idempotency_key' => 'retail-live-linked-stock-001',
+            'customer_type' => 'walk_in',
+            'walk_in_name' => 'Live Stock Buyer',
+            'items' => [[
+                'product_id' => $product->id,
+                'variant_id' => $blackEight->id,
+                'inventory_color_variant_id' => $blackEightSize->inventory_color_variant_id,
+                'inventory_size_id' => $blackEightSize->id,
+                'qty' => 2,
+                'unit_price' => 100,
+                'size' => '8',
+                'color' => 'Black',
+            ]],
+            'payment_lines' => [['tender_type' => 'cash', 'amount' => 200]],
+        ])->assertCreated();
+
+        $listing = $this->actingAs($cashier, 'user')->getJson('/api/retail-pos/products')->assertOk();
+        $row = collect($listing->json('data'))->firstWhere('id', $product->id);
+        $variant = collect($row['variants'])->firstWhere('inventory_size_id', $blackEightSize->id);
+
+        $this->assertSame(2, (int) $blackEightSize->fresh()->quantity);
+        $this->assertSame(2, (int) $variant['quantity']);
+    }
+
+    #[Test]
+    public function retail_pos_rejects_a_valid_same_product_but_wrong_inventory_size_id(): void
+    {
+        ['cashier' => $cashier, 'product' => $product, 'blackEight' => $blackEight, 'blackEightSize' => $blackEightSize, 'blackNineSize' => $blackNineSize] = $this->createLinkedRetailCatalog();
+
+        $response = $this->actingAs($cashier, 'user')->postJson('/api/retail-pos/checkout', [
+            'idempotency_key' => 'retail-wrong-linked-target-001',
+            'customer_type' => 'walk_in',
+            'walk_in_name' => 'Wrong Target Buyer',
+            'items' => [[
+                'product_id' => $product->id,
+                'variant_id' => $blackEight->id,
+                'inventory_color_variant_id' => $blackEightSize->inventory_color_variant_id,
+                'inventory_size_id' => $blackNineSize->id,
+                'qty' => 1,
+                'unit_price' => 100,
+                'size' => '8',
+                'color' => 'Black',
+            ]],
+            'payment_lines' => [['tender_type' => 'cash', 'amount' => 100]],
+        ]);
+
+        $response->assertStatus(422);
+        $this->assertSame(4, (int) $blackEightSize->fresh()->quantity);
+        $this->assertSame(12, (int) $blackNineSize->fresh()->quantity);
+        $this->assertDatabaseCount('orders', 0);
+        $this->assertDatabaseCount('stock_movements', 0);
+        $this->assertDatabaseCount('finance_invoices', 0);
+    }
+
+    /** @return array{cashier: User, product: Product, blackEight: ProductVariant, blackEightSize: InventorySize, blackNineSize: InventorySize} */
+    private function createLinkedRetailCatalog(): array
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'retail']);
+        $cashier = User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $product = Product::create([
+            'shop_owner_id' => $shopOwner->id,
+            'name' => 'Canonical Linked Retail POS Sneaker',
+            'slug' => 'canonical-linked-retail-pos-' . random_int(1000, 9999),
+            'price' => 100,
+            'stock_quantity' => 99,
+            'is_active' => true,
+        ]);
+        $blackEight = ProductVariant::create([
+            'product_id' => $product->id,
+            'size' => '8',
+            'color' => 'Black',
+            'quantity' => 99,
+            'is_active' => true,
+        ]);
+        ProductVariant::create([
+            'product_id' => $product->id,
+            'size' => '9',
+            'color' => 'Black',
+            'quantity' => 99,
+            'is_active' => true,
+        ]);
+        ProductVariant::create([
+            'product_id' => $product->id,
+            'size' => '8',
+            'color' => 'White',
+            'quantity' => 99,
+            'is_active' => true,
+        ]);
+        $inventoryItem = InventoryItem::create([
+            'product_id' => $product->id,
+            'shop_owner_id' => $shopOwner->id,
+            'name' => $product->name,
+            'sku' => 'INV-CANONICAL-RETAIL-' . random_int(1000, 9999),
+            'category' => 'shoes',
+            'unit' => 'pairs',
+            'available_quantity' => 36,
+            'reserved_quantity' => 0,
+            'reorder_level' => 1,
+            'reorder_quantity' => 5,
+            'is_active' => true,
+        ]);
+        $black = InventoryColorVariant::create([
+            'inventory_item_id' => $inventoryItem->id,
+            'color_name' => 'Black',
+            'quantity' => 16,
+        ]);
+        $white = InventoryColorVariant::create([
+            'inventory_item_id' => $inventoryItem->id,
+            'color_name' => 'White',
+            'quantity' => 20,
+        ]);
+        $blackEightSize = InventorySize::create([
+            'inventory_item_id' => $inventoryItem->id,
+            'inventory_color_variant_id' => $black->id,
+            'size' => '8',
+            'size_system' => 'US',
+            'quantity' => 4,
+        ]);
+        $blackNineSize = InventorySize::create([
+            'inventory_item_id' => $inventoryItem->id,
+            'inventory_color_variant_id' => $black->id,
+            'size' => '9',
+            'size_system' => 'US',
+            'quantity' => 12,
+        ]);
+        InventorySize::create([
+            'inventory_item_id' => $inventoryItem->id,
+            'inventory_color_variant_id' => $white->id,
+            'size' => '8',
+            'size_system' => 'US',
+            'quantity' => 20,
+        ]);
+
+        return compact('cashier', 'product', 'blackEight', 'blackEightSize', 'blackNineSize');
     }
 }
