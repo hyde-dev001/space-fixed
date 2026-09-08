@@ -587,7 +587,7 @@ export default function PurchaseRequest() {
 			{isAnyModalOpen && <div className="fixed inset-0 z-40" />}
 
 			<div className="p-6 space-y-6">
-				<div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+				<div className="flex flex-col items-end lg:flex-row lg:items-center lg:justify-end gap-4">
 					<h1 className="sr-only">Purchase Request (Replenishment)</h1>
 					{!ownerMode && (
 						<button
