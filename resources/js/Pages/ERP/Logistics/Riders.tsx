@@ -111,7 +111,7 @@ export default function Riders() {
           <h1 className="sr-only">Riders</h1>
         </div>
 
-        <div className="flex flex-col gap-3 sm:gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 sm:gap-4 sm:flex-row sm:items-center sm:justify-end">
           <div data-testid="riders-filter-bar" className="mx-auto grid w-full max-w-md grid-cols-1 gap-3 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-800 sm:grid-cols-2 sm:p-4 xl:mx-0 xl:w-auto xl:max-w-none xl:flex xl:flex-wrap xl:items-center xl:gap-3 xl:rounded-none xl:border-0 xl:bg-transparent xl:p-0 xl:shadow-none">
             <MonochromeSelect
               value={filters.availability}
