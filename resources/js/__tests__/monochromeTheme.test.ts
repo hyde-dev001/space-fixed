@@ -18,7 +18,48 @@ const customOptionStyles = appCss.slice(
   appCss.indexOf('@utility no-scrollbar'),
 );
 
-describe('shared monochrome Light Mode theme', () => {
+describe('shared monochrome Light and Dark Mode theme', () => {
+  it('defines scoped ERP tokens for both themes', () => {
+    expect(appCss).toContain('#app .erp-theme {');
+    expect(appCss).toContain('--erp-ink: #111111;');
+    expect(appCss).toContain('--erp-surface-muted: #f3f4f6;');
+    expect(appCss).toContain('html.dark #app .erp-theme {');
+    expect(appCss).toContain('--erp-ink: #ffffff;');
+    expect(appCss).toContain('--erp-surface: #111111;');
+  });
+
+  it('keeps ordinary ERP controls neutral and semantic exceptions explicit', () => {
+    expect(appCss).toContain(':not([data-erp-icon-action], [data-erp-icon-action] *');
+    expect(appCss).toContain('[data-erp-icon-action]');
+    expect(appCss).toContain('[data-critical]');
+    expect(appCss).toContain('#app .erp-theme');
+
+    for (const family of ['rose', 'pink', 'fuchsia', 'error', 'success', 'warning', 'meta', 'slate']) {
+      expect(appCss).toContain(`[class^='bg-${family}-']`);
+      expect(appCss).toContain(`[class*='dark:bg-${family}-']`);
+    }
+
+    for (const token of ['bg-primary', 'bg-danger', 'bg-gray-2', 'border-stroke', 'dark:bg-boxdark', 'dark:border-strokedark']) {
+      expect(appCss).toContain(`[class~='${token}']`);
+    }
+
+    expect(appCss).toContain("[class*='bg-[radial-gradient']");
+  });
+
+  it('normalizes ERP charts and SweetAlert portals in dark mode without global scope', () => {
+    expect(appCss).toContain('html.dark #app .erp-theme .apexcharts-series[rel="1"]');
+    expect(appCss).toContain('html.dark #app .erp-theme .apexcharts-series[rel="1"] .apexcharts-radialbar-area');
+    expect(appCss).toContain('html:has(#app .erp-theme) .erp-swal2-popup');
+    expect(appCss).not.toContain('html:has(#app) .erp-swal2-popup');
+  });
+
+  it('keeps ERP progress and non-critical SweetAlert warning chrome neutral', () => {
+    expect(appCss).toContain('html:has(#app .erp-theme) #nprogress .bar');
+    expect(appCss).toContain('html.dark:has(#app .erp-theme) #nprogress .bar');
+    expect(appCss).toContain('html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) :is(.swal2-warning, .swal2-info, .swal2-question)');
+    expect(appCss).not.toContain('html:has(#app) #nprogress .bar');
+  });
+
   it('scopes shared metric card styling away from Dark Mode', () => {
     expect(appCss).toContain('html:not(.dark) #app .metrics-card');
   });

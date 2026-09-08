@@ -126,12 +126,23 @@ describe("Shop Owner Approval Center", () => {
     expect(screen.getByRole("heading", { name: "Approval Center" })).toBeInTheDocument();
     expect(screen.getByText("1 approval requires your decision")).toBeInTheDocument();
     expect(screen.getByText("Approvals requiring your decision")).toBeInTheDocument();
+    expect(screen.getByText("Expense", { exact: true })).toHaveClass("bg-gray-100", "text-gray-700");
+    expect(screen.getByText("Expense", { exact: true })).not.toHaveClass("bg-blue-50", "text-blue-700");
     expect(screen.queryByText("Owner Action Center")).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /Urgent Exceptions/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /Waiting on Others/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("navigation", { name: /Action Center buckets/i })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: /All Approvals/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Price Changes/i })).toBeInTheDocument();
+  });
+
+  it("uses neutral treatments for approval navigation and refresh controls", () => {
+    render(<ActionCenter />);
+
+    expect(screen.getByRole("link", { name: /^Pending$/i })).toHaveClass("bg-gray-950", "text-white");
+    expect(screen.getByRole("link", { name: /^Pending$/i })).not.toHaveClass("bg-blue-600");
+    expect(screen.getByRole("button", { name: /refresh approval center/i })).toHaveClass("focus-visible:ring-gray-500");
+    expect(screen.getByRole("button", { name: /refresh approval center/i })).not.toHaveClass("focus-visible:ring-blue-500");
   });
 
   it("renders owner decisions with all supported approval filters and review-only rows", async () => {
@@ -219,7 +230,8 @@ describe("Shop Owner Approval Center", () => {
 
     expect(screen.getByRole("heading", { name: "Approval history" })).toBeInTheDocument();
     expect(screen.getByText("Purchase request PR-42")).toBeInTheDocument();
-    expect(screen.getByText("Approved")).toBeInTheDocument();
+    expect(screen.getByText("Approved")).toHaveClass("text-gray-700", "dark:text-gray-300");
+    expect(screen.getByText("Approved")).not.toHaveClass("text-emerald-700", "dark:text-emerald-300");
     expect(screen.getByRole("button", { name: /View Purchase request PR-42 approval details/i })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Approve$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Reject$/i })).not.toBeInTheDocument();
@@ -248,7 +260,7 @@ describe("Shop Owner Approval Center", () => {
 
     expect(screen.getByText(/partial coverage/i)).toBeInTheDocument();
     expect(screen.getByText(/5 approvals from currently available sources/i)).toBeInTheDocument();
-    expect(screen.getByText(/expenses temporarily unavailable/i)).toBeInTheDocument();
+    expect(screen.getByText(/expenses temporarily unavailable/i)).toHaveClass("text-gray-600", "dark:text-gray-300");
   });
 
   it("distinguishes unavailable data from a healthy empty approval queue", () => {
@@ -269,7 +281,7 @@ describe("Shop Owner Approval Center", () => {
 
     render(<ActionCenter />);
 
-    expect(screen.getByText(/Approval Center currently unavailable/i)).toBeInTheDocument();
+    expect(screen.getByText(/Approval Center currently unavailable/i).parentElement).toHaveClass("border-gray-200", "bg-gray-50", "text-gray-700");
 
     mocks.props = {
       ...mocks.props,

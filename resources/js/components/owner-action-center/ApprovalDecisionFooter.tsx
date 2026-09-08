@@ -41,7 +41,7 @@ export default function ApprovalDecisionFooter({
       title: `Approve ${recordLabel}?`,
       text: `This will ${definition.consequence}. Confirm only after checking the summary and evidence above.`,
       confirmButtonText: "Approve",
-      confirmButtonColor: "#059669",
+      confirmButtonColor: "#111111",
     });
 
     if (confirmation.isConfirmed) onSubmit("approve");
@@ -61,8 +61,8 @@ export default function ApprovalDecisionFooter({
       showCancelButton: true,
       confirmButtonText: "Continue",
       cancelButtonText: "Cancel",
-      confirmButtonColor: "#dc2626",
-      cancelButtonColor: "#6b7280",
+      confirmButtonColor: "#111111",
+      cancelButtonColor: "#f3f4f6",
     });
 
     if (!selection.isConfirmed) return;
@@ -82,8 +82,8 @@ export default function ApprovalDecisionFooter({
         showCancelButton: true,
         confirmButtonText: "Reject",
         cancelButtonText: "Cancel",
-        confirmButtonColor: "#dc2626",
-        cancelButtonColor: "#6b7280",
+        confirmButtonColor: "#111111",
+        cancelButtonColor: "#f3f4f6",
       });
 
       if (!customReason.isConfirmed) return;
@@ -110,7 +110,7 @@ export default function ApprovalDecisionFooter({
           type="button"
           disabled={submitting}
           onClick={handleApprove}
-          className="inline-flex min-h-11 items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:focus-visible:ring-offset-gray-900"
+          className="inline-flex min-h-11 items-center justify-center rounded-lg bg-gray-950 px-4 py-2 text-sm font-semibold text-white hover:bg-black focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-100 dark:focus-visible:ring-gray-400 dark:focus-visible:ring-offset-gray-900"
         >
           Approve
         </button>
@@ -120,7 +120,7 @@ export default function ApprovalDecisionFooter({
           type="button"
           disabled={submitting}
           onClick={handleReject}
-          className="inline-flex min-h-11 items-center justify-center rounded-lg border border-red-300 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950/30 dark:focus-visible:ring-offset-gray-900"
+          className="inline-flex min-h-11 items-center justify-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-900 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800 dark:focus-visible:ring-gray-400 dark:focus-visible:ring-offset-gray-900"
         >
           Reject
         </button>

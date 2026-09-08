@@ -3224,6 +3224,8 @@ const PointOfSalePage = () => {
 														onClick={() => removeRetailCartItem(item.lineId)}
 														title="Remove product"
 														aria-label="Remove product"
+														data-erp-icon-action="true"
+														data-semantic-color="danger"
 														className="rounded-md p-1 text-red-600 transition hover:bg-red-50 hover:text-red-500"
 													>
 														<svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -3727,6 +3729,8 @@ const PointOfSalePage = () => {
 														onClick={unselectManualPackage}
 														title="Unselect package"
 														aria-label="Unselect package"
+														data-erp-icon-action="true"
+														data-semantic-color="danger"
 														className="rounded-md p-1 text-red-600 transition hover:bg-red-50 hover:text-red-500"
 													>
 														<svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -3754,6 +3758,8 @@ const PointOfSalePage = () => {
 																			onClick={() => removeItem(item.id)}
 																			title="Remove add-on"
 																			aria-label="Remove add-on"
+																			data-erp-icon-action="true"
+																			data-semantic-color="danger"
 																			className="rounded p-1 text-red-600 transition hover:bg-red-50 hover:text-red-500"
 																		>
 																			<svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -3780,6 +3786,8 @@ const PointOfSalePage = () => {
 														onClick={() => removeItem(item.id)}
 														title="Remove item"
 														aria-label="Remove item"
+														data-erp-icon-action="true"
+														data-semantic-color="danger"
 														className="rounded-md p-1 text-red-600 transition hover:bg-red-50 hover:text-red-500"
 													>
 														<svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
