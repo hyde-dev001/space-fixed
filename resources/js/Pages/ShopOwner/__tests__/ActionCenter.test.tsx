@@ -129,6 +129,12 @@ describe("Shop Owner Approval Center", () => {
     expect(screen.getByRole("navigation", { name: "Approval Center views" })).toHaveClass("justify-end");
     expect(screen.getByRole("link", { name: "Pending" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Salary Adjustments: 1" })).toBeInTheDocument();
+    const sourceFilters = screen.getByRole("navigation", { name: /Approval Center source filters/i });
+    expect(sourceFilters).toHaveClass("overflow-x-auto", "pb-1");
+    expect(sourceFilters).not.toHaveClass("flex-wrap");
+    const salaryFilter = screen.getByRole("link", { name: "Salary Adjustments: 1" });
+    expect(salaryFilter).toHaveClass("whitespace-nowrap");
+    expect(salaryFilter.querySelector("span")).toHaveClass("min-h-6", "min-w-6", "bg-red-600", "ring-2");
     expect(screen.getByText("Expense", { exact: true })).toHaveClass("bg-gray-100", "text-gray-700");
     expect(screen.getByText("Expense", { exact: true })).not.toHaveClass("bg-blue-50", "text-blue-700");
     expect(screen.queryByText("Owner Action Center")).not.toBeInTheDocument();
