@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { Eye } from "lucide-react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
-import ManagerFilterPanel, { ManagerFilterActions } from "../../../components/manager/ManagerFilterPanel";
+import ManagerFilterPanel from "../../../components/manager/ManagerFilterPanel";
 import {
     fetchManagerOrderReplacements,
     reassignManagerOrder,
@@ -330,12 +330,16 @@ export default function JobOrders() {
                         <div className="xl:col-span-2"><label htmlFor="order-assignment-state" className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Assignment</label><MonochromeSelect id="order-assignment-state" value={form.assignment_state} onChange={(event) => setForm((current) => ({ ...current, assignment_state: event.target.value }))} className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-white"><option value="">All assignments</option><option value="unassigned">Pending / unassigned</option><option value="assigned">Assigned and locked</option><option value="reassignment_required">Reassignment required</option></MonochromeSelect></div>
                         <div><label htmlFor="order-handler" className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Handler ID</label><input id="order-handler" inputMode="numeric" value={form.handler_id} onChange={(event) => setForm((current) => ({ ...current, handler_id: event.target.value }))} placeholder="Optional" className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-white" /></div>
                         <div><label htmlFor="order-date-from" className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">From</label><input id="order-date-from" type="date" value={form.date_from} onChange={(event) => setForm((current) => ({ ...current, date_from: event.target.value }))} className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-white" /></div>
-                        <div><label htmlFor="order-date-to" className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">To</label><input id="order-date-to" type="date" value={form.date_to} onChange={(event) => setForm((current) => ({ ...current, date_to: event.target.value }))} className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-white" /></div>
-                        <label className="flex min-h-11 items-center gap-2 self-end text-sm font-medium text-gray-700 dark:text-gray-300"><input type="checkbox" checked={form.overdue} onChange={(event) => setForm((current) => ({ ...current, overdue: event.target.checked }))} className="h-4 w-4 rounded border-gray-300 text-blue-700 focus:ring-blue-500" />Overdue only</label>
-                        <ManagerFilterActions>
-                            <button type="submit" className="min-h-11 rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200 dark:focus:ring-offset-gray-950">Apply filters</button>
-                            <button type="button" onClick={clearFilters} className="min-h-11 rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Clear</button>
-                        </ManagerFilterActions>
+                        <div className="xl:col-span-6 flex flex-wrap items-end justify-between gap-4">
+                            <div className="flex flex-wrap items-end gap-4">
+                                <div className="w-full sm:w-56"><label htmlFor="order-date-to" className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">To</label><input id="order-date-to" type="date" value={form.date_to} onChange={(event) => setForm((current) => ({ ...current, date_to: event.target.value }))} className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-white" /></div>
+                                <label className="flex min-h-11 items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300"><input type="checkbox" checked={form.overdue} onChange={(event) => setForm((current) => ({ ...current, overdue: event.target.checked }))} className="h-4 w-4 rounded border-gray-300 text-blue-700 focus:ring-blue-500" />Overdue only</label>
+                            </div>
+                            <div className="xl:col-span-6 flex flex-wrap items-center justify-end gap-2">
+                                <button type="submit" className="min-h-11 rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200 dark:focus:ring-offset-gray-950">Apply filters</button>
+                                <button type="button" onClick={clearFilters} className="min-h-11 rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Clear</button>
+                            </div>
+                        </div>
                     </form>
                 </ManagerFilterPanel>
 
