@@ -73,6 +73,27 @@ final class OwnerActionCenterController extends Controller
             $history = $view === 'history'
                 ? $this->approvalHistory->read($owner, $query)
                 : null;
+
+            $approvalCoverageCounts = $result->coverageCounts;
+            $approvalHistoryCoverageCounts = $history?->coverageCounts;
+
+            if ($query->coverage !== 'all') {
+                try {
+                    if ($view === 'history') {
+                        $approvalHistoryCoverageCounts = $this->approvalHistory->coverageCountsFor($owner);
+                    } else {
+                        $approvalCoverageCounts = $this->actionCenter->approvalCoverageCountsFor($owner);
+                    }
+                } catch (Throwable $exception) {
+                    report($exception);
+                    Log::warning('owner_action_center.coverage_counts_failed', [
+                        'shop_id' => (int) $owner->getKey(),
+                        'view' => $view,
+                        'coverage' => $query->coverage,
+                        'correlation_id' => $this->correlationId($request),
+                    ]);
+                }
+            }
         } catch (Throwable $exception) {
             report($exception);
             Log::warning('owner_action_center.route_failed', [
@@ -91,6 +112,8 @@ final class OwnerActionCenterController extends Controller
             'ownerActionCenter' => $result->toArray(),
             'approvalCoverageSources' => $this->enabledApprovalCoverageSources($owner),
             'approvalHistoryCoverageSources' => $this->approvalHistory->coverageSourcesFor($owner),
+            'approvalCoverageCounts' => $approvalCoverageCounts,
+            'approvalHistoryCoverageCounts' => $approvalHistoryCoverageCounts,
             'view' => $view,
             'bucket' => $result->bucket,
             'source' => $history?->coverage ?? $result->coverage,

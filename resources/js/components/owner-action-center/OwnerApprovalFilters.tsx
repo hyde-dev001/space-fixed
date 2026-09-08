@@ -101,8 +101,8 @@ export default function OwnerApprovalFilters({ result, availableResult, availabl
   if (filters.length === 0) return null;
 
   return (
-    <nav aria-label="Approval Center source filters" className="mt-5 max-w-full overflow-x-auto pb-1">
-      <div className="flex w-max min-w-full gap-2">
+    <nav aria-label="Approval Center source filters" className="mt-5 max-w-full overflow-x-auto overscroll-x-contain pb-1">
+      <div className="flex w-max min-w-full gap-1.5">
         {filters.map((filter) => {
           const active = source === filter.key;
           const salaryAdjustmentCount = filter.key === "salary_changes" ? coverageCounts?.salary_changes ?? 0 : 0;
@@ -114,12 +114,12 @@ export default function OwnerApprovalFilters({ result, availableResult, availabl
               aria-current={active ? "page" : undefined}
               aria-label={salaryAdjustmentCount > 0 ? `${filter.label}: ${salaryAdjustmentCount}` : filter.label}
               className={active
-                ? "inline-flex min-h-11 shrink-0 items-center gap-2 whitespace-nowrap rounded-full bg-gray-950 px-3 py-1.5 text-sm font-semibold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 focus-visible:ring-offset-2"
-                : "inline-flex min-h-11 shrink-0 items-center gap-2 whitespace-nowrap rounded-full border border-gray-300 px-3 py-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 focus-visible:ring-offset-2 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/[0.06]"}
+                ? "inline-flex min-h-11 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-gray-950 px-2.5 py-1 text-xs font-semibold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 focus-visible:ring-offset-2"
+                : "inline-flex min-h-11 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-gray-300 px-2.5 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 focus-visible:ring-offset-2 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/[0.06]"}
             >
               {filter.label}
               {salaryAdjustmentCount > 0 && (
-                <span aria-hidden="true" className="inline-flex min-h-6 min-w-6 shrink-0 items-center justify-center rounded-full bg-red-600 px-1.5 text-sm font-extrabold leading-6 text-white shadow-sm ring-2 ring-white dark:ring-gray-950">
+                <span aria-hidden="true" className="inline-flex min-h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-red-600 px-1 text-xs font-extrabold leading-5 text-white shadow-sm ring-2 ring-white dark:ring-gray-950">
                   {salaryAdjustmentCount}
                 </span>
               )}

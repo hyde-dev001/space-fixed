@@ -134,7 +134,8 @@ describe("Shop Owner Approval Center", () => {
     expect(sourceFilters).not.toHaveClass("flex-wrap");
     const salaryFilter = screen.getByRole("link", { name: "Salary Adjustments: 1" });
     expect(salaryFilter).toHaveClass("whitespace-nowrap");
-    expect(salaryFilter.querySelector("span")).toHaveClass("min-h-6", "min-w-6", "bg-red-600", "ring-2");
+    expect(salaryFilter.querySelector("span")).toHaveClass("min-h-5", "min-w-5", "bg-red-600", "ring-2");
+    expect(salaryFilter).toHaveClass("min-h-11", "px-2.5", "text-xs");
     expect(screen.getByText("Expense", { exact: true })).toHaveClass("bg-gray-100", "text-gray-700");
     expect(screen.getByText("Expense", { exact: true })).not.toHaveClass("bg-blue-50", "text-blue-700");
     expect(screen.queryByText("Owner Action Center")).not.toBeInTheDocument();
@@ -168,6 +169,25 @@ describe("Shop Owner Approval Center", () => {
     expect(screen.getByRole("link", { name: "Pending" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Salary Adjustments: 2" })).toBeInTheDocument();
     expect(screen.queryByText("2 approvals require your decision")).not.toBeInTheDocument();
+  });
+
+  it("keeps approval counts visible when another source filter is selected", () => {
+    mocks.props = {
+      ...mocks.props,
+      source: "prices",
+      approvalCoverageCounts: { prices: 0, salary_changes: 1 },
+      ownerActionCenter: result({
+        items: [],
+        coverage: "prices",
+        coverage_counts: { prices: 0 },
+        pagination: { page: 1, per_page: 20, total: 0, last_page: 1 },
+      }),
+    };
+
+    render(<ActionCenter />);
+
+    expect(screen.getByRole("link", { name: "Price Changes" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "Salary Adjustments: 1" })).toBeInTheDocument();
   });
 
   it("renders owner decisions with all supported approval filters and review-only rows", async () => {

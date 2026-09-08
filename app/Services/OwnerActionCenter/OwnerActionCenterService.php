@@ -59,6 +59,21 @@ final class OwnerActionCenterService
         return $this->adapterRegistry->approvalCoverageSourcesFor($owner);
     }
 
+    /**
+     * Read the owner-scoped counts used by approval source navigation.
+     *
+     * @return array<string, int>
+     */
+    public function approvalCoverageCountsFor(ShopOwner $owner): array
+    {
+        return $this->queueForOwnerApprovalCenter($owner, new OwnerAttentionQuery(
+            bucket: 'needs_my_decision',
+            coverage: 'all',
+            page: 1,
+            perPage: 1,
+        ))->coverageCounts;
+    }
+
     private function read(ShopOwner $owner, OwnerAttentionQuery $query, bool $ownerScoped = false): OwnerActionCenterResult
     {
         $startedAt = microtime(true);
