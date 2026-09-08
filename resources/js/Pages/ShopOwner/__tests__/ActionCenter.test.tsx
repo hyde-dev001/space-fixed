@@ -46,7 +46,7 @@ const result = (overrides: Partial<OwnerActionCenterResult> = {}): OwnerActionCe
     refunds: 0,
     prices: 0,
     payslips: 0,
-    salary_changes: 0,
+    salary_changes: 1,
     expenses: 1,
     purchase_requests: 0,
     repair_rejections: 0,
@@ -127,7 +127,8 @@ describe("Shop Owner Approval Center", () => {
     expect(screen.queryByText("1 approval requires your decision")).not.toBeInTheDocument();
     expect(screen.getByText("Approvals requiring your decision")).toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: "Approval Center views" })).toHaveClass("justify-end");
-    expect(screen.getByRole("link", { name: "Pending approvals: 1" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Pending" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Salary Adjustments: 1" })).toBeInTheDocument();
     expect(screen.getByText("Expense", { exact: true })).toHaveClass("bg-gray-100", "text-gray-700");
     expect(screen.getByText("Expense", { exact: true })).not.toHaveClass("bg-blue-50", "text-blue-700");
     expect(screen.queryByText("Owner Action Center")).not.toBeInTheDocument();
@@ -141,23 +142,25 @@ describe("Shop Owner Approval Center", () => {
   it("uses neutral treatments for approval navigation and refresh controls", () => {
     render(<ActionCenter />);
 
-    expect(screen.getByRole("link", { name: /Pending approvals: 1/i })).toHaveClass("bg-gray-950", "text-white");
-    expect(screen.getByRole("link", { name: /Pending approvals: 1/i })).not.toHaveClass("bg-blue-600");
+    expect(screen.getByRole("link", { name: "Pending" })).toHaveClass("bg-gray-950", "text-white");
+    expect(screen.getByRole("link", { name: "Pending" })).not.toHaveClass("bg-blue-600");
     expect(screen.getByRole("button", { name: /refresh approval center/i })).toHaveClass("focus-visible:ring-gray-500");
     expect(screen.getByRole("button", { name: /refresh approval center/i })).not.toHaveClass("focus-visible:ring-blue-500");
   });
 
-  it("updates the pending count badge without rendering the approval summary sentence", () => {
+  it("shows the salary adjustment count on its source filter instead of Pending", () => {
     mocks.props = {
       ...mocks.props,
       ownerActionCenter: result({
+        coverage_counts: { salary_changes: 2 },
         pagination: { page: 1, per_page: 20, total: 2, last_page: 1 },
       }),
     };
 
     render(<ActionCenter />);
 
-    expect(screen.getByRole("link", { name: "Pending approvals: 2" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Pending" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Salary Adjustments: 2" })).toBeInTheDocument();
     expect(screen.queryByText("2 approvals require your decision")).not.toBeInTheDocument();
   });
 
@@ -173,7 +176,6 @@ describe("Shop Owner Approval Center", () => {
       "Refunds",
       "Price Changes",
       "Payslips",
-      "Salary Adjustments",
       "Purchase Requests",
       "Suspension Requests",
       "Expenses",
@@ -181,6 +183,7 @@ describe("Shop Owner Approval Center", () => {
     ]) {
       expect(screen.getByRole("link", { name: new RegExp(`^${label}$`, "i") })).toBeInTheDocument();
     }
+    expect(screen.getByRole("link", { name: "Salary Adjustments: 1" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /^Refunds$/i })).toHaveAttribute(
       "href",
       expect.stringContaining("source=refunds"),
