@@ -411,7 +411,6 @@ export default function Customers() {
                         </div>
                         <div>
                           <p className="text-sm font-semibold text-gray-900 dark:text-white">{customer.name}</p>
-                          <p className="text-xs text-gray-500 dark:text-gray-400">Customer #{customer.id}</p>
                         </div>
                       </div>
                     </td>
