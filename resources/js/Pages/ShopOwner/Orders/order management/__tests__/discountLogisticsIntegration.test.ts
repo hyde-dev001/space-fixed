@@ -8,6 +8,13 @@ const discountSource = readFileSync(
 );
 
 describe('shop-owner logistics voucher integration', () => {
+  it('keeps the vouchers page identity visible above the campaign metrics', () => {
+    expect(discountSource).toContain('Promo Management');
+    expect(discountSource).toContain('Create product-based vouchers and discounts');
+    expect(discountSource).toContain('text-3xl font-bold tracking-tight text-slate-900');
+    expect(discountSource).not.toContain('<h1 className="sr-only">Vouchers &amp; Discount</h1>');
+  });
+
   it('maps the logistics capability and target on the campaign contract', () => {
     expect(discountSource).toContain('discount_target');
     expect(discountSource).toContain('data?.logistics');
