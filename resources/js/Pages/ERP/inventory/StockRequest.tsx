@@ -591,7 +591,7 @@ export default function StockRequest() {
 			<div className="p-6 space-y-6">
 				<div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
 					<h1 className="sr-only">Stock Replenishment Request</h1>
-					<div className="flex flex-wrap items-center gap-2">
+					<div className="ml-auto flex flex-wrap items-center gap-2">
 						{!ownerMode && (
 							<button
 								onClick={() => {
