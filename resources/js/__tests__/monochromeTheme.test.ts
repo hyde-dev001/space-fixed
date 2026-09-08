@@ -105,6 +105,13 @@ describe('shared monochrome Light and Dark Mode theme', () => {
     expect(appCss).toContain(":not(option):not(:disabled):hover");
   });
 
+  it('keeps disabled ERP controls neutral and hover-inert', () => {
+    expect(appCss).toContain("#app .erp-theme :is(button, [role='button']):not([data-catalog-card]):disabled");
+    expect(appCss).toContain("#app .erp-theme :is(button, [role='button']):not([data-catalog-card]):disabled:hover");
+    expect(appCss).toContain('background-color: var(--erp-surface-muted) !important;');
+    expect(appCss).toContain('box-shadow: none !important;');
+  });
+
   it('leaves native select option popovers to the browser while keeping field focus neutral', () => {
     expect(appCss).toContain('html:not(.dark) #app .erp-theme select {');
     expect(appCss).toContain('color-scheme: light;');

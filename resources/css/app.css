@@ -2691,7 +2691,7 @@ html.dark #app .erp-theme {
    dark mode. */
 #app .erp-theme :is(button, a[href], [role='button'], [role='tab'], [role='menuitem']):not(
   [data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *
-):is(
+):not(:disabled):is(
   [class^='bg-blue-'], [class*=' bg-blue-'],
   [class^='bg-indigo-'], [class*=' bg-indigo-'],
   [class^='bg-purple-'], [class*=' bg-purple-'],
@@ -2714,7 +2714,7 @@ html.dark #app .erp-theme {
 
 #app .erp-theme :is(button, a[href], [role='button'], [role='tab'], [role='menuitem']):not(
   [data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *
-):is(
+):not(:disabled):is(
   [class^='bg-blue-'], [class*=' bg-blue-'],
   [class^='bg-indigo-'], [class*=' bg-indigo-'],
   [class^='bg-purple-'], [class*=' bg-purple-'],
@@ -2738,7 +2738,7 @@ html.dark #app .erp-theme {
 /* Colored hover-only utilities become the neutral hover treatment. */
 #app .erp-theme :is(button, a[href], [role='button'], [role='tab'], [role='menuitem']):not(
   [data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *
-):is(
+):not(:disabled):is(
   [class*='hover:bg-blue-'], [class*='hover:bg-indigo-'], [class*='hover:bg-purple-'],
   [class*='hover:bg-violet-'], [class*='hover:bg-sky-'], [class*='hover:bg-cyan-'],
   [class*='hover:bg-teal-'], [class*='hover:bg-yellow-'], [class*='hover:bg-amber-'],
@@ -4067,7 +4067,7 @@ html.dark:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-cancel {
   [class*='bg-[#2a3f6a]'], [class*='bg-[#b91c1c]'],
   [class*='bg-[#9f1616]'], [class*='bg-[#007d48]'],
   [class*='bg-[#243758]']
-):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):not(:disabled) {
   background-color: var(--erp-surface-muted) !important;
   border-color: var(--erp-border) !important;
   color: var(--erp-text) !important;
@@ -4075,7 +4075,7 @@ html.dark:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-cancel {
 
 #app .erp-theme :is(
   button, a[href], [role='button'], [role='tab'], [role='menuitem']
-):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):is(
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):not(:disabled):is(
   [class*='bg-[#16233b]'], [class*='bg-[#16284a]'],
   [class*='bg-[#213257]'], [class*='bg-[#13213d]'],
   [class*='bg-[#2a3f6a]'], [class*='bg-[#b91c1c]'],
@@ -4089,7 +4089,7 @@ html.dark:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-cancel {
 
 #app .erp-theme :is(
   [class*='text-[#16233b]'], [class*='text-[#0f1b33]']
-):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):not(:disabled) {
   color: var(--erp-text) !important;
 }
 
@@ -4097,7 +4097,7 @@ html.dark:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-cancel {
   [class*='border-[#16233b]'], [class*='border-[#16284a]'],
   [class*='border-[#213257]'], [class*='border-[#2a3f6a]'],
   [class*='border-[#8f1212]']
-):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):not(:disabled) {
   border-color: var(--erp-border) !important;
 }
 
@@ -4114,7 +4114,7 @@ html.dark:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-cancel {
   [class*='hover:bg-[#213257]'], [class*='hover:bg-[#13213d]'],
   [class*='hover:bg-[#2a3f6a]'], [class*='hover:bg-[#b91c1c]'],
   [class*='hover:bg-[#9f1616]'], [class*='hover:bg-[#243758]']
-):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):hover {
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):not(:disabled):hover {
   background-color: var(--erp-surface-muted) !important;
   border-color: var(--erp-border) !important;
   color: var(--erp-text) !important;
@@ -4181,7 +4181,7 @@ html.dark:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) :is(.swal2-warning
   [class^='bg-success-'], [class*=' bg-success-'], [class~='bg-success'],
   [class^='bg-warning-'], [class*=' bg-warning-'], [class~='bg-warning'],
   [class^='bg-meta-'], [class*=' bg-meta-'], [class^='bg-slate-'], [class*=' bg-slate-']
-):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):not(:disabled) {
   background-color: var(--erp-surface-muted) !important;
   border-color: var(--erp-border) !important;
   color: var(--erp-text) !important;
@@ -4471,4 +4471,22 @@ html.dark #app .erp-theme :is([class~='dark:border-strokedark']):not(
   background-color: var(--erp-ink) !important;
   border-color: var(--erp-ink) !important;
   color: var(--erp-on-ink) !important;
+}
+
+/* Disabled controls are not interactive states. Keep them neutral and do not
+   let legacy hover utilities make them look clickable. Catalog cards retain
+   their white surface while their own disabled styling remains visible. */
+#app .erp-theme :is(button, [role='button']):not([data-catalog-card]):disabled,
+#app .erp-theme :is(button, [role='button']):not([data-catalog-card]):disabled:hover,
+html:not(.dark) #app .erp-theme :is(button, [role='button']):not([data-catalog-card]):disabled,
+html:not(.dark) #app .erp-theme :is(button, [role='button']):not([data-catalog-card]):disabled:hover,
+html.dark #app .erp-theme :is(button, [role='button']):not([data-catalog-card]):disabled,
+html.dark #app .erp-theme :is(button, [role='button']):not([data-catalog-card]):disabled:hover {
+  background-color: var(--erp-surface-muted) !important;
+  border-color: var(--erp-border) !important;
+  color: var(--erp-text-muted) !important;
+  box-shadow: none !important;
+  cursor: not-allowed !important;
+  opacity: 0.55 !important;
+  transform: none !important;
 }
