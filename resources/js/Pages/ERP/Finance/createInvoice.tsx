@@ -355,7 +355,7 @@ export default function FinanceCreateInvoice() {
 	return (
 		<>
 			<Head title="Create Invoice - Solespace ERP" />
-			<div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-6 px-4 sm:px-6 lg:px-8">
+			<div className="min-h-screen bg-white dark:bg-gray-900 py-6 px-4 sm:px-6 lg:px-8">
 				<div className="w-full space-y-6 pb-20">
 					<div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 						<a
@@ -490,7 +490,7 @@ export default function FinanceCreateInvoice() {
 						</div>
 					</div>
 
-					<div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+					<div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-visible">
 						<div className="overflow-x-auto">
 							<table className="min-w-full text-sm">
 								<thead className="bg-gray-50 dark:bg-gray-900/40 text-gray-600 dark:text-gray-300">
