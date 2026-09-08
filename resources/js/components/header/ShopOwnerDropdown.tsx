@@ -5,6 +5,7 @@ import Swal from "sweetalert2";
 import { LogOut, Settings2, User } from "lucide-react";
 import type { ErpActor, ErpUrls } from "../../types/erp";
 import InlineAccountMenu from "./InlineAccountMenu";
+import { withSweetAlertSemantic } from "@/utils/semanticSweetAlert";
 
 const normalizePhotoPath = (photoPath: unknown): string | null => {
   if (typeof photoPath !== "string") return null;
@@ -86,7 +87,7 @@ export default function ShopOwnerDropdown({ actor, urls, inline = false, busines
   async function handleLogout() {
     closeDropdown();
     
-    const result = await Swal.fire({
+    const result = await Swal.fire(withSweetAlertSemantic({
       title: "Sign Out",
       text: "Are you sure you want to sign out?",
       icon: "warning",
@@ -94,7 +95,7 @@ export default function ShopOwnerDropdown({ actor, urls, inline = false, busines
       confirmButtonText: "Yes, sign out",
       cancelButtonText: "Cancel",
       reverseButtons: true,
-    });
+    }, "signout"));
 
     if (result.isConfirmed) {
       router.post(urls?.logout || '/shop-owner/logout', {}, {

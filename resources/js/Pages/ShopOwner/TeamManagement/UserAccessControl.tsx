@@ -5,6 +5,7 @@ import AppLayoutShopOwner from '../../../layout/AppLayout_shopOwner';
 import AppLayoutERP from '../../../layout/AppLayout_ERP';
 import Swal from 'sweetalert2';
 import Button from '../../../components/ui/button/Button';
+import IconButton from '../../../components/ui/icon-button/IconButton';
 import { Modal } from '../../../components/ui/modal';
 import {
   Table,
@@ -1868,37 +1869,37 @@ const UserAccessControl: React.FC = () => {
                         </TableCell>
                         <TableCell className="px-6 py-4">
                           <div className="flex items-center space-x-2">
-                            <button
-                              type="button"
+                            <IconButton
+                              variant="primary"
                               onClick={() => viewInvitationLink(employee)}
-                              className={`p-2 rounded-lg transition-colors duration-200 ${(String(employee.email ?? '').trim().toLowerCase() === currentAccountEmail) ? 'text-green-600/50 cursor-not-allowed' : 'text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20'}`}
                               title={(String(employee.email ?? '').trim().toLowerCase() === currentAccountEmail) ? 'You cannot reset your own account password' : 'View/Resend Invitation Link'}
+                              aria-label={(String(employee.email ?? '').trim().toLowerCase() === currentAccountEmail) ? 'You cannot reset your own account password' : `View or resend invitation for ${employee.name}`}
                               disabled={String(employee.email ?? '').trim().toLowerCase() === currentAccountEmail}
                             >
                               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                               </svg>
-                            </button>
-                            <button
-                              type="button"
+                            </IconButton>
+                            <IconButton
+                              variant="neutral"
                               onClick={() => openPermissionModal(employee)}
-                              className="p-2 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-lg transition-colors duration-200"
                               title="Manage Permissions"
+                              aria-label={`Manage permissions for ${employee.name}`}
                             >
                               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                               </svg>
-                            </button>
-                            <button
-                              type="button"
+                            </IconButton>
+                            <IconButton
+                              variant="neutral"
                               onClick={() => openEditEmployeeModal(employee)}
-                              className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors duration-200"
                               title="Edit Employee"
+                              aria-label={`Edit ${employee.name}`}
                             >
                               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                               </svg>
-                            </button>
+                            </IconButton>
                             {/* Delete button removed per request */}
                           </div>
                         </TableCell>

@@ -4,6 +4,8 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
 import AppLayoutShopOwner from "../../../../layout/AppLayout_shopOwner";
 import AppLayoutERP from "../../../../layout/AppLayout_ERP";
+import IconButton from "../../../../components/ui/icon-button/IconButton";
+import { withSweetAlertSemantic } from "../../../../utils/semanticSweetAlert";
 
 type PromoKind = "voucher" | "discount";
 type DiscountMode = "percentage" | "fixed";
@@ -483,7 +485,7 @@ export default function VouchersDiscountPage() {
 	};
 
 	const handleDeleteCampaign = async (campaign: Campaign) => {
-		const confirmation = await Swal.fire({
+		const confirmation = await Swal.fire(withSweetAlertSemantic({
 			title: "Delete campaign?",
 			text: `This will permanently remove ${campaign.name}.`,
 			icon: "warning",
@@ -492,7 +494,7 @@ export default function VouchersDiscountPage() {
 			cancelButtonColor: "#9CA3AF",
 			confirmButtonText: "Yes, delete it",
 			cancelButtonText: "Cancel",
-		});
+		}, "danger"));
 
 		if (!confirmation.isConfirmed) {
 			return;
@@ -1387,23 +1389,23 @@ export default function VouchersDiscountPage() {
 										</td>
 										<td className="py-4 text-right">
 											<div className="inline-flex items-center gap-2">
-												<button
-													type="button"
+												<IconButton
+													variant="neutral"
 													onClick={() => handleEditCampaign(campaign)}
-													className="rounded-lg p-2 text-blue-600 transition-colors hover:bg-blue-50"
 													title="View / Edit"
+													label={`View or edit ${campaign.name}`}
 												>
 													<EyeIcon className="h-5 w-5" />
-												</button>
-												<button
-													type="button"
+												</IconButton>
+												<IconButton
+													variant="danger"
 													onClick={() => handleDeleteCampaign(campaign)}
 													disabled={deletingCampaignId === campaign.id}
-													className="rounded-lg p-2 text-red-600 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
 													title="Delete"
+													label={`Delete ${campaign.name}`}
 												>
 													<TrashIcon className="h-5 w-5" />
-												</button>
+												</IconButton>
 											</div>
 										</td>
 									</tr>

@@ -1765,12 +1765,13 @@ const PointOfSalePage = () => {
 														key={`package-${pkg.id}`}
 														onClick={() => addPackageToOrder(pkg)}
 														disabled={!!selectedRepairOrder}
-														className="h-56 rounded-xl border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-blue-300 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
+														data-catalog-card="true"
+														className="h-56 rounded-xl border border-black bg-white p-4 text-left text-black transition enabled:hover:border-black enabled:hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
 													>
 														<div className="flex h-full flex-col">
 															<div className="flex items-start justify-between">
-																<span className="rounded-full bg-slate-200 px-2 py-1 text-[10px] font-semibold uppercase text-slate-600">Package</span>
-																<span className={`flex h-6 w-6 items-center justify-center rounded-full border ${selected ? "border-blue-500 bg-blue-500 text-white" : "border-slate-300"}`}>
+																<span className="rounded-full border border-black bg-white px-2 py-1 text-[10px] font-semibold uppercase text-black">Package</span>
+																<span className={`flex h-6 w-6 items-center justify-center rounded-full border ${selected ? "border-black bg-black text-white" : "border-black bg-white text-black"}`}>
 																	{selected && (
 																		<svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
 																			<path d="M4 10l4 4 8-8" />
@@ -1778,13 +1779,13 @@ const PointOfSalePage = () => {
 																	)}
 																</span>
 															</div>
-															<p className="mt-3 text-xl font-semibold text-slate-900">{pkg.name}</p>
-															<p className="mt-1 text-xs text-slate-600">{pkg.description}</p>
-															<p className="mt-2 text-xs text-slate-700">Includes {pkg.includedServices.length} services</p>
-															<p className="text-xs text-slate-700">{pkg.saveText}</p>
-															<div className="mt-auto flex items-center justify-between border-t border-slate-200 pt-3">
-																<p className="text-2xl font-bold text-slate-900">{formatPeso(pkg.price)}</p>
-																<p className="text-xs text-slate-500">Bundle offer</p>
+															<p className="mt-3 text-xl font-semibold text-black">{pkg.name}</p>
+															<p className="mt-1 text-xs text-black">{pkg.description}</p>
+															<p className="mt-2 text-xs text-black">Includes {pkg.includedServices.length} services</p>
+															<p className="text-xs text-black">{pkg.saveText}</p>
+															<div className="mt-auto flex items-center justify-between border-t border-black pt-3">
+																<p className="text-2xl font-bold text-black">{formatPeso(pkg.price)}</p>
+																<p className="text-xs text-black">Bundle offer</p>
 															</div>
 														</div>
 													</button>
@@ -1827,16 +1828,17 @@ const PointOfSalePage = () => {
 														key={`service-${service.id}`}
 														onClick={() => addFromServiceCatalog(service)}
 														disabled={!canSelectService}
-														className={`h-56 rounded-xl border p-4 text-left transition ${
+														data-catalog-card="true"
+														className={`h-56 rounded-xl border border-black bg-white p-4 text-left text-black transition ${
 															canSelectService
-																? "border-slate-200 bg-slate-50 hover:border-blue-300 hover:bg-blue-50"
-																: "border-slate-200 bg-slate-100 opacity-45 grayscale cursor-not-allowed"
+																? "enabled:hover:border-black enabled:hover:bg-white"
+																: "opacity-50 grayscale cursor-not-allowed"
 														}`}
 													>
 														<div className="flex h-full flex-col">
 															<div className="flex items-start justify-between">
-																<span className="rounded-full bg-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-600">{service.category}</span>
-																<span className={`flex h-6 w-6 items-center justify-center rounded-full border ${selected ? "border-blue-500 bg-blue-500 text-white" : "border-slate-300"}`}>
+																<span className="rounded-full border border-black bg-white px-2 py-1 text-[10px] font-semibold text-black">{service.category}</span>
+																<span className={`flex h-6 w-6 items-center justify-center rounded-full border ${selected ? "border-black bg-black text-white" : "border-black bg-white text-black"}`}>
 																	{selected && (
 																		<svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
 																			<path d="M4 10l4 4 8-8" />
@@ -1844,18 +1846,18 @@ const PointOfSalePage = () => {
 																	)}
 																</span>
 															</div>
-															<p className="mt-3 text-xl font-semibold text-slate-900">{service.name}</p>
-															<ul className="mt-2 list-disc pl-5 text-xs text-slate-600">
+															<p className="mt-3 text-xl font-semibold text-black">{service.name}</p>
+															<ul className="mt-2 list-disc pl-5 text-xs text-black">
 																<li>{service.category} service for customer request.</li>
 																<li>Estimated turnaround: {service.duration}.</li>
 															</ul>
-															<div className="mt-auto flex items-center justify-between border-t border-slate-200 pt-3">
-																<p className="text-2xl font-bold text-slate-900">{formatPeso(service.price)}</p>
-																<p className="text-xs text-slate-500">{service.duration}</p>
+															<div className="mt-auto flex items-center justify-between border-t border-black pt-3">
+																<p className="text-2xl font-bold text-black">{formatPeso(service.price)}</p>
+																<p className="text-xs text-black">{service.duration}</p>
 															</div>
-															{activeManualPackage && isIncludedByPackage && <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Included in package</span>}
-															{activeManualPackage && !isIncludedByPackage && <span className="text-[10px] font-semibold uppercase tracking-wider text-blue-700">Add-on</span>}
-															{selectedRepairOrder && isRequestedService && <span className="text-[10px] font-semibold uppercase tracking-wider text-emerald-700">Requested</span>}
+															{activeManualPackage && isIncludedByPackage && <span className="text-[10px] font-semibold uppercase tracking-wider text-black">Included in package</span>}
+															{activeManualPackage && !isIncludedByPackage && <span className="text-[10px] font-semibold uppercase tracking-wider text-black">Add-on</span>}
+															{selectedRepairOrder && isRequestedService && <span className="text-[10px] font-semibold uppercase tracking-wider text-black">Requested</span>}
 														</div>
 													</button>
 												);

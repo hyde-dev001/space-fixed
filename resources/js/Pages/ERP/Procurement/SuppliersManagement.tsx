@@ -3,8 +3,10 @@ import { useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
 import axios from "axios";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
+import IconButton from "../../../components/ui/icon-button/IconButton";
 import { supplierApi, type Supplier } from "@/services/procurementApi";
 import { erpUrl } from "@/utils/erpCapabilities";
+import { withSweetAlertSemantic } from "@/utils/semanticSweetAlert";
 
 
 
@@ -148,7 +150,7 @@ export default function SuppliersManagement() {
 	const handleArchive = async (supplierId: number) => {
 		if (ownerMode) return;
 
-		const result = await Swal.fire({
+		const result = await Swal.fire(withSweetAlertSemantic({
 			title: "Archive Supplier?",
 			text: "Are you sure you want to archive this supplier? You can restore it later if needed.",
 			icon: "warning",
@@ -157,7 +159,7 @@ export default function SuppliersManagement() {
 			cancelButtonColor: "#6b7280",
 			confirmButtonText: "Archive",
 			cancelButtonText: "Cancel",
-		});
+		}, "danger"));
 
 		if (!result.isConfirmed) return;
 
@@ -179,7 +181,7 @@ export default function SuppliersManagement() {
 	const handleRestore = async (supplierId: number) => {
 		if (ownerMode) return;
 
-		const result = await Swal.fire({
+		const result = await Swal.fire(withSweetAlertSemantic({
 			title: "Restore Supplier?",
 			text: "Are you sure you want to restore this supplier to active records?",
 			icon: "question",
@@ -188,7 +190,7 @@ export default function SuppliersManagement() {
 			cancelButtonColor: "#6b7280",
 			confirmButtonText: "Restore",
 			cancelButtonText: "Cancel",
-		});
+		}, "success"));
 
 		if (!result.isConfirmed) return;
 
@@ -386,40 +388,44 @@ export default function SuppliersManagement() {
 										</td>
 											<td className="px-4 py-3 text-center">
 												<div className="flex items-center justify-center gap-2">
-													<button
+													<IconButton
+														variant="neutral"
 														onClick={() => handleView(supplier)}
-														className="p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
 														title="View supplier details"
+														label={`View details for ${supplier.name}`}
 													>
-														<svg className="h-5 w-5 text-blue-600 dark:text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+														<svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
 															<path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.27 2.943 9.542 7-1.272 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
 															<circle cx="12" cy="12" r="3" />
 														</svg>
-													</button>
+													</IconButton>
 														{ownerMode ? null : showArchived ? (
-														<button
+														<IconButton
+															variant="success"
 															onClick={() => handleRestore(supplier.id)}
-															className="p-2 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
 															title="Restore supplier"
+															label={`Restore ${supplier.name}`}
 														>
 															<RestoreIcon className="w-5 h-5" />
-														</button>
+														</IconButton>
 													) : (
 														<>
-															<button
+															<IconButton
+																variant="neutral"
 																onClick={() => handleEdit(supplier)}
-																className="p-2 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-lg transition-colors"
 																title="Edit supplier"
+																label={`Edit ${supplier.name}`}
 															>
 																<PencilIcon className="w-5 h-5" />
-															</button>
-															<button
+															</IconButton>
+															<IconButton
+																variant="danger"
 																onClick={() => handleArchive(supplier.id)}
-																className="p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
 																title="Archive supplier"
+																label={`Archive ${supplier.name}`}
 															>
 																<ArchiveBoxIcon className="w-5 h-5" />
-															</button>
+															</IconButton>
 														</>
 													)}
 												</div>

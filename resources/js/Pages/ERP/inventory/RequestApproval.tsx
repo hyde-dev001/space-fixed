@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ComponentType } from "react";
 import Swal from "sweetalert2";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
+import IconButton from "../../../components/ui/icon-button/IconButton";
 import requestMaterialApprovalApi from "../../../services/requestMaterialApprovalApi";
 import type { StockRequestApproval } from "../../../types/procurement";
 
@@ -462,14 +463,14 @@ export default function RequestApproval() {
 												</span>
 											</td>
 											<td className="px-4 py-3 text-center">
-												<button
+												<IconButton
+													variant="neutral"
 													onClick={() => setSelectedRequest(request)}
-													className="p-2 rounded-lg text-blue-600 hover:text-blue-700 dark:hover:text-blue-400 transition-colors"
 													aria-label="View request details"
 													title="View request details"
 												>
 													<EyeIcon className="w-5 h-5" />
-												</button>
+												</IconButton>
 											</td>
 										</tr>
 										);

@@ -112,6 +112,39 @@ describe('shared monochrome Light and Dark Mode theme', () => {
     expect(appCss).toContain('box-shadow: none !important;');
   });
 
+  it('defines centralized semantic icon-action tokens and hover-inert disabled states', () => {
+    for (const family of ['neutral', 'primary', 'success', 'warning', 'danger']) {
+      expect(appCss).toContain(`--erp-icon-${family}-fg:`);
+      expect(appCss).toContain(`--erp-icon-${family}-bg:`);
+      expect(appCss).toContain(`--erp-icon-${family}-hover:`);
+      expect(appCss).toContain(`--erp-icon-${family}-active:`);
+      expect(appCss).toContain(`data-semantic-color='${family}'`);
+    }
+
+    expect(appCss).toContain("[data-erp-icon-action][aria-disabled='true']:hover");
+    expect(appCss).toContain('opacity: 0.38 !important;');
+    expect(appCss).toContain('cursor: not-allowed !important;');
+    expect(appCss).toContain(':has(> svg)');
+    expect(appCss).toContain('--erp-icon-action-fg: var(--erp-icon-neutral-fg);');
+    expect(appCss).toContain('[data-catalog-card]');
+    expect(appCss).toContain('background-color: #ffffff !important;');
+  });
+
+  it('keeps SweetAlert feedback semantic without recoloring ordinary confirmations', () => {
+    for (const icon of ['success', 'warning', 'error']) {
+      expect(appCss).toContain(`.swal2-icon.swal2-${icon}`);
+    }
+
+    expect(appCss).toContain('.swal2-icon:is(.swal2-info, .swal2-question)');
+
+    for (const semantic of ['info', 'success', 'warning', 'danger', 'signout']) {
+      expect(appCss).toContain(`erp-swal2-${semantic}`);
+    }
+
+    expect(appCss).toContain('erp-swal2-signout');
+    expect(appCss).toContain('background-color: #111111 !important;');
+  });
+
   it('leaves native select option popovers to the browser while keeping field focus neutral', () => {
     expect(appCss).toContain('html:not(.dark) #app .erp-theme select {');
     expect(appCss).toContain('color-scheme: light;');
