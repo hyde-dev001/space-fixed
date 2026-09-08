@@ -51,4 +51,39 @@ describe("Finance UI consistency presentation", () => {
     expect(approveAction).toContain("bg-gray-950");
     expect(approveAction).not.toContain("bg-green-600");
   });
+
+  it("aligns bulk approval actions with the queue description", () => {
+    const queueStart = payslipApproval.indexOf("Payslip Approval Queue");
+    const queueHeaderStart = payslipApproval.lastIndexOf(
+      '<div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">',
+      queueStart,
+    );
+    const filterStart = payslipApproval.indexOf('<div className="mb-4 flex flex-col sm:flex-row gap-3">', queueStart);
+    const queueHeader = payslipApproval.slice(queueHeaderStart, filterStart);
+
+    expect(queueHeaderStart).toBeGreaterThanOrEqual(0);
+    expect(queueHeaderStart).toBeLessThan(queueStart);
+    expect(queueHeader).toContain("Verify amounts, deductions, and attachments before approval.");
+    expect(queueHeader).toContain("Approve All ({pendingCount})");
+  });
+
+  it("keeps the batch approval preview monochrome and hides its scrollbar UI", () => {
+    const modalStart = payslipApproval.indexOf("Batch Approval Preview Modal");
+    const progressModalStart = payslipApproval.indexOf("Batch Approval Progress Modal", modalStart);
+    const modal = payslipApproval.slice(modalStart, progressModalStart);
+
+    expect(modal).toContain("overflow-y-auto");
+    expect(modal).toContain("no-scrollbar");
+    expect(modal).toContain("Approval Summary");
+    expect(modal).not.toContain("📊");
+    expect(modal).not.toContain("bg-gradient-to-br");
+    expect(modal).not.toContain("bg-blue-50");
+    expect(modal).toContain("bg-gray-950");
+    expect(modal).not.toContain("bg-green-600");
+
+    const approvalHandlerStart = payslipApproval.indexOf("const handleConfirmBatchApproval");
+    const approvalHandler = payslipApproval.slice(approvalHandlerStart, modalStart);
+    expect(approvalHandler).toContain('confirmButtonColor: "#030712"');
+    expect(approvalHandler).not.toContain('confirmButtonColor: "#16a34a"');
+  });
 });

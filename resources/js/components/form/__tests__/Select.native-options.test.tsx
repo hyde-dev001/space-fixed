@@ -3,6 +3,25 @@ import { describe, expect, it, vi } from 'vitest';
 import Select from '../Select';
 
 describe('shared Select native-options adapter', () => {
+  it('keeps field styling on the trigger instead of duplicating it on the wrapper', () => {
+    render(
+      <Select
+        aria-label="Status"
+        className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm"
+      >
+        <option value="">All statuses</option>
+        <option value="pending">Pending</option>
+      </Select>,
+    );
+
+    const trigger = screen.getByRole('combobox', { name: 'Status' });
+    const wrapper = trigger.parentElement;
+
+    expect(wrapper).toHaveClass('mt-1', 'w-full');
+    expect(wrapper).not.toHaveClass('border', 'border-gray-300', 'bg-white', 'px-3');
+    expect(trigger).toHaveClass('border-gray-300', 'bg-white', 'px-3');
+  });
+
   it('renders a custom monochrome menu while preserving native select values and changes', () => {
     const onChange = vi.fn();
 
