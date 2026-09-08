@@ -2886,14 +2886,16 @@ const PointOfSalePage = () => {
 			<style>{`
 				@media print {
 					@page {
-						size: 80mm auto;
-						margin: 0;
+						size: A4;
+						margin: 10mm;
 					}
 
 					html,
 					body {
-						width: 80mm !important;
-						min-width: 80mm !important;
+						width: auto !important;
+						min-width: 0 !important;
+						height: auto !important;
+						min-height: 0 !important;
 						margin: 0 !important;
 						padding: 0 !important;
 						background: #fff !important;
@@ -2905,9 +2907,9 @@ const PointOfSalePage = () => {
 
 					.cashier-pos-page {
 						position: absolute !important;
-						inset: 0 auto auto 0 !important;
-						width: 80mm !important;
-						min-width: 80mm !important;
+						inset: 0 !important;
+						width: 100% !important;
+						min-width: 0 !important;
 						min-height: 0 !important;
 						margin: 0 !important;
 						padding: 0 !important;
@@ -2930,14 +2932,14 @@ const PointOfSalePage = () => {
 
 					.receipt-print-modal {
 						position: static !important;
-						width: 80mm !important;
+						width: 100% !important;
 						min-height: 0 !important;
 						padding: 0 !important;
 						background: #fff !important;
 					}
 
 					.receipt-print-card {
-						width: 80mm !important;
+						width: 100% !important;
 						max-width: none !important;
 						margin: 0 !important;
 						border: 0 !important;
@@ -2958,19 +2960,19 @@ const PointOfSalePage = () => {
 					}
 
 					.pos-print-area {
-						width: 80mm !important;
-						max-width: 80mm !important;
-						min-height: 0 !important;
+						width: 100% !important;
+						max-width: none !important;
+						min-height: calc(297mm - 20mm);
 						box-sizing: border-box !important;
-						padding: 5mm !important;
+						padding: 12mm !important;
 						margin: 0 !important;
 						border: 0 !important;
 						border-radius: 0 !important;
 						box-shadow: none !important;
 						background: #fff !important;
 						color: #111827 !important;
-						font-size: 11px !important;
-						line-height: 1.35 !important;
+						font-size: 14px !important;
+						line-height: 1.5 !important;
 					}
 
 				}
