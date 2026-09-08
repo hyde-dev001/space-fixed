@@ -100,6 +100,24 @@ describe("HR UI consistency presentation", () => {
     expect(generateSlip).not.toContain("hover:bg-blue-50 dark:hover:bg-blue-900/20");
   });
 
+  it("uses neutral summary cards and a black batch generation action", () => {
+    const batchPreview = sectionBetween(generateSlip, "Batch Payroll Preview", "{/* Generation Progress Overlay */}");
+    const confirmIndex = batchPreview.indexOf("Confirm & Generate All");
+    const confirmHandlerIndex = batchPreview.indexOf("onClick={handleConfirmBatchGeneration}");
+    const confirmAction = batchPreview.slice(
+      batchPreview.indexOf("className=", confirmHandlerIndex),
+      batchPreview.indexOf("</button>", confirmIndex),
+    );
+
+    expect(batchPreview).toContain("rounded-2xl border border-gray-200 bg-white p-5 shadow-sm");
+    expect(batchPreview).not.toContain("bg-green-50");
+    expect(batchPreview).not.toContain("bg-red-50");
+    expect(batchPreview).not.toContain("bg-purple-50");
+    expect(confirmAction).toContain("bg-gray-950");
+    expect(confirmAction).not.toContain("bg-green-600");
+    expect(confirmAction).not.toContain("shadow-green-500/30");
+  });
+
   it("uses the black primary action in the salary change modal", () => {
     const submitLabelIndex = salaryChanges.indexOf("Submit Salary Change");
     const submitClassStart = salaryChanges.lastIndexOf("className=", submitLabelIndex);

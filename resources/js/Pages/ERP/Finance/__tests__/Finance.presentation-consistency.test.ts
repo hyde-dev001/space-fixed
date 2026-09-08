@@ -10,6 +10,7 @@ const readPage = (fileName: string) => readFileSync(
 const expense = readPage("Expense.tsx");
 const createInvoice = readPage("createInvoice.tsx");
 const invoice = readPage("Invoice.tsx");
+const payslipApproval = readPage("payslipApproval.tsx");
 
 describe("Finance UI consistency presentation", () => {
   it("uses a neutral surface for procured stock details", () => {
@@ -31,5 +32,23 @@ describe("Finance UI consistency presentation", () => {
     expect(invoice).not.toContain("p-2 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-lg transition-colors");
     expect(invoice).not.toContain("p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors");
     expect(invoice).toContain('paid: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"');
+  });
+
+  it("places black bulk approval actions above the queue status filter", () => {
+    const pageStart = payslipApproval.indexOf('<div className="p-6 space-y-6">');
+    const metricGridStart = payslipApproval.indexOf('<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">', pageStart);
+    const pageHeader = payslipApproval.slice(pageStart, metricGridStart);
+    const queueStart = payslipApproval.indexOf("Payslip Approval Queue");
+    const approveIndex = payslipApproval.indexOf("Approve All ({pendingCount})", queueStart);
+    const statusFilterIndex = payslipApproval.indexOf('<option value="All">All Status</option>', queueStart);
+    const approveButtonStart = payslipApproval.lastIndexOf("<button", approveIndex);
+    const approveClassStart = payslipApproval.indexOf("className=", approveButtonStart);
+    const approveAction = payslipApproval.slice(approveClassStart, payslipApproval.indexOf("</button>", approveIndex));
+
+    expect(pageHeader).not.toContain("Approve All");
+    expect(approveIndex).toBeGreaterThan(queueStart);
+    expect(approveIndex).toBeLessThan(statusFilterIndex);
+    expect(approveAction).toContain("bg-gray-950");
+    expect(approveAction).not.toContain("bg-green-600");
   });
 });

@@ -2521,17 +2521,17 @@ export default function GenerateSlip() {
 						</div>
 
 						<div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-							<div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-4">
-								<p className="text-sm text-green-600 dark:text-green-400 mb-1">Total Gross</p>
-								<p className="text-2xl font-bold text-green-900 dark:text-green-300">{formatPHP(batchPreviewData.summary.total_gross)}</p>
+							<div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm transition-colors hover:border-gray-400 dark:border-gray-800 dark:bg-white/[0.03] dark:hover:border-gray-600">
+								<p className="text-sm font-semibold text-gray-700 dark:text-gray-200">Total Gross</p>
+								<p className="mt-2 text-3xl font-bold tracking-tight text-gray-950 tabular-nums dark:text-white">{formatPHP(batchPreviewData.summary.total_gross)}</p>
 							</div>
-							<div className="bg-red-50 dark:bg-red-900/20 rounded-lg p-4">
-								<p className="text-sm text-red-600 dark:text-red-400 mb-1">Total Deductions</p>
-								<p className="text-2xl font-bold text-red-900 dark:text-red-300">{formatPHP(batchPreviewData.summary.total_gross - batchPreviewData.summary.total_net)}</p>
+							<div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm transition-colors hover:border-gray-400 dark:border-gray-800 dark:bg-white/[0.03] dark:hover:border-gray-600">
+								<p className="text-sm font-semibold text-gray-700 dark:text-gray-200">Total Deductions</p>
+								<p className="mt-2 text-3xl font-bold tracking-tight text-gray-950 tabular-nums dark:text-white">{formatPHP(batchPreviewData.summary.total_gross - batchPreviewData.summary.total_net)}</p>
 							</div>
-							<div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-4">
-								<p className="text-sm text-purple-600 dark:text-purple-400 mb-1">Total Net</p>
-								<p className="text-2xl font-bold text-purple-900 dark:text-purple-300">{formatPHP(batchPreviewData.summary.total_net)}</p>
+							<div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm transition-colors hover:border-gray-400 dark:border-gray-800 dark:bg-white/[0.03] dark:hover:border-gray-600">
+								<p className="text-sm font-semibold text-gray-700 dark:text-gray-200">Total Net</p>
+								<p className="mt-2 text-3xl font-bold tracking-tight text-gray-950 tabular-nums dark:text-white">{formatPHP(batchPreviewData.summary.total_net)}</p>
 							</div>
 						</div>
 
@@ -2598,7 +2598,7 @@ export default function GenerateSlip() {
 							</button>
 							<button
 								onClick={handleConfirmBatchGeneration}
-								className="px-5 py-2.5 rounded-lg bg-green-600 text-white text-sm font-medium hover:bg-green-700 transition-all flex items-center gap-2 shadow-lg shadow-green-500/30"
+								className="inline-flex items-center gap-2 rounded-lg bg-gray-950 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-gray-800 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-200"
 							>
 								<CheckIcon className="size-4" />
 								Confirm & Generate All
