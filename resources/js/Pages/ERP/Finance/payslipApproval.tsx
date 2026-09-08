@@ -1122,41 +1122,7 @@ export default function PayslipApproval({
 		<>
 			<Head title={headTitle} />
 			<div className="p-6 space-y-6">
-				<div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-					<h1 className="sr-only">Payslip Approvals</h1>
-					<div className="flex flex-wrap items-center justify-end gap-3">
-						{pendingCount > 0 && canCheckerApprove && (
-							<button
-								onClick={handleApproveAll}
-								disabled={isBatchApproving || isApproving}
-								className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-							>
-								<CheckIcon className="size-4" />
-								Approve All ({pendingCount})
-							</button>
-						)}
-						{allowFinalApproveAll && awaitingFinalApprovalCount > 0 && canFinalApprove && (
-							<button
-								onClick={handleFinalApproveAll}
-								disabled={isApproving || isBatchApproving}
-								className="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-							>
-								<CheckIcon className="size-4" />
-								Approve All Owner ({awaitingFinalApprovalCount})
-							</button>
-						)}
-						{readyForDisbursementCount > 0 && canDisburse && (
-							<button
-								onClick={handleApproveAllReadyForDisbursement}
-								disabled={isApproving || isBatchApproving}
-								className="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-							>
-								<CalendarIcon className="size-4" />
-								Approve All Ready ({readyForDisbursementCount})
-							</button>
-						)}
-					</div>
-				</div>
+				<h1 className="sr-only">Payslip Approvals</h1>
 
 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
 				<MetricCard
@@ -1193,6 +1159,39 @@ export default function PayslipApproval({
 					<div className="mb-4 flex flex-col gap-2">
 						<h2 className="text-lg font-semibold text-gray-900 dark:text-white">Payslip Approval Queue</h2>
 						<p className="text-sm text-gray-500 dark:text-gray-400">Verify amounts, deductions, and attachments before approval.</p>
+					</div>
+
+					<div className="mb-4 flex flex-wrap items-center justify-end gap-3">
+						{pendingCount > 0 && canCheckerApprove && (
+							<button
+								onClick={handleApproveAll}
+								disabled={isBatchApproving || isApproving}
+								className="inline-flex items-center gap-2 rounded-lg bg-gray-950 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-200"
+							>
+								<CheckIcon className="size-4" />
+								Approve All ({pendingCount})
+							</button>
+						)}
+						{allowFinalApproveAll && awaitingFinalApprovalCount > 0 && canFinalApprove && (
+							<button
+								onClick={handleFinalApproveAll}
+								disabled={isApproving || isBatchApproving}
+								className="inline-flex items-center gap-2 rounded-lg bg-gray-950 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-200"
+							>
+								<CheckIcon className="size-4" />
+								Approve All Owner ({awaitingFinalApprovalCount})
+							</button>
+						)}
+						{readyForDisbursementCount > 0 && canDisburse && (
+							<button
+								onClick={handleApproveAllReadyForDisbursement}
+								disabled={isApproving || isBatchApproving}
+								className="inline-flex items-center gap-2 rounded-lg bg-gray-950 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-200"
+							>
+								<CalendarIcon className="size-4" />
+								Approve All Ready ({readyForDisbursementCount})
+							</button>
+						)}
 					</div>
 
 					<div className="mb-4 flex flex-col sm:flex-row gap-3">
