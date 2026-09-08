@@ -23,6 +23,8 @@ interface ActionCenterPageProps {
   approvalHistory?: OwnerApprovalHistoryResult | null;
   approvalCoverageSources?: OwnerAttentionCoverageSource[];
   approvalHistoryCoverageSources?: OwnerAttentionCoverageSource[];
+  approvalCoverageCounts?: Partial<Record<OwnerAttentionCoverageSource, number>>;
+  approvalHistoryCoverageCounts?: Partial<Record<OwnerAttentionCoverageSource, number>>;
   view?: OwnerApprovalCenterView;
   bucket?: "needs_my_decision";
   source?: OwnerActionCenterCoverage;
@@ -253,7 +255,9 @@ export default function ActionCenter() {
             availableCoverageSources={view === "history"
               ? props.approvalHistoryCoverageSources ?? props.approvalCoverageSources
               : props.approvalCoverageSources}
-            coverageCounts={view === "history" ? history?.coverage_counts : result?.coverage_counts}
+            coverageCounts={view === "history"
+              ? props.approvalHistoryCoverageCounts ?? history?.coverage_counts
+              : props.approvalCoverageCounts ?? result?.coverage_counts}
             source={source}
             perPage={perPage}
             view={view}

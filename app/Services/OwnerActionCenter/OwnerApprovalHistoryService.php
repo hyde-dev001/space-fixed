@@ -113,6 +113,21 @@ final class OwnerApprovalHistoryService
     }
 
     /**
+     * Read the completed-decision counts used by approval source navigation.
+     *
+     * @return array<string, int>
+     */
+    public function coverageCountsFor(ShopOwner $owner): array
+    {
+        return $this->read($owner, new OwnerAttentionQuery(
+            bucket: 'needs_my_decision',
+            coverage: 'all',
+            page: 1,
+            perPage: 1,
+        ))->coverageCounts;
+    }
+
+    /**
      * @param array<int, string> $enabledCoverages
      * @return array<int, OwnerApprovalHistoryItem>
      */

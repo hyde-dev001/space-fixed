@@ -19,7 +19,9 @@ use App\Models\RepairService;
 use App\Models\ShopOwner;
 use App\Models\User;
 use App\Services\OwnerActionCenter\Adapters\OrderRefundAttentionAdapter;
+use App\Services\OwnerActionCenter\Adapters\PriceApprovalAttentionAdapter;
 use App\Services\OwnerActionCenter\Adapters\RepairRefundAttentionAdapter;
+use App\Services\OwnerActionCenter\Adapters\SalaryChangeAttentionAdapter;
 use App\Support\OwnerActionCenter\OwnerAttentionAdapterResult;
 use App\Support\OwnerActionCenter\OwnerAttentionQuery;
 use Illuminate\Database\Events\QueryExecuted;
@@ -130,6 +132,30 @@ final class OwnerActionCenterRouteTest extends TestCase
                 ->where('ownerActionCenter.coverage', 'refunds')
                 ->where('ownerActionCenter.bucket', 'needs_my_decision')
                 ->where('ownerActionCenter.pagination.per_page', 3));
+    }
+
+    public function test_filtered_approval_center_exposes_global_coverage_counts_for_source_navigation(): void
+    {
+        $owner = $this->phaseThreeOwner();
+        config([
+            'owner_action_center.coverage.refunds' => false,
+            'owner_action_center.coverage.prices' => true,
+            'owner_action_center.coverage.payslips' => false,
+            'owner_action_center.coverage.salary_changes' => true,
+            'owner_action_center.coverage.expenses' => false,
+            'owner_action_center.coverage.purchase_requests' => false,
+            'owner_action_center.coverage.repair_rejections' => false,
+        ]);
+        $this->bindAdapter(PriceApprovalAttentionAdapter::class, 'price_approvals', 'prices', qualifyingCount: 2);
+        $this->bindAdapter(SalaryChangeAttentionAdapter::class, 'salary_changes', 'salary_changes', qualifyingCount: 1);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->get(route('shop-owner.shell.action-center', ['source' => 'prices']))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('ownerActionCenter.coverage', 'prices')
+                ->where('approvalCoverageCounts.prices', 2)
+                ->where('approvalCoverageCounts.salary_changes', 1));
     }
 
     public function test_action_center_exposes_only_the_owner_approval_queue(): void
