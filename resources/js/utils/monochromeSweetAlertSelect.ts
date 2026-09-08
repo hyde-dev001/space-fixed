@@ -26,7 +26,13 @@ const labelForSelect = (select: HTMLSelectElement) => {
 };
 
 export const enhanceSweetAlertSelect = (select: HTMLSelectElement) => {
-  if (!select.parentElement || select.dataset.monochromeSelectEnhanced === 'true') return;
+  if (
+    !select.parentElement
+    || select.hidden
+    || select.style.display === 'none'
+    || select.closest('[hidden]')
+    || select.dataset.monochromeSelectEnhanced === 'true'
+  ) return;
 
   ensureDocumentListener();
   select.dataset.monochromeSelectEnhanced = 'true';

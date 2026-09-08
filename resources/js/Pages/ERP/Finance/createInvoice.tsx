@@ -159,7 +159,6 @@ export default function FinanceCreateInvoice() {
 			showCancelButton: true,
 			confirmButtonText: "Add Product",
 			cancelButtonText: "Cancel",
-			confirmButtonColor: "#2563eb",
 			reverseButtons: true,
 		});
 		if (!confirm.isConfirmed) return;
