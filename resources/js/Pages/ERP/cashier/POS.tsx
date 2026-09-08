@@ -2886,40 +2886,93 @@ const PointOfSalePage = () => {
 			<style>{`
 				@media print {
 					@page {
-						size: A4;
-						margin: 12mm;
+						size: 80mm auto;
+						margin: 0;
+					}
+
+					html,
+					body {
+						width: 80mm !important;
+						min-width: 80mm !important;
+						margin: 0 !important;
+						padding: 0 !important;
+						background: #fff !important;
 					}
 
 					body * {
 						visibility: hidden !important;
 					}
 
-					body {
+					.cashier-pos-page {
+						position: absolute !important;
+						inset: 0 auto auto 0 !important;
+						width: 80mm !important;
+						min-width: 80mm !important;
+						min-height: 0 !important;
+						margin: 0 !important;
+						padding: 0 !important;
+						overflow: visible !important;
 						background: #fff !important;
 					}
 
-					.pos-print-area,
-					.pos-print-area * {
+					.cashier-pos-page > * {
+						display: none !important;
+					}
+
+					.cashier-pos-page > .receipt-print-modal {
+						display: block !important;
+					}
+
+					.receipt-print-modal,
+					.receipt-print-modal * {
 						visibility: visible !important;
 					}
 
-					.pos-print-area {
+					.receipt-print-modal {
 						position: static !important;
-						inset: auto !important;
-						width: 100% !important;
-						max-width: none !important;
-						min-height: calc(297mm - 24mm);
-						padding: 16mm !important;
-						margin: 0 !important;
+						width: 80mm !important;
+						min-height: 0 !important;
+						padding: 0 !important;
 						background: #fff !important;
+					}
+
+					.receipt-print-card {
+						width: 80mm !important;
+						max-width: none !important;
+						margin: 0 !important;
 						border: 0 !important;
 						border-radius: 0 !important;
 						box-shadow: none !important;
+						background: #fff !important;
 					}
 
+					.receipt-modal-header,
 					.receipt-modal-actions {
 						display: none !important;
 					}
+
+					.receipt-modal-content {
+						max-height: none !important;
+						overflow: visible !important;
+						padding: 0 !important;
+					}
+
+					.pos-print-area {
+						width: 80mm !important;
+						max-width: 80mm !important;
+						min-height: 0 !important;
+						box-sizing: border-box !important;
+						padding: 5mm !important;
+						margin: 0 !important;
+						border: 0 !important;
+						border-radius: 0 !important;
+						box-shadow: none !important;
+						background: #fff !important;
+						color: #111827 !important;
+						font-size: 11px !important;
+						line-height: 1.35 !important;
+					}
+
 				}
 			`}</style>
 
@@ -4099,9 +4152,9 @@ const PointOfSalePage = () => {
 				)}
 
 				{isReceiptModalOpen && receiptSnapshot && (
-					<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
-						<div className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
-							<div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+					<div className="receipt-print-modal fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
+						<div className="receipt-print-card w-full max-w-xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
+							<div className="receipt-modal-header flex items-center justify-between border-b border-slate-200 px-5 py-4">
 								<h3 className="text-lg font-semibold text-slate-900">Receipt (Thermal)</h3>
 								<div className="flex items-center gap-2">
 									<button
@@ -4129,7 +4182,7 @@ const PointOfSalePage = () => {
 								</div>
 							</div>
 
-							<div className="max-h-[75vh] overflow-y-auto p-5">
+							<div className="receipt-modal-content max-h-[75vh] overflow-y-auto p-5">
 								<div className="pos-print-area mx-auto w-full max-w-[320px] rounded-lg border border-slate-300 bg-white p-3 text-xs text-slate-800">
 									<div className="text-center">
 										<p className="text-sm font-bold">SoleSpace Repair POS</p>
