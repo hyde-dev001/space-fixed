@@ -93,8 +93,26 @@ const optionsFromChildren = (children: ReactNode): Option[] => {
 };
 
 const marginUtilities = /^(?:[a-z-]+:)*(?:m|mx|my|mt|mr|mb|ml|ms|me)-/;
+const controlStyleUtilities = /^(?:appearance|bg|border|caret|cursor|decoration|divide|fill|font|from|gradient|leading|object|opacity|outline|p(?:[trblxyse])?|placeholder|ring|resize|rounded|select|shadow|stroke|text|to|touch|transition|truncate|via|whitespace)(?:-|$)/;
 const interactiveStateUtilities = new Set(["hover", "focus", "focus-visible", "active"]);
 const nonNeutralStateColor = /^(?:bg|text|border|ring|outline)-(?:blue|indigo|purple|brand|sky|violet|cyan|emerald|green|red|orange|yellow|pink|teal|amber|rose|fuchsia|lime|transparent)(?:-|$)/;
+
+const containerClasses = (className: string, isOptionsApi: boolean) => {
+  const layoutClassName = className
+    .split(/\s+/)
+    .filter((token) => {
+      if (!token) return false;
+      const utility = token.split(":").slice(-1)[0];
+      return !controlStyleUtilities.test(utility);
+    })
+    .join(" ");
+
+  return [
+    "relative inline-block align-top",
+    isOptionsApi ? "w-full" : "",
+    layoutClassName,
+  ].filter(Boolean).join(" ");
+};
 
 const triggerClasses = (className: string, isOptionsApi: boolean) => {
   const triggerClassName = className
@@ -318,7 +336,7 @@ const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select(props,
   };
 
   return (
-    <div ref={containerRef} className={`relative inline-block align-top ${className}`}>
+    <div ref={containerRef} className={containerClasses(className, isOptionsApi)}>
       {label && (
         <label htmlFor={triggerId} className="mb-2 block text-sm font-semibold text-gray-700 dark:text-gray-300">
           {label}

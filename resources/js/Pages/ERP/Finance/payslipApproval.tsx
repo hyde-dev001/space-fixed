@@ -1022,7 +1022,7 @@ export default function PayslipApproval({
 			showCancelButton: true,
 			confirmButtonText: "Approve All",
 			cancelButtonText: "Cancel",
-			confirmButtonColor: "#16a34a",
+			confirmButtonColor: "#030712",
 			cancelButtonColor: "#6b7280",
 			preConfirm: () => {
 				return {
@@ -1156,42 +1156,43 @@ export default function PayslipApproval({
 				</div>
 
 				<div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-6 shadow-sm">
-					<div className="mb-4 flex flex-col gap-2">
-						<h2 className="text-lg font-semibold text-gray-900 dark:text-white">Payslip Approval Queue</h2>
-						<p className="text-sm text-gray-500 dark:text-gray-400">Verify amounts, deductions, and attachments before approval.</p>
-					</div>
-
-					<div className="mb-4 flex flex-wrap items-center justify-end gap-3">
-						{pendingCount > 0 && canCheckerApprove && (
-							<button
-								onClick={handleApproveAll}
-								disabled={isBatchApproving || isApproving}
-								className="inline-flex items-center gap-2 rounded-lg bg-gray-950 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-200"
-							>
-								<CheckIcon className="size-4" />
-								Approve All ({pendingCount})
-							</button>
-						)}
-						{allowFinalApproveAll && awaitingFinalApprovalCount > 0 && canFinalApprove && (
-							<button
-								onClick={handleFinalApproveAll}
-								disabled={isApproving || isBatchApproving}
-								className="inline-flex items-center gap-2 rounded-lg bg-gray-950 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-200"
-							>
-								<CheckIcon className="size-4" />
-								Approve All Owner ({awaitingFinalApprovalCount})
-							</button>
-						)}
-						{readyForDisbursementCount > 0 && canDisburse && (
-							<button
-								onClick={handleApproveAllReadyForDisbursement}
-								disabled={isApproving || isBatchApproving}
-								className="inline-flex items-center gap-2 rounded-lg bg-gray-950 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-200"
-							>
-								<CalendarIcon className="size-4" />
-								Approve All Ready ({readyForDisbursementCount})
-							</button>
-						)}
+					<div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+						<div>
+							<h2 className="text-lg font-semibold text-gray-900 dark:text-white">Payslip Approval Queue</h2>
+							<p className="text-sm text-gray-500 dark:text-gray-400">Verify amounts, deductions, and attachments before approval.</p>
+						</div>
+						<div className="flex flex-wrap items-center justify-end gap-3">
+							{pendingCount > 0 && canCheckerApprove && (
+								<button
+									onClick={handleApproveAll}
+									disabled={isBatchApproving || isApproving}
+									className="inline-flex items-center gap-2 rounded-lg bg-gray-950 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-200"
+								>
+									<CheckIcon className="size-4" />
+									Approve All ({pendingCount})
+								</button>
+							)}
+							{allowFinalApproveAll && awaitingFinalApprovalCount > 0 && canFinalApprove && (
+								<button
+									onClick={handleFinalApproveAll}
+									disabled={isApproving || isBatchApproving}
+									className="inline-flex items-center gap-2 rounded-lg bg-gray-950 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-200"
+								>
+									<CheckIcon className="size-4" />
+									Approve All Owner ({awaitingFinalApprovalCount})
+								</button>
+							)}
+							{readyForDisbursementCount > 0 && canDisburse && (
+								<button
+									onClick={handleApproveAllReadyForDisbursement}
+									disabled={isApproving || isBatchApproving}
+									className="inline-flex items-center gap-2 rounded-lg bg-gray-950 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-200"
+								>
+									<CalendarIcon className="size-4" />
+									Approve All Ready ({readyForDisbursementCount})
+								</button>
+							)}
+						</div>
 					</div>
 
 					<div className="mb-4 flex flex-col sm:flex-row gap-3">
@@ -1553,7 +1554,7 @@ export default function PayslipApproval({
 			{showPreviewModal && (
 				<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
 					<div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
-						<div className="p-6 overflow-y-auto max-h-[calc(90vh-120px)]">
+						<div className="p-6 overflow-y-auto no-scrollbar max-h-[calc(90vh-120px)]">
 							{isLoadingPreview ? (
 								<div className="flex items-center justify-center py-12">
 									<div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
@@ -1561,20 +1562,20 @@ export default function PayslipApproval({
 							) : previewData ? (
 								<div className="space-y-4">
 									{/* Summary Card */}
-									<div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-6">
-										<h3 className="font-semibold text-blue-900 dark:text-blue-100 mb-3">📊 Approval Summary</h3>
+									<div className="rounded-xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-950">
+										<h3 className="mb-3 font-semibold text-gray-950 dark:text-white">Approval Summary</h3>
 										<div className="grid grid-cols-3 gap-4">
 											<div>
-												<p className="text-sm text-blue-600 dark:text-blue-300">Payslips</p>
-												<p className="text-2xl font-bold text-blue-900 dark:text-blue-50">{previewData.summary.count}</p>
+												<p className="text-sm text-gray-600 dark:text-gray-400">Payslips</p>
+												<p className="text-2xl font-bold text-gray-950 dark:text-white">{previewData.summary.count}</p>
 											</div>
 											<div>
-												<p className="text-sm text-blue-600 dark:text-blue-300">Total Gross</p>
-												<p className="text-2xl font-bold text-blue-900 dark:text-blue-50">{formatCurrency(previewData.summary.total_gross)}</p>
+												<p className="text-sm text-gray-600 dark:text-gray-400">Total Gross</p>
+												<p className="text-2xl font-bold text-gray-950 dark:text-white">{formatCurrency(previewData.summary.total_gross)}</p>
 											</div>
 											<div>
-												<p className="text-sm text-blue-600 dark:text-blue-300">Total Net</p>
-												<p className="text-2xl font-bold text-blue-900 dark:text-blue-50">{formatCurrency(previewData.summary.total_net)}</p>
+												<p className="text-sm text-gray-600 dark:text-gray-400">Total Net</p>
+												<p className="text-2xl font-bold text-gray-950 dark:text-white">{formatCurrency(previewData.summary.total_net)}</p>
 											</div>
 										</div>
 									</div>
@@ -1619,7 +1620,7 @@ export default function PayslipApproval({
 							<button
 								onClick={handleConfirmBatchApproval}
 								disabled={isLoadingPreview || !previewData}
-								className="px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+								className="inline-flex items-center gap-2 rounded-lg bg-gray-950 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-200"
 							>
 								<CheckIcon className="size-4" />
 								Confirm Approval
