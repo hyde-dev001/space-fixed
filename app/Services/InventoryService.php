@@ -277,12 +277,17 @@ class InventoryService
      */
     public function checkAndCreateAlerts($itemId)
     {
-        $item = InventoryItem::find($itemId);
+        $item = InventoryItem::with(['sizes', 'colorVariants.sizes'])->find($itemId);
         
         if (!$item) {
             return;
         }
         
+        // Variant inventory is checked by the target-aware scheduled job.
+        if ($item->sizes->isNotEmpty() || $item->colorVariants->isNotEmpty()) {
+            return;
+        }
+
         // Check for existing unresolved alerts
         $existingAlert = InventoryAlert::where('inventory_item_id', $item->id)
             ->where('is_resolved', false)

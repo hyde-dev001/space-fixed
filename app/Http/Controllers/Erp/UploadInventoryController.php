@@ -21,6 +21,8 @@ use Illuminate\Support\Str;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use App\Models\User;
 
+use App\Services\InventoryReplenishmentService;
+
 class UploadInventoryController extends Controller
 {
     use AuthorizesRequests;
@@ -232,6 +234,12 @@ class UploadInventoryController extends Controller
                 'is_active' => true,
                 'created_by' => $actorUserId
             ]);
+            $replenishmentDefaults = [
+                'auto_stock_request_enabled' => (bool) $item->auto_stock_request_enabled,
+                'reorder_level' => (int) $item->reorder_level,
+                'reorder_quantity' => (int) $item->reorder_quantity,
+            ];
+
             
             // Create color variants if provided
             if (!empty($validated['color_variants'])) {
@@ -245,7 +253,10 @@ class UploadInventoryController extends Controller
                         'inventory_item_id' => $item->id,
                         'color_name' => $variantData['color_name'],
                         'color_code' => $variantData['color_code'] ?? null,
-                        'quantity' => $variantQuantity
+                        'quantity' => $variantQuantity,
+                        'auto_stock_request_enabled' => empty($variantSizes) ? $replenishmentDefaults['auto_stock_request_enabled'] : null,
+                        'reorder_level' => empty($variantSizes) ? $replenishmentDefaults['reorder_level'] : null,
+                        'reorder_quantity' => empty($variantSizes) ? $replenishmentDefaults['reorder_quantity'] : null,
                     ]);
 
                     if (!empty($variantSizes)) {
@@ -268,6 +279,9 @@ class UploadInventoryController extends Controller
                                     'size' => $sizeValue,
                                     'size_system' => $sizeSystem,
                                     'quantity' => (int) $sizeData['quantity'],
+                                    'auto_stock_request_enabled' => $replenishmentDefaults['auto_stock_request_enabled'],
+                                    'reorder_level' => $replenishmentDefaults['reorder_level'],
+                                    'reorder_quantity' => $replenishmentDefaults['reorder_quantity'],
                                 ]);
                             }
                         }
@@ -299,6 +313,9 @@ class UploadInventoryController extends Controller
                         InventorySize::create([
                             'inventory_item_id' => $item->id,
                             'inventory_color_variant_id' => null,
+                            'auto_stock_request_enabled' => $replenishmentDefaults['auto_stock_request_enabled'],
+                            'reorder_level' => $replenishmentDefaults['reorder_level'],
+                            'reorder_quantity' => $replenishmentDefaults['reorder_quantity'],
                             'size' => $sizeValue,
                             'size_system' => $sizeSystem,
                             'quantity' => (int) $sizeData['quantity'],
@@ -431,6 +448,45 @@ class UploadInventoryController extends Controller
         ]);
     }
     
+    /**
+     * Update automatic replenishment settings for explicit inventory targets.
+     */
+    public function updateReplenishmentSettings(Request $request, $id): JsonResponse
+    {
+        $validated = $request->validate([
+            'targets' => 'required|array|min:1',
+            'targets.*.type' => 'required|string|in:item,color,size',
+            'targets.*.id' => 'required|integer|min:1',
+            'targets.*.auto_stock_request_enabled' => 'required|boolean',
+            'targets.*.reorder_level' => 'required|integer|min:0',
+            'targets.*.reorder_quantity' => 'required|integer|min:1',
+        ]);
+
+        $shopOwnerId = $this->resolveShopOwnerId($request);
+        if (!$shopOwnerId) {
+            return response()->json([
+                'message' => 'Shop context is missing for this account.',
+            ], 403);
+        }
+
+        $item = InventoryItem::query()
+            ->where('shop_owner_id', $shopOwnerId)
+            ->findOrFail($id);
+
+        $this->authorizeInventoryItem($request, 'update', $item);
+
+        if ($authorizationError = $this->authorizeCategoryForBusinessType($request, $item->category)) {
+            return $authorizationError;
+        }
+
+        app(InventoryReplenishmentService::class)->updateSettings($item, $validated['targets']);
+
+        return response()->json([
+            'message' => 'Automatic replenishment settings updated successfully.',
+            'item' => $item->fresh(['sizes', 'colorVariants.images', 'colorVariants.sizes', 'images']),
+        ]);
+    }
+
     /**
      * Archive inventory item (soft delete)
      */
@@ -688,6 +744,9 @@ class UploadInventoryController extends Controller
                 'color_name'        => $canonicalColorName,
                 'color_code'        => $validated['color_code'] ?? null,
                 'quantity'          => $totalQty,
+                'auto_stock_request_enabled' => empty($validated['sizes']) ? (bool) $item->auto_stock_request_enabled : null,
+                'reorder_level' => empty($validated['sizes']) ? (int) $item->reorder_level : null,
+                'reorder_quantity' => empty($validated['sizes']) ? (int) $item->reorder_quantity : null,
             ]);
 
             // 2. Upload images (stored under inventory/{id}/)
@@ -717,6 +776,9 @@ class UploadInventoryController extends Controller
                     InventorySize::create([
                         'inventory_item_id' => $item->id,
                         'inventory_color_variant_id' => $colorVariant->id,
+                        'auto_stock_request_enabled' => (bool) $item->auto_stock_request_enabled,
+                        'reorder_level' => (int) $item->reorder_level,
+                        'reorder_quantity' => (int) $item->reorder_quantity,
                         'size'              => $sizeValue,
                         'size_system'       => $sizeSystem,
                         'quantity'          => $sizeData['quantity'],
@@ -868,6 +930,24 @@ class UploadInventoryController extends Controller
 
         DB::beginTransaction();
         try {
+            $colorVariant = InventoryColorVariant::query()
+                ->where('inventory_item_id', $item->id)
+                ->whereKey($colorId)
+                ->lockForUpdate()
+                ->firstOrFail();
+            $hadSizes = $colorVariant->sizes()->exists();
+            $defaultReplenishment = [
+                'auto_stock_request_enabled' => (bool) $item->auto_stock_request_enabled,
+                'reorder_level' => (int) $item->reorder_level,
+                'reorder_quantity' => (int) $item->reorder_quantity,
+            ];
+            $sizeSettings = $hadSizes
+                ? $defaultReplenishment
+                : [
+                    'auto_stock_request_enabled' => (bool) ($colorVariant->auto_stock_request_enabled ?? $defaultReplenishment['auto_stock_request_enabled']),
+                    'reorder_level' => (int) ($colorVariant->reorder_level ?? $defaultReplenishment['reorder_level']),
+                    'reorder_quantity' => (int) ($colorVariant->reorder_quantity ?? $defaultReplenishment['reorder_quantity']),
+                ];
             $quantityToAdd = (int) $validated['quantity'];
             $sizeValue = trim((string) $validated['size']);
             $sizeSystem = $this->normalizeSizeSystem($validated['size_system'] ?? null);
@@ -888,6 +968,17 @@ class UploadInventoryController extends Controller
                     'size' => $sizeValue,
                     'size_system' => $sizeSystem,
                     'quantity' => $quantityToAdd,
+                    'auto_stock_request_enabled' => $sizeSettings['auto_stock_request_enabled'],
+                    'reorder_level' => $sizeSettings['reorder_level'],
+                    'reorder_quantity' => $sizeSettings['reorder_quantity'],
+                ]);
+            }
+
+            if (! $hadSizes) {
+                $colorVariant->update([
+                    'auto_stock_request_enabled' => null,
+                    'reorder_level' => null,
+                    'reorder_quantity' => null,
                 ]);
             }
 

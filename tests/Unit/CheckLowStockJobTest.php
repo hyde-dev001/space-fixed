@@ -6,7 +6,9 @@ use App\Events\LowStockAlert;
 use App\Events\OutOfStockAlert;
 use App\Jobs\CheckLowStockJob;
 use App\Models\InventoryAlert;
+use App\Models\InventoryColorVariant;
 use App\Models\InventoryItem;
+use App\Models\InventorySize;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
 use App\Models\PurchaseOrderReceipt;
@@ -344,6 +346,262 @@ class CheckLowStockJobTest extends TestCase
         $this->assertDatabaseHas('stock_request_approvals', [
             'inventory_item_id' => $item->id,
             'quantity_needed' => 15,
+            'is_auto_generated' => true,
+        ]);
+    }
+
+    public function test_variant_stock_is_checked_independently_and_request_preserves_color_and_size(): void
+    {
+        $shopOwner = ShopOwner::factory()->create();
+        $item = InventoryItem::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'available_quantity' => 0,
+        ]);
+        $black = InventoryColorVariant::create([
+            'inventory_item_id' => $item->id,
+            'color_name' => 'Black',
+            'quantity' => 23,
+        ]);
+        $white = InventoryColorVariant::create([
+            'inventory_item_id' => $item->id,
+            'color_name' => 'White',
+            'quantity' => 20,
+        ]);
+
+        InventorySize::create([
+            'inventory_item_id' => $item->id,
+            'inventory_color_variant_id' => $black->id,
+            'size' => '8',
+            'size_system' => 'US',
+            'quantity' => 3,
+            'auto_stock_request_enabled' => true,
+            'reorder_level' => 5,
+            'reorder_quantity' => 20,
+        ]);
+        InventorySize::create([
+            'inventory_item_id' => $item->id,
+            'inventory_color_variant_id' => $black->id,
+            'size' => '9',
+            'size_system' => 'US',
+            'quantity' => 20,
+            'auto_stock_request_enabled' => true,
+            'reorder_level' => 5,
+            'reorder_quantity' => 20,
+        ]);
+        InventorySize::create([
+            'inventory_item_id' => $item->id,
+            'inventory_color_variant_id' => $white->id,
+            'size' => '8',
+            'size_system' => 'US',
+            'quantity' => 20,
+            'auto_stock_request_enabled' => true,
+            'reorder_level' => 5,
+            'reorder_quantity' => 20,
+        ]);
+
+        (new CheckLowStockJob($shopOwner->id))->handle();
+
+        $this->assertDatabaseHas('inventory_alerts', [
+            'inventory_item_id' => $item->id,
+            'inventory_color_variant_id' => $black->id,
+            'alert_type' => 'low_stock',
+            'is_resolved' => false,
+        ]);
+        $this->assertSame(1, InventoryAlert::where('inventory_item_id', $item->id)->count());
+        $this->assertDatabaseHas('stock_request_approvals', [
+            'inventory_item_id' => $item->id,
+            'requested_color' => 'black',
+            'requested_size' => 'US 8',
+            'quantity_needed' => 20,
+            'is_auto_generated' => true,
+        ]);
+    }
+
+    public function test_variant_incoming_supply_only_covers_the_matching_color_and_size(): void
+    {
+        $shopOwner = ShopOwner::factory()->create();
+        $requester = User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $item = InventoryItem::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'available_quantity' => 0,
+        ]);
+        $black = InventoryColorVariant::create([
+            'inventory_item_id' => $item->id,
+            'color_name' => 'Black',
+            'quantity' => 3,
+        ]);
+        $white = InventoryColorVariant::create([
+            'inventory_item_id' => $item->id,
+            'color_name' => 'White',
+            'quantity' => 20,
+        ]);
+        InventorySize::create([
+            'inventory_item_id' => $item->id,
+            'inventory_color_variant_id' => $black->id,
+            'size' => '8',
+            'size_system' => 'US',
+            'quantity' => 3,
+            'auto_stock_request_enabled' => true,
+            'reorder_level' => 5,
+            'reorder_quantity' => 40,
+        ]);
+        InventorySize::create([
+            'inventory_item_id' => $item->id,
+            'inventory_color_variant_id' => $black->id,
+            'size' => '9',
+            'size_system' => 'US',
+            'quantity' => 20,
+            'auto_stock_request_enabled' => true,
+            'reorder_level' => 5,
+            'reorder_quantity' => 40,
+        ]);
+        InventorySize::create([
+            'inventory_item_id' => $item->id,
+            'inventory_color_variant_id' => $white->id,
+            'size' => '8',
+            'size_system' => 'US',
+            'quantity' => 20,
+            'auto_stock_request_enabled' => true,
+            'reorder_level' => 5,
+            'reorder_quantity' => 40,
+        ]);
+
+        PurchaseRequest::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'inventory_item_id' => $item->id,
+            'requested_color' => 'BLACK',
+            'requested_size' => '8',
+            'quantity' => 15,
+            'status' => 'pending_finance',
+            'requested_by' => $requester->id,
+        ]);
+        PurchaseRequest::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'inventory_item_id' => $item->id,
+            'requested_color' => 'black',
+            'requested_size' => 'US 9',
+            'quantity' => 30,
+            'status' => 'pending_finance',
+            'requested_by' => $requester->id,
+        ]);
+        PurchaseRequest::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'inventory_item_id' => $item->id,
+            'requested_color' => 'white',
+            'requested_size' => 'US 8',
+            'quantity' => 20,
+            'status' => 'pending_finance',
+            'requested_by' => $requester->id,
+        ]);
+
+        (new CheckLowStockJob($shopOwner->id))->handle();
+
+        $this->assertDatabaseHas('stock_request_approvals', [
+            'inventory_item_id' => $item->id,
+            'requested_color' => 'black',
+            'requested_size' => 'US 8',
+            'quantity_needed' => 25,
+            'is_auto_generated' => true,
+        ]);
+    }
+
+    public function test_variant_alert_resolves_and_can_alert_again_after_recovery(): void
+    {
+        $shopOwner = ShopOwner::factory()->create();
+        $item = InventoryItem::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'available_quantity' => 0,
+        ]);
+        $color = InventoryColorVariant::create([
+            'inventory_item_id' => $item->id,
+            'color_name' => 'Black',
+            'quantity' => 3,
+        ]);
+        $size = InventorySize::create([
+            'inventory_item_id' => $item->id,
+            'inventory_color_variant_id' => $color->id,
+            'size' => '8',
+            'size_system' => 'US',
+            'quantity' => 3,
+            'auto_stock_request_enabled' => false,
+            'reorder_level' => 5,
+            'reorder_quantity' => 20,
+        ]);
+
+        $job = new CheckLowStockJob($shopOwner->id);
+        $job->handle();
+        $size->update(['quantity' => 6]);
+        $job->handle();
+        $size->update(['quantity' => 3]);
+        $job->handle();
+
+        $this->assertSame(2, InventoryAlert::where('inventory_item_id', $item->id)->count());
+        $this->assertSame(1, InventoryAlert::where('inventory_item_id', $item->id)->where('is_resolved', false)->count());
+    }
+
+    public function test_variant_legacy_purchase_order_headers_only_cover_the_matching_color_and_size(): void
+    {
+        $shopOwner = ShopOwner::factory()->create();
+        $requester = User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $supplier = Supplier::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $item = InventoryItem::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'available_quantity' => 0,
+        ]);
+        $black = InventoryColorVariant::create([
+            'inventory_item_id' => $item->id,
+            'color_name' => 'Black',
+            'quantity' => 23,
+        ]);
+        InventorySize::create([
+            'inventory_item_id' => $item->id,
+            'inventory_color_variant_id' => $black->id,
+            'size' => '8',
+            'size_system' => 'US',
+            'quantity' => 3,
+            'auto_stock_request_enabled' => true,
+            'reorder_level' => 5,
+            'reorder_quantity' => 40,
+        ]);
+        InventorySize::create([
+            'inventory_item_id' => $item->id,
+            'inventory_color_variant_id' => $black->id,
+            'size' => '9',
+            'size_system' => 'US',
+            'quantity' => 20,
+            'auto_stock_request_enabled' => true,
+            'reorder_level' => 5,
+            'reorder_quantity' => 40,
+        ]);
+
+        PurchaseOrder::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'supplier_id' => $supplier->id,
+            'inventory_item_id' => $item->id,
+            'requested_color' => 'BLACK',
+            'requested_size' => '8',
+            'quantity' => 15,
+            'status' => 'sent',
+            'ordered_by' => $requester->id,
+        ]);
+        PurchaseOrder::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'supplier_id' => $supplier->id,
+            'inventory_item_id' => $item->id,
+            'requested_color' => 'black',
+            'requested_size' => 'US 9',
+            'quantity' => 30,
+            'status' => 'sent',
+            'ordered_by' => $requester->id,
+        ]);
+
+        (new CheckLowStockJob($shopOwner->id))->handle();
+
+        $this->assertDatabaseHas('stock_request_approvals', [
+            'inventory_item_id' => $item->id,
+            'requested_color' => 'black',
+            'requested_size' => 'US 8',
+            'quantity_needed' => 25,
             'is_auto_generated' => true,
         ]);
     }

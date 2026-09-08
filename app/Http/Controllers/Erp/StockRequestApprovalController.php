@@ -3,9 +3,10 @@
 namespace App\Http\Controllers\Erp;
 
 use App\Http\Controllers\Controller;
-use App\Models\StockRequestApproval;
-use App\Models\InventoryItem;
 use App\Http\Requests\ApproveStockRequestRequest;
+use App\Models\InventoryItem;
+use App\Models\StockRequestApproval;
+use App\Services\InventoryVariantIdentity;
 use App\Services\StockRequestApprovalService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -66,7 +67,7 @@ class StockRequestApprovalController extends Controller
 
         return in_array($normalized, ['all', 'all_size', 'all_sizes', 'any'], true)
             ? null
-            : $trimmed;
+            : InventoryVariantIdentity::normalizeSize($trimmed);
     }
 
     /**
@@ -77,17 +78,17 @@ class StockRequestApprovalController extends Controller
     private function configuredSizesForPerSizeRequest(InventoryItem $inventoryItem, ?string $requestedColor): Collection|JsonResponse
     {
         $colorVariants = $inventoryItem->colorVariants()->get();
-        $normalizedColor = strtolower(trim((string) $requestedColor));
+        $normalizedColor = InventoryVariantIdentity::normalizeColor($requestedColor);
 
         if ($colorVariants->isNotEmpty()) {
-            if ($normalizedColor === '') {
+            if ($normalizedColor === null) {
                 return response()->json([
                     'message' => 'Select a color before requesting all shoe sizes.',
                 ], 422);
             }
 
             $variant = $colorVariants->first(
-                fn ($candidate) => strtolower(trim((string) $candidate->color_name)) === $normalizedColor
+                fn ($candidate) => InventoryVariantIdentity::normalizeColor($candidate->color_name) === $normalizedColor
             );
 
             if (! $variant) {
@@ -101,7 +102,7 @@ class StockRequestApprovalController extends Controller
                 ->get();
         }
 
-        if ($normalizedColor !== '') {
+        if ($normalizedColor !== null) {
             return response()->json([
                 'message' => 'This item has no configured color variants.',
             ], 422);
@@ -276,7 +277,7 @@ class StockRequestApprovalController extends Controller
 
             $configuredSizeCount = $configuredSizes
                 ->filter(fn ($size) => trim((string) $size->size) !== '')
-                ->unique(fn ($size) => strtolower((string) ($size->size_system ?? '')) . '|' . trim((string) $size->size))
+                ->unique(fn ($size) => InventoryVariantIdentity::fromSize($size))
                 ->count();
 
             if ($configuredSizeCount < 1) {
@@ -302,7 +303,7 @@ class StockRequestApprovalController extends Controller
             'repair_request_id' => $validated['repair_request_id'] ?? null,
             'quantity_needed'   => $quantityNeeded,
             'requested_size'    => $requestedSize,
-            'requested_color'   => $validated['requested_color'] ?? null,
+            'requested_color'   => InventoryVariantIdentity::normalizeColor($validated['requested_color'] ?? null),
             'priority'          => $validated['priority'],
             'request_source'    => $validated['request_source'] ?? 'manual',
             'requested_by'      => $user->id,
