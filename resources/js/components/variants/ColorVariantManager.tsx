@@ -431,7 +431,7 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
 
       {/* Color Picker Modal */}
       {showColorPicker && (
-        <div className="fixed inset-0 z-[99999] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[99999] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
           <div className="bg-white dark:bg-gray-800 rounded-xl max-w-2xl w-full p-6 shadow-2xl">
             <div className="flex items-center justify-between mb-4">
               <h4 className="text-xl font-semibold text-gray-900 dark:text-white">
@@ -537,7 +537,7 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
 
       {/* Size Picker Modal */}
       {showSizePickerForColorId && (
-        <div className="fixed inset-0 z-[1000002] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[1000002] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
           <div className="bg-white dark:bg-gray-800 rounded-xl max-w-2xl w-full p-6 shadow-2xl max-h-[85vh] flex flex-col">
             <div className="flex items-center justify-between mb-4">
               <div>

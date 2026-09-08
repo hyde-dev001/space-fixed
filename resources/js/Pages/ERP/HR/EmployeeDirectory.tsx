@@ -2752,7 +2752,7 @@ export const EmployeeManagement: React.FC<{
 
         {isViewModalOpen && selectedEmployee && (
           <ModalPortal>
-            <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
+            <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8 erp-modal-backdrop">
               <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[95vh] overflow-auto">
                 <div className="p-8">
                   <h3 className="text-3xl font-semibold text-gray-900 dark:text-white mb-6">Employee Details</h3>
@@ -2877,7 +2877,7 @@ export const EmployeeManagement: React.FC<{
         {/* Suspension Request Modal */}
         {isSuspensionRequestModalOpen && employeeToSuspend && (
           <ModalPortal>
-            <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
+            <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8 erp-modal-backdrop">
               <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-xl w-full">
                 <div className="p-6">
                   <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
@@ -2975,7 +2975,7 @@ export const EmployeeManagement: React.FC<{
 
         {isTerminationRequestModalOpen && employeeToTerminate && (
           <ModalPortal>
-            <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
+            <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8 erp-modal-backdrop">
               <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-xl w-full">
                 <div className="p-6">
                   <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
@@ -3058,7 +3058,7 @@ export const EmployeeManagement: React.FC<{
 
         {isRehireRequestModalOpen && employeeToRehire && (
           <ModalPortal>
-            <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
               <div className="bg-white dark:bg-gray-900 rounded-xl shadow-xl max-w-2xl w-full border border-gray-200 dark:border-gray-800 overflow-hidden">
                 <div className="border-b border-gray-200 dark:border-gray-800 px-8 py-6">
                   <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
@@ -3279,7 +3279,7 @@ export const EmployeeManagement: React.FC<{
         {/* Add Employee Modal */}
         {isAddEmployeeOpen && (
           <ModalPortal>
-            <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
               <div className="bg-white dark:bg-gray-900 rounded-xl shadow-xl max-w-2xl w-full border border-gray-200 dark:border-gray-800 overflow-hidden">
                 {/* Header */}
                 <div className="border-b border-gray-200 dark:border-gray-800 px-8 py-6">
@@ -3539,7 +3539,7 @@ export const EmployeeManagement: React.FC<{
         {/* Permission Management Modal */}
         {isPermissionModalOpen && selectedEmployeeForPermissions && availablePermissions && (
           <ModalPortal>
-            <div className="fixed inset-0 z-[999999] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="fixed inset-0 z-[999999] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
               <div className="w-full max-w-5xl rounded-2xl bg-white dark:bg-gray-900 shadow-2xl overflow-hidden border border-gray-200 dark:border-gray-700">
                 <div className="px-6 py-5 border-b border-gray-200 dark:border-gray-700 flex items-start justify-between">
                   <div>
@@ -3761,7 +3761,7 @@ export const EmployeeManagement: React.FC<{
 
         {invitationModal.isOpen && (
           <ModalPortal>
-            <div className="fixed inset-0 z-[999999] bg-black/50 backdrop-blur-sm flex items-center justify-center p-6">
+            <div className="fixed inset-0 z-[999999] bg-black/50 backdrop-blur-sm flex items-center justify-center p-6 erp-modal-backdrop">
               <div className="w-full max-w-5xl rounded-2xl bg-white dark:bg-gray-900 shadow-2xl overflow-hidden border border-gray-200 dark:border-gray-700">
                 <div className="px-8 py-6 border-b border-gray-200 dark:border-gray-700 flex items-start justify-between">
                   <div className="flex items-start gap-3">

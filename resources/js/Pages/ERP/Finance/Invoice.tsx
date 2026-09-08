@@ -1311,7 +1311,7 @@ const Invoice: React.FC = () => {
       {/* View Invoice Modal */}
       {isViewModalOpen && selectedInvoice && (
         <ModalPortal>
-          <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
+          <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8 erp-modal-backdrop">
             <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
               {/* Close Button */}
               <button

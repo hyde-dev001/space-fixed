@@ -559,7 +559,7 @@ export default function ERPReports() {
         </div>
 
         {generateModalOpen && selectedReportType && (
-          <div className="fixed inset-0 z-999999 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="fixed inset-0 z-999999 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm erp-modal-backdrop">
             <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl dark:bg-gray-800">
               <div className="flex items-center justify-between border-b border-gray-200 p-6 dark:border-gray-700">
                 <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
@@ -599,7 +599,7 @@ export default function ERPReports() {
         )}
 
         {reviewTarget && (
-          <div className="fixed inset-0 z-999999 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="fixed inset-0 z-999999 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm erp-modal-backdrop">
             <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl dark:bg-gray-800">
               <div className="flex items-center justify-between border-b border-gray-200 p-6 dark:border-gray-700">
                 <div>

@@ -607,7 +607,7 @@ export default function WarrantyQueue() {
 
         {isClaimDetailsOpen && selectedClaim && (
           <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 erp-modal-backdrop"
             onClick={closeWarrantyClaimDetails}
           >
             <div

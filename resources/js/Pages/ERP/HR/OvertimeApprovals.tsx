@@ -875,7 +875,7 @@ export function OvertimeRequests() {
       {/* View Details Modal */}
       {isViewModalOpen && selectedRequest && (
         <ModalPortal>
-          <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
+          <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8 erp-modal-backdrop">
             <div className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[95vh] overflow-y-auto">
               {/* Header with Status */}
               <div className="sticky top-0 border-b border-gray-200 dark:border-gray-700 px-6 py-5 flex justify-between items-start">
@@ -1035,7 +1035,7 @@ export function OvertimeRequests() {
       {/* Reject Overtime Request Modal */}
       {isRejectModalOpen && requestToReject && (
         <ModalPortal>
-          <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
+          <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8 erp-modal-backdrop">
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-xl w-full">
               <div className="p-6">
                 <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">Reject Overtime Request</h3>
@@ -1145,7 +1145,7 @@ export function OvertimeRequests() {
       {/* Assign Overtime Modal */}
       {isAssignModalOpen && (
         <ModalPortal>
-          <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
+          <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8 erp-modal-backdrop">
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
               <div className="p-6">
                 <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-6">Assign Overtime to Employee</h3>

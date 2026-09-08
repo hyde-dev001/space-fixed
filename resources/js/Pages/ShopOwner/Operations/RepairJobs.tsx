@@ -120,7 +120,7 @@ const ErrorState = ({ message, onRetry }: { message: string; onRetry: () => void
 
 const RepairDetailDialog = ({ repair, onClose }: { repair: ManagerRepairJob; onClose: () => void }) => (
   <div
-    className="fixed inset-0 z-[60] flex items-center justify-center bg-gray-950/50 p-4"
+    className="fixed inset-0 z-[60] flex items-center justify-center bg-gray-950/50 p-4 erp-modal-backdrop"
     role="dialog"
     aria-modal="true"
     aria-labelledby="owner-repair-detail-title"

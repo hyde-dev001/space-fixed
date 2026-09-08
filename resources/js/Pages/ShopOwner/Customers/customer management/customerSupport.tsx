@@ -1319,7 +1319,7 @@ export default function CustomerSupport() {
       {/* Fullscreen Image Modal */}
       {fullscreenImage && (
         <div 
-          className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50"
+          className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 erp-modal-backdrop"
           onClick={() => setFullscreenImage(null)}
         >
           <button
@@ -1345,7 +1345,7 @@ export default function CustomerSupport() {
       {/* Transfer Modal */}
       {showTransferModal && selectedTicket && (
         <div 
-          className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50"
+          className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 erp-modal-backdrop"
           onClick={() => setShowTransferModal(false)}
         >
           <div 

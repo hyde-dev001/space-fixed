@@ -609,7 +609,7 @@ const SalaryChanges: React.FC = () => {
 
   const ViewModal: React.FC<{ change: SalaryChange }> = ({ change }) => (
     <ModalPortal>
-      <div className="fixed inset-0 z-999999 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+      <div className="fixed inset-0 z-999999 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm erp-modal-backdrop">
         <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-white dark:bg-gray-900 rounded-2xl shadow-2xl">
           <div className="p-6 space-y-6">
             {/* Retroactive Warning */}
@@ -1019,7 +1019,7 @@ const SalaryChanges: React.FC = () => {
       {/* New Salary Change Modal */}
       {isNewChangeOpen && (
         <ModalPortal>
-          <div className="fixed inset-0 z-999999 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-999999 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
             <div className="bg-white dark:bg-gray-900 rounded-xl shadow-xl max-w-2xl w-full border border-gray-200 dark:border-gray-800 overflow-hidden">
               <div className="border-b border-gray-200 dark:border-gray-800 px-8 py-6 flex items-start justify-between gap-4">
                 <div>

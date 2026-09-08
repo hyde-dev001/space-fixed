@@ -137,7 +137,7 @@ const DecisionDialog = ({
     const actionLabel = isReassign ? "Confirm reassignment" : isForward ? "Forward to Shop Owner" : "Confirm final rejection";
 
     return (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-gray-950/50 p-4" role="dialog" aria-modal="true" aria-labelledby="repair-decision-title">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-gray-950/50 p-4 erp-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="repair-decision-title">
             <form onSubmit={onSubmit} className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl dark:bg-gray-900">
                 <div className="flex items-start justify-between gap-4">
                     <div>

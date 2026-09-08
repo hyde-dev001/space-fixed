@@ -395,7 +395,7 @@ export default function LeaveApprovals() {
             </main>
 
             {requestToReject && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/50 p-4" role="presentation">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/50 p-4 erp-modal-backdrop" role="presentation">
                     <div role="dialog" aria-modal="true" aria-labelledby="reject-leave-title" className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl dark:bg-gray-900">
                         <h2 id="reject-leave-title" className="text-lg font-semibold text-gray-900 dark:text-white">Reject leave request</h2>
                         <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">Provide a reason for rejecting {requestToReject.employee.name}’s request. This reason is saved in the request history.</p>

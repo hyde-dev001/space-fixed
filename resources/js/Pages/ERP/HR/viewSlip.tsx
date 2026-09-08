@@ -564,7 +564,7 @@ export default function ViewSlip() {
             </div>
 
             {selectedSlip && createPortal(
-                <div className="fixed inset-0 z-999999 bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
+                <div className="fixed inset-0 z-999999 bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8 erp-modal-backdrop">
                     <div className="relative bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto p-8">
                         <div className="flex items-start justify-between mb-4">
                             <div>

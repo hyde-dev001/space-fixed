@@ -678,7 +678,7 @@ export default function StockRequest() {
 
 			{viewingRequest && (
 				<div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">
-					<button type="button" aria-label="Close request details modal" className="absolute inset-0 bg-black/45 backdrop-blur-[2px]" onClick={() => setViewingRequest(null)} />
+					<button type="button" aria-label="Close request details modal" className="absolute inset-0 bg-black/45 backdrop-blur-[2px] erp-modal-backdrop" onClick={() => setViewingRequest(null)} />
 					<div className="relative w-full max-w-3xl overflow-hidden rounded-3xl border border-gray-200/90 bg-white shadow-2xl dark:border-gray-800/90 dark:bg-gray-900 max-h-[92vh]">
 						<div className="sticky top-0 z-10 border-b border-gray-200 bg-white/95 px-5 py-4 backdrop-blur dark:border-gray-800 dark:bg-gray-900/95 sm:px-6">
 							<div className="flex items-start justify-between gap-4">

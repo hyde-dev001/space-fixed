@@ -493,7 +493,7 @@ export default function ERPShoePricing() {
 
           {/* View Modal */}
           {viewModalOpen && selectedShoe && (
-            <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
+            <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8 erp-modal-backdrop">
               <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-3xl w-full max-h-[88vh] flex flex-col overflow-hidden">
                 <div className="px-6 py-5 border-b border-gray-200 dark:border-gray-700 flex items-start justify-between">
                   <div>
@@ -652,7 +652,7 @@ export default function ERPShoePricing() {
             const isIncrease = difference > 0;
             
             return (
-              <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
+              <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8 erp-modal-backdrop">
                 <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-3xl w-full max-h-[88vh] flex flex-col overflow-hidden">
                   <div className="px-6 py-5 border-b border-gray-200 dark:border-gray-700 flex items-start justify-between">
                     <div>

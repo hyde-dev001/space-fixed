@@ -3162,7 +3162,7 @@ export default function JobOrdersRepair() {
 
         {/* View Order Modal */}
         {isViewModalOpen && viewOrder && (
-          <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-0">
+          <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-0 erp-modal-backdrop">
             <div
               className="absolute inset-0"
               onClick={() => {
@@ -3931,7 +3931,7 @@ export default function JobOrdersRepair() {
 
         {/* Shipping Modal */}
         {isShippingModalOpen && selectedOrder && (
-          <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
+          <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8 erp-modal-backdrop">
             <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col">
               <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
                 <h2 className="text-xl font-bold text-gray-900 dark:text-white">Ship Order</h2>
@@ -4093,7 +4093,7 @@ export default function JobOrdersRepair() {
 
         {/* Rejection Modal */}
         {isRejectionModalOpen && (
-          <div className="fixed inset-0 z-[999999] bg-gray-900/50 flex items-end sm:items-center sm:justify-center p-4">
+          <div className="fixed inset-0 z-[999999] bg-gray-900/50 flex items-end sm:items-center sm:justify-center p-4 erp-modal-backdrop">
             <div className="w-full sm:max-w-md bg-white dark:bg-gray-800 rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col max-h-[90vh] sm:max-h-none overflow-hidden">
               {/* Header */}
               <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex-shrink-0">
@@ -4174,7 +4174,7 @@ export default function JobOrdersRepair() {
 
         {/* Refund Review Modal */}
         {isRefundReviewModalOpen && refundReviewItem && refundReviewOrder && (
-          <div className="fixed inset-0 z-[999999] bg-gray-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-[999999] bg-gray-900/60 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
             <div className="w-full max-w-3xl bg-white dark:bg-gray-800 rounded-2xl shadow-2xl flex flex-col max-h-[92vh] overflow-hidden">
               <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 shrink-0">
                 <h2 className="text-xl font-bold text-gray-900 dark:text-white">Review Refund Request</h2>

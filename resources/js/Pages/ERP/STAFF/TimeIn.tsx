@@ -1842,7 +1842,7 @@ export default function TimeIn() {
 
                 {/* Leave Request Modal */}
                 {showLeaveModal && (
-                    <div className="fixed inset-0 z-[999999] flex items-start justify-center overflow-y-auto bg-black/60 p-3 backdrop-blur-sm sm:items-center sm:p-4">
+                    <div className="fixed inset-0 z-[999999] flex items-start justify-center overflow-y-auto bg-black/60 p-3 backdrop-blur-sm sm:items-center sm:p-4 erp-modal-backdrop">
                         <div
                             role="dialog"
                             aria-modal="true"
@@ -2031,7 +2031,7 @@ export default function TimeIn() {
 
                 {/* Overtime Modal */}
                 {showOvertimeModal && (
-                    <div className="fixed inset-0 z-[999999] flex items-start justify-center overflow-y-auto bg-black/60 p-3 backdrop-blur-sm sm:items-center sm:p-4">
+                    <div className="fixed inset-0 z-[999999] flex items-start justify-center overflow-y-auto bg-black/60 p-3 backdrop-blur-sm sm:items-center sm:p-4 erp-modal-backdrop">
                         <div className="my-3 max-h-[calc(100dvh-1.5rem)] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-4 shadow-2xl dark:bg-gray-900 sm:my-4 sm:max-h-[calc(100dvh-2rem)] sm:p-6 md:p-8">
                             <div className="mb-6">
                                 <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Request Overtime</h2>

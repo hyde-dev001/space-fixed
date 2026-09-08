@@ -926,7 +926,7 @@ const ViewAttendance: React.FC = () => {
 
       {/* View Modal - Attendance Receipt */}
       {isViewModalOpen && selectedRecord && createPortal(
-        <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
           <div className="bg-white dark:bg-gray-900 rounded-2xl max-w-3xl w-full max-h-[95vh] p-8 space-y-6 overflow-y-auto">
             <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Attendance Receipt</h2>
 
@@ -1030,7 +1030,7 @@ const ViewAttendance: React.FC = () => {
 
       {/* Edit Modal — Attendance Correction */}
       {isEditModalOpen && editRecord && createPortal(
-        <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
           <div className="bg-white dark:bg-gray-900 rounded-2xl max-w-lg w-full p-8 space-y-5">
             <div className="flex items-center justify-between">
               <div>

@@ -631,7 +631,7 @@ export default function FinanceCreateInvoice() {
 					</div>
 
 					{isEditModalOpen && editingRow && (
-						<div className="fixed inset-0 z-[999999] flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
+						<div className="fixed inset-0 z-[999999] flex items-center justify-center bg-black/60 backdrop-blur-sm px-4 erp-modal-backdrop">
 							<div className="w-full max-w-lg rounded-2xl bg-white dark:bg-gray-900 shadow-xl border border-gray-200 dark:border-gray-700 p-6 space-y-4">
 								<div className="flex items-center justify-between">
 									<h3 className="text-lg font-semibold text-gray-900 dark:text-white">Edit Product</h3>

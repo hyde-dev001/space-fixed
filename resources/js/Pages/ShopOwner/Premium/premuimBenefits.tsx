@@ -623,7 +623,7 @@ const PremiumBenefits: React.FC<Props> = () => {
 			</div>
 
 				{showUpgradeModal && upgradePreview ? (
-					<div className="fixed inset-0 z-2000 flex items-center justify-center bg-black/60 p-4 backdrop-blur-[2px]">
+					<div className="fixed inset-0 z-2000 flex items-center justify-center bg-black/60 p-4 backdrop-blur-[2px] erp-modal-backdrop">
 						<div className="w-full max-w-2xl rounded-3xl border border-gray-200 bg-white p-6 shadow-[0_30px_65px_-30px_rgba(15,23,42,0.65)] sm:p-7" role="dialog" aria-modal="true" aria-labelledby="upgrade-modal-title">
 							<div className="mb-5 flex items-start justify-between gap-4 border-b border-gray-200 pb-5">
 								<div>
@@ -682,7 +682,7 @@ const PremiumBenefits: React.FC<Props> = () => {
 				) : null}
 
 				{showDowngradeModal && selectedDowngradePlan ? (
-					<div className="fixed inset-0 z-2000 flex items-center justify-center bg-black/60 p-4 backdrop-blur-[2px]">
+					<div className="fixed inset-0 z-2000 flex items-center justify-center bg-black/60 p-4 backdrop-blur-[2px] erp-modal-backdrop">
 						<div className="w-full max-w-2xl rounded-3xl border border-gray-200 bg-white p-6 shadow-[0_30px_65px_-30px_rgba(15,23,42,0.65)] sm:p-7" role="dialog" aria-modal="true" aria-labelledby="downgrade-modal-title">
 							<div className="mb-5 flex items-start justify-between gap-4 border-b border-gray-200 pb-5">
 								<div>
@@ -736,7 +736,7 @@ const PremiumBenefits: React.FC<Props> = () => {
 				) : null}
 
 				{showCancelModal ? (
-					<div className="fixed inset-0 z-2000 flex items-center justify-center bg-black/60 p-4 backdrop-blur-[2px]">
+					<div className="fixed inset-0 z-2000 flex items-center justify-center bg-black/60 p-4 backdrop-blur-[2px] erp-modal-backdrop">
 						<div className="w-full max-w-4xl rounded-3xl border border-gray-200 bg-white p-6 shadow-[0_30px_65px_-30px_rgba(15,23,42,0.65)] sm:p-7" role="dialog" aria-modal="true" aria-labelledby="cancel-premium-title">
 							<div className="mb-5 flex items-start justify-between gap-4 border-b border-gray-200 pb-5">
 								<div>

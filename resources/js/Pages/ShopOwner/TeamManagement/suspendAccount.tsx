@@ -474,7 +474,7 @@ const SuspendAccount: React.FC = () => {
       {/* Details Modal */}
       {detailsModalOpen && selectedRequest && (
         <div className="fixed inset-0 flex items-center justify-center z-[100000] p-4">
-          <div className="fixed inset-0 bg-black/10 backdrop-blur-sm z-[100000]" onClick={() => { setDetailsModalOpen(false); setSelectedRequest(null); }}></div>
+          <div className="fixed inset-0 bg-black/10 backdrop-blur-sm z-[100000] erp-modal-backdrop" onClick={() => { setDetailsModalOpen(false); setSelectedRequest(null); }}></div>
           <div className="bg-white dark:bg-gray-800 rounded-2xl max-w-lg w-full p-6 shadow-xl relative z-[100001]">
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-2xl font-bold text-gray-900 dark:text-white">
@@ -659,7 +659,7 @@ const SuspendAccount: React.FC = () => {
       {rejectionModalOpen && selectedRequest && (
         <div className="fixed inset-0 flex items-center justify-center z-[100000] p-4">
           <div
-            className="fixed inset-0 bg-black/10 backdrop-blur-sm z-[100000]"
+            className="fixed inset-0 bg-black/10 backdrop-blur-sm z-[100000] erp-modal-backdrop"
             onClick={() => {
               if (isRejecting) return;
               setRejectionModalOpen(false);
@@ -709,7 +709,7 @@ const SuspendAccount: React.FC = () => {
       {approvalModalOpen && selectedRequest && (
         <div className="fixed inset-0 flex items-center justify-center z-[100000] p-4">
           <div
-            className="fixed inset-0 bg-black/10 backdrop-blur-sm z-[100000]"
+            className="fixed inset-0 bg-black/10 backdrop-blur-sm z-[100000] erp-modal-backdrop"
             onClick={() => {
               if (isApproving) return;
               setApprovalModalOpen(false);

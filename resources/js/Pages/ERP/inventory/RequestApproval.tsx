@@ -517,7 +517,7 @@ export default function RequestApproval() {
 
 			{selectedRequest && (
 				<div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-					<div className="absolute inset-0 bg-black/40" onClick={() => setSelectedRequest(null)} />
+					<div className="absolute inset-0 bg-black/40 erp-modal-backdrop" onClick={() => setSelectedRequest(null)} />
 					<div className="relative w-full max-w-2xl rounded-2xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 p-6 shadow-2xl">
 						<div className="mb-4">
 							<h3 className="text-xl font-semibold text-gray-900 dark:text-white">Review Material Request</h3>

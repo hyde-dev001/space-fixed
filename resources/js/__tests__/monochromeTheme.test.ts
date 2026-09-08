@@ -28,6 +28,16 @@ describe('shared monochrome Light and Dark Mode theme', () => {
     expect(appCss).toContain('--erp-surface: #111111;');
   });
 
+  it('keeps ERP modal backdrops dark and outside monochrome surface normalization', () => {
+    expect(appCss).toContain('.erp-modal-backdrop');
+    expect(appCss).toContain('html:has(#app .erp-theme) .erp-modal-backdrop');
+    expect(appCss).toContain('background: rgba(0, 0, 0, 0.28) !important;');
+    expect(appCss).toContain('backdrop-filter: blur(2px) !important;');
+    expect(appCss).toContain(':not(.erp-modal-backdrop, [data-critical], [data-critical] *)');
+    expect(appCss).toContain('body.swal2-shown:not(.swal2-toast-shown) .swal2-container');
+    expect(appCss).toContain('--swal2-backdrop: rgba(0, 0, 0, 0.28);');
+  });
+
   it('keeps ordinary ERP controls neutral and semantic exceptions explicit', () => {
     expect(appCss).toContain(':not([data-erp-icon-action], [data-erp-icon-action] *');
     expect(appCss).toContain('[data-erp-icon-action]');

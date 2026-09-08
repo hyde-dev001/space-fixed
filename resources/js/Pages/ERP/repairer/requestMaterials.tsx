@@ -584,7 +584,7 @@ export default function RequestMaterials() {
 
       {isCreateModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setIsCreateModalOpen(false)} />
+          <div className="absolute inset-0 bg-black/40 erp-modal-backdrop" onClick={() => setIsCreateModalOpen(false)} />
           <div className="relative w-full max-w-2xl rounded-2xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 p-6 shadow-2xl">
             <div className="mb-4">
               <h3 className="text-xl font-semibold text-gray-900 dark:text-white">Create Material Request</h3>
@@ -682,7 +682,7 @@ export default function RequestMaterials() {
 
       {isCartOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/40" onClick={() => !isSubmittingCart && setIsCartOpen(false)} />
+          <div className="absolute inset-0 bg-black/40 erp-modal-backdrop" onClick={() => !isSubmittingCart && setIsCartOpen(false)} />
           <div className="relative w-full max-w-2xl rounded-2xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="mb-4">
               <h3 className="text-xl font-semibold text-gray-900 dark:text-white">Bulk Material Request Cart</h3>
