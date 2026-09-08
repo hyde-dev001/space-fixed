@@ -559,7 +559,7 @@ export default function RepairPriceApproval() {
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <h1 className="sr-only">Repair Service Price Approval Requests</h1>
           {/* View Toggle */}
-          <div className="flex gap-2 bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
+          <div className="flex gap-2 bg-gray-100 dark:bg-gray-800 p-1 rounded-lg lg:ml-auto">
             <button
               onClick={() => {
                 setViewMode('pending');
