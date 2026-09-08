@@ -8,6 +8,8 @@ import { ColorVariantManager, ColorVariant, SizeVariant } from '@/components/var
 import { ColorVariantImageUploader, ColorVariantImage } from '@/components/variants/ColorVariantImageUploader';
 import { inventoryItemAPI } from '@/services/inventoryAPI';
 import type { InventoryItem as ApiInventoryItem, InventoryColorVariant, InventoryImage, InventorySize } from '@/types/inventory';
+import { Settings2 } from 'lucide-react';
+import ReplenishmentSettingsModal from './ReplenishmentSettingsModal';
 
 type StockCategory = 'shoes' | 'repair_materials';
 type StockStatus = 'In Stock' | 'Low Stock' | 'Out of Stock';
@@ -33,6 +35,7 @@ type StockItem = {
   imageUrl?: string;
   createdAt: string;
   deleted_at?: string | null;
+  apiItem: ApiInventoryItem;
 };
 
 type MetricCardProps = {
@@ -286,6 +289,7 @@ const mapApiItemToStock = (item: ApiInventoryItem): StockItem | null => {
     imageUrl: toStorageUrl(item.main_image),
     createdAt: item.created_at,
     deleted_at: item.deleted_at ?? null,
+    apiItem: item,
   };
 };
 
@@ -337,8 +341,9 @@ export default function UploadInventory() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingStock, setEditingStock] = useState<StockItem | null>(null);
+  const [replenishmentSettingsItem, setReplenishmentSettingsItem] = useState<ApiInventoryItem | null>(null);
   const userPermissions: string[] = Array.isArray(auth?.permissions) ? auth.permissions : [];
-  const canConfigureAutoStock = userPermissions.includes(editingStock ? 'inventory.edit' : 'inventory.create');
+  const canEditInventory = !ownerMode && userPermissions.includes('inventory.edit');
   const [colorVariants, setColorVariants] = useState<ColorVariant[]>([]);
   const [newColorVariants, setNewColorVariants] = useState<ColorVariant[]>([]);
   const [repairImages, setRepairImages] = useState<ColorVariantImage[]>([]);
@@ -698,6 +703,19 @@ export default function UploadInventory() {
     setIsModalOpen(true);
   };
 
+  const handleOpenReplenishmentSettings = (stock: StockItem) => {
+    if (!canEditInventory) return;
+    setReplenishmentSettingsItem(stock.apiItem);
+  };
+
+  const handleReplenishmentSaved = (updatedItem: ApiInventoryItem) => {
+    const updatedStock = mapApiItemToStock(updatedItem);
+    if (updatedStock) {
+      setStocks((current) => current.map((stock) => stock.id === updatedStock.id ? updatedStock : stock));
+    }
+    setReplenishmentSettingsItem(null);
+  };
+
   const handleArchive = async (id: number, productName: string) => {
     if (ownerMode) return;
 
@@ -889,9 +907,6 @@ export default function UploadInventory() {
           unit: resolvedUnit,
           notes: formData.notes,
           available_quantity: quantityAsNumber,
-          reorder_level: reorderLevelNumber,
-          reorder_quantity: reorderQuantityNumber,
-          auto_stock_request_enabled: formData.autoStockRequestEnabled,
           cost_price: isShoesMode ? undefined : costPriceNumber,
           price: isShoesMode ? undefined : sellingPriceNumber,
         });
@@ -1113,6 +1128,16 @@ export default function UploadInventory() {
                         <td className="px-6 py-4 text-right flex items-center justify-end gap-2">
                           {!ownerMode && (!showArchived ? (
                             <>
+                              {canEditInventory && (
+                                <button
+                                  onClick={() => handleOpenReplenishmentSettings(stock)}
+                                  className="rounded-lg p-2 text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-200 dark:hover:bg-gray-800 dark:hover:text-white"
+                                  title="Automatic replenishment settings"
+                                  aria-label={`Automatic replenishment settings for ${stock.name}`}
+                                >
+                                  <Settings2 className="h-5 w-5" aria-hidden="true" />
+                                </button>
+                              )}
                               <button
                                 onClick={() => handleOpenModal(stock)}
                                 className="p-2 text-gray-900 hover:text-black dark:text-gray-200 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
@@ -1546,77 +1571,7 @@ export default function UploadInventory() {
                 </div>
                 )}
 
-                {canConfigureAutoStock && (
-                  <div className='rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-900/50'>
-                    <div className='mb-4'>
-                      <h3 className='text-base font-semibold text-gray-900 dark:text-white'>Automatic Replenishment</h3>
-                      <p className='mt-1 text-sm text-gray-600 dark:text-gray-400'>
-                        Configure when this item should create a Stock Request automatically.
-                      </p>
-                    </div>
-
-                    <label className='flex items-center gap-3 text-sm font-medium text-gray-800 dark:text-gray-200'>
-                      <input
-                        type='checkbox'
-                        checked={formData.autoStockRequestEnabled}
-                        onChange={(event) =>
-                          setFormData((prev) => ({
-                            ...prev,
-                            autoStockRequestEnabled: event.target.checked,
-                          }))
-                        }
-                        className='h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-gray-900'
-                      />
-                      Enable Auto Stock Request
-                    </label>
-
-                    <div className='mt-4 grid grid-cols-1 gap-4 md:grid-cols-2'>
-                      <div>
-                        <label htmlFor='stock-reorder-level' className='mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300'>
-                          Reorder Level
-                        </label>
-                        <input
-                          id='stock-reorder-level'
-                          type='number'
-                          min='0'
-                          step='1'
-                          value={formData.reorderLevel}
-                          onChange={(event) => {
-                            const nextValue = event.target.value;
-                            if (/^\d*$/.test(nextValue)) {
-                              setFormData((prev) => ({ ...prev, reorderLevel: nextValue }));
-                            }
-                          }}
-                          className='w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-white'
-                        />
-                      </div>
-                      <div>
-                        <label htmlFor='stock-reorder-quantity' className='mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300'>
-                          Quantity to Request
-                        </label>
-                        <input
-                          id='stock-reorder-quantity'
-                          type='number'
-                          min='1'
-                          step='1'
-                          value={formData.reorderQuantity}
-                          disabled={!formData.autoStockRequestEnabled}
-                          onChange={(event) => {
-                            const nextValue = event.target.value;
-                            if (/^\d*$/.test(nextValue)) {
-                              setFormData((prev) => ({ ...prev, reorderQuantity: nextValue }));
-                            }
-                          }}
-                          className='w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500 dark:border-gray-600 dark:bg-gray-900 dark:text-white dark:disabled:bg-gray-800 dark:disabled:text-gray-500'
-                        />
-                      </div>
-                    </div>
-
-                    <p className='mt-3 text-xs text-gray-500 dark:text-gray-400'>
-                      When available stock reaches {formData.reorderLevel || '0'} units or below, the system will automatically create a Stock Request for {formData.reorderQuantity || '0'} units.
-                    </p>
-                  </div>
-                )}
+                {/* Automatic replenishment settings are managed from the item action. */}
 
                 {!isShoesMode && (
                   <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-6">
@@ -1793,6 +1748,14 @@ export default function UploadInventory() {
           </div>
         </div>,
         document.body
+      )}
+
+      {replenishmentSettingsItem && (
+        <ReplenishmentSettingsModal
+          item={replenishmentSettingsItem}
+          onClose={() => setReplenishmentSettingsItem(null)}
+          onSaved={handleReplenishmentSaved}
+        />
       )}
     </>
   );

@@ -42,7 +42,12 @@ class SendLowStockNotification implements ShouldQueue
         }
 
         // Send notification to all relevant users
-        Notification::send($users, new LowStockNotification($inventoryItem, $event->currentQuantity, $event->reorderLevel));
+        Notification::send($users, new LowStockNotification(
+            $inventoryItem,
+            $event->currentQuantity,
+            $event->reorderLevel,
+            $event->target,
+        ));
 
         Log::info("Low stock notification sent to " . $users->count() . " users for item: {$inventoryItem->name}");
     }

@@ -24,6 +24,7 @@ import {
     CreateSupplierOrderData,
     ReceiveOrderData,
     InventoryAlert,
+    UpdateInventoryReplenishmentSettingsData,
 } from '@/types/inventory';
 
 const API_BASE = '/api/erp/inventory';
@@ -292,6 +293,21 @@ export const inventoryItemAPI = {
     async update(id: number, data: Partial<CreateInventoryItemData>): Promise<InventoryItem> {
         try {
             const response = await axios.put(`${API_BASE}/items/${id}`, data);
+            return response.data;
+        } catch (error) {
+            return handleApiError(error);
+        }
+    },
+
+    /**
+     * Update explicit per-variant automatic replenishment settings.
+     */
+    async updateReplenishmentSettings(
+        id: number,
+        data: UpdateInventoryReplenishmentSettingsData,
+    ): Promise<{ message: string; item: InventoryItem }> {
+        try {
+            const response = await axios.put(`${API_BASE}/items/${id}/replenishment-settings`, data);
             return response.data;
         } catch (error) {
             return handleApiError(error);

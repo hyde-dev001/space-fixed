@@ -4,6 +4,8 @@ namespace App\Services;
 
 use App\Enums\NotificationType;
 use App\Models\InventoryItem;
+use App\Models\InventoryColorVariant;
+use App\Models\InventorySize;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
 use App\Models\StockRequestApproval;
@@ -61,31 +63,36 @@ class StockRequestApprovalService
     }
 
     /**
-     * Create the uncovered portion of an item's automatic replenishment need.
+     * Create the uncovered portion of an inventory target's automatic replenishment need.
+     *
+     * The optional target keeps existing item-only callers compatible while allowing the
+     * low-stock job to pass the exact color/size target being evaluated.
      */
-    public function createAutomaticStockRequest(InventoryItem $item, string $priority): ?StockRequestApproval
+    public function createAutomaticStockRequest(InventoryItem $item, string $priority, ?array $target = null): ?StockRequestApproval
     {
-        $stockRequest = DB::transaction(function () use ($item, $priority): ?StockRequestApproval {
+        $stockRequest = DB::transaction(function () use ($item, $priority, $target): ?StockRequestApproval {
             $lockedItem = InventoryItem::query()
                 ->where('shop_owner_id', $item->shop_owner_id)
                 ->whereKey($item->id)
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            if (! $lockedItem->auto_stock_request_enabled
-                || $lockedItem->available_quantity > $lockedItem->reorder_level) {
+            $target = $this->resolveAutomaticTarget($lockedItem, $target);
+            if (! $target
+                || ! $target['auto_stock_request_enabled']
+                || (int) $target['quantity'] > (int) $target['reorder_level']) {
                 return null;
             }
 
-            $reorderQuantity = max(0, (int) $lockedItem->reorder_quantity);
+            $reorderQuantity = max(0, (int) $target['reorder_quantity']);
             if ($reorderQuantity === 0) {
                 return null;
             }
 
-            $coveredQuantity = $this->openStockRequestQuantity($lockedItem)
-                + $this->openReplenishmentQuantity($lockedItem)
-                + $this->openPurchaseRequestQuantity($lockedItem)
-                + $this->openPurchaseOrderQuantity($lockedItem);
+            $coveredQuantity = $this->openStockRequestQuantity($lockedItem, $target)
+                + $this->openReplenishmentQuantity($lockedItem, $target)
+                + $this->openPurchaseRequestQuantity($lockedItem, $target)
+                + $this->openPurchaseOrderQuantity($lockedItem, $target);
             $quantityNeeded = max(0, $reorderQuantity - $coveredQuantity);
 
             if ($quantityNeeded === 0) {
@@ -95,6 +102,8 @@ class StockRequestApprovalService
             return $this->persistStockRequest($lockedItem, [
                 'shop_owner_id' => $lockedItem->shop_owner_id,
                 'quantity_needed' => $quantityNeeded,
+                'requested_size' => $target['requested_size'],
+                'requested_color' => $target['requested_color'],
                 'priority' => $priority,
                 'request_source' => 'manual',
                 'status' => 'pending',
@@ -115,10 +124,56 @@ class StockRequestApprovalService
         Log::info('Automatic stock request created.', [
             'request_id' => $stockRequest->id,
             'inventory_item_id' => $stockRequest->inventory_item_id,
+            'requested_color' => $stockRequest->requested_color,
+            'requested_size' => $stockRequest->requested_size,
             'quantity_needed' => $stockRequest->quantity_needed,
         ]);
 
         return $stockRequest;
+    }
+
+    /** @return array<string, mixed>|null */
+    private function resolveAutomaticTarget(InventoryItem $item, ?array $requestedTarget): ?array
+    {
+        $target = $requestedTarget ?? ['type' => 'item', 'id' => $item->id];
+        $type = (string) ($target['type'] ?? '');
+        $id = (int) ($target['id'] ?? 0);
+
+        if ($type === 'item' && $id !== (int) $item->id) {
+            return null;
+        }
+
+        if ($type === 'color') {
+            $color = InventoryColorVariant::query()
+                ->where('inventory_item_id', $item->id)
+                ->whereKey($id)
+                ->lockForUpdate()
+                ->first();
+            if (! $color || $color->sizes()->exists()) {
+                return null;
+            }
+        }
+
+        if ($type === 'size') {
+            $size = InventorySize::query()
+                ->where('inventory_item_id', $item->id)
+                ->whereKey($id)
+                ->lockForUpdate()
+                ->first();
+            if (! $size) {
+                return null;
+            }
+        }
+
+        if (! in_array($type, ['item', 'color', 'size'], true)) {
+            return null;
+        }
+
+        $item->unsetRelation('sizes')->unsetRelation('colorVariants');
+
+        return app(InventoryReplenishmentService::class)
+            ->effectiveTargets($item)
+            ->first(fn (array $candidate): bool => $candidate['type'] === $type && (int) $candidate['id'] === $id);
     }
 
     private function persistStockRequest(InventoryItem $inventoryItem, array $data): StockRequestApproval
@@ -151,7 +206,7 @@ class StockRequestApprovalService
         ]);
     }
 
-    private function openStockRequestQuantity(InventoryItem $item): int
+    private function openStockRequestQuantity(InventoryItem $item, array $target): int
     {
         return (int) StockRequestApproval::query()
             ->where('shop_owner_id', $item->shop_owner_id)
@@ -160,11 +215,17 @@ class StockRequestApprovalService
             ->whereDoesntHave('purchaseRequest', function ($query): void {
                 $query->whereIn('status', self::OPEN_PURCHASE_REQUEST_STATUSES);
             })
+            ->get(['quantity_needed', 'requested_color', 'requested_size'])
+            ->filter(fn (StockRequestApproval $request): bool => $this->targetMatches($request, $target))
             ->sum('quantity_needed');
     }
 
-    private function openReplenishmentQuantity(InventoryItem $item): int
+    private function openReplenishmentQuantity(InventoryItem $item, array $target): int
     {
+        if ($target['type'] !== 'item') {
+            return 0;
+        }
+
         return (int) ReplenishmentRequest::query()
             ->where('shop_owner_id', $item->shop_owner_id)
             ->where('inventory_item_id', $item->id)
@@ -180,7 +241,7 @@ class StockRequestApprovalService
             ->sum('quantity_needed');
     }
 
-    private function openPurchaseRequestQuantity(InventoryItem $item): int
+    private function openPurchaseRequestQuantity(InventoryItem $item, array $target): int
     {
         return (int) PurchaseRequest::query()
             ->where('shop_owner_id', $item->shop_owner_id)
@@ -194,10 +255,12 @@ class StockRequestApprovalService
                     $purchaseOrderQuery->whereIn('status', self::OPEN_PURCHASE_ORDER_STATUSES);
                 });
             })
+            ->get(['quantity', 'requested_color', 'requested_size'])
+            ->filter(fn (PurchaseRequest $request): bool => $this->targetMatches($request, $target))
             ->sum('quantity');
     }
 
-    private function openPurchaseOrderQuantity(InventoryItem $item): int
+    private function openPurchaseOrderQuantity(InventoryItem $item, array $target): int
     {
         $itemQuantity = PurchaseOrderItem::query()
             ->with('receiptItems.receipt')
@@ -207,6 +270,7 @@ class StockRequestApprovalService
                     ->whereIn('status', self::OPEN_PURCHASE_ORDER_STATUSES);
             })
             ->get()
+            ->filter(fn (PurchaseOrderItem $purchaseOrderItem): bool => $this->targetMatches($purchaseOrderItem, $target))
             ->sum(function (PurchaseOrderItem $purchaseOrderItem): int {
                 $acceptedQuantity = $purchaseOrderItem->receiptItems
                     ->filter(fn ($receiptItem) => $receiptItem->receipt?->status === 'posted')
@@ -220,7 +284,14 @@ class StockRequestApprovalService
             ->where('inventory_item_id', $item->id)
             ->whereIn('status', self::OPEN_PURCHASE_ORDER_STATUSES)
             ->whereDoesntHave('items')
-            ->get(['quantity', 'received_quantity', 'defective_quantity'])
+            ->get([
+                'quantity',
+                'received_quantity',
+                'defective_quantity',
+                'requested_color',
+                'requested_size',
+            ])
+            ->filter(fn (PurchaseOrder $purchaseOrder): bool => $this->targetMatches($purchaseOrder, $target))
             ->sum(function (PurchaseOrder $purchaseOrder): int {
                 $receivedQuantity = (int) ($purchaseOrder->received_quantity ?? 0);
                 $defectiveQuantity = (int) ($purchaseOrder->defective_quantity ?? 0);
@@ -230,6 +301,14 @@ class StockRequestApprovalService
             });
 
         return (int) $itemQuantity + (int) $legacyQuantity;
+    }
+
+    private function targetMatches(object $record, array $target): bool
+    {
+        return InventoryVariantIdentity::normalizeColor($record->requested_color ?? null)
+            === ($target['requested_color'] ?? null)
+            && InventoryVariantIdentity::normalizeSize($record->requested_size ?? null)
+                === ($target['requested_size'] ?? null);
     }
 
     /**
