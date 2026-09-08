@@ -195,20 +195,7 @@ export default function StockMovement() {
 			<Head title="Stock Movement - Solespace" />
 
 			<div className="p-6 space-y-6">
-				<div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-					<h1 className="sr-only">Stock Movement</h1>
-					<div className="flex flex-wrap items-center justify-end gap-3">
-						<button
-							type="button"
-							onClick={() => {
-								void loadMovements();
-							}}
-							className="px-3 py-1 text-xs font-semibold rounded-full border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
-						>
-							Refresh
-						</button>
-					</div>
-				</div>
+				<h1 className="sr-only">Stock Movement</h1>
 
 				<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
 					<MetricCard title="Stock IN" value={stockInCount} description="Purchase and restock entries" icon={ArrowUpIcon} color="success" />

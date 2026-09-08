@@ -991,7 +991,7 @@ export default function UploadInventory() {
           <div className="flex items-center justify-between">
             <h1 className="sr-only">Upload Stocks</h1>
             {!ownerMode && (
-              <div className="flex items-center gap-3">
+              <div className="ml-auto flex items-center gap-3">
                 <button
                   type="button"
                   onClick={() => {
