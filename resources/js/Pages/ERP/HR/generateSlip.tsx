@@ -1629,6 +1629,36 @@ export default function GenerateSlip() {
 		<div className="space-y-6">
 			<h1 className="sr-only">Generate Payslip</h1>
 
+			{/* Release Authorization Cards */}
+			<div className="space-y-3">
+				<div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+					<DashboardMetricCard
+						label="Checker Approved"
+						value={isLoadingGovernanceStatus
+							? 'Loading…'
+							: `${governanceStatus.checkerApproved}/${governanceStatus.totalPayrolls} payrolls`}
+						description={governanceStatus.requireChecker
+							? `${governanceStatus.awaitingChecker} awaiting checker sign-off`
+							: 'Checker step is not required'}
+						context="Release"
+						icon={CheckCircleIcon}
+					/>
+					<DashboardMetricCard
+						label="Final Approver Required"
+						value={isLoadingGovernanceStatus
+							? 'Loading…'
+							: governanceStatus.requireFinalApprover
+							? `${governanceStatus.awaitingFinalApprover} awaiting final release`
+							: 'Not required'}
+						description={isLoadingGovernanceStatus
+							? 'Fetching governance checks...'
+							: `${governanceStatus.paidPayrolls} already paid`}
+						context="Release"
+						icon={LockIcon}
+					/>
+				</div>
+			</div>
+
 			{/* 13th-Month Controls */}
 			<div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm p-6">
 				<div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -1657,36 +1687,6 @@ export default function GenerateSlip() {
 							{ownerMode ? 'Finance workflow required' : isProcessingThirteenth ? 'Processing…' : 'Run 13th-Month Release'}
 						</button>
 					</div>
-				</div>
-			</div>
-
-			{/* Release Authorization Cards */}
-			<div className="space-y-3">
-				<div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-					<DashboardMetricCard
-						label="Checker Approved"
-						value={isLoadingGovernanceStatus
-							? 'Loading…'
-							: `${governanceStatus.checkerApproved}/${governanceStatus.totalPayrolls} payrolls`}
-						description={governanceStatus.requireChecker
-							? `${governanceStatus.awaitingChecker} awaiting checker sign-off`
-							: 'Checker step is not required'}
-						context="Release"
-						icon={CheckCircleIcon}
-					/>
-					<DashboardMetricCard
-						label="Final Approver Required"
-						value={isLoadingGovernanceStatus
-							? 'Loading…'
-							: governanceStatus.requireFinalApprover
-							? `${governanceStatus.awaitingFinalApprover} awaiting final release`
-							: 'Not required'}
-						description={isLoadingGovernanceStatus
-							? 'Fetching governance checks...'
-							: `${governanceStatus.paidPayrolls} already paid`}
-						context="Release"
-						icon={LockIcon}
-					/>
 				</div>
 			</div>
 
