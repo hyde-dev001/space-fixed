@@ -14,14 +14,17 @@ describe('generate payslip layout', () => {
 		expect(source).not.toContain('readiness for release controls');
 	});
 
-	it('places the employee table after the authorization cards and keeps filters in its header', () => {
+	it('places the authorization cards above the release controls and employee table', () => {
 		const source = readFileSync(resolve(sourcePath), 'utf8');
 		const authorizationCardsIndex = source.indexOf('{/* Release Authorization Cards */}');
+		const thirteenthMonthControlsIndex = source.indexOf('{/* 13th-Month Controls */}');
 		const employeeTableIndex = source.indexOf('{/* Employee Table */}');
 		const filtersIndex = source.indexOf('className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-5"');
 
 		expect(authorizationCardsIndex).toBeGreaterThanOrEqual(0);
+		expect(thirteenthMonthControlsIndex).toBeGreaterThan(authorizationCardsIndex);
 		expect(employeeTableIndex).toBeGreaterThan(authorizationCardsIndex);
+		expect(employeeTableIndex).toBeGreaterThan(thirteenthMonthControlsIndex);
 		expect(filtersIndex).toBeGreaterThan(employeeTableIndex);
 	});
 });
