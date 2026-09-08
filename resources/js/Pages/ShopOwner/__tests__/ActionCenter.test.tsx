@@ -124,8 +124,10 @@ describe("Shop Owner Approval Center", () => {
     render(<ActionCenter />);
 
     expect(screen.getByRole("heading", { name: "Approval Center" })).toBeInTheDocument();
-    expect(screen.getByText("1 approval requires your decision")).toBeInTheDocument();
+    expect(screen.queryByText("1 approval requires your decision")).not.toBeInTheDocument();
     expect(screen.getByText("Approvals requiring your decision")).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "Approval Center views" })).toHaveClass("justify-end");
+    expect(screen.getByRole("link", { name: "Pending approvals: 1" })).toBeInTheDocument();
     expect(screen.getByText("Expense", { exact: true })).toHaveClass("bg-gray-100", "text-gray-700");
     expect(screen.getByText("Expense", { exact: true })).not.toHaveClass("bg-blue-50", "text-blue-700");
     expect(screen.queryByText("Owner Action Center")).not.toBeInTheDocument();
@@ -139,10 +141,24 @@ describe("Shop Owner Approval Center", () => {
   it("uses neutral treatments for approval navigation and refresh controls", () => {
     render(<ActionCenter />);
 
-    expect(screen.getByRole("link", { name: /^Pending$/i })).toHaveClass("bg-gray-950", "text-white");
-    expect(screen.getByRole("link", { name: /^Pending$/i })).not.toHaveClass("bg-blue-600");
+    expect(screen.getByRole("link", { name: /Pending approvals: 1/i })).toHaveClass("bg-gray-950", "text-white");
+    expect(screen.getByRole("link", { name: /Pending approvals: 1/i })).not.toHaveClass("bg-blue-600");
     expect(screen.getByRole("button", { name: /refresh approval center/i })).toHaveClass("focus-visible:ring-gray-500");
     expect(screen.getByRole("button", { name: /refresh approval center/i })).not.toHaveClass("focus-visible:ring-blue-500");
+  });
+
+  it("updates the pending count badge without rendering the approval summary sentence", () => {
+    mocks.props = {
+      ...mocks.props,
+      ownerActionCenter: result({
+        pagination: { page: 1, per_page: 20, total: 2, last_page: 1 },
+      }),
+    };
+
+    render(<ActionCenter />);
+
+    expect(screen.getByRole("link", { name: "Pending approvals: 2" })).toBeInTheDocument();
+    expect(screen.queryByText("2 approvals require your decision")).not.toBeInTheDocument();
   });
 
   it("renders owner decisions with all supported approval filters and review-only rows", async () => {

@@ -143,17 +143,6 @@ export default function Ecommerce() {
     <Layout>
       <Head title="Dashboard - Shop Owner" />
       <div className="space-y-6">
-        <div>
-          <h3 className="text-2xl font-bold text-gray-800 dark:text-white/90">
-            Dashboard
-          </h3>
-          <p className="mt-1 text-gray-500 dark:text-gray-400">
-            {hideOrderMetrics
-              ? "Overview of your shop's repair performance"
-              : "Overview of your shop's ecommerce performance"}
-          </p>
-        </div>
-
       <EcommerceMetrics
         stats={stats}
         showOrdersMetric={!hideOrderMetrics}
