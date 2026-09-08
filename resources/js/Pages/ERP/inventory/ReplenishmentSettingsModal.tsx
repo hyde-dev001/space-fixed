@@ -1,4 +1,5 @@
 import React, { FormEvent, useEffect, useMemo, useState } from 'react';
+import Swal from 'sweetalert2';
 import { Modal } from '@/components/ui/modal';
 import { inventoryItemAPI } from '@/services/inventoryAPI';
 import type {
@@ -189,6 +190,13 @@ export default function ReplenishmentSettingsModal({
                     reorder_level,
                     reorder_quantity,
                 })),
+            });
+            await Swal.fire({
+                icon: 'success',
+                title: 'Settings saved',
+                text: 'Automatic replenishment settings updated successfully.',
+                timer: 1500,
+                showConfirmButton: false,
             });
             onSaved(response.item);
         } catch (requestError) {

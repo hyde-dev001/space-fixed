@@ -1,14 +1,19 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ReplenishmentSettingsModal from '../ReplenishmentSettingsModal';
 import type { InventoryItem } from '@/types/inventory';
 
 const updateReplenishmentSettings = vi.hoisted(() => vi.fn());
+const swalFire = vi.hoisted(() => vi.fn());
 
 vi.mock('@/services/inventoryAPI', () => ({
     inventoryItemAPI: {
         updateReplenishmentSettings,
     },
+}));
+
+vi.mock('sweetalert2', () => ({
+    default: { fire: swalFire },
 }));
 
 const item = {
@@ -53,6 +58,12 @@ const item = {
 } as InventoryItem;
 
 describe('ReplenishmentSettingsModal', () => {
+    beforeEach(() => {
+        updateReplenishmentSettings.mockReset();
+        swalFire.mockReset();
+        swalFire.mockResolvedValue({});
+    });
+
     it('applies one policy to every actual variant and saves explicit targets', async () => {
         updateReplenishmentSettings.mockResolvedValue({ item });
         const onSaved = vi.fn();
@@ -77,6 +88,13 @@ describe('ReplenishmentSettingsModal', () => {
             ],
         }));
         expect(onSaved).toHaveBeenCalledWith(item);
+        expect(swalFire).toHaveBeenCalledWith(expect.objectContaining({
+            icon: 'success',
+            title: 'Settings saved',
+            text: 'Automatic replenishment settings updated successfully.',
+            timer: 1500,
+            showConfirmButton: false,
+        }));
     });
 
     it('limits a color bulk action to that color sizes', () => {
