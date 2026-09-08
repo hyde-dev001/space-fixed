@@ -86,7 +86,6 @@ export default function ActionCenter() {
     ? history?.pagination.per_page ?? props.per_page ?? 20
     : result?.pagination.per_page ?? props.per_page ?? 20;
   const lastPage = view === "history" ? history?.pagination.last_page ?? 1 : result?.pagination.last_page ?? 1;
-  const pendingApprovalCount = result?.pagination.total ?? 0;
   const rawApproval = typeof window === "undefined"
     ? null
     : new URLSearchParams(window.location.search).get("approval");
@@ -198,17 +197,12 @@ export default function ActionCenter() {
             <a
               href={actionCenterUrl(bucket, "all", 1, result?.pagination.per_page ?? 20)}
               aria-current={view === "pending" ? "page" : undefined}
-              aria-label={pendingApprovalCount > 0 ? `Pending approvals: ${pendingApprovalCount}` : "Pending"}
+              aria-label="Pending"
               className={view === "pending"
                 ? "inline-flex min-h-11 items-center gap-2 rounded-lg bg-gray-950 px-4 py-2 text-sm font-semibold text-white hover:bg-black focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-500 focus-visible:ring-offset-2 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-100 dark:focus-visible:ring-gray-400 dark:focus-visible:ring-offset-gray-900"
                 : "inline-flex min-h-11 items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-500 focus-visible:ring-offset-2 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/[0.06] dark:focus-visible:ring-offset-gray-900"}
             >
               Pending
-              {pendingApprovalCount > 0 && (
-                <span aria-hidden="true" className="inline-flex min-h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 text-xs font-bold leading-5 text-white">
-                  {pendingApprovalCount}
-                </span>
-              )}
             </a>
             <a
               href={actionCenterUrl(bucket, "all", 1, history?.pagination.per_page ?? 20, "history")}
@@ -259,6 +253,7 @@ export default function ActionCenter() {
             availableCoverageSources={view === "history"
               ? props.approvalHistoryCoverageSources ?? props.approvalCoverageSources
               : props.approvalCoverageSources}
+            coverageCounts={view === "history" ? history?.coverage_counts : result?.coverage_counts}
             source={source}
             perPage={perPage}
             view={view}

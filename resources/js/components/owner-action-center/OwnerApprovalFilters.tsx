@@ -89,11 +89,12 @@ interface OwnerApprovalFiltersProps {
   result: OwnerActionCenterResult | null;
   availableResult?: OwnerActionCenterResult | null;
   availableCoverageSources?: OwnerAttentionCoverageSource[];
+  coverageCounts?: Partial<Record<OwnerAttentionCoverageSource, number>>;
   source: OwnerActionCenterCoverage;
   perPage: number;
   view?: OwnerApprovalCenterView;
 }
-export default function OwnerApprovalFilters({ result, availableResult, availableCoverageSources, source, perPage, view = "pending" }: OwnerApprovalFiltersProps) {
+export default function OwnerApprovalFilters({ result, availableResult, availableCoverageSources, coverageCounts, source, perPage, view = "pending" }: OwnerApprovalFiltersProps) {
   if (result === null) return null;
 
   const filters = availableFilters(availableResult ?? result, availableCoverageSources);
@@ -103,17 +104,24 @@ export default function OwnerApprovalFilters({ result, availableResult, availabl
     <nav aria-label="Approval Center source filters" className="mt-5 flex flex-wrap gap-2">
       {filters.map((filter) => {
         const active = source === filter.key;
+        const salaryAdjustmentCount = filter.key === "salary_changes" ? coverageCounts?.salary_changes ?? 0 : 0;
 
         return (
           <a
             key={filter.key}
             href={actionCenterUrl(result.bucket, filter.key, 1, perPage, view)}
             aria-current={active ? "page" : undefined}
+            aria-label={salaryAdjustmentCount > 0 ? `${filter.label}: ${salaryAdjustmentCount}` : filter.label}
             className={active
-              ? "inline-flex min-h-11 items-center rounded-full bg-gray-950 px-3 py-1.5 text-sm font-semibold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 focus-visible:ring-offset-2"
-              : "inline-flex min-h-11 items-center rounded-full border border-gray-300 px-3 py-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 focus-visible:ring-offset-2 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/[0.06]"}
+              ? "inline-flex min-h-11 items-center gap-2 rounded-full bg-gray-950 px-3 py-1.5 text-sm font-semibold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 focus-visible:ring-offset-2"
+              : "inline-flex min-h-11 items-center gap-2 rounded-full border border-gray-300 px-3 py-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 focus-visible:ring-offset-2 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/[0.06]"}
           >
             {filter.label}
+            {salaryAdjustmentCount > 0 && (
+              <span aria-hidden="true" className="inline-flex min-h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 text-xs font-bold leading-5 text-white">
+                {salaryAdjustmentCount}
+              </span>
+            )}
           </a>
         );
       })}
