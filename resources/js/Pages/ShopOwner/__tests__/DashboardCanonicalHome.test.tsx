@@ -163,6 +163,8 @@ describe("canonical shop owner home approval summary", () => {
     render(<Dashboard />);
 
     expect(await screen.findByText("Existing dashboard metrics")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Dashboard" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Overview of your shop's/i)).not.toBeInTheDocument();
     expect(screen.queryByText("Required Actions \u2014 Coming in Phase 3")).not.toBeInTheDocument();
     expect(screen.queryByText(/Urgent Exceptions/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Waiting on Others/i)).not.toBeInTheDocument();
