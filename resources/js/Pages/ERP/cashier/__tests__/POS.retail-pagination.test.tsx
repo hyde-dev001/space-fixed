@@ -4,10 +4,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const usePageMock = vi.fn();
 const axiosGetMock = vi.fn();
+const axiosPostMock = vi.fn();
+const swalFireMock = vi.fn();
 
 vi.mock('axios', () => ({
   default: {
     get: (...args: unknown[]) => axiosGetMock(...args),
+    post: (...args: unknown[]) => axiosPostMock(...args),
+  },
+}));
+
+vi.mock('sweetalert2', () => ({
+  default: {
+    fire: (...args: unknown[]) => swalFireMock(...args),
   },
 }));
 
@@ -30,10 +39,40 @@ const retailProducts = Array.from({ length: 11 }, (_, index) => ({
   variants: [],
 }));
 
+const canonicalRetailProduct = {
+  id: 101,
+  name: 'Canonical Retail Product',
+  price: 1000,
+  stock_quantity: 16,
+  main_image: null,
+  variants: [
+    {
+      id: 501,
+      size: '8',
+      color: 'Black',
+      quantity: 4,
+      inventory_item_id: 1001,
+      inventory_color_variant_id: 1101,
+      inventory_size_id: 1201,
+    },
+    {
+      id: 502,
+      size: '9',
+      color: 'Black',
+      quantity: 12,
+      inventory_item_id: 1001,
+      inventory_color_variant_id: 1101,
+      inventory_size_id: 1202,
+    },
+  ],
+};
+
 describe('Cashier retail catalog pagination', () => {
   beforeEach(() => {
     usePageMock.mockReset();
     axiosGetMock.mockReset();
+    axiosPostMock.mockReset();
+    swalFireMock.mockReset();
 
     usePageMock.mockReturnValue({
       props: {
@@ -54,6 +93,15 @@ describe('Cashier retail catalog pagination', () => {
 
       return Promise.resolve({ data: { data: [] } });
     });
+    axiosPostMock.mockResolvedValue({
+      data: {
+        data: {
+          id: 900,
+          transaction_no: 'RPOS-900',
+        },
+      },
+    });
+    swalFireMock.mockResolvedValue({ isConfirmed: true });
   });
 
   afterEach(() => {
@@ -82,5 +130,67 @@ describe('Cashier retail catalog pagination', () => {
     expect(await screen.findByText('Retail Product 10', { exact: true })).toBeInTheDocument();
     expect(screen.queryByText('Retail Product 1', { exact: true })).not.toBeInTheDocument();
     expect(pagination).toHaveTextContent('Showing 10 to 11 of 11 products');
+  });
+  it('shows the selected canonical target stock and refreshes it without a hard reload', async () => {
+    const refreshedProduct = {
+      ...canonicalRetailProduct,
+      stock_quantity: 6,
+      variants: canonicalRetailProduct.variants.map((variant) => (
+        variant.id === 502 ? { ...variant, quantity: 2 } : variant
+      )),
+    };
+
+    axiosGetMock
+      .mockImplementationOnce(() => Promise.resolve({ data: { data: [canonicalRetailProduct] } }))
+      .mockImplementationOnce(() => Promise.resolve({ data: { data: [refreshedProduct] } }));
+
+    render(<CashierPOS />);
+
+    await screen.findByText('Canonical Retail Product', { exact: true });
+    expect(screen.getByText('4 in stock', { exact: true })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByTitle('Select size for Canonical Retail Product'), {
+      target: { value: '9' },
+    });
+
+    expect(screen.getByText('12 in stock', { exact: true })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh', exact: true }));
+
+    await waitFor(() => expect(screen.getByText('2 in stock', { exact: true })).toBeInTheDocument());
+    expect(axiosGetMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('submits the selected catalog and inventory target IDs during checkout', async () => {
+    axiosGetMock.mockImplementation(() => Promise.resolve({
+      data: { data: [canonicalRetailProduct] },
+    }));
+
+    render(<CashierPOS />);
+
+    await screen.findByText('Canonical Retail Product', { exact: true });
+    fireEvent.click(screen.getByRole('button', { name: 'Add', exact: true }));
+    fireEvent.change(screen.getByTitle('Retail cash received'), {
+      target: { value: '1000' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Pay', exact: true }));
+
+    await waitFor(() => expect(axiosPostMock).toHaveBeenCalledWith(
+      '/api/retail-pos/checkout',
+      expect.objectContaining({
+        items: [
+          expect.objectContaining({
+            product_id: 101,
+            variant_id: 501,
+            inventory_color_variant_id: 1101,
+            inventory_size_id: 1201,
+            size: '8',
+            color: 'Black',
+          }),
+        ],
+      }),
+      expect.anything(),
+    ));
+    await waitFor(() => expect(axiosGetMock).toHaveBeenCalledTimes(2));
   });
 });

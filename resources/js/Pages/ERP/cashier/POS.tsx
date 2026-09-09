@@ -162,6 +162,9 @@ type RetailProductVariant = {
 	color: string;
 	stock: number;
 	image?: string | null;
+	inventoryItemId?: number | null;
+	inventoryColorVariantId?: number | null;
+	inventorySizeId?: number | null;
 };
 
 type RetailCartItem = {
@@ -175,6 +178,9 @@ type RetailCartItem = {
 	variantId?: number | null;
 	size?: string | null;
 	color?: string | null;
+	inventoryItemId?: number | null;
+	inventoryColorVariantId?: number | null;
+	inventorySizeId?: number | null;
 };
 
 const OPEN_REFUND_STATUSES = ["requested", "approved", "processing"];
@@ -894,6 +900,9 @@ const PointOfSalePage = () => {
 						color: String(variant?.color ?? "").trim(),
 						stock: Number(variant?.quantity ?? 0),
 						image: variant?.image ? String(variant.image) : null,
+						inventoryItemId: Number(variant?.inventory_item_id ?? 0) || null,
+						inventoryColorVariantId: Number(variant?.inventory_color_variant_id ?? 0) || null,
+						inventorySizeId: Number(variant?.inventory_size_id ?? 0) || null,
 					})).filter((variant: RetailProductVariant) => variant.id > 0)
 					: [],
 			})).filter((row: RetailCatalogProduct) => row.id > 0);
@@ -2451,6 +2460,9 @@ const PointOfSalePage = () => {
 						variantId: selectedVariant?.id ?? null,
 						size: selectedVariant?.size ?? null,
 						color: selectedVariant?.color ?? null,
+						inventoryItemId: selectedVariant?.inventoryItemId ?? null,
+						inventoryColorVariantId: selectedVariant?.inventoryColorVariantId ?? null,
+						inventorySizeId: selectedVariant?.inventorySizeId ?? null,
 					},
 				];
 			}
@@ -2469,6 +2481,9 @@ const PointOfSalePage = () => {
 					size: selectedVariant?.size ?? null,
 					color: selectedVariant?.color ?? null,
 					image: selectedVariant?.image ?? product.image ?? null,
+					inventoryItemId: selectedVariant?.inventoryItemId ?? null,
+					inventoryColorVariantId: selectedVariant?.inventoryColorVariantId ?? null,
+					inventorySizeId: selectedVariant?.inventorySizeId ?? null,
 				}
 				: item);
 		});
@@ -2519,6 +2534,9 @@ const PointOfSalePage = () => {
 						variantId: matchedVariant?.id ?? null,
 						size: matchedVariant?.size ?? null,
 						color: matchedVariant?.color ?? null,
+						inventoryItemId: matchedVariant?.inventoryItemId ?? null,
+						inventoryColorVariantId: matchedVariant?.inventoryColorVariantId ?? null,
+						inventorySizeId: matchedVariant?.inventorySizeId ?? null,
 						stock: availableStock,
 						qty: Math.min(item.qty, Math.max(1, availableStock)),
 						unitPrice: product.price,
@@ -2543,6 +2561,9 @@ const PointOfSalePage = () => {
 						variantId: matchedVariant?.id ?? null,
 						size: matchedVariant?.size ?? null,
 						color: matchedVariant?.color ?? null,
+						inventoryItemId: matchedVariant?.inventoryItemId ?? null,
+						inventoryColorVariantId: matchedVariant?.inventoryColorVariantId ?? null,
+						inventorySizeId: matchedVariant?.inventorySizeId ?? null,
 						image: matchedVariant?.image ?? product.image ?? null,
 					};
 				});
@@ -2781,6 +2802,9 @@ const PointOfSalePage = () => {
 						unit_price: Number(item.unitPrice.toFixed(2)),
 						size: item.size || null,
 						color: item.color || null,
+						variant_id: item.variantId ?? null,
+						inventory_color_variant_id: item.inventoryColorVariantId ?? null,
+						inventory_size_id: item.inventorySizeId ?? null,
 						image: item.image || null,
 					})),
 					payment_lines: [
