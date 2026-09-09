@@ -4181,7 +4181,10 @@ html.dark:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) :is(.swal2-warning
   [class^='bg-success-'], [class*=' bg-success-'], [class~='bg-success'],
   [class^='bg-warning-'], [class*=' bg-warning-'], [class~='bg-warning'],
   [class^='bg-meta-'], [class*=' bg-meta-'], [class^='bg-slate-'], [class*=' bg-slate-']
-):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):not(:disabled) {
+):not(
+  .erp-modal-backdrop,
+  [data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *
+):not(:disabled) {
   background-color: var(--erp-surface-muted) !important;
   border-color: var(--erp-border) !important;
   color: var(--erp-text) !important;
@@ -4224,6 +4227,7 @@ html.dark:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) :is(.swal2-warning
 }
 
 #app .erp-theme :is(button, a[href], [role='button'], [role='tab'], [role='menuitem']):not(
+  .erp-modal-backdrop,
   [data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *
 ):is(
   [class^='bg-rose-'], [class*=' bg-rose-'], [class^='bg-pink-'], [class*=' bg-pink-'],
@@ -4944,12 +4948,12 @@ html:has(#app .erp-theme) .erp-modal-backdrop {
   background: rgba(0, 0, 0, 0.28) !important;
   background-color: rgba(0, 0, 0, 0.28) !important;
   background-image: none !important;
-  backdrop-filter: blur(2px) !important;
   -webkit-backdrop-filter: blur(2px) !important;
+  backdrop-filter: blur(2px) !important;
 }
 
 html:has(#app .erp-theme) body.swal2-shown:not(.swal2-toast-shown) .swal2-container {
   --swal2-backdrop: rgba(0, 0, 0, 0.28);
-  backdrop-filter: blur(2px);
   -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
 }
