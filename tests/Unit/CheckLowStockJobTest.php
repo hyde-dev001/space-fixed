@@ -605,4 +605,303 @@ class CheckLowStockJobTest extends TestCase
             'is_auto_generated' => true,
         ]);
     }
+    public function test_low_to_out_transition_resolves_the_previous_condition_only_for_that_target(): void
+    {
+        $shopOwner = ShopOwner::factory()->create();
+        $item = InventoryItem::factory()->create(['shop_owner_id' => $shopOwner->id, 'available_quantity' => 0]);
+        $color = InventoryColorVariant::create([
+            'inventory_item_id' => $item->id,
+            'color_name' => 'Black',
+            'quantity' => 3,
+        ]);
+        $size = InventorySize::create([
+            'inventory_item_id' => $item->id,
+            'inventory_color_variant_id' => $color->id,
+            'size' => '8',
+            'size_system' => 'US',
+            'quantity' => 3,
+            'auto_stock_request_enabled' => false,
+            'reorder_level' => 5,
+        ]);
+        $job = new CheckLowStockJob($shopOwner->id);
+
+        $job->handle();
+        $job->handle();
+        $size->update(['quantity' => 0]);
+        $job->handle();
+        $job->handle();
+
+        $this->assertDatabaseHas('inventory_alerts', [
+            'inventory_item_id' => $item->id,
+            'inventory_color_variant_id' => $color->id,
+            'inventory_size_id' => $size->id,
+            'alert_type' => 'low_stock',
+            'is_resolved' => true,
+        ]);
+        $this->assertDatabaseHas('inventory_alerts', [
+            'inventory_item_id' => $item->id,
+            'inventory_color_variant_id' => $color->id,
+            'inventory_size_id' => $size->id,
+            'alert_type' => 'out_of_stock',
+            'is_resolved' => false,
+        ]);
+        $this->assertSame(1, InventoryAlert::where('inventory_item_id', $item->id)->where('is_resolved', false)->count());
+    }
+
+    public function test_out_to_low_transition_resolves_the_previous_condition_only_for_that_target(): void
+    {
+        $shopOwner = ShopOwner::factory()->create();
+        $item = InventoryItem::factory()->create(['shop_owner_id' => $shopOwner->id, 'available_quantity' => 0]);
+        $color = InventoryColorVariant::create([
+            'inventory_item_id' => $item->id,
+            'color_name' => 'Black',
+            'quantity' => 0,
+        ]);
+        $size = InventorySize::create([
+            'inventory_item_id' => $item->id,
+            'inventory_color_variant_id' => $color->id,
+            'size' => '8',
+            'size_system' => 'US',
+            'quantity' => 0,
+            'auto_stock_request_enabled' => false,
+            'reorder_level' => 5,
+        ]);
+        $job = new CheckLowStockJob($shopOwner->id);
+
+        $job->handle();
+        $job->handle();
+        $size->update(['quantity' => 3]);
+        $job->handle();
+        $job->handle();
+
+        $this->assertDatabaseHas('inventory_alerts', [
+            'inventory_item_id' => $item->id,
+            'inventory_color_variant_id' => $color->id,
+            'inventory_size_id' => $size->id,
+            'alert_type' => 'out_of_stock',
+            'is_resolved' => true,
+        ]);
+        $this->assertDatabaseHas('inventory_alerts', [
+            'inventory_item_id' => $item->id,
+            'inventory_color_variant_id' => $color->id,
+            'inventory_size_id' => $size->id,
+            'alert_type' => 'low_stock',
+            'is_resolved' => false,
+        ]);
+        $this->assertSame(1, InventoryAlert::where('inventory_item_id', $item->id)->where('is_resolved', false)->count());
+    }
+
+    public function test_normal_recovery_does_not_resolve_an_unrelated_variant_alert(): void
+    {
+        $shopOwner = ShopOwner::factory()->create();
+        $item = InventoryItem::factory()->create(['shop_owner_id' => $shopOwner->id, 'available_quantity' => 0]);
+        $black = InventoryColorVariant::create(['inventory_item_id' => $item->id, 'color_name' => 'Black', 'quantity' => 3]);
+        $white = InventoryColorVariant::create(['inventory_item_id' => $item->id, 'color_name' => 'White', 'quantity' => 3]);
+        $blackSize = InventorySize::create([
+            'inventory_item_id' => $item->id,
+            'inventory_color_variant_id' => $black->id,
+            'size' => '8',
+            'size_system' => 'US',
+            'quantity' => 3,
+            'auto_stock_request_enabled' => false,
+            'reorder_level' => 5,
+        ]);
+        $whiteSize = InventorySize::create([
+            'inventory_item_id' => $item->id,
+            'inventory_color_variant_id' => $white->id,
+            'size' => '8',
+            'size_system' => 'US',
+            'quantity' => 3,
+            'auto_stock_request_enabled' => false,
+            'reorder_level' => 5,
+        ]);
+        $job = new CheckLowStockJob($shopOwner->id);
+
+        $job->handle();
+        $blackSize->update(['quantity' => 6]);
+        $job->handle();
+
+        $this->assertDatabaseHas('inventory_alerts', [
+            'inventory_color_variant_id' => $black->id,
+            'inventory_size_id' => $blackSize->id,
+            'is_resolved' => true,
+        ]);
+        $this->assertDatabaseHas('inventory_alerts', [
+            'inventory_color_variant_id' => $white->id,
+            'inventory_size_id' => $whiteSize->id,
+            'is_resolved' => false,
+        ]);
+    }
+
+    public function test_mixed_color_targets_create_separate_alerts_without_a_parent_alert(): void
+    {
+        $shopOwner = ShopOwner::factory()->create();
+        $item = InventoryItem::factory()->create(['shop_owner_id' => $shopOwner->id, 'available_quantity' => 0]);
+        $black = InventoryColorVariant::create(['inventory_item_id' => $item->id, 'color_name' => 'Black', 'quantity' => 0]);
+        $white = InventoryColorVariant::create(['inventory_item_id' => $item->id, 'color_name' => 'White', 'quantity' => 0]);
+        $blackSize = InventorySize::create([
+            'inventory_item_id' => $item->id,
+            'inventory_color_variant_id' => $black->id,
+            'size' => '8',
+            'size_system' => 'US',
+            'quantity' => 0,
+            'auto_stock_request_enabled' => false,
+            'reorder_level' => 5,
+        ]);
+
+        (new CheckLowStockJob($shopOwner->id))->handle();
+
+        $this->assertDatabaseHas('inventory_alerts', [
+            'inventory_item_id' => $item->id,
+            'inventory_color_variant_id' => $black->id,
+            'inventory_size_id' => $blackSize->id,
+            'alert_type' => 'out_of_stock',
+            'is_resolved' => false,
+        ]);
+        $this->assertDatabaseHas('inventory_alerts', [
+            'inventory_item_id' => $item->id,
+            'inventory_color_variant_id' => $white->id,
+            'inventory_size_id' => null,
+            'alert_type' => 'out_of_stock',
+            'is_resolved' => false,
+        ]);
+        $this->assertDatabaseMissing('inventory_alerts', [
+            'inventory_item_id' => $item->id,
+            'inventory_color_variant_id' => null,
+            'inventory_size_id' => null,
+        ]);
+    }
+
+    public function test_variant_automatic_request_subtracts_only_exact_open_incoming_supply(): void
+    {
+        $shopOwner = ShopOwner::factory()->create();
+        $requester = User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $supplier = Supplier::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $item = InventoryItem::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'available_quantity' => 0,
+        ]);
+        $black = InventoryColorVariant::create(['inventory_item_id' => $item->id, 'color_name' => 'Black', 'quantity' => 3]);
+        $white = InventoryColorVariant::create(['inventory_item_id' => $item->id, 'color_name' => 'White', 'quantity' => 20]);
+        $blackEight = InventorySize::create([
+            'inventory_item_id' => $item->id,
+            'inventory_color_variant_id' => $black->id,
+            'size' => '8',
+            'size_system' => 'US',
+            'quantity' => 3,
+            'auto_stock_request_enabled' => true,
+            'reorder_level' => 5,
+            'reorder_quantity' => 40,
+        ]);
+        InventorySize::create([
+            'inventory_item_id' => $item->id,
+            'inventory_color_variant_id' => $black->id,
+            'size' => '9',
+            'size_system' => 'US',
+            'quantity' => 20,
+            'auto_stock_request_enabled' => true,
+            'reorder_level' => 5,
+            'reorder_quantity' => 40,
+        ]);
+        InventorySize::create([
+            'inventory_item_id' => $item->id,
+            'inventory_color_variant_id' => $white->id,
+            'size' => '8',
+            'size_system' => 'US',
+            'quantity' => 20,
+            'auto_stock_request_enabled' => true,
+            'reorder_level' => 5,
+            'reorder_quantity' => 40,
+        ]);
+
+        StockRequestApproval::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'inventory_item_id' => $item->id,
+            'requested_color' => 'BLACK',
+            'requested_size' => 'US 8',
+            'quantity_needed' => 5,
+            'status' => 'pending',
+        ]);
+        StockRequestApproval::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'inventory_item_id' => $item->id,
+            'requested_color' => 'black',
+            'requested_size' => 'US 9',
+            'quantity_needed' => 50,
+            'status' => 'pending',
+        ]);
+        ReplenishmentRequest::create([
+            'request_number' => 'RR-UNSCOPED-001',
+            'shop_owner_id' => $shopOwner->id,
+            'inventory_item_id' => $item->id,
+            'product_name' => $item->name,
+            'sku_code' => $item->sku,
+            'quantity_needed' => 100,
+            'priority' => 'medium',
+            'status' => 'pending',
+            'requested_by' => $requester->id,
+            'requested_date' => now(),
+        ]);
+        PurchaseRequest::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'inventory_item_id' => $item->id,
+            'requested_color' => 'black',
+            'requested_size' => 'US 8',
+            'quantity' => 10,
+            'status' => 'pending_finance',
+            'requested_by' => $requester->id,
+        ]);
+        PurchaseRequest::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'inventory_item_id' => $item->id,
+            'requested_color' => 'white',
+            'requested_size' => 'US 8',
+            'quantity' => 100,
+            'status' => 'pending_finance',
+            'requested_by' => $requester->id,
+        ]);
+        $purchaseOrder = PurchaseOrder::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'supplier_id' => $supplier->id,
+            'inventory_item_id' => $item->id,
+            'status' => 'partially_received',
+            'ordered_by' => $requester->id,
+        ]);
+        $matchingPoItem = PurchaseOrderItem::factory()->create([
+            'purchase_order_id' => $purchaseOrder->id,
+            'inventory_item_id' => $item->id,
+            'requested_color' => 'BLACK',
+            'requested_size' => 'US 8',
+            'ordered_quantity' => 12,
+        ]);
+        PurchaseOrderItem::factory()->create([
+            'purchase_order_id' => $purchaseOrder->id,
+            'inventory_item_id' => $item->id,
+            'requested_color' => 'BLACK',
+            'requested_size' => 'US 9',
+            'ordered_quantity' => 100,
+        ]);
+        $receipt = PurchaseOrderReceipt::factory()->create([
+            'purchase_order_id' => $purchaseOrder->id,
+            'shop_owner_id' => $shopOwner->id,
+            'status' => 'posted',
+        ]);
+        PurchaseOrderReceiptItem::factory()->create([
+            'purchase_order_receipt_id' => $receipt->id,
+            'purchase_order_item_id' => $matchingPoItem->id,
+            'received_quantity' => 4,
+            'accepted_quantity' => 4,
+        ]);
+
+        (new CheckLowStockJob($shopOwner->id))->handle();
+
+        $this->assertDatabaseHas('stock_request_approvals', [
+            'inventory_item_id' => $item->id,
+            'requested_color' => 'black',
+            'requested_size' => 'US 8',
+            'quantity_needed' => 17,
+            'is_auto_generated' => true,
+        ]);
+    }
+
 }

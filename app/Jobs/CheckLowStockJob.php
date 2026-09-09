@@ -84,6 +84,13 @@ class CheckLowStockJob implements ShouldQueue
                 return null;
             }
 
+            $this->unresolvedAlertQuery($item, 'out_of_stock', $lockedTarget)
+                ->update([
+                    'is_resolved' => true,
+                    'resolved_at' => now(),
+                    'resolved_by' => null,
+                ]);
+
             $query = $this->unresolvedAlertQuery($item, 'low_stock', $lockedTarget);
             if ($query->exists()) {
                 return null;
@@ -129,6 +136,13 @@ class CheckLowStockJob implements ShouldQueue
             if (! $lockedTarget || (int) $lockedTarget['quantity'] > 0) {
                 return null;
             }
+
+            $this->unresolvedAlertQuery($item, 'low_stock', $lockedTarget)
+                ->update([
+                    'is_resolved' => true,
+                    'resolved_at' => now(),
+                    'resolved_by' => null,
+                ]);
 
             $query = $this->unresolvedAlertQuery($item, 'out_of_stock', $lockedTarget);
             if ($query->exists()) {

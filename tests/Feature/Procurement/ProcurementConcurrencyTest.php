@@ -2,12 +2,16 @@
 
 namespace Tests\Feature\Procurement;
 
+use App\Jobs\CheckLowStockJob;
+use App\Models\InventoryColorVariant;
 use App\Models\InventoryItem;
+use App\Models\InventorySize;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
 use App\Models\PurchaseOrderReceipt;
 use App\Models\ShopOwner;
 use App\Models\StockMovement;
+use App\Models\StockRequestApproval;
 use App\Models\Supplier;
 use App\Models\User;
 use App\Services\PurchaseOrderReceiptService;
@@ -79,6 +83,47 @@ class ProcurementConcurrencyTest extends TestCase
 
         $this->assertSame(1, StockMovement::whereNotNull('reversal_of_stock_movement_id')->count());
         $this->assertSame(0, $inventory->fresh()->available_quantity);
+    }
+
+    public function test_mysql_serializes_duplicate_automatic_stock_requests_for_one_variant(): void
+    {
+        if (DB::getDriverName() !== 'mysql') {
+            $this->markTestSkipped('MySQL row-lock verification is intentionally skipped on SQLite.');
+        }
+        if (! function_exists('pcntl_fork')) {
+            $this->markTestSkipped('MySQL concurrency verification requires the pcntl extension.');
+        }
+
+        $owner = ShopOwner::factory()->create();
+        $inventory = InventoryItem::factory()->create([
+            'shop_owner_id' => $owner->id,
+            'available_quantity' => 0,
+        ]);
+        $color = InventoryColorVariant::create([
+            'inventory_item_id' => $inventory->id,
+            'color_name' => 'Black',
+            'quantity' => 3,
+        ]);
+        InventorySize::create([
+            'inventory_item_id' => $inventory->id,
+            'inventory_color_variant_id' => $color->id,
+            'size' => '8',
+            'size_system' => 'US',
+            'quantity' => 3,
+            'auto_stock_request_enabled' => true,
+            'reorder_level' => 5,
+            'reorder_quantity' => 40,
+        ]);
+
+        $this->runConcurrently(function () use ($owner): void {
+            (new CheckLowStockJob($owner->id))->handle();
+        });
+
+        $this->assertSame(1, StockRequestApproval::query()
+            ->where('inventory_item_id', $inventory->id)
+            ->where('requested_color', 'black')
+            ->where('requested_size', 'US 8')
+            ->count());
     }
 
     private function runConcurrently(callable $callback): void
