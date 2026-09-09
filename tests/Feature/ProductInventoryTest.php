@@ -2,10 +2,13 @@
 
 namespace Tests\Feature;
 
+use App\Models\InventoryImage;
 use App\Models\InventoryItem;
 use App\Models\ShopOwner;
 use App\Models\User;
+use App\Services\Erp\ShopOwnerInventoryReadService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
@@ -144,5 +147,71 @@ class ProductInventoryTest extends TestCase
 
         $response->assertStatus(200);
         $this->assertCount(1, $response->json('data'));
+    }
+    public function test_inventory_image_paths_are_canonical_and_missing_files_are_omitted(): void
+    {
+        Storage::fake('public');
+        $this->shopOwner->update(['business_type' => 'both']);
+        $item = InventoryItem::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'category' => 'shoes',
+            'main_image' => 'public/inventory/1/front.jpg',
+        ]);
+        $existingPaths = [
+            '/storage/inventory/1/front.jpg' => 'inventory/1/front.jpg',
+            'storage/inventory/1/side.jpg' => 'inventory/1/side.jpg',
+            'public/inventory/1/back.jpg' => 'inventory/1/back.jpg',
+        ];
+        $sortOrder = 0;
+        foreach ($existingPaths as $path => $storagePath) {
+            Storage::disk('public')->put($storagePath, 'image');
+            InventoryImage::create([
+                'inventory_item_id' => $item->id,
+                'image_path' => $path,
+                'sort_order' => $sortOrder++,
+            ]);
+        }
+        InventoryImage::create([
+            'inventory_item_id' => $item->id,
+            'image_path' => 'storage/inventory/1/missing.jpg',
+            'sort_order' => $sortOrder,
+        ]);
+
+        $response = $this->getJson('/api/erp/inventory/products');
+
+        $response->assertOk();
+        $this->assertSame('inventory/1/front.jpg', $response->json('data.0.main_image'));
+        $this->assertSame([
+            'inventory/1/back.jpg',
+            'inventory/1/front.jpg',
+            'inventory/1/side.jpg',
+        ], collect($response->json('data.0.images'))
+            ->pluck('image_path')
+            ->sort()
+            ->values()
+            ->all());
+        $this->assertCount(3, $response->json('data.0.images'));
+        $this->assertTrue(collect($response->json('data.0.images'))
+            ->every(fn (array $image): bool => str_ends_with($image['url'], '/storage/' . $image['image_path'])));
+
+        $row = app(ShopOwnerInventoryReadService::class)
+            ->rows($this->shopOwner->id)
+            ->firstWhere('id', $item->id);
+        $this->assertSame('inventory/1/front.jpg', $row['main_image']);
+        $this->assertSame([
+            'inventory/1/back.jpg',
+            'inventory/1/front.jpg',
+            'inventory/1/side.jpg',
+        ], collect($row['images'])
+            ->pluck('image_path')
+            ->sort()
+            ->values()
+            ->all());
+
+        $itemsResponse = $this->getJson('/api/erp/inventory/items');
+
+        $itemsResponse->assertOk();
+        $this->assertSame('inventory/1/front.jpg', $itemsResponse->json('data.0.main_image'));
+        $this->assertCount(3, $itemsResponse->json('data.0.images'));
     }
 }

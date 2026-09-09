@@ -226,7 +226,7 @@ class PurchaseRequestWorkflowTest extends TestCase
         $this->assertDatabaseHas('notifications', [
             'user_id' => $procurement->id,
             'title' => 'New Stock Request Submitted',
-            'action_url' => "/erp/inventory/request-material-approval?stock_request={$stockRequest->id}",
+            'action_url' => "/erp/procurement/stock-request-approval?stock_request={$stockRequest->id}",
         ]);
     }
 

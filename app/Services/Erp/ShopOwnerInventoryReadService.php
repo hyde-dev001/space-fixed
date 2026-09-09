@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace App\Services\Erp;
 
+use App\Models\InventoryImage;
 use App\Models\InventoryItem;
 use App\Models\Product;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Storage;
 
 final class ShopOwnerInventoryReadService
 {
@@ -194,7 +194,8 @@ final class ShopOwnerInventoryReadService
         }
 
         $additionalImages = collect($product->additional_images ?? [])
-            ->filter(fn ($path): bool => is_string($path) && $this->publicFileExists($path))
+            ->map(fn ($path): ?string => is_string($path) ? InventoryImage::existingPublicPath($path) : null)
+            ->filter()
             ->values()
             ->map(fn (string $path, int $index): array => [
                 'id' => $index,
@@ -253,15 +254,17 @@ final class ShopOwnerInventoryReadService
 
     private function sanitizeInventoryImages(InventoryItem $item): void
     {
-        if ($item->main_image && ! $this->publicFileExists($item->main_image)) {
-            $item->main_image = null;
-        }
+        $item->main_image = InventoryImage::existingPublicPath($item->main_image);
 
         if ($item->relationLoaded('images')) {
             $item->setRelation(
                 'images',
                 $item->images
-                    ->filter(fn ($image): bool => $image->image_path && $this->publicFileExists($image->image_path))
+                    ->filter(function ($image): bool {
+                        $image->image_path = InventoryImage::existingPublicPath($image->image_path);
+
+                        return $image->image_path !== null;
+                    })
                     ->values(),
             );
         }
@@ -272,7 +275,11 @@ final class ShopOwnerInventoryReadService
                     $variant->setRelation(
                         'images',
                         $variant->images
-                            ->filter(fn ($image): bool => $image->image_path && $this->publicFileExists($image->image_path))
+                            ->filter(function ($image): bool {
+                                $image->image_path = InventoryImage::existingPublicPath($image->image_path);
+
+                                return $image->image_path !== null;
+                            })
                             ->values(),
                     );
                 }
@@ -282,12 +289,7 @@ final class ShopOwnerInventoryReadService
 
     private function publicPathOrNull(?string $path): ?string
     {
-        return $path && $this->publicFileExists($path) ? $path : null;
-    }
-
-    private function publicFileExists(string $path): bool
-    {
-        return Storage::disk('public')->exists(ltrim($path, '/'));
+        return InventoryImage::existingPublicPath($path);
     }
 
     private function applyInventoryFilters(Builder $query, array $filters): Builder

@@ -3,13 +3,18 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\InventoryItem;
 use App\Models\PosRefund;
 use App\Models\PosTransaction;
 use App\Models\Product;
+use App\Models\ProductVariant;
 use App\Models\ShopOwner;
 use App\Models\User;
+use App\Services\InventoryReplenishmentService;
+use App\Services\InventoryVariantIdentity;
 use App\Services\RetailPosPaymentService;
 use App\Services\RetailPosRefundService;
+use Illuminate\Support\Collection;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -17,7 +22,7 @@ use Illuminate\Validation\ValidationException;
 
 class RetailPosController extends Controller
 {
-    public function listProducts(Request $request)
+    public function listProducts(Request $request, InventoryReplenishmentService $replenishmentService)
     {
         $shopOwnerId = $this->resolveActorShopOwnerId($this->resolveActor());
         $this->assertRetailOrBoth($shopOwnerId);
@@ -62,10 +67,69 @@ class RetailPosController extends Controller
             ->limit(250)
             ->get(['id', 'name', 'slug', 'price', 'stock_quantity', 'main_image']);
 
+        $inventoryItems = InventoryItem::query()
+            ->where('shop_owner_id', $shopOwnerId)
+            ->whereIn('product_id', $products->modelKeys())
+            ->with(['colorVariants.sizes', 'sizes.colorVariant'])
+            ->get()
+            ->keyBy('product_id');
+
+        $data = $products->map(function (Product $product) use ($inventoryItems, $replenishmentService): array {
+            $inventoryItem = $inventoryItems->get($product->id);
+            $targets = $inventoryItem ? $replenishmentService->effectiveTargets($inventoryItem) : null;
+
+            return [
+                'id' => (int) $product->id,
+                'name' => (string) $product->name,
+                'slug' => (string) $product->slug,
+                'price' => $product->price,
+                'stock_quantity' => $targets
+                    ? (int) $targets->sum(fn (array $target): int => (int) $target['quantity'])
+                    : (int) $product->stock_quantity,
+                'main_image' => $product->main_image,
+                'variants' => $product->variants
+                    ->map(fn (ProductVariant $variant): array => $this->retailVariantPayload($variant, $targets))
+                    ->values()
+                    ->all(),
+            ];
+        })->values();
+
         return response()->json([
             'success' => true,
-            'data' => $products,
+            'data' => $data,
         ]);
+    }
+
+    private function retailVariantPayload(ProductVariant $variant, ?Collection $targets): array
+    {
+        $target = $targets?->first(function (array $target) use ($variant): bool {
+            if (($target['type'] ?? null) === 'item') {
+                return true;
+            }
+
+            if (InventoryVariantIdentity::normalizeColor($target['requested_color'] ?? null) !== InventoryVariantIdentity::normalizeColor($variant->color)) {
+                return false;
+            }
+
+            $targetSize = InventoryVariantIdentity::normalizeSize($target['requested_size'] ?? null);
+
+            return $targetSize === null || $targetSize === InventoryVariantIdentity::normalizeSize($variant->size);
+        });
+
+        return [
+            'id' => (int) $variant->id,
+            'size' => $variant->size,
+            'color' => $variant->color,
+            'image' => $variant->image,
+            'quantity' => $target ? (int) $target['quantity'] : ($targets ? 0 : (int) $variant->quantity),
+            'inventory_item_id' => $target ? (int) $target['inventory_item_id'] : null,
+            'inventory_color_variant_id' => $target && $target['inventory_color_variant_id'] !== null
+                ? (int) $target['inventory_color_variant_id']
+                : null,
+            'inventory_size_id' => $target && $target['inventory_size_id'] !== null
+                ? (int) $target['inventory_size_id']
+                : null,
+        ];
     }
 
     public function checkout(Request $request, RetailPosPaymentService $service)
@@ -79,6 +143,9 @@ class RetailPosController extends Controller
             'walk_in_email' => ['nullable', 'email', 'max:255'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.product_id' => ['required', 'integer', 'exists:products,id'],
+            'items.*.variant_id' => ['nullable', 'integer', 'min:1'],
+            'items.*.inventory_color_variant_id' => ['nullable', 'integer', 'min:1'],
+            'items.*.inventory_size_id' => ['nullable', 'integer', 'min:1'],
             'items.*.qty' => ['required', 'integer', 'min:1'],
             'items.*.unit_price' => ['required', 'numeric', 'min:0.01'],
             'items.*.size' => ['nullable', 'string', 'max:50'],

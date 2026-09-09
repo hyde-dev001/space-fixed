@@ -81,6 +81,7 @@ class AuthController extends Controller
         $credentials = $request->only('email', 'password');
         $credentials['status'] = 'active';
 
+
         if (!Auth::guard('user')->attempt($credentials)) {
             return response()->json([
                 'message' => [
@@ -111,6 +112,18 @@ class AuthController extends Controller
             }
         }
 
+        if ($user instanceof User && $user->hasEmployeeTotpEnabled()) {
+            Auth::guard('user')->logout();
+
+            return response()->json([
+                'message' => [
+                    'icon' => 'error',
+                    'title' => 'Error',
+                    'text' => 'Invalid Credentials',
+                ],
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
         if ($user && $user->isCustomerAccount() && ! $user->hasVerifiedEmail()) {
             Auth::guard('user')->logout();
 
@@ -139,7 +152,13 @@ class AuthController extends Controller
         ], Response::HTTP_OK);
     }
     public function logout(Request $request) {
-        $request->user()->tokens()->delete();
+        $token = $request->user()->currentAccessToken();
+
+        if ($token) {
+            $token->delete();
+        } else {
+            $request->user()->tokens()->delete();
+        }
         
         return response()->json([
             'message' => [

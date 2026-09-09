@@ -501,13 +501,11 @@ Route::get('/shop-owner/resubmit/{shopOwner}/documents/{document}', [PrivateSens
     ->name('shop-owner.resubmission.document');
 
 // Employee Invitation Routes (Public - No Authentication Required)
-Route::get('/invite/{token}', [InvitationController::class, 'show'])->name('invitation.show');
-Route::post('/invite/{token}', [InvitationController::class, 'accept'])->name('invitation.accept');
+Route::get('/invite/{token}', [InvitationController::class, 'show'])->middleware('throttle:30,1')->name('invitation.show');
+Route::post('/invite/{token}', [InvitationController::class, 'accept'])->middleware('throttle:10,1')->name('invitation.accept');
 // Alias route for accept-invitation (used by invitation links)
-Route::get('/accept-invitation/{token}', [InvitationController::class, 'show'])->name('invitation.accept-invitation');
-Route::post('/accept-invitation/{token}', [InvitationController::class, 'accept'])->name('invitation.accept-invitation.submit');
-
-// Cart Routes
+Route::get('/accept-invitation/{token}', [InvitationController::class, 'show'])->middleware('throttle:30,1')->name('invitation.accept-invitation');
+Route::post('/accept-invitation/{token}', [InvitationController::class, 'accept'])->middleware('throttle:10,1')->name('invitation.accept-invitation.submit');// Cart Routes
 Route::get('/api/cart', [CartController::class, 'index'])->name('cart.index');
 Route::post('/api/cart/add', [CartController::class, 'add'])->middleware(['auth:user', 'customer.identity.approved'])->name('cart.add');
 Route::post('/api/cart/remove', [CartController::class, 'remove'])->middleware('auth:user')->name('cart.remove');
@@ -2230,12 +2228,29 @@ Route::get('/erp/hr/audit-logs', [\App\Http\Controllers\Erp\ReadPageController::
 
 Route::middleware(['auth:user', 'check.suspension'])->group(function () {
     Route::get('/erp/profile', [UserProfileController::class, 'show'])->name('erp.profile');
+    Route::get('/erp/security/activity', [UserProfileController::class, 'securityActivity'])->middleware('throttle:30,1')->name('erp.security.activity');
+    Route::get('/erp/security/sessions', [UserProfileController::class, 'activeSessions'])->middleware('throttle:30,1')->name('erp.security.sessions.index');
     Route::post('/erp/password', [UserProfileController::class, 'updatePassword'])->middleware('throttle:5,1')->name('erp.password.update');
+    Route::post('/erp/security/sessions/logout-others', [UserProfileController::class, 'logoutOtherSessions'])->middleware('throttle:5,1')->name('erp.security.sessions.logout-others');
 });
 
+Route::middleware(['throttle:10,1'])->group(function () {
+    Route::get('/erp/mfa/challenge', [\App\Http\Controllers\EmployeeMfaController::class, 'challenge'])->name('erp.mfa.challenge');
+    Route::post('/erp/mfa/challenge', [\App\Http\Controllers\EmployeeMfaController::class, 'verifyLogin'])->name('erp.mfa.challenge.verify');
+});
+
+Route::middleware(['auth:user', 'check.suspension', 'throttle:10,1'])
+    ->prefix('erp/security/totp')
+    ->name('erp.security.totp.')
+    ->group(function () {
+        Route::post('/setup', [\App\Http\Controllers\EmployeeMfaController::class, 'setup'])->name('setup');
+        Route::post('/verify', [\App\Http\Controllers\EmployeeMfaController::class, 'verifySetup'])->name('verify');
+        Route::post('/recovery-codes/regenerate', [\App\Http\Controllers\EmployeeMfaController::class, 'regenerateRecoveryCodes'])->name('recovery.regenerate');
+        Route::post('/disable', [\App\Http\Controllers\EmployeeMfaController::class, 'disable'])->name('disable');
+    });
+
 // Finance pages
-Route::prefix('finance')->name('finance.')->middleware(['auth:user', 'role_or_permission:Shop Owner|access-finance-dashboard|access-finance-expenses|access-finance-invoices|access-repair-price-approval|access-shoe-price-approval|access-approval-workflow|access-purchase-request-approval|access-payslip-approval|access-refund-approval'])->group(function () {
-    Route::get('/', function () {
+Route::prefix('finance')->name('finance.')->middleware(['auth:user', 'role_or_permission:Shop Owner|access-finance-dashboard|access-finance-expenses|access-finance-invoices|access-repair-price-approval|access-shoe-price-approval|access-approval-workflow|access-purchase-request-approval|access-payslip-approval|access-refund-approval'])->group(function () {    Route::get('/', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }

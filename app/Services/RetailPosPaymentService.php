@@ -72,40 +72,25 @@ class RetailPosPaymentService
                     ]);
                 }
 
-                $requestedSize = isset($line['size']) ? trim((string) $line['size']) : '';
-                $requestedColor = isset($line['color']) ? trim((string) $line['color']) : '';
-                $linkedInventoryAvailable = $this->inventoryCheckoutService->availableForCheckout($product, $requestedSize ?: null, $requestedColor ?: null);
-                $resolvedVariant = null;
+                $selection = $this->inventoryCheckoutService->resolveSelection($product, $line);
+                $requestedSize = trim((string) ($selection['requested_size'] ?? ''));
+                $requestedColor = trim((string) ($selection['requested_color'] ?? ''));
+                $resolvedVariant = $selection['variant'];
+                $linkedInventoryAvailable = $this->inventoryCheckoutService->availableForSelection($selection);
 
-                if ($linkedInventoryAvailable === null && $requestedSize !== '' && $requestedColor !== '') {
-                    $normalizedRequestedSize = $this->normalizeVariantToken($requestedSize);
-                    $normalizedRequestedColor = $this->normalizeVariantToken($requestedColor);
-
-                    $resolvedVariant = ProductVariant::query()
-                        ->where('product_id', (int) $product->id)
-                        ->where('is_active', true)
-                        ->lockForUpdate()
-                        ->get()
-                        ->first(function (ProductVariant $variant) use ($normalizedRequestedSize, $normalizedRequestedColor) {
-                            return $this->normalizeVariantToken($variant->size) === $normalizedRequestedSize
-                                && $this->normalizeVariantToken($variant->color) === $normalizedRequestedColor;
-                        });
-
-                    if (!$resolvedVariant) {
-                        throw ValidationException::withMessages([
-                            "items.{$index}.size" => ["Variant not found for size {$requestedSize} and color {$requestedColor}."],
-                        ]);
-                    }
-
-                    if ((int) ($resolvedVariant->quantity ?? 0) < $qty) {
-                        throw ValidationException::withMessages([
-                            "items.{$index}.qty" => ["Insufficient stock for size {$requestedSize} and color {$requestedColor}."],
-                        ]);
-                    }
+                if ($linkedInventoryAvailable === null && $requestedSize !== '' && $requestedColor !== '' && ! $resolvedVariant) {
+                    throw ValidationException::withMessages([
+                        "items.{$index}.size" => ["Variant not found for size {$requestedSize} and color {$requestedColor}."],
+                    ]);
                 }
 
                 if ($linkedInventoryAvailable !== null && $linkedInventoryAvailable < $qty) {
                     throw ValidationException::withMessages(['items.' . $index . '.qty' => ['Insufficient stock for selected item.']]);
+                }
+                if ($linkedInventoryAvailable === null && $resolvedVariant && (int) ($resolvedVariant->quantity ?? 0) < $qty) {
+                    throw ValidationException::withMessages([
+                        "items.{$index}.qty" => ["Insufficient stock for size {$requestedSize} and color {$requestedColor}."],
+                    ]);
                 }
                 if ($linkedInventoryAvailable === null && (int) ($product->stock_quantity ?? 0) < $qty) {
                     throw ValidationException::withMessages([
@@ -124,6 +109,9 @@ class RetailPosPaymentService
                     'color' => $resolvedVariant?->color ?? ($requestedColor !== '' ? $requestedColor : null),
                     'image' => $line['image'] ?? null,
                     'variant' => $resolvedVariant,
+                    'inventory_item_id' => $selection['inventory_item']?->id,
+                    'inventory_color_variant_id' => $selection['color']?->id,
+                    'inventory_size_id' => $selection['size']?->id,
                     'linked_inventory' => $linkedInventoryAvailable !== null,
                 ];
             }
@@ -361,8 +349,4 @@ class RetailPosPaymentService
         return $transactionNo;
     }
 
-    private function normalizeVariantToken(?string $value): string
-    {
-        return strtolower(preg_replace('/\s+/', ' ', trim((string) $value)) ?? '');
-    }
 }

@@ -13,7 +13,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
@@ -25,8 +24,8 @@ use App\Models\PositionTemplatePermission;
 use App\Services\BusinessAccessControlService;
 use App\Services\HR\EmployeeLinkedUserSynchronizer;
 use App\Services\HR\EmployeeOperationalPolicy;
+use App\Services\EmployeeInvitationService;
 use App\Services\Logistics\RiderProfileSyncService;
-use Carbon\Carbon;
 
 class UserAccessControlController extends Controller
 {
@@ -39,6 +38,7 @@ class UserAccessControlController extends Controller
         BusinessAccessControlService $accessControl,
         private readonly EmployeeLinkedUserSynchronizer $linkedUserSynchronizer,
         private readonly EmployeeOperationalPolicy $employeePolicy,
+        private readonly EmployeeInvitationService $invitations,
     )
     {
         $this->accessControl = $accessControl;
@@ -418,12 +418,8 @@ class UserAccessControlController extends Controller
                 ]);
             }
 
-            // Create both Employee and User atomically
-            // Generate invitation token instead of temporary password
-            $inviteToken = Str::random(64);
-            $inviteExpiresAt = Carbon::now()->addDays(7);
-            
-            [$employee, $user] = DB::transaction(function () use ($validated, $shopOwner, $inviteToken, $inviteExpiresAt, $legacyUserRole) {
+            // Create both Employee and User atomically.
+            [$employee, $user, $inviteToken, $inviteExpiresAt] = DB::transaction(function () use ($validated, $shopOwner, $legacyUserRole) {
                 $employeeData = collect($validated)->only([
                     'shop_owner_id','name','email','phone','address','position','department','branch','salary','hire_date','status'
                 ])->toArray();
@@ -440,7 +436,7 @@ class UserAccessControlController extends Controller
 
                 // Avoid double audit rows (Employee + User) for one employee creation action.
                 // Keep the Employee create log as the business-facing audit entry.
-                $user = activity()->withoutLogs(function () use ($validated, $shopOwner, $inviteToken, $inviteExpiresAt, $legacyUserRole, $firstName, $lastName) {
+                $user = activity()->withoutLogs(function () use ($validated, $shopOwner, $legacyUserRole, $firstName, $lastName) {
                     return User::create([
                         'name' => $validated['name'],
                         'first_name' => $firstName,
@@ -452,12 +448,10 @@ class UserAccessControlController extends Controller
                         'role' => $legacyUserRole, // Keep old role column enum-compatible for backward compatibility
                         'position' => $validated['position'] ?? null,
                         'password' => null, // No password until invitation is accepted
-                        'invite_token' => $inviteToken,
-                        'invite_expires_at' => $inviteExpiresAt,
-                        'invited_at' => now(),
-                        'invited_by' => $shopOwner->id,
                     ]);
                 });
+
+                $invitation = $this->invitations->issue($user, (int) $shopOwner->id);
 
                 // Assign Spatie role based on department
                 $roleMap = [
@@ -527,7 +521,7 @@ class UserAccessControlController extends Controller
                     }
                 }
 
-                return [$employee, $user];
+                return [$employee, $user, $invitation['token'], $invitation['expires_at']];
             });
 
             $this->linkedUserSynchronizer->sync($employee);
@@ -1652,17 +1646,15 @@ class UserAccessControlController extends Controller
                 ], 422);
             }
 
-            // Generate new invitation token
-            $inviteToken = Str::random(64);
-            $inviteExpiresAt = Carbon::now()->addDays(7);
+            if (! is_null($user->password)) {
+                return response()->json([
+                    'error' => 'This employee has already completed account setup.'
+                ], 422);
+            }
 
-            // Update user with new invitation token
-            $user->update([
-                'invite_token' => $inviteToken,
-                'invite_expires_at' => $inviteExpiresAt,
-                'invited_at' => now(),
-                'invited_by' => $shopOwner->id,
-            ]);
+            $invitation = $this->invitations->issue($user, (int) $shopOwner->id);
+            $inviteToken = $invitation['token'];
+            $inviteExpiresAt = $invitation['expires_at'];
 
             // Generate invitation URL
             $inviteUrl = url("/accept-invitation/{$inviteToken}");
@@ -1717,44 +1709,52 @@ class UserAccessControlController extends Controller
                 return response()->json(['error' => 'Employee not found'], 404);
             }
 
-            // Check if user has valid invitation token
-            if (!$user->invite_token || !$user->invite_expires_at) {
-                return response()->json(['error' => 'No active invitation found. Please regenerate the invitation first.'], 400);
+            if (! is_null($user->password)) {
+                return response()->json(['error' => 'This employee has already completed account setup.'], 422);
             }
 
-            // Check if invitation expired
-            if (Carbon::now()->greaterThan($user->invite_expires_at)) {
-                return response()->json(['error' => 'Invitation has expired. Please regenerate a new invitation.'], 400);
-            }
-
-            $inviteUrl = url("/accept-invitation/{$user->invite_token}");
+            $invitation = $this->invitations->issue($user, (int) $shopOwner->id);
+            $inviteUrl = url("/accept-invitation/{$invitation['token']}");
             $shopName = $shopOwner->business_name ?? 'SoleSpace';
-            $expiresAt = $user->invite_expires_at->format('M d, Y h:i A');
+            $expiresAt = $invitation['expires_at']->format('M d, Y h:i A');
             $personalEmail = $validated['personal_email'];
 
+            $htmlEmployeeName = htmlspecialchars((string) $user->name, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+            $htmlInviteUrl = htmlspecialchars((string) $inviteUrl, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+            $htmlShopName = htmlspecialchars((string) $shopName, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+            $htmlExpiresAt = htmlspecialchars((string) $expiresAt, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+            $htmlWorkEmail = htmlspecialchars((string) $user->email, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+
             // Send email using Laravel Mail
-            \Mail::send([], [], function ($message) use ($user, $inviteUrl, $shopName, $expiresAt, $personalEmail) {
+            \Mail::send([], [], function ($message) use (
+                $htmlEmployeeName,
+                $htmlInviteUrl,
+                $htmlShopName,
+                $htmlExpiresAt,
+                $htmlWorkEmail,
+                $personalEmail
+            ) {
                 $message->to($personalEmail)
-                    ->subject("Your {$shopName} Account Invitation")
+                    ->subject("Your {$htmlShopName} Account Invitation")
                     ->html("
                         <html>
                         <body style='font-family: Arial, sans-serif; line-height: 1.6; color: #333;'>
                             <div style='max-width: 600px; margin: 0 auto; padding: 20px;'>
-                                <h2 style='color: #4F46E5;'>Welcome to {$shopName}!</h2>
+                                <h2 style='color: #4F46E5;'>Welcome to {$htmlShopName}!</h2>
                                 
-                                <p>Hi <strong>{$user->name}</strong>,</p>
+                                <p>Hi <strong>{$htmlEmployeeName}</strong>,</p>
                                 
-                                <p>You've been invited to join our team at <strong>{$shopName}</strong>!</p>
+                                <p>You've been invited to join our team at <strong>{$htmlShopName}</strong>!</p>
                                 
                                 <div style='background: #F3F4F6; padding: 15px; border-radius: 8px; margin: 20px 0;'>
-                                    <p style='margin: 0 0 10px 0;'><strong>Your work email:</strong> {$user->email}</p>
-                                    <p style='margin: 0;'><strong>Invitation expires:</strong> {$expiresAt}</p>
+                                    <p style='margin: 0 0 10px 0;'><strong>Your work email:</strong> {$htmlWorkEmail}</p>
+                                    <p style='margin: 0;'><strong>Invitation expires:</strong> {$htmlExpiresAt}</p>
                                 </div>
                                 
                                 <p>Click the button below to set up your account and create your password:</p>
                                 
                                 <div style='text-align: center; margin: 30px 0;'>
-                                    <a href='{$inviteUrl}' 
+                                    <a href='{$htmlInviteUrl}'
                                        style='display: inline-block; background: #4F46E5; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; font-weight: bold;'>
                                         Set Up My Account
                                     </a>
@@ -1762,13 +1762,13 @@ class UserAccessControlController extends Controller
                                 
                                 <p style='font-size: 12px; color: #666;'>
                                     Or copy and paste this link into your browser:<br>
-                                    <a href='{$inviteUrl}' style='color: #4F46E5; word-break: break-all;'>{$inviteUrl}</a>
+                                    <a href='{$htmlInviteUrl}' style='color: #4F46E5; word-break: break-all;'>{$htmlInviteUrl}</a>
                                 </p>
                                 
                                 <hr style='border: none; border-top: 1px solid #E5E7EB; margin: 20px 0;'>
                                 
                                 <p style='font-size: 12px; color: #666;'>
-                                    <strong>Important:</strong> This invitation link will expire on {$expiresAt}. 
+                                    <strong>Important:</strong> This invitation link will expire on {$htmlExpiresAt}.
                                     If you need a new invitation, please contact your administrator.
                                 </p>
                                 

@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Jobs\CheckLowStockJob;
 use App\Models\InventoryColorVariant;
 use App\Models\InventoryItem;
 use App\Models\InventorySize;
@@ -20,14 +21,17 @@ class InventoryReplenishmentService
     {
         $item->loadMissing(['sizes.colorVariant', 'colorVariants.sizes']);
 
+        $validSizes = $item->sizes
+            ->filter(fn (InventorySize $size): bool => $this->hasValidColorParent($item, $size))
+            ->values();
         $targets = collect();
 
-        foreach ($item->sizes as $size) {
+        foreach ($validSizes as $size) {
             $targets->push($this->sizeTarget($size, $size->colorVariant));
         }
 
         foreach ($item->colorVariants as $color) {
-            if ($color->sizes->isEmpty()) {
+            if (! $validSizes->contains(fn (InventorySize $size): bool => (int) $size->inventory_color_variant_id === (int) $color->id)) {
                 $targets->push($this->colorTarget($color));
             }
         }
@@ -83,6 +87,8 @@ class InventoryReplenishmentService
                 $this->updateTarget($lockedItem, $target);
             }
         }, 3);
+
+        CheckLowStockJob::dispatch((int) $item->shop_owner_id)->afterCommit();
     }
 
     /** @return array<string, mixed> */
@@ -148,6 +154,20 @@ class InventoryReplenishmentService
         ];
     }
 
+    private function hasValidColorParent(InventoryItem $item, InventorySize $size): bool
+    {
+        if ((int) $size->inventory_item_id !== (int) $item->id) {
+            return false;
+        }
+
+        if (! $size->inventory_color_variant_id) {
+            return true;
+        }
+
+        return $size->colorVariant !== null
+            && (int) $size->colorVariant->inventory_item_id === (int) $item->id;
+    }
+
     private function targetTypeOrder(string $type): int
     {
         return match ($type) {
@@ -174,6 +194,13 @@ class InventoryReplenishmentService
             'reorder_level' => $target['reorder_level'],
             'reorder_quantity' => $target['reorder_quantity'],
         ];
+
+        $targetIsEffective = $this->effectiveTargets($item)
+            ->contains(fn (array $candidate): bool => $candidate['type'] === $target['type']
+                && (int) $candidate['id'] === (int) $target['id']);
+        if (! $targetIsEffective) {
+            throw ValidationException::withMessages(['targets' => 'The replenishment target is not valid for this inventory item.']);
+        }
 
         switch ($target['type']) {
             case 'item':
