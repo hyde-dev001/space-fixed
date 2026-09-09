@@ -2,10 +2,9 @@ import type { ReactNode } from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { routerPostMock, usePageMock, swalFireMock } = vi.hoisted(() => ({
+const { routerPostMock, usePageMock } = vi.hoisted(() => ({
   routerPostMock: vi.fn(),
   usePageMock: vi.fn(),
-  swalFireMock: vi.fn(),
 }));
 
 vi.mock('@inertiajs/react', () => ({
@@ -25,7 +24,7 @@ vi.mock('@/icons/index', () => ({
   LockIcon: () => <span aria-hidden="true" />,
 }));
 vi.mock('@/Pages/UserSide/Shared/UserModal', () => ({
-  default: { fire: swalFireMock },
+  default: { fire: vi.fn() },
 }));
 
 import UserLogin from '../UserLogin';
@@ -42,7 +41,6 @@ const submit = () => fireEvent.submit(screen.getByRole('button', { name: /sign i
 beforeEach(() => {
   routerPostMock.mockReset();
   usePageMock.mockReset();
-  swalFireMock.mockReset();
   pageState.props = {
     csrf_token: 'csrf-token',
     flash: {},
@@ -77,19 +75,6 @@ describe('unified sign-in', () => {
       { email: 'owner@example.test', password: 'secret-password', remember: false },
       expect.any(Object),
     );
-  });
-
-  it('does not show login success while an employee MFA challenge is pending', () => {
-    routerPostMock.mockImplementation((_url: string, _data: unknown, options: { onSuccess?: (page: { url: string }) => void }) => {
-      options.onSuccess?.({ url: '/erp/mfa/challenge' });
-    });
-
-    render(<UserLogin />);
-    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'employee@solespace.test' } });
-    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'secret-password' } });
-    submit();
-
-    expect(swalFireMock).not.toHaveBeenCalled();
   });
 
   it('keeps authentication errors generic without naming an account type', () => {

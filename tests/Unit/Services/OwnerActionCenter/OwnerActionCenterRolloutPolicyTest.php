@@ -118,7 +118,6 @@ final class OwnerActionCenterRolloutPolicyTest extends TestCase
             'owner_action_center.coverage.suspensions' => false,
             'owner_action_center.coverage.terminations' => false,
             'owner_action_center.coverage.rehires' => false,
-            'owner_action_center.coverage.repair_rejections' => false,
         ]);
 
         $selection = app(OwnerActionCenterRolloutPolicy::class)->select($owner);
@@ -162,7 +161,6 @@ final class OwnerActionCenterRolloutPolicyTest extends TestCase
             'owner_action_center.coverage.suspensions' => true,
             'owner_action_center.coverage.terminations' => true,
             'owner_action_center.coverage.rehires' => true,
-            'owner_action_center.coverage.repair_rejections' => true,
         ]);
     }
 }

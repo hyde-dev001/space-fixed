@@ -34,7 +34,6 @@ final class PhaseThreeCCharacterizationTest extends TestCase
                 'salary_changes' => false,
                 'expenses' => true,
                 'purchase_requests' => true,
-                'repair_rejections' => false,
             ],
             'owner_action_center.buckets.urgent_exceptions.enabled' => true,
             'owner_action_center.buckets.urgent_exceptions.coverage' => [

@@ -26,7 +26,6 @@ use App\Services\RepairDeliveryService;
 use App\Services\RepairPosPaymentService;
 use App\Services\RepairPosReceiptService;
 use App\Services\RepairPosRefundService;
-use App\Services\ShopOwnerApprovalPolicyService;
 use App\Support\Tax\VatInclusiveCalculator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -39,10 +38,6 @@ class RepairRequestController extends Controller
     private const REPAIR_VAT_RATE_PERCENT = 12.0;
 
     private const PAYMENT_RETURN_TOKEN_TTL_SECONDS = 86400;
-
-    public function __construct(
-        private ShopOwnerApprovalPolicyService $shopOwnerApprovalPolicyService
-    ) {}
 
     public function store(
         Request $request,
@@ -394,16 +389,7 @@ class RepairRequestController extends Controller
 
             // Get shop owner for high value check
             $isHighValue = $shopOwner && $requestTotal >= $shopOwner->high_value_threshold;
-            $requiresOwnerApprovalByPolicy = $shopOwner
-                ? $this->shopOwnerApprovalPolicyService->requiresOwnerApprovalForRepairReject((int) $shopOwner->id, (float) $requestTotal)
-                : false;
-            $requiresOwnerApproval = $shopOwner
-                && $shopOwner->require_two_way_approval
-                && $requiresOwnerApprovalByPolicy;
-
-            if ($requiresOwnerApprovalByPolicy) {
-                $isHighValue = true;
-            }
+            $requiresOwnerApproval = false;
 
             $activePolicyVersion = null;
             if ($shopOwner) {
@@ -552,17 +538,6 @@ class RepairRequestController extends Controller
                     'service_count' => count($serviceIds),
                 ]);
 
-                // If high-value repair requiring owner approval, send additional notification
-                if ($requiresOwnerApproval) {
-                    $notificationService->notifyHighValueRepairApproval($request->shop_owner_id, [
-                        'repair_id' => $repairRequest->id,
-                        'request_id' => $requestId,
-                        'order_number' => $requestId,
-                        'customer_name' => $request->customer_name,
-                        'total' => $requestTotal,
-                        'threshold' => $shopOwner->high_value_threshold,
-                    ]);
-                }
             }
 
             // AUTO-ASSIGN TO REPAIRER (Phase 2)
@@ -832,7 +807,7 @@ class RepairRequestController extends Controller
         }
 
         // Legacy normalization: old payment flows could leave paid repairs stuck in
-        // owner_approval_pending. Owner approval is now only used for rejection workflows.
+        // owner_approval_pending; the removed Owner-stage rows remain readable.
         RepairRequest::query()
             ->where('user_id', $user->id)
             ->where('status', 'owner_approval_pending')
@@ -2308,16 +2283,7 @@ class RepairRequestController extends Controller
                 fn (RepairService $service) => (float) $service->price
             ), 2);
             $shopOwner = ShopOwner::find($repair->shop_owner_id);
-            $requiresOwnerApprovalByPolicy = $shopOwner
-                ? $this->shopOwnerApprovalPolicyService->requiresOwnerApprovalForRepairReject(
-                    (int) $shopOwner->id,
-                    $total
-                )
-                : false;
-            $isHighValue = (bool) ($shopOwner && (
-                $total >= (float) $shopOwner->high_value_threshold
-                || $requiresOwnerApprovalByPolicy
-            ));
+            $isHighValue = (bool) ($shopOwner && $total >= (float) $shopOwner->high_value_threshold);
             $snapshot = $services->map(fn (RepairService $service) => [
                 'id' => (int) $service->id,
                 'name' => $service->name,
@@ -2336,9 +2302,7 @@ class RepairRequestController extends Controller
                 'included_services_snapshot' => $snapshot,
                 'add_on_services_snapshot' => null,
                 'is_high_value' => $isHighValue,
-                'requires_owner_approval' => (bool) ($shopOwner
-                    && $shopOwner->require_two_way_approval
-                    && $requiresOwnerApprovalByPolicy),
+                'requires_owner_approval' => false,
                 'pricing_breakdown' => [
                     'mode' => 'services',
                     'package_id' => null,

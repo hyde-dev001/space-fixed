@@ -933,16 +933,6 @@ const repairItems: NavItem[] = [
     route: "erp.repairer.support",
     moduleKey: "repair_operations",
   },
-  {
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-      </svg>
-    ),
-    name: "Repair Reject Approval",
-    route: "erp.user.repair-reject-approval",
-    moduleKey: "repair_operations",
-  },
 ];
 
 const cashierItems: NavItem[] = [
@@ -1189,7 +1179,6 @@ const EmployeeSidebarERP: React.FC = () => {
     "erp.procurement.suppliers-management": "/erp/procurement/suppliers-management",
     "erp.manager.audit-logs": "/erp/manager/audit-logs",
     // User section routes
-    "erp.user.repair-reject-approval": "/erp/user/repair-reject-approval",
     "erp.repairer.support": "/erp/staff/repairer-support",
     "erp.cashier.point-of-sale": "/erp/cashier/point-of-sale",
     "erp.cashier.dashboard": "/erp/cashier/dashboard",

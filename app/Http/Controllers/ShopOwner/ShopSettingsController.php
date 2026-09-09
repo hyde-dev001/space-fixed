@@ -36,7 +36,6 @@ class ShopSettingsController extends Controller
         'salary_adjustment_approval',
         'purchase_request_approval',
         'expense_approval',
-        'repair_reject_approval',
     ];
 
     private const INITIAL_SECTION_KEYS = [
@@ -528,8 +527,6 @@ class ShopSettingsController extends Controller
             'approval_pages.purchase_request_approval.enabled' => ['required_with:approval_pages', 'boolean'],
             'approval_pages.purchase_request_approval.limit' => ['nullable', 'numeric', 'min:0', 'max:9999999.99'],
             'approval_pages.expense_approval.enabled' => ['required_with:approval_pages', 'boolean'],
-            'approval_pages.repair_reject_approval.enabled' => ['required_with:approval_pages', 'boolean'],
-            'approval_pages.repair_reject_approval.limit' => ['nullable', 'numeric', 'min:0', 'max:9999999.99'],
             'repair_payment_policy' => ['sometimes', 'string', 'in:full_upfront'],
             'repair_workload_limit' => ['sometimes', 'integer', 'min:1', 'max:500'],
             'order_refund_deadline_days' => ['sometimes', 'integer', 'min:1', 'max:30'],
@@ -879,7 +876,7 @@ class ShopSettingsController extends Controller
     }
 
     /**
-     * Merge only the seven validated booleans into existing settings.
+     * Merge only the six validated booleans into existing settings.
      * Unknown JSON and legacy limits remain intact for compatibility.
      *
      * @return array<string, mixed>

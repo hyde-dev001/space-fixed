@@ -70,14 +70,6 @@ final class OwnerAttentionAdapterRegistry
                     'bucket' => 'needs_my_decision',
                 ],
             ],
-            'repair_rejections' => [
-                [
-                    'class' => 'App\\Services\\OwnerActionCenter\\Adapters\\RepairRejectAttentionAdapter',
-                    'key' => 'repair_rejections',
-                    'coverage' => 'repair_rejections',
-                    'bucket' => 'needs_my_decision',
-                ],
-            ],
             'suspensions' => [
                 [
                     'class' => 'App\\Services\\OwnerActionCenter\\Adapters\\SuspensionAttentionAdapter',
@@ -263,7 +255,7 @@ final class OwnerAttentionAdapterRegistry
         }
 
         return array_values(array_filter(
-            array_diff(OwnerAttentionQuery::COVERAGES_BY_BUCKET['needs_my_decision'], ['all']),
+            array_diff(OwnerAttentionQuery::COVERAGES_BY_BUCKET['needs_my_decision'], ['all', 'repair_rejections']),
             static fn (string $coverage): bool => config("owner_action_center.coverage.{$coverage}", false) === true,
         ));
     }

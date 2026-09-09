@@ -109,7 +109,6 @@ const baseShopSettings = {
     salary_adjustment_approval: { enabled: false },
     purchase_request_approval: { enabled: false },
     expense_approval: { enabled: false },
-    repair_reject_approval: { enabled: false },
   },
   business_scaling: {},
   pay_cycle: "monthly",

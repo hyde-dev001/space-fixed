@@ -15,7 +15,6 @@ describe("Action Center approval deep links", () => {
     ["salary_change", 18],
     ["purchase_request", 19],
     ["expense", 20],
-    ["repair_rejection", 21],
   ] as const)("parses the typed %s selection", (sourceType, sourceId) => {
     expect(parseApprovalSelection(sourceType + ":" + sourceId)).toEqual({
       sourceType,
@@ -26,5 +25,6 @@ describe("Action Center approval deep links", () => {
   it("does not interpret legacy page query strings as a typed selection", () => {
     expect(parseApprovalSelection("refund_type=order&refund=12")).toBeNull();
     expect(parseApprovalSelection("expense=34")).toBeNull();
+    expect(parseApprovalSelection("repair_rejection:21")).toBeNull();
   });
 });

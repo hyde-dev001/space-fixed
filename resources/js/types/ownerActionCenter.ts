@@ -43,7 +43,6 @@ export type OwnerAttentionAdapterKey =
   | "suspension_requests"
   | "termination_requests"
   | "rehire_requests"
-  | "repair_rejections"
   | "compliance_documents"
   | "failed_order_refunds"
   | "failed_repair_refunds"

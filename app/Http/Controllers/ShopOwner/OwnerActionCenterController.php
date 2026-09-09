@@ -34,7 +34,6 @@ final class OwnerActionCenterController extends Controller
         'purchase_request',
         'suspension_request',
         'expense',
-        'repair_rejection',
     ];
 
     public function __construct(
@@ -256,7 +255,6 @@ final class OwnerActionCenterController extends Controller
                 'salary' => 'salary_change',
                 'purchase' => 'purchase_request',
                 'expense' => 'expense',
-                'repair_rejection' => 'repair_rejection',
                 default => null,
             };
         }
@@ -305,7 +303,6 @@ final class OwnerActionCenterController extends Controller
             'salary' => ['salary_change_id', 'salary_change', 'id'],
             'purchase' => ['purchase_request', 'purchase_request_id', 'id'],
             'expense' => ['expense', 'expense_id', 'id'],
-            'repair_rejection' => ['repair_id', 'repair', 'id'],
             default => [],
         };
     }

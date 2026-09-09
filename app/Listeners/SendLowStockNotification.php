@@ -2,14 +2,13 @@
 
 namespace App\Listeners;
 
-use App\Enums\NotificationType;
 use App\Events\LowStockAlert;
 use App\Models\User;
 use App\Notifications\LowStockNotification;
-use App\Services\NotificationService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Notification;
 
 class SendLowStockNotification implements ShouldQueue
 {
@@ -42,27 +41,13 @@ class SendLowStockNotification implements ShouldQueue
             return;
         }
 
-        $notificationService = app(NotificationService::class);
-        foreach ($users as $user) {
-            $notification = new LowStockNotification(
-                $inventoryItem,
-                $event->currentQuantity,
-                $event->reorderLevel,
-                $event->target,
-            );
-            $data = $notification->toArray($user);
-
-            $notificationService->sendToUser(
-                userId: (int) $user->id,
-                type: NotificationType::LOW_STOCK_ALERT,
-                title: 'Low Stock Alert',
-                message: $data['message'],
-                data: $data,
-                actionUrl: "/erp/inventory/inventory-dashboard?inventory_item={$inventoryItem->id}",
-                shopId: (int) $inventoryItem->shop_owner_id,
-                priority: 'medium',
-            );
-        }
+        // Send notification to all relevant users
+        Notification::send($users, new LowStockNotification(
+            $inventoryItem,
+            $event->currentQuantity,
+            $event->reorderLevel,
+            $event->target,
+        ));
 
         Log::info("Low stock notification sent to " . $users->count() . " users for item: {$inventoryItem->name}");
     }

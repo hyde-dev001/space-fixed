@@ -25,7 +25,7 @@ class ShopOwnerApprovalPolicyServiceTest extends TestCase
         $this->policy = app(ShopOwnerApprovalPolicyService::class);
     }
 
-    public function test_missing_or_malformed_settings_require_owner_approval_for_all_families(): void
+    public function test_missing_or_malformed_settings_require_owner_approval_for_supported_families(): void
     {
         $this->assertAllFamilyPolicies(true);
 
@@ -39,7 +39,6 @@ class ShopOwnerApprovalPolicyServiceTest extends TestCase
                     'salary_adjustment_approval' => ['limit' => 10],
                     'purchase_request_approval' => [],
                     'expense_approval' => ['enabled' => null],
-                    'repair_reject_approval' => ['enabled' => []],
                 ],
             ],
         ]);
@@ -80,7 +79,6 @@ class ShopOwnerApprovalPolicyServiceTest extends TestCase
             'salary adjustment' => fn (): bool => $this->policy->requiresOwnerApprovalForSalaryAdjustment($this->shopOwner->id),
             'purchase request' => fn (): bool => $this->policy->requiresOwnerApprovalForPurchaseRequest($this->shopOwner->id, 100.00),
             'expense' => fn (): bool => $this->policy->requiresOwnerApprovalForExpense($this->shopOwner->id, 100.00),
-            'repair reject' => fn (): bool => $this->policy->requiresOwnerApprovalForRepairReject($this->shopOwner->id, 100.00),
         ];
 
         foreach ($readers as $family => $reader) {
@@ -92,7 +90,6 @@ class ShopOwnerApprovalPolicyServiceTest extends TestCase
                     'salary adjustment' => 'requiresOwnerApprovalForSalaryAdjustment',
                     'purchase request' => 'requiresOwnerApprovalForPurchaseRequest',
                     'expense' => 'requiresOwnerApprovalForExpense',
-                    'repair reject' => 'requiresOwnerApprovalForRepairReject',
                 }),
                 "Missing policy reader for {$family}.",
             );
@@ -103,8 +100,7 @@ class ShopOwnerApprovalPolicyServiceTest extends TestCase
                 'payslip' => 'requiresOwnerApprovalForPayslip',
                 'salary adjustment' => 'requiresOwnerApprovalForSalaryAdjustment',
                 'purchase request' => 'requiresOwnerApprovalForPurchaseRequest',
-                'expense' => 'requiresOwnerApprovalForExpense',
-                'repair reject' => 'requiresOwnerApprovalForRepairReject',
+                    'expense' => 'requiresOwnerApprovalForExpense',
             })) {
                 $this->assertSame($expected, $reader(), "Unexpected {$family} policy result.");
             }
@@ -121,7 +117,6 @@ class ShopOwnerApprovalPolicyServiceTest extends TestCase
             'salary_adjustment_approval',
             'purchase_request_approval',
             'expense_approval',
-            'repair_reject_approval',
         ] as $key) {
             $pages[$key] = ['enabled' => $enabled, 'limit' => $limit];
         }

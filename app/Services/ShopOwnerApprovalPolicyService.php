@@ -14,7 +14,6 @@ class ShopOwnerApprovalPolicyService
         'salary_adjustment_approval',
         'purchase_request_approval',
         'expense_approval',
-        'repair_reject_approval',
     ];
 
     public function requiresOwnerApprovalForPriceChange(int $shopOwnerId, float $currentPrice, float $proposedPrice): bool
@@ -25,11 +24,6 @@ class ShopOwnerApprovalPolicyService
     public function requiresOwnerApprovalForPurchaseRequest(int $shopOwnerId, float $amount): bool
     {
         return $this->readApprovalToggle($shopOwnerId, 'purchase_request_approval');
-    }
-
-    public function requiresOwnerApprovalForRepairReject(int $shopOwnerId, float $amount): bool
-    {
-        return $this->readApprovalToggle($shopOwnerId, 'repair_reject_approval');
     }
 
     public function requiresOwnerApprovalForRefund(int $shopOwnerId, float $amount): bool

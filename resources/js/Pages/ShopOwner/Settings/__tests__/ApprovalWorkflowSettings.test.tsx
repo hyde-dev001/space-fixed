@@ -66,7 +66,6 @@ const approvalPages = {
   salary_adjustment_approval: { enabled: true },
   purchase_request_approval: { enabled: true },
   expense_approval: { enabled: true },
-  repair_reject_approval: { enabled: true },
 };
 
 beforeEach(() => {
@@ -120,7 +119,7 @@ beforeEach(() => {
 });
 
 describe("approval workflow settings", () => {
-  it("renders seven binary controls without amount inputs", async () => {
+  it("renders six binary controls without amount inputs", async () => {
     render(<ShopSetting />);
 
     await waitFor(() => {
@@ -131,7 +130,6 @@ describe("approval workflow settings", () => {
         "Salary Adjustment Approval",
         "Purchase Request Approval",
         "Expense Approvals",
-        "Repair Reject Approval",
       ]) {
         expect(screen.getByRole("button", { name: new RegExp(label, "i") })).toBeInTheDocument();
         expect(screen.getByText(label)).toBeInTheDocument();

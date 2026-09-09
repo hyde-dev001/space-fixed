@@ -5,149 +5,112 @@ namespace App\Http\Controllers;
 use App\Models\User;
 use App\Models\Employee;
 use App\Mail\EmployeeInvitation;
-use App\Services\EmployeeInvitationService;
-use App\Services\EmployeeSecurityService;
-use App\Support\EmployeePasswordRules;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
+use Carbon\Carbon;
 use Inertia\Inertia;
 
 class InvitationController extends Controller
 {
-    public function __construct(
-        private readonly EmployeeInvitationService $invitations,
-        private readonly EmployeeSecurityService $security,
-    ) {}
-
-    private function canManageEmployeeAccounts(mixed $authUser): bool
-    {
-        return $authUser instanceof User
-            && $authUser->isEmployeeAccount()
-            && $authUser->shop_owner_id !== null
-            && $authUser->can('manage-employee-accounts');
-    }
-
     /**
      * Show invitation acceptance page
      */
     public function show($token)
     {
-        $user = $this->invitations->find((string) $token);
-
-        if (!$user || !$user->invite_expires_at) {
+        // Find user by token
+        $user = User::where('invite_token', $token)
+                    ->whereNotNull('invite_token')
+                    ->first();
+        
+        // Validate token exists
+        if (!$user) {
             return Inertia::render('Auth/InvitationInvalid', [
-                'error' => 'Invalid invitation link',
+                'error' => 'Invalid invitation link'
             ]);
         }
-
-        if (now()->greaterThan($user->invite_expires_at)) {
+        
+        // Check if token expired
+        if (Carbon::now()->greaterThan($user->invite_expires_at)) {
             return Inertia::render('Auth/InvitationExpired', [
                 'email' => $user->email,
-                'expired_at' => $user->invite_expires_at->toDateTimeString(),
+                'expired_at' => $user->invite_expires_at->toDateTimeString()
             ]);
         }
-
+        
+        // Check if already accepted
         if ($user->password !== null) {
             return Inertia::render('Auth/InvitationAlreadyAccepted', [
-                'email' => $user->email,
+                'email' => $user->email
             ]);
         }
-
+        
+        // Show password setup form
         return Inertia::render('Auth/AcceptInvitation', [
             'token' => $token,
             'email' => $user->email,
             'name' => $user->name,
-            'expires_at' => $user->invite_expires_at->toDateTimeString(),
+            'expires_at' => $user->invite_expires_at->toDateTimeString()
         ]);
     }
-
+    
     /**
      * Accept invitation and set password
      */
     public function accept(Request $request, $token)
     {
-        $user = $this->invitations->find((string) $token);
+        // Find user first (before validation so we can show proper error pages)
+        $user = User::where('invite_token', $token)
+                    ->whereNotNull('invite_token')
+                    ->first();
 
-        if (!$user || !$user->invite_expires_at) {
+        if (!$user) {
             return Inertia::render('Auth/InvitationInvalid', [
-                'error' => 'Invalid invitation link',
+                'error' => 'Invalid invitation link'
             ]);
         }
 
-        if (now()->greaterThan($user->invite_expires_at)) {
+        if (Carbon::now()->greaterThan($user->invite_expires_at)) {
             return Inertia::render('Auth/InvitationExpired', [
                 'email' => $user->email,
-                'expired_at' => $user->invite_expires_at->toDateTimeString(),
+                'expired_at' => $user->invite_expires_at->toDateTimeString()
             ]);
         }
 
         if ($user->password !== null) {
             return Inertia::render('Auth/InvitationAlreadyAccepted', [
-                'email' => $user->email,
+                'email' => $user->email
             ]);
         }
 
-        $validated = $request->validate(['password' => EmployeePasswordRules::rules()]);
-        $tokenHash = hash('sha256', (string) $token);
+        // Validate input
+        $validated = $request->validate([
+            'password' => [
+                'required',
+                'string',
+                'min:8',
+                'confirmed',
+                'regex:/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@\$!%*?&])[A-Za-z\d@\$!%*?&]/',
+            ],
+        ], [
+            'password.regex' => 'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character.'
+        ]);
 
-        $accepted = DB::transaction(function () use ($user, $validated, $token, $tokenHash): bool {
-            $lockedUser = User::query()
-                ->whereKey($user->getKey())
-                ->lockForUpdate()
-                ->first();
-
-            if (!$lockedUser || $lockedUser->password !== null
-                || !$lockedUser->invite_expires_at
-                || now()->greaterThan($lockedUser->invite_expires_at)) {
-                return false;
-            }
-
-            $tokenMatches = hash_equals((string) $lockedUser->invite_token_hash, $tokenHash)
-                || hash_equals((string) $lockedUser->invite_token, (string) $token);
-            if (! $tokenMatches) {
-                return false;
-            }
-
-            $employee = Employee::query()
-                ->where('shop_owner_id', $lockedUser->shop_owner_id)
-                ->whereRaw('LOWER(email) = ?', [strtolower((string) $lockedUser->email)])
-                ->lockForUpdate()
-                ->first();
-
-            if (!$employee) {
-                return false;
-            }
-
-            $lockedUser->forceFill([
-                'password' => Hash::make($validated['password']),
-                'email_verified_at' => now(),
-                'force_password_change' => false,
-            ])->save();
-            $this->invitations->clear($lockedUser);
-            $this->security->invalidateAccess($lockedUser);
-            $this->security->audit(
-                $lockedUser,
-                'employee_invitation_accepted',
-                'Employee invitation accepted.',
-                $employee,
-            );
-
-            return true;
-        });
-
-        if (!$accepted) {
-            return Inertia::render('Auth/InvitationInvalid', [
-                'error' => 'This invitation is no longer valid.',
-            ]);
-        }
+        // Set password and clear invitation token, and clear the force_password_change flag
+        $user->update([
+            'password' => Hash::make($validated['password']),
+            'invite_token' => null,
+            'invite_expires_at' => null,
+            'email_verified_at' => now(),
+            'force_password_change' => false,
+        ]);
 
         return redirect('/login')->with('success', 'Your account has been activated! Please log in with your work email and new password.');
     }
-
+    
     /**
      * Force-reset an employee password and issue a fresh invitation link.
      */
@@ -155,12 +118,12 @@ class InvitationController extends Controller
     {
         $authUser = Auth::guard('user')->user();
 
-        if (!$this->canManageEmployeeAccounts($authUser)) {
+        if (!$authUser) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
         $employee = Employee::query()
-            ->whereKey($employeeId)
+            ->where('id', $employeeId)
             ->where('shop_owner_id', $authUser->shop_owner_id)
             ->first();
 
@@ -177,53 +140,46 @@ class InvitationController extends Controller
             return response()->json(['error' => 'Linked user account not found'], 404);
         }
 
-        if ((int) $user->id === (int) $authUser->id) {
+        if ((int) $user->id === (int) $authUser->id || strcasecmp((string) $user->email, (string) $authUser->email) === 0) {
             return response()->json([
-                'error' => 'You cannot reset the password of the account you are currently using.',
+                'error' => 'You cannot reset the password of the account you are currently using.'
             ], 422);
         }
 
-        $invitation = DB::transaction(function () use ($user, $employee, $authUser): array {
-            $lockedUser = User::query()
-                ->whereKey($user->getKey())
-                ->where('shop_owner_id', $authUser->shop_owner_id)
-                ->lockForUpdate()
-                ->firstOrFail();
+        $newToken = Str::random(64);
+        $newExpiry = Carbon::now()->addDays(7);
 
-            $this->security->invalidateAccess($lockedUser);
-            $invitation = $this->invitations->issue($lockedUser, (int) $authUser->id, true);
-            $this->security->audit(
-                $lockedUser,
-                'employee_credential_reset_initiated',
-                'Employee credential reset initiated by authorized management.',
-                $employee,
-            );
-
-            return $invitation;
-        });
+        $user->update([
+            'password' => null,
+            'force_password_change' => true,
+            'invite_token' => $newToken,
+            'invite_expires_at' => $newExpiry,
+            'invited_at' => now(),
+            'invited_by' => $authUser->id,
+        ]);
 
         return response()->json([
             'success' => true,
             'message' => 'Password reset initiated. Share the new setup link with the employee.',
-            'invite_url' => url("/accept-invitation/{$invitation['token']}"),
-            'invite_expires_at' => $invitation['expires_at']->toIso8601String(),
+            'invite_url' => url("/accept-invitation/{$newToken}"),
+            'invite_expires_at' => $newExpiry->toIso8601String(),
             'work_email' => $user->email,
             'employee_name' => $user->name,
         ]);
     }
+
     /**
      * Regenerate invitation link (for HR/Shop Owner)
      */
     public function regenerate(Request $request, $employeeId)
     {
         $authUser = Auth::guard('user')->user();
-
-        if (!$this->canManageEmployeeAccounts($authUser)) {
+        if (!$authUser) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
         $employee = Employee::query()
-            ->whereKey($employeeId)
+            ->where('id', $employeeId)
             ->where('shop_owner_id', $authUser->shop_owner_id)
             ->first();
 
@@ -235,51 +191,44 @@ class InvitationController extends Controller
             ->where('email', $employee->email)
             ->where('shop_owner_id', $authUser->shop_owner_id)
             ->first();
-
+        
         if (!$user) {
             return response()->json(['error' => 'User account not found'], 404);
         }
 
-        if ((int) $user->id === (int) $authUser->id || $user->password !== null) {
+        if ((int) $user->id === (int) $authUser->id || strcasecmp((string) $user->email, (string) $authUser->email) === 0) {
             return response()->json([
-                'error' => 'Only pending employee invitations can be regenerated.',
+                'error' => 'You cannot reset the password of the account you are currently using.'
             ], 422);
         }
-
-        $invitation = DB::transaction(function () use ($user, $employee, $authUser): array {
-            $lockedUser = User::query()
-                ->whereKey($user->getKey())
-                ->where('shop_owner_id', $authUser->shop_owner_id)
-                ->lockForUpdate()
-                ->firstOrFail();
-
-            $invitation = $this->invitations->issue($lockedUser, (int) $authUser->id);
-            $this->security->audit(
-                $lockedUser,
-                'employee_invitation_regenerated',
-                'Employee invitation regenerated by authorized management.',
-                $employee,
-            );
-
-            return $invitation;
-        });
-
+        
+        // Generate new token
+        $newToken = Str::random(64);
+        $newExpiry = Carbon::now()->addDays(7);
+        
+        $user->update([
+            'invite_token' => $newToken,
+            'invite_expires_at' => $newExpiry,
+            'invited_at' => now(),
+            'invited_by' => $authUser->id,
+        ]);
+        
         return response()->json([
             'success' => true,
-            'invite_url' => url("/accept-invitation/{$invitation['token']}"),
-            'invite_expires_at' => $invitation['expires_at']->toIso8601String(),
+            'invite_url' => url("/accept-invitation/{$newToken}"),
+            'invite_expires_at' => $newExpiry->toIso8601String(),
             'work_email' => $user->email,
             'employee_name' => $user->name,
         ]);
     }
+    
     /**
      * Send invitation email to a personal email address
      */
     public function sendInvitationEmail(Request $request, $employeeId)
     {
         $authUser = Auth::guard('user')->user();
-
-        if (!$this->canManageEmployeeAccounts($authUser)) {
+        if (!$authUser) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -305,65 +254,44 @@ class InvitationController extends Controller
             return response()->json(['error' => 'User account not found'], 404);
         }
 
-        if ($user->password !== null) {
-            return response()->json(['error' => 'The employee has already accepted the invitation.'], 422);
+        if (!$user->invite_token || !$user->invite_expires_at) {
+            return response()->json(['error' => 'No active invitation found. Please regenerate the invitation first.'], 400);
         }
 
-        $invitation = DB::transaction(function () use ($user, $employee, $authUser): array {
-            $lockedUser = User::query()
-                ->whereKey($user->getKey())
-                ->where('shop_owner_id', $authUser->shop_owner_id)
-                ->lockForUpdate()
-                ->firstOrFail();
+        if (Carbon::now()->greaterThan($user->invite_expires_at)) {
+            return response()->json(['error' => 'Invitation has expired. Please regenerate a new invitation.'], 400);
+        }
 
-            $invitation = $this->invitations->issue($lockedUser, (int) $authUser->id);
-            $this->security->audit(
-                $lockedUser,
-                'employee_invitation_resent',
-                'Employee invitation sent to a personal email address.',
-                $employee,
-            );
-
-            return $invitation;
-        });
-
-        $inviteUrl = url("/accept-invitation/{$invitation['token']}");
+        $inviteUrl = url("/accept-invitation/{$user->invite_token}");
         $shopName = 'SoleSpace';
-        $expiresAt = $invitation['expires_at']->format('M d, Y h:i A');
-
+        $expiresAt = $user->invite_expires_at->format('M d, Y h:i A');
         $personalEmail = $request->personal_email;
         $employeeName = $user->name;
         $workEmail = $user->email;
 
-        $htmlEmployeeName = htmlspecialchars((string) $employeeName, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-        $htmlInviteUrl = htmlspecialchars((string) $inviteUrl, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-        $htmlShopName = htmlspecialchars((string) $shopName, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-        $htmlExpiresAt = htmlspecialchars((string) $expiresAt, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-        $htmlWorkEmail = htmlspecialchars((string) $workEmail, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-
         try {
-            Mail::send([], [], function ($message) use ($htmlEmployeeName, $htmlInviteUrl, $htmlShopName, $htmlExpiresAt, $personalEmail, $htmlWorkEmail) {
+            Mail::send([], [], function ($message) use ($employeeName, $inviteUrl, $shopName, $expiresAt, $personalEmail, $workEmail) {
                 $message->to($personalEmail)
-                    ->subject("Your {$htmlShopName} Account Invitation")
+                    ->subject("Your {$shopName} Account Invitation")
                     ->html("
                         <html>
                         <body style='font-family: Arial, sans-serif; line-height: 1.6; color: #333;'>
                             <div style='max-width: 600px; margin: 0 auto; padding: 20px;'>
-                            <h2 style='color: #4F46E5;'>Welcome to {$htmlShopName}!</h2>
+                                <h2 style='color: #4F46E5;'>Welcome to {$shopName}!</h2>
                                 
-                            <p>Hi <strong>{$htmlEmployeeName}</strong>,</p>
+                                <p>Hi <strong>{$employeeName}</strong>,</p>
                                 
-                            <p>You've been invited to join our team at <strong>{$htmlShopName}</strong>!</p>
+                                <p>You've been invited to join our team at <strong>{$shopName}</strong>!</p>
                                 
                                 <div style='background: #F3F4F6; padding: 15px; border-radius: 8px; margin: 20px 0;'>
-                                    <p style='margin: 0 0 10px 0;'><strong>Your work email:</strong> {$htmlWorkEmail}</p>
-                                    <p style='margin: 0;'><strong>Invitation expires:</strong> {$htmlExpiresAt}</p>
+                                    <p style='margin: 0 0 10px 0;'><strong>Your work email:</strong> {$workEmail}</p>
+                                    <p style='margin: 0;'><strong>Invitation expires:</strong> {$expiresAt}</p>
                                 </div>
                                 
                                 <p>Click the button below to set up your account and create your password:</p>
                                 
                                 <div style='text-align: center; margin: 30px 0;'>
-                                    <a href='{$htmlInviteUrl}'
+                                    <a href='{$inviteUrl}' 
                                        style='display: inline-block; background: #4F46E5; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; font-weight: bold;'>
                                         Set Up My Account
                                     </a>
@@ -371,13 +299,13 @@ class InvitationController extends Controller
                                 
                                 <p style='font-size: 12px; color: #666;'>
                                     Or copy and paste this link into your browser:<br>
-                                    <a href='{$htmlInviteUrl}' style='color: #4F46E5; word-break: break-all;'>{$htmlInviteUrl}</a>
+                                    <a href='{$inviteUrl}' style='color: #4F46E5; word-break: break-all;'>{$inviteUrl}</a>
                                 </p>
                                 
                                 <hr style='border: none; border-top: 1px solid #E5E7EB; margin: 20px 0;'>
                                 
                                 <p style='font-size: 12px; color: #666;'>
-                                    <strong>Important:</strong> This invitation link will expire on {$htmlExpiresAt}.
+                                    <strong>Important:</strong> This invitation link will expire on {$expiresAt}.
                                     If you need a new invitation, please contact your administrator.
                                 </p>
                             </div>
@@ -390,79 +318,43 @@ class InvitationController extends Controller
                 'success' => true,
                 'message' => "Invitation email sent successfully to {$personalEmail}",
                 'invite_url' => $inviteUrl,
-                'invite_expires_at' => $invitation['expires_at']->toIso8601String(),
+                'invite_expires_at' => $user->invite_expires_at->toIso8601String(),
             ]);
 
         } catch (\Exception $e) {
             Log::error('Failed to send invitation email: ' . $e->getMessage());
-            return response()->json(['error' => 'Failed to send email.'], 500);
+            return response()->json(['error' => 'Failed to send email: ' . $e->getMessage()], 500);
         }
     }
     
     /**
      * Resend invitation email (for HR/Shop Owner)
      */
-    public function resendInvite(Request $request, $employeeId)
+    public function resendInvite($employeeId)
     {
-        $authUser = Auth::guard('user')->user();
-
-        if (!$this->canManageEmployeeAccounts($authUser)) {
-            return response()->json(['error' => 'Unauthorized'], 403);
-        }
-
-        $employee = Employee::query()
-            ->whereKey($employeeId)
-            ->where('shop_owner_id', $authUser->shop_owner_id)
-            ->first();
-
-        if (!$employee) {
-            return response()->json(['error' => 'Employee not found'], 404);
-        }
-
-        $user = User::query()
-            ->where('email', $employee->email)
-            ->where('shop_owner_id', $authUser->shop_owner_id)
-            ->first();
-
-        if (!$user || $user->password !== null) {
+        $employee = Employee::findOrFail($employeeId);
+        $user = User::where('email', $employee->email)->first();
+        
+        if (!$user || !$user->invite_token) {
             return response()->json(['error' => 'No pending invitation found'], 404);
         }
-
-        $invitation = DB::transaction(function () use ($user, $employee, $authUser): array {
-            $lockedUser = User::query()
-                ->whereKey($user->getKey())
-                ->where('shop_owner_id', $authUser->shop_owner_id)
-                ->lockForUpdate()
-                ->firstOrFail();
-
-            $invitation = $this->invitations->issue($lockedUser, (int) $authUser->id);
-            $this->security->audit(
-                $lockedUser,
-                'employee_invitation_resent',
-                'Employee invitation resent by authorized management.',
-                $employee,
-            );
-
-            return $invitation;
-        });
-
+        
+        if ($user->password !== null) {
+            return response()->json(['error' => 'User has already accepted invitation'], 400);
+        }
+        
+        $inviteUrl = url("/invite/{$user->invite_token}");
+        
         try {
-            $mailUser = $user->fresh();
-            Mail::to($mailUser->email)->send(
-                new EmployeeInvitation($mailUser, url("/invite/{$invitation['token']}")),
-            );
-
+            Mail::to($user->email)->send(new EmployeeInvitation($user, $inviteUrl));
+            
             return response()->json([
                 'success' => true,
-                'email' => $mailUser->email,
-                'message' => 'Invitation email resent successfully',
+                'email' => $user->email,
+                'message' => 'Invitation email resent successfully'
             ]);
-        } catch (\Throwable $exception) {
-            Log::error('Failed to resend employee invitation email.', [
-                'user_id' => $user->getKey(),
-                'exception' => $exception::class,
-            ]);
-
+        } catch (\Exception $e) {
+            Log::error('Failed to resend invitation email: ' . $e->getMessage());
             return response()->json(['error' => 'Failed to send email'], 500);
         }
     }

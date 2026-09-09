@@ -23,12 +23,6 @@ class EmployeeSeeder extends Seeder
      */
     public function run(): void
     {
-        if (app()->environment('production')) {
-            throw new \RuntimeException(
-                'EmployeeSeeder is disabled in production; create employee accounts through the invitation workflow.',
-            );
-        }
-
         // Get all shop owners
         $shopOwners = ShopOwner::all();
 
@@ -199,6 +193,7 @@ class EmployeeSeeder extends Seeder
                     'last_name' => $employeeData['last_name'],
                     'name' => $employeeData['first_name'] . ' ' . $employeeData['last_name'],
                     'email' => $employeeData['email'],
+                    'password' => Hash::make($employeeData['email']),
                     'phone' => $employeeData['phone'],
                     'address' => $shopOwner->business_address,
                     'city' => $shopOwner->city_state,

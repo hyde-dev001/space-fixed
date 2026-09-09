@@ -2,7 +2,6 @@
 
 namespace Tests\Feature\Manager;
 
-use App\Models\ProcurementSettings;
 use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use App\Models\User;
@@ -37,7 +36,8 @@ class ManagerRepairRejectionTest extends TestCase
 
         // Create a repair-type shop
         $this->repairShop = ShopOwner::factory()->create([
-            'business_type' => 'repair' // or 'both'
+            'business_type' => 'repair',
+            'require_two_way_approval' => true,
         ]);
 
         $this->manager = User::factory()
@@ -99,7 +99,7 @@ class ManagerRepairRejectionTest extends TestCase
     }
 
     /**
-     * Test: Manager can approve a repair rejection
+     * Test: Manager approval is the final rejection decision
      */
     public function test_manager_can_approve_repair_rejection(): void
     {
@@ -113,18 +113,17 @@ class ManagerRepairRejectionTest extends TestCase
         $response->assertJson(['success' => true]);
 
         $this->rejectedRepair->refresh();
+        $this->assertSame('rejected', $this->rejectedRepair->status);
         $this->assertEquals('approve_rejection', $this->rejectedRepair->manager_decision);
+        $this->assertFalse((bool) $this->rejectedRepair->requires_owner_approval);
         $this->assertNotNull($this->rejectedRepair->manager_reviewed_at);
     }
 
     /**
-     * Test: OFF skips only the owner stage and leaves the final manager decision pending
+     * Test: Manager approval ignores the legacy Owner policy snapshot
      */
-    public function test_manager_approval_routes_an_off_snapshot_to_manager_final_review(): void
+    public function test_manager_approval_ignores_legacy_owner_policy_snapshot(): void
     {
-        $this->setRepairRejectPolicy(false);
-        $this->rejectedRepair->update(['requires_owner_approval' => false]);
-
         $response = $this->actingAs($this->manager, 'user')
             ->postJson(
                 "/api/manager/repairs/{$this->rejectedRepair->id}/approve-rejection",
@@ -135,8 +134,18 @@ class ManagerRepairRejectionTest extends TestCase
             ->assertJson(['success' => true]);
 
         $this->rejectedRepair->refresh();
-        $this->assertSame('manager_reviewing', $this->rejectedRepair->status);
-        $this->assertNotSame('rejected', $this->rejectedRepair->status);
+        $this->assertSame('rejected', $this->rejectedRepair->status);
+        $this->assertFalse((bool) $this->rejectedRepair->requires_owner_approval);
+    }
+
+    public function test_manager_owner_forwarding_endpoint_is_removed(): void
+    {
+        $this->actingAs($this->manager, 'user')
+            ->postJson(
+                sprintf('/api/manager/repairs/%d/forward-to-owner', $this->rejectedRepair->id),
+                ['reason' => 'Owner approval is no longer part of repair rejection.'],
+            )
+            ->assertNotFound();
     }
 
     /**
@@ -344,6 +353,8 @@ class ManagerRepairRejectionTest extends TestCase
         $response->assertStatus(200)
             ->assertJson(['success' => true]);
 
+        $this->assertFalse((bool) $assignedRepair->fresh()->requires_owner_approval);
+
         $this->assertDatabaseHas('notifications', [
             'user_id' => $permissionBasedReviewer->id,
             'type' => 'repair_rejection_review',
@@ -351,11 +362,4 @@ class ManagerRepairRejectionTest extends TestCase
         ]);
     }
 
-    private function setRepairRejectPolicy(bool $enabled): void
-    {
-        $settings = ProcurementSettings::getForShopOwner($this->repairShop->id);
-        $settingsJson = $settings->settings_json;
-        $settingsJson['approval_pages']['repair_reject_approval']['enabled'] = $enabled;
-        $settings->update(['settings_json' => $settingsJson]);
-    }
 }

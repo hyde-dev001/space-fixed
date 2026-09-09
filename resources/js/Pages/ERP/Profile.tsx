@@ -1,30 +1,10 @@
 import { useState } from "react";
-import { Head, useForm } from "@inertiajs/react";
+import { Head, useForm, usePage } from "@inertiajs/react";
 import { router } from "@inertiajs/react";
 import Swal from "sweetalert2";
 import AppLayoutERP from "../../layout/AppLayout_ERP";
-import EmployeeTotpSecurity from "../../components/UserProfile/EmployeeTotpSecurity";
-
-interface SecurityActivity {
-    action: string;
-    description: string;
-    label: string;
-    created_at?: string | null;
-}
-
-interface ActiveSession {
-    device: string;
-    last_active_at: string;
-    current: boolean;
-}
 
 interface PageProps {
-    security?: {
-        is_employee: boolean;
-        totp_enabled: boolean;
-        activity?: SecurityActivity[];
-        active_sessions?: ActiveSession[];
-    };
     user: {
         id: number;
         name: string;
@@ -43,8 +23,9 @@ interface PageProps {
     requiresPasswordChange: boolean;
 }
 
-export default function Profile({ user, requiresPasswordChange, security }: PageProps) {
-
+export default function Profile({ user, requiresPasswordChange }: PageProps) {
+    const { flash } = usePage().props as any;
+    
     const { data, setData, post, processing, errors, reset } = useForm({
         current_password: "",
         password: "",
@@ -192,7 +173,7 @@ export default function Profile({ user, requiresPasswordChange, security }: Page
                                 <p className="text-gray-900 dark:text-white font-medium mt-1">{personalData.last_name}</p>
                             </div>
                             <div>
-                                <label className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">{security?.is_employee ? "Company Account" : "Email address"}</label>
+                                <label className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Email address</label>
                                 <p className="text-gray-900 dark:text-white font-medium mt-1">{personalData.email}</p>
                             </div>
                             <div>
@@ -296,16 +277,6 @@ export default function Profile({ user, requiresPasswordChange, security }: Page
                         </form>
                     </div>
                 </div>
-
-                {security?.is_employee && (
-                    <div className="mt-8">
-                        <EmployeeTotpSecurity
-                            enabled={security.totp_enabled}
-                            activity={security.activity}
-                            active_sessions={security.active_sessions}
-                        />
-                    </div>
-                )}
             </div>
         </AppLayoutERP>
     );

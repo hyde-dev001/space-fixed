@@ -62,6 +62,10 @@ class User extends Authenticatable implements MustVerifyEmail
         'role',
         'approval_limit',
         'force_password_change',
+        'invite_token',
+        'invite_expires_at',
+        'invited_at',
+        'invited_by',
     ];
 
     /**
@@ -74,17 +78,10 @@ class User extends Authenticatable implements MustVerifyEmail
         'remember_token',
         'valid_id_path',
         'valid_id_disk',
-        'invite_token',
-        'invite_token_hash',
-        'invited_by',
-        'employee_totp_secret',
-        'employee_totp_recovery_codes',
-        'security_version',
     ];
 
     protected $attributes = [
         'identity_verification_status' => self::IDENTITY_PENDING_REVIEW,
-        'security_version' => 1,
     ];
 
     /**
@@ -99,11 +96,6 @@ class User extends Authenticatable implements MustVerifyEmail
         'force_password_change' => 'boolean',
         'invite_expires_at' => 'datetime',
         'invited_at' => 'datetime',
-        'employee_totp_secret' => 'encrypted',
-        'employee_totp_enabled_at' => 'datetime',
-        'employee_totp_recovery_codes' => 'array',
-        'employee_totp_last_used_timestep' => 'integer',
-        'security_version' => 'integer',
     ];
 
     /**
@@ -125,19 +117,6 @@ class User extends Authenticatable implements MustVerifyEmail
         $role = strtoupper(trim((string) $this->role));
 
         return is_null($this->shop_owner_id) && in_array($role, ['', 'CUSTOMER'], true);
-    }
-
-    public function isEmployeeAccount(): bool
-    {
-        return ! is_null($this->shop_owner_id);
-    }
-
-    public function hasEmployeeTotpEnabled(): bool
-    {
-        return $this->isEmployeeAccount()
-            && $this->employee_totp_enabled_at !== null
-            && is_string($this->employee_totp_secret)
-            && $this->employee_totp_secret !== '';
     }
 
     public function currentSuspension(): BelongsTo

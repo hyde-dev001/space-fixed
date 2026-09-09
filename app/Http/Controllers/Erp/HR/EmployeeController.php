@@ -10,22 +10,25 @@ use App\Models\SuspensionRequest;
 use App\Models\User;
 use App\Models\HR\LeaveBalance;
 use App\Models\HR\AuditLog;
+use App\Mail\EmployeeInvitation;
 use App\Models\ShopOwner;
 use App\Services\BusinessAccessControlService;
 use App\Services\HR\EmployeeLinkedUserSynchronizer;
-use App\Services\EmployeeInvitationService;
 use App\Services\HR\EmployeeOwnerProjection;
 use App\Services\HR\EmployeeOperationalPolicy;
 use App\Services\Logistics\RiderProfileSyncService;
-use App\Services\EmployeeSecurityService;
 use App\Traits\HR\LogsHRActivity;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Carbon\Carbon;
 use Spatie\Permission\Models\Role;
 
 class EmployeeController extends Controller
@@ -36,8 +39,6 @@ class EmployeeController extends Controller
         private readonly EmployeeLinkedUserSynchronizer $linkedUserSynchronizer,
         private readonly EmployeeOwnerProjection $employeeOwnerProjection,
         private readonly EmployeeOperationalPolicy $employeePolicy,
-        private readonly EmployeeInvitationService $invitations,
-        private readonly EmployeeSecurityService $security,
     ) {
     }
 
@@ -131,10 +132,9 @@ class EmployeeController extends Controller
     public function store(Request $request): JsonResponse
     {
         $user = Auth::guard('user')->user();
-
-        if (! $user instanceof User
-            || ! $user->isEmployeeAccount()
-            || ! $user->can('manage-employee-accounts')) {
+        
+        // Check if user is Manager or has any HR-related permissions
+        if (!$user->hasRole('Manager') && !$user->can('access-employee-directory') && !$user->can('access-attendance-records') && !$user->can('access-payslip-generation')) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -225,6 +225,9 @@ class EmployeeController extends Controller
         }
         $legacyUserRole = $this->mapLegacyUserRole($normalizedRole);
 
+        // Generate invitation token instead of temporary password
+        $inviteToken = Str::random(64);
+        $inviteExpiresAt = Carbon::now()->addDays(7);
 
         // Map camelCase to snake_case for database
         $firstName = $request->firstName ?? $request->first_name ?? '';
@@ -232,7 +235,7 @@ class EmployeeController extends Controller
         $fullName = trim($firstName . ' ' . $lastName);
         
         // Create both Employee and User atomically
-        [$employee, $newUser, $inviteUrl, $inviteExpiresAt] = DB::transaction(function () use ($request, $user, $firstName, $lastName, $fullName, $resolvedSpatieRole, $legacyUserRole) {
+        [$employee, $newUser, $inviteUrl] = DB::transaction(function () use ($request, $user, $firstName, $lastName, $fullName, $inviteToken, $inviteExpiresAt, $resolvedSpatieRole, $legacyUserRole) {
             $data = [
                 'shop_owner_id' => $user->shop_owner_id,
                 'first_name' => $firstName,
@@ -274,11 +277,11 @@ class EmployeeController extends Controller
                 'role' => $legacyUserRole,
                 'position' => $request->position ?? null,
                 'password' => null, // No password until invitation is accepted
+                'invite_token' => $inviteToken,
+                'invite_expires_at' => $inviteExpiresAt,
+                'invited_at' => now(),
+                'invited_by' => $user->id,
             ]);
-
-            $invitation = $this->invitations->issue($newUser, (int) $user->id);
-            $inviteToken = $invitation['token'];
-            $inviteExpiresAt = $invitation['expires_at'];
 
             $newUser->assignRole($resolvedSpatieRole);
             app(RiderProfileSyncService::class)->syncUser($newUser);
@@ -293,7 +296,7 @@ class EmployeeController extends Controller
                 date('Y')
             );
 
-            return [$employee, $newUser, $inviteUrl, $inviteExpiresAt];
+            return [$employee, $newUser, $inviteUrl];
         });
 
         $this->linkedUserSynchronizer->sync($employee);
@@ -308,14 +311,6 @@ class EmployeeController extends Controller
             $employee,
             "Employee created: {$employee->first_name} {$employee->last_name} ({$employee->position})",
             ['onboarding', 'invitation_sent' => $emailSent]
-        );
-
-        $this->security->audit(
-            $newUser,
-            'employee_invitation_created',
-            'Employee invitation created by authorized management.',
-            $employee,
-            AuditLog::SEVERITY_INFO,
         );
 
         return response()->json([

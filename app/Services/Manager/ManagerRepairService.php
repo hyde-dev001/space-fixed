@@ -10,7 +10,6 @@ use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use App\Models\User;
 use App\Services\NotificationService;
-use App\Services\ShopOwnerApprovalPolicyService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -65,7 +64,6 @@ final class ManagerRepairService
         private readonly ManagerAuthorizationService $authorization,
         private readonly ManagerAssignmentEligibilityService $eligibility,
         private readonly NotificationService $notifications,
-        private readonly ShopOwnerApprovalPolicyService $approvalPolicy,
     ) {
     }
 
@@ -423,14 +421,7 @@ final class ManagerRepairService
             }
 
             $manager = $this->shopManager($shopOwnerId);
-            $shop = ShopOwner::query()->find($shopOwnerId);
             $previousStatus = $this->value($locked->status);
-            $requiresOwnerApproval = $shop !== null
-                && (bool) $shop->require_two_way_approval
-                && $this->approvalPolicy->requiresOwnerApprovalForRepairReject(
-                    $shopOwnerId,
-                    (float) ($locked->total ?? 0),
-                );
             $locked->forceFill([
                 'status' => 'repairer_rejected',
                 'repairer_rejection_reason' => $reason,
@@ -438,7 +429,7 @@ final class ManagerRepairService
                 'repairer_rejected_at' => now(),
                 'repairer_rejected_by' => $repairer->id,
                 'assigned_manager_id' => $manager?->id,
-                'requires_owner_approval' => $requiresOwnerApproval,
+                'requires_owner_approval' => false,
                 'manager_decision' => null,
                 'manager_review_notes' => null,
                 'manager_reviewed_at' => null,
@@ -590,6 +581,7 @@ final class ManagerRepairService
                 'reassignment_count' => (int) ($repair->reassignment_count ?? 0) + 1,
                 'last_reassigned_at' => now(),
                 'assigned_manager_id' => $manager->id,
+                'requires_owner_approval' => false,
                 'manager_decision' => 'override_accept',
                 'manager_review_notes' => $reason,
                 'manager_reviewed_at' => now(),
@@ -643,7 +635,7 @@ final class ManagerRepairService
         return $result->fresh(['repairer', 'managerReviewedBy']) ?? $result;
     }
 
-    public function finalReject(User $manager, int $repairId, string $reason, bool $legacyStageOnly = false): RepairRequest
+    public function finalReject(User $manager, int $repairId, string $reason): RepairRequest
     {
         $shopOwnerId = $this->authorizedMutationShopOwnerId($manager);
         $reason = trim($reason);
@@ -653,7 +645,7 @@ final class ManagerRepairService
             ]);
         }
 
-        $result = DB::transaction(function () use ($manager, $shopOwnerId, $repairId, $reason, $legacyStageOnly): RepairRequest {
+        $result = DB::transaction(function () use ($manager, $shopOwnerId, $repairId, $reason): RepairRequest {
             $repair = RepairRequest::query()
                 ->whereKey($repairId)
                 ->where('shop_owner_id', $shopOwnerId)
@@ -664,20 +656,12 @@ final class ManagerRepairService
                 throw (new ModelNotFoundException())->setModel(RepairRequest::class, [$repairId]);
             }
 
-            if ($repair->requires_owner_approval === true && $this->value($repair->status) !== 'manager_reviewing') {
-                throw ValidationException::withMessages([
-                    'status' => ['This repair follows an explicit Owner approval policy. Forward it to the Shop Owner instead of finalizing it here.'],
-                ]);
-            }
-
-            $this->assertManagerDecisionState(
-                repair: $repair,
-                allowedStatuses: $legacyStageOnly ? ['manager_reviewing'] : null,
-            );
+            $this->assertManagerDecisionState(repair: $repair);
             $previousStatus = $this->value($repair->status);
             $repair->forceFill([
                 'status' => 'rejected',
                 'manager_decision' => 'approve_rejection',
+                'requires_owner_approval' => false,
                 'manager_review_notes' => $reason,
                 'manager_reviewed_at' => now(),
                 'manager_reviewed_by' => $manager->id,
@@ -746,171 +730,6 @@ final class ManagerRepairService
                 report($exception);
             }
         }
-
-        return $result->fresh(['user', 'services', 'managerReviewedBy']) ?? $result;
-    }
-
-    public function finalizeLegacy(User $manager, int $repairId, string $reason): RepairRequest
-    {
-        return $this->finalReject($manager, $repairId, $reason, legacyStageOnly: true);
-    }
-
-    /** Explicit exceptional Owner-stage workflow; never used by default. */
-    public function forwardToOwner(User $manager, int $repairId, string $reason): RepairRequest
-    {
-        $shopOwnerId = $this->authorizedMutationShopOwnerId($manager);
-        $reason = trim($reason);
-        if ($reason === '') {
-            throw ValidationException::withMessages([
-                'reason' => ['A forwarding reason is required.'],
-            ]);
-        }
-
-        $result = DB::transaction(function () use ($manager, $shopOwnerId, $repairId, $reason): RepairRequest {
-            $repair = RepairRequest::query()
-                ->whereKey($repairId)
-                ->where('shop_owner_id', $shopOwnerId)
-                ->lockForUpdate()
-                ->first();
-
-            if ($repair === null) {
-                throw (new ModelNotFoundException())->setModel(RepairRequest::class, [$repairId]);
-            }
-
-            if ($repair->requires_owner_approval !== true) {
-                throw ValidationException::withMessages([
-                    'status' => ['This repair does not have an explicit Owner approval requirement.'],
-                ]);
-            }
-
-            $this->assertManagerDecisionState($repair);
-            $previousStatus = $this->value($repair->status);
-            $repair->forceFill([
-                'status' => 'owner_approval_pending',
-                'manager_decision' => 'approve_rejection',
-                'manager_review_notes' => $reason,
-                'manager_reviewed_at' => now(),
-                'manager_reviewed_by' => $manager->id,
-                'assigned_manager_id' => $manager->id,
-            ])->save();
-
-            $this->audit(
-                repair: $repair,
-                shopOwnerId: $shopOwnerId,
-                actorId: (int) $manager->id,
-                action: 'repair_forwarded_to_owner',
-                metadata: [
-                    'previous_state' => [
-                        'status' => $previousStatus,
-                    ],
-                    'new_state' => [
-                        'status' => 'owner_approval_pending',
-                    ],
-                    'reason' => $reason,
-                    'owner_stage' => 'explicit_policy',
-                    'reference_id' => 'repair:' . $repair->id,
-                ],
-            );
-
-            return $repair;
-        });
-
-        try {
-            $this->notifications->notifyRepairRejectApprovalRequest($shopOwnerId, [
-                'repair_id' => (int) $result->id,
-                'request_id' => (string) $result->request_id,
-                'order_number' => (string) $result->request_id,
-                'reason' => $reason,
-                'manager_id' => (int) $manager->id,
-                'manager_name' => $this->displayName($manager),
-            ]);
-        } catch (\Throwable $exception) {
-            report($exception);
-        }
-
-        return $result->fresh(['user', 'services', 'managerReviewedBy']) ?? $result;
-    }
-
-    /**
-     * Compatibility transition for the old two-step Manager review screen.
-     * The canonical Manager page uses finalReject() or reassign() directly;
-     * this method only preserves the explicitly retained policy-off flow.
-     */
-    public function beginLegacyManagerReview(User $manager, int $repairId, string $reason): RepairRequest
-    {
-        $shopOwnerId = $this->authorizedMutationShopOwnerId($manager);
-        $reason = trim($reason);
-        if ($reason === '') {
-            throw ValidationException::withMessages([
-                'reason' => ['A Manager review reason is required.'],
-            ]);
-        }
-
-        $existingRepair = RepairRequest::query()
-            ->whereKey($repairId)
-            ->where('shop_owner_id', $shopOwnerId)
-            ->first();
-
-        if ($existingRepair === null) {
-            throw (new ModelNotFoundException())->setModel(RepairRequest::class, [$repairId]);
-        }
-
-        if ($existingRepair->requires_owner_approval === true) {
-            return $this->forwardToOwner($manager, $repairId, $reason);
-        }
-
-        $result = DB::transaction(function () use ($manager, $shopOwnerId, $repairId, $reason): RepairRequest {
-            $repair = RepairRequest::query()
-                ->whereKey($repairId)
-                ->where('shop_owner_id', $shopOwnerId)
-                ->lockForUpdate()
-                ->first();
-
-            if ($repair === null) {
-                throw (new ModelNotFoundException())->setModel(RepairRequest::class, [$repairId]);
-            }
-
-            if ($repair->requires_owner_approval === true) {
-                throw ValidationException::withMessages([
-                    'status' => ['This repair now requires the explicit Shop Owner approval stage.'],
-                ]);
-            }
-
-            if ($this->value($repair->status) !== 'repairer_rejected') {
-                throw ValidationException::withMessages([
-                    'status' => ['This repair request is not waiting for initial Manager review.'],
-                ]);
-            }
-
-            $repair->forceFill([
-                'status' => 'manager_reviewing',
-                'manager_decision' => 'approve_rejection',
-                'manager_review_notes' => $reason,
-                'manager_reviewed_at' => now(),
-                'manager_reviewed_by' => $manager->id,
-                'assigned_manager_id' => $manager->id,
-            ])->save();
-
-            $this->audit(
-                repair: $repair,
-                shopOwnerId: $shopOwnerId,
-                actorId: (int) $manager->id,
-                action: 'repair_manager_reviewed',
-                metadata: [
-                    'previous_state' => [
-                        'status' => 'repairer_rejected',
-                    ],
-                    'new_state' => [
-                        'status' => 'manager_reviewing',
-                    ],
-                    'reason' => $reason,
-                    'next_stage' => 'manager_final_decision',
-                    'reference_id' => 'repair:' . $repair->id,
-                ],
-            );
-
-            return $repair;
-        });
 
         return $result->fresh(['user', 'services', 'managerReviewedBy']) ?? $result;
     }
@@ -1184,25 +1003,22 @@ final class ManagerRepairService
             'reassignment_reason_code' => $assignmentState === 'reassignment_required' ? $decision['reason_code'] : null,
             'reassignment_reason_label' => $assignmentState === 'reassignment_required' ? $decision['reason_label'] : null,
             'requires_owner_approval' => (bool) $repair->requires_owner_approval,
-            'next_action' => $this->nextAction($status, $assignmentState, (bool) $repair->requires_owner_approval),
+            'next_action' => $this->nextAction($status, $assignmentState),
             'created_at' => $repair->created_at?->toISOString(),
             'updated_at' => $repair->updated_at?->toISOString(),
         ];
     }
 
-    private function nextAction(string $status, string $assignmentState, bool $requiresOwnerApproval): string
+    private function nextAction(string $status, string $assignmentState): string
     {
         if ($status === 'awaiting_assignment') {
             return 'Manager review required: no eligible repairer';
         }
         if ($status === 'repairer_rejected') {
-            return $requiresOwnerApproval ? 'Manager review: explicit Owner stage available' : 'Manager decision required';
+            return 'Manager decision required';
         }
         if ($assignmentState === 'reassignment_required') {
             return 'Manager reassignment required';
-        }
-        if ($status === 'owner_approval_pending') {
-            return 'Waiting for Shop Owner decision';
         }
         if ($this->isTerminalStatus($status)) {
             return 'No action required';

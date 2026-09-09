@@ -225,7 +225,6 @@ final class ApprovalPolicySnapshotMigrationTest extends TestCase
             'salary_adjustment_approval',
             'purchase_request_approval',
             'expense_approval',
-            'repair_reject_approval',
         ])->mapWithKeys(static fn (string $key): array => [$key => ['enabled' => $enabled]])->all();
     }
 

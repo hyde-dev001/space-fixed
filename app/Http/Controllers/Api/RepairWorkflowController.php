@@ -24,7 +24,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use App\Services\NotificationService;
 use App\Services\PaymentSettlementService;
-use App\Services\ShopOwnerApprovalPolicyService;
 use App\Services\Logistics\SourceShipmentService;
 use App\Services\RepairDeliveryService;
 use App\Services\Repairs\RepairOwnerProjection;
@@ -52,7 +51,6 @@ class RepairWorkflowController extends Controller
 
     public function __construct(
         NotificationService $notificationService,
-        private ShopOwnerApprovalPolicyService $shopOwnerApprovalPolicyService,
         private PaymentSettlementService $paymentSettlementService,
         private SourceShipmentService $sourceShipmentService,
         private RepairDeliveryService $repairDeliveryService,
@@ -118,7 +116,7 @@ class RepairWorkflowController extends Controller
     }
     
     /**
-     * Calculate if request is high value and requires owner approval
+     * Calculate the high-value classification for reporting.
      */
     public function calculateHighValue($requestId)
     {
@@ -134,25 +132,16 @@ class RepairWorkflowController extends Controller
             }
             
             $isHighValue = $repairRequest->total >= $shopOwner->high_value_threshold;
-            $requiresOwnerApprovalByPolicy = $this->shopOwnerApprovalPolicyService->requiresOwnerApprovalForRepairReject(
-                (int) $shopOwner->id,
-                (float) $repairRequest->total
-            );
-            $requiresOwnerApproval = $shopOwner->require_two_way_approval && $requiresOwnerApprovalByPolicy;
-
-            if ($requiresOwnerApprovalByPolicy) {
-                $isHighValue = true;
-            }
             
             $repairRequest->update([
                 'is_high_value' => $isHighValue,
-                'requires_owner_approval' => $requiresOwnerApproval
+                'requires_owner_approval' => false,
             ]);
             
             return response()->json([
                 'success' => true,
                 'is_high_value' => $isHighValue,
-                'requires_owner_approval' => $requiresOwnerApproval,
+                'requires_owner_approval' => false,
                 'threshold' => $shopOwner->high_value_threshold
             ]);
             
@@ -1078,14 +1067,6 @@ class RepairWorkflowController extends Controller
             
             // Find manager for escalation
             $manager = $this->findShopManager($repairRequest->shop_owner_id);
-            $shopOwner = ShopOwner::query()->find($repairRequest->shop_owner_id);
-            $requiresOwnerApproval = $shopOwner
-                ? (bool) $shopOwner->require_two_way_approval
-                    && $this->shopOwnerApprovalPolicyService->requiresOwnerApprovalForRepairReject(
-                        (int) $shopOwner->id,
-                        (float) $repairRequest->total,
-                    )
-                : true;
             $missingSkillNames = $reasonCategory === 'skills_gap'
                 ? []
                 : [];
@@ -1097,7 +1078,7 @@ class RepairWorkflowController extends Controller
                 'repairer_rejected_at' => now(),
                 'repairer_rejected_by' => $user->id,
                 'assigned_manager_id' => $manager ? $manager->id : null,
-                'requires_owner_approval' => $requiresOwnerApproval,
+                'requires_owner_approval' => false,
                 // Start a fresh manager-review cycle for this new rejection.
                 'manager_decision' => null,
                 'manager_review_notes' => null,
@@ -1173,11 +1154,8 @@ class RepairWorkflowController extends Controller
                 ], 403);
             }
             
-            // Manager inbox for rejection workflow:
-            // - Initial review: repairer_rejected
-            // - Forwarded to owner (for manager visibility): owner_approval_pending
-            // - Final review after owner approval: manager_reviewing
-            // Include resolved entries for reference/history in the same table.
+            // Manager inbox for rejection workflow. Resolved entries remain
+            // visible for reference/history in the same table.
             $repairs = RepairRequest::with([
                 'user', 
                 'services', 
@@ -1188,7 +1166,7 @@ class RepairWorkflowController extends Controller
             ])
                 ->where('shop_owner_id', $user->shop_owner_id)
                 ->whereNotNull('repairer_rejected_at')
-                ->whereIn('status', ['repairer_rejected', 'owner_approval_pending', 'manager_reviewing', 'rejected', 'assigned_to_repairer'])
+                ->whereIn('status', ['repairer_rejected', 'manager_reviewing', 'rejected', 'assigned_to_repairer'])
                 ->orderBy('repairer_rejected_at', 'desc')
                 ->get();
 
@@ -1214,7 +1192,7 @@ class RepairWorkflowController extends Controller
     }
     
     /**
-     * Manager first approval: forwards repairer rejection to shop owner.
+     * Compatibility endpoint: Manager approval is final.
      */
     public function approveRejection(Request $request, $requestId)
     {
@@ -1225,7 +1203,7 @@ class RepairWorkflowController extends Controller
         $manager = Auth::guard('user')->user();
         if ($manager) {
             try {
-                $repairRequest = app(ManagerRepairService::class)->beginLegacyManagerReview(
+                $repairRequest = app(ManagerRepairService::class)->finalReject(
                     manager: $manager,
                     repairId: (int) $requestId,
                     reason: (string) ($request->input('notes') ?? 'Manager reviewed the repairer rejection.'),
@@ -1233,9 +1211,7 @@ class RepairWorkflowController extends Controller
 
                 return response()->json([
                     'success' => true,
-                    'message' => $repairRequest->status === 'owner_approval_pending'
-                        ? 'Repair rejection was forwarded to the Shop Owner under the explicit approval policy.'
-                        : 'Repair rejection is ready for the Manager final decision.',
+                    'message' => 'Repair request was rejected by the Manager.',
                     'repair' => $repairRequest,
                 ]);
             } catch (ModelNotFoundException) {
@@ -1308,11 +1284,11 @@ class RepairWorkflowController extends Controller
                 ], 400);
             }
             
-            $ownerApprovalRequired = $repairRequest->requires_owner_approval !== false;
-            $nextStatus = $ownerApprovalRequired ? 'owner_approval_pending' : 'manager_reviewing';
+            $nextStatus = 'rejected';
 
             $repairRequest->update([
                 'status' => $nextStatus,
+                'requires_owner_approval' => false,
                 'manager_decision' => 'approve_rejection',
                 'manager_review_notes' => $request->notes,
                 'manager_reviewed_at' => now(),
@@ -1321,36 +1297,9 @@ class RepairWorkflowController extends Controller
 
             DB::commit();
 
-            if ($ownerApprovalRequired) {
-                try {
-                    $this->notificationService->notifyRepairRejectApprovalRequest(
-                        (int) $repairRequest->shop_owner_id,
-                        [
-                            'repair_id' => (int) $repairRequest->id,
-                            'request_id' => (string) ($repairRequest->request_id ?? $repairRequest->id),
-                            'order_number' => (string) ($repairRequest->request_id ?? $repairRequest->id),
-                            'customer_name' => (string) ($repairRequest->customer_name ?? 'Customer'),
-                            'reason' => (string) ($repairRequest->repairer_rejection_reason ?? ''),
-                            'manager_notes' => (string) ($request->notes ?? ''),
-                            'manager_id' => (int) $user->id,
-                            'manager_name' => (string) ($user->name ?? trim((string) (($user->first_name ?? '') . ' ' . ($user->last_name ?? '')))),
-                            'status' => $nextStatus,
-                        ]
-                    );
-                } catch (\Throwable $notificationError) {
-                    \Log::warning('Could not notify shop owner for forwarded repair rejection', [
-                        'repair_request_id' => $repairRequest->id,
-                        'shop_owner_id' => $repairRequest->shop_owner_id,
-                        'error' => $notificationError->getMessage(),
-                    ]);
-                }
-            }
-
             return response()->json([
                 'success' => true,
-                'message' => $ownerApprovalRequired
-                    ? 'Initial approval completed. Rejection forwarded to shop owner for review.'
-                    : 'Initial approval completed. Rejection is now pending manager final review.',
+                'message' => 'Repair request was rejected by the Manager.',
                 'repair' => $repairRequest->fresh(['user', 'services', 'managerReviewedBy'])
             ]);
             
@@ -1375,7 +1324,7 @@ class RepairWorkflowController extends Controller
         $manager = Auth::guard('user')->user();
         if ($manager) {
             try {
-                $repairRequest = app(ManagerRepairService::class)->finalizeLegacy(
+                $repairRequest = app(ManagerRepairService::class)->finalReject(
                     manager: $manager,
                     repairId: (int) $requestId,
                     reason: (string) ($request->input('notes') ?? 'Manager final review confirmed the rejection.'),
@@ -1681,239 +1630,6 @@ class RepairWorkflowController extends Controller
     }
 
     /**
-     * Get rejection requests waiting for shop-owner approval (rejection workflow only).
-     */
-    public function getOwnerRejectionPendingApprovals(Request $request)
-    {
-        try {
-            $shopOwner = Auth::guard('shop_owner')->user();
-
-            if (!$shopOwner) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Unauthenticated'
-                ], 401);
-            }
-
-            $repairs = RepairRequest::with([
-                'user:id,first_name,last_name,email,phone',
-                'services:id,name,price',
-                'repairer:id,first_name,last_name',
-                'repairerRejectedBy',
-                'managerReviewedBy',
-                'ownerReviewedBy',
-            ])
-                ->where('shop_owner_id', $shopOwner->id)
-                ->whereNotNull('repairer_rejected_at')
-                ->where(function ($query) {
-                    $query->whereNull('requires_owner_approval')
-                        ->orWhere('requires_owner_approval', true);
-                })
-                ->whereIn('status', ['owner_approval_pending', 'manager_reviewing', 'assigned_to_repairer', 'rejected'])
-                ->orderByDesc('repairer_rejected_at')
-                ->get();
-
-            return response()->json([
-                'success' => true,
-                'repairs' => $repairs,
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to fetch owner rejection approvals: ' . $e->getMessage(),
-            ], 500);
-        }
-    }
-
-    /**
-     * Show a rejection-workflow repair belonging to this shop owner.
-     */
-    public function getOwnerRejectionApproval(Request $request, $id)
-    {
-        $shopOwner = Auth::guard('shop_owner')->user();
-
-        if (!$shopOwner) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Unauthenticated',
-            ], 401);
-        }
-
-        $repair = RepairRequest::with([
-            'user:id,first_name,last_name,email,phone',
-            'services:id,name,price',
-            'repairer:id,first_name,last_name',
-            'repairerRejectedBy',
-            'managerReviewedBy',
-            'ownerReviewedBy',
-        ])
-            ->where('shop_owner_id', $shopOwner->id)
-            ->whereKey($id)
-            ->first();
-
-        if (!$repair) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Repair rejection approval not found',
-            ], 404);
-        }
-
-        return response()->json([
-            'success' => true,
-            'repair' => $repair,
-        ]);
-    }
-
-    /**
-     * Shop-owner approval step for rejection workflow.
-     */
-    public function approveOwnerRejection(Request $request, $id)
-    {
-        $request->validate([
-            'notes' => 'nullable|string|max:500'
-        ]);
-
-        try {
-            $shopOwner = Auth::guard('shop_owner')->user();
-
-            if (!$shopOwner) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Unauthenticated'
-                ], 401);
-            }
-
-            DB::beginTransaction();
-
-            $repairRequest = RepairRequest::where('id', $id)
-                ->where('shop_owner_id', $shopOwner->id)
-                ->first();
-
-            if (!$repairRequest) {
-                DB::rollBack();
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Repair request not found'
-                ], 404);
-            }
-
-            if ($repairRequest->requires_owner_approval === false) {
-                DB::rollBack();
-                return response()->json([
-                    'success' => false,
-                    'message' => 'This repair rejection does not require owner approval'
-                ], 400);
-            }
-
-            if ($repairRequest->status !== 'owner_approval_pending') {
-                DB::rollBack();
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Repair is not pending owner rejection approval'
-                ], 400);
-            }
-
-            $repairRequest->update([
-                'status' => 'manager_reviewing',
-                'owner_decision' => 'approved',
-                'owner_review_notes' => $request->notes,
-                'owner_reviewed_at' => now(),
-                'owner_reviewed_by' => $shopOwner->id,
-                'owner_reviewed_by_id' => $shopOwner->id,
-            ]);
-
-            DB::commit();
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Owner approval completed. Request is now pending manager final approval.',
-                'repair' => $repairRequest->fresh(['user', 'services', 'repairer', 'ownerReviewedBy'])
-            ]);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to approve rejection: ' . $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Shop-owner rejects the rejection request and returns repair to assigned flow.
-     */
-    public function rejectOwnerRejection(Request $request, $id)
-    {
-        $request->validate([
-            'notes' => 'required|string|min:10|max:500'
-        ]);
-
-        try {
-            $shopOwner = Auth::guard('shop_owner')->user();
-
-            if (!$shopOwner) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Unauthenticated'
-                ], 401);
-            }
-
-            DB::beginTransaction();
-
-            $repairRequest = RepairRequest::where('id', $id)
-                ->where('shop_owner_id', $shopOwner->id)
-                ->first();
-
-            if (!$repairRequest) {
-                DB::rollBack();
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Repair request not found'
-                ], 404);
-            }
-
-            if ($repairRequest->requires_owner_approval === false) {
-                DB::rollBack();
-                return response()->json([
-                    'success' => false,
-                    'message' => 'This repair rejection does not require owner approval'
-                ], 400);
-            }
-
-            if ($repairRequest->status !== 'owner_approval_pending') {
-                DB::rollBack();
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Repair is not pending owner rejection approval'
-                ], 400);
-            }
-
-            $repairRequest->update([
-                'status' => 'assigned_to_repairer',
-                'owner_decision' => 'rejected',
-                'owner_review_notes' => $request->notes,
-                'owner_reviewed_at' => now(),
-                'owner_reviewed_by' => $shopOwner->id,
-                'owner_reviewed_by_id' => $shopOwner->id,
-                'manager_decision' => null,
-            ]);
-
-            DB::commit();
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Owner rejected the rejection request. Repair returned to assigned workflow.',
-                'repair' => $repairRequest->fresh(['user', 'services', 'repairer', 'ownerReviewedBy'])
-            ]);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to reject rejection request: ' . $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
      * Get available repairers for a repair (workload-based only)
      * Used by manager to select repairers for override
      */
@@ -2003,145 +1719,6 @@ class RepairWorkflowController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch available repairers: ' . $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Get high-value repairs pending shop owner approval
-     * For shop owners only
-     */
-    public function getHighValuePendingApprovals()
-    {
-        try {
-            $shopOwner = Auth::guard('shop_owner')->user();
-            
-            $repairs = RepairRequest::where('shop_owner_id', $shopOwner->id)
-                ->where('is_high_value', true)
-                ->where('requires_owner_approval', true)
-                ->where('status', 'owner_approval_pending')
-                ->with([
-                    'user:id,first_name,last_name,email,phone',
-                    'services:id,name,price',
-                    'repairer:id,first_name,last_name',
-                    'conversation'
-                ])
-                ->orderBy('created_at', 'desc')
-                ->get();
-            
-            return response()->json([
-                'success' => true,
-                'repairs' => $repairs
-            ]);
-            
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to fetch high-value repairs: ' . $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Approve high-value repair request
-     * Allows repairer to start work
-     */
-    public function approveHighValueRepair(Request $request, $id)
-    {
-        try {
-            $shopOwner = Auth::guard('shop_owner')->user();
-            
-            DB::beginTransaction();
-            
-            $repairRequest = RepairRequest::where('id', $id)
-                ->where('shop_owner_id', $shopOwner->id)
-                ->firstOrFail();
-            
-            if ($repairRequest->status !== 'owner_approval_pending') {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Repair is not pending owner approval'
-                ], 400);
-            }
-            
-            $repairRequest->update([
-                'status' => 'owner_approved',
-                'owner_decision' => 'approve',
-                'owner_approval_notes' => $request->notes,
-                'owner_reviewed_at' => now(),
-                'owner_reviewed_by_id' => $shopOwner->id,
-            ]);
-            
-            DB::commit();
-            
-            // TODO: Send notification to repairer that they can start work
-            // TODO: Send notification to customer that repair is approved
-            
-            return response()->json([
-                'success' => true,
-                'message' => 'High-value repair approved. Repairer can now start work.',
-                'repair' => $repairRequest->fresh(['user', 'services', 'repairer', 'ownerReviewedBy'])
-            ]);
-            
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to approve repair: ' . $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Reject high-value repair request
-     * Cancels the repair and notifies customer
-     */
-    public function rejectHighValueRepair(Request $request, $id)
-    {
-        $request->validate([
-            'notes' => 'required|string|min:10'
-        ]);
-        
-        try {
-            $shopOwner = Auth::guard('shop_owner')->user();
-            
-            DB::beginTransaction();
-            
-            $repairRequest = RepairRequest::where('id', $id)
-                ->where('shop_owner_id', $shopOwner->id)
-                ->firstOrFail();
-            
-            if ($repairRequest->status !== 'owner_approval_pending') {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Repair is not pending owner approval'
-                ], 400);
-            }
-            
-            $repairRequest->update([
-                'status' => 'owner_rejected',
-                'owner_decision' => 'reject',
-                'owner_approval_notes' => $request->notes,
-                'owner_reviewed_at' => now(),
-                'owner_reviewed_by_id' => $shopOwner->id,
-            ]);
-            
-            DB::commit();
-            
-            // TODO: Send notification to customer explaining rejection
-            // TODO: Potentially trigger refund if payment was made
-            
-            return response()->json([
-                'success' => true,
-                'message' => 'High-value repair rejected. Customer will be notified.',
-                'repair' => $repairRequest->fresh(['user', 'services', 'ownerReviewedBy'])
-            ]);
-            
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to reject repair: ' . $e->getMessage()
             ], 500);
         }
     }
@@ -2749,8 +2326,8 @@ class RepairWorkflowController extends Controller
     /**
      * Customer confirms repair (Phase 4)
      * Changes status from repairer_accepted to waiting_customer_confirmation
-     * Note: For high-value repairs, owner_approval_pending is set AFTER payment (not here)
-     * This allows payment to be enabled first before owner approval
+     * Payment remains governed by the existing repair payment flow; high-value
+     * classification is informational and does not create an Owner approval stage.
      */
     public function confirmRepair(Request $request, $id)
     {
@@ -2771,9 +2348,7 @@ class RepairWorkflowController extends Controller
                 ->where('status', 'repairer_accepted')
                 ->firstOrFail();
             
-            // Always transition to waiting_customer_confirmation on confirmation
-            // For high-value repairs, transition to owner_approval_pending AFTER payment is completed
-            // This ensures payment can be enabled and processed before owner approval
+            // Always transition to waiting_customer_confirmation on confirmation.
             $newStatus = 'waiting_customer_confirmation';
             
             $repairRequest->update([

@@ -10,7 +10,7 @@ describe('Manager Repair Jobs page contract', () => {
     expect(source).toContain('fetchManagerRepairerOptions');
     expect(source).toContain('repairer_workload');
     expect(source).toContain('review_state');
-    expect(source).toContain('Forward to Shop Owner');
+    expect(source).not.toContain('Forward to Shop Owner');
     expect(source).toContain('Confirm final rejection');
     expect(source).toContain('Confirm reassignment');
   });
