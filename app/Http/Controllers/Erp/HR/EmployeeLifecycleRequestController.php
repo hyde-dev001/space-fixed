@@ -13,7 +13,6 @@ use App\Services\HR\EmployeeLifecycleWorkflowService;
 use App\Services\NotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 
@@ -112,7 +111,6 @@ final class EmployeeLifecycleRequestController extends Controller
 
         if ($type === EmployeeLifecycleRequestType::REHIRE) {
             $rules += [
-                'rehire_start_date' => ['required', 'date'],
                 'rehire_position' => ['required', 'string', 'max:100'],
                 'rehire_department' => ['nullable', 'string', 'max:100'],
                 'rehire_functional_role' => ['nullable', 'string', 'max:100'],
@@ -145,15 +143,6 @@ final class EmployeeLifecycleRequestController extends Controller
                 return response()->json([
                     'message' => 'The selected rehire role is not available for this company.',
                     'errors' => ['rehire_role' => ['Select a valid role for this company.']],
-                ], 422);
-            }
-
-            $rehireDate = Carbon::parse($validated['rehire_start_date'])->startOfDay();
-            if ($employee->terminated_at !== null
-                && $rehireDate->lessThanOrEqualTo($employee->terminated_at->copy()->startOfDay())) {
-                return response()->json([
-                    'message' => 'The rehire date must be after the termination date.',
-                    'errors' => ['rehire_start_date' => ['The rehire date must be after the termination date.']],
                 ], 422);
             }
 

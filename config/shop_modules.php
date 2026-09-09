@@ -547,6 +547,7 @@ $routeBuckets = [
         'shop-owner.employees.store',
         'shop-owner.employees.suspend',
         'shop-owner.employees.update',
+        'shop_owner.employees.reset_password',
         'shop_owner.employees.regenerate_invite',
         'shop_owner.employees.send_invitation_email',
         'shop_owner.suspension_requests.index',

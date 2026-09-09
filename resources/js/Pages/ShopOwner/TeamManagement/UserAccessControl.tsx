@@ -57,6 +57,12 @@ interface Employee {
   department?: string;
   phone?: string;
   address?: string;
+  position?: string;
+  personalEmail?: string | null;
+  accountStatus?: string | null;
+  lastActive?: string | null;
+  createdBy?: string | number | null;
+  linkedAccountState?: string | null;
   userId?: number;
   roleName?: string;
   permissions?: string[];
@@ -208,7 +214,6 @@ const UserAccessControl: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'employees'>('employees');
   const [isEmployeeModalOpen, setIsEmployeeModalOpen] = useState(false);
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
-  const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [selectedUser, setSelectedUser] = useState<UserAccount | null>(null);
   const [employeeFilter, setEmployeeFilter] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
@@ -221,6 +226,7 @@ const UserAccessControl: React.FC = () => {
   const [isInviteLinkCopied, setIsInviteLinkCopied] = useState(false);
   const [isSendingInviteEmail, setIsSendingInviteEmail] = useState(false);
   const [inviteEmailStatus, setInviteEmailStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [viewingEmployee, setViewingEmployee] = useState<Employee | null>(null);
   const lastInvitationKeyRef = useRef<string | null>(null);
 
   const openInvitationModal = (
@@ -405,6 +411,12 @@ const UserAccessControl: React.FC = () => {
       additionalRoles: Array.isArray(emp.additionalRoles)
         ? emp.additionalRoles.map((role: string) => normalizeRoleName(role))
         : emp.additionalRoles,
+      position: emp.position ?? '',
+      personalEmail: emp.personalEmail ?? emp.personal_email ?? null,
+      accountStatus: emp.accountStatus ?? emp.account_status ?? null,
+      lastActive: emp.lastActive ?? emp.last_active ?? null,
+      createdBy: emp.createdBy ?? emp.created_by ?? null,
+      linkedAccountState: emp.linkedAccountState ?? emp.linked_account_state ?? null,
       createdAt: new Date(emp.createdAt)
     };
   }
@@ -895,7 +907,7 @@ const UserAccessControl: React.FC = () => {
   };
 
   useEffect(() => {
-    if (!isEmployeeModalOpen || Boolean(editingEmployee)) {
+    if (!isEmployeeModalOpen) {
       setEmployeeEmailValidation({ status: 'idle', message: '' });
       return;
     }
@@ -929,10 +941,10 @@ const UserAccessControl: React.FC = () => {
     }, 350);
 
     return () => window.clearTimeout(timer);
-  }, [employeeForm.email, isEmployeeModalOpen, editingEmployee]);
+  }, [employeeForm.email, isEmployeeModalOpen]);
 
   useEffect(() => {
-    if (!isEmployeeModalOpen || Boolean(editingEmployee)) {
+    if (!isEmployeeModalOpen) {
       setEmployeePhoneValidation({ status: 'idle', message: '' });
       return;
     }
@@ -965,7 +977,7 @@ const UserAccessControl: React.FC = () => {
     }, 350);
 
     return () => window.clearTimeout(timer);
-  }, [employeeForm.phone, isEmployeeModalOpen, editingEmployee]);
+  }, [employeeForm.phone, isEmployeeModalOpen]);
 
   const handleAddEmployee = async () => {
     // Check required fields
@@ -1150,110 +1162,6 @@ const UserAccessControl: React.FC = () => {
       } else {
         setIsSubmittingEmployee(false);
       }
-    }, 100);
-  };
-
-  const handleEditEmployee = async () => {
-    if (!editingEmployee || !employeeForm.firstName || !employeeForm.lastName || !employeeForm.email) {
-      setIsEmployeeModalOpen(false);
-      setTimeout(() => {
-        Swal.fire({
-          icon: 'error',
-          title: 'Validation Error',
-          text: 'Please fill in all required fields',
-          timer: 3000,
-          showConfirmButton: false
-        });
-      }, 100);
-      return;
-    }
-
-    const trimmedEmail = employeeForm.email.trim();
-    const normalizedPhone = employeeForm.phone.replace(/\D/g, '').slice(0, 11);
-
-    setIsSubmittingEmployee(true);
-
-    setTimeout(() => {
-      router.put(`/shop-owner/employees/${editingEmployee.id}`, {
-        name: `${employeeForm.firstName} ${employeeForm.lastName}`,
-        email: trimmedEmail,
-        phone: normalizedPhone,
-        address: employeeForm.address,
-        department: employeeForm.department || 'General',
-        position: employeeForm.position || '',
-        salary: parseFloat(employeeForm.salary) || 0,
-        hire_date: employeeForm.hire_date || new Date().toISOString().split('T')[0],
-        status: editingEmployee.status,
-      }, {
-        preserveScroll: true,
-        preserveState: true,
-        onSuccess: () => {
-          setEmployees(employees.map((employee) =>
-            employee.id === editingEmployee.id
-              ? {
-                ...employee,
-                name: `${employeeForm.firstName} ${employeeForm.lastName}`,
-                email: trimmedEmail,
-                phone: normalizedPhone,
-                address: employeeForm.address,
-                department: employeeForm.department || 'General',
-                role: employeeForm.department || employeeForm.role,
-                position: employeeForm.position || employee.position,
-                salary: parseFloat(employeeForm.salary) || 0,
-                hire_date: employeeForm.hire_date,
-              }
-              : employee
-          ));
-
-          setIsEmployeeModalOpen(false);
-          setEditingEmployee(null);
-          setEmployeeForm({
-            firstName: '',
-            lastName: '',
-            email: '',
-            phone: '',
-            address: '',
-            department: '',
-            hire_date: new Date().toISOString().split('T')[0],
-            role: '',
-            salary: '',
-          });
-
-          Swal.fire({
-            icon: 'success',
-            title: 'Success!',
-            text: 'Employee updated successfully!',
-            timer: 2000,
-            showConfirmButton: false
-          });
-        },
-        onError: (errors) => {
-          let errorMessage = 'Failed to update employee. Please try again.';
-
-          if (typeof errors === 'object' && errors !== null) {
-            const validationErrors = Object.values(errors).flat();
-            if (validationErrors.length > 0) {
-              errorMessage = validationErrors.join('<br>');
-            } else if (errors.message) {
-              errorMessage = errors.message;
-            } else if (errors.error) {
-              errorMessage = errors.error;
-            }
-          } else if (typeof errors === 'string') {
-            errorMessage = errors;
-          }
-
-          Swal.fire({
-            icon: 'error',
-            title: 'Error',
-            html: errorMessage,
-            showConfirmButton: true
-          });
-        },
-        onFinish: () => {
-          setIsSubmittingEmployee(false);
-        }
-      });
     }, 100);
   };
 
@@ -1662,7 +1570,6 @@ const UserAccessControl: React.FC = () => {
 
   // Modal open handlers
   const openAddEmployeeModal = () => {
-    setEditingEmployee(null);
     setEmployeeEmailValidation({ status: 'idle', message: '' });
     setEmployeePhoneValidation({ status: 'idle', message: '' });
     setEmployeeForm({
@@ -1680,24 +1587,72 @@ const UserAccessControl: React.FC = () => {
     setIsEmployeeModalOpen(true);
   };
 
-  const openEditEmployeeModal = (employee: Employee) => {
-    setEditingEmployee(employee);
-    setEmployeeEmailValidation({ status: 'idle', message: '' });
-    setEmployeePhoneValidation({ status: 'idle', message: '' });
-    setEmployeeForm({
-      firstName: (employee.name || '').split(' ')[0] || '',
-      lastName: ((employee.name || '').split(' ').slice(1).join(' ')) || '',
-      email: employee.email,
-      phone: employee.phone || '',
-      address: employee.address || '',
-      department: employee.department || employee.role || '',
-      hire_date: employee.hire_date || new Date().toISOString().split('T')[0],
-      role: employee.role || '',
-      position: (employee as any).position || '',
-      salary: employee.salary?.toString() || '',
+  const handleResetEmployeePassword = async (employee: Employee) => {
+    if (!employee.userId) {
+      await Swal.fire({
+        icon: 'error',
+        title: 'Reset Failed',
+        text: 'Employee user ID not found.',
+      });
+      return;
+    }
+
+    const employeeEmail = String(employee.email ?? '').trim().toLowerCase();
+    if ((currentUserId > 0 && Number(employee.userId) === currentUserId)
+      || (currentAccountEmail !== '' && employeeEmail === currentAccountEmail)) {
+      await Swal.fire({
+        icon: 'info',
+        title: 'Action Blocked',
+        text: 'You cannot reset the password of the account you are currently using.',
+      });
+      return;
+    }
+
+    const result = await Swal.fire({
+      title: 'Reset employee password?',
+      text: 'This invalidates the current password and generates a new setup link.',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Yes, reset password',
+      cancelButtonText: 'Cancel',
     });
 
-    setIsEmployeeModalOpen(true);
+    if (!result.isConfirmed) return;
+
+    try {
+      const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+      const response = await fetch('/api/shop-owner/employees/' + employee.userId + '/reset-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'X-CSRF-TOKEN': csrf || '',
+        },
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || data.message || 'Failed to reset employee password.');
+      }
+
+      openInvitationModal({
+        invite_url: data.invite_url,
+        invite_expires_at: data.invite_expires_at,
+        work_email: data.work_email || employee.email,
+        employee: {
+          name: employee.name,
+          email: employee.email,
+          userId: employee.userId,
+        },
+        timestamp: data.timestamp || Date.now(),
+        wasRegenerated: false,
+      }, String(employee.userId) + '-' + String(data.timestamp || Date.now()));
+    } catch (error) {
+      await Swal.fire({
+        icon: 'error',
+        title: 'Reset Failed',
+        text: error instanceof Error ? error.message : 'Failed to reset employee password.',
+      });
+    }
   };
 
   // View/Resend Invitation Link
@@ -1870,6 +1825,17 @@ const UserAccessControl: React.FC = () => {
                         <TableCell className="px-6 py-4">
                           <div className="flex items-center space-x-2">
                             <IconButton
+                              variant="warning"
+                              onClick={() => handleResetEmployeePassword(employee)}
+                              title="Reset Password"
+                              aria-label="Reset employee password"
+                              disabled={String(employee.email ?? '').trim().toLowerCase() === currentAccountEmail}
+                            >
+                              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m6-10h-1V6a5 5 0 00-10 0v1H6a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V9a2 2 0 00-2-2zM9 7V6a3 3 0 016 0v1H9z" />
+                              </svg>
+                            </IconButton>
+                            <IconButton
                               variant="primary"
                               onClick={() => viewInvitationLink(employee)}
                               title={(String(employee.email ?? '').trim().toLowerCase() === currentAccountEmail) ? 'You cannot reset your own account password' : 'View/Resend Invitation Link'}
@@ -1892,12 +1858,13 @@ const UserAccessControl: React.FC = () => {
                             </IconButton>
                             <IconButton
                               variant="neutral"
-                              onClick={() => openEditEmployeeModal(employee)}
-                              title="Edit Employee"
-                              aria-label={`Edit ${employee.name}`}
+                              onClick={() => setViewingEmployee(employee)}
+                              title="View Details"
+                              aria-label={`View details for ${employee.name}`}
                             >
                               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.477 0 8.268 2.943 9.542 7-1.274 4.057-5.065 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                <circle cx="12" cy="12" r="3" strokeWidth={2} />
                               </svg>
                             </IconButton>
                             {/* Delete button removed per request */}
@@ -2169,7 +2136,7 @@ const UserAccessControl: React.FC = () => {
               <div className="bg-white dark:bg-gray-900 rounded-xl shadow-xl max-w-2xl w-full border border-gray-200 dark:border-gray-800 overflow-hidden">
                 {/* Header */}
                 <div className="border-b border-gray-200 dark:border-gray-800 px-8 py-6">
-                  <h2 className="text-2xl font-bold text-gray-900 dark:text-white">{editingEmployee ? 'Edit Employee' : 'Add New Employee'}</h2>
+                  <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Add New Employee</h2>
                   <p className="text-gray-600 dark:text-gray-400 text-sm mt-1">Fill in the employee details below</p>
                 </div>
 
@@ -2292,17 +2259,63 @@ const UserAccessControl: React.FC = () => {
                         Cancel
                       </button>
                       <button
-                        onClick={editingEmployee ? handleEditEmployee : handleAddEmployee}
+                        onClick={handleAddEmployee}
                         disabled={isSubmittingEmployee}
                         className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors"
                       >
-                        {isSubmittingEmployee ? 'Processing...' : (editingEmployee ? 'Update Employee' : 'Add Employee')}
+                        {isSubmittingEmployee ? 'Processing...' : 'Add Employee'}
                       </button>
                     </div>
                   </div>
                 </div>
               </div>
             </div>
+          </Modal>
+
+          <Modal isOpen={Boolean(viewingEmployee)} onClose={() => setViewingEmployee(null)}>
+            {viewingEmployee && (
+              <div className="w-full max-w-3xl p-6">
+                <div className="border-b border-gray-200 pb-4 dark:border-gray-700">
+                  <h3 className="text-2xl font-semibold text-gray-900 dark:text-white">View Details</h3>
+                  <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                    Read-only employee and account information.
+                  </p>
+                </div>
+
+                <dl className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  {[
+                    ['Name', viewingEmployee.name],
+                    ['Work Email', viewingEmployee.email],
+                    ['Personal Email', viewingEmployee.personalEmail || 'Personal email unavailable'],
+                    ['Phone', viewingEmployee.phone || 'Not available'],
+                    ['Department / Role', viewingEmployee.department || viewingEmployee.role || 'Not assigned'],
+                    ['Position / Job Title', viewingEmployee.position || 'Not assigned'],
+                    ['Employment Status', viewingEmployee.status],
+                    ['Hired Date', viewingEmployee.hire_date
+                      ? new Date(viewingEmployee.hire_date).toLocaleDateString()
+                      : 'Not available'],
+                    ['Salary / Daily Rate', viewingEmployee.salary ?? 'Not available'],
+                    ['Account Status', viewingEmployee.accountStatus || 'Unknown'],
+                    ['Last Active', viewingEmployee.lastActive
+                      ? new Date(viewingEmployee.lastActive).toLocaleString()
+                      : 'Never'],
+                    ['Created By', viewingEmployee.createdBy ? String(viewingEmployee.createdBy) : 'Not available'],
+                    ['Linked Account State', viewingEmployee.linkedAccountState || (viewingEmployee.userId ? 'linked' : 'not_linked')],
+                  ].map(([label, value]) => (
+                    <div key={label} className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+                      <dt className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">{label}</dt>
+                      <dd className="mt-1 break-words text-sm text-gray-900 dark:text-white">{value}</dd>
+                    </div>
+                  ))}
+                </dl>
+
+                <div className="mt-6 flex justify-end">
+                  <Button variant="outline" onClick={() => setViewingEmployee(null)}>
+                    Close
+                  </Button>
+                </div>
+              </div>
+            )}
           </Modal>
 
           <Modal isOpen={isAccountModalOpen} onClose={() => setIsAccountModalOpen(false)}>

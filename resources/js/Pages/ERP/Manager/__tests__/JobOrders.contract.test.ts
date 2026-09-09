@@ -22,11 +22,12 @@ describe('Manager Job Orders page contract', () => {
   });
 
   it('aligns filter actions with the overdue-only control', () => {
-    const formStart = source.indexOf('<form onSubmit={applyFilters}');
+    const formStart = source.indexOf('<form onSubmit={(event) => event.preventDefault()}');
     const filterForm = source.slice(formStart, source.indexOf('</form>', formStart));
 
     expect(filterForm).toContain('xl:col-span-6 flex flex-wrap items-end justify-between gap-4');
     expect(filterForm).toContain('xl:col-span-6 flex flex-wrap items-center justify-end gap-2');
     expect(filterForm).not.toContain('<ManagerFilterActions>');
+    expect(filterForm).not.toContain('Apply filters');
   });
 });

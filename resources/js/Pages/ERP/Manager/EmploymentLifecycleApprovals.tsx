@@ -128,10 +128,13 @@ export default function EmploymentLifecycleApprovals() {
 
   useEffect(() => { void load(); }, [load]);
 
-  const applyFilters = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setFilters({ search: form.search.trim(), status: form.status, page: 1 });
-  };
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      setFilters({ search: form.search.trim(), status: form.status, page: 1 });
+    }, form.search.trim() ? 300 : 0);
+
+    return () => window.clearTimeout(timeout);
+  }, [form]);
 
   const clearFilters = () => {
     setForm(initialFilterForm);
@@ -232,7 +235,7 @@ export default function EmploymentLifecycleApprovals() {
             <h2 id="lifecycle-filters-title" className="text-base font-semibold text-gray-900 dark:text-white">Filter requests</h2>
             <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Search the {label.toLowerCase()} history in your authorized shop.</p>
           </div>
-          <form onSubmit={applyFilters} className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <form onSubmit={(event) => event.preventDefault()} className="grid grid-cols-1 gap-4 md:grid-cols-3">
             <div className="md:col-span-2">
               <label htmlFor="lifecycle-search" className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Search</label>
               <input id="lifecycle-search" type="search" value={form.search} onChange={(event) => setForm((current) => ({ ...current, search: event.target.value }))} placeholder="Employee, email, or reason" className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-white" />
@@ -248,7 +251,6 @@ export default function EmploymentLifecycleApprovals() {
               </MonochromeSelect>
             </div>
             <div className="flex items-end gap-2 md:col-span-3">
-              <button type="submit" className="min-h-11 rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-700 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200">Apply filters</button>
               <button type="button" onClick={clearFilters} className="min-h-11 rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Clear</button>
             </div>
           </form>

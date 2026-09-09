@@ -1178,7 +1178,7 @@ Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')-
         })->name('suspend-accounts');
 
         Route::post('/employees', [UserAccessControlController::class, 'storeEmployee'])->name('employees.store');
-        Route::put('/employees/{employee}', [UserAccessControlController::class, 'updateEmployee'])->name('employees.update');
+        Route::put('/employees/{employee}', [UserAccessControlController::class, 'rejectHrMasterDataUpdate'])->name('employees.update');
         Route::delete('/employees/{employee}', [\App\Http\Controllers\EmployeeController::class, 'destroy'])->middleware('shop.isolation')->name('employees.destroy');
         Route::post('/employees/{employee}/suspend', [\App\Http\Controllers\EmployeeController::class, 'suspend'])->middleware('shop.isolation')->name('employees.suspend');
         Route::post('/employees/{employee}/activate', [\App\Http\Controllers\EmployeeController::class, 'activate'])->middleware('shop.isolation')->name('employees.activate');

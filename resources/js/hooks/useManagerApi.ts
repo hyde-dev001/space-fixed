@@ -970,8 +970,9 @@ export function useManagerLeaveApprovals(
   return useQuery({
     queryKey: ['manager-leave-approvals', filters],
     queryFn: () => fetchManagerLeaveApprovals(filters),
-    refetchInterval: 60000,
+    refetchInterval: 30000,
     staleTime: 30000,
+    refetchOnWindowFocus: true,
     retry: 2,
   });
 }

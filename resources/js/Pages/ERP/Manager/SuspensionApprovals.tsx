@@ -1,6 +1,6 @@
 import MonochromeSelect from "@/components/form/Select";
 import { Head } from "@inertiajs/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { CheckCircle2, Clock3, Store, XCircle } from "lucide-react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
@@ -160,11 +160,14 @@ export default function SuspensionApprovals() {
     const [processingId, setProcessingId] = useState<number | null>(null);
     const [actionError, setActionError] = useState<string | null>(null);
 
-    const applyFilters = (event: FormEvent<HTMLFormElement>) => {
-        event.preventDefault();
-        setActionError(null);
-        setFilters({ ...form, page: 1, per_page: 20 });
-    };
+    useEffect(() => {
+        const timeout = window.setTimeout(() => {
+            setActionError(null);
+            setFilters({ ...form, page: 1, per_page: 20 });
+        }, form.search.trim() ? 300 : 0);
+
+        return () => window.clearTimeout(timeout);
+    }, [form]);
 
     const clearFilters = () => {
         setForm(initialFilterForm);
@@ -262,7 +265,7 @@ export default function SuspensionApprovals() {
                         <h2 id="suspension-filters-title" className="text-base font-semibold text-gray-900 dark:text-white">Filter requests</h2>
                         <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Age is based on request creation. Formal SLA appears only when a policy is configured.</p>
                     </div>
-                    <form onSubmit={applyFilters} className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                    <form onSubmit={(event) => event.preventDefault()} className="grid grid-cols-1 gap-4 md:grid-cols-3">
                         <div className="md:col-span-2">
                             <label htmlFor="suspension-search" className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Search</label>
                             <input
@@ -285,7 +288,6 @@ export default function SuspensionApprovals() {
                             </MonochromeSelect>
                         </div>
                         <div className="flex items-end gap-2 md:col-span-3">
-                            <button type="submit" className="min-h-11 rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200 dark:focus:ring-offset-gray-950">Apply filters</button>
                             <button type="button" onClick={clearFilters} className="min-h-11 rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800 dark:focus:ring-offset-gray-950">Clear</button>
                         </div>
                     </form>

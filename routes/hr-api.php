@@ -104,7 +104,9 @@ Route::prefix('api/hr')->middleware(['web', 'auth:user', 'permission:access-hr-d
         Route::post('/{userId}/roles/sync', [\App\Http\Controllers\ShopOwner\UserAccessControlController::class, 'syncAdditionalRoles'])->name('hr.employees.roles.sync');
         
         // Invitation Management
-        Route::post('/{id}/reset-password', [InvitationController::class, 'resetEmployeePassword'])->name('hr.employees.reset_password');
+        Route::post('/{id}/reset-password', [InvitationController::class, 'resetEmployeePassword'])
+            ->middleware('throttle:privileged-password-reset')
+            ->name('hr.employees.reset_password');
         Route::post('/{id}/regenerate-invite', [InvitationController::class, 'regenerate'])->name('hr.employees.regenerate_invite');
         Route::post('/{id}/resend-invite', [InvitationController::class, 'resendInvite'])->name('hr.employees.resend_invite');
         Route::post('/{id}/send-invitation-email', [InvitationController::class, 'sendInvitationEmail'])->name('hr.employees.send_invitation_email');

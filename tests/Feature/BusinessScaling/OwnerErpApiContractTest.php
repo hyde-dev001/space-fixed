@@ -187,7 +187,7 @@ final class OwnerErpApiContractTest extends TestCase
         }
     }
 
-    public function test_owner_can_update_an_employee_through_the_owner_scoped_json_route(): void
+    public function test_owner_employee_access_control_rejects_hr_master_data_updates(): void
     {
         $owner = ShopOwner::factory()->approved()->create([
             'registration_type' => 'company',
@@ -211,9 +211,14 @@ final class OwnerErpApiContractTest extends TestCase
                 'hire_date' => now()->toDateString(),
                 'status' => 'active',
             ])
-            ->assertOk()
-            ->assertJsonPath('employee.id', $employee->id)
-            ->assertJsonPath('employee.name', 'Updated Employee');
+            ->assertForbidden()
+            ->assertJsonPath('code', 'SHOP_OWNER_HR_EDIT_FORBIDDEN');
+
+        $this->assertDatabaseHas('employees', [
+            'id' => $employee->id,
+            'email' => 'employee@example.test',
+            'status' => 'active',
+        ]);
     }
 
     public function test_owner_cannot_reactivate_a_terminated_employee(): void
@@ -233,8 +238,8 @@ final class OwnerErpApiContractTest extends TestCase
                 'email' => $employee->email,
                 'status' => 'active',
             ])
-            ->assertStatus(422)
-            ->assertJsonPath('code', 'EMPLOYEE_REHIRE_REQUIRED');
+            ->assertForbidden()
+            ->assertJsonPath('code', 'SHOP_OWNER_HR_EDIT_FORBIDDEN');
 
         $this->assertDatabaseHas('employees', [
             'id' => $employee->id,
