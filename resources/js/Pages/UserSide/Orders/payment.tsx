@@ -2689,12 +2689,18 @@ const Payment: React.FC = () => {
             )}
 
             {isAddressSheetOpen && createPortal((
-              <div
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="address-sheet-title"
-                className="fixed inset-0 z-[100001] overflow-y-auto bg-white xl:left-auto xl:w-[min(42rem,100%)] xl:border-l xl:border-gray-200 xl:shadow-2xl"
-              >
+              <>
+                <div
+                  className="erp-modal-backdrop fixed inset-0 z-[100000]"
+                  aria-hidden="true"
+                />
+                <div className="pointer-events-none fixed inset-0 z-[100001] flex justify-end">
+                  <div
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="address-sheet-title"
+                    className="pointer-events-auto h-full w-full overflow-y-auto bg-white xl:w-[min(42rem,100%)] xl:border-l xl:border-gray-200 xl:shadow-2xl"
+                  >
                 <div className="sticky top-0 z-10 bg-white border-b border-gray-200 px-4 py-4 flex items-center justify-between">
                   <button
                     type="button"
@@ -2962,8 +2968,10 @@ const Payment: React.FC = () => {
                   </div>
                 )}
 
-              </div>
-            ), document.body)}
+                  </div>
+                </div>
+              </>
+              ), document.body)}
           </div>
 
           <div className="hidden xl:grid grid-cols-1 md:grid-cols-3 gap-6 items-start">

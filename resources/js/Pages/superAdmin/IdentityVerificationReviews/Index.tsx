@@ -440,7 +440,7 @@ const IdentityReviewQueue: React.FC<Props> = ({ reviews, stats, filters }) => {
 			</div>
 
 			{selected && (
-				<div className="fixed inset-0 z-[100000] flex items-center justify-center bg-black/60 p-4 pointer-events-auto" role="dialog" aria-modal="true" aria-label="Identity review">
+				<div className="fixed inset-0 z-[100000] flex items-center justify-center bg-black/60 p-4 pointer-events-auto erp-modal-backdrop" role="dialog" aria-modal="true" aria-label="Identity review">
 					<div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl">
 						<div className="flex items-start justify-between gap-4">
 							<div>
@@ -496,7 +496,7 @@ const IdentityReviewQueue: React.FC<Props> = ({ reviews, stats, filters }) => {
 				</div>
 			)}
 			{imagePreview && (
-				<div className="fixed inset-0 z-[100001] flex items-center justify-center bg-black/80 p-4" role="dialog" aria-modal="true" aria-label={imagePreview.alt + ' preview'} onClick={() => setImagePreview(null)}>
+				<div className="fixed inset-0 z-[100001] flex items-center justify-center bg-black/80 p-4 erp-modal-backdrop" role="dialog" aria-modal="true" aria-label={imagePreview.alt + ' preview'} onClick={() => setImagePreview(null)}>
 					<div className="relative flex max-h-[95vh] max-w-[95vw] items-center justify-center rounded-2xl bg-white p-3 shadow-2xl" onClick={event => event.stopPropagation()}>
 						<img src={imagePreview.url} alt={imagePreview.alt + ' preview'} className="max-h-[88vh] max-w-[90vw] rounded-xl object-contain" />
 						<button type="button" onClick={() => setImagePreview(null)} className="absolute right-5 top-5 rounded-lg bg-gray-900 px-3 py-2 text-sm font-semibold text-white hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-500" aria-label="Close image preview">Close</button>

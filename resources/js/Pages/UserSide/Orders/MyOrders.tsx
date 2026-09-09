@@ -2617,7 +2617,7 @@ const MyOrders: React.FC = () => {
         {showCancelModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center">
             <div
-              className="absolute inset-0 bg-black opacity-40"
+              className="absolute inset-0 bg-black opacity-40 erp-modal-backdrop"
               onClick={() => {
                 setShowCancelModal(false);
                 setCancelTargetOrderId(null);
@@ -2709,7 +2709,7 @@ const MyOrders: React.FC = () => {
         {showRefundRejectionModal && refundRejectionOrder && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div
-              className="absolute inset-0 bg-black opacity-40"
+              className="absolute inset-0 bg-black opacity-40 erp-modal-backdrop"
               onClick={() => {
                 setShowRefundRejectionModal(false);
                 setRefundRejectionOrder(null);
@@ -2741,7 +2741,7 @@ const MyOrders: React.FC = () => {
         {showReasonDetailsModal && reasonDetailsOrder && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div
-              className="absolute inset-0 bg-black opacity-40"
+              className="absolute inset-0 bg-black opacity-40 erp-modal-backdrop"
               onClick={() => {
                 setShowReasonDetailsModal(false);
                 setReasonDetailsOrder(null);
@@ -2814,7 +2814,7 @@ const MyOrders: React.FC = () => {
         {showReportModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div
-              className="absolute inset-0 bg-black opacity-40"
+              className="absolute inset-0 bg-black opacity-40 erp-modal-backdrop"
               onClick={() => {
                 if (!isSubmittingReport) resetReportModal();
               }}
@@ -2955,7 +2955,7 @@ const MyOrders: React.FC = () => {
         {showRefundModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div
-              className="absolute inset-0 bg-black opacity-40"
+              className="absolute inset-0 bg-black opacity-40 erp-modal-backdrop"
               onClick={() => {
                 setShowRefundModal(false);
                 setRefundOrderId(null);

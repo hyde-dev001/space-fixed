@@ -5024,7 +5024,7 @@ const MyRepairs: React.FC = () => {
         </div>
         {modifyOrder && (
           <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4 erp-modal-backdrop"
             role="dialog"
             aria-modal="true"
             aria-labelledby="modify-repair-services-title"
@@ -5141,7 +5141,7 @@ const MyRepairs: React.FC = () => {
         )}
         {showCancelModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center">
-            <div className="absolute inset-0 bg-black opacity-40" onClick={() => setShowCancelModal(false)}></div>
+            <div className="absolute inset-0 bg-black opacity-40 erp-modal-backdrop" onClick={() => setShowCancelModal(false)}></div>
             <div className="bg-white rounded-lg shadow-xl z-50 max-w-lg w-full mx-4">
               <div className="px-6 py-4 border-b">
                 <h3 className="text-lg font-semibold">Cancel Repair</h3>
@@ -5221,7 +5221,7 @@ const MyRepairs: React.FC = () => {
         )}
         {showRefundModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black opacity-40" onClick={() => setShowRefundModal(false)}></div>
+            <div className="absolute inset-0 bg-black opacity-40 erp-modal-backdrop" onClick={() => setShowRefundModal(false)}></div>
             <div className="bg-white rounded-lg shadow-xl z-50 max-w-5xl w-full max-h-[90vh] flex flex-col">
               <div className="px-8 py-4 border-b shrink-0">
                 <h3 className="text-xl font-semibold">Request Refund {refundStep === 2 && '- Payment Details'}</h3>
@@ -5607,7 +5607,7 @@ const MyRepairs: React.FC = () => {
 
         {showWarrantyModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black opacity-40" onClick={closeWarrantyModal}></div>
+            <div className="absolute inset-0 bg-black opacity-40 erp-modal-backdrop" onClick={closeWarrantyModal}></div>
             <div className="bg-white rounded-lg shadow-xl z-50 max-w-5xl w-full max-h-[90vh] flex flex-col">
               <div className="px-8 py-4 border-b shrink-0">
                 <h3 className="text-xl font-semibold">File Warranty Claim</h3>
@@ -5835,7 +5835,7 @@ const MyRepairs: React.FC = () => {
         {/* Phase 10D - Review Modal */}
         {showReviewModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center">
-            <div className="absolute inset-0 bg-black opacity-40" onClick={() => setShowReviewModal(false)}></div>
+            <div className="absolute inset-0 bg-black opacity-40 erp-modal-backdrop" onClick={() => setShowReviewModal(false)}></div>
             <div className="bg-white rounded-lg shadow-xl z-50 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
               <div className="px-6 py-4 border-b sticky top-0 bg-white">
                 <h3 className="text-lg font-semibold">Write a Review</h3>
@@ -5982,7 +5982,7 @@ const MyRepairs: React.FC = () => {
         {/* Schedule Modal */}
         {showScheduleModal && scheduleCalendarData && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black opacity-50" onClick={() => setShowScheduleModal(false)} />
+            <div className="absolute inset-0 bg-black opacity-50 erp-modal-backdrop" onClick={() => setShowScheduleModal(false)} />
             <div className="bg-white rounded-xl shadow-2xl z-50 w-full max-w-md">
               <div className="px-6 py-4 border-b flex items-center justify-between">
                 <div>

@@ -1699,7 +1699,7 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
 
       {fullscreenImage && (
         <div
-          className="fixed inset-0 backdrop-blur-md flex items-center justify-center z-50"
+          className="fixed inset-0 bg-black/25 backdrop-blur-md flex items-center justify-center z-50 erp-modal-backdrop"
           onClick={() => setFullscreenImage(null)}
         >
           <button

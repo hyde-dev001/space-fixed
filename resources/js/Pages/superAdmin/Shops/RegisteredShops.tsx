@@ -779,7 +779,7 @@ function RegisteredShops({ shops, stats, filters = {} }) {
         {/* Details Modal - Matching ShopOwnerRegistrationView */}
         {isLoadingDetails && (
           <ModalPortal>
-            <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
+            <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8 erp-modal-backdrop">
               <div className="bg-white dark:bg-gray-800 rounded-xl px-6 py-5 shadow-xl border border-gray-200 dark:border-gray-700">
                 <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Loading shop details...</p>
               </div>
@@ -788,7 +788,7 @@ function RegisteredShops({ shops, stats, filters = {} }) {
         )}
 
         {selectedShop && (
-          <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
+          <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8 erp-modal-backdrop">
             <div className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
               <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex justify-between items-center">
                 <h3 className="text-xl font-semibold text-gray-900 dark:text-white">
@@ -983,7 +983,7 @@ function RegisteredShops({ shops, stats, filters = {} }) {
         {/* Suspend Shop Modal */}
         {isSuspendModalOpen && shopToSuspend && (
           <ModalPortal>
-            <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
               <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-2xl w-full">
                 <div className="border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex justify-between items-center">
                 <h3 className="text-xl font-semibold text-gray-900 dark:text-white">

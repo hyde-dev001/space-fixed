@@ -1510,7 +1510,7 @@ const Checkout: React.FC = () => {
             {showAddressSelector && createPortal((
               <>
                 {/* Backdrop */}
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100000] pointer-events-auto" onClick={() => setShowAddressSelector(false)} />
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100000] pointer-events-auto erp-modal-backdrop" onClick={() => setShowAddressSelector(false)} />
                 
                 {/* Modal */}
                 <div className="fixed inset-0 z-[100001] flex items-center justify-center p-4">
@@ -1628,7 +1628,7 @@ const Checkout: React.FC = () => {
             {/* Add Address Modal */}
             {showAddAddressModal && createPortal((
               <>
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100000] pointer-events-auto" onClick={() => setShowAddAddressModal(false)} />
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100000] pointer-events-auto erp-modal-backdrop" onClick={() => setShowAddAddressModal(false)} />
                 <div className="fixed inset-0 z-[100001] flex items-center justify-center p-4">
                   <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl max-w-5xl w-full max-h-[90vh] border border-gray-200 dark:border-gray-800 flex flex-col">
                     <div className="border-b border-gray-200 dark:border-gray-800 px-4 py-3 flex items-center justify-between flex-shrink-0 sticky top-0 bg-white dark:bg-gray-900 z-10">
@@ -1854,7 +1854,7 @@ const Checkout: React.FC = () => {
             {/* Edit Address Modal */}
             {editingAddressId !== null && editingAddressData && createPortal((
               <>
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100000] pointer-events-auto" onClick={() => setEditingAddressId(null)} />
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100000] pointer-events-auto erp-modal-backdrop" onClick={() => setEditingAddressId(null)} />
                 <div className="fixed inset-0 z-[100001] flex items-center justify-center p-4">
                   <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl max-w-2xl w-full border border-gray-200 dark:border-gray-800 max-h-[90vh] flex flex-col">
                     

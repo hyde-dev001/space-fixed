@@ -234,7 +234,7 @@ const ProductQuickView: React.FC<ProductQuickViewProps> = ({ product, detailsHre
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center overflow-x-hidden overflow-y-auto bg-slate-950/60 p-3 transition-opacity duration-200 motion-reduce:transition-none sm:p-6"
+      className="fixed inset-0 z-[60] flex items-center justify-center overflow-x-hidden overflow-y-auto bg-slate-950/60 p-3 transition-opacity duration-200 motion-reduce:transition-none sm:p-6 erp-modal-backdrop"
       onClick={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}

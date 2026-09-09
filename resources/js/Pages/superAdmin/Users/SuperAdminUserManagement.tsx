@@ -1019,7 +1019,7 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
         {isViewModalOpen && (
           <>
             {/* Backdrop */}
-            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100000] pointer-events-auto" />
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100000] pointer-events-auto erp-modal-backdrop" />
             {/* Modal */}
             <div ref={viewModalRef} tabIndex={-1} className="fixed inset-0 flex items-center justify-center z-[100001] p-4 pointer-events-auto">
               <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-auto p-6">
@@ -1103,7 +1103,7 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
         {isSuspendModalOpen && (
           <>
             {/* Backdrop */}
-            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100000] pointer-events-auto" />
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100000] pointer-events-auto erp-modal-backdrop" />
             {/* Modal */}
             <div ref={suspendModalRef} tabIndex={-1} className="fixed inset-0 flex items-center justify-center z-[100001] p-4 pointer-events-auto">
               <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full mx-4 p-6">
@@ -1199,7 +1199,7 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
           <>
             {/* Backdrop */}
             <div 
-              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100000] pointer-events-auto"
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100000] pointer-events-auto erp-modal-backdrop"
               onClick={() => {
                 setIsDetailsModalOpen(false);
                 setExpandedDocuments(new Set());

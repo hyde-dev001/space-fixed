@@ -813,7 +813,7 @@ export default function ShopOwnerRegistrationView({
 
           {/* View Details Modal */}
           {isViewModalOpen && selectedRegistration && (
-            <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
+            <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8 erp-modal-backdrop">
               <div className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
                 <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex justify-between items-center">
                   <h3 className="text-xl font-semibold text-gray-900 dark:text-white">
@@ -1093,7 +1093,7 @@ export default function ShopOwnerRegistrationView({
 
           {/* Reject Modal */}
           {isRejectModalOpen && registrationToReject && (
-            <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
+            <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8 erp-modal-backdrop">
               <div className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full">
                 <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex justify-between items-center">
                   <h3 className="text-xl font-semibold text-gray-900 dark:text-white">
@@ -1229,7 +1229,7 @@ export default function ShopOwnerRegistrationView({
       {/* Lightbox modal for viewing documents */}
       {lightboxUrl && (
         <div
-          className="fixed inset-0 z-[9999999] flex items-center justify-center bg-black/70 p-4"
+          className="fixed inset-0 z-[9999999] flex items-center justify-center bg-black/70 p-4 erp-modal-backdrop"
           role="dialog"
           aria-modal="true"
           onClick={() => setLightboxUrl(null)}
