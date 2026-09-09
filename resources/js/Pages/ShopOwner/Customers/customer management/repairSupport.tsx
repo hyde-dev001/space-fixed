@@ -1133,7 +1133,7 @@ export default function RepairSupport() {
       {/* Fullscreen Image Modal */}
       {fullscreenImage && (
         <div 
-          className="fixed inset-0 backdrop-blur-md flex items-center justify-center z-50"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm erp-modal-backdrop"
           onClick={() => setFullscreenImage(null)}
         >
           <button

@@ -532,7 +532,7 @@ export default function CustomerReviews() {
 
         {selectedImage && (          <>
             <div
-              className="fixed inset-0 z-100002 bg-black/80"
+              className="fixed inset-0 z-100002 bg-black/80 erp-modal-backdrop"
               onClick={() => setSelectedImage(null)}
             />
             <div className="fixed inset-0 z-100003 flex items-center justify-center p-4">

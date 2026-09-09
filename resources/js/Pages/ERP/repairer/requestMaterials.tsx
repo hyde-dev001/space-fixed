@@ -430,8 +430,6 @@ export default function RequestMaterials() {
     <AppLayoutERP hideHeader={isCreateModalOpen || isCartOpen}>
       <Head title="Request Material - Repair - Solespace" />
 
-      {isCreateModalOpen && <div className="fixed inset-0 z-40" />}
-
       <div className="p-6 space-y-6">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <h1 className="sr-only">Request Material</h1>
@@ -677,8 +675,6 @@ export default function RequestMaterials() {
           </div>
         </div>
       )}
-
-      {isCartOpen && <div className="fixed inset-0 z-40" />}
 
       {isCartOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">

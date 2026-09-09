@@ -369,8 +369,6 @@ export default function RequestApproval() {
 		<AppLayoutERP hideHeader={isReviewModalOpen}>
 			<Head title="Repair Material Request Approval - Inventory - Solespace" />
 
-			{isReviewModalOpen && <div className="fixed inset-0 z-40" />}
-
 			<div className="p-6 space-y-6">
 				<h1 className="sr-only">Repair Material Request Approval</h1>
 

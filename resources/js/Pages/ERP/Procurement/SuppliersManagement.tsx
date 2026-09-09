@@ -301,8 +301,6 @@ export default function SuppliersManagement() {
 	return (
 		<AppLayoutERP hideHeader={isAnyModalOpen}>
 			<Head title="Suppliers Management - Solespace" />
-			{isAnyModalOpen && <div className="fixed inset-0 z-40" />}
-
 			<div className="p-6 space-y-6">
 				<div className="flex flex-col items-end lg:flex-row lg:items-center lg:justify-end gap-4">
 					<h1 className="sr-only">Suppliers Management</h1>

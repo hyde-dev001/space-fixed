@@ -3902,7 +3902,7 @@ export default function JobOrdersRepair() {
         )}
 
         {enlargedImage && (
-          <div className="fixed inset-0 z-[999999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-6">
+          <div className="fixed inset-0 z-[999999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-6 erp-modal-backdrop">
             <button
               type="button"
               className="absolute inset-0"

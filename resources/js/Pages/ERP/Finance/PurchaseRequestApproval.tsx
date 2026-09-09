@@ -457,8 +457,6 @@ export default function PurchaseRequestApproval({ onModalStateChange, requests: 
 	return (
 		<>
 			<Head title="Purchase Request Approval - Solespace ERP" />
-			{isAnyModalOpen && <div className="fixed inset-0 z-40" />}
-
 			<div className="p-6 space-y-6">
 				<h1 className="sr-only">Purchase Request Approval</h1>
 
