@@ -2,14 +2,13 @@
 
 namespace App\Listeners;
 
-use App\Enums\NotificationType;
 use App\Events\OutOfStockAlert;
 use App\Models\User;
 use App\Notifications\OutOfStockNotification;
-use App\Services\NotificationService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Notification;
 
 class SendOutOfStockNotification implements ShouldQueue
 {
@@ -43,22 +42,7 @@ class SendOutOfStockNotification implements ShouldQueue
         }
 
         // Send notification to all relevant users
-        $notificationService = app(NotificationService::class);
-        foreach ($users as $user) {
-            $notification = new OutOfStockNotification($inventoryItem, $event->target);
-            $data = $notification->toArray($user);
-
-            $notificationService->sendToUser(
-                userId: (int) $user->id,
-                type: NotificationType::LOW_STOCK_ALERT,
-                title: 'Out of Stock Alert',
-                message: $data['message'],
-                data: $data,
-                actionUrl: "/erp/inventory/inventory-dashboard?inventory_item={$inventoryItem->id}",
-                shopId: (int) $inventoryItem->shop_owner_id,
-                priority: 'high',
-            );
-        }
+        Notification::send($users, new OutOfStockNotification($inventoryItem, $event->target));
 
         Log::info("Out of stock notification sent to " . $users->count() . " users for item: {$inventoryItem->name}");
     }

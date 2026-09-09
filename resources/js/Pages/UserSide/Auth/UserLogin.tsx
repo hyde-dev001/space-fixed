@@ -92,9 +92,7 @@ export default function UserLogin() {
     }, {
       onSuccess: (page) => {
         const redirectUrl = String(page?.url || '');
-        const isTwoFactorChallenge =
-          redirectUrl.includes('/shop-owner/two-factor') ||
-          redirectUrl.includes('/erp/mfa/challenge');
+        const isTwoFactorChallenge = redirectUrl.includes('/shop-owner/two-factor');
 
         if (isTwoFactorChallenge) {
           return;

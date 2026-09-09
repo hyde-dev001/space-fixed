@@ -143,13 +143,11 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->web(append: [
             \App\Http\Middleware\HandleInertiaRequests::class,
             \App\Http\Middleware\CheckEmployeeSuspension::class,
-            \App\Http\Middleware\EnsureEmployeeSecurity::class,
             \App\Http\Middleware\EnsureCustomerEmailIsVerified::class,
         ]);
         $middleware->api([
             \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
             \App\Http\Middleware\CheckEmployeeSuspension::class,
-            \App\Http\Middleware\EnsureEmployeeSecurity::class,
             \App\Http\Middleware\EnsureCustomerEmailIsVerified::class,
             'throttle:60,1',
             \Illuminate\Routing\Middleware\SubstituteBindings::class,

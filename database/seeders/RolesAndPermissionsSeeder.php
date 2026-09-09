@@ -45,8 +45,6 @@ class RolesAndPermissionsSeeder extends Seeder
             'request-employee-terminations',
             'request-employee-rehires',
             
-            'manage-employee-accounts',
-            'reset-employee-mfa',
             // ===== CRM MODULE =====
             'access-crm-dashboard',
             'access-crm-customers',
@@ -195,8 +193,6 @@ class RolesAndPermissionsSeeder extends Seeder
             'decide-manager-suspension-approvals',
             'decide-manager-termination-approvals',
             'decide-manager-rehire-approvals',
-            'manage-employee-accounts',
-            'reset-employee-mfa',
             // Global Access
             'access-global-search',
             'access-notification-center',
@@ -242,8 +238,6 @@ class RolesAndPermissionsSeeder extends Seeder
             'request-employee-rehires',
             // Salary Change Workflow
             'manage-salary-changes',
-            'manage-employee-accounts',
-            'reset-employee-mfa',
             // RBAC & Permissions Management
             'manage-employee-permissions',
             // Global Access

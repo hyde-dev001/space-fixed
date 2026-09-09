@@ -211,7 +211,6 @@ const REPAIRER_PAGES: readonly PageDefinition[] = [
   definePage("repairer", "repair-stocks", "Stocks Overview", "/erp/staff/stocks-overview", ["stock", "materials", "repair"], { anyRoles: ["REPAIRER"], anyPermissions: ["access-repair-stocks"], allowedBusinessTypes: ["repair", "both"] }),
   definePage("repairer", "repair-request-material", "Request Material", "/erp/staff/request-material", ["material", "request", "stock"], { anyRoles: ["REPAIRER"], anyPermissions: ["access-repair-stocks"], allowedBusinessTypes: ["repair", "both"] }),
   definePage("repairer", "repair-support", "Chat", "/erp/staff/repairer-support", ["chat", "support", "customer"], { anyRoles: ["REPAIRER"], anyPermissions: ["access-repairer-support"], allowedBusinessTypes: ["repair", "both"] }),
-  definePage("repairer", "repair-reject-approval", "Repair Reject Approval", "/erp/user/repair-reject-approval", ["reject", "approval", "repair"], { anyRoles: ["REPAIRER"], anyPermissions: ["access-repair-reject-approval"], allowedBusinessTypes: ["repair", "both"] }),
   definePage("repairer", "repairer-articles", "Repairer Articles", "/erp/repairer/articles", ["article", "articles", "guide", "knowledge"], { anyRoles: ["REPAIRER"], anyPermissions: ["access-repairer-dashboard"], allowedBusinessTypes: ["repair", "both"] }),
 ];
 

@@ -6,7 +6,6 @@ import PayslipApprovalDetails from "./approvals/PayslipApprovalDetails";
 import PriceApprovalDetails from "./approvals/PriceApprovalDetails";
 import PurchaseRequestApprovalDetails from "./approvals/PurchaseRequestApprovalDetails";
 import RefundApprovalDetails from "./approvals/RefundApprovalDetails";
-import RepairRejectApprovalDetails from "./approvals/RepairRejectApprovalDetails";
 import SalaryAdjustmentApprovalDetails from "./approvals/SalaryAdjustmentApprovalDetails";
 import SuspensionApprovalDetails from "./approvals/SuspensionApprovalDetails";
 import EmployeeLifecycleApprovalDetails from "./approvals/EmployeeLifecycleApprovalDetails";
@@ -33,7 +32,7 @@ export interface ApprovalPanelDefinition {
 
 export type ApprovalSourceType = Exclude<
   OwnerAttentionSourceType,
-  "compliance_document" | "logistics_failure"
+  "compliance_document" | "logistics_failure" | "repair_rejection"
 >;
 
 const noteBody = (key: string) => (reason?: string): Record<string, unknown> => ({
@@ -246,30 +245,16 @@ export const approvalPanelRegistry: Record<ApprovalSourceType, ApprovalPanelDefi
     },
     consequence: "move this record to the next authoritative workflow stage",
   }),
-  repair_rejection: definition({
-    sourceType: "repair_rejection",
-    label: "Repair rejection approval",
-    noun: "Repair rejection",
-    detailPath: (id) => `/api/shop-owner/repairs/rejection-pending/${id}`,
-    renderer: RepairRejectApprovalDetails,
-    approve: {
-      path: (id) => `/api/shop-owner/repairs/${id}/approve-rejection`,
-      body: noteBody("notes"),
-    },
-    reject: {
-      path: (id) => `/api/shop-owner/repairs/${id}/reject-rejection`,
-      body: noteBody("notes"),
-      minLength: 10,
-      maxLength: 500,
-    },
-    consequence: "send the repair rejection to the authoritative repair workflow decision stage",
-  }),
 };
 
 export const approvalDefinitionFor = (
   sourceType: OwnerAttentionSourceType,
 ): ApprovalPanelDefinition | null => {
-  if (sourceType === "compliance_document" || sourceType === "logistics_failure") return null;
+  if (
+    sourceType === "compliance_document"
+    || sourceType === "logistics_failure"
+    || sourceType === "repair_rejection"
+  ) return null;
   return approvalPanelRegistry[sourceType];
 };
 

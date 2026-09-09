@@ -54,7 +54,6 @@ export const getShopOwnerNavigation = (access: ShopOwnerAccess): NavigationItem[
                 { label: 'All Services', path: '/shop-owner/services' },
                 { label: 'Add Service', path: '/shop-owner/services/add' },
                 { label: 'Repair Requests', path: '/shop-owner/repair-requests' },
-                { label: 'High Value Repairs', path: '/shop-owner/high-value-repairs' },
             ],
         },
 

@@ -11,7 +11,7 @@ class ShopOwnerApprovalSettingsTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_settings_payload_exposes_all_seven_binary_controls_without_limits(): void
+    public function test_settings_payload_exposes_six_binary_controls_without_limits(): void
     {
         $owner = ShopOwner::factory()->approved()->create([
             'registration_type' => 'company',
@@ -35,7 +35,6 @@ class ShopOwnerApprovalSettingsTest extends TestCase
             'salary_adjustment_approval',
             'purchase_request_approval',
             'expense_approval',
-            'repair_reject_approval',
         ], array_keys($approvalPages));
 
         foreach ($approvalPages as $setting) {
@@ -103,7 +102,6 @@ class ShopOwnerApprovalSettingsTest extends TestCase
             'salary_adjustment_approval',
             'purchase_request_approval',
             'expense_approval',
-            'repair_reject_approval',
         ] as $key) {
             $pages[$key] = ['enabled' => $enabled, 'limit' => $limit];
         }

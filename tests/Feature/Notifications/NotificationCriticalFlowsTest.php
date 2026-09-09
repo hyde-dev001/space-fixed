@@ -306,17 +306,11 @@ class NotificationCriticalFlowsTest extends TestCase
             'proposed_by_name' => 'HR',
             'new_salary' => '25000.00',
         ]);
-        $notificationService->notifyRepairRejectApprovalRequest($shopOwner->id, [
-            'repair_id' => 105,
-            'request_id' => 'REP-105',
-        ]);
-
         $expectedUrls = [
             'Refund Request' => '/shop-owner/action-center?bucket=needs_my_decision&approval=order_refund:101',
             'Price Change Approval Required' => '/shop-owner/action-center?bucket=needs_my_decision&approval=product_price_change:102',
             'Repair Service Approval Required' => '/shop-owner/action-center?bucket=needs_my_decision&approval=repair_price_change:103',
             'New Salary Change Request' => '/shop-owner/action-center?bucket=needs_my_decision&approval=salary_change:104',
-            'Repair Rejection Awaiting Your Review' => '/shop-owner/action-center?bucket=needs_my_decision&approval=repair_rejection:105',
         ];
 
         foreach ($expectedUrls as $title => $actionUrl) {
@@ -327,33 +321,6 @@ class NotificationCriticalFlowsTest extends TestCase
                 'requires_action' => true,
             ]);
         }
-    }
-
-    #[Test]
-    public function high_value_repair_owner_notification_points_to_the_high_value_approval_page(): void
-    {
-        $shopOwner = $this->createShopOwner([
-            'business_type' => 'repair',
-            'registration_type' => 'company',
-        ]);
-
-        app(NotificationService::class)->notifyHighValueRepairApproval($shopOwner->id, [
-            'repair_id' => 501,
-            'request_id' => 'RR-501',
-            'total' => '2500.00',
-        ]);
-
-        $this->assertDatabaseHas('notifications', [
-            'shop_owner_id' => $shopOwner->id,
-            'title' => 'High-Value Repair Approval',
-            'action_url' => '/shop-owner/high-value-repairs?repair_id=501',
-        ]);
-
-        $this->actingAs($shopOwner, 'shop_owner')
-            ->get('/shop-owner/high-value-repairs?repair_id=501')
-            ->assertOk()
-            ->assertInertia(fn (Assert $page) => $page
-                ->component('ShopOwner/Repairs/highValueRepairs'));
     }
 
     #[Test]
@@ -421,7 +388,7 @@ class NotificationCriticalFlowsTest extends TestCase
             ->get('/shop-owner/job-orders-repair')
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->component('ShopOwner/Repairs/service management/JobOrdersRepair'));
+                ->component('ShopOwner/Operations/RepairJobs'));
     }
 
     #[Test]

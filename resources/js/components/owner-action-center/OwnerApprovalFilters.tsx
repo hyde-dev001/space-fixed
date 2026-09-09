@@ -34,14 +34,13 @@ export const adapterCoverage = (key: OwnerAttentionAdapterKey): OwnerAttentionCo
   if (key === "suspension_requests") return "suspensions";
   if (key === "termination_requests") return "terminations";
   if (key === "rehire_requests") return "rehires";
-  if (key === "repair_rejections") return "repair_rejections";
   if (["compliance_documents", "pending_compliance_renewals"].includes(key)) return "compliance";
   if (["unowned_logistics_failures", "active_logistics_recovery"].includes(key)) return "logistics";
   return null;
 };
 
 export const bucketCoverages: Record<OwnerAttentionBucket, OwnerAttentionCoverageSource[]> = {
-  needs_my_decision: ["refunds", "prices", "payslips", "salary_changes", "purchase_requests", "suspensions", "terminations", "rehires", "expenses", "repair_rejections"],
+  needs_my_decision: ["refunds", "prices", "payslips", "salary_changes", "purchase_requests", "suspensions", "terminations", "rehires", "expenses"],
   urgent_exceptions: ["compliance", "refunds", "logistics"],
   waiting_on_others: ["compliance", "refunds", "logistics"],
 };
@@ -68,8 +67,11 @@ export const actionCenterUrl = (
 export const availableFilters = (
   result: OwnerActionCenterResult,
   availableCoverageSources?: OwnerAttentionCoverageSource[],
+  view: OwnerApprovalCenterView = "pending",
 ): Array<{ key: OwnerActionCenterCoverage; label: string }> => {
-  const allowedCoverages = bucketCoverages[result.bucket];
+  const allowedCoverages = view === "history"
+    ? filterLabels.map(({ key }) => key)
+    : bucketCoverages[result.bucket];
   const coverages = availableCoverageSources
     ? availableCoverageSources.filter((coverage) => allowedCoverages.includes(coverage))
     : Array.from(new Set(result.health.enabled_adapter_keys
@@ -97,7 +99,7 @@ interface OwnerApprovalFiltersProps {
 export default function OwnerApprovalFilters({ result, availableResult, availableCoverageSources, coverageCounts, source, perPage, view = "pending" }: OwnerApprovalFiltersProps) {
   if (result === null) return null;
 
-  const filters = availableFilters(availableResult ?? result, availableCoverageSources);
+  const filters = availableFilters(availableResult ?? result, availableCoverageSources, view);
   if (filters.length === 0) return null;
 
   return (

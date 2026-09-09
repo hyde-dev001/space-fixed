@@ -913,13 +913,6 @@ export async function finalRejectManagerRepair(
   return postManagerRepairDecision(`/api/manager/repairs/${id}/final-reject`, { reason });
 }
 
-export async function forwardManagerRepairToOwner(
-  id: number,
-  reason: string,
-): Promise<{ success: boolean; message: string; data: ManagerRepairJob }> {
-  return postManagerRepairDecision(`/api/manager/repairs/${id}/forward-to-owner`, { reason });
-}
-
 async function postManagerRepairDecision(
   url: string,
   body: Record<string, string | number>,

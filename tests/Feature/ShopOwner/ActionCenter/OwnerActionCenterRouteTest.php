@@ -54,7 +54,6 @@ final class OwnerActionCenterRouteTest extends TestCase
             'owner_action_center.coverage.expenses' => true,
             'owner_action_center.coverage.purchase_requests' => true,
             'owner_action_center.coverage.suspensions' => false,
-            'owner_action_center.coverage.repair_rejections' => false,
             'owner_action_center.buckets.urgent_exceptions.enabled' => false,
             'owner_action_center.buckets.urgent_exceptions.coverage.compliance' => false,
         ]);
@@ -82,7 +81,6 @@ final class OwnerActionCenterRouteTest extends TestCase
             'owner_action_center.coverage.salary_changes' => false,
             'owner_action_center.coverage.expenses' => false,
             'owner_action_center.coverage.purchase_requests' => false,
-            'owner_action_center.coverage.repair_rejections' => false,
         ]);
         $this->bindAdapter(OrderRefundAttentionAdapter::class, 'order_refunds', 'refunds', qualifyingCount: 2);
 
@@ -144,7 +142,6 @@ final class OwnerActionCenterRouteTest extends TestCase
             'owner_action_center.coverage.salary_changes' => true,
             'owner_action_center.coverage.expenses' => false,
             'owner_action_center.coverage.purchase_requests' => false,
-            'owner_action_center.coverage.repair_rejections' => false,
         ]);
         $this->bindAdapter(PriceApprovalAttentionAdapter::class, 'price_approvals', 'prices', qualifyingCount: 2);
         $this->bindAdapter(SalaryChangeAttentionAdapter::class, 'salary_changes', 'salary_changes', qualifyingCount: 1);
@@ -506,11 +503,11 @@ final class OwnerActionCenterRouteTest extends TestCase
 
         $this->actingAs($owner, 'shop_owner')
             ->get(route('shop-owner.shell.action-center', [
-                'approval' => 'repair_rejection:123',
+                'approval' => 'purchase_request:123',
             ]))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->where('approvalSelection.sourceType', 'repair_rejection')
+                ->where('approvalSelection.sourceType', 'purchase_request')
                 ->where('approvalSelection.sourceId', 123)
                 ->where('approvalSelectionError', null));
     }
@@ -526,7 +523,6 @@ final class OwnerActionCenterRouteTest extends TestCase
             ['shop-owner.salary-adjustment-approvals', ['salary_change_id' => '14'], 'salary_change:14'],
             ['shop-owner.purchase-request-approval', ['purchase_request' => '15'], 'purchase_request:15'],
             ['shop-owner.expense-approvals', ['expense' => '16'], 'expense:16'],
-            ['shop-owner.repair-reject-approval', ['repair_id' => '17'], 'repair_rejection:17'],
         ];
 
         foreach ($cases as [$routeName, $query, $approval]) {
@@ -550,7 +546,6 @@ final class OwnerActionCenterRouteTest extends TestCase
             ['shop-owner.salary-adjustment-approvals', ['salary_change_id' => '']],
             ['shop-owner.purchase-request-approval', ['purchase_request' => 'abc']],
             ['shop-owner.expense-approvals', ['expense' => '-4']],
-            ['shop-owner.repair-reject-approval', ['repair_id' => '0']],
         ] as [$routeName, $query]) {
             $response = $this->actingAs($owner, 'shop_owner')
                 ->get(route($routeName, $query));
@@ -649,7 +644,7 @@ final class OwnerActionCenterRouteTest extends TestCase
             ->assertNotFound();
     }
 
-    public function test_price_and_repair_rejection_details_are_tenant_scoped(): void
+    public function test_price_and_repair_service_details_are_tenant_scoped(): void
     {
         $owner = $this->phaseThreeOwner();
         $otherOwner = ShopOwner::factory()->approved()->create([
@@ -722,19 +717,6 @@ final class OwnerActionCenterRouteTest extends TestCase
             'status' => 'Active',
             'shop_owner_id' => $otherOwner->id,
         ]);
-        $repair = RepairRequest::factory()->create([
-            'shop_owner_id' => $owner->id,
-            'status' => 'rejected',
-            'requires_owner_approval' => true,
-            'repairer_rejected_at' => now(),
-        ]);
-        $otherRepair = RepairRequest::factory()->create([
-            'shop_owner_id' => $otherOwner->id,
-            'status' => 'rejected',
-            'requires_owner_approval' => true,
-            'repairer_rejected_at' => now(),
-        ]);
-
         $this->actingAs($owner, 'shop_owner')
             ->getJson("/api/shop-owner/price-changes/{$priceChange->id}")
             ->assertOk()
@@ -744,18 +726,10 @@ final class OwnerActionCenterRouteTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.id', $repairService->id);
         $this->actingAs($owner, 'shop_owner')
-            ->getJson("/api/shop-owner/repairs/rejection-pending/{$repair->id}")
-            ->assertOk()
-            ->assertJsonPath('repair.id', $repair->id);
-
-        $this->actingAs($owner, 'shop_owner')
             ->getJson("/api/shop-owner/price-changes/{$otherPriceChange->id}")
             ->assertNotFound();
         $this->actingAs($owner, 'shop_owner')
             ->getJson("/api/shop-owner/repair-price-changes/{$otherRepairService->id}")
-            ->assertNotFound();
-        $this->actingAs($owner, 'shop_owner')
-            ->getJson("/api/shop-owner/repairs/rejection-pending/{$otherRepair->id}")
             ->assertNotFound();
     }
 
@@ -936,6 +910,8 @@ final class OwnerActionCenterRouteTest extends TestCase
         config([
             'owner_action_center.coverage.expenses' => false,
             'owner_action_center.coverage.purchase_requests' => false,
+            'owner_action_center.coverage.terminations' => false,
+            'owner_action_center.coverage.rehires' => false,
         ]);
         $this->bindAdapter(OrderRefundAttentionAdapter::class, 'order_refunds', 'refunds', new RuntimeException('order source unavailable'));
         $this->bindAdapter(RepairRefundAttentionAdapter::class, 'repair_refunds', 'refunds');
@@ -955,6 +931,8 @@ final class OwnerActionCenterRouteTest extends TestCase
         config([
             'owner_action_center.coverage.expenses' => false,
             'owner_action_center.coverage.purchase_requests' => false,
+            'owner_action_center.coverage.terminations' => false,
+            'owner_action_center.coverage.rehires' => false,
         ]);
         $this->bindAdapter(OrderRefundAttentionAdapter::class, 'order_refunds', 'refunds', new RuntimeException('order source unavailable'));
         $this->bindAdapter(RepairRefundAttentionAdapter::class, 'repair_refunds', 'refunds', new RuntimeException('repair source unavailable'));

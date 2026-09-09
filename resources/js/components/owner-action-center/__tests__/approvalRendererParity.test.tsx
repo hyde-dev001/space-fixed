@@ -6,7 +6,6 @@ import PayslipApprovalDetails from "../approvals/PayslipApprovalDetails";
 import SalaryAdjustmentApprovalDetails from "../approvals/SalaryAdjustmentApprovalDetails";
 import PurchaseRequestApprovalDetails from "../approvals/PurchaseRequestApprovalDetails";
 import ExpenseApprovalDetails from "../approvals/ExpenseApprovalDetails";
-import RepairRejectApprovalDetails from "../approvals/RepairRejectApprovalDetails";
 import SuspensionApprovalDetails from "../approvals/SuspensionApprovalDetails";
 import type { OwnerAttentionItem } from "../../../types/ownerActionCenter";
 
@@ -113,10 +112,6 @@ describe("owner approval renderer parity", () => {
       {
         renderer: <ExpenseApprovalDetails item={item({ source_type: "expense", title: "Expense" })} detail={{ reference: "EXP-12", category: "Operations", amount: 450, description: "Submitted supplier expense", receipt_path: "receipts/exp-12.pdf", status: "submitted" }} />,
         values: ["EXP-12", "Operations", "Submitted supplier expense", "receipts/exp-12.pdf"],
-      },
-      {
-        renderer: <RepairRejectApprovalDetails item={item({ source_type: "repair_rejection", title: "Repair rejection" })} detail={{ request_number: "RR-12", user: { first_name: "Jane", last_name: "Customer" }, services: [{ name: "Sole repair" }], repairer: { first_name: "Alex", last_name: "Repairer" }, repairer_rejection_reason: "Cannot restore sole", status: "owner_approval_pending" }} />,
-        values: ["RR-12", "Jane Customer", "Sole repair", "Alex Repairer", "Cannot restore sole"],
       },
     ];
 

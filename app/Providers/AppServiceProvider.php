@@ -27,7 +27,6 @@ use App\Events\SupplierOrderOverdue;
 // Inventory Listeners
 use App\Listeners\SendLowStockNotification;
 use App\Listeners\SendOutOfStockNotification;
-use App\Listeners\QueueLowStockCheck;
 use App\Listeners\UpdateProductStock;
 use App\Listeners\CreateStockMovement;
 use App\Listeners\NotifySupplierOrderOverdue;
@@ -133,7 +132,6 @@ class AppServiceProvider extends ServiceProvider
         // Register Inventory Module Event Listeners
         Event::listen(LowStockAlert::class, SendLowStockNotification::class);
         Event::listen(OutOfStockAlert::class, SendOutOfStockNotification::class);
-        Event::listen(StockMovementRecorded::class, QueueLowStockCheck::class);
         Event::listen(StockMovementRecorded::class, UpdateProductStock::class);
         Event::listen(InventoryItemUpdated::class, CreateStockMovement::class);
         Event::listen(SupplierOrderOverdue::class, NotifySupplierOrderOverdue::class);

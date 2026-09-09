@@ -102,26 +102,6 @@ final class ManagerRepairController extends Controller
         }
     }
 
-    /** Explicit exception route for a shop policy that requires Owner review. */
-    public function forwardToOwner(RepairManagerDecisionRequest $request, int $id): JsonResponse
-    {
-        try {
-            $repair = $this->repairs->forwardToOwner(
-                manager: $this->manager(),
-                repairId: $id,
-                reason: (string) $request->validated('reason'),
-            );
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Repair rejection was forwarded to the Shop Owner under the explicit approval policy.',
-                'data' => $this->repairs->show($this->manager(), (int) $repair->id),
-            ]);
-        } catch (ValidationException $exception) {
-            return $this->validationError($exception);
-        }
-    }
-
     private function manager(): User
     {
         /** @var User $manager */

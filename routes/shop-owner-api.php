@@ -380,9 +380,6 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
             Route::post('/{id}/ship', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'shipRepair'])->name('shop_owner.repairs.ship');
         });
 
-        Route::get('/high-value-pending', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'getHighValuePendingApprovals'])->name('shop_owner.repairs.high-value-pending');
-        Route::post('/{id}/approve-high-value', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'approveHighValueRepair'])->name('shop_owner.repairs.approve-high-value');
-        Route::post('/{id}/reject-high-value', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'rejectHighValueRepair'])->name('shop_owner.repairs.reject-high-value');
     });
 
     // ============================================
@@ -424,7 +421,7 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
     // ============================================
     // USER ACCESS CONTROL / EMPLOYEE MANAGEMENT (Shop Owner)
     // ============================================
-    Route::prefix('employees')->middleware('check.registration.type:company')->group(function () {
+    Route::prefix('employees')->group(function () {
         Route::post('/{userId}/regenerate-invite', [\App\Http\Controllers\ShopOwner\UserAccessControlController::class, 'regenerateInvite'])->name('shop_owner.employees.regenerate_invite');
         Route::post('/{userId}/send-invitation-email', [\App\Http\Controllers\ShopOwner\UserAccessControlController::class, 'sendInvitationEmail'])->name('shop_owner.employees.send_invitation_email');
     });

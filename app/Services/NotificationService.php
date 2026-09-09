@@ -44,7 +44,6 @@ class NotificationService
             'salary_change',
             'purchase_request',
             'expense',
-            'repair_rejection',
             'suspension_request',
             'termination_request',
             'rehire_request',
@@ -1915,60 +1914,6 @@ class NotificationService
                     : 'repair_price_change',
                 $serviceData['package_id'] ?? $serviceData['service_id'] ?? null,
             )
-        );
-    }
-
-    /**
-     * Notify shop owner of high-value repair needing approval.
-     */
-    public function notifyHighValueRepairApproval(int $shopOwnerId, array $repairData): ?Notification
-    {
-        return $this->sendToResolvedShopOwnerRecipients(
-            eventType: 'high_value_approval',
-            shopOwnerId: $shopOwnerId,
-            type: NotificationType::HIGH_VALUE_APPROVAL,
-            title: 'High-Value Repair Approval',
-            message: "Repair (₱{$repairData['total']}) requires your approval",
-            data: $repairData,
-            actionUrl: $this->highValueRepairActionUrl($repairData),
-            priority: 'high',
-            requiresAction: true,
-        );
-    }
-
-    private function highValueRepairActionUrl(array $repairData): string
-    {
-        $repairId = (int) ($repairData['repair_id'] ?? 0);
-
-        return $repairId > 0
-            ? "/shop-owner/high-value-repairs?repair_id={$repairId}"
-            : '/shop-owner/high-value-repairs';
-    }
-
-    /**
-     * Notify shop owner when manager forwards a repairer rejection for owner review.
-     */
-    public function notifyRepairRejectApprovalRequest(int $shopOwnerId, array $repairData): ?Notification
-    {
-        $orderNumber = (string) ($repairData['order_number'] ?? $repairData['request_id'] ?? $repairData['repair_id'] ?? 'N/A');
-        $reason = trim((string) ($repairData['reason'] ?? $repairData['repairer_rejection_reason'] ?? ''));
-
-        $message = "Repair rejection for #{$orderNumber} was forwarded by manager and needs your review.";
-        if ($reason !== '') {
-            $message .= " Reason: {$reason}";
-        }
-
-        return $this->sendToResolvedShopOwnerRecipients(
-            eventType: 'repair_reject_approval',
-            shopOwnerId: $shopOwnerId,
-            type: NotificationType::REPAIR_REJECTION_REVIEW,
-            title: 'Repair Rejection Awaiting Your Review',
-            message: $message,
-            data: $repairData,
-            actionUrl: $this->ownerApprovalActionUrl('repair_rejection', $repairData['repair_id'] ?? null),
-            priority: 'high',
-            groupKey: "repair-reject-owner-{$orderNumber}",
-            requiresAction: true
         );
     }
 

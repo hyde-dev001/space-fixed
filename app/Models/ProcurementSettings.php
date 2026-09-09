@@ -54,7 +54,6 @@ class ProcurementSettings extends Model
                         'salary_adjustment_approval' => ['enabled' => true, 'limit' => null],
                         'purchase_request_approval' => ['enabled' => true, 'limit' => null],
                         'expense_approval' => ['enabled' => true, 'limit' => null],
-                        'repair_reject_approval' => ['enabled' => true, 'limit' => null],
                     ],
                 ],
             ]

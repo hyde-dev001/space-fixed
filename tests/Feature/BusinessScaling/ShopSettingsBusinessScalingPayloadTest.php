@@ -56,7 +56,6 @@ final class ShopSettingsBusinessScalingPayloadTest extends TestCase
             'salary_adjustment_approval',
             'purchase_request_approval',
             'expense_approval',
-            'repair_reject_approval',
         ], array_keys($approvalPages));
 
         $this->assertSame('individual', $page['current']['registration_type']);

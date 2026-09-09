@@ -9,6 +9,7 @@ use App\Models\HR\LeaveRequest;
 use App\Models\HR\Payroll;
 use App\Traits\LogsHRActivity;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 use Carbon\Carbon;
 
@@ -610,4 +611,48 @@ class EmployeeSelfServiceController extends Controller
         }
     }
 
+    /**
+     * Change employee password
+     */
+    public function changePassword(Request $request)
+    {
+        try {
+            if (!auth()->check()) {
+                return response()->json(['error' => 'Unauthorized'], 401);
+            }
+
+            $validated = $request->validate([
+                'current_password' => 'required|string',
+                'new_password' => 'required|string|min:8|confirmed',
+            ]);
+
+            $user = auth()->user();
+
+            // Verify current password
+            if (!Hash::check($validated['current_password'], $user->password)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Current password is incorrect',
+                ], 422);
+            }
+
+            // Update password
+            $user->password = Hash::make($validated['new_password']);
+            $user->save();
+
+            $this->logActivity('employee_password_changed', $user->id);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Password changed successfully',
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to change password',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
 }

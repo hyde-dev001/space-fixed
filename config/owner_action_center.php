@@ -16,7 +16,6 @@ return [
         'suspensions' => true,
         'terminations' => true,
         'rehires' => true,
-        'repair_rejections' => true,
     ],
     'buckets' => [
         'urgent_exceptions' => [

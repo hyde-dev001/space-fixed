@@ -154,7 +154,6 @@ class ForgotPasswordOtpController extends Controller
 
         if ($account instanceof User) {
             $account->invite_token = null;
-            $account->invite_token_hash = null;
             $account->invite_expires_at = null;
             $account->force_password_change = false;
         }
@@ -175,12 +174,7 @@ class ForgotPasswordOtpController extends Controller
     {
         $user = User::where('email', $email)->first();
 
-        // Employee company accounts do not use the public email-OTP recovery flow.
-        if ($user?->isEmployeeAccount()) {
-            return null;
-        }
-
-        if ($user && ! empty($user->password)) {
+        if ($user && (!empty($user->password) || !empty($user->invite_token))) {
             return $user;
         }
 

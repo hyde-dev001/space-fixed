@@ -21,7 +21,6 @@ final class RecipientResolver
             'employee_termination_request',
             'employee_rehire_request',
             'high_value_approval',
-            'repair_reject_approval',
         ];
 
         if (in_array($eventType, $governanceTypes, true)) {

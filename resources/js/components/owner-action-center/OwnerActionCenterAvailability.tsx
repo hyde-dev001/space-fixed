@@ -16,7 +16,6 @@ const adapterLabels: Record<OwnerAttentionAdapterKey, string> = {
   suspension_requests: "Suspension requests",
   termination_requests: "Termination requests",
   rehire_requests: "Rehire requests",
-  repair_rejections: "Repair rejections",
   compliance_documents: "Compliance documents",
   failed_order_refunds: "Order refund recovery",
   failed_repair_refunds: "Repair refund recovery",

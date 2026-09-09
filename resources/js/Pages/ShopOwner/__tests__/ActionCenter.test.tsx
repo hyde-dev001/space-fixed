@@ -49,7 +49,6 @@ const result = (overrides: Partial<OwnerActionCenterResult> = {}): OwnerActionCe
     salary_changes: 1,
     expenses: 1,
     purchase_requests: 0,
-    repair_rejections: 0,
   },
   health: {
     enabled_adapter_keys: [
@@ -60,7 +59,6 @@ const result = (overrides: Partial<OwnerActionCenterResult> = {}): OwnerActionCe
       "salary_changes",
       "expenses",
       "purchase_requests",
-      "repair_rejections",
     ],
     healthy_adapter_keys: [
       "order_refunds",
@@ -70,7 +68,6 @@ const result = (overrides: Partial<OwnerActionCenterResult> = {}): OwnerActionCe
       "salary_changes",
       "expenses",
       "purchase_requests",
-      "repair_rejections",
     ],
     failed_adapter_keys: [],
   },
@@ -111,7 +108,6 @@ describe("Shop Owner Approval Center", () => {
         "purchase_requests",
         "suspensions",
         "expenses",
-        "repair_rejections",
       ],
       source: "all",
       page: 1,
@@ -205,7 +201,6 @@ describe("Shop Owner Approval Center", () => {
       "Purchase Requests",
       "Suspension Requests",
       "Expenses",
-      "Repair Rejections",
     ]) {
       expect(screen.getByRole("link", { name: new RegExp(`^${label}$`, "i") })).toBeInTheDocument();
     }
@@ -241,7 +236,6 @@ describe("Shop Owner Approval Center", () => {
     expect(screen.getByRole("navigation", { name: /Approval Center source filters/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /^Refunds$/i })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("link", { name: /^Expenses$/i })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /^Repair Rejections$/i })).toBeInTheDocument();
   });
 
   it("shows completed owner decisions in history and opens them read-only", async () => {

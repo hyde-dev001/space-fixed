@@ -124,29 +124,4 @@ describe("ApprovalDecisionFooter", () => {
     expect(screen.getByRole("button", { name: /^Reject$/i })).toHaveAttribute("data-critical");
   });
 
-  it("preserves the repair rejection minimum reason length", async () => {
-    const onSubmit = vi.fn();
-    sweetAlertFire
-      .mockResolvedValueOnce({ isConfirmed: true, value: "Other" })
-      .mockResolvedValueOnce({ isConfirmed: true, value: "Too short" })
-      .mockResolvedValueOnce({ isConfirmed: true });
-
-    render(
-      <ApprovalDecisionFooter
-        definition={approvalPanelRegistry.repair_rejection}
-        recordLabel="Repair rejection #1"
-        submitting={false}
-        onSubmit={onSubmit}
-      />,
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: /^Reject$/i }));
-
-    await waitFor(() => expect(sweetAlertFire).toHaveBeenCalledTimes(3));
-    expect(sweetAlertFire.mock.calls[2][0]).toEqual(expect.objectContaining({
-      icon: "warning",
-      title: "Invalid rejection reason",
-    }));
-    expect(onSubmit).not.toHaveBeenCalled();
-  });
 });

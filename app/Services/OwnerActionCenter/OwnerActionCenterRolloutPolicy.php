@@ -86,7 +86,6 @@ final class OwnerActionCenterRolloutPolicy
             'terminations',
             'rehires',
             'expenses',
-            'repair_rejections',
         ] as $family) {
             if (! array_key_exists($family, $coverage)) {
                 if ($family === 'suspensions') {

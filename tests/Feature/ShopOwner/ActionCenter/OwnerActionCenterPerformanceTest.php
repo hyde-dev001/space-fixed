@@ -25,7 +25,6 @@ final class OwnerActionCenterPerformanceTest extends TestCase
         ['class' => 'App\\Services\\OwnerActionCenter\\Adapters\\SalaryChangeAttentionAdapter', 'key' => 'salary_changes', 'coverage' => 'salary_changes', 'source' => 'salary_change'],
         ['class' => 'App\\Services\\OwnerActionCenter\\Adapters\\ExpenseAttentionAdapter', 'key' => 'expenses', 'coverage' => 'expenses', 'source' => 'expense'],
         ['class' => 'App\\Services\\OwnerActionCenter\\Adapters\\PurchaseRequestAttentionAdapter', 'key' => 'purchase_requests', 'coverage' => 'purchase_requests', 'source' => 'purchase_request'],
-        ['class' => 'App\\Services\\OwnerActionCenter\\Adapters\\RepairRejectAttentionAdapter', 'key' => 'repair_rejections', 'coverage' => 'repair_rejections', 'source' => 'repair_rejection'],
     ];
 
     private const WAITING_COMPLIANCE_ADAPTER = 'App\\Services\\OwnerActionCenter\\Adapters\\PendingComplianceRenewalAttentionAdapter';
@@ -42,7 +41,6 @@ final class OwnerActionCenterPerformanceTest extends TestCase
             'owner_action_center.coverage.prices' => true,
             'owner_action_center.coverage.payslips' => true,
             'owner_action_center.coverage.salary_changes' => true,
-            'owner_action_center.coverage.repair_rejections' => true,
             'owner_action_center.home_limit' => 3,
         ]);
     }

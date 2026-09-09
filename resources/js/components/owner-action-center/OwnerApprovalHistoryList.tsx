@@ -59,6 +59,9 @@ export default function OwnerApprovalHistoryList({ items, onReview, selectedAtte
                 </div>
                 {item.comments && <p className={`mt-2 text-xs ${selected ? "text-gray-300" : "text-gray-500 dark:text-gray-400"}`}>Note: {item.comments}</p>}
               </div>
+              {item.source_type === "repair_rejection" ? (
+                <span className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">History only</span>
+              ) : (
               <button
                 type="button"
                 aria-label={`View ${item.title} approval details`}
@@ -72,6 +75,7 @@ export default function OwnerApprovalHistoryList({ items, onReview, selectedAtte
                 </svg>
                 <span className="sr-only">View details</span>
               </button>
+              )}
             </div>
           </li>
         );

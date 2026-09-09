@@ -24,7 +24,6 @@ type ApprovalPages = {
 	salary_adjustment_approval: ApprovalSetting;
 	purchase_request_approval: ApprovalSetting;
 	expense_approval: ApprovalSetting;
-	repair_reject_approval: ApprovalSetting;
 };
 
 type ShopSettingsPayload = {
@@ -159,11 +158,6 @@ const APPROVAL_ITEMS: ApprovalItemConfig[] = [
 		key: 'expense_approval',
 		title: 'Expense Approvals',
 		description: 'Include the Shop Owner decision stage for manual expense approvals.',
-	},
-	{
-		key: 'repair_reject_approval',
-		title: 'Repair Reject Approval',
-		description: 'Include the Shop Owner decision stage before Manager final review.',
 	},
 ];
 

@@ -317,7 +317,6 @@ class RepairOnlineRefundWorkflowTest extends TestCase
                         'refund_approval' => ['enabled' => true, 'limit' => null],
                         'price_approval' => ['enabled' => false, 'limit' => null],
                         'purchase_request_approval' => ['enabled' => false, 'limit' => null],
-                        'repair_reject_approval' => ['enabled' => false, 'limit' => null],
                     ],
                 ],
             ],

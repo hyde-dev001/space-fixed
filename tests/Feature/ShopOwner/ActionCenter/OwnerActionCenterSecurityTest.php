@@ -43,7 +43,6 @@ final class OwnerActionCenterSecurityTest extends TestCase
             'owner_action_center.coverage.prices' => false,
             'owner_action_center.coverage.payslips' => false,
             'owner_action_center.coverage.salary_changes' => false,
-            'owner_action_center.coverage.repair_rejections' => false,
             'owner_action_center.buckets.urgent_exceptions.enabled' => false,
             'owner_action_center.buckets.urgent_exceptions.coverage.compliance' => false,
             'owner_action_center.buckets.urgent_exceptions.coverage.refunds' => false,

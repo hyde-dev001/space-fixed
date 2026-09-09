@@ -18,7 +18,6 @@ const APPROVAL_SOURCE_TYPES: ReadonlySet<string> = new Set([
   "termination_request",
   "rehire_request",
   "expense",
-  "repair_rejection",
 ]);
 
 export const parseApprovalSelection = (value: unknown): ApprovalSelection | null => {
