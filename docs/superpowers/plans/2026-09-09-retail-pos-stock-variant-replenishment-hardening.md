@@ -391,3 +391,17 @@ Explicitly report:
 - [ ] **Step 6: Perform the final reuse/dead-code check.**
 
 Confirm no unused imports, abandoned test fixtures, duplicate target resolvers, dead UI state, new dependencies, or stale TODOs were introduced. Do not mark the task complete until `@superpowers:verification-before-completion` has fresh command evidence for every claimed pass.
+
+## Execution record -- 2026-09-09
+
+Tasks 1-7 were implemented in the preceding commits. This follow-up traced the procurement stock-request notification from persistence through the browser:
+
+- [x] Stock-request submission and repair-forwarding notifications emit the canonical procurement approval route.
+- [x] Notification URL normalization preserves the canonical procurement route and query while retaining legacy inventory routing.
+- [x] Procurement browser click reaches `/erp/procurement/stock-request-approval?stock_request=1` with no 4xx responses.
+- [x] Focused backend matrix passes: 62 tests, 255 assertions, and 2 intentional MySQL/pcntl skips.
+- [x] Focused frontend checks pass: 13 tests; the production build passes.
+- [x] The image regression fixture explicitly uses `business_type=both` and `category=shoes` so the `/items` endpoint does not filter the test row.
+- [ ] The full frontend suite has 235 passing files and 1,383 passing tests; one pre-existing suite cannot resolve `@testing-library/dom`.
+- [x] The known low-stock command queued the check; the isolated job created the exact alert and automatic request with variant context.
+- [ ] Queue-worker delivery was not consumed because the database queue also contains unrelated jobs.
