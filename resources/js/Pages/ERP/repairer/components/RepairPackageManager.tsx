@@ -633,7 +633,7 @@ export default function RepairPackageManager({
                 {services.map((service) => {
                   const checked = formState.service_ids.includes(service.id);
                   return (
-                    <label key={service.id} className={`flex items-center justify-between gap-3 rounded border p-3 cursor-pointer ${checked ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20" : "border-gray-200 dark:border-gray-700"}`}>
+                    <label key={service.id} className={`flex items-center justify-between gap-3 rounded border p-3 cursor-pointer transition-colors ${checked ? "border-gray-500 bg-gray-100 dark:border-gray-600 dark:bg-gray-800" : "border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900"}`}>
                       <div className="min-w-0">
                         <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{service.name}</p>
                         <p className="text-xs text-gray-500 dark:text-gray-400">{service.category} • {service.duration}</p>
