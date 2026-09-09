@@ -5,6 +5,7 @@ import type { FormEvent } from "react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import ManagerFilterPanel, { ManagerFilterActions } from "../../../components/manager/ManagerFilterPanel";
 import { decideManagerLeaveRequest, useManagerLeaveApprovals } from "../../../hooks/useManagerApi";
+import { workflowFeedback } from "../../../utils/workflowFeedback";
 import type {
     ManagerLeaveApprovalFilters,
     ManagerLeaveRequest,
@@ -199,7 +200,13 @@ export default function LeaveApprovals() {
     };
 
     const approve = async (request: ManagerLeaveRequest) => {
-        if (!window.confirm(`Approve ${request.no_of_days}-day leave for ${request.employee.name}?`)) {
+        const confirmation = await workflowFeedback.confirm({
+            title: `Approve ${request.no_of_days}-day leave for ${request.employee.name}?`,
+            text: "This leave request will be approved and removed from the pending queue.",
+            confirmButtonText: "Approve",
+            confirmButtonColor: "#059669",
+        });
+        if (!confirmation.isConfirmed) {
             return;
         }
 
@@ -223,14 +230,26 @@ export default function LeaveApprovals() {
 
     const reject = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
-        if (!requestToReject || !rejectionReason.trim()) {
+        const request = requestToReject;
+        const reason = rejectionReason.trim();
+        if (!request || !reason) {
             return;
         }
 
-        setProcessingId(requestToReject.id);
+        const confirmation = await workflowFeedback.confirm({
+            title: `Reject ${request.no_of_days}-day leave for ${request.employee.name}?`,
+            text: "This rejection reason will be saved in the request history.",
+            confirmButtonText: "Reject",
+            confirmButtonColor: "#dc2626",
+        });
+        if (!confirmation.isConfirmed) {
+            return;
+        }
+
+        setProcessingId(request.id);
         setActionError(null);
         try {
-            await decideManagerLeaveRequest(requestToReject.id, "reject", rejectionReason.trim());
+            await decideManagerLeaveRequest(request.id, "reject", reason);
             setRequestToReject(null);
             setRejectionReason("");
             await approvals.refetch();

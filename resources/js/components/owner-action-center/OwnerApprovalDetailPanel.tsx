@@ -315,7 +315,7 @@ export default function OwnerApprovalDetailPanel({
       </div>
 
       {!loading && detail && (
-        <section className="shrink-0 border-t border-gray-200 bg-white pb-[env(safe-area-inset-bottom)] pt-4 dark:border-gray-800 dark:bg-gray-950" aria-labelledby="owner-approval-decision-footer-title">
+        <section className="shrink-0 border-t border-gray-200 bg-gray-50 pb-[env(safe-area-inset-bottom)] pt-4 dark:border-gray-800 dark:bg-gray-900" aria-labelledby="owner-approval-decision-footer-title">
           <h3 id="owner-approval-decision-footer-title" className="text-sm font-semibold text-gray-900 dark:text-white">Decision footer</h3>
           <div className="mt-3">
             {canDecide ? (

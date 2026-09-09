@@ -108,6 +108,7 @@ describe("OwnerApprovalDetailPanel", () => {
     expect(headings.indexOf("Decision summary")).toBeLessThan(headings.indexOf("Request details"));
     expect(headings.indexOf("Request details")).toBeLessThan(headings.indexOf("Workflow/history"));
     expect(headings.indexOf("Workflow/history")).toBeLessThan(headings.indexOf("Decision footer"));
+    expect(screen.getByRole("heading", { name: "Decision footer" }).parentElement).toHaveClass("bg-gray-50", "dark:bg-gray-900");
     expect(screen.getByText("Owner approval")).toHaveClass("text-gray-600", "dark:text-gray-300");
     expect(screen.getByText("Owner approval")).not.toHaveClass("text-blue-600", "dark:text-blue-300");
 

@@ -39,6 +39,7 @@ describe("ApprovalDecisionFooter", () => {
       input: "select",
       inputOptions: expect.objectContaining({ Other: "Other" }),
       confirmButtonText: "Continue",
+      confirmButtonColor: "#dc2626",
     })));
 
     expect(screen.queryByRole("button", { name: /Confirm rejection/i })).not.toBeInTheDocument();
@@ -68,6 +69,7 @@ describe("ApprovalDecisionFooter", () => {
       inputLabel: "Rejection reason",
       inputAttributes: { maxlength: "1000" },
       confirmButtonText: "Reject",
+      confirmButtonColor: "#dc2626",
     }));
     expect(onSubmit).toHaveBeenCalledWith("reject", "The attached quote does not match the requested amount.");
   });
@@ -89,6 +91,7 @@ describe("ApprovalDecisionFooter", () => {
       text: expect.stringContaining("move this record to the next authoritative workflow stage"),
       showCancelButton: true,
       confirmButtonText: "Approve",
+      confirmButtonColor: "#059669",
     })));
     expect(onSubmit).toHaveBeenCalledWith("approve");
     expect(screen.queryByRole("button", { name: /Confirm approval/i })).not.toBeInTheDocument();
@@ -105,7 +108,7 @@ describe("ApprovalDecisionFooter", () => {
     expect(screen.getByRole("button", { name: /^Reject$/i })).toBeDisabled();
   });
 
-  it("uses neutral primary and secondary treatments for text decisions", () => {
+  it("uses semantic critical treatments for text decisions", () => {
     render(
       <ApprovalDecisionFooter
         definition={approvalPanelRegistry.expense}
@@ -115,10 +118,10 @@ describe("ApprovalDecisionFooter", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: /^Approve$/i })).toHaveClass("bg-gray-950", "text-white");
-    expect(screen.getByRole("button", { name: /^Reject$/i })).toHaveClass("border-gray-300", "bg-white", "text-gray-900");
-    expect(screen.getByRole("button", { name: /^Approve$/i })).not.toHaveClass("bg-emerald-600");
-    expect(screen.getByRole("button", { name: /^Reject$/i })).not.toHaveClass("border-red-300", "text-red-700");
+    expect(screen.getByRole("button", { name: /^Approve$/i })).toHaveClass("bg-emerald-600", "text-white");
+    expect(screen.getByRole("button", { name: /^Approve$/i })).toHaveAttribute("data-critical");
+    expect(screen.getByRole("button", { name: /^Reject$/i })).toHaveClass("border-red-300", "bg-white", "text-red-700");
+    expect(screen.getByRole("button", { name: /^Reject$/i })).toHaveAttribute("data-critical");
   });
 
   it("preserves the repair rejection minimum reason length", async () => {
