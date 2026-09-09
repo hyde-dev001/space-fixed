@@ -109,6 +109,19 @@ final class EmployeeAccountRecoveryTest extends TestCase
     }
 
     #[Test]
+    public function employee_invitation_mailable_renders_for_personal_delivery(): void
+    {
+        [, $linkedUser] = $this->employeeWithLinkedUser();
+        $linkedUser->forceFill([
+            'invite_expires_at' => now()->addDays(7),
+        ])->save();
+
+        (new EmployeeInvitation($linkedUser->fresh(), 'https://solespace.test/accept-invitation/test-token'))
+            ->assertSeeInHtml($linkedUser->name)
+            ->assertSeeInHtml('https://solespace.test/accept-invitation/test-token');
+    }
+
+    #[Test]
     public function account_recovery_cannot_cross_shop_boundaries(): void
     {
         $foreignShop = ShopOwner::factory()->approved()->create([
