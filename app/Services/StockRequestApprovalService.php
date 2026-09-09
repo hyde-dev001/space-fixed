@@ -163,6 +163,11 @@ class StockRequestApprovalService
             if (! $size) {
                 return null;
             }
+
+            if ($size->inventory_color_variant_id
+                && ! $size->colorVariant()->where('inventory_item_id', $item->id)->exists()) {
+                return null;
+            }
         }
 
         if (! in_array($type, ['item', 'color', 'size'], true)) {

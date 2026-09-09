@@ -129,4 +129,75 @@ class InventoryReplenishmentSettingsTest extends TestCase
             'reorder_level' => $foreignItem->reorder_level,
         ]);
     }
+    /** @test */
+    public function a_size_target_with_a_foreign_color_parent_is_rejected_without_partial_updates(): void
+    {
+        $item = InventoryItem::factory()->create(['shop_owner_id' => $this->shopOwner->id, 'category' => 'shoes']);
+        $color = InventoryColorVariant::create([
+            'inventory_item_id' => $item->id,
+            'color_name' => 'Black',
+        ]);
+        $validSize = InventorySize::create([
+            'inventory_item_id' => $item->id,
+            'inventory_color_variant_id' => $color->id,
+            'size' => '8',
+            'size_system' => 'US',
+            'quantity' => 3,
+            'auto_stock_request_enabled' => false,
+            'reorder_level' => 10,
+            'reorder_quantity' => 10,
+        ]);
+        $foreignItem = InventoryItem::factory()->create(['shop_owner_id' => ShopOwner::factory()->create()->id]);
+        $foreignColor = InventoryColorVariant::create([
+            'inventory_item_id' => $foreignItem->id,
+            'color_name' => 'Foreign',
+        ]);
+        $foreignParentSize = InventorySize::create([
+            'inventory_item_id' => $item->id,
+            'inventory_color_variant_id' => $foreignColor->id,
+            'size' => '9',
+            'size_system' => 'US',
+            'quantity' => 2,
+            'auto_stock_request_enabled' => false,
+            'reorder_level' => 10,
+            'reorder_quantity' => 10,
+        ]);
+        $originalValidLevel = (int) $validSize->reorder_level;
+        $originalForeignLevel = (int) $foreignParentSize->reorder_level;
+
+        $this->actingAs($this->user, 'user')
+            ->putJson("/api/erp/inventory/items/{$item->id}/replenishment-settings", [
+                'targets' => [
+                    [
+                        'type' => 'size',
+                        'id' => $validSize->id,
+                        'auto_stock_request_enabled' => true,
+                        'reorder_level' => 3,
+                        'reorder_quantity' => 20,
+                    ],
+                    [
+                        'type' => 'size',
+                        'id' => $foreignParentSize->id,
+                        'auto_stock_request_enabled' => true,
+                        'reorder_level' => 1,
+                        'reorder_quantity' => 30,
+                    ],
+                ],
+            ])
+            ->assertUnprocessable();
+
+        $this->assertDatabaseHas('inventory_sizes', [
+            'id' => $validSize->id,
+            'reorder_level' => $originalValidLevel,
+            'reorder_quantity' => 10,
+            'auto_stock_request_enabled' => false,
+        ]);
+        $this->assertDatabaseHas('inventory_sizes', [
+            'id' => $foreignParentSize->id,
+            'reorder_level' => $originalForeignLevel,
+            'reorder_quantity' => 10,
+            'auto_stock_request_enabled' => false,
+        ]);
+    }
+
 }
