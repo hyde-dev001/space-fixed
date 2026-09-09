@@ -149,9 +149,10 @@ describe('Cashier retail catalog pagination', () => {
     await screen.findByText('Canonical Retail Product', { exact: true });
     expect(screen.getByText('4 in stock', { exact: true })).toBeInTheDocument();
 
-    fireEvent.change(screen.getByTitle('Select size for Canonical Retail Product'), {
-      target: { value: '9' },
-    });
+    fireEvent.click(screen.getByRole('button', { name: /Select size for Canonical Retail Product/i }));
+    const dialog = screen.getByRole('dialog', { name: /choose options for canonical retail product/i });
+    fireEvent.click(within(dialog).getByRole('radio', { name: '9' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Apply' }));
 
     expect(screen.getByText('12 in stock', { exact: true })).toBeInTheDocument();
 
