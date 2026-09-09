@@ -58,12 +58,23 @@ describe('user-side navigation shell', () => {
     );
   });
 
-  it('keeps Download as the last utility link after Cart', () => {
+  it('keeps authenticated sidebar actions in the requested order without Cart', () => {
     const sidebarStart = navigationSource.indexOf('aria-label="Site menu"');
     const sidebarSource = navigationSource.slice(sidebarStart, navigationSource.indexOf('</aside>', sidebarStart));
+    const primaryNavEnd = sidebarSource.indexOf('</nav>');
+    const joinTeamIndex = sidebarSource.indexOf('<span>Join Our Team</span>');
+    const editProfileIndex = sidebarSource.indexOf('<span>Edit Profile</span>');
+    const downloadIndex = sidebarSource.indexOf("href={route('download')}");
+    const logoutIndex = sidebarSource.indexOf('<span>Log out</span>');
 
-    expect(sidebarSource).toContain("href={route('download')}");
-    expect(sidebarSource.indexOf('>Cart')).toBeLessThan(sidebarSource.indexOf('>Download'));
+    expect(sidebarSource).not.toContain('>Cart');
+    expect(sidebarSource).not.toContain('>Account');
+    expect(sidebarSource).not.toContain('id="customer-account-menu"');
+    expect(joinTeamIndex).toBeGreaterThan(-1);
+    expect(joinTeamIndex).toBeLessThan(primaryNavEnd);
+    expect(editProfileIndex).toBeGreaterThan(primaryNavEnd);
+    expect(editProfileIndex).toBeLessThan(downloadIndex);
+    expect(downloadIndex).toBeLessThan(logoutIndex);
   });
 
   it('renders the shared moving offers ticker with reduced-motion support', () => {
@@ -109,66 +120,15 @@ describe('user-side navigation shell', () => {
     expect(navigationSource).not.toContain('fixed right-0 top-full z-50 mt-1 w-52');
   });
 
-  it('opens authenticated Account as an inline animated accordion with a plus control', () => {
-    const accountPanelStart = navigationSource.indexOf('id="customer-account-submenu"');
-    const utilityStart = navigationSource.indexOf('<div className="border-t border-[#cacacb] px-6 py-6 sm:px-8 dark:border-slate-700">');
-    const cartStart = navigationSource.indexOf('>Cart {effectiveCartCount > 0', utilityStart);
-    const accountTriggerStart = navigationSource.indexOf('aria-controls="customer-account-submenu"');
-    const accountTriggerEnd = navigationSource.indexOf('</button>', accountTriggerStart);
-    const accountTriggerSource = navigationSource.slice(navigationSource.lastIndexOf('<button', accountTriggerStart), accountTriggerEnd);
-    const accountPanelSource = navigationSource.slice(accountPanelStart, cartStart);
-
-    expect(accountPanelStart).toBeGreaterThan(-1);
-    expect(utilityStart).toBeGreaterThan(-1);
-    expect(cartStart).toBeGreaterThan(-1);
-    expect(accountPanelStart).toBeGreaterThan(utilityStart);
-    expect(accountPanelStart).toBeLessThan(cartStart);
-    expect(accountTriggerSource).toContain('text-left text-base font-medium');
-    expect(accountTriggerSource).not.toContain('text-lg font-semibold');
-    expect(navigationSource).toContain('const [accountDrawerOpen, setAccountDrawerOpen] = useState(false);');
-    expect(navigationSource).toContain('aria-controls="customer-account-submenu"');
-    expect(navigationSource).toContain('aria-expanded={accountDrawerOpen}');
-    expect(navigationSource).toContain('aria-label={`${accountDrawerOpen ? \'Collapse\' : \'Expand\'} Account`}');
-    expect(navigationSource).toContain('transition-[grid-template-rows,opacity,transform] duration-300 ease-out');
-    expect(accountPanelSource).toContain('aria-hidden={!accountDrawerOpen}');
-    expect(accountPanelSource).toContain("accountDrawerOpen ? 'grid-rows-[1fr] translate-y-0 opacity-100' : 'grid-rows-[0fr] -translate-y-1 opacity-0 pointer-events-none'");
-    expect(accountPanelSource).toContain('<span>Edit Profile</span>');
-    expect(accountPanelSource).toContain('<span>Join Our Team</span>');
-    expect(accountPanelSource).toContain('<span>Log out</span>');
-    expect(accountPanelSource).toContain("href={route('shop-owner-register')}");
-    expect(navigationSource).not.toContain('id="customer-account-menu"');
-    expect(navigationSource).not.toContain('absolute bottom-full left-0 right-0');
+  it('keeps the sidebar navigation accessible and visually consistent', () => {
+    expect(navigationSource).not.toContain('aria-label="Account submenu"');
+    expect(navigationSource).not.toContain('fixed left-[min(88vw,31rem)] top-0 z-[110]');
 
     const siteMenuStart = navigationSource.indexOf('aria-label="Site menu"');
     const siteMenuEnd = navigationSource.indexOf('</aside>', siteMenuStart);
     const siteMenuSource = navigationSource.slice(siteMenuStart, siteMenuEnd);
     expect(siteMenuSource).toContain('text-xl font-semibold');
     expect(siteMenuSource).not.toContain('font-black');
-    const siteNavStart = navigationSource.indexOf('<nav className="flex-1 px-6 py-7 sm:px-8">', siteMenuStart);
-    const siteNavEnd = navigationSource.indexOf('</nav>', siteNavStart);
-    const siteNavSource = navigationSource.slice(siteNavStart, siteNavEnd);
-    expect(siteNavSource).not.toContain('id="customer-account-submenu"');
-  });
-
-  it('keeps Account identifiable and makes Logout visibly interactive', () => {
-    const accountTriggerStart = navigationSource.indexOf('aria-controls="customer-account-submenu"');
-    const accountTriggerEnd = navigationSource.indexOf('</button>', accountTriggerStart);
-    const accountTriggerSource = navigationSource.slice(
-      navigationSource.lastIndexOf('<button', accountTriggerStart),
-      accountTriggerEnd,
-    );
-    const accountPanelStart = navigationSource.indexOf('id="customer-account-submenu"');
-    const logoutStart = navigationSource.indexOf('>Log out</span>', accountPanelStart);
-    const logoutSource = navigationSource.slice(
-      navigationSource.lastIndexOf('<button', logoutStart),
-      navigationSource.indexOf('</button>', logoutStart),
-    );
-
-    expect(accountTriggerSource).toContain('h-5 w-5');
-    expect(accountTriggerSource).toContain('aria-hidden="true"');
-    expect(logoutSource).toContain('hover:bg-red-50');
-    expect(logoutSource).toContain('focus-visible:ring-2');
-    expect(logoutSource).toContain('focus-visible:ring-red-500');
   });
 
   it('animates sidebar plus submenus and exposes their expanded state', () => {
