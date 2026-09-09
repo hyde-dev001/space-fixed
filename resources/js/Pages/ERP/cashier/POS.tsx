@@ -1,6 +1,7 @@
 import MonochromeSelect from "@/components/form/Select";
+import { Modal } from "@/components/ui/modal";
 import { Head, usePage } from "@inertiajs/react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import axios from "axios";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import Swal from "sweetalert2";
@@ -181,6 +182,24 @@ type RetailCartItem = {
 	inventoryItemId?: number | null;
 	inventoryColorVariantId?: number | null;
 	inventorySizeId?: number | null;
+};
+
+type RetailVariantSelection = {
+	size: string;
+	color: string;
+};
+
+type RetailVariantOptions = RetailVariantSelection & {
+	sizeOptions: string[];
+	colorOptions: string[];
+	selectedVariant: RetailProductVariant | null;
+	selectedStock: number;
+};
+
+type RetailVariantModalTarget = RetailVariantSelection & {
+	kind: "catalog" | "cart";
+	productId: number;
+	lineId?: string;
 };
 
 const OPEN_REFUND_STATUSES = ["requested", "approved", "processing"];
@@ -466,6 +485,233 @@ const normalizeVariantToken = (value: unknown): string => {
 		.toLowerCase();
 };
 
+const getUniqueVariantValues = (variants: RetailProductVariant[], field: "size" | "color"): string[] => {
+	return Array.from(new Set(variants.map((variant) => variant[field]).filter((value) => value.length > 0)));
+};
+
+const getRetailVariantOptions = (
+	product: RetailCatalogProduct,
+	selection: RetailVariantSelection,
+): RetailVariantOptions => {
+	const colorSourceVariants = product.variants.some((variant) => variant.stock > 0)
+		? product.variants.filter((variant) => variant.stock > 0)
+		: product.variants;
+	const colorOptions = getUniqueVariantValues(colorSourceVariants, "color");
+	const selectedColor = colorOptions.find((color) => normalizeVariantToken(color) === normalizeVariantToken(selection.color))
+		?? colorOptions[0]
+		?? selection.color;
+	const variantsForSelectedColor = product.variants.filter((variant) => (
+		normalizeVariantToken(variant.color) === normalizeVariantToken(selectedColor)
+	));
+	const sizeSourceVariants = variantsForSelectedColor.length > 0
+		? (variantsForSelectedColor.some((variant) => variant.stock > 0)
+			? variantsForSelectedColor.filter((variant) => variant.stock > 0)
+			: variantsForSelectedColor)
+		: (product.variants.some((variant) => variant.stock > 0)
+			? product.variants.filter((variant) => variant.stock > 0)
+			: product.variants);
+	const sizeOptions = getUniqueVariantValues(sizeSourceVariants, "size");
+	const selectedSize = sizeOptions.find((size) => normalizeVariantToken(size) === normalizeVariantToken(selection.size))
+		?? sizeOptions[0]
+		?? selection.size;
+	const selectedVariant = product.variants.find((variant) => (
+		normalizeVariantToken(variant.size) === normalizeVariantToken(selectedSize)
+		&& normalizeVariantToken(variant.color) === normalizeVariantToken(selectedColor)
+	)) ?? null;
+
+	return {
+		sizeOptions,
+		colorOptions,
+		selectedSize,
+		selectedColor,
+		selectedVariant,
+		selectedStock: selectedVariant ? selectedVariant.stock : product.stock,
+	};
+};
+
+const getRetailSelectionAfterSizeChange = (
+	product: RetailCatalogProduct,
+	selection: RetailVariantSelection,
+	nextSize: string,
+): RetailVariantSelection => {
+	const hasCurrentColorForSize = product.variants.some((variant) => (
+		normalizeVariantToken(variant.size) === normalizeVariantToken(nextSize)
+		&& normalizeVariantToken(variant.color) === normalizeVariantToken(selection.color)
+	));
+	const nextColor = product.variants.find((variant) => (
+		normalizeVariantToken(variant.size) === normalizeVariantToken(nextSize)
+		&& variant.stock > 0
+	))?.color
+		?? product.variants.find((variant) => normalizeVariantToken(variant.size) === normalizeVariantToken(nextSize))?.color
+		?? "";
+
+	return {
+		size: nextSize,
+		color: hasCurrentColorForSize ? selection.color : nextColor,
+	};
+};
+
+const getRetailSelectionAfterColorChange = (
+	product: RetailCatalogProduct,
+	selection: RetailVariantSelection,
+	nextColor: string,
+): RetailVariantSelection => {
+	const hasCurrentSizeForColor = product.variants.some((variant) => (
+		normalizeVariantToken(variant.color) === normalizeVariantToken(nextColor)
+		&& normalizeVariantToken(variant.size) === normalizeVariantToken(selection.size)
+	));
+	const nextSize = product.variants.find((variant) => (
+		normalizeVariantToken(variant.color) === normalizeVariantToken(nextColor)
+		&& variant.stock > 0
+	))?.size
+		?? product.variants.find((variant) => normalizeVariantToken(variant.color) === normalizeVariantToken(nextColor))?.size
+		?? "";
+
+	return {
+		color: nextColor,
+		size: hasCurrentSizeForColor ? selection.size : nextSize,
+	};
+};
+
+type RetailVariantModalProps = {
+	isOpen: boolean;
+	product: RetailCatalogProduct;
+	selection: RetailVariantSelection;
+	onCancel: () => void;
+	onApply: (selection: RetailVariantSelection) => void;
+};
+
+const retailVariantOptionButtonClass = (isSelected: boolean): string => (
+	`flex min-h-11 cursor-pointer items-center justify-between rounded-xl border px-3 py-2 text-left text-sm font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 focus-visible:ring-offset-2 dark:focus-visible:ring-gray-300 dark:focus-visible:ring-offset-gray-900 ${isSelected
+		? "border-gray-950 bg-gray-950 text-white hover:bg-black dark:border-gray-950 dark:bg-gray-950 dark:text-white dark:hover:bg-black"
+		: "border-gray-200 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:border-gray-500 dark:hover:bg-gray-800"}`
+);
+
+function RetailVariantModal({ isOpen, product, selection, onCancel, onApply }: RetailVariantModalProps) {
+	const headingId = useId();
+	const [draft, setDraft] = useState<RetailVariantSelection>(selection);
+	const options = getRetailVariantOptions(product, draft);
+	const selectedVariant = options.selectedVariant;
+	const canApply = Boolean(selectedVariant && selectedVariant.stock > 0);
+
+	useEffect(() => {
+		if (isOpen) {
+			setDraft(selection);
+		}
+	}, [isOpen, selection.color, selection.size]);
+
+	return (
+		<Modal
+			isOpen={isOpen}
+			onClose={onCancel}
+			showCloseButton={false}
+			size="md"
+			className="!w-[calc(100vw-2rem)] !max-w-xl overflow-hidden border border-gray-200 shadow-2xl dark:border-gray-700"
+		>
+			<div
+				role="dialog"
+				aria-modal="true"
+				aria-labelledby={headingId}
+				className="max-h-[calc(100dvh-2rem)] overflow-y-auto bg-white p-4 text-gray-950 dark:bg-gray-900 dark:text-white sm:p-6"
+			>
+				<div className="flex items-start justify-between gap-4 border-b border-gray-200 pb-4 dark:border-gray-700">
+					<div className="min-w-0">
+						<p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">Product options</p>
+						<h2 id={headingId} className="mt-1 break-words text-lg font-bold tracking-tight">Choose options for {product.name}</h2>
+						<p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Select a size and color before adding or updating this item.</p>
+					</div>
+					<button
+						type="button"
+						aria-label={`Close options for ${product.name}`}
+						onClick={onCancel}
+						className="flex min-h-11 min-w-11 shrink-0 cursor-pointer items-center justify-center rounded-xl border border-gray-200 text-gray-500 transition-colors duration-150 hover:border-gray-400 hover:bg-gray-100 hover:text-gray-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 dark:border-gray-700 dark:text-gray-400 dark:hover:border-gray-500 dark:hover:bg-gray-800 dark:hover:text-white"
+					>
+						<svg aria-hidden="true" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+							<path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" />
+						</svg>
+					</button>
+				</div>
+
+				<div className="mt-5 space-y-5">
+					<fieldset>
+						<legend className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">Size</legend>
+						<div role="radiogroup" aria-label="Size options" className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+							{options.sizeOptions.map((size) => (
+								<button
+									key={size}
+									type="button"
+									role="radio"
+									aria-checked={normalizeVariantToken(draft.size) === normalizeVariantToken(size)}
+									onClick={() => setDraft((current) => getRetailSelectionAfterSizeChange(product, current, size))}
+									className={retailVariantOptionButtonClass(normalizeVariantToken(draft.size) === normalizeVariantToken(size))}
+								>
+									<span>{size}</span>
+									{normalizeVariantToken(draft.size) === normalizeVariantToken(size) && (
+										<svg aria-hidden="true" className="h-4 w-4 shrink-0" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2">
+											<path d="m4 10 4 4 8-8" strokeLinecap="round" strokeLinejoin="round" />
+										</svg>
+									)}
+								</button>
+							))}
+						</div>
+					</fieldset>
+
+					<fieldset>
+						<legend className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">Color</legend>
+						<div role="radiogroup" aria-label="Color options" className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+							{options.colorOptions.map((color) => (
+								<button
+									key={color}
+									type="button"
+									role="radio"
+									aria-checked={normalizeVariantToken(draft.color) === normalizeVariantToken(color)}
+									onClick={() => setDraft((current) => getRetailSelectionAfterColorChange(product, current, color))}
+									className={retailVariantOptionButtonClass(normalizeVariantToken(draft.color) === normalizeVariantToken(color))}
+								>
+									<span>{color}</span>
+									{normalizeVariantToken(draft.color) === normalizeVariantToken(color) && (
+										<svg aria-hidden="true" className="h-4 w-4 shrink-0" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2">
+											<path d="m4 10 4 4 8-8" strokeLinecap="round" strokeLinejoin="round" />
+										</svg>
+									)}
+								</button>
+							))}
+						</div>
+					</fieldset>
+
+					<div aria-live="polite" className={`rounded-xl border px-3 py-2 text-sm font-semibold ${canApply
+						? "border-gray-200 bg-gray-50 text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+						: "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-200"}`}>
+						{selectedVariant
+							? canApply
+								? `${selectedVariant.stock} in stock for ${options.selectedSize} / ${options.selectedColor}`
+								: `Out of stock for ${options.selectedSize} / ${options.selectedColor}`
+							: "This size and color combination is unavailable."}
+					</div>
+				</div>
+
+				<div className="mt-5 flex flex-col-reverse gap-3 border-t border-gray-200 pt-4 sm:flex-row sm:justify-end dark:border-gray-700">
+					<button
+						type="button"
+						onClick={onCancel}
+						className="min-h-11 cursor-pointer rounded-xl border border-gray-200 px-5 font-semibold text-gray-700 transition-colors duration-150 hover:border-gray-400 hover:bg-gray-100 hover:text-gray-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 dark:border-gray-700 dark:text-gray-300 dark:hover:border-gray-500 dark:hover:bg-gray-800 dark:hover:text-white"
+					>
+						Cancel
+					</button>
+					<button
+						type="button"
+						disabled={!canApply}
+						onClick={() => onApply({ size: options.selectedSize, color: options.selectedColor })}
+						className="min-h-11 cursor-pointer rounded-xl bg-gray-950 px-5 font-semibold text-white transition-colors duration-150 hover:bg-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-950 dark:hover:bg-black dark:focus-visible:ring-offset-gray-900"
+					>
+						Apply
+					</button>
+				</div>
+			</div>
+		</Modal>
+	);
+}
+
 const getRetailVariantIdentity = (
 	productId: number,
 	variantId?: number | null,
@@ -576,6 +822,7 @@ const PointOfSalePage = () => {
 	const [retailLoading, setRetailLoading] = useState<boolean>(false);
 	const [retailCart, setRetailCart] = useState<RetailCartItem[]>([]);
 	const [retailSelectionByProduct, setRetailSelectionByProduct] = useState<Record<number, { size: string; color: string }>>({});
+	const [retailVariantModal, setRetailVariantModal] = useState<RetailVariantModalTarget | null>(null);
 	const [retailCustomerName, setRetailCustomerName] = useState<string>("");
 	const [retailCustomerPhone, setRetailCustomerPhone] = useState<string>("");
 	const [retailCustomerEmail, setRetailCustomerEmail] = useState<string>("");
@@ -592,6 +839,8 @@ const PointOfSalePage = () => {
 	}, [allowedModes, mode]);
 
 	useEffect(() => {
+		setRetailVariantModal(null);
+
 		if (mode === "retail") {
 			setIsOrderModalOpen(false);
 			setIsRefundQueueOpen(false);
@@ -2579,6 +2828,33 @@ const PointOfSalePage = () => {
 		}
 	};
 
+	const openRetailVariantModal = (
+		kind: RetailVariantModalTarget["kind"],
+		product: RetailCatalogProduct,
+		selection: RetailVariantSelection,
+		lineId?: string,
+	) => {
+		setRetailVariantModal({
+			kind,
+			productId: product.id,
+			lineId,
+			...selection,
+		});
+	};
+
+	const applyRetailVariantSelection = (selection: RetailVariantSelection) => {
+		const target = retailVariantModal;
+		if (!target) return;
+
+		if (target.kind === "catalog") {
+			updateRetailSelection(target.productId, selection);
+		} else if (target.lineId) {
+			updateRetailCartVariant(target.lineId, selection.size, selection.color);
+		}
+
+		setRetailVariantModal(null);
+	};
+
 	const updateRetailCartQty = (lineId: string, nextQty: number) => {
 		setRetailCart((prev) => prev.map((item) => {
 			if (item.lineId !== lineId) return item;
@@ -2902,9 +3178,13 @@ const PointOfSalePage = () => {
 		setIsReceiptModalOpen(true);
 		window.print();
 	};
+	const retailVariantModalProduct = retailVariantModal
+		? retailProducts.find((product) => product.id === retailVariantModal.productId) ?? null
+		: null;
+	const isRetailVariantModalOpen = Boolean(retailVariantModalProduct);
 
 	return (
-		<AppLayoutERP hideHeader={isOrderModalOpen || isRefundQueueOpen || isReceiptModalOpen || isHistoryModalOpen}>
+		<AppLayoutERP hideHeader={isOrderModalOpen || isRefundQueueOpen || isReceiptModalOpen || isHistoryModalOpen || isRetailVariantModalOpen}>
 			<Head title="Point of Sale" />
 
 			<style>{`
@@ -3003,7 +3283,7 @@ const PointOfSalePage = () => {
 			`}</style>
 
 			<div className="cashier-pos-page space-y-6 p-4 md:p-6">
-				{!isOrderModalOpen && !isRefundQueueOpen && !isReceiptModalOpen && !isHistoryModalOpen && (
+				{!isOrderModalOpen && !isRefundQueueOpen && !isReceiptModalOpen && !isHistoryModalOpen && !isRetailVariantModalOpen && (
 				<div className="flex items-center justify-between">
 					<h1 className="sr-only">Point of Sale</h1>
 					<div className="flex flex-wrap gap-2">
@@ -3138,32 +3418,7 @@ const PointOfSalePage = () => {
 												.filter((entry) => entry.productId === product.id)
 												.reduce((sum, entry) => sum + entry.qty, 0);
 											const selection = getRetailSelectionForProduct(product);
-											const colorOptions = Array.from(new Set(
-												(product.variants.some((variant) => variant.stock > 0)
-													? product.variants.filter((variant) => variant.stock > 0)
-													: product.variants)
-													.map((variant) => variant.color)
-													.filter((color) => color.length > 0),
-											));
-											const selectedColor = colorOptions.find((color) => normalizeVariantToken(color) === normalizeVariantToken(selection.color))
-												?? colorOptions[0]
-												?? selection.color;
-											const variantsForSelectedColor = product.variants.filter((variant) => (
-												normalizeVariantToken(variant.color) === normalizeVariantToken(selectedColor)
-											));
-											const sizeSourceVariants = variantsForSelectedColor.length > 0
-												? (variantsForSelectedColor.some((variant) => variant.stock > 0)
-													? variantsForSelectedColor.filter((variant) => variant.stock > 0)
-													: variantsForSelectedColor)
-												: (product.variants.some((variant) => variant.stock > 0)
-													? product.variants.filter((variant) => variant.stock > 0)
-													: product.variants);
-											const sizeOptions = Array.from(new Set(sizeSourceVariants.map((variant) => variant.size).filter((size) => size.length > 0)));
-											const selectedSize = sizeOptions.find((size) => normalizeVariantToken(size) === normalizeVariantToken(selection.size))
-												?? sizeOptions[0]
-												?? selection.size;
-											const selectedVariant = resolveRetailVariant(product, selectedSize, selectedColor);
-											const selectedStock = selectedVariant ? selectedVariant.stock : product.stock;
+											const { selectedColor, selectedSize, selectedStock } = getRetailVariantOptions(product, selection);
 
 											return (
 												<div
@@ -3183,55 +3438,33 @@ const PointOfSalePage = () => {
 																{isSelected ? `In cart (${inCartQty})` : "Tap to add"}
 															</span>
 														</div>
-														<p className="mt-3 line-clamp-2 text-xl font-semibold text-slate-900">{product.name}</p>
+														<p data-testid={`retail-product-title-${product.id}`} className="mt-3 h-14 min-h-14 overflow-hidden line-clamp-2 text-xl leading-7 font-semibold text-slate-900">{product.name}</p>
 														{product.variants.length > 0 && (
-															<div className="mt-2 grid grid-cols-2 gap-2">
-																<MonochromeSelect
-																	title={`Select size for ${product.name}`}
-																	value={selectedSize}
-																	onChange={(event) => {
-																		const nextSize = event.target.value;
-																		const hasCurrentColorForSize = product.variants.some((variant) => (
-																			normalizeVariantToken(variant.size) === normalizeVariantToken(nextSize)
-																			&& normalizeVariantToken(variant.color) === normalizeVariantToken(selectedColor)
-																		));
-																		const firstColorForSize = product.variants.find((variant) => normalizeVariantToken(variant.size) === normalizeVariantToken(nextSize) && variant.stock > 0)?.color
-																			?? product.variants.find((variant) => normalizeVariantToken(variant.size) === normalizeVariantToken(nextSize))?.color
-																			?? "";
-																		updateRetailSelection(product.id, {
-																			size: nextSize,
-																			color: hasCurrentColorForSize ? selectedColor : firstColorForSize,
-																		});
-																	}}
-																	className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700 outline-none focus:border-blue-500"
+															<div className="mt-2 grid h-11 min-h-11 grid-cols-2 gap-2">
+																<button
+																	type="button"
+																	aria-haspopup="dialog"
+																	aria-label={`Select size for ${product.name} (currently ${selectedSize || "not selected"})`}
+																	onClick={() => openRetailVariantModal("catalog", product, { size: selectedSize, color: selectedColor })}
+																	className="flex min-w-0 cursor-pointer items-center justify-between gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-left text-xs text-slate-700 outline-none transition-colors hover:bg-slate-50 focus-visible:border-blue-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20"
 																>
-																	{sizeOptions.map((size) => (
-																		<option key={size} value={size}>{size}</option>
-																	))}
-																</MonochromeSelect>
-																<MonochromeSelect
-																	title={`Select color for ${product.name}`}
-																	value={selectedColor}
-																	onChange={(event) => {
-																		const nextColor = event.target.value;
-																		const hasCurrentSizeForColor = product.variants.some((variant) => (
-																			normalizeVariantToken(variant.color) === normalizeVariantToken(nextColor)
-																			&& normalizeVariantToken(variant.size) === normalizeVariantToken(selectedSize)
-																		));
-																		const firstSizeForColor = product.variants.find((variant) => normalizeVariantToken(variant.color) === normalizeVariantToken(nextColor) && variant.stock > 0)?.size
-																			?? product.variants.find((variant) => normalizeVariantToken(variant.color) === normalizeVariantToken(nextColor))?.size
-																			?? "";
-																		updateRetailSelection(product.id, {
-																			color: nextColor,
-																			size: hasCurrentSizeForColor ? selectedSize : firstSizeForColor,
-																		});
-																	}}
-																	className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700 outline-none focus:border-blue-500"
+																	<span className="mr-1 truncate"><span className="sr-only">Size: </span>{selectedSize || "Select size"}</span>
+																	<svg aria-hidden="true" className="h-4 w-4 shrink-0 text-slate-500" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6">
+																		<path d="m5 7 5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
+																	</svg>
+																</button>
+																<button
+																	type="button"
+																	aria-haspopup="dialog"
+																	aria-label={`Select color for ${product.name} (currently ${selectedColor || "not selected"})`}
+																	onClick={() => openRetailVariantModal("catalog", product, { size: selectedSize, color: selectedColor })}
+																	className="flex min-w-0 cursor-pointer items-center justify-between gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-left text-xs text-slate-700 outline-none transition-colors hover:bg-slate-50 focus-visible:border-blue-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20"
 																>
-																	{colorOptions.map((color) => (
-																		<option key={color} value={color}>{color}</option>
-																	))}
-																</MonochromeSelect>
+																	<span className="mr-1 truncate"><span className="sr-only">Color: </span>{selectedColor || "Select color"}</span>
+																	<svg aria-hidden="true" className="h-4 w-4 shrink-0 text-slate-500" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6">
+																		<path d="m5 7 5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
+																	</svg>
+																</button>
 															</div>
 														)}
 														<div className="mt-auto flex items-center justify-between border-t border-slate-200 pt-3">
@@ -3318,74 +3551,37 @@ const PointOfSalePage = () => {
 													const sourceProduct = retailProducts.find((entry) => entry.id === item.productId);
 													if (!sourceProduct || sourceProduct.variants.length === 0) return null;
 
-													const colorOptions = Array.from(new Set(
-														(sourceProduct.variants.some((variant) => variant.stock > 0)
-															? sourceProduct.variants.filter((variant) => variant.stock > 0)
-															: sourceProduct.variants)
-															.map((variant) => variant.color)
-															.filter((color) => color.length > 0),
-													));
-													const selectedColor = colorOptions.find((color) => normalizeVariantToken(color) === normalizeVariantToken(item.color ?? ""))
-														?? colorOptions[0]
-														?? item.color
-														?? "";
-													const variantsForSelectedColor = sourceProduct.variants.filter((variant) => (
-														normalizeVariantToken(variant.color) === normalizeVariantToken(selectedColor)
-													));
-													const sizeSourceVariants = variantsForSelectedColor.length > 0
-														? (variantsForSelectedColor.some((variant) => variant.stock > 0)
-															? variantsForSelectedColor.filter((variant) => variant.stock > 0)
-															: variantsForSelectedColor)
-														: (sourceProduct.variants.some((variant) => variant.stock > 0)
-															? sourceProduct.variants.filter((variant) => variant.stock > 0)
-															: sourceProduct.variants);
-													const sizeOptions = Array.from(new Set(sizeSourceVariants.map((variant) => variant.size).filter((size) => size.length > 0)));
-													const selectedSize = sizeOptions.find((size) => normalizeVariantToken(size) === normalizeVariantToken(item.size ?? ""))
-														?? sizeOptions[0]
-														?? "";
+													const { selectedColor, selectedSize } = getRetailVariantOptions(sourceProduct, {
+														size: item.size ?? "",
+														color: item.color ?? "",
+													});
 
 													return (
-														<div className="mb-2 grid grid-cols-2 gap-2">
-															<MonochromeSelect
-																title={`Cart size for ${item.name}`}
-																value={selectedSize}
-																onChange={(event) => {
-																	const nextSize = event.target.value;
-																	const hasCurrentColorForSize = sourceProduct.variants.some((variant) => (
-																		normalizeVariantToken(variant.size) === normalizeVariantToken(nextSize)
-																		&& normalizeVariantToken(variant.color) === normalizeVariantToken(selectedColor)
-																	));
-																	const nextColor = sourceProduct.variants.find((variant) => normalizeVariantToken(variant.size) === normalizeVariantToken(nextSize) && variant.stock > 0)?.color
-																		?? sourceProduct.variants.find((variant) => normalizeVariantToken(variant.size) === normalizeVariantToken(nextSize))?.color
-																		?? "";
-																	updateRetailCartVariant(item.lineId, nextSize, hasCurrentColorForSize ? selectedColor : nextColor);
-																}}
-																className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700 outline-none focus:border-blue-500"
+														<div className="mb-2 grid h-11 min-h-11 grid-cols-2 gap-2">
+															<button
+																type="button"
+																aria-haspopup="dialog"
+																aria-label={`Select size for ${item.name} in current order (currently ${selectedSize || "not selected"})`}
+																onClick={() => openRetailVariantModal("cart", sourceProduct, { size: selectedSize, color: selectedColor }, item.lineId)}
+																className="flex min-w-0 cursor-pointer items-center justify-between gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-left text-xs text-slate-700 outline-none transition-colors hover:bg-slate-50 focus-visible:border-blue-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20"
 															>
-																{sizeOptions.map((size) => (
-																	<option key={size} value={size}>{size}</option>
-																))}
-															</MonochromeSelect>
-															<MonochromeSelect
-																title={`Cart color for ${item.name}`}
-																value={selectedColor}
-																onChange={(event) => {
-																	const nextColor = event.target.value;
-																	const hasCurrentSizeForColor = sourceProduct.variants.some((variant) => (
-																		normalizeVariantToken(variant.color) === normalizeVariantToken(nextColor)
-																		&& normalizeVariantToken(variant.size) === normalizeVariantToken(selectedSize)
-																	));
-																	const nextSizeForColor = sourceProduct.variants.find((variant) => normalizeVariantToken(variant.color) === normalizeVariantToken(nextColor) && variant.stock > 0)?.size
-																		?? sourceProduct.variants.find((variant) => normalizeVariantToken(variant.color) === normalizeVariantToken(nextColor))?.size
-																		?? selectedSize;
-																	updateRetailCartVariant(item.lineId, hasCurrentSizeForColor ? selectedSize : nextSizeForColor, nextColor);
-																}}
-																className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700 outline-none focus:border-blue-500"
+																<span className="mr-1 truncate"><span className="sr-only">Size: </span>{selectedSize || "Select size"}</span>
+																<svg aria-hidden="true" className="h-4 w-4 shrink-0 text-slate-500" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6">
+																	<path d="m5 7 5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
+																</svg>
+															</button>
+															<button
+																type="button"
+																aria-haspopup="dialog"
+																aria-label={`Select color for ${item.name} in current order (currently ${selectedColor || "not selected"})`}
+																onClick={() => openRetailVariantModal("cart", sourceProduct, { size: selectedSize, color: selectedColor }, item.lineId)}
+																className="flex min-w-0 cursor-pointer items-center justify-between gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-left text-xs text-slate-700 outline-none transition-colors hover:bg-slate-50 focus-visible:border-blue-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20"
 															>
-																{colorOptions.map((color) => (
-																	<option key={color} value={color}>{color}</option>
-																))}
-															</MonochromeSelect>
+																<span className="mr-1 truncate"><span className="sr-only">Color: </span>{selectedColor || "Select color"}</span>
+																<svg aria-hidden="true" className="h-4 w-4 shrink-0 text-slate-500" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6">
+																	<path d="m5 7 5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
+																</svg>
+															</button>
 														</div>
 													);
 												})()}
@@ -4043,6 +4239,16 @@ const PointOfSalePage = () => {
 					</div>
 				)}
 					</>
+				)}
+
+				{retailVariantModal && retailVariantModalProduct && (
+					<RetailVariantModal
+						isOpen={isRetailVariantModalOpen}
+						product={retailVariantModalProduct}
+						selection={{ size: retailVariantModal.size, color: retailVariantModal.color }}
+						onCancel={() => setRetailVariantModal(null)}
+						onApply={applyRetailVariantSelection}
+					/>
 				)}
 
 				{isHistoryModalOpen && (
