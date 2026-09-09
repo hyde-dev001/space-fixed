@@ -748,7 +748,7 @@ const DssInsights: React.FC = () => {
       <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
+        <div className="select-none">
           <h1 className="text-2xl font-bold text-gray-800 dark:text-white/90">
             Decision Support System
           </h1>
@@ -770,7 +770,7 @@ const DssInsights: React.FC = () => {
             >
               <span className="text-xl font-bold leading-none">!</span>
               {(data?.recommendations?.length ?? 0) > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 min-w-5 h-5 px-1 rounded-full bg-amber-400 text-gray-900 text-[10px] font-bold flex items-center justify-center">
+                <span className="absolute -top-1.5 -right-1.5 min-w-5 h-5 px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
                   {Math.min(99, data?.recommendations.length ?? 0)}
                 </span>
               )}
