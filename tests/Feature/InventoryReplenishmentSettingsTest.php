@@ -2,12 +2,14 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\CheckLowStockJob;
 use App\Models\InventoryColorVariant;
 use App\Models\InventoryItem;
 use App\Models\InventorySize;
 use App\Models\ShopOwner;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
 use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
@@ -34,6 +36,8 @@ class InventoryReplenishmentSettingsTest extends TestCase
     /** @test */
     public function an_authorized_inventory_user_can_update_explicit_size_settings(): void
     {
+        Queue::fake();
+
         $item = InventoryItem::factory()->create(['shop_owner_id' => $this->shopOwner->id, 'category' => 'shoes']);
         $color = InventoryColorVariant::create([
             'inventory_item_id' => $item->id,
@@ -63,6 +67,10 @@ class InventoryReplenishmentSettingsTest extends TestCase
             ->assertJsonPath('item.color_variants.0.sizes.0.auto_stock_request_enabled', true)
             ->assertJsonPath('item.color_variants.0.sizes.0.reorder_level', 5)
             ->assertJsonPath('item.color_variants.0.sizes.0.reorder_quantity', 20);
+
+        Queue::assertPushed(CheckLowStockJob::class, function (CheckLowStockJob $job): bool {
+            return $job->shopOwnerId === $this->shopOwner->id;
+        });
 
         $this->assertDatabaseHas('inventory_sizes', [
             'id' => $size->id,

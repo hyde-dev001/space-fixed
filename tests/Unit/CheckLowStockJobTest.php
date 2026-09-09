@@ -17,10 +17,12 @@ use App\Models\PurchaseRequest;
 use App\Models\ReplenishmentRequest;
 use App\Models\ShopOwner;
 use App\Models\Supplier;
+use App\Models\StockMovement;
 use App\Models\StockRequestApproval;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
 
 class CheckLowStockJobTest extends TestCase
@@ -35,6 +37,25 @@ class CheckLowStockJobTest extends TestCase
     }
 
     /** @test */
+    public function test_stock_movement_queues_an_automatic_low_stock_check(): void
+    {
+        Queue::fake();
+
+        $shopOwner = ShopOwner::factory()->create();
+        $inventoryItem = InventoryItem::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        StockMovement::create([
+            'inventory_item_id' => $inventoryItem->id,
+            'movement_type' => 'stock_out',
+            'quantity_change' => -1,
+            'quantity_before' => 1,
+            'quantity_after' => 0,
+        ]);
+
+        Queue::assertPushed(CheckLowStockJob::class, function (CheckLowStockJob $job) use ($shopOwner): bool {
+            return $job->shopOwnerId === $shopOwner->id;
+        });
+    }
+
     public function it_creates_alerts_for_low_stock_items()
     {
         $shopOwner = ShopOwner::factory()->create();

@@ -399,9 +399,13 @@ Tasks 1-7 were implemented in the preceding commits. This follow-up traced the p
 - [x] Stock-request submission and repair-forwarding notifications emit the canonical procurement approval route.
 - [x] Notification URL normalization preserves the canonical procurement route and query while retaining legacy inventory routing.
 - [x] Procurement browser click reaches `/erp/procurement/stock-request-approval?stock_request=1` with no 4xx responses.
-- [x] Focused backend matrix passes: 62 tests, 255 assertions, and 2 intentional MySQL/pcntl skips.
+- [x] Focused backend matrix passes: 62 tests, 264 assertions, and 2 intentional MySQL/pcntl skips.
 - [x] Focused frontend checks pass: 13 tests; the production build passes.
 - [x] The image regression fixture explicitly uses `business_type=both` and `category=shoes` so the `/items` endpoint does not filter the test row.
 - [ ] The full frontend suite has 235 passing files and 1,383 passing tests; one pre-existing suite cannot resolve `@testing-library/dom`.
 - [x] The known low-stock command queued the check; the isolated job created the exact alert and automatic request with variant context.
+- [x] Stock movements now queue the low-stock check automatically after commit.
+- [x] Replenishment settings saves now queue the low-stock check automatically after commit.
+- [x] Inventory low/out-of-stock events now create ERP notifications with exact variant context for same-shop inventory viewers.
 - [ ] Queue-worker delivery was not consumed because the database queue also contains unrelated jobs.
+- [x] Windows composer dev omits Pail (which requires pcntl) while retaining queue:listen, so queued automatic checks no longer need a manual alert command.

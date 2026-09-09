@@ -6,19 +6,16 @@ use App\Enums\EmployeeStatus;
 use App\Models\Employee;
 use App\Models\User;
 use App\Models\AuditLog;
-use App\Mail\EmployeeInvitation;
 use App\Services\HR\EmployeeLinkedUserSynchronizer;
+use App\Services\EmployeeInvitationService;
 use App\Services\HR\EmployeeOwnerProjection;
 use App\Services\HR\EmployeeOperationalPolicy;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Mail;
-use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Validation\Rule;
 use Symfony\Component\HttpFoundation\Response;
-use Carbon\Carbon;
 
 /**
  * EmployeeController
@@ -34,6 +31,7 @@ class EmployeeController extends Controller
         private readonly EmployeeLinkedUserSynchronizer $linkedUserSynchronizer,
         private readonly EmployeeOwnerProjection $employeeOwnerProjection,
         private readonly EmployeeOperationalPolicy $employeePolicy,
+        private readonly EmployeeInvitationService $invitations,
     )
     {
     }
@@ -87,6 +85,15 @@ class EmployeeController extends Controller
      */
     public function store(Request $request)
     {
+        $actor = Auth::guard('user')->user();
+        if (! $actor instanceof User
+            || ! $actor->isEmployeeAccount()
+            || ! $actor->can('manage-employee-accounts')) {
+            return response()->json(['message' => 'Unauthorized'], Response::HTTP_FORBIDDEN);
+        }
+
+        $request->merge(['user_shop_id' => $actor->shop_owner_id]);
+
         try {
             $rules = [
                 'name' => 'required|string|max:255',
@@ -120,10 +127,6 @@ class EmployeeController extends Controller
             // Automatically assign to user's shop
             $validated['shop_owner_id'] = $request->user_shop_id;
 
-            // Generate invitation token instead of temporary password
-            $inviteToken = Str::random(64);
-            $inviteExpiresAt = Carbon::now()->addDays(7);
-
             // Create Employee record
             $employeeData = collect($validated)->only([
                 'shop_owner_id',
@@ -155,11 +158,12 @@ class EmployeeController extends Controller
                 'shop_owner_id' => $request->user_shop_id,
                 'role' => $validated['role'],
                 'password' => null, // No password until invitation is accepted
-                'invite_token' => $inviteToken,
-                'invite_expires_at' => $inviteExpiresAt,
-                'invited_at' => now(),
-                'invited_by' => $request->user()->id,
             ]);
+
+            $invitation = $this->invitations->issue($user, (int) $request->user()->id);
+            $inviteToken = $invitation['token'];
+            $inviteExpiresAt = $invitation['expires_at'];
+
             $this->linkedUserSynchronizer->sync($employee);
 
             // Generate invitation URL

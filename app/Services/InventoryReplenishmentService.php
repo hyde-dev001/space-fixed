@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Jobs\CheckLowStockJob;
 use App\Models\InventoryColorVariant;
 use App\Models\InventoryItem;
 use App\Models\InventorySize;
@@ -86,6 +87,8 @@ class InventoryReplenishmentService
                 $this->updateTarget($lockedItem, $target);
             }
         }, 3);
+
+        CheckLowStockJob::dispatch((int) $item->shop_owner_id)->afterCommit();
     }
 
     /** @return array<string, mixed> */
