@@ -34,6 +34,16 @@ describe('shared monochrome Light and Dark Mode theme', () => {
     expect(appCss).toContain('background: rgba(0, 0, 0, 0.28) !important;');
     expect(appCss).toContain('backdrop-filter: blur(2px) !important;');
     expect(appCss).toContain(':not(.erp-modal-backdrop, [data-critical], [data-critical] *)');
+    const latePaletteNormalization = appCss.slice(
+      appCss.indexOf('/* Normalize the remaining palette utilities'),
+      appCss.indexOf('/* Semantic icon-only actions'),
+    );
+    expect(latePaletteNormalization).toContain(
+      "):not(\n  .erp-modal-backdrop,\n  [data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *\n):not(:disabled)",
+    );
+    expect(latePaletteNormalization).toContain(
+      ":not(\n  .erp-modal-backdrop,\n  [data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *\n):is(",
+    );
     expect(appCss).toContain('body.swal2-shown:not(.swal2-toast-shown) .swal2-container');
     expect(appCss).toContain('--swal2-backdrop: rgba(0, 0, 0, 0.28);');
   });
