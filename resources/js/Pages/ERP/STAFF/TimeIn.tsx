@@ -1287,8 +1287,6 @@ export default function TimeIn() {
             <Head title="Attendance - Time In/Out" />
             
             <div data-testid="time-in-page" className="min-h-screen overflow-x-hidden text-gray-900 dark:text-white">
-                {!showOvertimeModal && !showLeaveModal ? (
-                <>
                 <h1 className="sr-only">Attendance Tracking</h1>
 
                 <div data-testid="attendance-dashboard" className="mb-8 grid gap-4 xl:mb-12 xl:grid-cols-5 xl:items-stretch xl:gap-6">
@@ -1837,8 +1835,6 @@ export default function TimeIn() {
                         </div>
                     )}
                 </div>
-                </>
-                ) : null}
 
                 {/* Leave Request Modal */}
                 {showLeaveModal && (
