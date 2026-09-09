@@ -79,26 +79,32 @@ class UploadInventoryController extends Controller
 
         $items->setCollection(
             $items->getCollection()->map(function (InventoryItem $item) {
-                if ($item->main_image && !Storage::disk('public')->exists(ltrim($item->main_image, '/'))) {
-                    $item->main_image = null;
-                }
+                $item->main_image = InventoryImage::existingPublicPath($item->main_image);
 
                 if ($item->relationLoaded('images')) {
                     $item->setRelation(
                         'images',
                         $item->images
-                            ->filter(fn ($image) => $image->image_path && Storage::disk('public')->exists(ltrim($image->image_path, '/')))
+                            ->filter(function ($image): bool {
+                                $image->image_path = InventoryImage::existingPublicPath($image->image_path);
+
+                                return $image->image_path !== null;
+                            })
                             ->values()
                     );
                 }
 
                 if ($item->relationLoaded('colorVariants')) {
-                    $item->colorVariants->each(function ($variant) {
+                    $item->colorVariants->each(function ($variant): void {
                         if ($variant->relationLoaded('images')) {
                             $variant->setRelation(
                                 'images',
                                 $variant->images
-                                    ->filter(fn ($image) => $image->image_path && Storage::disk('public')->exists(ltrim($image->image_path, '/')))
+                                    ->filter(function ($image): bool {
+                                        $image->image_path = InventoryImage::existingPublicPath($image->image_path);
+
+                                        return $image->image_path !== null;
+                                    })
                                     ->values()
                             );
                         }
@@ -618,8 +624,9 @@ class UploadInventoryController extends Controller
         $this->deleteLinkedProductImageByInventoryImage($image);
 
         // Delete file from storage
-        if (Storage::disk('public')->exists($image->image_path)) {
-            Storage::disk('public')->delete($image->image_path);
+        $imagePath = InventoryImage::normalizePath($image->image_path);
+        if ($imagePath && Storage::disk('public')->exists($imagePath)) {
+            Storage::disk('public')->delete($imagePath);
         }
         
         $image->delete();

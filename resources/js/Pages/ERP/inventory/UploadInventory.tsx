@@ -149,7 +149,7 @@ const getPrimaryImageFromVariants = (variants: ColorVariant[]): string => {
 };
 
 const toStorageUrl = (path?: string | null) =>
-  path ? `/storage/${path}` : '';
+  path ? `/storage/${path.replace(/^\/?(?:storage|public)\//i, '')}` : '';
 
 const normalizeBusinessType = (rawBusinessType?: string): BusinessType => {
   const normalized = (rawBusinessType ?? '').toLowerCase().trim();
@@ -545,7 +545,7 @@ export default function UploadInventory() {
       const newImages: ColorVariantImage[] = (result.images ?? []).map((img: any) => ({
         id: String(img.id),
         file: null,
-        preview: `/storage/${img.image_path}`,
+        preview: toStorageUrl(img.image_path),
         is_thumbnail: img.is_thumbnail ?? false,
         sort_order: img.sort_order ?? 0,
         uploaded_path: img.image_path,

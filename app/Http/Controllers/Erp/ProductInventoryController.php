@@ -3,12 +3,12 @@
 namespace App\Http\Controllers\Erp;
 
 use App\Http\Controllers\Controller;
+use App\Models\InventoryImage;
 use App\Models\InventoryItem;
 use App\Models\StockMovement;
 use App\Services\Erp\ShopOwnerInventoryReadService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 use App\Support\Erp\ErpActorContext;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 
@@ -246,26 +246,32 @@ class ProductInventoryController extends Controller
 
     private function sanitizeItemImagePaths(InventoryItem $item): InventoryItem
     {
-        if ($item->main_image && !$this->publicFileExists($item->main_image)) {
-            $item->main_image = null;
-        }
+        $item->main_image = InventoryImage::existingPublicPath($item->main_image);
 
         if ($item->relationLoaded('images')) {
             $item->setRelation(
                 'images',
                 $item->images
-                    ->filter(fn ($image) => $image->image_path && $this->publicFileExists($image->image_path))
+                    ->filter(function ($image): bool {
+                        $image->image_path = InventoryImage::existingPublicPath($image->image_path);
+
+                        return $image->image_path !== null;
+                    })
                     ->values()
             );
         }
 
         if ($item->relationLoaded('colorVariants')) {
-            $item->colorVariants->each(function ($variant) {
+            $item->colorVariants->each(function ($variant): void {
                 if ($variant->relationLoaded('images')) {
                     $variant->setRelation(
                         'images',
                         $variant->images
-                            ->filter(fn ($image) => $image->image_path && $this->publicFileExists($image->image_path))
+                            ->filter(function ($image): bool {
+                                $image->image_path = InventoryImage::existingPublicPath($image->image_path);
+
+                                return $image->image_path !== null;
+                            })
                             ->values()
                     );
                 }
@@ -273,11 +279,6 @@ class ProductInventoryController extends Controller
         }
 
         return $item;
-    }
-
-    private function publicFileExists(string $path): bool
-    {
-        return Storage::disk('public')->exists(ltrim($path, '/'));
     }
 
     private function resolveShopOwnerId(Request $request): ?int

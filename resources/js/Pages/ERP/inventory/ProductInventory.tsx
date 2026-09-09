@@ -26,6 +26,9 @@ interface ProductInventoryItem {
 	lastUpdated: string;
 }
 
+const toStorageUrl = (path?: string | null) =>
+	path ? `/storage/${path.replace(/^\/?(?:storage|public)\//i, "")}` : "";
+
 const mapApiItem = (item: ApiInventoryItem): ProductInventoryItem => ({
 	id: item.id,
 	sourceKey: `${item.source_type ?? "inventory"}-${item.source_id ?? item.id}`,
@@ -35,8 +38,8 @@ const mapApiItem = (item: ApiInventoryItem): ProductInventoryItem => ({
 	brand: item.brand ?? "",
 	sizes: item.sizes?.map((s) => s.size) ?? [],
 	productImages: [
-		...(item.images?.map((i) => `/storage/${i.image_path}`).filter(Boolean) ?? []),
-		...(item.main_image && !item.images?.length ? [`/storage/${item.main_image}`] : []),
+		...(item.images?.map((i) => toStorageUrl(i.image_path)).filter(Boolean) ?? []),
+		...(item.main_image && !item.images?.length ? [toStorageUrl(item.main_image)] : []),
 	],
 	availableQuantity: item.available_quantity,
 	reservedQuantity: item.reserved_quantity,
