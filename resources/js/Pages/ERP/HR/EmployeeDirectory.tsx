@@ -105,6 +105,12 @@ const AlertIcon: React.FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
+const UserCheckIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19a6 6 0 00-12 0m6-8a4 4 0 100-8 4 4 0 000 8zm8-5v6m3-3h-6" />
+  </svg>
+);
+
 const LockIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
@@ -1122,6 +1128,7 @@ export const EmployeeManagement: React.FC<{
     body,
     successTitle,
     successFallback,
+    errorTitle = 'Error',
     onSubmitted,
   }: {
     endpoint: string;
@@ -1129,6 +1136,7 @@ export const EmployeeManagement: React.FC<{
     body: Record<string, unknown>;
     successTitle: string;
     successFallback: string;
+    errorTitle?: string;
     onSubmitted: () => void;
   }) => {
     if (isProcessingId === employeeId) return;
@@ -1174,7 +1182,7 @@ export const EmployeeManagement: React.FC<{
         : 'Failed to submit employee lifecycle request.';
       setApiError(message);
       await Swal.fire(withSweetAlertSemantic({
-        title: 'Error',
+        title: errorTitle,
         text: message,
         icon: 'error',
         confirmButtonColor: '#ef4444',
@@ -1280,6 +1288,7 @@ export const EmployeeManagement: React.FC<{
       },
       successTitle: 'Rehire Request Submitted',
       successFallback: 'The request will be reviewed by the Manager, then the Company Shop Owner.',
+      errorTitle: 'Rehire Request Failed',
       onSubmitted: () => {
         setIsRehireRequestModalOpen(false);
         setEmployeeToRehire(null);
@@ -2542,7 +2551,7 @@ export const EmployeeManagement: React.FC<{
                         )}
                       </td>
                       <td className="px-3 py-3 align-top text-right text-sm font-medium">
-                        <div className="ml-auto flex max-w-[340px] flex-wrap items-center justify-end gap-2">
+                        <div className="ml-auto flex w-full max-w-[340px] flex-wrap items-center justify-end gap-2">
                           {!ownerReadOnly && (
                             <>
                           <IconButton
@@ -2597,14 +2606,16 @@ export const EmployeeManagement: React.FC<{
                                 Rehire Pending
                               </Button>
                             ) : (
-                              <Button
-                                variant="primary"
+                              <IconButton
+                                variant="success"
                                 onClick={() => handleRehireClick(employee)}
-                                className="whitespace-nowrap px-3 py-2 text-xs"
+                                className={employeeActionButtonClass}
+                                title="Request Rehire"
+                                aria-label={`Request rehire for ${buildName(employee)}`}
                                 disabled={isProcessingId === employee.id}
                               >
-                                Request Rehire
-                              </Button>
+                                <UserCheckIcon className="h-5 w-5" />
+                              </IconButton>
                             )
                           )}
                           {canRequestEmployeeLifecycle && employee.status !== 'terminated' && (
