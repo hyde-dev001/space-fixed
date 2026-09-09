@@ -9,9 +9,9 @@ const header = source.slice(
 );
 
 describe('DSS insights header controls', () => {
-  it('keeps the controls in place while preventing accidental title selection and using a red notification badge', () => {
+  it('keeps the controls in place while preventing accidental title selection and using a red notification number', () => {
     expect(header).toContain('<div className="select-none">');
-    expect(header).toContain('rounded-full bg-red-500 text-white text-[10px]');
+    expect(header).toContain('rounded-full bg-white text-red-600 text-[10px]');
     expect(header).toContain('className="flex items-center gap-3"');
     expect(header).toContain('aria-label="Show actionable recommendations"');
     expect(header).toContain('aria-label="Analysis period"');
