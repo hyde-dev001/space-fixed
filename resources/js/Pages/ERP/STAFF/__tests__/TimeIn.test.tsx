@@ -201,6 +201,17 @@ it('keeps the leave modal and status filter monochrome', async () => {
     ).toBe(true);
 });
 
+it('keeps the attendance page rendered behind the overtime modal', async () => {
+    render(<TimeIn />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Overtime' }));
+
+    expect(screen.getByTestId('attendance-dashboard')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Request Overtime' })).toBeInTheDocument();
+});
+
 it('blocks clock in outside the shop clock-in window', () => {
     const shopHours = { open: '10:00', close: '20:00', is_open: true };
 
