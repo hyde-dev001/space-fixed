@@ -53,6 +53,7 @@ describe('employee termination and rehire directory workflow', () => {
     expect(source).toContain('const employeeActionButtonClass =');
     expect(source).toContain('inline-flex size-11 shrink-0 items-center justify-center');
     expect(source).toContain('w-[340px]');
+    expect(source).toContain('w-full max-w-[340px]');
     expect(source).toContain('flex flex-wrap items-center justify-end gap-2');
     expect(actionColumn).toContain('<Button');
     expect(actionColumn).toContain('<IconButton');
@@ -62,7 +63,9 @@ describe('employee termination and rehire directory workflow', () => {
     expect(actionColumn).toContain('variant="danger"');
     expect(actionColumn).toContain('variant="success"');
     expect(actionColumn).toContain('Activate Account');
-    expect(actionColumn).toContain('Request Rehire');
+    expect(actionColumn).toContain('title="Request Rehire"');
+    expect(actionColumn).toContain('aria-label={`Request rehire for ${buildName(employee)}`}');
+    expect(actionColumn).toContain('<UserCheckIcon');
     expect(actionColumn).toContain('Rehire Pending');
     expect(actionColumn).toContain('title="Request Termination"');
     expect(actionColumn).toContain('aria-label={`Request termination for ${buildName(employee)}`}');
@@ -76,5 +79,12 @@ describe('employee termination and rehire directory workflow', () => {
     expect(source).toContain("['inactive', 'suspended'].includes(employee.status)");
     expect(source).toContain("onClick={() => handleRehireClick(employee)}");
     expect(source).toContain("onClick={() => handleTerminateClick(employee)}");
+  });
+
+  it('shows a contextual SweetAlert when a rehire request fails', () => {
+    expect(source).toContain('errorTitle?: string;');
+    expect(source).toContain('title: errorTitle');
+    expect(source).toContain("errorTitle: 'Rehire Request Failed'");
+    expect(source).toContain("icon: 'error'");
   });
 });
