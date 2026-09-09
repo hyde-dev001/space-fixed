@@ -747,20 +747,7 @@ const DssInsights: React.FC = () => {
       <Head title="Assist Center - Shop Owner" />
       <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="select-none">
-          <h1 className="text-2xl font-bold text-gray-800 dark:text-white/90">
-            Decision Support System
-          </h1>
-          <p className="mt-1 text-gray-500 dark:text-gray-400">
-            {!data || data.business_type === "repair"
-              ? "Rule-based insights for repair workload, service revenue, and actionable recommendations."
-              : data.business_type === "retail"
-              ? "Rule-based insights for retail sales, product performance, and actionable recommendations."
-              : "Rule-based insights for repair workload, retail sales, and actionable recommendations."}
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
+      <div className="flex items-center justify-end gap-3">
           <div className="relative" ref={recDropdownRef}>
             <button
               type="button"
@@ -770,7 +757,7 @@ const DssInsights: React.FC = () => {
             >
               <span className="text-xl font-bold leading-none">!</span>
               {(data?.recommendations?.length ?? 0) > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 min-w-5 h-5 px-1 rounded-full bg-white text-red-600 text-[10px] font-bold flex items-center justify-center ring-1 ring-red-200 dark:bg-gray-800 dark:text-red-400 dark:ring-red-900/50">
+                <span className="absolute -top-2 -right-2 min-w-6 h-6 px-1 rounded-full bg-red-600 text-white text-xs font-bold flex items-center justify-center shadow-sm ring-2 ring-white dark:bg-red-500 dark:ring-gray-900">
                   {Math.min(99, data?.recommendations.length ?? 0)}
                 </span>
               )}
@@ -882,7 +869,6 @@ const DssInsights: React.FC = () => {
           >
             {loading ? "Loading…" : "Refresh"}
           </button>
-        </div>
       </div>
 
       {/* Error state */}

@@ -9,10 +9,11 @@ const header = source.slice(
 );
 
 describe('DSS insights header controls', () => {
-  it('keeps the controls in place while preventing accidental title selection and using a red notification number', () => {
-    expect(header).toContain('<div className="select-none">');
-    expect(header).toContain('rounded-full bg-white text-red-600 text-[10px]');
-    expect(header).toContain('className="flex items-center gap-3"');
+  it('keeps the controls right-aligned and uses a visible solid red notification badge', () => {
+    expect(header).not.toContain('Decision Support System');
+    expect(header).not.toContain('Rule-based insights');
+    expect(header).toContain('className="flex items-center justify-end gap-3"');
+    expect(header).toContain('rounded-full bg-red-600 text-white text-xs font-bold');
     expect(header).toContain('aria-label="Show actionable recommendations"');
     expect(header).toContain('aria-label="Analysis period"');
     expect(header).toContain('onClick={fetchData}');
