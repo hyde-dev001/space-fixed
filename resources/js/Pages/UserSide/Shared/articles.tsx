@@ -350,7 +350,7 @@ const Articles: React.FC = () => {
 
 				{selectedImage ? (
 					<div
-						className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-3 sm:p-4"
+						className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-3 sm:p-4 erp-modal-backdrop"
 						onClick={() => setSelectedImage(null)}
 						role="dialog"
 						aria-modal="true"

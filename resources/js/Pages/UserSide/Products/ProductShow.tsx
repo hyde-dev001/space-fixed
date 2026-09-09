@@ -1616,7 +1616,7 @@ const ProductShow: React.FC = () => {
               </div>
 
               {showSizeChart && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 sm:p-4" onClick={() => setShowSizeChart(false)}>
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 sm:p-4 erp-modal-backdrop" onClick={() => setShowSizeChart(false)}>
                   <div
                     className="w-[94vw] max-h-[86vh] overflow-hidden rounded-2xl bg-white text-black shadow-2xl sm:max-h-[90vh] sm:w-[90%] sm:max-w-2xl"
                     onClick={(e) => e.stopPropagation()}
@@ -1940,7 +1940,7 @@ const ProductShow: React.FC = () => {
 
               {/* Add to Cart Modal - Shopee Style */}
               {showAddToCartModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setShowAddToCartModal(false)}>
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 erp-modal-backdrop" onClick={() => setShowAddToCartModal(false)}>
                   <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()}>
                     {/* Close Button */}
                     <button
@@ -2173,7 +2173,7 @@ const ProductShow: React.FC = () => {
               )}
 
               {showAddedModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/50 px-3 py-4 sm:px-4" onClick={() => setShowAddedModal(false)}>
+                <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/50 px-3 py-4 sm:px-4 erp-modal-backdrop" onClick={() => setShowAddedModal(false)}>
                   <div
                     className="relative grid w-full max-w-5xl grid-cols-1 gap-4 rounded-2xl bg-white p-4 sm:gap-5 sm:p-5 md:grid-cols-2 md:gap-6 md:p-6 lg:p-7"
                     onClick={(e) => e.stopPropagation()}
@@ -2669,7 +2669,7 @@ const ProductShow: React.FC = () => {
       {/* Image Lightbox Modal */}
       {enlargedImage && (
         <div
-          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 erp-modal-backdrop"
           onClick={() => setEnlargedImage(null)}
         >
           <div

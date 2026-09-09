@@ -1325,7 +1325,7 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
         {/* Image Lightbox Modal */}
         {enlargedImage && (
           <div
-            className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 xl:p-6 animate-fadeIn"
+            className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 xl:p-6 animate-fadeIn erp-modal-backdrop"
             onClick={() => setEnlargedImage(null)}
           >
             <div

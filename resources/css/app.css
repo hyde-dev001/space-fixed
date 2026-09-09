@@ -4942,18 +4942,22 @@ html.dark:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .erp-swal2-info.sw
   color: inherit !important;
 }
 
-/* Canonical ERP/Shop Owner modal backdrop. Keep this after compatibility
+/* Canonical application-wide modal backdrop. Keep this after compatibility
    rules so legacy palette utilities cannot turn a backdrop into a surface. */
-html:has(#app .erp-theme) .erp-modal-backdrop {
-  background: rgba(0, 0, 0, 0.28) !important;
-  background-color: rgba(0, 0, 0, 0.28) !important;
+body .erp-modal-backdrop {
+  background: rgba(0, 0, 0, 0.25) !important;
+  background-color: rgba(0, 0, 0, 0.25) !important;
   background-image: none !important;
   -webkit-backdrop-filter: blur(2px) !important;
   backdrop-filter: blur(2px) !important;
 }
 
-html:has(#app .erp-theme) body.swal2-shown:not(.swal2-toast-shown) .swal2-container {
-  --swal2-backdrop: rgba(0, 0, 0, 0.28);
+body .erp-modal-backdrop:not([class~='opacity-0']) {
+  opacity: 1 !important;
+}
+
+body.swal2-shown:not(.swal2-toast-shown) .swal2-container {
+  --swal2-backdrop: rgba(0, 0, 0, 0.25);
   -webkit-backdrop-filter: blur(2px);
   backdrop-filter: blur(2px);
 }

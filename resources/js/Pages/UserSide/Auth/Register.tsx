@@ -206,7 +206,7 @@ const DocumentScreeningOverlay = ({
 
   return (
     <div
-      className="fixed inset-0 z-[120] flex min-h-dvh items-center justify-center overflow-y-auto bg-black/40 px-4 py-6 sm:px-6"
+      className="fixed inset-0 z-[120] flex min-h-dvh items-center justify-center overflow-y-auto bg-black/40 px-4 py-6 sm:px-6 erp-modal-backdrop"
     >
       <div
         className="w-full max-w-[400px] rounded-2xl border border-gray-200 bg-white p-6 font-outfit sm:p-8"

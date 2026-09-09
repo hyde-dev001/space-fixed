@@ -125,7 +125,7 @@ export default function ShipmentTrackingModal({
       role="dialog"
       aria-modal="true"
       aria-labelledby="shipment-tracking-title"
-      className="userside-tracking-modal fixed inset-0 z-[90] flex items-center justify-center bg-[#16233b]/55 p-0 sm:p-6"
+      className="userside-tracking-modal fixed inset-0 z-[90] flex items-center justify-center bg-[#16233b]/55 p-0 sm:p-6 erp-modal-backdrop"
       onClick={(event) => {
         if (event.target === event.currentTarget) closeModal();
       }}

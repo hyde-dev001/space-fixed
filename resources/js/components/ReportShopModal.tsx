@@ -100,7 +100,7 @@ const ReportShopModal: React.FC<Props> = ({ shopId, shopName, isOpen, onClose })
 
   return (
     <div
-      className="fixed inset-0 z-9999 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-9999 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 erp-modal-backdrop"
       onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}
     >
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">

@@ -2118,7 +2118,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
       {showSuccessModal && (
         <>
           {/* Backdrop */}
-          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50" />
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 erp-modal-backdrop" />
 
           {/* Modal */}
           <div className="fixed inset-0 flex items-center justify-center z-50 p-4">

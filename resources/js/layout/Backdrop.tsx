@@ -14,7 +14,7 @@ const Backdrop: React.FC = () => {
       role="button"
       tabIndex={0}
       aria-label="Close sidebar"
-      className="fixed inset-0 z-30 bg-black/50 motion-reduce:transition-none md:hidden"
+      className="fixed inset-0 z-30 bg-black/50 motion-reduce:transition-none md:hidden erp-modal-backdrop"
       onClick={toggleMobileSidebar}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " " || event.key === "Escape") {

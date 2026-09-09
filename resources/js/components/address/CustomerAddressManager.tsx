@@ -485,7 +485,7 @@ export default function CustomerAddressManager({
 
       {modalOpen && (
         <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/50 p-3 backdrop-blur-[2px] sm:p-5"
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/50 p-3 backdrop-blur-[2px] sm:p-5 erp-modal-backdrop"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) closeModal();
           }}

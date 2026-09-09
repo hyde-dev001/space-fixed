@@ -1368,7 +1368,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                 type="button"
                 aria-label="Close search"
                 onClick={() => setIsSearchFocused(false)}
-                className="fixed inset-0 z-[120] bg-black/55 opacity-100 backdrop-blur-[2px] transition-opacity duration-300 motion-reduce:transition-none"
+                className="fixed inset-0 z-[120] bg-black/55 opacity-100 backdrop-blur-[2px] transition-opacity duration-300 motion-reduce:transition-none erp-modal-backdrop"
               />
               <div role="dialog" aria-modal="true" aria-label="Search products and shops" className="fixed left-1/2 top-1/2 z-[121] w-[min(92vw,42rem)] -translate-x-1/2 -translate-y-1/2 overflow-hidden bg-white text-[#111111] shadow-2xl transition-all duration-300 ease-out motion-reduce:transition-none">
                 <form onSubmit={handleSearch} className="flex items-center gap-3 border-b border-[#dedede] px-5 py-4 sm:px-7">
@@ -1466,7 +1466,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
               type="button"
               aria-label="Close cart"
               onClick={() => setCartDrawerOpen(false)}
-              className={`fixed inset-0 z-[100] bg-black/35 backdrop-blur-[2px] transition-opacity duration-300 motion-reduce:transition-none ${cartDrawerOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+              className={`fixed inset-0 z-[100] bg-black/35 backdrop-blur-[2px] transition-opacity duration-300 motion-reduce:transition-none erp-modal-backdrop ${cartDrawerOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
             />
             <aside
               aria-label="Shopping cart"
@@ -1494,7 +1494,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
               setAccountDrawerOpen(false);
               setLandingSidebarOpen(false);
             }}
-            className={`fixed inset-0 z-[100] bg-black/35 backdrop-blur-[2px] transition-opacity duration-300 motion-reduce:transition-none ${landingSidebarOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+            className={`fixed inset-0 z-[100] bg-black/35 backdrop-blur-[2px] transition-opacity duration-300 motion-reduce:transition-none erp-modal-backdrop ${landingSidebarOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
           />
           <aside
             aria-label="Site menu"

@@ -846,7 +846,7 @@ export default function SubscriptionManagement() {
         </div>
 
         {isPlanModalOpen && (
-          <ModalPortal><div className="fixed inset-0 z-999999 flex items-center justify-center bg-black/50 p-4" onClick={() => setIsPlanModalOpen(false)}><form onSubmit={submitPlan} onClick={(e) => e.stopPropagation()} className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl dark:bg-gray-800">
+          <ModalPortal><div className="fixed inset-0 z-999999 flex items-center justify-center bg-black/50 p-4 erp-modal-backdrop" onClick={() => setIsPlanModalOpen(false)}><form onSubmit={submitPlan} onClick={(e) => e.stopPropagation()} className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl dark:bg-gray-800">
             <div className="mb-5 flex items-center justify-between"><h2 className="text-xl font-bold dark:text-white">{editingPlan ? 'Edit Plan' : 'Create Plan'}</h2><button type="button" onClick={() => setIsPlanModalOpen(false)} aria-label="Close"><XIcon className="size-5" /></button></div>
             <div className="grid gap-4 sm:grid-cols-2">
               {([['plan_code','Plan code'],['name','Name'],['price','Price'],['duration_days','Duration (days)'],['showroom_slot_limit','Showroom slots']] as const).map(([field,label]) => <label key={field} className="text-sm font-medium text-gray-700 dark:text-gray-200">{label}<input disabled={field === 'plan_code' && !!editingPlan} type={field === 'plan_code' || field === 'name' ? 'text' : 'number'} min={field === 'showroom_slot_limit' || field === 'duration_days' ? 1 : 0} max={field === 'showroom_slot_limit' ? 150 : field === 'duration_days' ? 3650 : undefined} value={planForm.data[field]} onChange={(e) => planForm.setData(field, field === 'plan_code' || field === 'name' || field === 'price' ? e.target.value : Number(e.target.value))} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 dark:bg-gray-700" />{planForm.errors[field] && <span className="text-xs text-red-600">{planForm.errors[field]}</span>}</label>)}
@@ -864,7 +864,7 @@ export default function SubscriptionManagement() {
         {selected && (
           <ModalPortal>
           <div
-            className="fixed inset-0 z-999999 flex items-center justify-center bg-black/45 p-4 backdrop-blur-[1px]"
+            className="fixed inset-0 z-999999 flex items-center justify-center bg-black/45 p-4 backdrop-blur-[1px] erp-modal-backdrop"
             onClick={() => setSelected(null)}
           >
             <div

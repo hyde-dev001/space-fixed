@@ -238,7 +238,7 @@ export default function EmployeeTotpSecurity({ enabled, activity = [], active_se
         const history = isActivity ? activityHistory : sessionHistory;
         const title = isActivity ? "Security Activity" : "Active Sessions";
 
-        return <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-label={title}>
+        return <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/50 p-4 erp-modal-backdrop" role="dialog" aria-modal="true" aria-label={title}>
             <button type="button" aria-label="Close" className="absolute inset-0" onClick={() => setHistoryView(null)} />
             <div className="relative max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-900">
                 <div className="flex items-center justify-between border-b border-gray-200 px-6 py-5 dark:border-gray-700"><h3 className="text-lg font-bold text-gray-900 dark:text-white">{title}</h3><button type="button" onClick={() => setHistoryView(null)} className="text-sm font-medium text-gray-600 hover:text-gray-900 dark:text-gray-300">Close</button></div>
@@ -277,7 +277,7 @@ export default function EmployeeTotpSecurity({ enabled, activity = [], active_se
 
         return (
             <div
-                className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+                className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 erp-modal-backdrop"
                 role="presentation"
             >
                 <div

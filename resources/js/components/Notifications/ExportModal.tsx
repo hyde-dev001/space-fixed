@@ -81,7 +81,7 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => {
       <div className="flex min-h-screen items-center justify-center p-4">
         {/* Backdrop */}
         <div
-          className="fixed inset-0 bg-slate-900/30 backdrop-blur-sm transition-all"
+          className="fixed inset-0 bg-slate-900/30 backdrop-blur-sm transition-all erp-modal-backdrop"
           onClick={onClose}
         />
 

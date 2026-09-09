@@ -129,7 +129,7 @@ function DeliveryProofDialog({
       role="dialog"
       aria-modal="true"
       aria-labelledby="delivery-proof-title"
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 p-0 sm:p-6"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 p-0 sm:p-6 erp-modal-backdrop"
     >
       <div className="flex h-full w-full flex-col overflow-hidden bg-white shadow-2xl sm:h-auto sm:max-h-[90vh] sm:max-w-5xl sm:rounded-2xl">
         <button
