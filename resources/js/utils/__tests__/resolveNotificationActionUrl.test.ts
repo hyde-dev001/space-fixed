@@ -19,14 +19,14 @@ describe('resolveNotificationActionUrl', () => {
     })).toBe('/finance?section=invoice-generation&invoice=21');
   });
 
-  it('routes legacy inventory and HR destinations to pages that still exist', () => {
+  it('preserves canonical procurement approval destinations and routes legacy pages', () => {
     expect(resolveNotificationActionUrl('/erp/procurement/replenishment-request-approval', 'stock_request', {
       request_id: 3,
     })).toBe('/erp/inventory/request-material-approval?stock_request=3');
 
     expect(resolveNotificationActionUrl('/erp/procurement/stock-request-approval', 'stock_request', {
       request_id: 4,
-    })).toBe('/erp/inventory/request-material-approval?stock_request=4');
+    })).toBe('/erp/procurement/stock-request-approval?stock_request=4');
 
     expect(resolveNotificationActionUrl('/erp/procurement/supplier-orders', 'supplier_order_overdue', {
       po_number: 'PO-1001',

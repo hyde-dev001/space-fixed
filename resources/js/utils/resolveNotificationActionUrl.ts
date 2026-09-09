@@ -106,9 +106,9 @@ export function resolveNotificationActionUrl(
 
   if (path === '/erp/procurement/stock-request-approval') {
     return appendQueryParam(
-      '/erp/inventory/request-material-approval',
+      path,
       'stock_request',
-      getValue(data, 'stock_request_id') ?? getValue(data, 'request_id') ?? new URLSearchParams(query).get('stock_request'),
+      new URLSearchParams(query).get('stock_request') ?? getValue(data, 'stock_request_id') ?? getValue(data, 'request_id'),
     );
   }
 
