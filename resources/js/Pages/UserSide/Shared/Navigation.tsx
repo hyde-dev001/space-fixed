@@ -106,7 +106,6 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
   const [quickCartItems, setQuickCartItems] = useState<QuickCartItem[]>([]);
   const [quickCartLoading, setQuickCartLoading] = useState(false);
   const [cartRefreshKey, setCartRefreshKey] = useState(0);
-  const [accountDrawerOpen, setAccountDrawerOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchProducts, setSearchProducts] = useState<SearchSuggestionProduct[]>([]);
   const [searchShops, setSearchShops] = useState<SearchSuggestionShop[]>([]);
@@ -193,7 +192,6 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setLandingSidebarOpen(false);
-        setAccountDrawerOpen(false);
       }
     };
 
@@ -233,7 +231,6 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
       if (!event.detail?.openDrawer) return;
 
       setLandingSidebarOpen(false);
-      setAccountDrawerOpen(false);
       setCartDrawerOpen(true);
       setCartRefreshKey((key) => key + 1);
     };
@@ -736,7 +733,6 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
               type="button"
               onClick={() => {
                 setLandingSidebarOpen((open) => !open);
-                setAccountDrawerOpen(false);
               }}
               className={`absolute left-0 top-3 inline-flex h-10 w-10 -translate-y-px items-center justify-center p-0 transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 sm:top-5 ${isTransparentNav ? 'text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.7)] focus-visible:ring-white' : 'text-gray-900 focus-visible:ring-gray-900'}`}
               aria-label={landingSidebarOpen ? 'Close menu' : 'Toggle menu'}
@@ -764,7 +760,6 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
               onClick={landingSidebar ? (event) => {
                 event.preventDefault();
                 setLandingSidebarOpen(false);
-                setAccountDrawerOpen(false);
                 setCartDrawerOpen(true);
               } : undefined}
             >
@@ -1232,7 +1227,6 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
               onClick={landingSidebar ? (event) => {
                 event.preventDefault();
                 setLandingSidebarOpen(false);
-                setAccountDrawerOpen(false);
                 setCartDrawerOpen(true);
               } : undefined}
             >
@@ -1490,10 +1484,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
           <button
             type="button"
             aria-label="Close menu"
-            onClick={() => {
-              setAccountDrawerOpen(false);
-              setLandingSidebarOpen(false);
-            }}
+            onClick={() => setLandingSidebarOpen(false)}
             className={`fixed inset-0 z-[100] bg-black/35 backdrop-blur-[2px] transition-opacity duration-300 motion-reduce:transition-none erp-modal-backdrop ${landingSidebarOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
           />
           <aside
@@ -1501,10 +1492,10 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
             className={`userside-customer-drawer fixed left-0 top-0 z-[110] flex h-dvh w-[min(88vw,31rem)] flex-col overflow-y-auto border-r border-white/60 bg-white/60 text-[#111111] dark:border-slate-700 dark:bg-slate-900/95 dark:text-white shadow-2xl backdrop-blur-2xl transition-transform duration-300 ease-out motion-reduce:transition-none ${landingSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
           >
             <div className="flex items-center justify-between border-b border-[#e5e5e5] px-6 py-6 sm:px-8 dark:border-slate-700">
-              <Link href={route('landing')} onClick={() => { setAccountDrawerOpen(false); setLandingSidebarOpen(false); }} className="text-xl font-semibold tracking-[-0.06em] sm:text-2xl">
+              <Link href={route('landing')} onClick={() => setLandingSidebarOpen(false)} className="text-xl font-semibold tracking-[-0.06em] sm:text-2xl">
                 SOLESPACE
               </Link>
-              <button type="button" onClick={() => { setAccountDrawerOpen(false); setLandingSidebarOpen(false); }} className="inline-flex h-11 w-11 items-center justify-center rounded-full hover:bg-[#f5f5f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] dark:hover:bg-slate-800 dark:focus-visible:ring-slate-300" aria-label="Close menu">
+              <button type="button" onClick={() => setLandingSidebarOpen(false)} className="inline-flex h-11 w-11 items-center justify-center rounded-full hover:bg-[#f5f5f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] dark:hover:bg-slate-800 dark:focus-visible:ring-slate-300" aria-label="Close menu">
                 <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 6l12 12M18 6L6 18" /></svg>
               </button>
             </div>
@@ -1517,7 +1508,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                   return (
                     <div key={`${item.label}-${item.dropdownKey ?? 'link'}`}>
                       <div className="flex items-center justify-between">
-                        <Link href={href} onClick={() => { setAccountDrawerOpen(false); setLandingSidebarOpen(false); }} className="flex min-h-12 flex-1 items-center text-lg font-semibold tracking-[-0.02em] transition-opacity hover:opacity-55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] sm:text-xl">
+                        <Link href={href} onClick={() => setLandingSidebarOpen(false)} className="flex min-h-12 flex-1 items-center text-lg font-semibold tracking-[-0.02em] transition-opacity hover:opacity-55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] sm:text-xl">
                           {item.label}
                         </Link>
                          {hasChildren && (
@@ -1530,9 +1521,9 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                          <div id={`sidebar-submenu-${item.dropdownKey}`} aria-hidden={!isExpanded} className={`grid transition-[grid-template-rows,opacity,transform] duration-300 ease-out motion-reduce:transition-none ${isExpanded ? 'grid-rows-[1fr] translate-y-0 opacity-100' : 'grid-rows-[0fr] -translate-y-1 opacity-0 pointer-events-none'}`}>
                            <div className="min-h-0 overflow-hidden">
                              <div className="mb-3 ml-4 border-l border-[#cacacb] pl-4 dark:border-slate-700">
-                               <Link href={route('products', item.params?.category ? { category: item.params.category } : undefined)} onClick={() => { setAccountDrawerOpen(false); setLandingSidebarOpen(false); }} className="flex min-h-10 items-center text-sm font-medium text-[#707072] hover:text-[#111111] dark:text-slate-400 dark:hover:text-white">Shop all</Link>
+                               <Link href={route('products', item.params?.category ? { category: item.params.category } : undefined)} onClick={() => setLandingSidebarOpen(false)} className="flex min-h-10 items-center text-sm font-medium text-[#707072] hover:text-[#111111] dark:text-slate-400 dark:hover:text-white">Shop all</Link>
                                {['New arrivals', 'Best sellers', 'Running', 'Basketball', 'Lifestyle'].map((category) => (
-                                 <Link key={category} href={route('products', item.params?.category ? { category: item.params.category } : undefined)} onClick={() => { setAccountDrawerOpen(false); setLandingSidebarOpen(false); }} className="flex min-h-10 items-center text-sm font-medium text-[#707072] hover:text-[#111111] dark:text-slate-400 dark:hover:text-white">{category}</Link>
+                                 <Link key={category} href={route('products', item.params?.category ? { category: item.params.category } : undefined)} onClick={() => setLandingSidebarOpen(false)} className="flex min-h-10 items-center text-sm font-medium text-[#707072] hover:text-[#111111] dark:text-slate-400 dark:hover:text-white">{category}</Link>
                                ))}
                              </div>
                            </div>
@@ -1541,62 +1532,34 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                     </div>
                   );
                 })}
+                {isAuthenticated && (
+                  <Link href={route('shop-owner-register')} onClick={() => setLandingSidebarOpen(false)} className={`flex min-h-12 items-center text-lg font-semibold tracking-[-0.02em] transition-opacity hover:opacity-55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] sm:text-xl ${isMobileServicesActive ? 'text-gray-900 dark:text-white' : ''}`}>
+                    <span>Join Our Team</span>
+                  </Link>
+                )}
               </div>
             </nav>
-            <div className="border-t border-[#cacacb] px-6 py-6 sm:px-8 dark:border-slate-700">
-              {isAuthenticated && (
-                <div>
-                  <button
-                    type="button"
-                    onClick={() => { setCartDrawerOpen(false); setAccountDrawerOpen((open) => !open); }}
-                    aria-expanded={accountDrawerOpen}
-                    aria-controls="customer-account-submenu"
-                    aria-label={`${accountDrawerOpen ? 'Collapse' : 'Expand'} Account`}
-                    className="flex min-h-12 w-full items-center justify-between text-left text-base font-medium transition-opacity hover:opacity-55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111]"
-                  >
-                    <span className="flex items-center gap-3">
-                      <svg className="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                        <circle cx="12" cy="8" r="3" strokeWidth={2} />
-                        <path strokeLinecap="round" strokeWidth={2} d="M5 20a7 7 0 0 1 14 0" />
-                      </svg>
-                      <span>Account</span>
-                    </span>
-                    <svg className={`h-4 w-4 transition-transform duration-300 ease-out motion-reduce:transition-none ${accountDrawerOpen ? 'rotate-45' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeWidth={2} d="M12 5v14M5 12h14" />
-                    </svg>
-                  </button>
-                  <div
-                    id="customer-account-submenu"
-                    aria-hidden={!accountDrawerOpen}
-                    className={`grid transition-[grid-template-rows,opacity,transform] duration-300 ease-out motion-reduce:transition-none ${accountDrawerOpen ? 'grid-rows-[1fr] translate-y-0 opacity-100' : 'grid-rows-[0fr] -translate-y-1 opacity-0 pointer-events-none'}`}
-                  >
-                    <div className="min-h-0 overflow-hidden">
-                      <div className="mb-3 ml-4 border-l border-[#cacacb] pl-4 dark:border-slate-700">
-                        <Link href="/customer-profile" onClick={() => { setAccountDrawerOpen(false); setLandingSidebarOpen(false); }} className={`flex min-h-10 items-center gap-3 text-sm font-medium text-[#707072] hover:text-[#111111] dark:text-slate-400 dark:hover:text-white ${isMyProfileActive ? 'text-[#111111] dark:text-white' : ''}`}>
-                          <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={1.9} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-                          <span>Edit Profile</span>
-                        </Link>
-                        <Link href={route('shop-owner-register')} onClick={() => { setAccountDrawerOpen(false); setLandingSidebarOpen(false); }} className={`flex min-h-10 items-center gap-3 text-sm font-medium text-[#707072] hover:text-[#111111] dark:text-slate-400 dark:hover:text-white ${isMobileServicesActive ? 'text-[#111111] dark:text-white' : ''}`}>
-                          <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={1.9} d="M16 21v-2a4 4 0 00-4-4H6a2 2 0 00-2 2v2m8-8a4 4 0 100-8 4 4 0 000 8zm6-3v6m3-3h-6" /></svg>
-                          <span>Join Our Team</span>
-                        </Link>
-                        <button type="button" onClick={() => { setAccountDrawerOpen(false); handleLogout(); }} className="flex min-h-10 w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium text-red-600 transition-colors hover:bg-red-50 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 dark:text-red-400 dark:hover:bg-red-900/20 dark:hover:text-red-300">
-                          <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={1.9} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
-                          <span>Log out</span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-              {!isAuthenticated && (
+            <div className="relative border-t border-[#cacacb] px-6 py-6 sm:px-8 dark:border-slate-700">
+              {isAuthenticated ? (
+                <>
+                  <Link href="/customer-profile" onClick={() => setLandingSidebarOpen(false)} className={`flex min-h-12 items-center gap-3 text-base font-medium hover:opacity-55 ${isMyProfileActive ? 'text-gray-900 dark:text-white' : ''}`}>
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                    <span>Edit Profile</span>
+                  </Link>
+                </>
+              ) : (
                 <Link href={route('login')} onClick={() => setLandingSidebarOpen(false)} className="flex min-h-12 items-center gap-3 text-base font-medium hover:opacity-55">
                   <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3" strokeWidth={2}/><path strokeLinecap="round" strokeWidth={2} d="M5 20a7 7 0 0 1 14 0"/></svg>
                   Sign in
                 </Link>
               )}
-              <button type="button" onClick={() => { setLandingSidebarOpen(false); setAccountDrawerOpen(false); setCartDrawerOpen(true); }} className="flex min-h-12 w-full items-center gap-3 text-left text-base font-medium hover:opacity-55"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={2} d="M3 4h2l2.2 10.2a2 2 0 0 0 1.96 1.58h7.68a2 2 0 0 0 1.95-1.56L21 7H8"/><circle cx="10" cy="19" r="1.5"/><circle cx="17" cy="19" r="1.5"/></svg>Cart {effectiveCartCount > 0 && `(${effectiveCartCount})`}</button>
-              <Link href={route('download')} onClick={() => { setAccountDrawerOpen(false); setLandingSidebarOpen(false); }} className="flex min-h-12 items-center gap-3 text-base font-medium hover:opacity-55"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={2} d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14" /></svg>Download</Link>
+              <Link href={route('download')} onClick={() => setLandingSidebarOpen(false)} className="flex min-h-12 items-center gap-3 text-base font-medium hover:opacity-55"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={2} d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14" /></svg><span>Download</span></Link>
+              {isAuthenticated && (
+                <button type="button" onClick={() => { setLandingSidebarOpen(false); handleLogout(); }} className="flex min-h-12 w-full items-center gap-3 text-left text-base font-medium text-red-600 hover:opacity-70 dark:text-red-400">
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+                  <span>Log out</span>
+                </button>
+              )}
             </div>
           </aside>
         </>
