@@ -151,8 +151,10 @@ class ProductInventoryTest extends TestCase
     public function test_inventory_image_paths_are_canonical_and_missing_files_are_omitted(): void
     {
         Storage::fake('public');
+        $this->shopOwner->update(['business_type' => 'both']);
         $item = InventoryItem::factory()->create([
             'shop_owner_id' => $this->shopOwner->id,
+            'category' => 'shoes',
             'main_image' => 'public/inventory/1/front.jpg',
         ]);
         $existingPaths = [

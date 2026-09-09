@@ -355,7 +355,7 @@ class CheckLowStockJobTest extends TestCase
         $shopOwner = ShopOwner::factory()->create();
         $item = InventoryItem::factory()->create([
             'shop_owner_id' => $shopOwner->id,
-            'available_quantity' => 0,
+            'available_quantity' => 43,
         ]);
         $black = InventoryColorVariant::create([
             'inventory_item_id' => $item->id,
