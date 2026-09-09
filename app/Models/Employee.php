@@ -153,6 +153,11 @@ class Employee extends Model
         return $this->hasMany(EmployeeEmploymentPeriod::class);
     }
 
+    public function lifecycleRequests(): HasMany
+    {
+        return $this->hasMany(EmployeeLifecycleRequest::class);
+    }
+
     /**
      * Get the department this employee belongs to
      */

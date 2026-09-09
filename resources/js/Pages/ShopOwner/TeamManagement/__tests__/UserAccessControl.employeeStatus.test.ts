@@ -13,4 +13,12 @@ describe('shop-owner team employee account states', () => {
     expect(source).toContain('status: canonicalEmployeeStatus(emp.status),');
     expect(source).not.toContain("status: 'active' | 'inactive';");
   });
+  it('uses read-only employee details and keeps password reset in the access-control flow', () => {
+    expect(source).toContain('View Details');
+    expect(source).toContain('reset-password');
+    expect(source).toContain('Personal email unavailable');
+    expect(source).not.toContain('Edit Employee');
+    expect(source).not.toContain('handleEditEmployee');
+    expect(source).not.toContain('openEditEmployeeModal');
+  });
 });

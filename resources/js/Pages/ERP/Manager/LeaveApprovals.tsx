@@ -1,6 +1,6 @@
 import MonochromeSelect from "@/components/form/Select";
 import { Head } from "@inertiajs/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import ManagerFilterPanel, { ManagerFilterActions } from "../../../components/manager/ManagerFilterPanel";
@@ -187,11 +187,14 @@ export default function LeaveApprovals() {
     const [processingId, setProcessingId] = useState<number | null>(null);
     const [actionError, setActionError] = useState<string | null>(null);
 
-    const applyFilters = (event: FormEvent<HTMLFormElement>) => {
-        event.preventDefault();
-        setActionError(null);
-        setFilters({ ...form, page: 1, per_page: 20 });
-    };
+    useEffect(() => {
+        const timeout = window.setTimeout(() => {
+            setActionError(null);
+            setFilters({ ...form, page: 1, per_page: 20 });
+        }, form.search.trim() ? 300 : 0);
+
+        return () => window.clearTimeout(timeout);
+    }, [form]);
 
     const clearFilters = () => {
         setForm(initialFilterForm);
@@ -283,7 +286,7 @@ export default function LeaveApprovals() {
                         </>
                     )}
                 >
-                    <form onSubmit={applyFilters} className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
+                    <form onSubmit={(event) => event.preventDefault()} className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
                         <div className="xl:col-span-2">
                             <label htmlFor="leave-search" className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Search</label>
                             <input
@@ -325,7 +328,6 @@ export default function LeaveApprovals() {
                             <input id="leave-date-to" type="date" value={form.date_to} onChange={(event) => setForm((current) => ({ ...current, date_to: event.target.value }))} className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-white" />
                         </div>
                         <ManagerFilterActions>
-                            <button type="submit" className="min-h-11 rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200 dark:focus:ring-offset-gray-950">Apply filters</button>
                             <button type="button" onClick={clearFilters} className="min-h-11 rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800 dark:focus:ring-offset-gray-950">Clear</button>
                         </ManagerFilterActions>
                     </form>

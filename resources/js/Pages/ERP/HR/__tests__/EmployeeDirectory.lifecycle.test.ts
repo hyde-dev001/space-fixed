@@ -13,7 +13,8 @@ describe('employee termination and rehire directory workflow', () => {
     expect(source).toContain("endpoint: '/api/hr/rehire-requests'");
     expect(source).toContain('Request Termination');
     expect(source).toContain('Request Rehire');
-    expect(source).toContain('Hired Date');
+    expect(source).toContain('Rehire Pending');
+    expect(source).not.toContain('rehire_start_date');
     expect(source).toContain('Department / Role');
     expect(source).toContain('Approval Process');
     expect(source).toContain('Employment History');
@@ -29,7 +30,9 @@ describe('employee termination and rehire directory workflow', () => {
     expect(rehireModal).toContain('Phone');
     expect(rehireModal).toContain('Department / Role');
     expect(rehireModal).toContain('Position / Job Title');
-    expect(rehireModal).toContain('Hired Date');
+    expect(rehireModal).toContain('system generates the effective hired date');
+    expect(rehireModal).not.toContain('Hired Date');
+    expect(rehireModal).not.toContain('rehireStartDate');
     expect(rehireModal).toContain('Daily Rate');
     expect(rehireModal).toContain('Reason for Rehire');
     expect(rehireModal).toContain('Evidence / Notes');
@@ -60,6 +63,7 @@ describe('employee termination and rehire directory workflow', () => {
     expect(actionColumn).toContain('variant="success"');
     expect(actionColumn).toContain('Activate Account');
     expect(actionColumn).toContain('Request Rehire');
+    expect(actionColumn).toContain('Rehire Pending');
     expect(actionColumn).toContain('title="Request Termination"');
     expect(actionColumn).toContain('aria-label={`Request termination for ${buildName(employee)}`}');
     expect(actionColumn).not.toContain('>\n                              Request Termination\n');

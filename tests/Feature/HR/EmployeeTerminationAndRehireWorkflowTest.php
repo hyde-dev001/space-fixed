@@ -202,76 +202,117 @@ final class EmployeeTerminationAndRehireWorkflowTest extends TestCase
     }
 
     #[Test]
-    public function rehire_requires_a_new_start_date_and_explicit_role_then_opens_a_new_employment_period(): void
+    public function rehire_generates_the_new_start_date_after_approval_and_rejects_duplicates(): void
     {
-        [$employee, $linkedUser] = $this->employeeWithLinkedUser([
-            'employee' => [
-                'status' => EmployeeStatus::TERMINATED,
-                'terminated_at' => Carbon::parse('2026-08-31 10:00:00'),
-            ],
-            'user' => ['status' => 'inactive'],
-        ]);
-        $employee->forceFill(['hire_date' => '2025-01-10'])->save();
-        EmployeeEmploymentPeriod::factory()->for($employee)->create([
-            'start_date' => '2025-01-10',
-            'end_date' => '2026-08-31',
-            'end_reason' => 'Previous termination.',
-            'role' => 'Manager',
-        ]);
+        Carbon::setTestNow(Carbon::parse('2027-02-01 09:00:00'));
 
-        $this->actingAs($this->hr, 'user')
-            ->postJson('/api/hr/rehire-requests', [
-                'employee_id' => $employee->id,
-                'reason' => 'The employee is being considered for a new employment period.',
-                'rehire_start_date' => '2027-02-01',
-            ])
-            ->assertStatus(422)
-            ->assertJsonValidationErrors(['rehire_role']);
+        try {
+            [$employee, $linkedUser] = $this->employeeWithLinkedUser([
+                'employee' => [
+                    'status' => EmployeeStatus::TERMINATED,
+                    'terminated_at' => Carbon::parse('2026-08-31 10:00:00'),
+                ],
+                'user' => ['status' => 'inactive'],
+            ]);
+            $employee->forceFill(['hire_date' => '2025-01-10'])->save();
+            EmployeeEmploymentPeriod::factory()->for($employee)->create([
+                'start_date' => '2025-01-10',
+                'end_date' => '2026-08-31',
+                'end_reason' => 'Previous termination.',
+                'role' => 'Manager',
+            ]);
 
-        $request = $this->actingAs($this->hr, 'user')
-            ->postJson('/api/hr/rehire-requests', [
-                'employee_id' => $employee->id,
-                'reason' => 'The employee is being considered for a new employment period.',
-                'rehire_start_date' => '2027-02-01',
-                'rehire_position' => 'Repair Technician',
-                'rehire_department' => 'Repair',
-                'rehire_role' => 'Staff',
-                'rehire_salary' => 42000,
-            ])
-            ->assertCreated()
-            ->json('request');
-        $requestId = (int) $request['id'];
+            $this->actingAs($this->hr, 'user')
+                ->postJson('/api/hr/rehire-requests', [
+                    'employee_id' => $employee->id,
+                    'reason' => 'The employee is being considered for a new employment period.',
+                    'rehire_start_date' => '1999-01-01',
+                    'hired_date' => '1900-01-01',
+                ])
+                ->assertStatus(422)
+                ->assertJsonValidationErrors(['rehire_role']);
 
-        $this->actingAs($this->manager, 'user')
-            ->postJson("/api/manager/rehire-requests/{$requestId}/review", [
-                'action' => 'approve',
-                'note' => 'The new employment terms were reviewed.',
-            ])
-            ->assertOk();
+            $request = $this->actingAs($this->hr, 'user')
+                ->postJson('/api/hr/rehire-requests', [
+                    'employee_id' => $employee->id,
+                    'reason' => 'The employee is being considered for a new employment period.',
+                    'rehire_start_date' => '2099-01-01',
+                    'hired_date' => '1900-01-01',
+                    'rehire_position' => 'Repair Technician',
+                    'rehire_department' => 'Repair',
+                    'rehire_role' => 'Staff',
+                    'rehire_salary' => 42000,
+                ])
+                ->assertCreated()
+                ->json('request');
+            $requestId = (int) $request['id'];
+            $this->assertNull(EmployeeLifecycleRequest::findOrFail($requestId)->rehire_start_date);
 
-        $this->actingAs($this->shop, 'shop_owner')
-            ->postJson("/api/shop-owner/rehire-requests/{$requestId}/review", [
-                'action' => 'approve',
-                'note' => 'Approved as a new employment period.',
-            ])
-            ->assertOk();
+            $this->actingAs($this->hr, 'user')
+                ->postJson('/api/hr/rehire-requests', [
+                    'employee_id' => $employee->id,
+                    'reason' => 'A duplicate request must not be created.',
+                    'rehire_start_date' => '2099-01-01',
+                    'rehire_position' => 'Repair Technician',
+                    'rehire_role' => 'Staff',
+                ])
+                ->assertConflict()
+                ->assertJsonPath('code', 'EMPLOYEE_LIFECYCLE_REQUEST_CONFLICT');
 
-        $employee->refresh();
-        $linkedUser->refresh();
-        $this->assertSame(EmployeeStatus::ACTIVE, $employee->status);
-        $this->assertNull($employee->terminated_at);
-        $this->assertSame('2027-02-01', $employee->hire_date->toDateString());
-        $this->assertSame('Repair Technician', $employee->position);
-        $this->assertSame('42000.00', (string) $employee->salary);
-        $this->assertSame('active', $linkedUser->getRawOriginal('status'));
-        $this->assertTrue($linkedUser->hasRole('Staff'));
-        $this->assertSame(2, EmployeeEmploymentPeriod::where('employee_id', $employee->id)->count());
-        $this->assertTrue(EmployeeEmploymentPeriod::query()
-            ->where('employee_id', $employee->id)
-            ->whereDate('start_date', '2027-02-01')
-            ->whereNull('end_date')
-            ->where('role', 'Staff')
-            ->exists());
+            $this->assertSame(
+                1,
+                EmployeeLifecycleRequest::query()
+                    ->where('employee_id', $employee->id)
+                    ->whereIn('status', ['pending_manager', 'pending_owner'])
+                    ->count(),
+            );
+
+            $directoryResponse = $this->actingAs($this->hr, 'user')
+                ->getJson('/api/hr/employees?status=terminated')
+                ->assertOk();
+            $this->assertTrue((bool) $directoryResponse->json('data.0.has_pending_rehire_request'));
+
+            $this->actingAs($this->manager, 'user')
+                ->postJson("/api/manager/rehire-requests/{$requestId}/review", [
+                    'action' => 'approve',
+                    'note' => 'The new employment terms were reviewed.',
+                ])
+                ->assertOk();
+
+            $this->actingAs($this->shop, 'shop_owner')
+                ->postJson("/api/shop-owner/rehire-requests/{$requestId}/review", [
+                    'action' => 'approve',
+                    'note' => 'Approved as a new employment period.',
+                ])
+                ->assertOk();
+
+            $employee->refresh();
+            $linkedUser->refresh();
+            $this->assertSame(EmployeeStatus::ACTIVE, $employee->status);
+            $this->assertNull($employee->terminated_at);
+            $this->assertSame('2027-02-01', $employee->hire_date->toDateString());
+            $this->assertSame('Repair Technician', $employee->position);
+            $this->assertSame('42000.00', (string) $employee->salary);
+            $this->assertSame('active', $linkedUser->getRawOriginal('status'));
+            $this->assertTrue($linkedUser->hasRole('Staff'));
+            $this->assertSame(2, EmployeeEmploymentPeriod::where('employee_id', $employee->id)->count());
+            $this->assertTrue(EmployeeEmploymentPeriod::query()
+                ->where('employee_id', $employee->id)
+                ->whereDate('start_date', '2027-02-01')
+                ->whereNull('end_date')
+                ->where('role', 'Staff')
+                ->exists());
+            $this->assertTrue(EmployeeEmploymentPeriod::query()
+                ->where('employee_id', $employee->id)
+                ->whereDate('start_date', '2025-01-10')
+                ->exists());
+            $this->assertSame(
+                '2027-02-01',
+                EmployeeLifecycleRequest::findOrFail($requestId)->rehire_start_date->toDateString(),
+            );
+        } finally {
+            Carbon::setTestNow();
+        }
     }
 
     #[Test]

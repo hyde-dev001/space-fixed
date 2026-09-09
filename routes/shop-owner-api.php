@@ -422,6 +422,9 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
     // USER ACCESS CONTROL / EMPLOYEE MANAGEMENT (Shop Owner)
     // ============================================
     Route::prefix('employees')->group(function () {
+        Route::post('/{userId}/reset-password', [\App\Http\Controllers\ShopOwner\UserAccessControlController::class, 'resetEmployeePassword'])
+            ->middleware('throttle:privileged-password-reset')
+            ->name('shop_owner.employees.reset_password');
         Route::post('/{userId}/regenerate-invite', [\App\Http\Controllers\ShopOwner\UserAccessControlController::class, 'regenerateInvite'])->name('shop_owner.employees.regenerate_invite');
         Route::post('/{userId}/send-invitation-email', [\App\Http\Controllers\ShopOwner\UserAccessControlController::class, 'sendInvitationEmail'])->name('shop_owner.employees.send_invitation_email');
     });

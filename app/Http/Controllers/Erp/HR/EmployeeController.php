@@ -94,6 +94,11 @@ class EmployeeController extends Controller
                 'employmentPeriods' => fn ($query) => $query->orderByDesc('start_date'),
                 'user',
             ]);
+        $query->withExists([
+            'lifecycleRequests as has_pending_rehire_request' => fn ($requestQuery) => $requestQuery
+                ->where('request_type', 'rehire')
+                ->whereIn('status', ['pending_manager', 'pending_owner']),
+        ]);
 
         // Apply filters
         if ($request->filled('department')) {

@@ -1,7 +1,6 @@
 import MonochromeSelect from "@/components/form/Select";
 import { Head, Link, usePage } from "@inertiajs/react";
-import { useMemo, useState } from "react";
-import type { FormEvent } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ClipboardList, Wrench } from "lucide-react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import { DashboardMetricCard } from "../../../components/dashboard";
@@ -232,14 +231,17 @@ export default function StaffWorkload() {
         { activeOrders: 0, activeRepairs: 0, exceptions: 0 },
     ), [canRepair, canRetail, rows]);
 
-    const applyFilters = (event: FormEvent<HTMLFormElement>) => {
-        event.preventDefault();
-        setFilters({
-            ...form,
-            page: 1,
-            per_page: 25,
-        });
-    };
+    useEffect(() => {
+        const timeout = window.setTimeout(() => {
+            setFilters({
+                ...form,
+                page: 1,
+                per_page: 25,
+            });
+        }, form.search.trim() ? 300 : 0);
+
+        return () => window.clearTimeout(timeout);
+    }, [form]);
 
     const clearFilters = () => {
         setForm(initialFilterForm);
@@ -299,7 +301,7 @@ export default function StaffWorkload() {
                         </>
                     }
                 >
-                    <form onSubmit={applyFilters} className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
+                    <form onSubmit={(event) => event.preventDefault()} className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
                         <div className="xl:col-span-2">
                             <label htmlFor="staff-search" className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Search staff</label>
                             <input
@@ -361,12 +363,6 @@ export default function StaffWorkload() {
                             />
                         </div>
                         <ManagerFilterActions>
-                            <button
-                                type="submit"
-                                className="min-h-11 rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200 dark:focus:ring-offset-gray-950"
-                            >
-                                Apply filters
-                            </button>
                             <button
                                 type="button"
                                 onClick={clearFilters}

@@ -28,6 +28,7 @@ type Employee = {
   createdBy?: string;
   linkedUser?: string | number; // username or id of linked user account
   terminatedAt?: string;
+  rehirePending?: boolean;
   employmentHistory?: EmploymentPeriod[];
 };
 
@@ -68,7 +69,6 @@ type LifecycleRequestForm = {
 };
 
 type RehireRequestForm = LifecycleRequestForm & {
-  rehireStartDate: string;
   rehirePosition: string;
   rehireDepartment: string;
   rehireSalary: string;
@@ -380,6 +380,7 @@ const transformEmployeeFromApi = (apiEmployee: any): Employee => {
     createdBy: apiEmployee.created_by || apiEmployee.createdBy,
     linkedUser: apiEmployee.linked_user || apiEmployee.linkedUser,
     terminatedAt: apiEmployee.terminated_at || apiEmployee.terminatedAt,
+    rehirePending: Boolean(apiEmployee.has_pending_rehire_request ?? apiEmployee.rehire_pending),
     employmentHistory: Array.isArray(employmentPeriods)
       ? employmentPeriods.map(transformEmploymentPeriodFromApi)
       : undefined,
@@ -658,7 +659,6 @@ export const EmployeeManagement: React.FC<{
   const [rehireRequestForm, setRehireRequestForm] = useState<RehireRequestForm>({
     reason: "",
     evidence: "",
-    rehireStartDate: "",
     rehirePosition: "",
     rehireDepartment: "",
     rehireSalary: "",
@@ -1236,13 +1236,12 @@ export const EmployeeManagement: React.FC<{
   };
 
   const handleRehireClick = (employee: Employee) => {
-    if (!canRequestEmployeeLifecycle || employee.status !== 'terminated') return;
+    if (!canRequestEmployeeLifecycle || employee.status !== 'terminated' || employee.rehirePending) return;
 
     setEmployeeToRehire(employee);
     setRehireRequestForm({
       reason: '',
       evidence: '',
-      rehireStartDate: '',
       rehirePosition: employee.position || '',
       rehireDepartment: employee.department || '',
       rehireSalary: '',
@@ -1257,10 +1256,10 @@ export const EmployeeManagement: React.FC<{
     const reason = rehireRequestForm.reason.trim();
     if (!employee) return;
 
-    if (reason.length < 3 || !rehireRequestForm.rehireStartDate || !rehireRequestForm.rehirePosition.trim() || !rehireRequestForm.rehireRole.trim()) {
+    if (reason.length < 3 || !rehireRequestForm.rehirePosition.trim() || !rehireRequestForm.rehireRole.trim()) {
       await Swal.fire({
         title: 'Complete Rehire Details',
-        text: 'Provide a reason, new start date, position, and role before submitting.',
+        text: 'Provide a reason, position, and role before submitting.',
         icon: 'warning',
         confirmButtonColor: '#f59e0b',
       });
@@ -1274,7 +1273,6 @@ export const EmployeeManagement: React.FC<{
         employee_id: employee.id,
         reason,
         evidence: rehireRequestForm.evidence.trim() || null,
-        rehire_start_date: rehireRequestForm.rehireStartDate,
         rehire_position: rehireRequestForm.rehirePosition.trim(),
         rehire_department: rehireRequestForm.rehireDepartment.trim() || null,
         rehire_salary: rehireRequestForm.rehireSalary.trim() || null,
@@ -1288,7 +1286,6 @@ export const EmployeeManagement: React.FC<{
         setRehireRequestForm({
           reason: '',
           evidence: '',
-          rehireStartDate: '',
           rehirePosition: '',
           rehireDepartment: '',
           rehireSalary: '',
@@ -1712,38 +1709,14 @@ export const EmployeeManagement: React.FC<{
         throw new Error(data?.error || data?.message || 'Failed to reset employee password');
       }
 
-      const inviteUrl = data.invite_url;
-      const expiresAt = data.invite_expires_at ? new Date(data.invite_expires_at).toLocaleString() : 'N/A';
-
-      await Swal.fire({
-        icon: 'success',
-        title: 'Password Reset Ready',
-        html: `
-          <div style="text-align:left;">
-            <p style="margin-bottom:8px;">A new setup link was generated for <strong>${buildName(employee)}</strong>.</p>
-            <p style="margin-bottom:8px;"><strong>Work email:</strong> ${employee.email}</p>
-            <p style="margin-bottom:8px;"><strong>Expires:</strong> ${expiresAt}</p>
-            <div style="background:#f9fafb;padding:10px;border-radius:6px;border:1px solid #e5e7eb;word-break:break-all;font-family:monospace;font-size:12px;">
-              ${inviteUrl}
-            </div>
-          </div>
-        `,
-        showCancelButton: true,
-        confirmButtonText: 'Copy Link',
-        cancelButtonText: 'Done',
-        confirmButtonColor: '#16a34a',
-        cancelButtonColor: '#6b7280',
-      }).then((copyResult) => {
-        if (copyResult.isConfirmed && inviteUrl) {
-          navigator.clipboard.writeText(inviteUrl).catch(() => {});
-          Swal.fire({
-            icon: 'success',
-            title: 'Copied',
-            text: 'Setup link copied to clipboard.',
-            timer: 1500,
-            showConfirmButton: false,
-          });
-        }
+      openInvitationModal({
+        employeeId: employee.id,
+        employeeUserId: linkedUserId,
+        employeeName: buildName(employee),
+        workEmail: employee.email,
+        inviteUrl: data.invite_url,
+        inviteExpiresAt: data.invite_expires_at,
+        showRegeneratedNote: false,
       });
     } catch (error: any) {
       Swal.fire({
@@ -2619,14 +2592,20 @@ export const EmployeeManagement: React.FC<{
                             </Button>
                           )}
                           {canRequestEmployeeLifecycle && employee.status === 'terminated' && (
-                            <Button
-                              variant="primary"
-                              onClick={() => handleRehireClick(employee)}
-                              className="whitespace-nowrap px-3 py-2 text-xs"
-                              disabled={isProcessingId === employee.id}
-                            >
-                              Request Rehire
-                            </Button>
+                            employee.rehirePending ? (
+                              <Button variant="secondary" className="whitespace-nowrap px-3 py-2 text-xs" disabled>
+                                Rehire Pending
+                              </Button>
+                            ) : (
+                              <Button
+                                variant="primary"
+                                onClick={() => handleRehireClick(employee)}
+                                className="whitespace-nowrap px-3 py-2 text-xs"
+                                disabled={isProcessingId === employee.id}
+                              >
+                                Request Rehire
+                              </Button>
+                            )
                           )}
                           {canRequestEmployeeLifecycle && employee.status !== 'terminated' && (
                             <IconButton
@@ -2845,13 +2824,19 @@ export const EmployeeManagement: React.FC<{
                           </Button>
                         )}
                         {canRequestEmployeeLifecycle && selectedEmployee.status === 'terminated' && (
-                          <Button
-                            variant="primary"
-                            onClick={() => handleRehireClick(selectedEmployee)}
-                            disabled={isProcessingId === selectedEmployee.id}
-                          >
-                            Request Rehire
-                          </Button>
+                          selectedEmployee.rehirePending ? (
+                            <Button variant="secondary" disabled>
+                              Rehire Pending
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="primary"
+                              onClick={() => handleRehireClick(selectedEmployee)}
+                              disabled={isProcessingId === selectedEmployee.id}
+                            >
+                              Request Rehire
+                            </Button>
+                          )
                         )}
                         {canRequestEmployeeLifecycle && selectedEmployee.status !== 'terminated' && (
                           <Button
@@ -3065,7 +3050,7 @@ export const EmployeeManagement: React.FC<{
                     Request Rehire / Reinstate Employee
                   </h2>
                   <p className="text-gray-600 dark:text-gray-400 text-sm mt-1">
-                    Fill in the employee details below
+                    The system generates the effective hired date when the request is finally approved.
                   </p>
                 </div>
 
@@ -3169,19 +3154,6 @@ export const EmployeeManagement: React.FC<{
 
                       <div className="grid grid-cols-2 gap-4 mt-4">
                         <div>
-                          <label htmlFor="rehire-start-date" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                            Hired Date <span className="text-red-500">*</span>
-                          </label>
-                          <input
-                            id="rehire-start-date"
-                            type="date"
-                            value={rehireRequestForm.rehireStartDate}
-                            onChange={(event) => setRehireRequestForm({ ...rehireRequestForm, rehireStartDate: event.target.value })}
-                            className="w-full px-3 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-400 focus:border-transparent outline-none transition-all"
-                          />
-                        </div>
-
-                        <div>
                           <label htmlFor="rehire-salary" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
                             Daily Rate
                           </label>
@@ -3249,7 +3221,6 @@ export const EmployeeManagement: React.FC<{
                         setRehireRequestForm({
                           reason: '',
                           evidence: '',
-                          rehireStartDate: '',
                           rehirePosition: '',
                           rehireDepartment: '',
                           rehireSalary: '',
@@ -3263,7 +3234,7 @@ export const EmployeeManagement: React.FC<{
                     <button
                       type="button"
                       onClick={handleRehireRequestSubmit}
-                      disabled={isProcessingId === employeeToRehire.id || rehireRequestForm.reason.trim().length < 3 || !rehireRequestForm.rehireStartDate || !rehireRequestForm.rehirePosition.trim() || !rehireRequestForm.rehireRole.trim()}
+                      disabled={isProcessingId === employeeToRehire.id || rehireRequestForm.reason.trim().length < 3 || !rehireRequestForm.rehirePosition.trim() || !rehireRequestForm.rehireRole.trim()}
                       className={`px-5 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-all duration-200 hover:shadow-md active:shadow-sm ${isProcessingId === employeeToRehire.id ? 'opacity-50 cursor-not-allowed' : ''}`}
                     >
                       {isProcessingId === employeeToRehire.id ? 'Submitting...' : 'Submit Rehire Request'}

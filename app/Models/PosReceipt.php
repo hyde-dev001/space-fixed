@@ -11,6 +11,7 @@ class PosReceipt extends Model
 
     protected $fillable = [
         'pos_transaction_id',
+        'shop_owner_id',
         'receipt_no',
         'official_series',
         'issued_at',
