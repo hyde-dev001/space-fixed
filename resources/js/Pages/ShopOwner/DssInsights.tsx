@@ -770,7 +770,7 @@ const DssInsights: React.FC = () => {
             >
               <span className="text-xl font-bold leading-none">!</span>
               {(data?.recommendations?.length ?? 0) > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 min-w-5 h-5 px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
+                <span className="absolute -top-1.5 -right-1.5 min-w-5 h-5 px-1 rounded-full bg-white text-red-600 text-[10px] font-bold flex items-center justify-center ring-1 ring-red-200 dark:bg-gray-800 dark:text-red-400 dark:ring-red-900/50">
                   {Math.min(99, data?.recommendations.length ?? 0)}
                 </span>
               )}
