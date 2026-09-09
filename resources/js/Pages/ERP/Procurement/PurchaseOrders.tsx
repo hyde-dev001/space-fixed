@@ -720,8 +720,6 @@ export default function PurchaseOrders() {
 	return (
 		<AppLayoutERP hideHeader={isAnyModalOpen}>
 			<Head title="Purchase Orders - Solespace" />
-			{isAnyModalOpen && <div className="fixed inset-0 z-40" />}
-
 			<div className="p-6 space-y-6">
 				<div className="flex flex-col items-end lg:flex-row lg:items-center lg:justify-end gap-4">
 					<h1 className="sr-only">Purchase Orders</h1>

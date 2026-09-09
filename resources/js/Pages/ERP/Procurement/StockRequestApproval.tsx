@@ -489,8 +489,6 @@ export default function StockRequest() {
 	return (
 		<AppLayoutERP hideHeader={isAnyModalOpen}>
 			<Head title="Stock Replenishment Approval - Solespace" />
-			{isAnyModalOpen && <div className="fixed inset-0 z-40" />}
-
 			<div className="p-6 space-y-6">
 				<h1 className="sr-only">Stock Replenishment Approval</h1>
 

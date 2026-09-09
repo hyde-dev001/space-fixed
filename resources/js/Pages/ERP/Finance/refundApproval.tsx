@@ -1939,7 +1939,7 @@ export default function RefundApproval() {
 			)}
 
 			{activeImage && (
-				<div className="fixed inset-0 z-[1000000] flex items-center justify-center bg-black/80 p-6" onClick={() => setActiveImage(null)}>
+				<div className="fixed inset-0 z-[1000000] flex items-center justify-center bg-black/80 p-6 erp-modal-backdrop" onClick={() => setActiveImage(null)}>
 					<button
 						aria-label="Close image preview"
 						className="absolute top-4 right-4 text-white/80 hover:text-white"
