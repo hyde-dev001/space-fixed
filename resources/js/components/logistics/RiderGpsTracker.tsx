@@ -246,7 +246,6 @@ export default function RiderGpsTracker({
   const [serverRoute, setServerRoute] = useState<LiveTrackingRoute | null>(null);
   const [status, setStatus] = useState<'idle' | 'locating' | 'active' | 'offline' | 'error'>('idle');
   const [message, setMessage] = useState<string | null>(null);
-  const [lastSentAt, setLastSentAt] = useState<string | null>(null);
   const [currentPosition, setCurrentPosition] = useState<SentPosition | null>(null);
   const lastPosition = useRef<SentPosition | null>(null);
   const latestPosition = useRef<SentPosition | null>(null);
@@ -261,7 +260,6 @@ export default function RiderGpsTracker({
     setTracking(false);
     setCurrentPosition(null);
     setServerRoute(null);
-    setLastSentAt(null);
     setMessage(null);
     setStatus('idle');
     latestPosition.current = null;
@@ -382,7 +380,6 @@ export default function RiderGpsTracker({
         }
 
         lastPosition.current = nextPosition;
-        setLastSentAt(new Date(nextPosition.timestamp).toISOString());
         setMessage(null);
         setStatus('active');
         const moved = !previousPosition || distanceMeters(previousPosition, nextPosition) >= 25;
@@ -452,22 +449,6 @@ export default function RiderGpsTracker({
 
   if (!enabled) return null;
 
-  const toggleTracking = () => {
-    if (tracking) {
-      setTracking(false);
-      setStatus('idle');
-      setMessage(null);
-      setCurrentPosition(null);
-      setServerRoute(null);
-      latestPosition.current = null;
-      lastPosition.current = null;
-      return;
-    }
-
-    setMessage(null);
-    setTracking(true);
-  };
-
   const destinationPoint = destinationCoordinates(destination);
   const destinationLabel = destinationLabelProp ?? (destination?.type === 'shop' ? 'repair shop' : 'customer');
   const directRoute: LiveTrackingRoute | null = currentPosition && destinationPoint ? {
@@ -508,79 +489,59 @@ export default function RiderGpsTracker({
 
   return (
     <section
-      aria-label="GPS tracking"
-      className="mt-5 rounded-xl border border-slate-300 bg-slate-100 p-4 dark:border-slate-700 dark:bg-slate-900"
+      aria-label={'Route to ' + destinationLabel}
+      className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900"
     >
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h4 className="font-bold text-slate-950 dark:text-white">GPS tracking</h4>
-          <p role="status" aria-live="polite" className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-            {status === 'active' && 'GPS tracking active'}
-            {status === 'locating' && 'Getting your current location…'}
-            {status === 'offline' && 'Waiting for an internet connection'}
-            {status === 'error' && 'GPS tracking needs attention'}
-            {status === 'idle' && 'GPS tracking starts automatically while this delivery is active.'}
-          </p>
-          {lastSentAt && (
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-              Last GPS update {new Date(lastSentAt).toLocaleTimeString()}
-            </p>
-          )}
-          {tracking && currentPosition && currentPosition.accuracy_m !== null && currentPosition.accuracy_m > MAX_TRACKING_ACCURACY_M && (
-            <p role="status" className="mt-1 text-xs font-semibold text-slate-700 dark:text-slate-300">
-              GPS accuracy is approximate. A cellphone with location services will give a more accurate rider position.
-            </p>
-          )}
-          {tracking && currentPosition?.source === 'public_ip' && (
-            <p role="status" className="mt-1 text-xs font-semibold text-slate-700 dark:text-slate-300">
-              Using an approximate public network location. A cellphone with location services will give a more accurate rider position.
-            </p>
-          )}
-        </div>
-        <button
-          type="button"
-          onClick={toggleTracking}
-          disabled={!online && !tracking}
-          className="min-h-11 touch-manipulation rounded-xl border border-slate-950 px-4 text-sm font-bold text-slate-950 transition-colors hover:bg-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white dark:text-white dark:hover:bg-slate-800 dark:focus:ring-white"
-        >
-          {tracking ? 'Stop GPS tracking' : 'Start GPS tracking'}
-        </button>
-      </div>
-      {tracking && !currentPosition && destinationPoint && (
-        <p role="status" className="mt-3 text-sm font-semibold text-slate-800 dark:text-slate-200">
-          Waiting for your GPS position to show the route.
-        </p>
-      )}
-      {tracking && !destinationPoint && (
-        <p role="status" className="mt-3 text-sm font-semibold text-slate-700 dark:text-slate-300">
-          The {destinationLabel} map pin is unavailable. Use the Directions button above for navigation.
-        </p>
-      )}
-      {mapLocations.length > 0 && (
-        <div className="mt-4 overflow-hidden rounded-xl border border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-900">
-          <div className="flex flex-col gap-2 border-b border-slate-200 p-3 dark:border-slate-700 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <h5 className="font-bold text-slate-950 dark:text-white">Route to {destinationLabel}</h5>
-              <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-                {destination?.address || destination?.name || 'Delivery destination'}
+      {mapLocations.length > 0 ? (
+        <>
+          <header className="flex flex-col gap-3 border-b border-slate-200 p-4 sm:flex-row sm:items-start sm:justify-between dark:border-slate-700">
+            <div className="min-w-0">
+              <p className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                Route to {destinationLabel}
+              </p>
+              <h4 className="mt-1 text-base font-bold text-slate-950 dark:text-white">
+                {destination?.name || 'Delivery destination'}
+              </h4>
+              <p className="mt-1 break-words text-sm leading-6 text-slate-600 dark:text-slate-300">
+                {destination?.address || 'Address unavailable'}
               </p>
             </div>
             {route && (
-              <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-                ETA {Math.max(1, Math.ceil(route.duration_s / 60))} min · {formatDistance(route.distance_m)}
-              </p>
+              <dl className="grid shrink-0 grid-cols-2 gap-x-5 text-left sm:text-right">
+                <div>
+                  <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">ETA</dt>
+                  <dd className="mt-1 text-sm font-bold text-slate-950 dark:text-white">{Math.max(1, Math.ceil(route.duration_s / 60))} min</dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Distance</dt>
+                  <dd className="mt-1 text-sm font-bold text-slate-950 dark:text-white">{formatDistance(route.distance_m)}</dd>
+                </div>
+              </dl>
             )}
-          </div>
-          <LiveTrackingMap locations={mapLocations} label={'Rider route to ' + destinationLabel + ' map'} followLocation viewer="rider" />
-          <p className="border-t border-slate-200 px-3 py-2 text-xs text-slate-500 dark:border-slate-700 dark:text-slate-400">
+          </header>
+          <LiveTrackingMap locations={mapLocations} label={destinationLabel + ' route map'} followLocation viewer="rider" />
+          <p className="border-t border-slate-200 px-4 py-3 text-xs leading-5 text-slate-500 dark:border-slate-700 dark:text-slate-400">
             {route?.source === 'road'
               ? 'Fastest available road route. Use Directions above for turn-by-turn navigation.'
               : 'Road route is unavailable right now. Use Directions above for turn-by-turn navigation.'}
           </p>
+        </>
+      ) : (
+        <div className="p-4">
+          {tracking && !currentPosition && destinationPoint && (
+            <p role="status" className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+              Waiting for your current location to show the route.
+            </p>
+          )}
+          {tracking && !destinationPoint && (
+            <p role="status" className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+              The {destinationLabel} map pin is unavailable. Use the Directions button above for navigation.
+            </p>
+          )}
         </div>
       )}
       {message && (
-        <p role="alert" className="mt-3 text-sm font-semibold text-slate-900 dark:text-white">
+        <p role="alert" className="border-t border-slate-200 px-4 py-3 text-sm font-semibold text-slate-900 dark:border-slate-700 dark:text-white">
           {message}
         </p>
       )}

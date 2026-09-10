@@ -382,7 +382,7 @@ export default function LiveTrackingMap({ locations, label = 'Live rider map', f
     : primaryDestination;
   return (
     <div className="relative w-full">
-      <div ref={containerRef} className="h-72 w-full isolate overflow-hidden rounded-xl bg-gray-200 [&_.leaflet-control-zoom_a]:!h-11 [&_.leaflet-control-zoom_a]:!w-11 sm:h-96 dark:bg-slate-800" aria-label={label} />
+      <div ref={containerRef} className="isolate h-[24rem] w-full overflow-hidden bg-white [&_.leaflet-control-zoom_a]:!h-11 [&_.leaflet-control-zoom_a]:!w-11 sm:h-[32rem] lg:h-[38rem] dark:bg-slate-900" aria-label={label} />
     </div>
   );
 }

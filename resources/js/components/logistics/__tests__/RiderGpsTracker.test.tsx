@@ -62,7 +62,14 @@ describe('RiderGpsTracker', () => {
   it('automatically starts tracking and sends the browser GPS reading to the assigned leg', async () => {
     mocks.getPosition.mockResolvedValue(position());
 
-    render(<RiderGpsTracker legId={42} enabled online />);
+    render(
+      <RiderGpsTracker
+        legId={42}
+        enabled
+        online
+        destination={{ name: 'Customer', address: 'Customer address', latitude: 14.4, longitude: 121.05 }}
+      />,
+    );
 
     await waitFor(() => expect(mocks.recordLocation).toHaveBeenCalledWith(42, {
       latitude: 14.3001,
@@ -72,7 +79,10 @@ describe('RiderGpsTracker', () => {
       heading_deg: 90,
       recorded_at: '2026-09-04T00:00:00.000Z',
     }));
-    expect(screen.getByText('GPS tracking active')).toBeVisible();
+    expect(screen.queryByText('GPS tracking active')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Last GPS update/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Stop GPS tracking' })).not.toBeInTheDocument();
+    expect(await screen.findByTestId('rider-route-map')).toBeVisible();
   });
   it('automatically resumes tracking after the rider refreshes the delivery page', async () => {
     mocks.getPosition.mockResolvedValue(position());
@@ -88,7 +98,7 @@ describe('RiderGpsTracker', () => {
       latitude: 14.3001,
       longitude: 120.9501,
     })));
-    expect(screen.getByRole('button', { name: 'Stop GPS tracking' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Stop GPS tracking' })).not.toBeInTheDocument();
   });
 
   it('updates the rider marker from live GPS watch readings', async () => {
@@ -144,7 +154,7 @@ describe('RiderGpsTracker', () => {
       recorded_at: expect.any(String),
     })));
     expect(mocks.recordLocation.mock.calls[0][1]).not.toHaveProperty('accuracy_m');
-    expect(screen.getByText(/approximate public network location/i)).toBeVisible();
+    expect(screen.getByTestId('rider-route-map')).toBeVisible();
   });
   it('replaces an approximate IP marker with an accurate watchPosition reading', async () => {
     let onPosition: PositionCallback | null = null;

@@ -1,4 +1,4 @@
-import { cleanup, render, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import LiveTrackingMap from '../LiveTrackingMap';
 
@@ -110,6 +110,7 @@ describe('LiveTrackingMap', () => {
   it('recalculates the map without clearing already loaded map tiles', async () => {
     render(<LiveTrackingMap locations={[]} />);
 
+    expect(screen.getByLabelText('Live rider map')).toHaveClass('h-[24rem]', 'sm:h-[32rem]', 'lg:h-[38rem]', 'bg-white');
     await waitFor(() => expect(leaflet.mapFactory).toHaveBeenCalled());
     expect(resizeObserver.observe).toHaveBeenCalled();
     expect(resizeCallback).toBeTypeOf('function');
