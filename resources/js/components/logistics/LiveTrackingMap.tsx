@@ -77,7 +77,7 @@ const normalizedHeading = (value: number | null): number | null => {
   return ((value % 360) + 360) % 360;
 };
 
-const MOTORCYCLE_IMAGE = '/images/logistics/delivery-bike.png';
+const MOTORCYCLE_IMAGE = '/images/logistics/bikers.png';
 
 const riderIcon = (
   L: typeof import('leaflet'),
