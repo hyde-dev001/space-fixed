@@ -14,6 +14,16 @@ interface ActiveSession {
     current: boolean;
 }
 
+interface SecurityRoutes {
+    setup: string;
+    verify: string;
+    recovery: string;
+    disable: string;
+    activity: string;
+    sessions?: string;
+    logoutOtherSessions?: string;
+}
+
 interface PaginationMeta {
     current_page: number;
     last_page: number;
@@ -32,6 +42,8 @@ interface Props {
     enabled: boolean;
     activity?: SecurityActivity[];
     active_sessions?: ActiveSession[];
+    routes?: Partial<SecurityRoutes>;
+    showSessions?: boolean;
 }
 
 interface SetupResponse {
@@ -84,7 +96,16 @@ function HistoryRows({ history, activity }: HistoryRowsProps) {
     return <div className="divide-y divide-gray-200 dark:divide-gray-700">{history.data.map((session, index) => <div key={session.device + "-" + session.last_active_at + "-" + index} className="flex items-center justify-between gap-4 px-6 py-4"><div><p className="font-medium text-gray-900 dark:text-white">{session.device}</p><p className="text-sm text-gray-500 dark:text-gray-400">Last active {formatActivityDate(session.last_active_at)}</p></div>{session.current && <span className="rounded border border-green-200 px-2 py-1 text-xs font-medium text-green-700">This device</span>}</div>)}</div>;
 }
 
-export default function EmployeeTotpSecurity({ enabled, activity = [], active_sessions = [] }: Props) {
+export default function EmployeeTotpSecurity({ enabled, activity = [], active_sessions = [], routes, showSessions = true }: Props) {
+    const securityRoutes = {
+        setup: routes?.setup ?? route("erp.security.totp.setup"),
+        verify: routes?.verify ?? route("erp.security.totp.verify"),
+        recovery: routes?.recovery ?? route("erp.security.totp.recovery.regenerate"),
+        disable: routes?.disable ?? route("erp.security.totp.disable"),
+        activity: routes?.activity ?? route("erp.security.activity"),
+        sessions: routes?.sessions,
+        logoutOtherSessions: routes?.logoutOtherSessions,
+    };
     const [totpEnabled, setTotpEnabled] = useState(enabled);
     const [modal, setModal] = useState<Modal>(null);
     const [setupStep, setSetupStep] = useState<SetupStep>("password");
@@ -120,7 +141,7 @@ export default function EmployeeTotpSecurity({ enabled, activity = [], active_se
 
         try {
             const response = await axios.post<SetupResponse>(
-                route("erp.security.totp.setup"),
+                securityRoutes.setup,
                 { current_password: currentPassword },
             );
 
@@ -140,7 +161,7 @@ export default function EmployeeTotpSecurity({ enabled, activity = [], active_se
 
         try {
             const response = await axios.post<{ recovery_codes: string[] }>(
-                route("erp.security.totp.verify"),
+                securityRoutes.verify,
                 { code },
             );
 
@@ -163,7 +184,7 @@ export default function EmployeeTotpSecurity({ enabled, activity = [], active_se
 
         try {
             const response = await axios.post<{ recovery_codes: string[] }>(
-                route("erp.security.totp.recovery.regenerate"),
+                securityRoutes.recovery,
                 {
                     current_password: currentPassword,
                     code,
@@ -185,7 +206,7 @@ export default function EmployeeTotpSecurity({ enabled, activity = [], active_se
         setError("");
 
         try {
-            await axios.post(route("erp.security.totp.disable"), {
+            await axios.post(securityRoutes.disable, {
                 current_password: currentPassword,
                 code,
             });
@@ -203,8 +224,14 @@ export default function EmployeeTotpSecurity({ enabled, activity = [], active_se
         setProcessing(true);
         setSessionError("");
 
+        if (!securityRoutes.logoutOtherSessions) {
+            setSessionError("Active sessions are not available for this account.");
+            setProcessing(false);
+            return;
+        }
+
         try {
-            await axios.post(route("erp.security.sessions.logout-others"));
+            await axios.post(securityRoutes.logoutOtherSessions);
             setActiveSessions((sessions) => sessions.filter((session) => session.current));
         } catch (requestError) {
             setSessionError(errorMessage(requestError, "Unable to log out other sessions."));
@@ -219,10 +246,15 @@ export default function EmployeeTotpSecurity({ enabled, activity = [], active_se
         setHistoryError("");
         try {
             if (view === "activity") {
-                const response = await axios.get<PaginatedResponse<SecurityActivity>>(route("erp.security.activity"), { params: { page, per_page: 10 } });
+                const response = await axios.get<PaginatedResponse<SecurityActivity>>(securityRoutes.activity, { params: { page, per_page: 10 } });
                 setActivityHistory(response.data);
             } else {
-                const response = await axios.get<PaginatedResponse<ActiveSession>>(route("erp.security.sessions.index"), { params: { page, per_page: 10 } });
+                if (!showSessions || !securityRoutes.sessions) {
+                    setHistoryError("Active sessions are not available for this account.");
+                    return;
+                }
+
+                const response = await axios.get<PaginatedResponse<ActiveSession>>(securityRoutes.sessions, { params: { page, per_page: 10 } });
                 setSessionHistory(response.data);
             }
         } catch (requestError) {
@@ -630,6 +662,7 @@ export default function EmployeeTotpSecurity({ enabled, activity = [], active_se
                 </div>
             </div>
 
+            {showSessions && (
             <div className="mt-8 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
                 <div className="flex flex-col justify-between gap-4 border-b border-gray-200 px-8 py-6 md:flex-row md:items-center dark:border-gray-700">
                     <div>
@@ -673,6 +706,7 @@ export default function EmployeeTotpSecurity({ enabled, activity = [], active_se
                 </div>
                 {sessionError && <p className="px-8 py-4 text-sm text-red-600">{sessionError}</p>}
             </div>
+            )}
 
             <div className="mt-8 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
                 <div className="flex items-center justify-between border-b border-gray-200 px-8 py-6 dark:border-gray-700">

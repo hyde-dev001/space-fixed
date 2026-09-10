@@ -4,10 +4,14 @@ namespace App\Http\Controllers\UserSide;
 
 use App\Exceptions\IdentityDocumentScreeningException;
 use App\Http\Controllers\Controller;
+use App\Models\AuditLog;
 use App\Models\IdentityVerification;
+use App\Models\HR\AuditLog as HrAuditLog;
 use App\Models\User;
 use App\Rules\ValidIdentityDocumentImage;
+use App\Services\EmployeeSecurityService;
 use App\Services\IdentityVerificationService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -20,12 +24,20 @@ use Inertia\Inertia;
 
 class CustomerProfileController extends Controller
 {
+    public function __construct(private readonly EmployeeSecurityService $security)
+    {
+    }
+
     public function show(Request $request)
     {
         $user = Auth::guard('user')->user();
 
         if ($user && $user->shop_owner_id) {
             return redirect()->route('erp.profile');
+        }
+
+        if (! $user instanceof User || ! $user->isCustomerAccount()) {
+            abort(403);
         }
 
         $user->load('latestIdentityVerification');
@@ -42,6 +54,36 @@ class CustomerProfileController extends Controller
                 'profile_photo_url' => $user->profile_photo ? "/storage/{$user->profile_photo}" : null,
             ],
             'identity_verification' => $this->identityPayload($user),
+            'security' => [
+                'totp_enabled' => $user->hasCustomerTotpEnabled(),
+                'activity' => $this->securityActivityQuery($user)
+                    ->latest()
+                    ->limit(5)
+                    ->get()
+                    ->map(fn (AuditLog $log): array => $this->securityActivityPayload($log))
+                    ->values()
+                    ->all(),
+            ],
+        ]);
+    }
+
+    public function securityActivity(Request $request): JsonResponse
+    {
+        $user = $this->customerSecurityUser();
+        $paginator = $this->securityActivityQuery($user)
+            ->latest()
+            ->paginate($this->perPage($request));
+
+        return response()->json([
+            'data' => $paginator->getCollection()
+                ->map(fn (AuditLog $log): array => $this->securityActivityPayload($log))
+                ->values(),
+            'meta' => [
+                'current_page' => $paginator->currentPage(),
+                'last_page' => $paginator->lastPage(),
+                'per_page' => $paginator->perPage(),
+                'total' => $paginator->total(),
+            ],
         ]);
     }
 
@@ -174,6 +216,10 @@ class CustomerProfileController extends Controller
             return redirect()->route('erp.profile');
         }
 
+        if (! $user instanceof User || ! $user->isCustomerAccount()) {
+            abort(403);
+        }
+
         $validated = $request->validate([
             'first_name' => 'required|string|max:255',
             'last_name' => 'required|string|max:255',
@@ -262,6 +308,10 @@ class CustomerProfileController extends Controller
             return redirect()->route('erp.profile');
         }
 
+        if (! $user instanceof User || ! $user->isCustomerAccount()) {
+            abort(403);
+        }
+
         $request->validate([
             'current_password' => ['required'],
             'password' => ['required', 'confirmed', Password::min(8)->mixedCase()->numbers()->symbols()],
@@ -278,6 +328,13 @@ class CustomerProfileController extends Controller
             'password' => Hash::make($request->password),
         ]);
 
+        $this->security->auditCustomer(
+            $user,
+            'customer_password_changed',
+            'Customer changed their password.',
+            HrAuditLog::SEVERITY_WARNING,
+        );
+
         if ($request->expectsJson()) {
             return response()->json([
                 'message' => 'Password updated successfully',
@@ -285,5 +342,53 @@ class CustomerProfileController extends Controller
         }
 
         return back()->with('success', 'Password updated successfully');
+    }
+
+    private function customerSecurityUser(): User
+    {
+        $user = Auth::guard('user')->user();
+
+        if (! $user instanceof User || ! $user->isCustomerAccount()) {
+            abort(403);
+        }
+
+        return $user;
+    }
+
+    private function securityActivityQuery(User $user)
+    {
+        return AuditLog::query()
+            ->where('user_id', $user->getKey())
+            ->where('actor_user_id', $user->getKey())
+            ->where('object_type', User::class)
+            ->where('object_id', $user->getKey())
+            ->where('target_type', 'customer_security')
+            ->where('target_id', $user->getKey());
+    }
+
+    private function securityActivityPayload(AuditLog $log): array
+    {
+        $metadata = is_array($log->metadata) ? $log->metadata : [];
+
+        return [
+            'action' => $log->action,
+            'label' => match ($log->action) {
+                'customer_password_changed' => 'Password changed',
+                'customer_totp_enabled' => 'Two-factor authentication enabled',
+                'customer_totp_disabled' => 'Two-factor authentication disabled',
+                'customer_totp_verified' => 'Two-factor authentication verified',
+                'customer_totp_recovery_codes_regenerated' => 'Recovery codes regenerated',
+                'customer_login_succeeded' => 'Successful login',
+                'customer_login_failed' => 'Failed sign-in attempt',
+                default => str($log->action)->replace('_', ' ')->title()->toString(),
+            },
+            'description' => (string) ($metadata['description'] ?? 'Security activity recorded.'),
+            'created_at' => $log->created_at?->toIso8601String(),
+        ];
+    }
+
+    private function perPage(Request $request): int
+    {
+        return min(25, max(1, $request->integer('per_page', 10)));
     }
 }

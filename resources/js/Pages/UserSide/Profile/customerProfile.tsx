@@ -4,6 +4,7 @@ import Navigation from '../Shared/Navigation';
 import Swal from '../Shared/UserModal';
 import { useBadgeCounts } from '../../../hooks/useBadgeCounts';
 import { CustomerFooterReveal } from '../../../components/common/CustomerFooter';
+import EmployeeTotpSecurity from '../../../components/UserProfile/EmployeeTotpSecurity';
 import IdentityVerificationPanel, { type CustomerIdentityVerification } from './IdentityVerificationPanel';
 
 type ProfileData = {
@@ -33,6 +34,15 @@ type PageProps = {
 	orderStatusCount?: number;
 	repairStatusCount?: number;
 	identity_verification: CustomerIdentityVerification | null;
+	security?: {
+		totp_enabled: boolean;
+		activity: Array<{
+			action: string;
+			label: string;
+			description: string;
+			created_at?: string | null;
+		}>;
+	};
 };
 
 const CustomerProfile: React.FC = () => {
@@ -44,6 +54,7 @@ const CustomerProfile: React.FC = () => {
 		orderStatusCount = 0,
 		repairStatusCount = 0,
 		identity_verification,
+		security = { totp_enabled: false, activity: [] },
 	} = page.props;
 	const [profileData, setProfileData] = useState<ProfileData>({
 		firstName: user.first_name || '',
@@ -60,6 +71,9 @@ const CustomerProfile: React.FC = () => {
 	const [newPassword, setNewPassword] = useState('');
 	const [confirmPassword, setConfirmPassword] = useState('');
 	const [isSubmitting, setIsSubmitting] = useState(false);
+	const [isDesktopProfile, setIsDesktopProfile] = useState(() =>
+		typeof window !== 'undefined' && window.innerWidth >= 1280
+	);
 
 	useEffect(() => {
 		if (!isEditingPersonal) {
@@ -75,6 +89,13 @@ const CustomerProfile: React.FC = () => {
 		setPhotoPreview(previewUrl);
 		return () => URL.revokeObjectURL(previewUrl);
 	}, [photoFile]);
+
+	useEffect(() => {
+		const updateProfileLayout = () => setIsDesktopProfile(window.innerWidth >= 1280);
+		window.addEventListener('resize', updateProfileLayout);
+
+		return () => window.removeEventListener('resize', updateProfileLayout);
+	}, []);
 
 	const updateProfileField = (field: keyof ProfileData, value: string) => {
 		setProfileData((prev) => ({ ...prev, [field]: value }));
@@ -342,6 +363,20 @@ const CustomerProfile: React.FC = () => {
 		`h-5 w-5 transition-all duration-300 ${isActive ? 'scale-110' : 'scale-100'}`;
 	const mobileNavLabelClasses = (isActive: boolean) =>
 		`transition-all duration-300 ${isActive ? 'font-semibold' : 'font-normal'}`;
+	const customerSecurityPanel = (
+		<EmployeeTotpSecurity
+			enabled={security.totp_enabled}
+			activity={security.activity}
+			showSessions={false}
+			routes={{
+				setup: route('customer.security.totp.setup'),
+				verify: route('customer.security.totp.verify'),
+				recovery: route('customer.security.totp.recovery.regenerate'),
+				disable: route('customer.security.totp.disable'),
+				activity: route('customer.security.activity'),
+			}}
+		/>
+	);
 
 	// Show flash messages
 	useEffect(() => {
@@ -504,6 +539,7 @@ const CustomerProfile: React.FC = () => {
 								</div>
 							</div>
 						)}
+						{!isDesktopProfile && <div className="mt-8">{customerSecurityPanel}</div>}
 					</div>
 
 					<IdentityVerificationPanel
@@ -632,6 +668,7 @@ const CustomerProfile: React.FC = () => {
 						</div>
 					</form>
 					</div>
+					{isDesktopProfile && <div className="mt-8">{customerSecurityPanel}</div>}
 				</div>
 			</div>
 

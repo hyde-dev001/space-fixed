@@ -3,9 +3,11 @@ import { useRef, useState } from "react";
 
 interface Props {
     companyAccount: string;
+    verifyRoute?: string;
+    loginRoute?: string;
 }
 
-export default function EmployeeMfaChallenge({ companyAccount }: Props) {
+export default function EmployeeMfaChallenge({ companyAccount, verifyRoute, loginRoute }: Props) {
     const [recoveryMode, setRecoveryMode] = useState(false);
     const inputRefs = useRef<Array<HTMLInputElement | null>>([]);
     const { data, setData, post, processing, errors } = useForm({ code: "" });
@@ -24,7 +26,7 @@ export default function EmployeeMfaChallenge({ companyAccount }: Props) {
 
     const submit = (event: React.FormEvent<HTMLFormElement>) => {
         event.preventDefault();
-        post(route("erp.mfa.challenge.verify"));
+        post(verifyRoute ?? route("erp.mfa.challenge.verify"));
     };
 
     return (
@@ -106,7 +108,7 @@ export default function EmployeeMfaChallenge({ companyAccount }: Props) {
                     </form>
 
                     <Link
-                        href={route("login")}
+                        href={loginRoute ?? route("login")}
                         className="mt-6 block text-center text-sm font-medium text-blue-600 hover:underline"
                     >
                         Back to login

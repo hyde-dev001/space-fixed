@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Models\Employee;
+use App\Models\AuditLog as GeneralAuditLog;
 use App\Models\HR\AuditLog;
 use App\Models\User;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use InvalidArgumentException;
 
 final class EmployeeSecurityService
 {
@@ -110,6 +112,33 @@ final class EmployeeSecurityService
             'description' => $description,
             'severity' => $severity,
             'tags' => ['employee_security'],
+        ]);
+    }
+
+    public function auditCustomer(
+        User $target,
+        string $action,
+        string $description,
+        string $severity = AuditLog::SEVERITY_WARNING,
+    ): void {
+        if (! $target->isCustomerAccount()) {
+            throw new InvalidArgumentException('Customer security audits require a customer account.');
+        }
+
+        GeneralAuditLog::create([
+            'user_id' => $target->getKey(),
+            'actor_user_id' => $target->getKey(),
+            'action' => $action,
+            'object_type' => User::class,
+            'object_id' => $target->getKey(),
+            'target_type' => 'customer_security',
+            'target_id' => $target->getKey(),
+            'metadata' => [
+                'description' => $description,
+                'severity' => $severity,
+                'ip_address' => request()->ip(),
+                'user_agent' => request()->userAgent(),
+            ],
         ]);
     }
 

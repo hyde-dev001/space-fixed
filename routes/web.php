@@ -195,6 +195,22 @@ Route::post('/orders/refunds/{id}/mark-shipped-return', [OrderController::class,
 Route::get('/customer-profile', [CustomerProfileController::class, 'show'])->middleware('auth:user')->name('customer-profile');
 Route::post('/customer-profile', [CustomerProfileController::class, 'update'])->middleware('auth:user')->name('customer-profile.update');
 Route::post('/customer-profile/password', [CustomerProfileController::class, 'updatePassword'])->middleware(['auth:user', 'throttle:5,1'])->name('customer-profile.password');
+Route::get('/customer-profile/security/activity', [CustomerProfileController::class, 'securityActivity'])
+    ->middleware(['auth:user', 'customer.account', 'throttle:30,1'])
+    ->name('customer.security.activity');
+Route::middleware(['auth:user', 'customer.account', 'throttle:10,1'])
+    ->prefix('customer-profile/security/totp')
+    ->name('customer.security.totp.')
+    ->group(function () {
+        Route::post('/setup', [\App\Http\Controllers\EmployeeMfaController::class, 'customerSetup'])->name('setup');
+        Route::post('/verify', [\App\Http\Controllers\EmployeeMfaController::class, 'customerVerifySetup'])->name('verify');
+        Route::post('/recovery-codes/regenerate', [\App\Http\Controllers\EmployeeMfaController::class, 'customerRegenerateRecoveryCodes'])->name('recovery.regenerate');
+        Route::post('/disable', [\App\Http\Controllers\EmployeeMfaController::class, 'customerDisable'])->name('disable');
+    });
+Route::middleware(['throttle:10,1'])->group(function () {
+    Route::get('/customer/mfa/challenge', [\App\Http\Controllers\EmployeeMfaController::class, 'customerChallenge'])->name('customer.mfa.challenge');
+    Route::post('/customer/mfa/challenge', [\App\Http\Controllers\EmployeeMfaController::class, 'customerVerifyLogin'])->name('customer.mfa.challenge.verify');
+});
 Route::post('/customer-profile/identity-verifications/resubmit', [CustomerProfileController::class, 'resubmitIdentity'])
     ->middleware('auth:user')
     ->name('customer.identity-verifications.resubmit');
