@@ -92,4 +92,48 @@ class RouteEstimationServiceTest extends TestCase
         $this->assertNull($service->estimate(['latitude' => 100, 'longitude' => 120], $point));
         $this->assertNull($service->estimate(['latitude' => 14, 'longitude' => 'not-a-coordinate'], $point));
     }
+
+    public function test_it_projects_a_gps_point_onto_the_nearest_route_segment(): void
+    {
+        $route = [
+            [14.5995, 120.9842],
+            [14.5995, 120.9942],
+        ];
+
+        $projection = app(RouteEstimationService::class)->projectOntoRoute(
+            ['latitude' => 14.5996, 'longitude' => 120.9892],
+            $route,
+        );
+
+        $this->assertNotNull($projection);
+        $this->assertEqualsWithDelta(14.5995, $projection['point']['latitude'], 0.00001);
+        $this->assertEqualsWithDelta(120.9892, $projection['point']['longitude'], 0.00001);
+        $this->assertGreaterThan(0, $projection['distance_m']);
+        $this->assertGreaterThan(0, $projection['progress_m']);
+    }
+
+    public function test_it_trims_passed_route_geometry_and_does_not_move_backwards_within_tolerance(): void
+    {
+        $route = [
+            [14.5995, 120.9842],
+            [14.5995, 120.9942],
+            [14.5995, 121.0042],
+        ];
+        $service = app(RouteEstimationService::class);
+
+        $trimmed = $service->trimRoute(
+            $route,
+            ['latitude' => 14.5995, 'longitude' => 120.9992],
+            25,
+        );
+
+        $this->assertNotNull($trimmed);
+        $this->assertCount(2, $trimmed['geometry']);
+        $this->assertEqualsWithDelta(120.9992, $trimmed['geometry'][0][1], 0.00001);
+        $this->assertSame($trimmed['geometry'], $service->trimRoute(
+            $trimmed['geometry'],
+            ['latitude' => 14.5995, 'longitude' => 120.9990],
+            25,
+        )['geometry']);
+    }
 }

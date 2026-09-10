@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Http;
 class RouteEstimationService
 {
     /** @return array{distance_m: float, duration_s: int, geometry: array<int, array{0: float, 1: float}>, source: string}|null */
-    public function estimate(?array $from, ?array $to): ?array
+    public function estimate(?array $from, ?array $to, bool $useCache = true): ?array
     {
         $origin = $this->coordinates($from);
         $destination = $this->coordinates($to);
@@ -24,20 +24,153 @@ class RouteEstimationService
             $this->cacheCoordinate($destination['longitude']),
         ]));
 
-        return Cache::remember(
-            $key,
-            now()->addSeconds(max(1, (int) config('logistics_tracking.routing.cache_seconds', 60))),
-            function () use ($origin, $destination): ?array {
-                $roadRoute = $this->roadEstimate($origin, $destination);
-                if ($roadRoute) {
-                    return $roadRoute;
-                }
+        $estimate = function () use ($origin, $destination): ?array {
+            $roadRoute = $this->roadEstimate($origin, $destination);
+            if ($roadRoute) {
+                return $roadRoute;
+            }
 
-                return (bool) config('logistics_tracking.routing.fallback_to_direct', true)
-                    ? $this->directEstimate($origin, $destination)
-                    : null;
-            },
-        );
+            return (bool) config('logistics_tracking.routing.fallback_to_direct', true)
+                ? $this->directEstimate($origin, $destination)
+                : null;
+        };
+
+        return $useCache
+            ? Cache::remember(
+                $key,
+                now()->addSeconds(max(1, (int) config('logistics_tracking.routing.cache_seconds', 60))),
+                $estimate,
+            )
+            : $estimate();
+    }
+
+    /** @param array<int, array{0: int|float|string, 1: int|float|string}> $geometry */
+    public function distanceForGeometry(array $geometry): float
+    {
+        $geometry = $this->normaliseGeometry($geometry);
+        $distance = 0.0;
+
+        foreach (array_keys($geometry) as $index) {
+            if (! isset($geometry[$index + 1])) {
+                break;
+            }
+
+            $distance += $this->distanceMeters(
+                $geometry[$index][0],
+                $geometry[$index][1],
+                $geometry[$index + 1][0],
+                $geometry[$index + 1][1],
+            );
+        }
+
+        return $distance;
+    }
+
+    /**
+     * @param  array{latitude: int|float|string, longitude: int|float|string}  $point
+     * @param  array<int, array{0: int|float|string, 1: int|float|string}>  $geometry
+     * @return array{point: array{latitude: float, longitude: float}, distance_m: float, progress_m: float, segment_index: int}|null
+     */
+    public function projectOntoRoute(array $point, array $geometry): ?array
+    {
+        $point = $this->coordinates($point);
+        $geometry = $this->normaliseGeometry($geometry);
+
+        if (! $point || count($geometry) < 2) {
+            return null;
+        }
+
+        $metersPerLatitude = 111320.0;
+        $metersPerLongitude = max(0.0001, $metersPerLatitude * cos(deg2rad($point['latitude'])));
+        $best = null;
+        $travelled = 0.0;
+
+        foreach (array_keys($geometry) as $index) {
+            if (! isset($geometry[$index + 1])) {
+                break;
+            }
+
+            [$startLatitude, $startLongitude] = $geometry[$index];
+            [$endLatitude, $endLongitude] = $geometry[$index + 1];
+            $startX = ($startLongitude - $point['longitude']) * $metersPerLongitude;
+            $startY = ($startLatitude - $point['latitude']) * $metersPerLatitude;
+            $endX = ($endLongitude - $point['longitude']) * $metersPerLongitude;
+            $endY = ($endLatitude - $point['latitude']) * $metersPerLatitude;
+            $deltaX = $endX - $startX;
+            $deltaY = $endY - $startY;
+            $segmentLengthSquared = ($deltaX ** 2) + ($deltaY ** 2);
+            $segmentLength = sqrt($segmentLengthSquared);
+            $ratio = $segmentLengthSquared > 0
+                ? (($startX * -$deltaX) + ($startY * -$deltaY)) / $segmentLengthSquared
+                : 0.0;
+            $ratio = min(1.0, max(0.0, $ratio));
+            $projectedX = $startX + ($deltaX * $ratio);
+            $projectedY = $startY + ($deltaY * $ratio);
+            $distanceSquared = ($projectedX ** 2) + ($projectedY ** 2);
+
+            if ($best === null || $distanceSquared < $best['distance_squared']) {
+                $best = [
+                    'distance_squared' => $distanceSquared,
+                    'point' => [
+                        'latitude' => (float) ($point['latitude'] + ($projectedY / $metersPerLatitude)),
+                        'longitude' => (float) ($point['longitude'] + ($projectedX / $metersPerLongitude)),
+                    ],
+                    'progress_m' => $travelled + ($segmentLength * $ratio),
+                    'segment_index' => $index,
+                ];
+            }
+
+            $travelled += $segmentLength;
+        }
+
+        return $best === null
+            ? null
+            : [
+                'point' => $best['point'],
+                'distance_m' => sqrt($best['distance_squared']),
+                'progress_m' => $best['progress_m'],
+                'segment_index' => $best['segment_index'],
+            ];
+    }
+
+    /**
+     * @param  array<int, array{0: int|float|string, 1: int|float|string}>  $geometry
+     * @param  array{latitude: int|float|string, longitude: int|float|string}  $point
+     * @return array{geometry: array<int, array{0: float, 1: float}>, projected_point: array{latitude: float, longitude: float}, distance_to_route_m: float, progress_m: float}|null
+     */
+    public function trimRoute(array $geometry, array $point, float $toleranceMeters = 25): ?array
+    {
+        $geometry = $this->normaliseGeometry($geometry);
+        $projection = $this->projectOntoRoute($point, $geometry);
+
+        if (! $projection) {
+            return null;
+        }
+
+        if ($projection['progress_m'] <= max(0, $toleranceMeters)) {
+            return [
+                'geometry' => $geometry,
+                'projected_point' => $projection['point'],
+                'distance_to_route_m' => $projection['distance_m'],
+                'progress_m' => $projection['progress_m'],
+            ];
+        }
+
+        $trimmed = [[$projection['point']['latitude'], $projection['point']['longitude']]];
+        foreach (array_slice($geometry, $projection['segment_index'] + 1) as $coordinate) {
+            $trimmed[] = $coordinate;
+        }
+
+        if (count($trimmed) === 1) {
+            $trimmed[] = $geometry[array_key_last($geometry)];
+        }
+
+        return [
+            'geometry' => $trimmed,
+            'projected_point' => $projection['point'],
+            'distance_to_route_m' => $projection['distance_m'],
+            'progress_m' => $projection['progress_m'],
+        ];
     }
 
     /** @return array{latitude: float, longitude: float}|null */
@@ -60,6 +193,29 @@ class RouteEstimationService
     private function cacheCoordinate(float $coordinate): string
     {
         return number_format(round($coordinate, 3), 3, '.', '');
+    }
+
+    /** @param array<int, array{0: mixed, 1: mixed}> $geometry */
+    private function normaliseGeometry(array $geometry): array
+    {
+        $normalised = [];
+        foreach ($geometry as $coordinate) {
+            if (! is_array($coordinate)
+                || ! is_numeric($coordinate[0] ?? null)
+                || ! is_numeric($coordinate[1] ?? null)) {
+                continue;
+            }
+
+            $latitude = (float) $coordinate[0];
+            $longitude = (float) $coordinate[1];
+            if ($latitude < -90 || $latitude > 90 || $longitude < -180 || $longitude > 180) {
+                continue;
+            }
+
+            $normalised[] = [$latitude, $longitude];
+        }
+
+        return $normalised;
     }
 
     /** @param array{latitude: float, longitude: float} $origin */

@@ -20,15 +20,35 @@ const leaflet = vi.hoisted(() => {
   const marker = {
     addTo: vi.fn(),
     bindTooltip: vi.fn(),
+    getElement: vi.fn(() => null),
+    removeFrom: vi.fn(),
+    setIcon: vi.fn(),
     setLatLng: vi.fn(),
-    setStyle: vi.fn(),
+    setOpacity: vi.fn(),
     unbindTooltip: vi.fn(),
   };
   marker.addTo.mockReturnValue(marker);
   marker.bindTooltip.mockReturnValue(marker);
+  marker.removeFrom.mockReturnValue(marker);
+  marker.setIcon.mockReturnValue(marker);
   marker.setLatLng.mockReturnValue(marker);
-  marker.setStyle.mockReturnValue(marker);
+  marker.setOpacity.mockReturnValue(marker);
   marker.unbindTooltip.mockReturnValue(marker);
+
+  const destinationMarker = {
+    addTo: vi.fn(),
+    bindTooltip: vi.fn(),
+    removeFrom: vi.fn(),
+    setLatLng: vi.fn(),
+    setStyle: vi.fn(),
+    unbindTooltip: vi.fn(),
+  };
+  destinationMarker.addTo.mockReturnValue(destinationMarker);
+  destinationMarker.bindTooltip.mockReturnValue(destinationMarker);
+  destinationMarker.removeFrom.mockReturnValue(destinationMarker);
+  destinationMarker.setLatLng.mockReturnValue(destinationMarker);
+  destinationMarker.setStyle.mockReturnValue(destinationMarker);
+  destinationMarker.unbindTooltip.mockReturnValue(destinationMarker);
 
   const route = {
     addTo: vi.fn(),
@@ -46,6 +66,9 @@ const leaflet = vi.hoisted(() => {
     map,
     mapFactory: vi.fn(() => map),
     markerFactory: vi.fn(() => marker),
+    destinationMarker,
+    destinationMarkerFactory: vi.fn(() => destinationMarker),
+    divIconFactory: vi.fn((options) => options),
     polylineFactory: vi.fn(() => route),
     route,
     tile,
@@ -54,9 +77,11 @@ const leaflet = vi.hoisted(() => {
 });
 
 vi.mock('leaflet', () => ({
-  circleMarker: leaflet.markerFactory,
+  circleMarker: leaflet.destinationMarkerFactory,
+  divIcon: leaflet.divIconFactory,
   latLngBounds: leaflet.latLngBounds,
   map: leaflet.mapFactory,
+  marker: leaflet.markerFactory,
   polyline: leaflet.polylineFactory,
   tileLayer: leaflet.tileLayer,
 }));
@@ -173,5 +198,95 @@ describe('LiveTrackingMap', () => {
       [14.62, 121.0],
       [14.7, 121.05],
     ]));
+  });
+
+  it('animates a rider marker between accepted location samples', async () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+
+    const firstLocation = {
+      leg_id: 9,
+      shipment_id: 1,
+      shipment_reference: 'SHP-1',
+      rider: { id: 1, name: 'Rider' },
+      status: 'active',
+      destination: {},
+      location: {
+        latitude: 14.6,
+        longitude: 120.98,
+        accuracy_m: null,
+        speed_mps: null,
+        heading_deg: null,
+        recorded_at: null,
+        received_at: null,
+      },
+      stale: false,
+    };
+    const view = render(<LiveTrackingMap locations={[firstLocation]} />);
+
+    await waitFor(() => expect(leaflet.markerFactory).toHaveBeenCalled());
+    frames.length = 0;
+    view.rerender(
+      <LiveTrackingMap
+        locations={[{
+          ...firstLocation,
+          location: { ...firstLocation.location, latitude: 14.61, longitude: 120.99 },
+        }]}
+      />,
+    );
+
+    await waitFor(() => expect(frames.length).toBeGreaterThan(0));
+    expect(leaflet.marker.setLatLng).not.toHaveBeenLastCalledWith([14.61, 120.99]);
+  });
+
+  it('does not replace a newer canonical route with an older route response', async () => {
+    const newerRoute = {
+      source: 'road' as const,
+      distance_m: 1000,
+      duration_s: 120,
+      route_version: 2,
+      updated_at: '2026-09-09T00:00:02.000Z',
+      geometry: [[14.6, 120.98], [14.65, 121.0]] as [number, number][],
+    };
+    const olderRoute = {
+      ...newerRoute,
+      distance_m: 2000,
+      route_version: 1,
+      updated_at: '2026-09-09T00:00:01.000Z',
+      geometry: [[14.6, 120.98], [14.7, 121.05]] as [number, number][],
+    };
+    const location = {
+      leg_id: 10,
+      shipment_id: 1,
+      shipment_reference: 'SHP-1',
+      rider: { id: 1, name: 'Rider' },
+      status: 'active',
+      destination: {},
+      location: {
+        latitude: 14.6,
+        longitude: 120.98,
+        accuracy_m: null,
+        speed_mps: null,
+        heading_deg: null,
+        recorded_at: null,
+        received_at: null,
+      },
+      stale: false,
+      route: newerRoute,
+    };
+    const view = render(<LiveTrackingMap locations={[location]} />);
+
+    await waitFor(() => expect(leaflet.polylineFactory).toHaveBeenCalled());
+    leaflet.route.setLatLngs.mockClear();
+    view.rerender(<LiveTrackingMap locations={[{ ...location, route: olderRoute }]} />);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(leaflet.route.setLatLngs).not.toHaveBeenCalledWith([
+      [14.6, 120.98],
+      [14.7, 121.05],
+    ]);
   });
 });

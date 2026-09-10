@@ -194,6 +194,23 @@ const isLiveTrackingRoute = (value: unknown): value is LiveTrackingRoute => {
       && typeof point[1] === 'number'
       && Number.isFinite(point[1]));
 };
+
+const acceptsRoute = (current: LiveTrackingRoute | null, next: LiveTrackingRoute): boolean => {
+  if (!current) return true;
+
+  const currentVersion = current.route_version;
+  const nextVersion = next.route_version;
+  if (typeof currentVersion === 'number' && typeof nextVersion === 'number') {
+    if (nextVersion < currentVersion) return false;
+    if (nextVersion > currentVersion) return true;
+  }
+
+  const currentUpdatedAt = current.updated_at ? Date.parse(current.updated_at) : NaN;
+  const nextUpdatedAt = next.updated_at ? Date.parse(next.updated_at) : NaN;
+  return !Number.isFinite(currentUpdatedAt)
+    || !Number.isFinite(nextUpdatedAt)
+    || nextUpdatedAt >= currentUpdatedAt;
+};
 const isPermissionDenied = (error: unknown): boolean => (
   typeof error === 'object'
   && error !== null
@@ -358,7 +375,10 @@ export default function RiderGpsTracker({
         if (cancelled) return;
         const responseRoute = response?.data?.route;
         if (latestPosition.current?.timestamp === nextPosition.timestamp) {
-          setServerRoute(isLiveTrackingRoute(responseRoute) ? responseRoute : null);
+          const nextRoute = isLiveTrackingRoute(responseRoute) ? responseRoute : null;
+          if (nextRoute) {
+            setServerRoute((currentRoute) => acceptsRoute(currentRoute, nextRoute) ? nextRoute : currentRoute);
+          }
         }
 
         lastPosition.current = nextPosition;

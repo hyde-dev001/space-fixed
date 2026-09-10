@@ -240,6 +240,76 @@ describe('RiderGpsTracker', () => {
     expect(screen.getByText(/Road route is unavailable right now/)).toBeVisible();
   });
 
+  it('keeps a newer route version when a later response is stale', async () => {
+    let onPosition: PositionCallback | null = null;
+    mocks.watchPosition.mockImplementation((success: PositionCallback) => {
+      onPosition = success;
+      return 9;
+    });
+    mocks.getPosition.mockResolvedValue(position());
+    mocks.recordLocation
+      .mockResolvedValueOnce({
+        data: {
+          accepted: true,
+          route: {
+            source: 'road',
+            distance_m: 1000,
+            duration_s: 120,
+            route_version: 2,
+            updated_at: '2026-09-09T00:00:02.000Z',
+            geometry: [[14.3001, 120.9501], [14.31, 121.0]],
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          accepted: true,
+          route: {
+            source: 'direct',
+            distance_m: 2000,
+            duration_s: 240,
+            route_version: 1,
+            updated_at: '2026-09-09T00:00:01.000Z',
+            geometry: [[14.3001, 120.9501], [14.32, 121.02]],
+          },
+        },
+      });
+
+    const view = render(
+      <RiderGpsTracker
+        legId={42}
+        enabled
+        online
+        destination={{ latitude: 14.4, longitude: 121.05, address: 'Customer address' }}
+      />,
+    );
+
+    await waitFor(() => expect(screen.getByTestId('rider-route-map')).toHaveTextContent('road'));
+    const moved = position(Date.parse('2026-09-04T00:00:30.000Z'));
+    Object.defineProperty(moved.coords, 'latitude', { value: 14.31 });
+    Object.defineProperty(moved.coords, 'longitude', { value: 120.96 });
+    act(() => onPosition?.(moved));
+    view.rerender(
+      <RiderGpsTracker
+        legId={42}
+        enabled
+        online={false}
+        destination={{ latitude: 14.4, longitude: 121.05, address: 'Customer address' }}
+      />,
+    );
+    view.rerender(
+      <RiderGpsTracker
+        legId={42}
+        enabled
+        online
+        destination={{ latitude: 14.4, longitude: 121.05, address: 'Customer address' }}
+      />,
+    );
+
+    await waitFor(() => expect(mocks.recordLocation).toHaveBeenCalledTimes(2));
+    expect(screen.getByTestId('rider-route-map')).toHaveTextContent('road');
+  });
+
   it('uses the server-provided road route for the rider map', async () => {
     mocks.getPosition.mockResolvedValue(position());
     mocks.recordLocation.mockResolvedValue({

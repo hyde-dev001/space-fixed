@@ -67,6 +67,7 @@ class Employee extends Model
     ];
 
     protected $hidden = [
+        'password',
         'privileged_suspension_id',
     ];
 

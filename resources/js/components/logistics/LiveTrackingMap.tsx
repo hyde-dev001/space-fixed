@@ -69,15 +69,128 @@ const formatDistance = (meters: number): string => meters >= 1000
 
 const formatEta = (seconds: number): string => `${Math.max(1, Math.ceil(seconds / 60))} min`;
 
+type Point = [number, number];
+
+const normalizedHeading = (value: number | null): number | null => {
+  if (value === null || !Number.isFinite(value)) return null;
+  return ((value % 360) + 360) % 360;
+};
+
+const riderIcon = (
+  L: typeof import('leaflet'),
+  heading: number | null,
+) => {
+  return L.divIcon({
+    className: 'live-rider-marker',
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+    html: heading === null ? '●' : '<span style=transform:rotate(' + heading + 'deg)>▲</span>',
+  });
+};
+
 export default function LiveTrackingMap({ locations, label = 'Live rider map', followLocation = false, viewer = 'customer' }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<import('leaflet').Map | null>(null);
   const leafletRef = useRef<typeof import('leaflet') | null>(null);
-  const markersRef = useRef(new Map<number, import('leaflet').CircleMarker>());
+  const markersRef = useRef(new Map<number, import('leaflet').Marker>());
   const destinationMarkersRef = useRef(new Map<number, import('leaflet').CircleMarker>());
   const routesRef = useRef(new Map<number, import('leaflet').Polyline>());
+  const routeStateRef = useRef(new Map<number, LiveTrackingRoute | null>());
+  const routeVersionRef = useRef(new Map<number, { version?: number; updatedAt?: number }>());
+  const displayedPointsRef = useRef(new Map<number, Point>());
+  const animationFramesRef = useRef(new Map<number, number>());
+  const headingsRef = useRef(new Map<number, number>());
   const [mapReady, setMapReady] = useState(false);
   const hasFittedRef = useRef(false);
+
+  const cancelMarkerAnimation = (legId: number): void => {
+    const frame = animationFramesRef.current.get(legId);
+    if (frame !== undefined) {
+      window.cancelAnimationFrame?.(frame);
+      animationFramesRef.current.delete(legId);
+    }
+  };
+
+  const animateMarker = (marker: import('leaflet').Marker, legId: number, target: Point): void => {
+    const previous = displayedPointsRef.current.get(legId);
+    cancelMarkerAnimation(legId);
+
+    if (!previous
+      || (previous[0] === target[0] && previous[1] === target[1])
+      || typeof window.requestAnimationFrame !== 'function') {
+      marker.setLatLng(target);
+      displayedPointsRef.current.set(legId, target);
+      return;
+    }
+
+    const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const step = (timestamp: number): void => {
+      const progress = Math.min(1, Math.max(0, (timestamp - startedAt) / 900));
+      const eased = progress * (2 - progress);
+      const point: Point = [
+        previous[0] + ((target[0] - previous[0]) * eased),
+        previous[1] + ((target[1] - previous[1]) * eased),
+      ];
+      marker.setLatLng(point);
+      displayedPointsRef.current.set(legId, point);
+
+      if (progress < 1) {
+        animationFramesRef.current.set(legId, window.requestAnimationFrame(step));
+      } else {
+        animationFramesRef.current.delete(legId);
+        displayedPointsRef.current.set(legId, target);
+      }
+    };
+
+    animationFramesRef.current.set(legId, window.requestAnimationFrame(step));
+  };
+
+  const headingFor = (legId: number, value: number | null): number | null => {
+    const heading = normalizedHeading(value);
+    if (heading === null) return null;
+
+    const previous = headingsRef.current.get(legId);
+    if (previous !== undefined) {
+      const delta = Math.abs(heading - previous);
+      if (Math.min(delta, 360 - delta) < 8) return previous;
+    }
+
+    headingsRef.current.set(legId, heading);
+    return heading;
+  };
+
+  const acceptedRouteFor = (entry: LiveRiderLocation): LiveTrackingRoute | null => {
+    const incoming = entry.route ?? null;
+    const previous = routeStateRef.current.get(entry.leg_id) ?? null;
+    if (!incoming) {
+      routeStateRef.current.set(entry.leg_id, null);
+      routeVersionRef.current.delete(entry.leg_id);
+      return null;
+    }
+
+    const previousMeta = routeVersionRef.current.get(entry.leg_id);
+    const incomingVersion = typeof incoming.route_version === 'number' && Number.isFinite(incoming.route_version)
+      ? incoming.route_version
+      : undefined;
+    const incomingUpdatedAt = incoming.updated_at ? Date.parse(incoming.updated_at) : undefined;
+    const isOlderVersion = incomingVersion !== undefined
+      && previousMeta?.version !== undefined
+      && incomingVersion < previousMeta.version;
+    const isOlderTimestamp = incomingVersion !== undefined
+      && previousMeta?.version === incomingVersion
+      && incomingUpdatedAt !== undefined
+      && previousMeta.updatedAt !== undefined
+      && incomingUpdatedAt < previousMeta.updatedAt;
+
+    if (previous && (isOlderVersion || isOlderTimestamp)) return previous;
+
+    routeStateRef.current.set(entry.leg_id, incoming);
+    routeVersionRef.current.set(entry.leg_id, {
+      version: incomingVersion,
+      updatedAt: incomingUpdatedAt,
+    });
+    return incoming;
+  };
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -110,9 +223,15 @@ export default function LiveTrackingMap({ locations, label = 'Live rider map', f
 
     return () => {
       disposed = true;
+      animationFramesRef.current.forEach((frame) => window.cancelAnimationFrame?.(frame));
+      animationFramesRef.current.clear();
       markersRef.current.clear();
       destinationMarkersRef.current.clear();
       routesRef.current.clear();
+      routeStateRef.current.clear();
+      routeVersionRef.current.clear();
+      displayedPointsRef.current.clear();
+      headingsRef.current.clear();
       resizeObserver?.disconnect();
       resizeObserver = null;
       map?.remove();
@@ -133,8 +252,13 @@ export default function LiveTrackingMap({ locations, label = 'Live rider map', f
 
     markersRef.current.forEach((marker, legId) => {
       if (!visibleIds.has(legId)) {
+        cancelMarkerAnimation(legId);
         marker.removeFrom(map);
         markersRef.current.delete(legId);
+        routeStateRef.current.delete(legId);
+        routeVersionRef.current.delete(legId);
+        displayedPointsRef.current.delete(legId);
+        headingsRef.current.delete(legId);
       }
     });
     destinationMarkersRef.current.forEach((marker, legId) => {
@@ -158,26 +282,24 @@ export default function LiveTrackingMap({ locations, label = 'Live rider map', f
       const deliveryLabel = entry.delivery_label ? ' · ' + entry.delivery_label : '';
       const tooltip = riderLabel + deliveryLabel + (entry.stale ? ' - Stale location' : '');
       const existing = markersRef.current.get(entry.leg_id);
+      const heading = headingFor(entry.leg_id, entry.location.heading_deg);
+      const route = acceptedRouteFor(entry);
 
       if (existing) {
+        animateMarker(existing, entry.leg_id, point);
         existing
-          .setLatLng(point)
-          .setStyle({
-            color: entry.stale ? '#64748b' : '#ffffff',
-            fillColor: entry.stale ? '#cbd5e1' : '#1677e8',
-            weight: 3,
-          })
+          .setIcon(riderIcon(L, heading))
+          .setOpacity(entry.stale ? 0.65 : 1)
           .unbindTooltip()
           .bindTooltip(tooltip);
       } else {
-        const marker = L.circleMarker(point, {
-          radius: 8,
-          color: entry.stale ? '#64748b' : '#ffffff',
-          fillColor: entry.stale ? '#cbd5e1' : '#1677e8',
-          weight: 3,
-          fillOpacity: 0.9,
+        const marker = L.marker(point, {
+          icon: riderIcon(L, heading),
+          keyboard: false,
+          opacity: entry.stale ? 0.65 : 1,
         }).addTo(map).bindTooltip(tooltip);
         markersRef.current.set(entry.leg_id, marker);
+        displayedPointsRef.current.set(entry.leg_id, point);
       }
 
       const destination = destinationPoint(entry);
@@ -209,7 +331,7 @@ export default function LiveTrackingMap({ locations, label = 'Live rider map', f
         destinationMarkersRef.current.delete(entry.leg_id);
       }
 
-      const geometry = entry.route?.source === 'direct' ? [] : entry.route?.geometry ?? [];
+      const geometry = route?.source === 'direct' ? [] : route?.geometry ?? [];
       const routeGeometry = geometry.length >= 2 ? [point, ...geometry.slice(1)] : geometry;
       const existingRoute = routesRef.current.get(entry.leg_id);
       if (routeGeometry.length >= 2) {

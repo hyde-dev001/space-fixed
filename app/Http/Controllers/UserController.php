@@ -12,6 +12,7 @@ use App\Rules\NotDisposableEmail;
 use App\Rules\ValidIdentityDocumentImage;
 use App\Services\Authentication\UnifiedLoginContextResolver;
 use App\Services\HR\EmployeeOperationalPolicy;
+use App\Services\EmployeeSecurityService;
 use App\Services\IdentityVerificationService;
 use App\Services\NominatimService;
 use Illuminate\Auth\Events\Registered;
@@ -36,6 +37,7 @@ class UserController extends Controller
         private readonly EmployeeOperationalPolicy $employeePolicy,
         private readonly UnifiedLoginContextResolver $loginContext,
         private readonly ShopOwnerAuthController $shopOwnerAuth,
+        private readonly EmployeeSecurityService $security,
     )
     {
     }
@@ -617,15 +619,27 @@ class UserController extends Controller
             }
 
             if ($context !== 'user') {
+                $candidateUser = User::query()
+                    ->whereRaw('LOWER(email) = ?', [strtolower((string) $credentials['email'])])
+                    ->first();
+                if ($candidateUser?->isEmployeeAccount()) {
+                    $this->auditEmployeeSignIn($candidateUser, 'employee_login_failed', 'Failed employee sign-in attempt.');
+                }
+
                 throw ValidationException::withMessages([
                     'email' => ['Invalid email or password.'],
                 ]);
             }
 
             $user = User::where('email', $credentials['email'])->first();
+            $employee = null;
             $passwordHash = $user?->getAuthPassword() ?: self::DUMMY_PASSWORD_HASH;
 
             if (! $user || ! Hash::check((string) $credentials['password'], (string) $passwordHash)) {
+                if ($user?->isEmployeeAccount()) {
+                    $this->auditEmployeeSignIn($user, 'employee_login_failed', 'Failed employee sign-in attempt.');
+                }
+
                 throw ValidationException::withMessages([
                     'email' => ['Invalid email or password.'],
                 ]);
@@ -677,7 +691,9 @@ class UserController extends Controller
                 }
 
                 if ($employees->count() === 1) {
-                    if (! $this->employeePolicy->canAuthenticate($employees->first())) {
+                    $employee = $employees->first();
+
+                    if (! $this->employeePolicy->canAuthenticate($employee)) {
                         throw ValidationException::withMessages([
                             'email' => ['Your account has been suspended. Please contact support.'],
                         ]);
@@ -685,8 +701,35 @@ class UserController extends Controller
                 }
             }
 
+            if ($user->isEmployeeAccount() && $user->hasEmployeeTotpEnabled()) {
+                Auth::guard('user')->logout();
+                $request->session()->regenerate();
+                $request->session()->put([
+                    'employee_mfa_pending_user_id' => $user->getKey(),
+                    'employee_mfa_pending_security_version' => (int) ($user->security_version ?: 1),
+                    'employee_mfa_pending_remember' => $request->boolean('remember'),
+                ]);
+                $request->session()->save();
+
+                if ($request->header('X-Inertia')) {
+                    return redirect()->route('erp.mfa.challenge');
+                }
+
+                if ($request->expectsJson()) {
+                    return response()->json([
+                        'success' => false,
+                        'requires_mfa' => true,
+                        'redirect' => route('erp.mfa.challenge'),
+                    ], 202);
+                }
+
+                return redirect()->route('erp.mfa.challenge');
+            }
+
             Auth::guard('user')->login($user, $request->filled('remember'));
             $request->session()->regenerate();
+
+            $this->security->markAuthenticated($request, $user);
 
             // CRITICAL: Explicitly save the session to ensure it persists
             $request->session()->save();
@@ -700,7 +743,16 @@ class UserController extends Controller
 
             // Use the shared account classifier so employees are not treated as customers.
 
-            $isEmployee = ! $user->isCustomerAccount();
+            $isEmployee = $user->isEmployeeAccount();
+            if ($isEmployee && $employee instanceof Employee) {
+                $this->security->audit(
+                    $user,
+                    'employee_login_succeeded',
+                    'Employee signed in successfully.',
+                    $employee,
+                    \App\Models\HR\AuditLog::SEVERITY_INFO,
+                );
+            }
 
             // Default redirect for customer accounts.
             $redirectUrl = route('landing');
@@ -769,6 +821,26 @@ class UserController extends Controller
 
             return back()->withErrors(['email' => 'Login failed. Please try again.']);
         }
+    }
+
+    private function auditEmployeeSignIn(User $user, string $action, string $description): void
+    {
+        $employee = Employee::query()
+            ->where('shop_owner_id', $user->shop_owner_id)
+            ->whereRaw('LOWER(email) = ?', [strtolower((string) $user->email)])
+            ->first();
+
+        if (! $employee) {
+            return;
+        }
+
+        $this->security->audit(
+            $user,
+            $action,
+            $description,
+            $employee,
+            \App\Models\HR\AuditLog::SEVERITY_WARNING,
+        );
     }
 
     /**
