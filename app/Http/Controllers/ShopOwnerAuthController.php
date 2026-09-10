@@ -11,6 +11,7 @@ use App\Enums\ShopOwnerStatus;
 use App\Models\ShopDocument;
 use App\Models\Employee;
 use App\Models\User;
+use App\Services\EmployeeMfaService;
 use App\Services\ShopOwnerDocumentRequirementService;
 use App\Services\ShopDocumentLifecycleService;
 use Illuminate\Http\Request;
@@ -23,6 +24,7 @@ use App\Rules\NotDisposableEmail;
 use Inertia\Inertia;
 use Inertia\Response as InertiaResponse;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
@@ -41,15 +43,18 @@ class ShopOwnerAuthController extends Controller
     public function __construct(
         private readonly ShopOwnerDocumentRequirementService $documentRequirements,
         private readonly ShopDocumentLifecycleService $documentLifecycle,
+        private readonly EmployeeMfaService $mfa,
     ) {}
 
     private const MAX_RESUBMISSION_ATTEMPTS = 3;
     private const REGISTRATION_EMAIL_OTP_TTL_MINUTES = 10;
     private const REGISTRATION_EMAIL_OTP_MAX_ATTEMPTS = 5;
     private const REGISTRATION_EMAIL_VERIFIED_TTL_MINUTES = 60;
-    private const LOGIN_EMAIL_OTP_TTL_MINUTES = 10;
-    private const LOGIN_EMAIL_OTP_MAX_ATTEMPTS = 5;
+    private const LOGIN_TOTP_TTL_MINUTES = 10;
+    private const LOGIN_TOTP_MAX_ATTEMPTS = 5;
+    private const LOGIN_TWO_FACTOR_ATTEMPTS_SESSION_KEY = 'shop_owner_2fa_attempts';
     private const LOGIN_TWO_FACTOR_SESSION_KEY = 'shop_owner_2fa_entry';
+    private const LOGIN_TOTP_ENROLLMENT_SESSION_KEY = 'shop_owner_totp_login_enrollment';
     private const DUMMY_PASSWORD_HASH = '$2y$10$5n3DruMVEXy/QDrfseoa.uJ3ed2F8YjGuWk8rbM.tE0uNTd85ew.C';
 
     /**
@@ -1111,19 +1116,34 @@ class ShopOwnerAuthController extends Controller
 
             $remember = (bool) $request->boolean('remember');
 
-            if ((bool) ($shopOwner->two_factor_email_enabled ?? false)) {
+            if ($shopOwner->hasTotpEnabled()) {
                 $this->beginLoginTwoFactorChallenge($request, $shopOwner, $remember);
 
                 if ($request->expectsJson()) {
                     return response()->json([
                         'success' => true,
                         'requires_two_factor' => true,
-                        'message' => 'Verification code sent to your email.',
+                        'message' => 'Authenticator verification required.',
                         'redirect' => route('shop-owner.two-factor.challenge'),
                     ], 202);
                 }
 
-                return redirect()->route('shop-owner.two-factor.challenge')->with('status', 'otp-sent');
+                return redirect()->route('shop-owner.two-factor.challenge');
+            }
+
+            if ((bool) ($shopOwner->two_factor_email_enabled ?? false)) {
+                $this->beginLoginTwoFactorEnrollment($request, $shopOwner, $remember);
+
+                if ($request->expectsJson()) {
+                    return response()->json([
+                        'success' => true,
+                        'requires_two_factor_setup' => true,
+                        'message' => 'Authenticator setup is required before you can sign in.',
+                        'redirect' => route('shop-owner.two-factor.enroll'),
+                    ], 202);
+                }
+
+                return redirect()->route('shop-owner.two-factor.enroll');
             }
 
             // Login the shop owner using shop_owner guard
@@ -1191,13 +1211,42 @@ class ShopOwnerAuthController extends Controller
             return redirect()->route('shop-owner.login.form');
         }
 
-        $entry = $this->readLoginTwoFactorEntry($request, (int) $shopOwner->id);
-        $secondsRemaining = max(0, ((int) ($entry['expires_at'] ?? now()->timestamp)) - now()->timestamp);
+        if ($request->session()->has(self::LOGIN_TOTP_ENROLLMENT_SESSION_KEY)) {
+            return redirect()->route('shop-owner.two-factor.enroll');
+        }
 
-        return Inertia::render('UserSide/Auth/ShopOwnerTwoFactor', [
-            'status' => session('status'),
-            'email' => $this->maskEmail((string) $shopOwner->email),
-            'seconds_remaining' => $secondsRemaining,
+        return Inertia::render('ERP/EmployeeMfaChallenge', [
+            'companyAccount' => (string) $shopOwner->email,
+            'verifyRoute' => route('shop-owner.two-factor.verify'),
+            'loginRoute' => route('login'),
+        ]);
+    }
+
+    public function showTwoFactorEnrollment(Request $request)
+    {
+        $shopOwner = $this->resolvePendingTwoFactorShopOwner($request);
+        $pending = $shopOwner ? $this->pendingLoginEnrollment($request, $shopOwner) : null;
+
+        if (! $shopOwner || $pending === null) {
+            $this->clearLoginTwoFactorChallenge($request, $shopOwner?->getKey());
+
+            return redirect()->route('shop-owner.login.form');
+        }
+
+        try {
+            $secret = Crypt::decryptString($pending['secret']);
+        } catch (\Throwable) {
+            $this->clearLoginTwoFactorChallenge($request, (int) $shopOwner->getKey());
+
+            return redirect()->route('shop-owner.login.form');
+        }
+
+        return Inertia::render('UserSide/Auth/ShopOwnerTotpEnrollment', [
+            'qr_code' => $this->mfa->qrDataUri(
+                $this->mfa->provisioningUriForEmail((string) $shopOwner->email, $secret),
+            ),
+            'manual_key' => $secret,
+            'expires_at' => $pending['expires_at'],
         ]);
     }
 
@@ -1208,59 +1257,95 @@ class ShopOwnerAuthController extends Controller
     {
         try {
             $validated = $request->validate([
-                'otp' => ['required', 'digits:6'],
+                'code' => ['required', 'string', 'max:32'],
             ]);
 
             $shopOwner = $this->resolvePendingTwoFactorShopOwner($request);
             if (!$shopOwner) {
                 throw ValidationException::withMessages([
-                    'otp' => ['Your login session expired. Please sign in again.'],
+                    'code' => ['Your login session expired. Please sign in again.'],
                 ]);
             }
 
-            $entry = $this->readLoginTwoFactorEntry($request, (int) $shopOwner->id);
-            if (!is_array($entry)) {
+            if ($request->session()->has(self::LOGIN_TOTP_ENROLLMENT_SESSION_KEY)) {
                 throw ValidationException::withMessages([
-                    'otp' => ['Verification code expired. Please request a new code.'],
+                    'code' => ['Authenticator setup is required before you can sign in.'],
                 ]);
             }
 
-            if ((int) ($entry['attempts'] ?? 0) >= self::LOGIN_EMAIL_OTP_MAX_ATTEMPTS) {
+            $attempts = (int) $request->session()->get(self::LOGIN_TWO_FACTOR_ATTEMPTS_SESSION_KEY, 0);
+            if ($attempts >= self::LOGIN_TOTP_MAX_ATTEMPTS) {
                 $this->clearLoginTwoFactorChallenge($request, (int) $shopOwner->id);
 
                 throw ValidationException::withMessages([
-                    'otp' => ['Too many failed attempts. Please sign in again.'],
+                    'code' => ['Too many failed attempts. Please sign in again.'],
                 ]);
             }
 
-            if ((int) ($entry['expires_at'] ?? 0) < now()->timestamp) {
-                $this->clearLoginTwoFactorChallenge($request, (int) $shopOwner->id);
+            $code = trim((string) $validated['code']);
+            $method = preg_match('/\A\d{6}\z/', $code) === 1 ? 'totp' : 'recovery_code';
+            $authenticatedOwner = DB::transaction(function () use ($shopOwner, $request, $code, $method): ShopOwner|false {
+                $lockedOwner = ShopOwner::query()
+                    ->whereKey($shopOwner->getKey())
+                    ->lockForUpdate()
+                    ->first();
+
+                if (! $lockedOwner instanceof ShopOwner
+                    || ! $this->isApprovedShopOwner($lockedOwner)
+                    || ! $lockedOwner->hasTotpEnabled()) {
+                    return false;
+                }
+
+                if ($method === 'totp') {
+                    $secret = $lockedOwner->shop_owner_totp_secret;
+                    $acceptedTimestep = is_string($secret)
+                        ? $this->mfa->consumeTotpState(
+                            $secret,
+                            $lockedOwner->shop_owner_totp_last_used_timestep,
+                            $code,
+                            intdiv(now()->timestamp, 30),
+                        )
+                        : false;
+
+                    if (! is_int($acceptedTimestep)) {
+                        return false;
+                    }
+
+                    $lockedOwner->shop_owner_totp_last_used_timestep = $acceptedTimestep;
+                } else {
+                    $remainingCodes = $this->mfa->consumeRecoveryCodeFromHashes(
+                        is_array($lockedOwner->shop_owner_totp_recovery_codes)
+                            ? $lockedOwner->shop_owner_totp_recovery_codes
+                            : [],
+                        $code,
+                    );
+
+                    if ($remainingCodes === false) {
+                        return false;
+                    }
+
+                    $lockedOwner->shop_owner_totp_recovery_codes = $remainingCodes;
+                }
+
+                $lockedOwner->save();
+
+                return $lockedOwner;
+            });
+
+            if (! $authenticatedOwner instanceof ShopOwner) {
+                $attempts++;
+                if ($attempts >= self::LOGIN_TOTP_MAX_ATTEMPTS) {
+                    $this->clearLoginTwoFactorChallenge($request, (int) $shopOwner->id);
+                } else {
+                    $request->session()->put(self::LOGIN_TWO_FACTOR_ATTEMPTS_SESSION_KEY, $attempts);
+                }
 
                 throw ValidationException::withMessages([
-                    'otp' => ['Verification code expired. Please sign in again.'],
+                    'code' => ['Incorrect verification code. Please try again.'],
                 ]);
             }
 
-            $otp = (string) ($validated['otp'] ?? '');
-            if (!Hash::check($otp, (string) ($entry['otp_hash'] ?? ''))) {
-                $entry['attempts'] = (int) ($entry['attempts'] ?? 0) + 1;
-                $this->storeLoginTwoFactorEntry($request, (int) $shopOwner->id, $entry);
-
-                throw ValidationException::withMessages([
-                    'otp' => ['Incorrect verification code. Please try again.'],
-                ]);
-            }
-
-            $remember = (bool) $request->session()->get('shop_owner_2fa_remember', false);
-            $this->clearLoginTwoFactorChallenge($request, (int) $shopOwner->id);
-
-            Auth::guard('shop_owner')->login($shopOwner, $remember);
-            $request->session()->regenerate();
-
-            $shopOwner->update([
-                'last_login_at' => now(),
-                'last_login_ip' => $request->ip(),
-            ]);
+            $this->completeTwoFactorLogin($request, $authenticatedOwner);
 
             if ($request->expectsJson()) {
                 return response()->json([
@@ -1282,84 +1367,173 @@ class ShopOwnerAuthController extends Controller
 
             throw $e;
         } catch (\Exception $e) {
-            Log::error('Error verifying shop owner two-factor OTP', ['error' => $e->getMessage()]);
+            Log::error('Error verifying shop owner TOTP', ['error' => $e->getMessage()]);
 
             if ($request->expectsJson()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Unable to verify code right now. Please try again.',
+                    'message' => 'Unable to verify authenticator code right now. Please try again.',
                 ], 500);
             }
 
-            return back()->withErrors(['otp' => 'Unable to verify code right now. Please try again.']);
+            return back()->withErrors(['code' => 'Unable to verify authenticator code right now. Please try again.']);
         }
     }
 
-    /**
-     * Resend login two-factor OTP for shop owner.
-     */
-    public function resendLoginTwoFactorOtp(Request $request)
+    public function verifyTwoFactorEnrollment(Request $request)
     {
         try {
+            $validated = $request->validate([
+                'code' => ['required', 'digits:6'],
+            ]);
+
             $shopOwner = $this->resolvePendingTwoFactorShopOwner($request);
-            if (!$shopOwner) {
+            $pending = $shopOwner ? $this->pendingLoginEnrollment($request, $shopOwner) : null;
+            if (! $shopOwner || $pending === null) {
                 throw ValidationException::withMessages([
-                    'otp' => ['Your login session expired. Please sign in again.'],
+                    'code' => ['Your authenticator setup session expired. Please sign in again.'],
                 ]);
             }
 
-            $this->issueLoginTwoFactorOtp($request, $shopOwner);
+            try {
+                $secret = Crypt::decryptString($pending['secret']);
+            } catch (\Throwable) {
+                $this->clearLoginTwoFactorChallenge($request, (int) $shopOwner->getKey());
+
+                throw ValidationException::withMessages([
+                    'code' => ['Your authenticator setup session is invalid. Please sign in again.'],
+                ]);
+            }
+
+            $attempts = (int) $request->session()->get(self::LOGIN_TWO_FACTOR_ATTEMPTS_SESSION_KEY, 0);
+            if ($attempts >= self::LOGIN_TOTP_MAX_ATTEMPTS) {
+                $this->clearLoginTwoFactorChallenge($request, (int) $shopOwner->getKey());
+
+                throw ValidationException::withMessages([
+                    'code' => ['Too many failed attempts. Please sign in again.'],
+                ]);
+            }
+
+            $result = DB::transaction(function () use ($shopOwner, $secret, $validated, $request): array|false {
+                $lockedOwner = ShopOwner::query()
+                    ->whereKey($shopOwner->getKey())
+                    ->lockForUpdate()
+                    ->first();
+
+                if (! $lockedOwner instanceof ShopOwner
+                    || ! $this->isApprovedShopOwner($lockedOwner)
+                    || $lockedOwner->hasTotpEnabled()
+                    || ! (bool) $lockedOwner->two_factor_email_enabled
+                    || ! $this->mfa->verifyEnrollment($secret, (string) $validated['code'])) {
+                    return false;
+                }
+
+                $recoveryCodes = $this->mfa->generateRecoveryCodes();
+                $lockedOwner->forceFill([
+                    'shop_owner_totp_secret' => $secret,
+                    'shop_owner_totp_enabled_at' => now(),
+                    'shop_owner_totp_recovery_codes' => $this->mfa->hashRecoveryCodes($recoveryCodes),
+                    'shop_owner_totp_last_used_timestep' => null,
+                    'two_factor_email_enabled' => false,
+                ])->save();
+
+                return [
+                    'owner' => $lockedOwner,
+                    'recovery_codes' => $recoveryCodes,
+                ];
+            });
+
+            if ($result === false) {
+                $attempts++;
+                if ($attempts >= self::LOGIN_TOTP_MAX_ATTEMPTS) {
+                    $this->clearLoginTwoFactorChallenge($request, (int) $shopOwner->getKey());
+                } else {
+                    $request->session()->put(self::LOGIN_TWO_FACTOR_ATTEMPTS_SESSION_KEY, $attempts);
+                }
+
+                throw ValidationException::withMessages([
+                    'code' => ['The authenticator code is invalid. Please try again.'],
+                ]);
+            }
+
+            /** @var ShopOwner $authenticatedOwner */
+            $authenticatedOwner = $result['owner'];
+            $this->completeTwoFactorLogin($request, $authenticatedOwner);
 
             if ($request->expectsJson()) {
                 return response()->json([
                     'success' => true,
-                    'message' => 'A new verification code has been sent to your email.',
+                    'message' => 'Two-factor authentication enabled.',
+                    'recovery_codes' => $result['recovery_codes'],
+                    'redirect' => route('shop-owner.dashboard'),
                 ]);
             }
 
-            return back()->with('status', 'otp-resent');
+            return redirect()->route('shop-owner.dashboard')->with('success', 'Welcome back!');
         } catch (ValidationException $e) {
             if ($request->expectsJson()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Unable to resend verification code.',
+                    'message' => 'Authenticator setup could not be completed.',
                     'errors' => $e->errors(),
                 ], 422);
             }
 
             throw $e;
         } catch (\Exception $e) {
-            Log::error('Error resending shop owner two-factor OTP', ['error' => $e->getMessage()]);
+            Log::error('Error completing Shop Owner TOTP enrollment', ['error' => $e->getMessage()]);
 
             if ($request->expectsJson()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Unable to resend verification code right now. Please try again.',
+                    'message' => 'Unable to complete authenticator setup right now. Please try again.',
                 ], 500);
             }
 
-            return back()->withErrors(['otp' => 'Unable to resend verification code right now. Please try again.']);
+            return back()->withErrors(['code' => 'Unable to complete authenticator setup right now. Please try again.']);
         }
     }
 
     private function beginLoginTwoFactorChallenge(Request $request, ShopOwner $shopOwner, bool $remember): void
     {
-        $request->session()->put('shop_owner_2fa_pending_id', (int) $shopOwner->id);
-        $request->session()->put('shop_owner_2fa_remember', $remember);
-        $request->session()->put('shop_owner_2fa_pending_at', now()->timestamp);
+        $request->session()->put([
+            'shop_owner_2fa_pending_id' => (int) $shopOwner->id,
+            'shop_owner_2fa_remember' => $remember,
+            'shop_owner_2fa_pending_at' => now()->timestamp,
+            self::LOGIN_TWO_FACTOR_ATTEMPTS_SESSION_KEY => 0,
+        ]);
+        $request->session()->forget(self::LOGIN_TWO_FACTOR_SESSION_KEY);
+        $request->session()->forget(self::LOGIN_TOTP_ENROLLMENT_SESSION_KEY);
+    }
 
-        $this->issueLoginTwoFactorOtp($request, $shopOwner);
+    private function beginLoginTwoFactorEnrollment(Request $request, ShopOwner $shopOwner, bool $remember): void
+    {
+        $this->beginLoginTwoFactorChallenge($request, $shopOwner, $remember);
+
+        $secret = $this->mfa->generateSecret();
+        $expiresAt = now()->addMinutes(self::LOGIN_TOTP_TTL_MINUTES);
+
+        $request->session()->put(self::LOGIN_TOTP_ENROLLMENT_SESSION_KEY, [
+            'shop_owner_id' => (int) $shopOwner->getKey(),
+            'secret' => Crypt::encryptString($secret),
+            'expires_at' => $expiresAt->timestamp,
+        ]);
     }
 
     private function resolvePendingTwoFactorShopOwner(Request $request): ?ShopOwner
     {
         $pendingId = (int) $request->session()->get('shop_owner_2fa_pending_id', 0);
-        if ($pendingId <= 0) {
+        $pendingAt = (int) $request->session()->get('shop_owner_2fa_pending_at', 0);
+        if ($pendingId <= 0 || $pendingAt <= 0 || $pendingAt + (self::LOGIN_TOTP_TTL_MINUTES * 60) <= now()->timestamp) {
+            if ($pendingId > 0) {
+                $this->clearLoginTwoFactorChallenge($request, $pendingId);
+            }
+
             return null;
         }
 
         $shopOwner = ShopOwner::find($pendingId);
-        if (!$shopOwner) {
+        if (! $shopOwner instanceof ShopOwner || ! $this->isApprovedShopOwner($shopOwner)) {
             $this->clearLoginTwoFactorChallenge($request, $pendingId);
 
             return null;
@@ -1368,143 +1542,61 @@ class ShopOwnerAuthController extends Controller
         return $shopOwner;
     }
 
-    private function issueLoginTwoFactorOtp(Request $request, ShopOwner $shopOwner): void
+    /** @return array{shop_owner_id: int, secret: string, expires_at: int}|null */
+    private function pendingLoginEnrollment(Request $request, ShopOwner $shopOwner): ?array
     {
-        $otp = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
-        $ttl = now()->addMinutes(self::LOGIN_EMAIL_OTP_TTL_MINUTES);
-
-        try {
-            $this->storeLoginTwoFactorEntry($request, (int) $shopOwner->id, [
-                'otp_hash' => Hash::make($otp),
-                'attempts' => 0,
-                'expires_at' => $ttl->timestamp,
-            ]);
-
-            Mail::raw(
-                "Your SoleSpace login verification code is {$otp}. This code expires in "
-                . self::LOGIN_EMAIL_OTP_TTL_MINUTES
-                . ' minutes.',
-                function ($message) use ($shopOwner) {
-                    $message->to($shopOwner->email)
-                        ->subject('SoleSpace Login Verification Code');
-                }
-            );
-        } catch (\Throwable $e) {
-            $this->clearLoginTwoFactorChallenge($request, (int) $shopOwner->id);
-
-            Log::error('Failed to send shop owner login two-factor OTP email', [
-                'shop_owner_id' => $shopOwner->id,
-                'email' => $shopOwner->email,
-                'error' => $e->getMessage(),
-            ]);
-
-            throw ValidationException::withMessages([
-                'email' => ['Unable to send verification code right now. Please try again.'],
-            ]);
-        }
-    }
-
-    private function readLoginTwoFactorEntry(Request $request, int $shopOwnerId): ?array
-    {
-        $entry = $request->session()->get(self::LOGIN_TWO_FACTOR_SESSION_KEY);
-        if (
-            is_array($entry)
-            && (int) ($entry['shop_owner_id'] ?? 0) === $shopOwnerId
-        ) {
-            return $entry;
+        $pending = $request->session()->get(self::LOGIN_TOTP_ENROLLMENT_SESSION_KEY);
+        if (! is_array($pending)
+            || (int) ($pending['shop_owner_id'] ?? 0) !== (int) $shopOwner->getKey()
+            || ! is_string($pending['secret'] ?? null)
+            || ! is_numeric($pending['expires_at'] ?? null)) {
+            return null;
         }
 
-        // Backward-compatible fallback for pre-session-based challenges.
-        try {
-            $legacyEntry = Cache::get($this->loginTwoFactorCacheKey($shopOwnerId));
-        } catch (\Throwable $e) {
-            Log::warning('Shop owner 2FA legacy cache read failed', [
-                'shop_owner_id' => $shopOwnerId,
-                'error' => $e->getMessage(),
-            ]);
+        if ((int) $pending['expires_at'] <= now()->timestamp) {
+            $request->session()->forget(self::LOGIN_TOTP_ENROLLMENT_SESSION_KEY);
 
             return null;
         }
 
-        if (!is_array($legacyEntry)) {
-            return null;
-        }
-
-        $normalizedLegacyEntry = [
-            'shop_owner_id' => $shopOwnerId,
-            'otp_hash' => (string) ($legacyEntry['otp_hash'] ?? ''),
-            'attempts' => (int) ($legacyEntry['attempts'] ?? 0),
-            'expires_at' => (int) ($legacyEntry['expires_at'] ?? 0),
+        return [
+            'shop_owner_id' => (int) $pending['shop_owner_id'],
+            'secret' => $pending['secret'],
+            'expires_at' => (int) $pending['expires_at'],
         ];
-
-        $request->session()->put(self::LOGIN_TWO_FACTOR_SESSION_KEY, $normalizedLegacyEntry);
-        try {
-            Cache::forget($this->loginTwoFactorCacheKey($shopOwnerId));
-        } catch (\Throwable $e) {
-            Log::warning('Shop owner 2FA legacy cache cleanup failed', [
-                'shop_owner_id' => $shopOwnerId,
-                'error' => $e->getMessage(),
-            ]);
-        }
-
-        return $normalizedLegacyEntry;
     }
 
-    private function storeLoginTwoFactorEntry(Request $request, int $shopOwnerId, array $entry): void
+    private function completeTwoFactorLogin(Request $request, ShopOwner $shopOwner): void
     {
-        $normalizedEntry = [
-            'shop_owner_id' => $shopOwnerId,
-            'otp_hash' => (string) ($entry['otp_hash'] ?? ''),
-            'attempts' => (int) ($entry['attempts'] ?? 0),
-            'expires_at' => (int) ($entry['expires_at'] ?? 0),
-        ];
+        $remember = (bool) $request->session()->get('shop_owner_2fa_remember', false);
+        $this->clearLoginTwoFactorChallenge($request, (int) $shopOwner->getKey());
 
-        $request->session()->put(self::LOGIN_TWO_FACTOR_SESSION_KEY, $normalizedEntry);
-    }
+        Auth::guard('shop_owner')->login($shopOwner, $remember);
+        $request->session()->regenerate();
 
-    private function loginTwoFactorCacheKey(int $shopOwnerId): string
-    {
-        return 'shop_owner_login_2fa:' . $shopOwnerId;
+        Log::info('Shop owner logged in successfully after TOTP verification', [
+            'shop_owner_id' => $shopOwner->getKey(),
+            'business_name' => $shopOwner->business_name,
+        ]);
     }
 
     private function clearLoginTwoFactorChallenge(Request $request, ?int $shopOwnerId = null): void
     {
-        $resolvedShopOwnerId = $shopOwnerId ?? (int) $request->session()->get('shop_owner_2fa_pending_id', 0);
-        if ($resolvedShopOwnerId > 0) {
-            try {
-                Cache::forget($this->loginTwoFactorCacheKey($resolvedShopOwnerId));
-            } catch (\Throwable $e) {
-                Log::warning('Shop owner 2FA legacy cache clear failed', [
-                    'shop_owner_id' => $resolvedShopOwnerId,
-                    'error' => $e->getMessage(),
-                ]);
-            }
-        }
-
         $request->session()->forget('shop_owner_2fa_pending_id');
         $request->session()->forget('shop_owner_2fa_remember');
         $request->session()->forget('shop_owner_2fa_pending_at');
+        $request->session()->forget(self::LOGIN_TWO_FACTOR_ATTEMPTS_SESSION_KEY);
         $request->session()->forget(self::LOGIN_TWO_FACTOR_SESSION_KEY);
+        $request->session()->forget(self::LOGIN_TOTP_ENROLLMENT_SESSION_KEY);
     }
 
-    private function maskEmail(string $email): string
+    private function isApprovedShopOwner(ShopOwner $shopOwner): bool
     {
-        $email = trim($email);
-        if ($email === '' || !str_contains($email, '@')) {
-            return 'your email';
-        }
+        $statusValue = $shopOwner->status instanceof ShopOwnerStatus
+            ? $shopOwner->status->value
+            : (string) $shopOwner->status;
 
-        [$local, $domain] = explode('@', $email, 2);
-
-        if ($local === '') {
-            return '***@' . $domain;
-        }
-
-        if (strlen($local) <= 2) {
-            return substr($local, 0, 1) . '*@' . $domain;
-        }
-
-        return substr($local, 0, 2) . str_repeat('*', max(strlen($local) - 2, 2)) . '@' . $domain;
+        return $statusValue === ShopOwnerStatus::APPROVED->value;
     }
 
     /**

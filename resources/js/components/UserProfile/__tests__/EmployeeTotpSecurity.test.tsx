@@ -104,4 +104,9 @@ describe("EmployeeTotpSecurity", () => {
         ));
         expect(await screen.findByText("Customer signed in successfully.")).toBeInTheDocument();
     });
+    it('can omit the activity card', () => {
+        render(<EmployeeTotpSecurity enabled={false} showSessions={false} showActivity={false} routes={{ setup: '/shop-owner/setup', verify: '/shop-owner/verify', recovery: '/shop-owner/recovery', disable: '/shop-owner/disable', activity: '/shop-owner/activity' }} />);
+
+        expect(screen.queryByText('Recent Security Activity')).not.toBeInTheDocument();
+    });
 });

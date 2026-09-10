@@ -25,9 +25,28 @@ describe("employee security route manifest", () => {
             "customer.mfa.challenge": expect.objectContaining({
                 uri: "customer/mfa/challenge",
             }),
+            "shop-owner.security.totp.setup": expect.objectContaining({
+                uri: "shop-owner/security/totp/setup",
+            }),
+            "shop-owner.security.totp.verify": expect.objectContaining({
+                uri: "shop-owner/security/totp/verify",
+            }),
+            "shop-owner.security.totp.recovery.regenerate": expect.objectContaining({
+                uri: "shop-owner/security/totp/recovery-codes/regenerate",
+            }),
+            "shop-owner.security.totp.disable": expect.objectContaining({
+                uri: "shop-owner/security/totp/disable",
+            }),
+            "shop-owner.two-factor.challenge": expect.objectContaining({
+                uri: "shop-owner/two-factor",
+            }),
+            "shop-owner.two-factor.verify": expect.objectContaining({
+                uri: "shop-owner/two-factor/verify",
+            }),
         });
 
         expect(Ziggy.routes).not.toHaveProperty("customer.security.sessions.index");
         expect(Ziggy.routes).not.toHaveProperty("customer.security.sessions.logout-others");
+        expect(Ziggy.routes).not.toHaveProperty("shop-owner.two-factor.resend");
     });
 });
