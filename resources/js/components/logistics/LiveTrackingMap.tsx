@@ -224,8 +224,8 @@ export default function LiveTrackingMap({ locations, label = 'Live rider map', f
 
       const container = containerRef.current;
       map = L.map(container, { scrollWheelZoom: false }).setView([14.5995, 120.9842], 12);
-      const tileLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap contributors',
+      const tileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
       });
       tileLayer.addTo(map);
       leafletRef.current = L;
