@@ -156,7 +156,9 @@ describe('LiveTrackingMap', () => {
     expect(leaflet.marker.bindTooltip).toHaveBeenCalledWith('Rider · Repair Pickup');
     expect(leaflet.divIconFactory).toHaveBeenCalledWith(expect.objectContaining({
       html: expect.stringContaining('data-icon="motorcycle"'),
+      iconSize: [32, 32],
     }));
+    expect(leaflet.divIconFactory.mock.calls[0][0].html).toContain('stroke="#ffffff"');
   });
 
   it('toggles the mobile map fullscreen control and resizes the map', async () => {

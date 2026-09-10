@@ -631,6 +631,7 @@ function ResolutionNotice({ delivery }: { delivery: TrackingShipmentLeg }) {
 
 function DeliveryContact({ delivery }: { delivery: TrackingShipmentLeg }) {
   const contact = deliveryContact(delivery);
+  const textPhone = contact.phone.replace(/[^\d+]/g, '');
 
   return (
     <div className="space-y-3">
@@ -661,18 +662,16 @@ function DeliveryContact({ delivery }: { delivery: TrackingShipmentLeg }) {
             No phone
           </span>
         )}
-        {contact.address ? (
+        {contact.phone ? (
           <a
-            href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(contact.address)}`}
-            target="_blank"
-            rel="noreferrer"
+            href={`sms:${textPhone}`}
             className="inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-950 transition-colors hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-slate-600 dark:text-white dark:hover:bg-slate-800 dark:focus:ring-gray-300 xl:min-h-11"
           >
-            Directions
+            Text customer
           </a>
         ) : (
           <span className="inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-200 px-3 text-sm text-slate-400 xl:min-h-11">
-            No address
+            No phone
           </span>
         )}
       </div>

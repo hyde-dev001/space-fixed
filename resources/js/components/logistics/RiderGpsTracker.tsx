@@ -497,8 +497,8 @@ export default function RiderGpsTracker({
           <LiveTrackingMap locations={mapLocations} label={destinationLabel + ' route map'} followLocation viewer="rider" />
           <p className="border-t border-slate-200 px-4 py-3 text-xs leading-5 text-slate-500 dark:border-slate-700 dark:text-slate-400">
             {route?.source === 'road'
-              ? 'Fastest available road route. Use Directions above for turn-by-turn navigation.'
-              : 'Road route is unavailable right now. Use Directions above for turn-by-turn navigation.'}
+              ? 'Fastest available road route is shown on the map.'
+              : 'Road route is unavailable right now. The map shows a direct route.'}
           </p>
         </>
       ) : (
@@ -510,7 +510,7 @@ export default function RiderGpsTracker({
           )}
           {tracking && !destinationPoint && (
             <p role="status" className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-              The {destinationLabel} map pin is unavailable. Use the Directions button above for navigation.
+              The {destinationLabel} map pin is unavailable right now.
             </p>
           )}
         </div>

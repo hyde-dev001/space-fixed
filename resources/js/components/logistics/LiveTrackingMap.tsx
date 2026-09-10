@@ -77,7 +77,7 @@ const normalizedHeading = (value: number | null): number | null => {
   return ((value % 360) + 360) % 360;
 };
 
-const MOTORCYCLE_ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-icon="motorcycle" aria-hidden="true"><path d="M5 18a2 2 0 100-4 2 2 0 000 4zm14 0a2 2 0 100-4 2 2 0 000 4zM7 16h6l3-5h3M11 16l-2-5h4" /></svg>';
+const MOTORBIKE_ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" data-icon="motorcycle" aria-hidden="true"><path d="m18 14-1-3"/><path d="m3 9 6 2a2 2 0 0 1 2-2h2a2 2 0 0 1 1.99 1.81"/><path d="M8 17h3a1 1 0 0 0 1-1 6 6 0 0 1 6-6 1 1 0 0 0 1-1v-.75A5 5 0 0 0 17 5"/><circle cx="19" cy="17" r="3"/><circle cx="5" cy="17" r="3"/></svg>';
 
 const riderIcon = (
   L: typeof import('leaflet'),
@@ -85,9 +85,9 @@ const riderIcon = (
 ) => {
   return L.divIcon({
     className: 'live-rider-marker',
-    iconSize: [24, 24],
-    iconAnchor: [12, 12],
-    html: '<span style="display:block;transform:rotate(' + (heading ?? 0) + 'deg)">' + MOTORCYCLE_ICON + '</span>',
+    iconSize: [32, 32],
+    iconAnchor: [16, 16],
+    html: '<span style="display:flex;align-items:center;justify-content:center;width:32px;height:32px;border:2px solid #ffffff;border-radius:9999px;background:#111111"><span style="display:block;transform:rotate(' + (heading ?? 0) + 'deg)">' + MOTORBIKE_ICON + '</span></span>',
   });
 };
 
