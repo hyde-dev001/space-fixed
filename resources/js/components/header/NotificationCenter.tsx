@@ -107,26 +107,27 @@ export default function NotificationCenter({
                 <>
                     <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
 
-                    <div className="absolute right-0 top-full mt-2 w-96 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 z-50 max-h-[600px] flex flex-col">
-                        <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+                    <div className="absolute right-0 top-full mt-2 w-96 overflow-hidden rounded-xl border border-gray-200 bg-white text-gray-900 shadow-2xl dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 z-50 max-h-[600px] flex flex-col">
+                        <div className="flex items-center justify-between border-b border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
                             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Notifications</h3>
                             <div className="flex items-center gap-2">
                                 <button
                                     onClick={() => setIsOpen(false)}
-                                    className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                                    className="rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-500 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
+                                    aria-label="Close notifications"
                                 >
-                                    <XMarkIcon className="h-5 w-5 text-gray-500" />
+                                    <XMarkIcon className="h-5 w-5" />
                                 </button>
                             </div>
                         </div>
 
-                        <div className="px-4 py-2 border-b border-gray-200 dark:border-gray-700">
+                        <div className="border-b border-gray-200 bg-white px-4 py-2 dark:border-gray-700 dark:bg-gray-900">
                             <button
                                 onClick={() => setShowUnreadOnly(!showUnreadOnly)}
                                 className={`text-sm px-3 py-1 rounded-full transition-colors ${
                                     showUnreadOnly
-                                        ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300'
-                                        : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
+                                        ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/50 dark:text-indigo-200 dark:hover:bg-indigo-900'
+                                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700'
                                 }`}
                             >
                                 {showUnreadOnly ? 'Show All' : 'Unread Only'}
@@ -137,7 +138,7 @@ export default function NotificationCenter({
                             {isLoading ? (
                                 <div className="p-8 text-center">
                                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto"></div>
-                                    <p className="mt-2 text-sm text-gray-500">Loading...</p>
+                                    <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">Loading...</p>
                                 </div>
                             ) : notifications.length === 0 ? (
                                 <div className="p-8 text-center">
@@ -164,8 +165,10 @@ export default function NotificationCenter({
                                                 key={notification.id}
                                                 {...wrapperProps}
                                                 onClick={() => handleNotificationClick(notification)}
-                                                className={`block p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer ${
-                                                    !notification.is_read ? 'bg-indigo-50 dark:bg-indigo-900/20' : ''
+                                                className={`block cursor-pointer p-4 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800 ${
+                                                    !notification.is_read
+                                                        ? 'bg-indigo-50 text-gray-900 dark:bg-indigo-900/30 dark:text-gray-100'
+                                                        : 'bg-white text-gray-700 dark:bg-gray-900 dark:text-gray-300'
                                                 }`}
                                             >
                                                 <div className="flex items-start gap-3">
@@ -184,14 +187,15 @@ export default function NotificationCenter({
                                                             </h4>
                                                             <button
                                                                 onClick={(e) => handleDelete(e, notification.id)}
-                                                                className="flex-shrink-0 p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded"
+                                                                className="flex-shrink-0 rounded p-1 text-gray-500 hover:bg-gray-200 hover:text-red-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-500 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-red-400"
+                                                                aria-label={`Delete ${notification.title}`}
                                                             >
-                                                                <TrashIcon className="h-4 w-4 text-gray-400 hover:text-red-500" />
+                                                                <TrashIcon className="h-4 w-4" />
                                                             </button>
                                                         </div>
-                                                        <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{notification.message}</p>
+                                                        <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">{notification.message}</p>
                                                         <div className="flex items-center gap-2 mt-2">
-                                                            <span className="text-xs text-gray-500 dark:text-gray-500">
+                                                            <span className="text-xs text-gray-500 dark:text-gray-400">
                                                                 {formatTimeAgo(notification.created_at)}
                                                             </span>
                                                             {!notification.is_read && (
@@ -208,7 +212,7 @@ export default function NotificationCenter({
                         </div>
 
                         {notifications.length > 0 && (
-                            <div className="p-3 border-t border-gray-200 dark:border-gray-700">
+                            <div className="border-t border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
                                 <Link
                                     href={viewAllHref}
                                     className="block text-center text-sm text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 font-medium"
