@@ -33,23 +33,23 @@
 - Create: `tests/Feature/CustomerMfaSecurityTest.php`
 - Inspect: `tests/Feature/EmployeeMfaRestorationTest.php`, `tests/Feature/UserSide/CustomerPasswordUpdateTest.php`
 
-- [ ] **Step 1: Write failing tests for profile security state and activity privacy**
+- [x] **Step 1: Write failing tests for profile security state and activity privacy**
 
 Create customer users with verified email and a known password. Assert `GET /customer-profile` includes `security.totp_enabled` and recent activity. Insert customer and employee audit records with distinct tags and assert the customer endpoint returns only the authenticated customer’s `customer_security` rows.
 
-- [ ] **Step 2: Write failing tests for enrollment and recovery lifecycle**
+- [x] **Step 2: Write failing tests for enrollment and recovery lifecycle**
 
 Exercise customer setup with the current password, verify the generated TOTP using the returned setup secret, assert encrypted secret/enabled timestamp/recovery hashes are stored, assert a recovery code is single-use, and assert disable clears the TOTP fields and invalidates the security version.
 
-- [ ] **Step 3: Write failing tests for customer MFA login**
+- [x] **Step 3: Write failing tests for customer MFA login**
 
 Enroll a customer, post valid credentials to `user.login`, and assert a `202` JSON response with `requires_mfa`, no successful-login message, and `assertGuest('user')`. Verify an invalid code does not authenticate, then verify a valid TOTP authenticates and redirects to the existing customer landing route.
 
-- [ ] **Step 4: Write failing tests for account isolation and no sessions**
+- [x] **Step 4: Write failing tests for account isolation and no sessions**
 
 Assert an employee cannot use customer MFA/activity routes, a customer cannot use ERP MFA/activity routes, customer activity cannot read another customer’s rows, and the route collection contains no customer Active Sessions route.
 
-- [ ] **Step 5: Run the focused backend test and confirm failure**
+- [x] **Step 5: Run the focused backend test and confirm failure**
 
 Run:
 
@@ -66,15 +66,15 @@ Expected: FAIL because customer security routes, payload, and login challenge do
 - Modify: `app/Services/EmployeeSecurityService.php`
 - Test: `tests/Feature/CustomerMfaSecurityTest.php`
 
-- [ ] **Step 1: Add account-neutral TOTP state methods**
+- [x] **Step 1: Add account-neutral TOTP state methods**
 
 Add one shared `hasTotpEnabled()` predicate for the existing encrypted secret and enabled timestamp. Keep `hasEmployeeTotpEnabled()` restricted to `isEmployeeAccount()` and add a customer counterpart restricted to `isCustomerAccount()`; both delegate to the shared predicate so the storage rules do not diverge.
 
-- [ ] **Step 2: Add an explicit customer audit method**
+- [x] **Step 2: Add an explicit customer audit method**
 
 Add `auditCustomer(User $target, string $action, string $description, string $severity = ...)` that rejects/non-logs non-customer targets, writes a nullable-shop-owner, null-employee record for the authenticated customer, and tags it `customer_security`. Keep `audit()` and its `employee_security` output unchanged for ERP callers.
 
-- [ ] **Step 3: Run the relevant backend tests**
+- [x] **Step 3: Run the relevant backend tests**
 
 Run:
 
@@ -93,31 +93,31 @@ Expected: the new model/service assertions pass or proceed to the expected contr
 - Modify: `routes/web.php`
 - Test: `tests/Feature/CustomerMfaSecurityTest.php`
 
-- [ ] **Step 1: Define customer-specific session keys and route entry points**
+- [x] **Step 1: Define customer-specific session keys and route entry points**
 
 Add customer wrappers or scoped methods around the existing setup/verify/recovery/disable/challenge/verify-login operations. Use customer-specific setup and pending-login session keys, tie every pending record to the authenticated/customer user ID and `security_version`, and preserve the existing ten-minute setup expiration and five-attempt challenge limit.
 
-- [ ] **Step 2: Reuse the existing MFA cryptography and storage**
+- [x] **Step 2: Reuse the existing MFA cryptography and storage**
 
 Use `EmployeeMfaService` for secret generation, provisioning URI/QR, TOTP verification, recovery generation/hashing, and one-time recovery consumption. Customer operations must use the same transaction and row-lock pattern as employee operations and must never accept a user ID or secret from the client.
 
-- [ ] **Step 3: Gate customer login before `Auth::guard('user')->login()`**
+- [x] **Step 3: Gate customer login before `Auth::guard('user')->login()`**
 
 In `UserController@login`, after customer email/status checks and before normal login, detect `hasCustomerTotpEnabled()`. If enrolled, log out/regenerate the session, store the customer pending ID/security version/remember flag, and return the customer challenge redirect/`202` response. Do not update `last_login_at` or claim successful login until factor verification succeeds.
 
-- [ ] **Step 4: Complete customer challenge atomically**
+- [x] **Step 4: Complete customer challenge atomically**
 
 Lock the pending customer row, revalidate active status/security version/customer account/enrollment, consume TOTP or a recovery code, update last-login fields, clear pending keys, regenerate the session, log in the customer, mark the security version, and audit successful login plus MFA verification. Use generic invalid-code responses and leave the guard unauthenticated on failure.
 
-- [ ] **Step 5: Add customer profile state and activity endpoint**
+- [x] **Step 5: Add customer profile state and activity endpoint**
 
 Add `security.totp_enabled` and five most recent customer-scoped activity rows to `CustomerProfileController@show`. Add a paginated JSON endpoint that filters by authenticated customer ID, `User::class` entity ID, and `customer_security` tag. Never return secret, recovery-code, session, or employee fields.
 
-- [ ] **Step 6: Register only customer MFA/activity routes**
+- [x] **Step 6: Register only customer MFA/activity routes**
 
-Use `auth:user`, `customer.account`, and existing throttle middleware for setup, verify, recovery regeneration, disable, login challenge, login verification, and activity. Use customer route names such as `customer.security.totp.setup`, `customer.security.totp.verify`, `customer.security.totp.recovery.regenerate`, `customer.security.totp.disable`, `customer.mfa.challenge`, `customer.mfa.challenge.verify`, and `customer.security.activity`. Do not add `customer.security.sessions` routes.
+Use `auth:user`, `customer.account`, and existing throttle middleware for setup, verify, recovery regeneration, disable, and activity. The login challenge GET/POST routes intentionally use throttling without `auth:user` because the guard is logged out while the customer is pending MFA; the controller validates the customer-specific pending session, account type, and security version instead. Use customer route names such as `customer.security.totp.setup`, `customer.security.totp.verify`, `customer.security.totp.recovery.regenerate`, `customer.security.totp.disable`, `customer.mfa.challenge`, `customer.mfa.challenge.verify`, and `customer.security.activity`. Do not add `customer.security.sessions` routes.
 
-- [ ] **Step 7: Run backend tests and fix failures**
+- [x] **Step 7: Run backend tests and fix failures**
 
 Run:
 
@@ -138,27 +138,27 @@ Expected: all listed tests pass.
 - Modify: `resources/js/__tests__/ziggySecurityRoutes.test.ts`
 - Regenerate: `resources/js/ziggy.js`
 
-- [ ] **Step 1: Add route configuration with employee-safe defaults**
+- [x] **Step 1: Add route configuration with employee-safe defaults**
 
 Make the shared component accept setup, verify, recovery, disable, and activity route names, defaulting to the current ERP names. Add `showSessions` defaulting to `true` for employees. Keep session state, requests, history, and logout controls behind that flag so customer rendering has no session request or Active Sessions markup.
 
-- [ ] **Step 2: Make the challenge page accept optional route names**
+- [x] **Step 2: Make the challenge page accept optional route names**
 
 Keep the current employee route and login-link defaults. Allow the customer controller to pass the customer verification route and customer login-form route while using the same six-digit/recovery-code UX.
 
-- [ ] **Step 3: Mount the component once in the customer profile**
+- [x] **Step 3: Mount the component once in the customer profile**
 
-Pass the server-provided customer MFA/activity state, customer route names, and `showSessions={false}`. Place the security panel outside the mobile/desktop duplicate layout wrappers so it renders once at every viewport size. Keep profile editing and password change separate.
+Pass the server-provided customer MFA/activity state, customer route names, and `showSessions={false}`. Mount the shared panel once inside the active responsive profile card (mobile/tablet or desktop) so it remains part of the customer Profile card without duplicating its state. Keep profile editing and password change separate.
 
-- [ ] **Step 4: Regenerate Ziggy and update frontend contracts**
+- [x] **Step 4: Regenerate Ziggy and update frontend contracts**
 
 Run the repository’s Ziggy generation command and assert the new customer route names exist. Do not add any customer session route names.
 
-- [ ] **Step 5: Add frontend regression assertions**
+- [x] **Step 5: Add frontend regression assertions**
 
 Assert the customer profile displays the security/MFA area, uses customer route names when setup is submitted, displays activity “View all,” and contains no “Active Sessions,” “Log Out Other Sessions,” ERP security route, or session request. Assert the existing employee component still uses ERP defaults and renders its session section.
 
-- [ ] **Step 6: Run focused frontend tests**
+- [x] **Step 6: Run focused frontend tests**
 
 Run:
 
@@ -174,7 +174,7 @@ Expected: PASS.
 - Review all files changed in Tasks 1–4.
 - Modify only if a concrete test/review finding requires it.
 
-- [ ] **Step 1: Run diff hygiene and inspect the diff**
+- [x] **Step 1: Run diff hygiene and inspect the diff**
 
 Run:
 
@@ -186,11 +186,11 @@ git diff -- app/Models/User.php app/Services/EmployeeSecurityService.php app/Htt
 
 Confirm no Active Sessions endpoint, prop, request, or customer UI survived; no employee route lost its guard; and no MFA secret/recovery code enters an Inertia or JSON payload.
 
-- [ ] **Step 2: Apply the required sequential reviews**
+- [x] **Step 2: Apply the required sequential reviews**
 
 Review against repository standards, the approved design, Laravel security practices, React/TypeScript boundaries, ponytail simplification, and the security-review checklist. Resolve concrete findings only; avoid unrelated refactors.
 
-- [ ] **Step 3: Run the full relevant quality gates**
+- [x] **Step 3: Run the full relevant quality gates**
 
 Run:
 
@@ -203,7 +203,7 @@ git diff --check
 
 Expected: focused Laravel tests pass, frontend tests pass subject to any pre-existing repository failure being reported explicitly, the production build succeeds, and diff check is clean.
 
-- [ ] **Step 4: Update the implementation plan and learning log if needed**
+- [x] **Step 4: Update the implementation plan and learning log if needed**
 
 Mark completed steps, record any durable repository lesson in `docs/ai-learning-log.md`, and do not document secrets or personal data.
 
@@ -215,4 +215,3 @@ After all tests/builds and review findings are resolved:
 git add -- app/Models/User.php app/Services/EmployeeSecurityService.php app/Http/Controllers/EmployeeMfaController.php app/Http/Controllers/UserController.php app/Http/Controllers/UserSide/CustomerProfileController.php routes/web.php resources/js/components/UserProfile/EmployeeTotpSecurity.tsx resources/js/Pages/ERP/EmployeeMfaChallenge.tsx resources/js/Pages/UserSide/Profile/customerProfile.tsx resources/js/ziggy.js tests/Feature/CustomerMfaSecurityTest.php resources/js/Pages/UserSide/Profile/__tests__/customerProfile.security.test.tsx resources/js/components/UserProfile/__tests__/EmployeeTotpSecurity.test.tsx resources/js/__tests__/ziggySecurityRoutes.test.ts
 git commit -m "feat: add customer MFA and security activity"
 ```
-

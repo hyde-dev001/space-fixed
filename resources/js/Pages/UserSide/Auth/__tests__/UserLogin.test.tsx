@@ -104,4 +104,17 @@ describe('unified sign-in', () => {
 
     expect(swalFireMock).not.toHaveBeenCalledWith(expect.objectContaining({ title: 'Signed In' }));
   });
+
+  it('does not show a signed-in success message before customer MFA is completed', () => {
+    routerPostMock.mockImplementation((_url: string, _data: unknown, options: { onSuccess?: (page: { url: string }) => void }) => {
+      options.onSuccess?.({ url: '/customer/mfa/challenge' });
+    });
+
+    render(<UserLogin />);
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'customer@example.test' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'current-password' } });
+    submit();
+
+    expect(swalFireMock).not.toHaveBeenCalledWith(expect.objectContaining({ title: 'Signed In' }));
+  });
 });

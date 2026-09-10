@@ -139,7 +139,18 @@ class User extends Authenticatable implements MustVerifyEmail
     public function hasEmployeeTotpEnabled(): bool
     {
         return $this->isEmployeeAccount()
-            && $this->employee_totp_enabled_at !== null
+            && $this->hasTotpEnabled();
+    }
+
+    public function hasCustomerTotpEnabled(): bool
+    {
+        return $this->isCustomerAccount()
+            && $this->hasTotpEnabled();
+    }
+
+    public function hasTotpEnabled(): bool
+    {
+        return $this->employee_totp_enabled_at !== null
             && is_string($this->employee_totp_secret)
             && $this->employee_totp_secret !== '';
     }

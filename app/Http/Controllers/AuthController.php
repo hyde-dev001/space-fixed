@@ -112,7 +112,8 @@ class AuthController extends Controller
             }
         }
 
-        if ($user instanceof User && $user->hasEmployeeTotpEnabled()) {
+        if ($user instanceof User
+            && ($user->hasEmployeeTotpEnabled() || $user->hasCustomerTotpEnabled())) {
             Auth::guard('user')->logout();
 
             return response()->json([

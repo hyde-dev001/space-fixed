@@ -13,6 +13,21 @@ describe("employee security route manifest", () => {
             "erp.security.totp.setup": expect.objectContaining({
                 uri: "erp/security/totp/setup",
             }),
+            "customer.security.activity": expect.objectContaining({
+                uri: "customer-profile/security/activity",
+            }),
+            "customer.security.totp.setup": expect.objectContaining({
+                uri: "customer-profile/security/totp/setup",
+            }),
+            "customer.security.totp.verify": expect.objectContaining({
+                uri: "customer-profile/security/totp/verify",
+            }),
+            "customer.mfa.challenge": expect.objectContaining({
+                uri: "customer/mfa/challenge",
+            }),
         });
+
+        expect(Ziggy.routes).not.toHaveProperty("customer.security.sessions.index");
+        expect(Ziggy.routes).not.toHaveProperty("customer.security.sessions.logout-others");
     });
 });

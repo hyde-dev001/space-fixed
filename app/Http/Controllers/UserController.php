@@ -624,6 +624,8 @@ class UserController extends Controller
                     ->first();
                 if ($candidateUser?->isEmployeeAccount()) {
                     $this->auditEmployeeSignIn($candidateUser, 'employee_login_failed', 'Failed employee sign-in attempt.');
+                } elseif ($candidateUser?->isCustomerAccount()) {
+                    $this->auditCustomerSignIn($candidateUser);
                 }
 
                 throw ValidationException::withMessages([
@@ -638,6 +640,8 @@ class UserController extends Controller
             if (! $user || ! Hash::check((string) $credentials['password'], (string) $passwordHash)) {
                 if ($user?->isEmployeeAccount()) {
                     $this->auditEmployeeSignIn($user, 'employee_login_failed', 'Failed employee sign-in attempt.');
+                } elseif ($user?->isCustomerAccount()) {
+                    $this->auditCustomerSignIn($user);
                 }
 
                 throw ValidationException::withMessages([
@@ -701,6 +705,31 @@ class UserController extends Controller
                 }
             }
 
+            if ($user->isCustomerAccount() && $user->hasCustomerTotpEnabled()) {
+                Auth::guard('user')->logout();
+                $request->session()->regenerate();
+                $request->session()->put([
+                    'customer_mfa_pending_user_id' => $user->getKey(),
+                    'customer_mfa_pending_security_version' => (int) ($user->security_version ?: 1),
+                    'customer_mfa_pending_remember' => $request->boolean('remember'),
+                ]);
+                $request->session()->save();
+
+                if ($request->header('X-Inertia')) {
+                    return redirect()->route('customer.mfa.challenge');
+                }
+
+                if ($request->expectsJson()) {
+                    return response()->json([
+                        'success' => false,
+                        'requires_mfa' => true,
+                        'redirect' => route('customer.mfa.challenge'),
+                    ], 202);
+                }
+
+                return redirect()->route('customer.mfa.challenge');
+            }
+
             if ($user->isEmployeeAccount() && $user->hasEmployeeTotpEnabled()) {
                 Auth::guard('user')->logout();
                 $request->session()->regenerate();
@@ -750,6 +779,13 @@ class UserController extends Controller
                     'employee_login_succeeded',
                     'Employee signed in successfully.',
                     $employee,
+                    \App\Models\HR\AuditLog::SEVERITY_INFO,
+                );
+            } elseif ($user->isCustomerAccount()) {
+                $this->security->auditCustomer(
+                    $user,
+                    'customer_login_succeeded',
+                    'Customer signed in successfully.',
                     \App\Models\HR\AuditLog::SEVERITY_INFO,
                 );
             }
@@ -839,6 +875,20 @@ class UserController extends Controller
             $action,
             $description,
             $employee,
+            \App\Models\HR\AuditLog::SEVERITY_WARNING,
+        );
+    }
+
+    private function auditCustomerSignIn(User $user): void
+    {
+        if (! $user->isCustomerAccount()) {
+            return;
+        }
+
+        $this->security->auditCustomer(
+            $user,
+            'customer_login_failed',
+            'Failed customer sign-in attempt.',
             \App\Models\HR\AuditLog::SEVERITY_WARNING,
         );
     }
