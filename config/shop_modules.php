@@ -206,6 +206,7 @@ $routeBuckets = [
         'erp.time-in',
         'finance.dashboard',
         'hr.dashboard',
+        'hr.employees.reset_mfa',
         'hr.employees.reset_password',
         'hr.notifications.clear_read',
         'hr.notifications.destroy',
@@ -772,6 +773,7 @@ $routeBuckets = [
         'inventory.items.images.thumbnail',
         'inventory.items.images.upload',
         'inventory.items.index',
+        'inventory.items.replenishment-settings.update',
         'inventory.items.restore',
         'inventory.items.sizes.update',
         'inventory.items.store',
@@ -963,6 +965,7 @@ $routeMethods = static function (string $routeName): array {
         'shop-owner.security.totp.verify' => ['POST'],
         'shop-owner.two-factor.enroll.verify' => ['POST'],
         'hr.employees.permissions.update' => ['POST'],
+        'hr.employees.reset_mfa' => ['POST'],
         'inventory.items.images.thumbnail' => ['PUT'],
         'shop_owner.inventory.items.images.thumbnail' => ['PUT'],
         'inventory.supplier-orders.status' => ['PUT'],
@@ -1210,6 +1213,7 @@ foreach ([
     $routes[$routeName]['actor_persistence'] = 'existing_owner_ref';
     $routes[$routeName]['risk_tier'] = 'sensitive';
     $routes[$routeName]['domain_rule'] = 'Shop Owner TOTP security mutations remain scoped to the authenticated Shop Owner account.';
+    $routes[$routeName]['supporting_routes'] = ['shop-owner.settings'];
 }
 
 $workspaceRoute = $routeEntry(
