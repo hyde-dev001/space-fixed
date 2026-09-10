@@ -14,7 +14,6 @@ const leaflet = vi.hoisted(() => {
 
   const tile = {
     addTo: vi.fn(),
-    redraw: vi.fn(),
   };
 
   const marker = {
@@ -111,7 +110,6 @@ describe('LiveTrackingMap', () => {
     render(<LiveTrackingMap locations={[]} />);
 
     expect(screen.getByLabelText('Live rider map')).toHaveClass('h-[30rem]', 'sm:h-[38rem]', 'lg:h-[44rem]', 'bg-white', '[&_.leaflet-tile]:!mix-blend-normal');
-    expect(screen.getByRole('button', { name: 'View map full screen' })).toHaveClass('min-h-11', 'min-w-11', 'sm:hidden');
     await waitFor(() => expect(leaflet.mapFactory).toHaveBeenCalled());
     expect(leaflet.tileLayer).toHaveBeenCalledWith(
       'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
@@ -126,8 +124,6 @@ describe('LiveTrackingMap', () => {
       pan: false,
       debounceMoveend: true,
     });
-    expect(leaflet.tile.redraw).not.toHaveBeenCalled();
-
   });
 
   it('labels an anonymous rider marker as Rider', async () => {
@@ -163,72 +159,6 @@ describe('LiveTrackingMap', () => {
       iconSize: [40, 40],
     }));
     expect(leaflet.divIconFactory.mock.calls[0][0].html).toContain('width="40" height="40"');
-  });
-
-  it('toggles the mobile map fullscreen control and resizes the map', async () => {
-    const requestFullscreen = vi.fn().mockResolvedValue(undefined);
-    const exitFullscreen = vi.fn().mockResolvedValue(undefined);
-    const originalRequestFullscreen = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'requestFullscreen');
-    const originalExitFullscreen = Object.getOwnPropertyDescriptor(document, 'exitFullscreen');
-    const originalFullscreenElement = Object.getOwnPropertyDescriptor(document, 'fullscreenElement');
-    let fullscreenElement: Element | null = null;
-
-    Object.defineProperty(HTMLElement.prototype, 'requestFullscreen', {
-      configurable: true,
-      value: requestFullscreen,
-    });
-    Object.defineProperty(document, 'exitFullscreen', {
-      configurable: true,
-      value: exitFullscreen,
-    });
-    Object.defineProperty(document, 'fullscreenElement', {
-      configurable: true,
-      get: () => fullscreenElement,
-    });
-
-    try {
-      render(<LiveTrackingMap locations={[]} />);
-
-      const button = screen.getByRole('button', { name: 'View map full screen' });
-      const shell = button.parentElement;
-      expect(shell).not.toBeNull();
-      await waitFor(() => expect(leaflet.mapFactory).toHaveBeenCalled());
-
-      fireEvent.click(button);
-      expect(requestFullscreen).toHaveBeenCalledTimes(1);
-
-      fullscreenElement = shell;
-      fireEvent(document, new Event('fullscreenchange'));
-      await waitFor(() => expect(screen.getByRole('button', { name: 'Exit full screen map' })).toBeInTheDocument());
-      expect(leaflet.map.invalidateSize).toHaveBeenCalledWith({
-        pan: false,
-        debounceMoveend: true,
-      });
-      expect(leaflet.tile.redraw).not.toHaveBeenCalled();
-
-      fireEvent.click(screen.getByRole('button', { name: 'Exit full screen map' }));
-      expect(exitFullscreen).toHaveBeenCalledTimes(1);
-
-      fullscreenElement = null;
-      fireEvent(document, new Event('fullscreenchange'));
-      await waitFor(() => expect(screen.getByRole('button', { name: 'View map full screen' })).toBeInTheDocument());
-    } finally {
-      if (originalRequestFullscreen) {
-        Object.defineProperty(HTMLElement.prototype, 'requestFullscreen', originalRequestFullscreen);
-      } else {
-        Reflect.deleteProperty(HTMLElement.prototype, 'requestFullscreen');
-      }
-      if (originalExitFullscreen) {
-        Object.defineProperty(document, 'exitFullscreen', originalExitFullscreen);
-      } else {
-        Reflect.deleteProperty(document, 'exitFullscreen');
-      }
-      if (originalFullscreenElement) {
-        Object.defineProperty(document, 'fullscreenElement', originalFullscreenElement);
-      } else {
-        Reflect.deleteProperty(document, 'fullscreenElement');
-      }
-    }
   });
 
   it('anchors a cached road route to the latest rider position', async () => {

@@ -1,5 +1,4 @@
 import 'leaflet/dist/leaflet.css';
-import { Maximize2, Minimize2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { LiveTrackingRoute } from '@/types/logistics';
 
@@ -92,7 +91,6 @@ const riderIcon = (
 };
 
 export default function LiveTrackingMap({ locations, label = 'Live rider map', followLocation = false, viewer = 'customer' }: Props) {
-  const mapShellRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<import('leaflet').Map | null>(null);
   const leafletRef = useRef<typeof import('leaflet') | null>(null);
@@ -105,24 +103,7 @@ export default function LiveTrackingMap({ locations, label = 'Live rider map', f
   const animationFramesRef = useRef(new Map<number, number>());
   const headingsRef = useRef(new Map<number, number>());
   const [mapReady, setMapReady] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(false);
   const hasFittedRef = useRef(false);
-
-  const toggleFullscreen = (): void => {
-    const shell = mapShellRef.current;
-    if (!shell) return;
-
-    if (document.fullscreenElement === shell) {
-      if (typeof document.exitFullscreen === 'function') {
-        void document.exitFullscreen().catch(() => undefined);
-      }
-      return;
-    }
-
-    if (typeof shell.requestFullscreen === 'function') {
-      void shell.requestFullscreen().catch(() => undefined);
-    }
-  };
 
   const cancelMarkerAnimation = (legId: number): void => {
     const frame = animationFramesRef.current.get(legId);
@@ -260,22 +241,6 @@ export default function LiveTrackingMap({ locations, label = 'Live rider map', f
       leafletRef.current = null;
     };
   }, []);
-
-  useEffect(() => {
-    const shell = mapShellRef.current;
-    if (!shell) return;
-
-    const handleFullscreenChange = () => {
-      setIsFullscreen(document.fullscreenElement === shell);
-      window.setTimeout(() => {
-        mapRef.current?.invalidateSize({ pan: false, debounceMoveend: true });
-      }, 0);
-    };
-
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
-  }, []);
-
 
   useEffect(() => {
     const L = leafletRef.current;
@@ -416,31 +381,13 @@ export default function LiveTrackingMap({ locations, label = 'Live rider map', f
       ? `Current GPS location · ${formatDistance(primaryLocation.location.accuracy_m)} accuracy`
       : 'Current GPS location'
     : primaryDestination;
-  const mapHeightClass = isFullscreen
-    ? 'h-dvh min-h-dvh'
-    : 'h-[30rem] sm:h-[38rem] lg:h-[44rem]';
-
   return (
-    <div
-      ref={mapShellRef}
-      className="relative w-full bg-white dark:bg-slate-900 [&:fullscreen]:h-dvh [&:fullscreen]:w-screen"
-    >
+    <div className="relative w-full bg-white dark:bg-slate-900">
       <div
         ref={containerRef}
-        className={'isolate w-full overflow-hidden bg-white [&_.leaflet-control-zoom_a]:!h-11 [&_.leaflet-control-zoom_a]:!w-11 [&_.leaflet-tile]:!mix-blend-normal ' + mapHeightClass + ' dark:bg-slate-900'}
+        className="isolate h-[30rem] w-full overflow-hidden bg-white [&_.leaflet-control-zoom_a]:!h-11 [&_.leaflet-control-zoom_a]:!w-11 [&_.leaflet-tile]:!mix-blend-normal sm:h-[38rem] lg:h-[44rem] dark:bg-slate-900"
         aria-label={label}
       />
-      <button
-        type="button"
-        onClick={toggleFullscreen}
-        aria-label={isFullscreen ? 'Exit full screen map' : 'View map full screen'}
-        aria-pressed={isFullscreen}
-        className="absolute right-3 top-3 z-[1100] inline-flex min-h-11 min-w-11 touch-manipulation items-center justify-center rounded-full border border-slate-200 bg-white text-slate-950 transition-colors hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 active:bg-slate-200 sm:hidden dark:border-slate-700 dark:bg-slate-900 dark:text-white dark:hover:bg-slate-800 dark:focus:ring-white"
-      >
-        {isFullscreen
-          ? <Minimize2 aria-hidden="true" className="h-5 w-5" />
-          : <Maximize2 aria-hidden="true" className="h-5 w-5" />}
-      </button>
     </div>
   );
 }
