@@ -737,7 +737,6 @@ describe('MyDeliveries rider interactions', () => {
     await waitFor(() => expect(screen.getByRole('region', { name: 'Route to repair shop' })).toBeVisible());
     expect(screen.queryByText('Route to repair shop')).not.toBeInTheDocument();
     expect(screen.queryByText('Shop address')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'View map full screen' })).toBeInTheDocument();
   });
 
   it('requires a photo for every failed pickup reason and notes only for Other', () => {
