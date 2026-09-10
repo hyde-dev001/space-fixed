@@ -77,7 +77,7 @@ const normalizedHeading = (value: number | null): number | null => {
   return ((value % 360) + 360) % 360;
 };
 
-const MOTORBIKE_ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" data-icon="motorcycle" aria-hidden="true"><path d="m18 14-1-3"/><path d="m3 9 6 2a2 2 0 0 1 2-2h2a2 2 0 0 1 1.99 1.81"/><path d="M8 17h3a1 1 0 0 0 1-1 6 6 0 0 1 6-6 1 1 0 0 0 1-1v-.75A5 5 0 0 0 17 5"/><circle cx="19" cy="17" r="3"/><circle cx="5" cy="17" r="3"/></svg>';
+const MOTORCYCLE_IMAGE = '/images/logistics/delivery-bike.png';
 
 const riderIcon = (
   L: typeof import('leaflet'),
@@ -85,9 +85,9 @@ const riderIcon = (
 ) => {
   return L.divIcon({
     className: 'live-rider-marker',
-    iconSize: [32, 32],
-    iconAnchor: [16, 16],
-    html: '<span style="display:flex;align-items:center;justify-content:center;width:32px;height:32px;border:2px solid #ffffff;border-radius:9999px;background:#111111"><span style="display:block;transform:rotate(' + (heading ?? 0) + 'deg)">' + MOTORBIKE_ICON + '</span></span>',
+    iconSize: [40, 40],
+    iconAnchor: [20, 20],
+    html: '<span style="display:block;width:40px;height:40px;transform:rotate(' + (heading ?? 0) + 'deg)"><img src="' + MOTORCYCLE_IMAGE + '" width="40" height="40" alt="" aria-hidden="true" draggable="false" style="display:block;width:40px;height:40px;object-fit:contain" /></span>',
   });
 };
 
@@ -96,6 +96,7 @@ export default function LiveTrackingMap({ locations, label = 'Live rider map', f
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<import('leaflet').Map | null>(null);
   const leafletRef = useRef<typeof import('leaflet') | null>(null);
+  const tileLayerRef = useRef<import('leaflet').TileLayer | null>(null);
   const markersRef = useRef(new Map<number, import('leaflet').Marker>());
   const destinationMarkersRef = useRef(new Map<number, import('leaflet').CircleMarker>());
   const routesRef = useRef(new Map<number, import('leaflet').Polyline>());
@@ -228,6 +229,7 @@ export default function LiveTrackingMap({ locations, label = 'Live rider map', f
         attribution: '&copy; OpenStreetMap contributors',
       });
       tileLayer.addTo(map);
+      tileLayerRef.current = tileLayer;
       leafletRef.current = L;
       mapRef.current = map;
       if (typeof ResizeObserver !== 'undefined') {
@@ -258,6 +260,7 @@ export default function LiveTrackingMap({ locations, label = 'Live rider map', f
       map?.remove();
       mapRef.current = null;
       leafletRef.current = null;
+      tileLayerRef.current = null;
     };
   }, []);
 
@@ -269,6 +272,7 @@ export default function LiveTrackingMap({ locations, label = 'Live rider map', f
       setIsFullscreen(document.fullscreenElement === shell);
       window.setTimeout(() => {
         mapRef.current?.invalidateSize({ pan: false, debounceMoveend: true });
+        tileLayerRef.current?.redraw();
       }, 0);
     };
 

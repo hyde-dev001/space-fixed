@@ -667,7 +667,7 @@ function DeliveryContact({ delivery }: { delivery: TrackingShipmentLeg }) {
             href={`sms:${textPhone}`}
             className="inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-950 transition-colors hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-slate-600 dark:text-white dark:hover:bg-slate-800 dark:focus:ring-gray-300 xl:min-h-11"
           >
-            Text customer
+            Text
           </a>
         ) : (
           <span className="inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-200 px-3 text-sm text-slate-400 xl:min-h-11">
