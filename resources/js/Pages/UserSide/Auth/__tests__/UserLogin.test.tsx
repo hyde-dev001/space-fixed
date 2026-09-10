@@ -1,8 +1,9 @@
 import type { ReactNode } from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { routerPostMock, usePageMock, swalFireMock } = vi.hoisted(() => ({
+const { routerOnMock, routerPostMock, usePageMock, swalFireMock } = vi.hoisted(() => ({
+  routerOnMock: vi.fn(() => vi.fn()),
   routerPostMock: vi.fn(),
   usePageMock: vi.fn(),
   swalFireMock: vi.fn(),
@@ -14,6 +15,7 @@ vi.mock('@inertiajs/react', () => ({
     <a href={href} {...props}>{children}</a>
   ),
   router: {
+    on: routerOnMock,
     post: routerPostMock,
   },
   usePage: () => usePageMock(),
@@ -40,6 +42,7 @@ const pageState = {
 const submit = () => fireEvent.submit(screen.getByRole('button', { name: /sign in/i }).closest('form')!);
 
 beforeEach(() => {
+  routerOnMock.mockClear();
   routerPostMock.mockReset();
   usePageMock.mockReset();
   swalFireMock.mockReset();
@@ -90,6 +93,28 @@ describe('unified sign-in', () => {
     submit();
 
     expect(screen.getByText('Email or password is incorrect.')).toBeInTheDocument();
+  });
+
+  it('shows a SweetAlert and prevents the default Inertia error page for 429 responses', () => {
+    render(<UserLogin />);
+
+    const invalidHandler = routerOnMock.mock.calls.find(([eventName]) => eventName === 'invalid')?.[1] as
+      ((event: CustomEvent) => void) | undefined;
+    const preventDefault = vi.fn();
+
+    expect(invalidHandler).toEqual(expect.any(Function));
+    act(() => {
+      invalidHandler?.({
+        detail: { response: { status: 429 } },
+        preventDefault,
+      } as unknown as CustomEvent);
+    });
+
+    expect(preventDefault).toHaveBeenCalledOnce();
+    expect(swalFireMock).toHaveBeenCalledWith(expect.objectContaining({
+      icon: 'warning',
+      title: 'Too many requests',
+    }));
   });
 
   it('does not show a signed-in success message before employee MFA is completed', () => {

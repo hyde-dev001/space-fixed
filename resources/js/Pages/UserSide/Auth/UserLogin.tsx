@@ -43,6 +43,19 @@ export default function UserLogin() {
     }
   }, [flash.success]);
 
+  useEffect(() => router.on('invalid', (event) => {
+    if (event.detail.response.status !== 429) return;
+
+    event.preventDefault();
+    setIsLoading(false);
+    Swal.fire({
+      icon: 'warning',
+      title: 'Too many requests',
+      text: 'Please wait a minute before trying to sign in again.',
+      confirmButtonColor: '#000000',
+    });
+  }), []);
+
   // Ensure CSRF token is set in headers for manual fetch if needed
   useEffect(() => {
     // Set CSRF token in meta tag if it's not already there
