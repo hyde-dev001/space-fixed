@@ -103,6 +103,8 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
         'password',
         'remember_token',
         'paymongo_secret_key', // Never expose the key in API responses
+        'shop_owner_totp_secret',
+        'shop_owner_totp_recovery_codes',
     ];
 
     /**
@@ -129,7 +131,18 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
         'warranty_enabled' => 'boolean',
         'order_refund_deadline_days' => 'integer',
         'two_factor_email_enabled' => 'boolean',
+        'shop_owner_totp_secret' => 'encrypted',
+        'shop_owner_totp_enabled_at' => 'datetime',
+        'shop_owner_totp_recovery_codes' => 'encrypted:array',
+        'shop_owner_totp_last_used_timestep' => 'integer',
     ];
+
+    public function hasTotpEnabled(): bool
+    {
+        return $this->shop_owner_totp_enabled_at !== null
+            && is_string($this->shop_owner_totp_secret)
+            && trim($this->shop_owner_totp_secret) !== '';
+    }
 
     /**
      * Get all documents uploaded for this shop owner
