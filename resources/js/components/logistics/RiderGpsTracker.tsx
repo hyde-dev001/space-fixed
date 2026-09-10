@@ -494,31 +494,6 @@ export default function RiderGpsTracker({
     >
       {mapLocations.length > 0 ? (
         <>
-          <header className="flex flex-col gap-3 border-b border-slate-200 p-4 sm:flex-row sm:items-start sm:justify-between dark:border-slate-700">
-            <div className="min-w-0">
-              <p className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                Route to {destinationLabel}
-              </p>
-              <h4 className="mt-1 text-base font-bold text-slate-950 dark:text-white">
-                {destination?.name || 'Delivery destination'}
-              </h4>
-              <p className="mt-1 break-words text-sm leading-6 text-slate-600 dark:text-slate-300">
-                {destination?.address || 'Address unavailable'}
-              </p>
-            </div>
-            {route && (
-              <dl className="grid shrink-0 grid-cols-2 gap-x-5 text-left sm:text-right">
-                <div>
-                  <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">ETA</dt>
-                  <dd className="mt-1 text-sm font-bold text-slate-950 dark:text-white">{Math.max(1, Math.ceil(route.duration_s / 60))} min</dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Distance</dt>
-                  <dd className="mt-1 text-sm font-bold text-slate-950 dark:text-white">{formatDistance(route.distance_m)}</dd>
-                </div>
-              </dl>
-            )}
-          </header>
           <LiveTrackingMap locations={mapLocations} label={destinationLabel + ' route map'} followLocation viewer="rider" />
           <p className="border-t border-slate-200 px-4 py-3 text-xs leading-5 text-slate-500 dark:border-slate-700 dark:text-slate-400">
             {route?.source === 'road'

@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import LiveTrackingMap from '../LiveTrackingMap';
 
@@ -110,7 +110,8 @@ describe('LiveTrackingMap', () => {
   it('recalculates the map without clearing already loaded map tiles', async () => {
     render(<LiveTrackingMap locations={[]} />);
 
-    expect(screen.getByLabelText('Live rider map')).toHaveClass('h-[24rem]', 'sm:h-[32rem]', 'lg:h-[38rem]', 'bg-white');
+    expect(screen.getByLabelText('Live rider map')).toHaveClass('h-[30rem]', 'sm:h-[38rem]', 'lg:h-[44rem]', 'bg-white');
+    expect(screen.getByRole('button', { name: 'View map full screen' })).toHaveClass('min-h-11', 'min-w-11', 'sm:hidden');
     await waitFor(() => expect(leaflet.mapFactory).toHaveBeenCalled());
     expect(resizeObserver.observe).toHaveBeenCalled();
     expect(resizeCallback).toBeTypeOf('function');
@@ -153,6 +154,74 @@ describe('LiveTrackingMap', () => {
 
     await waitFor(() => expect(leaflet.markerFactory).toHaveBeenCalled());
     expect(leaflet.marker.bindTooltip).toHaveBeenCalledWith('Rider · Repair Pickup');
+    expect(leaflet.divIconFactory).toHaveBeenCalledWith(expect.objectContaining({
+      html: expect.stringContaining('data-icon="motorcycle"'),
+    }));
+  });
+
+  it('toggles the mobile map fullscreen control and resizes the map', async () => {
+    const requestFullscreen = vi.fn().mockResolvedValue(undefined);
+    const exitFullscreen = vi.fn().mockResolvedValue(undefined);
+    const originalRequestFullscreen = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'requestFullscreen');
+    const originalExitFullscreen = Object.getOwnPropertyDescriptor(document, 'exitFullscreen');
+    const originalFullscreenElement = Object.getOwnPropertyDescriptor(document, 'fullscreenElement');
+    let fullscreenElement: Element | null = null;
+
+    Object.defineProperty(HTMLElement.prototype, 'requestFullscreen', {
+      configurable: true,
+      value: requestFullscreen,
+    });
+    Object.defineProperty(document, 'exitFullscreen', {
+      configurable: true,
+      value: exitFullscreen,
+    });
+    Object.defineProperty(document, 'fullscreenElement', {
+      configurable: true,
+      get: () => fullscreenElement,
+    });
+
+    try {
+      render(<LiveTrackingMap locations={[]} />);
+
+      const button = screen.getByRole('button', { name: 'View map full screen' });
+      const shell = button.parentElement;
+      expect(shell).not.toBeNull();
+      await waitFor(() => expect(leaflet.mapFactory).toHaveBeenCalled());
+
+      fireEvent.click(button);
+      expect(requestFullscreen).toHaveBeenCalledTimes(1);
+
+      fullscreenElement = shell;
+      fireEvent(document, new Event('fullscreenchange'));
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Exit full screen map' })).toBeInTheDocument());
+      expect(leaflet.map.invalidateSize).toHaveBeenCalledWith({
+        pan: false,
+        debounceMoveend: true,
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Exit full screen map' }));
+      expect(exitFullscreen).toHaveBeenCalledTimes(1);
+
+      fullscreenElement = null;
+      fireEvent(document, new Event('fullscreenchange'));
+      await waitFor(() => expect(screen.getByRole('button', { name: 'View map full screen' })).toBeInTheDocument());
+    } finally {
+      if (originalRequestFullscreen) {
+        Object.defineProperty(HTMLElement.prototype, 'requestFullscreen', originalRequestFullscreen);
+      } else {
+        Reflect.deleteProperty(HTMLElement.prototype, 'requestFullscreen');
+      }
+      if (originalExitFullscreen) {
+        Object.defineProperty(document, 'exitFullscreen', originalExitFullscreen);
+      } else {
+        Reflect.deleteProperty(document, 'exitFullscreen');
+      }
+      if (originalFullscreenElement) {
+        Object.defineProperty(document, 'fullscreenElement', originalFullscreenElement);
+      } else {
+        Reflect.deleteProperty(document, 'fullscreenElement');
+      }
+    }
   });
 
   it('anchors a cached road route to the latest rider position', async () => {
