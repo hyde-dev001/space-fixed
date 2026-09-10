@@ -2,11 +2,13 @@ import MonochromeSelect from "@/components/form/Select";
 																																								import React, { useEffect, useRef, useState } from 'react';
 import { Head, router, usePage } from '@inertiajs/react';
 import axios from 'axios';
+import { route } from 'ziggy-js';
 import 'leaflet/dist/leaflet.css';
 import { AlertTriangle, Building2, CalendarDays, Check, CheckCircle2, ChevronDown, Eye, EyeOff, MapPin, Store, Trash2, User, Wrench } from 'lucide-react';
 																																								import UserSwal from '../../UserSide/Shared/UserModal';
 import BusinessScalingSettings, { type BusinessScalingPayload } from './components/BusinessScalingSettings';
 import BusinessDocumentCompliance, { type ComplianceSlot } from './components/BusinessDocumentCompliance';
+import EmployeeTotpSecurity from '../../../components/UserProfile/EmployeeTotpSecurity';
 import { requiredPolicySectionKeys } from '../../../utils/policySectionResolver';
 import type { ShopPolicyEditorStateResponse, ShopPolicySections } from '../../../types/shopPolicy';
 import { GPS_POSITION_OPTIONS, getCurrentPositionWithTimeout } from '../../../utils/geolocation';
@@ -50,7 +52,7 @@ type ShopSettingsPayload = {
 	repair_payment_policy: 'deposit_50' | 'full_upfront';
 	repair_workload_limit: number;
 	order_refund_deadline_days: number;
-	two_factor_email_enabled: boolean;
+	totp_enabled: boolean;
 	has_paymongo_key: boolean;
 	// Geofence
 	attendance_geofence_enabled: boolean;
@@ -334,10 +336,6 @@ const ShopSetting: React.FC = () => {
 	const [savingAutoRenewal, setSavingAutoRenewal] = useState(false);
 	const [autoRenewalError, setAutoRenewalError] = useState<string | null>(null);
 	const [autoRenewalSuccess, setAutoRenewalSuccess] = useState(false);
-	const [twoFactorEmailEnabled, setTwoFactorEmailEnabled] = useState(Boolean(shop_settings.two_factor_email_enabled));
-	const [savingTwoFactor, setSavingTwoFactor] = useState(false);
-	const [twoFactorError, setTwoFactorError] = useState<string | null>(null);
-	const [twoFactorSuccess, setTwoFactorSuccess] = useState(false);
 	const [policySections, setPolicySections] = useState<ShopPolicySections>({});
 	const [defaultPolicySections, setDefaultPolicySections] = useState<ShopPolicySections>({});
 	const [policyVersionNumber, setPolicyVersionNumber] = useState<number | null>(null);
@@ -501,36 +499,6 @@ const ShopSetting: React.FC = () => {
 		}
 	};
 
-	const handleToggleTwoFactorEmail = (enabled: boolean) => {
-		if (savingTwoFactor) return;
-
-		const previous = twoFactorEmailEnabled;
-		setTwoFactorEmailEnabled(enabled);
-		setSavingTwoFactor(true);
-		setTwoFactorError(null);
-		setTwoFactorSuccess(false);
-
-		router.put(
-			'/shop-owner/settings',
-			{ two_factor_email_enabled: enabled },
-			{
-				preserveScroll: true,
-				onSuccess: () => {
-					setTwoFactorSuccess(true);
-					window.setTimeout(() => setTwoFactorSuccess(false), 2200);
-				},
-				onError: (pageErrors) => {
-					setTwoFactorEmailEnabled(previous);
-					const errors = pageErrors as Record<string, string | undefined>;
-					setTwoFactorError(errors.two_factor_email_enabled || 'Failed to update two-factor authentication setting.');
-				},
-				onFinish: () => {
-					setSavingTwoFactor(false);
-				},
-			},
-		);
-	};
-
 	const accountLabel = isIndividual ? 'Individual Account' : 'Business Account';
 	const businessTypeLabel = hasRetailSignal && hasRepairSignal
 		? 'Retail & Repair'
@@ -600,10 +568,6 @@ const ShopSetting: React.FC = () => {
 			return next.length === prev.length ? prev : next;
 		});
 	}, []);
-
-	useEffect(() => {
-		setTwoFactorEmailEnabled(Boolean(shop_settings.two_factor_email_enabled));
-	}, [shop_settings.two_factor_email_enabled]);
 
 	const normalizePolicySections = (source: ShopPolicySections | null | undefined): ShopPolicySections => {
 		const normalized: ShopPolicySections = {};
@@ -1014,7 +978,7 @@ const ShopSetting: React.FC = () => {
 		{ label: 'Staff Management', enabled: shop_settings.can_manage_staff },
 		{ label: 'Shop Profile Management', enabled: true },
 		{ label: 'Shop Notification Settings', enabled: true },
-		{ label: 'Email OTP Two-Factor Login', enabled: twoFactorEmailEnabled },
+		{ label: 'Authenticator-App Two-Factor Login', enabled: shop_settings.totp_enabled },
 		{ label: 'Approval Limit Controls', enabled: true },
 		{ label: 'Audit Logs Access', enabled: true },
 		{ label: 'Retail Order Workflows', enabled: hasRetailSignal },
@@ -1706,26 +1670,20 @@ const ShopSetting: React.FC = () => {
 									)}
 								</div>
 
-									<div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-3 text-sm text-gray-700">
-										<div className="flex items-start justify-between gap-3">
-											<div className="min-w-0">
-												<p className="font-semibold text-gray-900">Email OTP Two-Factor Login</p>
-												<p className="mt-1 text-xs text-gray-600">Require a one-time code from email after entering password.</p>
-											</div>
-											<ToggleSwitch
-												enabled={twoFactorEmailEnabled}
-												onChange={handleToggleTwoFactorEmail}
-												disabled={savingTwoFactor}
-												ariaLabel="Toggle email OTP two-factor login"
-											/>
-										</div>
-										{twoFactorError ? <p className="mt-2 text-xs text-red-600">{twoFactorError}</p> : null}
-										{twoFactorSuccess ? (
-											<p className="mt-2 flex items-center gap-1 text-xs font-medium text-green-700">
-												<Check size={13} /> Two-factor login setting saved.
-											</p>
-										) : null}
-									</div>
+					<div className="mt-3">
+						<EmployeeTotpSecurity
+							enabled={shop_settings.totp_enabled}
+							showSessions={false}
+							showActivity={false}
+							routes={{
+								setup: route('shop-owner.security.totp.setup'),
+								verify: route('shop-owner.security.totp.verify'),
+								recovery: route('shop-owner.security.totp.recovery.regenerate'),
+								disable: route('shop-owner.security.totp.disable'),
+								activity: route('erp.security.activity'),
+							}}
+						/>
+					</div>
 
 								<div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
 									{accountFeatures.map((feature) => (

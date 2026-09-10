@@ -91,6 +91,26 @@ class ShopOwnerApprovalSettingsTest extends TestCase
         $response->assertStatus(422);
     }
 
+    public function test_settings_exposes_totp_status_and_ignores_legacy_email_otp_updates(): void
+    {
+        $owner = ShopOwner::factory()->approved()->create([
+            'two_factor_email_enabled' => true,
+        ]);
+
+        $settings = $this->settingsPage($owner)['props']['shop_settings'];
+
+        $this->assertFalse($settings['totp_enabled']);
+        $this->assertArrayNotHasKey('two_factor_email_enabled', $settings);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->putJson('/shop-owner/settings', [
+                'two_factor_email_enabled' => false,
+            ])
+            ->assertRedirect();
+
+        $this->assertTrue((bool) $owner->fresh()->two_factor_email_enabled);
+    }
+
     /** @return array<string, array{enabled: bool, limit: float|null}> */
     private function approvalPages(bool $enabled, ?float $limit): array
     {

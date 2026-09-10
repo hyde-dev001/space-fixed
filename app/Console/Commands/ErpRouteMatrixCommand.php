@@ -107,7 +107,7 @@ final class ErpRouteMatrixCommand extends Command
                 }
 
                 $isNavigationOnlyCore = ($entry['classification'] ?? null) === 'core'
-                    && ($entry['navigation_group'] ?? null) === 'workspace';
+                    && in_array($entry['navigation_group'] ?? null, ['workspace', 'articles'], true);
 
                 if (($entry['supporting_routes'] ?? []) === [] && ! $isNavigationOnlyCore) {
                     $errors[] = "owner-capable component has no supporting API list: {$routeName}";

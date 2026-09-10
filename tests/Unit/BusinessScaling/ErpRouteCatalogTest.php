@@ -43,7 +43,7 @@ final class ErpRouteCatalogTest extends TestCase
         $this->assertSame('attendance-monitoring', $attendance['navigation_page_group']);
         $this->assertSame('Attendance Monitoring', $attendance['navigation_page_group_label']);
         $this->assertSame(20, $attendance['navigation_page_group_order']);
-        $this->assertSame(30, $attendance['navigation_order']);
+        $this->assertSame(40, $attendance['navigation_order']);
     }
 
     public function test_owner_readable_pages_require_a_complete_catalog_contract(): void

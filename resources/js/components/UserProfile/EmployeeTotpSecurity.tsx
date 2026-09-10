@@ -44,6 +44,7 @@ interface Props {
     active_sessions?: ActiveSession[];
     routes?: Partial<SecurityRoutes>;
     showSessions?: boolean;
+    showActivity?: boolean;
 }
 
 interface SetupResponse {
@@ -96,7 +97,7 @@ function HistoryRows({ history, activity }: HistoryRowsProps) {
     return <div className="divide-y divide-gray-200 dark:divide-gray-700">{history.data.map((session, index) => <div key={session.device + "-" + session.last_active_at + "-" + index} className="flex items-center justify-between gap-4 px-6 py-4"><div><p className="font-medium text-gray-900 dark:text-white">{session.device}</p><p className="text-sm text-gray-500 dark:text-gray-400">Last active {formatActivityDate(session.last_active_at)}</p></div>{session.current && <span className="rounded border border-green-200 px-2 py-1 text-xs font-medium text-green-700">This device</span>}</div>)}</div>;
 }
 
-export default function EmployeeTotpSecurity({ enabled, activity = [], active_sessions = [], routes, showSessions = true }: Props) {
+export default function EmployeeTotpSecurity({ enabled, activity = [], active_sessions = [], routes, showSessions = true, showActivity = true }: Props) {
     const securityRoutes = {
         setup: routes?.setup ?? route("erp.security.totp.setup"),
         verify: routes?.verify ?? route("erp.security.totp.verify"),
@@ -663,7 +664,7 @@ export default function EmployeeTotpSecurity({ enabled, activity = [], active_se
             </div>
 
             {showSessions && (
-            <div className="mt-8 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
+                <div className="mt-8 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
                 <div className="flex flex-col justify-between gap-4 border-b border-gray-200 px-8 py-6 md:flex-row md:items-center dark:border-gray-700">
                     <div>
                         <h3 className="text-xl font-bold text-gray-900 dark:text-white">Active Sessions</h3>
@@ -705,10 +706,11 @@ export default function EmployeeTotpSecurity({ enabled, activity = [], active_se
                     )}
                 </div>
                 {sessionError && <p className="px-8 py-4 text-sm text-red-600">{sessionError}</p>}
-            </div>
+                </div>
             )}
 
-            <div className="mt-8 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
+            {showActivity && (
+                <div className="mt-8 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
                 <div className="flex items-center justify-between border-b border-gray-200 px-8 py-6 dark:border-gray-700">
                     <h3 className="text-xl font-bold text-gray-900 dark:text-white">Recent Security Activity</h3>
                     <button type="button" onClick={() => void loadHistory("activity")} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 dark:border-gray-600 dark:text-gray-200">View all</button>
@@ -724,7 +726,8 @@ export default function EmployeeTotpSecurity({ enabled, activity = [], active_se
                         </div>
                     ))}
                 </div>
-            </div>
+                </div>
+            )}
 
             {renderModal()}
             {renderHistoryModal()}

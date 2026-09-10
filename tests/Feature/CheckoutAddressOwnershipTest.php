@@ -16,7 +16,9 @@ class CheckoutAddressOwnershipTest extends TestCase
 
     public function test_customer_cannot_create_an_order_with_another_customers_address(): void
     {
-        $customer = User::factory()->create();
+        $customer = User::factory()->create([
+            'identity_verification_status' => User::IDENTITY_APPROVED,
+        ]);
         $foreignAddress = $this->addressFor(User::factory()->create());
         $product = $this->productFor(ShopOwner::factory()->approved()->create());
 
@@ -30,7 +32,9 @@ class CheckoutAddressOwnershipTest extends TestCase
 
     public function test_customer_can_create_an_order_with_their_own_address(): void
     {
-        $customer = User::factory()->create();
+        $customer = User::factory()->create([
+            'identity_verification_status' => User::IDENTITY_APPROVED,
+        ]);
         $address = $this->addressFor($customer);
         $product = $this->productFor(ShopOwner::factory()->approved()->create());
 

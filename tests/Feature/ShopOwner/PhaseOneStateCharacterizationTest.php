@@ -18,12 +18,14 @@ use App\Models\ShopOwner;
 use App\Models\ShopOwnerModule;
 use App\Models\Supplier;
 use App\Models\User;
+use App\Services\EmployeeMfaService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use PHPUnit\Framework\Attributes\Test;
+use PragmaRX\Google2FA\Google2FA;
 use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
@@ -261,17 +263,20 @@ final class PhaseOneStateCharacterizationTest extends TestCase
         $shop = ShopOwner::factory()->approved()->create([
             'email' => 'phase-one-owner@example.test',
             'password' => Hash::make('Password1!'),
-            'two_factor_email_enabled' => true,
         ]);
+        $secret = $this->enableTotp($shop);
 
         $this->post('/shop-owner/login', [
             'email' => $shop->email,
             'password' => 'Password1!',
         ])
             ->assertRedirect(route('shop-owner.two-factor.challenge'))
-            ->assertSessionHas('shop_owner_2fa_pending_id', $shop->id);
+            ->assertSessionHas('shop_owner_2fa_pending_id', $shop->id)
+            ->assertSessionMissing('shop_owner_2fa_entry');
 
         $this->assertGuest('shop_owner');
+        Mail::assertNothingSent();
+        self::assertSame(6, strlen($this->totpCode($secret)));
     }
 
     #[Test]
@@ -279,24 +284,38 @@ final class PhaseOneStateCharacterizationTest extends TestCase
     {
         $shop = ShopOwner::factory()->approved()->create([
             'password' => Hash::make('Password1!'),
-            'two_factor_email_enabled' => true,
         ]);
+        $secret = $this->enableTotp($shop);
 
         $this->withSession([
             'shop_owner_2fa_pending_id' => $shop->id,
             'shop_owner_2fa_remember' => false,
             'shop_owner_2fa_pending_at' => now()->timestamp,
-            'shop_owner_2fa_entry' => [
-                'shop_owner_id' => $shop->id,
-                'otp_hash' => Hash::make('123456'),
-                'attempts' => 0,
-                'expires_at' => now()->addMinutes(10)->timestamp,
-            ],
-        ])->post('/shop-owner/two-factor/verify', ['otp' => '123456'])
+            'shop_owner_2fa_attempts' => 0,
+        ])->post('/shop-owner/two-factor/verify', ['code' => $this->totpCode($secret)])
             ->assertRedirect(route('shop-owner.dashboard'));
 
         $this->assertAuthenticatedAs($shop, 'shop_owner');
         $this->assertGuest('user');
+    }
+
+    private function enableTotp(ShopOwner $shop): string
+    {
+        $secret = (new Google2FA())->generateSecretKey(32);
+
+        $shop->forceFill([
+            'shop_owner_totp_secret' => $secret,
+            'shop_owner_totp_enabled_at' => now(),
+            'shop_owner_totp_recovery_codes' => app(EmployeeMfaService::class)->hashRecoveryCodes([]),
+            'shop_owner_totp_last_used_timestep' => null,
+        ])->save();
+
+        return $secret;
+    }
+
+    private function totpCode(string $secret): string
+    {
+        return (new Google2FA())->oathTotp($secret, intdiv(now()->timestamp, 30));
     }
 
     /** @return array{ShopOwner, User, PurchaseOrder, PurchaseOrderItem, InventoryItem} */

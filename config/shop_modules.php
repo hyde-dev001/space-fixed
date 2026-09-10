@@ -171,6 +171,15 @@ $routeBuckets = [
         'erp.notifications.update-preferences',
         'erp.password.update',
         'erp.profile',
+        'erp.mfa.challenge',
+        'erp.mfa.challenge.verify',
+        'erp.security.activity',
+        'erp.security.sessions.index',
+        'erp.security.sessions.logout-others',
+        'erp.security.totp.disable',
+        'erp.security.totp.recovery.regenerate',
+        'erp.security.totp.setup',
+        'erp.security.totp.verify',
         'erp.articles.index',
         'erp.articles.show',
         'erp.manager.articles.index',
@@ -197,6 +206,7 @@ $routeBuckets = [
         'erp.time-in',
         'finance.dashboard',
         'hr.dashboard',
+        'hr.employees.reset_mfa',
         'hr.employees.reset_password',
         'hr.notifications.clear_read',
         'hr.notifications.destroy',
@@ -259,11 +269,16 @@ $routeBuckets = [
         'shop-owner.settings.policies.draft',
         'shop-owner.settings.policies.publish',
         'shop-owner.settings.update',
+        'shop-owner.security.totp.disable',
+        'shop-owner.security.totp.recovery.regenerate',
+        'shop-owner.security.totp.setup',
+        'shop-owner.security.totp.verify',
         'shop-owner.shop-profile',
         'shop-owner.shop-profile.password.update',
         'shop-owner.shop-profile.update',
         'shop-owner.two-factor.challenge',
-        'shop-owner.two-factor.resend',
+        'shop-owner.two-factor.enroll',
+        'shop-owner.two-factor.enroll.verify',
         'shop-owner.two-factor.verify',
         'shop_owner.audit.export',
         'shop_owner.audit.index',
@@ -758,6 +773,7 @@ $routeBuckets = [
         'inventory.items.images.thumbnail',
         'inventory.items.images.upload',
         'inventory.items.index',
+        'inventory.items.replenishment-settings.update',
         'inventory.items.restore',
         'inventory.items.sizes.update',
         'inventory.items.store',
@@ -926,6 +942,12 @@ $routeMethods = static function (string $routeName): array {
         'shop_owner.finance.invoices.update' => ['PATCH'],
         'shop_owner.finance.expenses.update' => ['PATCH'],
         'erp.password.update' => ['POST'],
+        'erp.mfa.challenge.verify' => ['POST'],
+        'erp.security.sessions.logout-others' => ['POST'],
+        'erp.security.totp.disable' => ['POST'],
+        'erp.security.totp.recovery.regenerate' => ['POST'],
+        'erp.security.totp.setup' => ['POST'],
+        'erp.security.totp.verify' => ['POST'],
         'shop-owner.shop-profile.update' => ['POST'],
         'shop-owner.shop-profile.password.update' => ['POST'],
         'shop-owner.compliance-documents.renewals.store' => ['POST'],
@@ -937,7 +959,13 @@ $routeMethods = static function (string $routeName): array {
         'shop_owner.repairs.delivery-method' => ['PATCH'],
         'shop_owner.premium.auto-renew' => ['PATCH'],
         'shop-owner.employees.permissions.update' => ['POST'],
+        'shop-owner.security.totp.disable' => ['POST'],
+        'shop-owner.security.totp.recovery.regenerate' => ['POST'],
+        'shop-owner.security.totp.setup' => ['POST'],
+        'shop-owner.security.totp.verify' => ['POST'],
+        'shop-owner.two-factor.enroll.verify' => ['POST'],
         'hr.employees.permissions.update' => ['POST'],
+        'hr.employees.reset_mfa' => ['POST'],
         'inventory.items.images.thumbnail' => ['PUT'],
         'shop_owner.inventory.items.images.thumbnail' => ['PUT'],
         'inventory.supplier-orders.status' => ['PUT'],
@@ -1113,7 +1141,8 @@ $isPublicRoute = static fn (string $routeName): bool => in_array($routeName, [
     'shop-owner.resubmission.document',
     'shop-owner.resubmission.submit',
     'shop-owner.two-factor.challenge',
-    'shop-owner.two-factor.resend',
+    'shop-owner.two-factor.enroll',
+    'shop-owner.two-factor.enroll.verify',
     'shop-owner.two-factor.verify',
 ], true);
 
@@ -1167,6 +1196,24 @@ foreach ($routeBuckets as $bucket => $routeNames) {
             selfService: $isSelfServiceRoute($routeName),
         );
     }
+}
+
+foreach ([
+    'shop-owner.security.totp.disable',
+    'shop-owner.security.totp.recovery.regenerate',
+    'shop-owner.security.totp.setup',
+    'shop-owner.security.totp.verify',
+] as $routeName) {
+    if (! isset($routes[$routeName])) {
+        continue;
+    }
+
+    $routes[$routeName]['owner_access'] = 'allowed';
+    $routes[$routeName]['owner_denial_reason'] = null;
+    $routes[$routeName]['actor_persistence'] = 'existing_owner_ref';
+    $routes[$routeName]['risk_tier'] = 'sensitive';
+    $routes[$routeName]['domain_rule'] = 'Shop Owner TOTP security mutations remain scoped to the authenticated Shop Owner account.';
+    $routes[$routeName]['supporting_routes'] = ['shop-owner.settings'];
 }
 
 $workspaceRoute = $routeEntry(

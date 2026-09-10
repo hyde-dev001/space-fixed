@@ -1,4 +1,4 @@
-import { fireEvent, screen, within } from '@testing-library/dom';
+import { fireEvent, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { enhanceSweetAlertSelect } from '../monochromeSweetAlertSelect';
 

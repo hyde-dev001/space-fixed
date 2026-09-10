@@ -191,7 +191,8 @@ final class ShopModuleCatalogTest extends TestCase
             'shop-owner.resubmission.form',
             'shop-owner.resubmission.submit',
             'shop-owner.two-factor.challenge',
-            'shop-owner.two-factor.resend',
+            'shop-owner.two-factor.enroll',
+            'shop-owner.two-factor.enroll.verify',
             'shop-owner.two-factor.verify',
         ] as $routeName) {
             $this->assertSame('public', $routes[$routeName]['audience'], $routeName);

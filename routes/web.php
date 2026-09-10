@@ -17,6 +17,7 @@ use App\Http\Controllers\ShopOwner\EcommerceController;
 use App\Http\Controllers\ShopOwner\ShopOwnerDocumentRenewalController;
 use App\Http\Controllers\ShopOwner\ShopOwnerDashboardController;
 use App\Http\Controllers\ShopOwner\ShopOwnerModuleController;
+use App\Http\Controllers\ShopOwner\ShopOwnerMfaController;
 use App\Http\Controllers\ShopOwner\ShopOwnerUpgradeRequestController;
 use App\Http\Controllers\ShopOwner\OwnerActionCenterController;
 use App\Http\Controllers\ShopOwner\OwnerActionCenterSummaryController;
@@ -721,9 +722,11 @@ Route::get('/shop-owner/two-factor', [ShopOwnerAuthController::class, 'showTwoFa
 Route::post('/shop-owner/two-factor/verify', [ShopOwnerAuthController::class, 'verifyLoginTwoFactorOtp'])
     ->middleware('throttle:10,1')
     ->name('shop-owner.two-factor.verify');
-Route::post('/shop-owner/two-factor/resend', [ShopOwnerAuthController::class, 'resendLoginTwoFactorOtp'])
-    ->middleware('throttle:6,1')
-    ->name('shop-owner.two-factor.resend');
+Route::get('/shop-owner/two-factor/enroll', [ShopOwnerAuthController::class, 'showTwoFactorEnrollment'])
+    ->name('shop-owner.two-factor.enroll');
+Route::post('/shop-owner/two-factor/enroll/verify', [ShopOwnerAuthController::class, 'verifyTwoFactorEnrollment'])
+    ->middleware('throttle:10,1')
+    ->name('shop-owner.two-factor.enroll.verify');
 
 // Shop Owner Pending Approval Page
 Route::get('/shop-owner/pending-approval', function () {
@@ -980,6 +983,12 @@ Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')-
 
     // SHOP SETTINGS - Available to ALL
     Route::get('/settings', [ShopSettingsController::class, 'index'])->name('settings');
+    Route::middleware('throttle:10,1')->prefix('security/totp')->name('security.totp.')->group(function () {
+        Route::post('/setup', [ShopOwnerMfaController::class, 'setup'])->name('setup');
+        Route::post('/verify', [ShopOwnerMfaController::class, 'verifySetup'])->name('verify');
+        Route::post('/recovery-codes/regenerate', [ShopOwnerMfaController::class, 'regenerateRecoveryCodes'])->name('recovery.regenerate');
+        Route::post('/disable', [ShopOwnerMfaController::class, 'disable'])->name('disable');
+    });
     Route::put('/settings', [ShopSettingsController::class, 'update'])->name('settings.update');
     Route::post('/settings/business-upgrade', [ShopOwnerUpgradeRequestController::class, 'store'])
         ->middleware('throttle:5,1')

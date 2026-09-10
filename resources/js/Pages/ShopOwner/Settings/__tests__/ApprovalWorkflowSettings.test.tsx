@@ -28,12 +28,20 @@ vi.mock("axios", () => ({
   },
 }));
 
+vi.mock("ziggy-js", () => ({
+  route: (name: string) => `/${name}`,
+}));
+
 vi.mock("../components/BusinessScalingSettings", () => ({
   default: () => <div>Business scaling content</div>,
 }));
 
 vi.mock("../components/BusinessDocumentCompliance", () => ({
   default: () => <div>Document compliance content</div>,
+}));
+
+vi.mock("../../../../components/UserProfile/EmployeeTotpSecurity", () => ({
+  default: () => <div>Two-factor security content</div>,
 }));
 
 vi.mock("../../../UserSide/Shared/UserModal", () => ({
@@ -94,7 +102,7 @@ beforeEach(() => {
       repair_payment_policy: "deposit_50",
       repair_workload_limit: 20,
       order_refund_deadline_days: 7,
-      two_factor_email_enabled: false,
+      totp_enabled: false,
       has_paymongo_key: false,
       attendance_geofence_enabled: false,
       shop_latitude: null,

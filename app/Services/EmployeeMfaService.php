@@ -26,9 +26,14 @@ final class EmployeeMfaService
 
     public function provisioningUri(User $user, string $secret): string
     {
+        return $this->provisioningUriForEmail((string) $user->email, $secret);
+    }
+
+    public function provisioningUriForEmail(string $email, string $secret): string
+    {
         return $this->google2fa->getQRCodeUrl(
             (string) config('privileged_security.issuer'),
-            (string) $user->email,
+            $email,
             $secret,
         );
     }
@@ -45,7 +50,12 @@ final class EmployeeMfaService
 
     public function verifyEnrollment(string $secret, string $code): bool
     {
-        if (preg_match('/^[0-9]{6}$/', $code) !== 1) {
+        return $this->verifyTotpForSecret($secret, $code);
+    }
+
+    public function verifyTotpForSecret(string $secret, string $code): bool
+    {
+        if ($secret === '' || preg_match('/^[0-9]{6}$/', $code) !== 1) {
             return false;
         }
 
@@ -58,16 +68,39 @@ final class EmployeeMfaService
 
     public function consumeTotp(User $lockedUser, string $code, int $currentTimestep): bool
     {
-        if (preg_match('/^[0-9]{6}$/', $code) !== 1) {
-            return false;
-        }
-
         $secret = $lockedUser->employee_totp_secret;
         if (! is_string($secret) || $secret === '') {
             return false;
         }
 
-        $oldTimestep = $lockedUser->employee_totp_last_used_timestep;
+        $acceptedTimestep = $this->consumeTotpState(
+            $secret,
+            $lockedUser->employee_totp_last_used_timestep,
+            $code,
+            $currentTimestep,
+        );
+
+        if (! is_int($acceptedTimestep)) {
+            return false;
+        }
+
+        $lockedUser->forceFill([
+            'employee_totp_last_used_timestep' => $acceptedTimestep,
+        ])->save();
+
+        return true;
+    }
+
+    public function consumeTotpState(
+        string $secret,
+        ?int $oldTimestep,
+        string $code,
+        int $currentTimestep,
+    ): int|false {
+        if ($secret === '' || preg_match('/^[0-9]{6}$/', $code) !== 1) {
+            return false;
+        }
+
         $acceptedTimestep = $this->google2fa->verifyKeyNewer(
             $secret,
             $code,
@@ -81,11 +114,7 @@ final class EmployeeMfaService
             return false;
         }
 
-        $lockedUser->forceFill([
-            'employee_totp_last_used_timestep' => $acceptedTimestep,
-        ])->save();
-
-        return true;
+        return $acceptedTimestep;
     }
 
     /** @return list<string> */
@@ -112,14 +141,31 @@ final class EmployeeMfaService
 
     public function consumeRecoveryCode(User $lockedUser, string $code): bool
     {
-        try {
-            $normalizedCode = self::normalizeRecoveryCode($code);
-        } catch (InvalidArgumentException) {
+        $storedCodes = $lockedUser->employee_totp_recovery_codes;
+        if (! is_array($storedCodes)) {
             return false;
         }
 
-        $storedCodes = $lockedUser->employee_totp_recovery_codes;
-        if (! is_array($storedCodes)) {
+        $remainingCodes = $this->consumeRecoveryCodeFromHashes($storedCodes, $code);
+        if ($remainingCodes === false) {
+            return false;
+        }
+
+        $lockedUser->forceFill([
+            'employee_totp_recovery_codes' => $remainingCodes,
+        ])->save();
+
+        return true;
+    }
+
+    /** @param list<string> $storedCodes
+     *  @return list<string>|false
+     */
+    public function consumeRecoveryCodeFromHashes(array $storedCodes, string $code): array|false
+    {
+        try {
+            $normalizedCode = self::normalizeRecoveryCode($code);
+        } catch (InvalidArgumentException) {
             return false;
         }
 
@@ -129,11 +175,7 @@ final class EmployeeMfaService
             }
 
             unset($storedCodes[$index]);
-            $lockedUser->forceFill([
-                'employee_totp_recovery_codes' => array_values($storedCodes),
-            ])->save();
-
-            return true;
+            return array_values($storedCodes);
         }
 
         return false;
