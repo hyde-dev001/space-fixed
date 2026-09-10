@@ -155,10 +155,10 @@ describe('LiveTrackingMap', () => {
     await waitFor(() => expect(leaflet.markerFactory).toHaveBeenCalled());
     expect(leaflet.marker.bindTooltip).toHaveBeenCalledWith('Rider · Repair Pickup');
     expect(leaflet.divIconFactory).toHaveBeenCalledWith(expect.objectContaining({
-      html: expect.stringContaining('data-icon="motorcycle"'),
-      iconSize: [32, 32],
+      html: expect.stringContaining('delivery-bike.png'),
+      iconSize: [40, 40],
     }));
-    expect(leaflet.divIconFactory.mock.calls[0][0].html).toContain('stroke="#ffffff"');
+    expect(leaflet.divIconFactory.mock.calls[0][0].html).toContain('width="40" height="40"');
   });
 
   it('toggles the mobile map fullscreen control and resizes the map', async () => {
@@ -200,6 +200,7 @@ describe('LiveTrackingMap', () => {
         pan: false,
         debounceMoveend: true,
       });
+      expect(leaflet.tile.redraw).toHaveBeenCalledTimes(1);
 
       fireEvent.click(screen.getByRole('button', { name: 'Exit full screen map' }));
       expect(exitFullscreen).toHaveBeenCalledTimes(1);
