@@ -997,8 +997,9 @@ describe('MyDeliveries rider interactions', () => {
     expect(screen.getByRole('button', { name: 'Report incident' })).toHaveClass('bg-white', 'text-slate-950');
     expect(screen.getByRole('article')).toHaveClass('border', 'border-slate-200');
     expect(screen.getByRole('article')).not.toHaveClass('border-2', 'border-blue-400');
-    expect(screen.getByRole('link', { name: 'Directions' })).toHaveClass('border-slate-300', 'text-slate-950');
-    expect(screen.getByRole('link', { name: 'Directions' })).not.toHaveClass('border-blue-300', 'text-blue-700');
+    expect(screen.getByRole('link', { name: 'Text customer' })).toHaveClass('border-slate-300', 'text-slate-950');
+    expect(screen.getByRole('link', { name: 'Text customer' })).toHaveAttribute('href', 'sms:090015');
+    expect(screen.queryByRole('link', { name: 'Directions' })).not.toBeInTheDocument();
 
     const reason = screen.getByLabelText('Issue reason');
     fireEvent.click(reason);
@@ -1118,7 +1119,9 @@ describe('MyDeliveries rider interactions', () => {
       'Continue only the Current delivery shown below.',
     );
     expect(screen.getByRole('link', { name: 'Call' })).toBeVisible();
-    expect(screen.getByRole('link', { name: 'Directions' })).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Text customer' })).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Text customer' })).toHaveAttribute('href', 'sms:09007');
+    expect(screen.queryByRole('link', { name: 'Directions' })).not.toBeInTheDocument();
   });
 
   it('lets the rider refresh delivery data without reloading unrelated page props', () => {
