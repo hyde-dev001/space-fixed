@@ -37,4 +37,18 @@ describe('shop-owner logistics voucher integration', () => {
     expect(discountSource).toContain('Shipping voucher requires accessible Shop-owned Logistics');
     expect(discountSource).toContain('discountTarget: "items"');
   });
+
+  it('uses the dedicated sale endpoint for company shop owners', () => {
+    expect(discountSource).toContain('`/api/shop-owner/promos/products/${productId}/sale`');
+    expect(discountSource).toContain('`/api/shop-owner/promos/products/${selectedProduct.id}/sale`');
+    expect(discountSource).toContain('mode: "apply"');
+    expect(discountSource).toContain('mode: "restore"');
+  });
+
+  it('keeps the promo preview readable under the ERP palette overrides', () => {
+    expect(discountSource).toContain('bg-gray-100 p-5 text-gray-900');
+    expect(discountSource).toContain('border-gray-200 bg-white p-4');
+    expect(discountSource).toContain('font-semibold text-gray-900 dark:text-white">{previewDurationLabel}</p>');
+    expect(discountSource).not.toContain('bg-slate-950 p-5 text-white');
+  });
 });

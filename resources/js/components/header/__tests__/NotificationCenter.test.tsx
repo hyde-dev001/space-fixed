@@ -41,7 +41,7 @@ describe('NotificationCenter palette', () => {
         const panel = title.closest('[class*="absolute"]');
 
         expect(panel).toHaveClass('bg-white', 'text-gray-900', 'dark:bg-gray-900', 'dark:text-gray-100');
-        expect(row).toHaveClass('bg-indigo-50', 'dark:bg-indigo-900/30', 'text-gray-900', 'dark:text-gray-100');
+        expect(row).toHaveClass('bg-gray-100', 'dark:bg-gray-800', 'text-gray-900', 'dark:text-gray-100');
         expect(title).toHaveClass('text-gray-900', 'dark:text-white');
         expect(screen.getByText('Alvares Services submitted a request for review.')).toHaveClass(
             'text-gray-600',
