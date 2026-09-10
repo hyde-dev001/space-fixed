@@ -113,6 +113,10 @@ describe('LiveTrackingMap', () => {
     expect(screen.getByLabelText('Live rider map')).toHaveClass('h-[30rem]', 'sm:h-[38rem]', 'lg:h-[44rem]', 'bg-white', '[&_.leaflet-tile]:!mix-blend-normal');
     expect(screen.getByRole('button', { name: 'View map full screen' })).toHaveClass('min-h-11', 'min-w-11', 'sm:hidden');
     await waitFor(() => expect(leaflet.mapFactory).toHaveBeenCalled());
+    expect(leaflet.tileLayer).toHaveBeenCalledWith(
+      'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+      expect.objectContaining({ attribution: expect.stringContaining('CARTO') }),
+    );
     expect(resizeObserver.observe).toHaveBeenCalled();
     expect(resizeCallback).toBeTypeOf('function');
 
