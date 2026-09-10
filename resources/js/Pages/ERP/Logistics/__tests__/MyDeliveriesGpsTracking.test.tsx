@@ -104,6 +104,7 @@ describe('MyDeliveries GPS tracking integration', () => {
   it('automatically starts the tracker for an eligible current delivery', () => {
     render(<MyDeliveries />);
 
-    expect(screen.getByRole('button', { name: 'Stop GPS tracking' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Stop GPS tracking' })).not.toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Route to customer' })).toBeVisible();
   });
 });

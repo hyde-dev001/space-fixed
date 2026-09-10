@@ -2268,7 +2268,7 @@ export default function MyDeliveries() {
   return (
     <AppLayoutERP>
       <Head title="My Deliveries" />
-      <div className="mx-auto w-full max-w-xl space-y-8 pb-[calc(2rem+env(safe-area-inset-bottom))] md:max-w-3xl xl:max-w-3xl xl:space-y-6 xl:pb-10">
+      <div className="mx-auto w-full max-w-xl space-y-8 pb-[calc(2rem+env(safe-area-inset-bottom))] md:max-w-3xl xl:max-w-6xl xl:space-y-6 xl:pb-10">
         <header className="text-center xl:text-left">
           <h1 className="sr-only">My Deliveries</h1>
           <div className="mt-4 flex flex-col items-center gap-3 xl:mt-2 xl:flex-row xl:items-center xl:justify-between xl:gap-2">

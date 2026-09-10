@@ -349,7 +349,7 @@ describe('MyDeliveries task-first hierarchy', () => {
     const tabs = screen.getByRole('button', { name: 'Upcoming' }).parentElement;
     const filters = screen.getByLabelText('Business type').parentElement?.parentElement;
 
-    expect(page).toHaveClass('mx-auto', 'w-full', 'max-w-xl', 'md:max-w-3xl', 'xl:max-w-3xl', 'space-y-8', 'xl:space-y-6');
+    expect(page).toHaveClass('mx-auto', 'w-full', 'max-w-xl', 'md:max-w-3xl', 'xl:max-w-6xl', 'space-y-8', 'xl:space-y-6');
     expect(page).not.toHaveClass('lg:max-w-3xl');
     expect(screen.getByRole('heading', { name: 'My Deliveries' }).parentElement).toHaveClass('text-center', 'xl:text-left');
     expect(tabs).toHaveClass('gap-2');
@@ -691,8 +691,9 @@ describe('MyDeliveries rider interactions', () => {
 
     render(<MyDeliveries />);
 
-    expect(screen.getByRole('region', { name: 'GPS tracking' })).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Stop GPS tracking' })).toBeVisible();
+    expect(screen.queryByRole('region', { name: 'GPS tracking' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Stop GPS tracking' })).not.toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Route to customer' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Confirm pickup' })).toBeVisible();
   });
 
