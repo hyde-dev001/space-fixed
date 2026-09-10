@@ -62,12 +62,12 @@ final class LogisticsActorPolicyTest extends TestCase
         $policy = app(LogisticsActorPolicy::class);
 
         $cases = [
-            'owner dispatches' => [
+            'owner cannot dispatch' => [
                 $owner,
                 LogisticsAction::ASSIGN_RIDER,
                 $leg,
                 null,
-                true,
+                false,
             ],
             'employee dispatcher dispatches' => [
                 $dispatcher,
@@ -121,10 +121,10 @@ final class LogisticsActorPolicyTest extends TestCase
         );
 
         self::assertFalse($decision['allowed']);
-        self::assertSame('rider_identity_required', $decision['reason_category']);
+        self::assertSame('action_not_allowed', $decision['reason_category']);
     }
 
-    public function test_linked_owner_rider_may_submit_proof_only_for_the_exact_active_assignment(): void
+    public function test_linked_owner_rider_cannot_submit_proof(): void
     {
         $shop = $this->shopWithLogistics();
         $leg = $this->leg($shop, 'in_transit');
@@ -149,8 +149,8 @@ final class LogisticsActorPolicyTest extends TestCase
             $leg,
         );
 
-        self::assertTrue($decision['allowed']);
-        self::assertNull($decision['reason_category']);
+        self::assertFalse($decision['allowed']);
+        self::assertSame('action_not_allowed', $decision['reason_category']);
     }
 
     public function test_owner_dispatch_and_review_require_an_enabled_module_and_valid_source_state(): void
@@ -178,7 +178,9 @@ final class LogisticsActorPolicyTest extends TestCase
         $unprivileged = $this->user($shop);
         $policy = app(LogisticsActorPolicy::class);
 
-        self::assertTrue($policy->decideBatchManagement($shop, $shop)['allowed']);
+        $ownerDenied = $policy->decideBatchManagement($shop, $shop);
+        self::assertFalse($ownerDenied['allowed']);
+        self::assertSame('action_not_allowed', $ownerDenied['reason_category']);
 
         $denied = $policy->decideBatchManagement($unprivileged, $shop);
         self::assertFalse($denied['allowed']);
@@ -243,7 +245,8 @@ final class LogisticsActorPolicyTest extends TestCase
             null,
             true,
         );
-        self::assertTrue($replay['allowed']);
+        self::assertFalse($replay['allowed']);
+        self::assertSame('action_not_allowed', $replay['reason_category']);
     }
 
     public function test_cross_shop_records_fail_with_a_generic_category(): void
