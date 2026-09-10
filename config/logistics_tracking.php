@@ -29,6 +29,13 @@ return [
         'cache_seconds' => (int) env('LOGISTICS_TRACKING_ROUTING_CACHE', 60),
     ],
 
+    'route_progress' => [
+        'trim_tolerance_m' => (float) env('LOGISTICS_TRACKING_TRIM_TOLERANCE', 25),
+        'off_route_threshold_m' => (float) env('LOGISTICS_TRACKING_OFF_ROUTE_THRESHOLD', 75),
+        'off_route_consecutive_samples' => (int) env('LOGISTICS_TRACKING_OFF_ROUTE_SAMPLES', 3),
+        'reroute_cooldown_seconds' => (int) env('LOGISTICS_TRACKING_REROUTE_COOLDOWN', 60),
+    ],
+
     'rate_limits' => [
         'location_updates_per_minute' => (int) env('LOGISTICS_TRACKING_LOCATION_RATE', 20),
         'viewer_requests_per_minute' => (int) env('LOGISTICS_TRACKING_VIEWER_RATE', 20),

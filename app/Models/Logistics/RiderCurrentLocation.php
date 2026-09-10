@@ -21,6 +21,17 @@ class RiderCurrentLocation extends Model
         'heading_deg',
         'recorded_at',
         'received_at',
+        'route_geometry',
+        'route_distance_m',
+        'route_duration_s',
+        'route_source',
+        'route_version',
+        'route_updated_at',
+        'route_off_route_samples',
+        'route_off_route_state',
+        'route_cooldown_until',
+        'route_target_latitude',
+        'route_target_longitude',
     ];
 
     protected $casts = [
@@ -31,6 +42,15 @@ class RiderCurrentLocation extends Model
         'heading_deg' => 'float',
         'recorded_at' => 'datetime',
         'received_at' => 'datetime',
+        'route_geometry' => 'array',
+        'route_distance_m' => 'float',
+        'route_duration_s' => 'integer',
+        'route_version' => 'integer',
+        'route_updated_at' => 'datetime',
+        'route_off_route_samples' => 'integer',
+        'route_cooldown_until' => 'datetime',
+        'route_target_latitude' => 'float',
+        'route_target_longitude' => 'float',
     ];
 
     public function leg(): BelongsTo

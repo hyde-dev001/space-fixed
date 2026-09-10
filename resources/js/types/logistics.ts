@@ -437,4 +437,8 @@ export type LiveTrackingRoute = {
   duration_s: number;
   geometry: Array<[number, number]>;
   source?: 'road' | 'direct';
+  route_version?: number;
+  active_stop_id?: number | null;
+  updated_at?: string | null;
+  off_route_state?: 'on_route' | 'monitoring' | 'cooldown' | string;
 };

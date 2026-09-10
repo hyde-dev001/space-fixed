@@ -70,6 +70,14 @@ class CustomerLiveTrackingTest extends TestCase
             'heading_deg' => 90,
             'recorded_at' => now()->subSeconds(10),
             'received_at' => now()->subSeconds(5),
+            'route_geometry' => [[14.5995, 120.9842], [14.61, 120.99]],
+            'route_distance_m' => 1500,
+            'route_duration_s' => 180,
+            'route_source' => 'road',
+            'route_version' => 4,
+            'route_updated_at' => now(),
+            'route_target_latitude' => 14.61,
+            'route_target_longitude' => 120.99,
         ]);
 
         $this->actingAs($customer, 'user')
@@ -81,6 +89,9 @@ class CustomerLiveTrackingTest extends TestCase
             ->assertJsonPath('shipment.legs.0.live_tracking.location.latitude', 14.5995)
             ->assertJsonPath('shipment.legs.0.live_tracking.location.longitude', 120.9842)
             ->assertJsonPath('shipment.legs.0.live_tracking.stale', false)
+            ->assertJsonPath('shipment.legs.0.live_tracking.route.route_version', 4)
+            ->assertJsonPath('shipment.legs.0.live_tracking.route.active_stop_id', $leg->id)
+            ->assertJsonPath('shipment.legs.0.live_tracking.route.geometry.1.0', 14.61)
             ->assertJsonMissingPath('shipment.legs.0.live_tracking.rider');
     }
 

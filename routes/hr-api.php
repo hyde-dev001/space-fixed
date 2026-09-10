@@ -83,7 +83,7 @@ Route::prefix('api/hr/leave-requests')->middleware(['web', 'auth:user', 'shop.is
     Route::post('/{id}/reject', [LeaveController::class, 'reject'])->name('hr.leave.reject');
 });
 
-Route::prefix('api/hr')->middleware(['web', 'auth:user', 'permission:access-hr-dashboard|access-employee-directory|access-attendance-records|access-leave-approvals|access-manager-leave-approvals|decide-manager-leave-approvals|access-overtime-approvals|manage-attendance|access-payslip-generation|access-view-payslip|request-employee-suspensions|request-employee-terminations|request-employee-rehires|manage-salary-changes|approve-salary-change|override-salary-retroactive', 'shop.isolation'])->group(function () {
+Route::prefix('api/hr')->middleware(['web', 'auth:user', 'permission:access-hr-dashboard|access-employee-directory|access-attendance-records|access-leave-approvals|access-manager-leave-approvals|decide-manager-leave-approvals|access-overtime-approvals|manage-attendance|access-payslip-generation|access-view-payslip|request-employee-suspensions|request-employee-terminations|request-employee-rehires|manage-salary-changes|approve-salary-change|override-salary-retroactive|manage-employee-accounts|reset-employee-mfa', 'shop.isolation'])->group(function () {
     // ============================================
     // DASHBOARD & ANALYTICS
     // ============================================
@@ -110,6 +110,9 @@ Route::prefix('api/hr')->middleware(['web', 'auth:user', 'permission:access-hr-d
         Route::post('/{id}/regenerate-invite', [InvitationController::class, 'regenerate'])->name('hr.employees.regenerate_invite');
         Route::post('/{id}/resend-invite', [InvitationController::class, 'resendInvite'])->name('hr.employees.resend_invite');
         Route::post('/{id}/send-invitation-email', [InvitationController::class, 'sendInvitationEmail'])->name('hr.employees.send_invitation_email');
+        Route::post('/{id}/reset-mfa', [\App\Http\Controllers\EmployeeMfaController::class, 'resetForManagement'])
+            ->middleware('permission:reset-employee-mfa')
+            ->name('hr.employees.reset_mfa');
     });
 
     // ============================================

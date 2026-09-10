@@ -87,7 +87,8 @@ class RiderLocationService
             ]);
         }
 
-        return DB::transaction(function () use ($leg, $assignment, $payload, $recordedAt, $receivedAt): RiderCurrentLocation {
+        $accepted = false;
+        $location = DB::transaction(function () use ($leg, $assignment, $payload, $recordedAt, $receivedAt, &$accepted): RiderCurrentLocation {
             $current = RiderCurrentLocation::query()
                 ->where('shipment_leg_id', $leg->id)
                 ->lockForUpdate()
@@ -118,6 +119,22 @@ class RiderLocationService
                 'recorded_at' => $recordedAt,
                 'received_at' => $receivedAt,
             ];
+            if ($current && (int) $current->delivery_assignment_id !== (int) $assignment->id) {
+                $attributes += [
+                    'route_geometry' => null,
+                    'route_distance_m' => null,
+                    'route_duration_s' => null,
+                    'route_source' => null,
+                    'route_version' => 0,
+                    'route_updated_at' => null,
+                    'route_off_route_samples' => 0,
+                    'route_off_route_state' => 'on_route',
+                    'route_cooldown_until' => null,
+                    'route_target_latitude' => null,
+                    'route_target_longitude' => null,
+                ];
+            }
+            $accepted = true;
 
             if ($current) {
                 $current->fill($attributes);
@@ -128,6 +145,8 @@ class RiderLocationService
 
             return RiderCurrentLocation::query()->create($attributes);
         });
+
+        return $accepted ? $this->refreshCanonicalRoute($leg, $location) : $location;
     }
 
     /** @return Collection<int, array<string, mixed>> */
@@ -190,26 +209,224 @@ class RiderLocationService
             'route' => $payload['route'],
         ];
     }
-    /** @return array{distance_m: float, duration_s: int, geometry: array<int, array{0: float, 1: float}>, source: string}|null */
+    /** @return array<string, mixed>|null */
     public function routeFor(?ShipmentLeg $leg, RiderCurrentLocation $location): ?array
     {
         if (! $leg) {
             return null;
         }
-        $snapshot = $this->trackingTargetSnapshot($leg);
-        $coordinate = static fn (string $key): ?float => is_numeric($snapshot[$key] ?? null)
-            ? (float) $snapshot[$key]
-            : null;
-        return $this->routes->estimate(
-            [
-                'latitude' => (float) $location->latitude,
-                'longitude' => (float) $location->longitude,
-            ],
-            [
-                'latitude' => $coordinate('latitude'),
-                'longitude' => $coordinate('longitude'),
-            ],
+
+        return $this->routePayload($leg, $location);
+    }
+
+    private function refreshCanonicalRoute(ShipmentLeg $leg, RiderCurrentLocation $location): RiderCurrentLocation
+    {
+        $target = $this->targetCoordinates($leg);
+        if (! $target) {
+            return $location;
+        }
+
+        return DB::transaction(function () use ($leg, $location, $target): RiderCurrentLocation {
+            $current = RiderCurrentLocation::query()
+                ->whereKey($location->id)
+                ->where('shipment_leg_id', $leg->id)
+                ->lockForUpdate()
+                ->first();
+            if (! $current) {
+                return $location;
+            }
+
+            $currentPoint = [
+                'latitude' => (float) $current->latitude,
+                'longitude' => (float) $current->longitude,
+            ];
+            $targetChanged = $this->routeTargetChanged($current, $target);
+            $geometry = is_array($current->route_geometry) ? $current->route_geometry : [];
+
+            if ($targetChanged || count($geometry) < 2 || ! filled($current->route_source)) {
+                // ponytail: hold one leg row lock through this bounded provider call to avoid duplicate reroutes without a second state machine.
+                $route = $this->routes->estimate($currentPoint, $target);
+
+                return $this->storeRoute(
+                    $current,
+                    $route,
+                    $target,
+                    $targetChanged ? max(1, (int) $current->route_version + 1) : max(1, (int) $current->route_version),
+                );
+            }
+
+            if ($current->route_source !== 'road') {
+                return $current;
+            }
+
+            $trimmed = $this->routes->trimRoute(
+                $geometry,
+                $currentPoint,
+                (float) config('logistics_tracking.route_progress.trim_tolerance_m', 25),
+            );
+            if (! $trimmed) {
+                return $current;
+            }
+
+            $offRoute = $trimmed['distance_to_route_m'] > (float) config(
+                'logistics_tracking.route_progress.off_route_threshold_m',
+                75,
+            );
+            if ($offRoute) {
+                return $this->handleOffRoute($current, $target, $currentPoint, $trimmed);
+            }
+
+            $remainingDistance = $this->routes->distanceForGeometry($trimmed['geometry']);
+            $current->forceFill([
+                'route_geometry' => $trimmed['geometry'],
+                'route_distance_m' => $remainingDistance,
+                'route_duration_s' => $this->remainingDuration($current, $remainingDistance),
+                'route_version' => max(1, (int) $current->route_version),
+                'route_updated_at' => now(),
+                'route_off_route_samples' => 0,
+                'route_off_route_state' => $this->cooldownActive($current) ? 'cooldown' : 'on_route',
+                'route_target_latitude' => $target['latitude'],
+                'route_target_longitude' => $target['longitude'],
+            ])->save();
+
+            return $current->fresh();
+        });
+    }
+
+    /** @param array{latitude: float, longitude: float} $target */
+    /** @param array{latitude: float, longitude: float} $currentPoint */
+    /** @param array<string, mixed> $trimmed */
+    private function handleOffRoute(
+        RiderCurrentLocation $current,
+        array $target,
+        array $currentPoint,
+        array $trimmed,
+    ): RiderCurrentLocation {
+        $samples = min(
+            255,
+            (int) $current->route_off_route_samples + 1,
         );
+        $requiredSamples = max(1, (int) config(
+            'logistics_tracking.route_progress.off_route_consecutive_samples',
+            3,
+        ));
+
+        if ($samples >= $requiredSamples && ! $this->cooldownActive($current)) {
+            // ponytail: reroute only after confirmation; the existing row lock serializes requests per active leg.
+            $route = $this->routes->estimate($currentPoint, $target, false);
+            if ($route) {
+                return $this->storeRoute(
+                    $current,
+                    $route,
+                    $target,
+                    max(1, (int) $current->route_version + 1),
+                    'cooldown',
+                    0,
+                    now()->addSeconds(max(0, (int) config(
+                        'logistics_tracking.route_progress.reroute_cooldown_seconds',
+                        60,
+                    ))),
+                );
+            }
+        }
+
+        $current->forceFill([
+            'route_updated_at' => now(),
+            'route_off_route_samples' => $samples,
+            'route_off_route_state' => $this->cooldownActive($current) ? 'cooldown' : 'monitoring',
+            'route_target_latitude' => $target['latitude'],
+            'route_target_longitude' => $target['longitude'],
+        ])->save();
+
+        return $current->fresh();
+    }
+
+    /** @param array{latitude: float, longitude: float} $target */
+    private function storeRoute(
+        RiderCurrentLocation $current,
+        ?array $route,
+        array $target,
+        int $version,
+        string $state = 'on_route',
+        int $offRouteSamples = 0,
+        ?Carbon $cooldownUntil = null,
+    ): RiderCurrentLocation {
+        $current->forceFill([
+            'route_geometry' => $route['geometry'] ?? null,
+            'route_distance_m' => $route['distance_m'] ?? null,
+            'route_duration_s' => $route['duration_s'] ?? null,
+            'route_source' => $route['source'] ?? null,
+            'route_version' => $route ? $version : (int) $current->route_version,
+            'route_updated_at' => now(),
+            'route_off_route_samples' => $offRouteSamples,
+            'route_off_route_state' => $state,
+            'route_cooldown_until' => $cooldownUntil,
+            'route_target_latitude' => $target['latitude'],
+            'route_target_longitude' => $target['longitude'],
+        ])->save();
+
+        return $current->fresh();
+    }
+
+    /** @return array{latitude: float, longitude: float}|null */
+    private function targetCoordinates(ShipmentLeg $leg): ?array
+    {
+        $snapshot = $this->trackingTargetSnapshot($leg);
+        if (! is_numeric($snapshot['latitude'] ?? null) || ! is_numeric($snapshot['longitude'] ?? null)) {
+            return null;
+        }
+
+        return [
+            'latitude' => (float) $snapshot['latitude'],
+            'longitude' => (float) $snapshot['longitude'],
+        ];
+    }
+
+    /** @param array{latitude: float, longitude: float} $target */
+    private function routeTargetChanged(RiderCurrentLocation $location, array $target): bool
+    {
+        return $location->route_target_latitude === null
+            || $location->route_target_longitude === null
+            || abs((float) $location->route_target_latitude - $target['latitude']) > 0.000001
+            || abs((float) $location->route_target_longitude - $target['longitude']) > 0.000001;
+    }
+
+    private function cooldownActive(RiderCurrentLocation $location): bool
+    {
+        return $location->route_cooldown_until?->isFuture() === true;
+    }
+
+    private function remainingDuration(RiderCurrentLocation $current, float $remainingDistance): int
+    {
+        $previousDistance = (float) ($current->route_distance_m ?? 0);
+        $previousDuration = (int) ($current->route_duration_s ?? 0);
+        if ($previousDistance > 0 && $previousDuration > 0) {
+            return max(1, (int) ceil($previousDuration * ($remainingDistance / $previousDistance)));
+        }
+
+        return max(1, (int) ceil($remainingDistance / max(
+            1,
+            (float) config('logistics_tracking.routing.eta_speed_mps', 8.33),
+        )));
+    }
+
+    /** @return array<string, mixed>|null */
+    private function routePayload(ShipmentLeg $leg, RiderCurrentLocation $location): ?array
+    {
+        if (! is_array($location->route_geometry) || count($location->route_geometry) < 2) {
+            return null;
+        }
+
+        return [
+            'distance_m' => (float) ($location->route_distance_m ?? 0),
+            'duration_s' => (int) ($location->route_duration_s ?? 0),
+            'geometry' => $location->route_geometry,
+            'source' => $location->route_source,
+            'route_version' => (int) $location->route_version,
+            'active_stop_id' => (int) $leg->id,
+            'updated_at' => $location->route_updated_at?->toISOString(),
+            'off_route_state' => $location->route_off_route_state ?: 'on_route',
+        ];
     }
 
     /** @return array<int, string> */

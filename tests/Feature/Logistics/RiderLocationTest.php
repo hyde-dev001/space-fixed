@@ -40,6 +40,17 @@ class RiderLocationTest extends TestCase
             'heading_deg',
             'recorded_at',
             'received_at',
+            'route_geometry',
+            'route_distance_m',
+            'route_duration_s',
+            'route_source',
+            'route_version',
+            'route_updated_at',
+            'route_off_route_samples',
+            'route_off_route_state',
+            'route_cooldown_until',
+            'route_target_latitude',
+            'route_target_longitude',
         ]));
     }
 

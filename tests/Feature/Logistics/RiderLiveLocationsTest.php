@@ -87,6 +87,37 @@ class RiderLiveLocationsTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_dispatcher_reads_the_persisted_canonical_route_for_each_leg(): void
+    {
+        config(['logistics_tracking.enabled' => true]);
+
+        $shop = ShopOwner::factory()->create();
+        $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $dispatcher->givePermissionTo(Permission::findOrCreate('view-logistics-shipments', 'user'));
+        $tracked = $this->trackedLeg($shop, 'Canonical customer', [
+            'latitude' => 14.5995,
+            'longitude' => 120.9842,
+        ]);
+        $tracked['leg']->currentLocation()->update([
+            'route_geometry' => [[14.5995, 120.9842], [14.61, 120.99]],
+            'route_distance_m' => 1500,
+            'route_duration_s' => 180,
+            'route_source' => 'road',
+            'route_version' => 4,
+            'route_updated_at' => now(),
+            'route_target_latitude' => 14.61,
+            'route_target_longitude' => 120.99,
+        ]);
+
+        $this->actingAs($dispatcher, 'user')
+            ->getJson('/api/logistics/live-locations')
+            ->assertOk()
+            ->assertJsonPath('locations.0.route.route_version', 4)
+            ->assertJsonPath('locations.0.route.active_stop_id', $tracked['leg']->id)
+            ->assertJsonPath('locations.0.route.geometry.1.0', 14.61)
+            ->assertJsonPath('locations.0.route.geometry.1.1', 120.99);
+    }
+
     /** @return array{leg: ShipmentLeg, assignment: DeliveryAssignment, rider: RiderProfile} */
     private function trackedLeg(ShopOwner $shop, string $customerName, array $location, string $status = 'in_transit'): array
     {
