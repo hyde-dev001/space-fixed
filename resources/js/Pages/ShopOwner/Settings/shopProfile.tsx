@@ -3,6 +3,7 @@ import { Head, usePage, router } from "@inertiajs/react";
 import { createPortal } from "react-dom";
 import Swal from "sweetalert2";
 import AppLayoutShopOwner from "../../../layout/AppLayout_shopOwner";
+import PasswordRequirements from "../../../components/auth/PasswordRequirements";
 
 type ShopOwner = {
   id?: number;
@@ -1118,6 +1119,7 @@ const ShopProfile: React.FC = () => {
                     title="New password"
                     className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none"
                   />
+                  <PasswordRequirements password={newPassword} />
                   <input
                     type="password"
                     value={confirmPassword}
@@ -1451,6 +1453,7 @@ const ShopProfile: React.FC = () => {
                       title="New password"
                       className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none"
                     />
+                    <PasswordRequirements password={newPassword} />
                   </div>
                   <div>
                     <input

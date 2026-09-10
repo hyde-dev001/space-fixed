@@ -4,6 +4,7 @@ import { router } from "@inertiajs/react";
 import Swal from "sweetalert2";
 import AppLayoutERP from "../../layout/AppLayout_ERP";
 import EmployeeTotpSecurity from "../../components/UserProfile/EmployeeTotpSecurity";
+import PasswordRequirements from "../../components/auth/PasswordRequirements";
 
 interface SecurityActivity {
     action: string;
@@ -268,6 +269,7 @@ export default function Profile({ user, requiresPasswordChange, security }: Page
                                         {errors.password}
                                     </p>
                                 )}
+                                <PasswordRequirements password={data.password} />
                             </div>
 
                             <div>
