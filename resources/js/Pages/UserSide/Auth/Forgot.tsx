@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Head, Link, router } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 import Form from '../../../components/form/Form';
@@ -16,6 +16,20 @@ export default function Forgot() {
 	const [errors, setErrors] = useState<FormErrors>({});
 	const [isLoading, setIsLoading] = useState(false);
 	const authInputClasses = 'userside-auth-input h-12 rounded-xl !border-gray-200 !bg-[#f8fafc] !text-[13px] !text-gray-800 placeholder:!text-gray-400 shadow-none focus:!border-gray-300 focus:!ring-gray-200/70';
+
+	useEffect(() => router.on('invalid', (event) => {
+		if (event.detail.response.status !== 429) return;
+
+		event.preventDefault();
+		setIsLoading(false);
+		setErrors({ email: 'Too many requests. Please wait a minute before trying again.' });
+		Swal.fire({
+			icon: 'warning',
+			title: 'Too many requests',
+			text: 'Please wait a minute before requesting another verification code.',
+			confirmButtonColor: '#000000',
+		});
+	}), []);
 
 	const validateForm = (): boolean => {
 		const newErrors: FormErrors = {};
