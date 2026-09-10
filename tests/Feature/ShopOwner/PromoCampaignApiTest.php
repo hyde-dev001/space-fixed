@@ -86,6 +86,81 @@ class PromoCampaignApiTest extends TestCase
         ]);
     }
 
+    public function test_company_shop_owner_can_apply_a_product_sale_without_unlocking_general_product_edits(): void
+    {
+        $owner = ShopOwner::factory()->create([
+            'registration_type' => 'company',
+            'business_type' => 'retail',
+            'status' => 'approved',
+        ]);
+        $product = Product::create([
+            'shop_owner_id' => $owner->id,
+            'name' => 'Company Sale Shoe',
+            'price' => 10000,
+            'stock_quantity' => 10,
+            'is_active' => true,
+        ]);
+        $otherOwner = ShopOwner::factory()->create([
+            'registration_type' => 'company',
+            'business_type' => 'retail',
+            'status' => 'approved',
+        ]);
+        $otherProduct = Product::create([
+            'shop_owner_id' => $otherOwner->id,
+            'name' => 'Other Shop Shoe',
+            'price' => 9000,
+            'stock_quantity' => 10,
+            'is_active' => true,
+        ]);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->putJson('/api/shop-owner/promos/products/' . $product->id . '/sale', [
+                'mode' => 'apply',
+                'price' => 8000,
+                'compare_at_price' => 999999,
+                'scheduled_sale_price' => null,
+                'sale_starts_at' => null,
+                'sale_ends_at' => null,
+                'name' => 'Must remain unchanged',
+                'stock_quantity' => 1,
+            ])
+            ->assertOk()
+            ->assertJsonPath('product.id', $product->id);
+
+        $this->assertDatabaseHas('products', [
+            'id' => $product->id,
+            'name' => 'Company Sale Shoe',
+            'price' => 8000,
+            'compare_at_price' => 10000,
+            'stock_quantity' => 10,
+        ]);
+
+        $this->putJson('/api/shop-owner/promos/products/' . $otherProduct->id . '/sale', [
+            'mode' => 'apply',
+            'price' => 7000,
+        ])->assertNotFound();
+
+        $this->assertDatabaseHas('products', [
+            'id' => $otherProduct->id,
+            'price' => 9000,
+        ]);
+
+        $this->putJson('/api/shop-owner/promos/products/' . $product->id . '/sale', [
+            'mode' => 'restore',
+        ])->assertOk();
+
+        $this->assertDatabaseHas('products', [
+            'id' => $product->id,
+            'price' => 10000,
+            'compare_at_price' => null,
+        ]);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->putJson('/api/shop-owner/products/' . $product->id, ['price' => 7000])
+            ->assertForbidden()
+            ->assertJsonPath('code', 'ERP_ROUTE_NOT_ALLOWED');
+    }
+
     public function test_non_retail_shop_owner_cannot_use_promo_api(): void
     {
         $owner = ShopOwner::factory()->create([

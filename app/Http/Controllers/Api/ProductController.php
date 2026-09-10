@@ -1169,6 +1169,91 @@ class ProductController extends Controller
     }
 
     /**
+     * Apply or restore a product sale from the shop-owner promo flow.
+     *
+     * This endpoint is intentionally narrower than the general product update
+     * route so company owners can manage customer-facing sale prices without
+     * gaining unrestricted product-edit access.
+     */
+    public function updateSale(Request $request, $id): JsonResponse
+    {
+        try {
+            $shopOwnerId = $this->getAuthenticatedShopOwnerId();
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 403);
+        }
+
+        $product = Product::where('id', $id)
+            ->where('shop_owner_id', $shopOwnerId)
+            ->firstOrFail();
+
+        $validated = $request->validate([
+            'mode' => 'required|in:apply,restore',
+            'price' => 'required_if:mode,apply|nullable|numeric|min:0.01|max:999999.99',
+            'scheduled_sale_price' => 'nullable|numeric|min:0.01|max:999999.99',
+            'sale_starts_at' => 'nullable|date',
+            'sale_ends_at' => 'nullable|date|after_or_equal:sale_starts_at',
+        ]);
+
+        if ($validated['mode'] === 'restore') {
+            $request->replace([
+                'price' => (float) ($product->compare_at_price ?? $product->price),
+                'compare_at_price' => null,
+                'scheduled_sale_price' => null,
+                'sale_starts_at' => null,
+                'sale_ends_at' => null,
+            ]);
+
+            return $this->update($request, $id);
+        }
+
+        $baselineOriginalPrice = $product->compare_at_price !== null
+            && (float) $product->compare_at_price > (float) $product->price
+            ? (float) $product->compare_at_price
+            : (float) $product->price;
+        $scheduledSalePrice = $validated['scheduled_sale_price'] ?? null;
+        $salePrice = $scheduledSalePrice !== null
+            ? (float) $scheduledSalePrice
+            : (float) $validated['price'];
+
+        if ($salePrice >= $baselineOriginalPrice) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Sale price must be lower than the original price.',
+            ], 422);
+        }
+
+        if ($scheduledSalePrice !== null) {
+            if (empty($validated['sale_starts_at']) || empty($validated['sale_ends_at'])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Start and end date are required when scheduling a product discount.',
+                ], 422);
+            }
+
+            if (Carbon::parse((string) $validated['sale_ends_at'])->endOfDay()->lessThanOrEqualTo(now())) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'End date must be in the future for scheduled discounts.',
+                ], 422);
+            }
+        }
+
+        $request->replace([
+            'price' => $scheduledSalePrice !== null ? (float) $product->price : $salePrice,
+            'compare_at_price' => $baselineOriginalPrice,
+            'scheduled_sale_price' => $scheduledSalePrice !== null ? $salePrice : null,
+            'sale_starts_at' => $scheduledSalePrice !== null ? $validated['sale_starts_at'] : null,
+            'sale_ends_at' => $scheduledSalePrice !== null ? $validated['sale_ends_at'] : null,
+        ]);
+
+        return $this->update($request, $id);
+    }
+
+    /**
      * Archive product (soft delete)
      */
     public function destroy($id)

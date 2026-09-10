@@ -260,6 +260,8 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
     Route::prefix('promos')->middleware(['check.business.type:retail,both', 'erp.audience', 'erp.actor'])->group(function () {
         Route::get('/', [PromoCampaignController::class, 'index'])->name('shop_owner.promos.index');
         Route::post('/', [PromoCampaignController::class, 'store'])->name('shop_owner.promos.store');
+        Route::put('/products/{id}/sale', [\App\Http\Controllers\Api\ProductController::class, 'updateSale'])
+            ->name('shop_owner.promos.products.sale');
         Route::put('/{id}', [PromoCampaignController::class, 'update'])->name('shop_owner.promos.update');
         Route::patch('/{id}/status', [PromoCampaignController::class, 'updateStatus'])->name('shop_owner.promos.update-status');
         Route::delete('/{id}', [PromoCampaignController::class, 'destroy'])->name('shop_owner.promos.destroy');

@@ -395,7 +395,7 @@ export default function VouchersDiscountPage() {
 		try {
 			const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "";
 
-			const response = await fetch(`/api/shop-owner/products/${selectedProduct.id}`, {
+			const response = await fetch(`/api/shop-owner/promos/products/${selectedProduct.id}/sale`, {
 				method: "PUT",
 				credentials: "include",
 				headers: {
@@ -403,13 +403,7 @@ export default function VouchersDiscountPage() {
 					Accept: "application/json",
 					"X-CSRF-TOKEN": csrfToken,
 				},
-				body: JSON.stringify({
-					price: originalPrice,
-					compare_at_price: null,
-					scheduled_sale_price: null,
-					sale_starts_at: null,
-					sale_ends_at: null,
-				}),
+				body: JSON.stringify({ mode: "restore" }),
 			});
 
 			const result = await response.json().catch(() => ({}));
@@ -795,7 +789,7 @@ export default function VouchersDiscountPage() {
 					&& startsAtDate <= new Date()
 				);
 
-				const response = await fetch(`/api/shop-owner/products/${productId}`, {
+				const response = await fetch(`/api/shop-owner/promos/products/${productId}/sale`, {
 					method: "PUT",
 					credentials: "include",
 					headers: {
@@ -804,6 +798,7 @@ export default function VouchersDiscountPage() {
 						"X-CSRF-TOKEN": csrfToken,
 					},
 					body: JSON.stringify({
+						mode: "apply",
 						price: shouldScheduleDiscount
 							? selectedProduct?.price
 							: proposedPrice,
@@ -1240,19 +1235,19 @@ export default function VouchersDiscountPage() {
 									{form.kind}
 								</span>
 							</div>
-							<div className="mt-5 flex flex-1 flex-col rounded-[24px] bg-slate-950 p-5 text-white shadow-[0_20px_60px_-30px_rgba(15,23,42,0.85)]">
+							<div className="mt-5 flex flex-1 flex-col rounded-[24px] bg-gray-100 p-5 text-gray-900 shadow-[0_20px_60px_-30px_rgba(15,23,42,0.18)] dark:bg-gray-900 dark:text-gray-100">
 								<div className="flex items-start justify-between gap-4">
 									<div>
-										<p className="text-xs uppercase tracking-[0.24em] text-slate-400">Offer Summary</p>
-										<h3 className="mt-3 text-2xl font-semibold">{previewTitle}</h3>
+										<p className="text-xs uppercase tracking-[0.24em] text-gray-500 dark:text-gray-400">Offer Summary</p>
+										<h3 className="mt-3 text-2xl font-semibold text-gray-900 dark:text-white">{previewTitle}</h3>
 									</div>
-									<TicketIcon className="h-10 w-10 text-slate-300" />
+									<TicketIcon className="h-10 w-10 text-gray-600 dark:text-gray-300" />
 								</div>
 
 								<div className="mt-6 grid grid-cols-2 gap-3">
-									<div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-										<p className="text-xs uppercase tracking-wide text-slate-400">Discount</p>
-										<p className="mt-2 text-xl font-semibold">
+									<div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+										<p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Discount</p>
+										<p className="mt-2 text-xl font-semibold text-gray-900 dark:text-white">
 											{form.value
 												? isProductDiscountMode
 													? formatCurrency(Number(form.value))
@@ -1262,10 +1257,10 @@ export default function VouchersDiscountPage() {
 												: "Set value"}
 										</p>
 									</div>
-									<div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-										<p className="text-xs uppercase tracking-wide text-slate-400">Code</p>
+									<div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+										<p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Code</p>
 										<p
-											className="mt-2 max-w-full truncate text-xl font-semibold tracking-[0.14em]"
+											className="mt-2 max-w-full truncate text-xl font-semibold tracking-[0.14em] text-gray-900 dark:text-white"
 											title={form.kind === "voucher" ? (form.code || "NO-CODE") : "AUTO"}
 										>
 											{form.kind === "voucher" ? (form.code || "NO-CODE") : "AUTO"}
@@ -1273,14 +1268,14 @@ export default function VouchersDiscountPage() {
 									</div>
 								</div>
 
-								<div className="mt-6 space-y-3 text-sm text-slate-300">
+								<div className="mt-6 space-y-3 text-sm text-gray-600 dark:text-gray-300">
 									<div className="flex items-center justify-between gap-4">
-											<span>{isShippingVoucher ? "Shipping" : "Product"}</span>
-											<span className="font-medium text-white">{isShippingVoucher ? "Shop-owned Logistics" : (selectedProduct?.name ?? "All products")}</span>
+										<span>{isShippingVoucher ? "Shipping" : "Product"}</span>
+										<span className="font-medium text-gray-900 dark:text-white">{isShippingVoucher ? "Shop-owned Logistics" : (selectedProduct?.name ?? "All products")}</span>
 									</div>
 									<div className="flex items-center justify-between gap-4">
 										<span>Schedule</span>
-										<span className="font-medium text-white">
+										<span className="font-medium text-gray-900 dark:text-white">
 											{isProductDiscountMode
 												? (form.discountScheduleEnabled ? `${form.startDate} to ${form.endDate}` : "Apply immediately")
 												: `${form.startDate} to ${form.endDate}`}
@@ -1288,7 +1283,7 @@ export default function VouchersDiscountPage() {
 									</div>
 									<div className="flex items-center justify-between gap-4">
 										<span>{isProductDiscountMode ? "Savings" : "Minimum spend"}</span>
-										<span className="font-medium text-white">
+										<span className="font-medium text-gray-900 dark:text-white">
 											{isProductDiscountMode
 												? `${formatCurrency(saleSavings)}${saleSavingsPercent > 0 ? ` (${saleSavingsPercent}% off)` : ""}`
 												: formatCurrency(Number(form.minSpend || 0))}
@@ -1296,19 +1291,19 @@ export default function VouchersDiscountPage() {
 									</div>
 								</div>
 
-								<div className="mt-6 border-t border-white/10 pt-4">
-									<p className="text-[11px] uppercase tracking-[0.24em] text-slate-400">Promo Pulse</p>
+								<div className="mt-6 border-t border-gray-200 pt-4 dark:border-gray-700">
+									<p className="text-[11px] uppercase tracking-[0.24em] text-gray-500 dark:text-gray-400">Promo Pulse</p>
 									<div className="mt-3 grid grid-cols-2 gap-3">
-										<div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-											<p className="text-[11px] uppercase tracking-wide text-slate-400">Duration</p>
-											<p className="mt-1 text-sm font-semibold text-white">{previewDurationLabel}</p>
+										<div className="rounded-2xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
+											<p className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">Duration</p>
+											<p className="mt-1 text-sm font-semibold text-gray-900 dark:text-white">{previewDurationLabel}</p>
 										</div>
-										<div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-											<p className="text-[11px] uppercase tracking-wide text-slate-400">Scope</p>
-											<p className="mt-1 text-sm font-semibold text-white">{previewScopeLabel}</p>
+										<div className="rounded-2xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
+											<p className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">Scope</p>
+											<p className="mt-1 text-sm font-semibold text-gray-900 dark:text-white">{previewScopeLabel}</p>
 										</div>
 									</div>
-									<div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-white/10">
+									<div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
 										<div
 											className={`h-full rounded-full bg-linear-to-r from-cyan-300 via-blue-300 to-indigo-300 ${previewIntensityClass}`}
 										/>

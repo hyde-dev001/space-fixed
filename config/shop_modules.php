@@ -348,6 +348,7 @@ $routeBuckets = [
         'shop_owner.promos.destroy',
         'shop_owner.promos.index',
         'shop_owner.promos.products',
+        'shop_owner.promos.products.sale',
         'shop_owner.promos.store',
         'shop_owner.promos.update',
         'shop_owner.promos.update-status',
@@ -954,6 +955,7 @@ $routeMethods = static function (string $routeName): array {
         'shop-owner.modules.update' => ['PATCH'],
         'api.leave.cancel' => ['DELETE'],
         'shop_owner.promos.update-status' => ['PATCH'],
+        'shop_owner.promos.products.sale' => ['PUT'],
         'shop_owner.orders.update-status' => ['PATCH'],
         'shop_owner.orders.correct-terminal-outcome' => ['POST'],
         'shop_owner.repairs.delivery-method' => ['PATCH'],
@@ -1541,6 +1543,7 @@ $retailOwnerPages = [
         'supporting_routes' => [
             'shop_owner.promos.index',
             'shop_owner.promos.products',
+            'shop_owner.promos.products.sale',
             'shop_owner.promos.store',
             'shop_owner.promos.update',
             'shop_owner.promos.destroy',
@@ -2051,6 +2054,7 @@ $ownerOperationalApiRouteGroups = [
         'routes' => [
             'shop_owner.promos.index',
             'shop_owner.promos.products',
+            'shop_owner.promos.products.sale',
             'shop_owner.promos.store',
             'shop_owner.promos.update',
             'shop_owner.promos.destroy',
