@@ -96,7 +96,6 @@ export default function LiveTrackingMap({ locations, label = 'Live rider map', f
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<import('leaflet').Map | null>(null);
   const leafletRef = useRef<typeof import('leaflet') | null>(null);
-  const tileLayerRef = useRef<import('leaflet').TileLayer | null>(null);
   const markersRef = useRef(new Map<number, import('leaflet').Marker>());
   const destinationMarkersRef = useRef(new Map<number, import('leaflet').CircleMarker>());
   const routesRef = useRef(new Map<number, import('leaflet').Polyline>());
@@ -229,7 +228,6 @@ export default function LiveTrackingMap({ locations, label = 'Live rider map', f
         attribution: '&copy; OpenStreetMap contributors',
       });
       tileLayer.addTo(map);
-      tileLayerRef.current = tileLayer;
       leafletRef.current = L;
       mapRef.current = map;
       if (typeof ResizeObserver !== 'undefined') {
@@ -260,7 +258,6 @@ export default function LiveTrackingMap({ locations, label = 'Live rider map', f
       map?.remove();
       mapRef.current = null;
       leafletRef.current = null;
-      tileLayerRef.current = null;
     };
   }, []);
 
@@ -272,7 +269,6 @@ export default function LiveTrackingMap({ locations, label = 'Live rider map', f
       setIsFullscreen(document.fullscreenElement === shell);
       window.setTimeout(() => {
         mapRef.current?.invalidateSize({ pan: false, debounceMoveend: true });
-        tileLayerRef.current?.redraw();
       }, 0);
     };
 
@@ -431,7 +427,7 @@ export default function LiveTrackingMap({ locations, label = 'Live rider map', f
     >
       <div
         ref={containerRef}
-        className={'isolate w-full overflow-hidden bg-white [&_.leaflet-control-zoom_a]:!h-11 [&_.leaflet-control-zoom_a]:!w-11 ' + mapHeightClass + ' dark:bg-slate-900'}
+        className={'isolate w-full overflow-hidden bg-white [&_.leaflet-control-zoom_a]:!h-11 [&_.leaflet-control-zoom_a]:!w-11 [&_.leaflet-tile]:!mix-blend-normal ' + mapHeightClass + ' dark:bg-slate-900'}
         aria-label={label}
       />
       <button

@@ -110,7 +110,7 @@ describe('LiveTrackingMap', () => {
   it('recalculates the map without clearing already loaded map tiles', async () => {
     render(<LiveTrackingMap locations={[]} />);
 
-    expect(screen.getByLabelText('Live rider map')).toHaveClass('h-[30rem]', 'sm:h-[38rem]', 'lg:h-[44rem]', 'bg-white');
+    expect(screen.getByLabelText('Live rider map')).toHaveClass('h-[30rem]', 'sm:h-[38rem]', 'lg:h-[44rem]', 'bg-white', '[&_.leaflet-tile]:!mix-blend-normal');
     expect(screen.getByRole('button', { name: 'View map full screen' })).toHaveClass('min-h-11', 'min-w-11', 'sm:hidden');
     await waitFor(() => expect(leaflet.mapFactory).toHaveBeenCalled());
     expect(resizeObserver.observe).toHaveBeenCalled();
@@ -200,7 +200,7 @@ describe('LiveTrackingMap', () => {
         pan: false,
         debounceMoveend: true,
       });
-      expect(leaflet.tile.redraw).toHaveBeenCalledTimes(1);
+      expect(leaflet.tile.redraw).not.toHaveBeenCalled();
 
       fireEvent.click(screen.getByRole('button', { name: 'Exit full screen map' }));
       expect(exitFullscreen).toHaveBeenCalledTimes(1);
