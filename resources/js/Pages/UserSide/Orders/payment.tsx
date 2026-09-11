@@ -3283,7 +3283,7 @@ const Payment: React.FC = () => {
                               className="hide-scrollbar mt-1 max-h-[min(20rem,calc(100vh-12rem))] overflow-y-auto rounded-xl border border-[#cacacb] bg-white p-1 shadow-none"
                             >
                               {voucherSuggestionGroups.length > 0 ? (
-                                <div className="space-y-3">
+                                <div className="flex flex-col gap-5">
                                   {voucherSuggestionGroups.map((group) => (
                                     <div
                                       key={group.key}
@@ -3325,9 +3325,9 @@ const Payment: React.FC = () => {
                                         }}
                                         className={'group relative overflow-hidden rounded-xl border text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 ' + (selectedVoucherCampaignId === voucher.id ? 'border-gray-900 bg-[#f5f5f5]' : 'border-[#cacacb] bg-white hover:border-gray-900')}
                                       >
-                                        <div className="grid min-h-[7rem] grid-cols-[3.25rem_minmax(0,1fr)_6.5rem] items-stretch">
-                                          <div className="flex flex-col items-center justify-center border-r border-dashed border-[#cacacb] bg-[#f5f5f5] px-1 py-2 text-center">
-                                            <div className="flex h-9 w-9 items-center justify-center rounded-full border border-[#cacacb] bg-white text-base font-semibold text-[#111111]" aria-hidden="true">
+                                        <div className="grid min-h-[5.5rem] grid-cols-[3rem_minmax(0,1fr)_5.75rem] items-stretch">
+                                          <div className="flex flex-col items-center justify-center border-r border-dashed border-[#cacacb] bg-[#f5f5f5] px-1 py-1.5 text-center">
+                                            <div className="flex h-8 w-8 items-center justify-center rounded-full border border-[#cacacb] bg-white text-sm font-semibold text-[#111111]" aria-hidden="true">
                                               %
                                             </div>
                                             <span className="mt-1 rounded-full bg-[#111111] px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-white">
@@ -3335,7 +3335,7 @@ const Payment: React.FC = () => {
                                             </span>
                                           </div>
 
-                                          <div className="min-w-0 px-2 py-1.5 leading-tight">
+                                          <div className="min-w-0 px-2 py-1 leading-tight">
                                             <div className="flex flex-wrap items-start justify-between gap-1">
                                               <div className="min-w-0">
                                                 <p className="inline truncate text-sm font-semibold text-[#111111]">{displayName}</p>
@@ -3348,14 +3348,14 @@ const Payment: React.FC = () => {
                                               </span>
                                             </div>
 
-                                            <p className="mt-1 inline text-lg font-semibold leading-tight text-[#111111]">
+                                            <p className="mt-1 inline text-base font-semibold leading-tight text-[#111111]">
                                               {formatVoucherBenefit(voucher)}
                                             </p>
 
                                             {minimumSpend > 0 && (
                                               <>
-                                                <p className="ml-2 inline text-sm text-[#39393b]">Min. spend {formatVoucherMoney(minimumSpend)}</p>
-                                                <div className="mt-1 rounded-md bg-[#f5f5f5] px-1.5 py-1.5">
+                                                <p className="ml-2 inline text-xs text-[#39393b]">Min. spend {formatVoucherMoney(minimumSpend)}</p>
+                                                <div className="mt-1 rounded-md bg-[#f5f5f5] px-1.5 py-1">
                                                   <div className="flex items-center justify-between gap-1 text-[11px] text-[#707072]">
                                                     <span>{formatVoucherMoney(eligibleSubtotal)} eligible</span>
                                                     <span>{remainingSpend > 0 ? formatVoucherMoney(remainingSpend) + ' more' : 'Requirement met'}</span>
@@ -3364,13 +3364,13 @@ const Payment: React.FC = () => {
                                                     <div className="h-full rounded-full bg-[#d30005]" style={{ width: String(spendProgress) + '%' }} />
                                                   </div>
                                                 </div>
-                                                <p className={(remainingSpend > 0 ? 'text-amber-700' : 'text-emerald-700') + ' ml-1 inline align-middle text-xs font-medium'}>
+                                                <p className={(remainingSpend > 0 ? 'text-amber-700' : 'text-emerald-700') + ' ml-1 inline align-middle text-[11px] font-medium'}>
                                                   {remainingSpend > 0 ? 'Add ' + formatVoucherMoney(remainingSpend) + ' more to unlock this voucher.' : 'Eligible for this order.'}
                                                 </p>
                                               </>
                                             )}
 
-                                            <div className="ml-2 inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5 align-middle text-xs text-[#707072]">
+                                            <div className="ml-2 inline-flex flex-wrap items-center gap-x-1 align-middle text-[11px] text-[#707072]">
                                               <span>{voucher.target === 'shipping' ? 'Shipping' : 'Items'}</span>
                                               <span aria-hidden="true">·</span>
                                               <span>{voucher.scope === 'shop_wide' ? 'Shop-wide' : 'Selected products'}</span>
@@ -3383,16 +3383,16 @@ const Payment: React.FC = () => {
                                             </p>
                                           </div>
 
-                                          <div className="flex min-w-0 flex-col items-stretch justify-center gap-1 border-l border-[#cacacb] px-1 py-1.5">
+                                          <div className="flex min-w-0 flex-col items-stretch justify-center gap-1 border-l border-[#cacacb] px-1 py-1">
                                             {isClaiming ? (
-                                              <button type="button" disabled className="min-h-11 w-full whitespace-nowrap rounded-xl bg-[#f5f5f5] px-1 text-xs font-semibold text-[#707072]">
+                                              <button type="button" disabled className="min-h-11 w-full whitespace-nowrap rounded-xl bg-[#f5f5f5] px-1.5 text-[11px] font-semibold text-[#707072]">
                                                 Claiming…
                                               </button>
                                             ) : canUseVoucher ? (
                                               <button
                                                 type="button"
                                                 onClick={() => handleUseVoucher(voucher)}
-                                                className="min-h-11 w-full whitespace-nowrap rounded-xl bg-gray-900 px-1 text-sm font-medium text-white transition-colors hover:bg-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2"
+                                                className="min-h-11 w-full whitespace-nowrap rounded-xl bg-gray-900 px-1.5 text-xs font-medium text-white transition-colors hover:bg-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2"
                                               >
                                                 Use voucher
                                               </button>
@@ -3400,7 +3400,7 @@ const Payment: React.FC = () => {
                                               <button
                                                 type="button"
                                                 onClick={() => void handleClaimVoucher(voucher, isEligible)}
-                                                className="min-h-11 w-full whitespace-nowrap rounded-xl bg-gray-900 px-1 text-xs font-medium text-white transition-colors hover:bg-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2"
+                                                className="min-h-11 w-full whitespace-nowrap rounded-xl bg-gray-900 px-1.5 text-[11px] font-medium text-white transition-colors hover:bg-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2"
                                               >
                                                 {isEligible ? 'Claim & use' : 'Claim for later'}
                                               </button>
@@ -3413,7 +3413,7 @@ const Payment: React.FC = () => {
                                         </div>
 
                                         {minimumSpend > 0 && remainingSpend > 0 && (
-                                          <div className="border-t border-[#cacacb] px-2 py-1.5 text-xs font-medium text-[#111111]">
+                                          <div className="border-t border-[#cacacb] px-2 py-1 text-xs font-medium text-[#111111]">
                                             {'Add ' + formatVoucherMoney(remainingSpend) + ', to get ' + formatVoucherBenefit(voucher).replace(/\s+(shipping|items)$/i, '')}
                                           </div>
                                         )}

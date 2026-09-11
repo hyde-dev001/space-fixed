@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Keep the existing desktop voucher UI and behavior, visibly separate product/shipping suggestions, and render the open voucher list in normal document flow so the delivery-address, preference, and payment sections move down instead of being covered.
+**Goal:** Preserve the existing desktop voucher behavior and payment flow while making the voucher picker compact, visibly separating product/shipping suggestions, and rendering the open voucher list in normal document flow so the delivery-address, preference, and payment sections move down instead of being covered.
 
-**Architecture:** Change only the suggestion panel positioning and presentation grouping in the existing `Payment` component. Remove the absolute-positioning classes from the current listbox and wrap the existing cards in non-empty Product Vouchers and Shipping Vouchers groups while preserving the list width, scroll limit, card markup, handlers, and state. Update the existing source-contract tests to lock the inline-flow and grouping behavior.
+**Architecture:** Change only the suggestion panel positioning and presentation in the existing `Payment` component. Remove the absolute-positioning classes from the current listbox, wrap the existing cards in non-empty Product Vouchers and Shipping Vouchers groups, and use compact card spacing/dimensions while preserving the card handlers, state, payment requests, and payment computation. Update the existing source-contract tests to lock the inline-flow, grouping, and compact layout behavior.
 
 **Tech Stack:** Laravel 12, Inertia 2, React 18, TypeScript 5.7, Tailwind CSS 4, Vitest, Vite 7.
 
@@ -12,8 +12,9 @@
 
 - Preserve existing voucher claim, use, clear, filtering, loading, eligibility, and keyboard behavior.
 - Preserve payment preview requests, checkout payloads, discount calculations, and backend files.
-- Do not resize the current voucher cards, text, buttons, or spacing; only change overlay positioning to normal flow.
-- Keep the existing voucher card dimensions while grouping items-targeted and shipping-targeted suggestions under separate visible headings.
+- Keep the voucher cards, text, and action column compact enough to avoid unnecessary vertical bulk while retaining the existing visual language.
+- Keep action buttons at the existing touch-safe minimum height while reducing their width/padding and text size where possible.
+- Keep a clear vertical gap between the Product Vouchers and Shipping Vouchers groups.
 - Keep the open suggestion list bounded with the existing max-height and vertical scrolling.
 - Modify only the payment source, its focused layout/integration tests, this plan note, and the requested production build if regenerated.
 
