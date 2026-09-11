@@ -3274,7 +3274,7 @@ const Payment: React.FC = () => {
                                   setIsVoucherSuggestionOpen(false);
                                 }
                               }}
-                              className="hide-scrollbar absolute left-0 right-0 top-full z-40 mt-1 max-h-[min(20rem,calc(100vh-12rem))] overflow-y-auto rounded-xl border border-[#cacacb] bg-white p-1 shadow-none"
+                              className="hide-scrollbar mt-1 max-h-[min(20rem,calc(100vh-12rem))] overflow-y-auto rounded-xl border border-[#cacacb] bg-white p-1 shadow-none"
                             >
                               {filteredVoucherCodeSuggestions.length > 0 ? (
                                 <div className="space-y-1">

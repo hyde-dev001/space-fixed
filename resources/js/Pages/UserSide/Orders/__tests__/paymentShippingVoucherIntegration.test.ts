@@ -33,6 +33,12 @@ describe('payment shipping voucher integration', () => {
   });
 
   it('renders complete voucher suggestion states and supports claim and use', () => {
+    const voucherSectionIndex = paymentSource.indexOf('data-testid="desktop-voucher-section"');
+    const deliveryPersistenceIndex = paymentSource.indexOf('{/* Delivery address persistence */}');
+    const desktopVoucherSection = paymentSource.slice(voucherSectionIndex, deliveryPersistenceIndex);
+
+    expect(voucherSectionIndex).toBeGreaterThan(-1);
+    expect(deliveryPersistenceIndex).toBeGreaterThan(voucherSectionIndex);
     expect(paymentSource).toContain("type VoucherClaimStatus = 'claimed' | 'claimable' | 'redeemed' | 'unavailable'");
     expect(paymentSource).toContain("type VoucherEligibility = 'eligible' | 'minimum_spend' | 'not_applicable' | 'shipping_unavailable' | 'shipping_fee_required' | 'unavailable'");
     expect(paymentSource).toContain('eligibility_message');
@@ -43,7 +49,9 @@ describe('payment shipping voucher integration', () => {
     expect(paymentSource).toContain('role="listbox"');
     expect(paymentSource).toContain('aria-expanded={showVoucherSuggestionDropdown}');
     expect(paymentSource).toContain('data-testid="desktop-voucher-suggestions"');
-    expect(paymentSource).toContain('absolute left-0 right-0 top-full');
+    expect(desktopVoucherSection).toContain('hide-scrollbar mt-1 max-h-[min(20rem,calc(100vh-12rem))]');
+    expect(desktopVoucherSection).toContain('overflow-y-auto');
+    expect(desktopVoucherSection).not.toContain('absolute left-0 right-0 top-full');
     expect(paymentSource).toContain('overflow-y-auto');
     expect(paymentSource).toContain('min-h-[7rem]');
     expect(paymentSource).toContain('grid-cols-[3.25rem_minmax(0,1fr)_6.5rem]');

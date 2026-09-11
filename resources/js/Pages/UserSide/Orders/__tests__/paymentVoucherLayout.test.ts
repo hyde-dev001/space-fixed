@@ -24,7 +24,9 @@ describe('payment desktop voucher layout', () => {
     expect(phoneFieldSource).toContain('className="w-full px-4 py-3');
     expect(desktopVoucherSection).toContain('className="mt-2 w-full rounded-xl');
     expect(desktopVoucherSection).toContain('data-testid="desktop-voucher-suggestions"');
-    expect(desktopVoucherSection).toContain('absolute left-0 right-0 top-full');
+    expect(desktopVoucherSection).toContain('hide-scrollbar mt-1 max-h-[min(20rem,calc(100vh-12rem))]');
+    expect(desktopVoucherSection).toContain('overflow-y-auto');
+    expect(desktopVoucherSection).not.toContain('absolute left-0 right-0 top-full');
     expect(desktopVoucherSection).toContain('handleApplyVoucherCode');
     expect(desktopVoucherSection).toContain('handleClearVoucherSelection');
     expect(desktopVoucherSection).toContain('data-testid="voucher-suggestion-card"');
