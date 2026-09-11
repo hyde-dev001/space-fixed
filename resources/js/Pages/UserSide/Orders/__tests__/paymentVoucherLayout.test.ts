@@ -61,6 +61,18 @@ describe('payment desktop voucher layout', () => {
     expect(desktopVoucherSection).not.toContain('{isPromoPreviewLoading ? (');
   });
 
+  it('separates product and shipping voucher suggestions', () => {
+    const voucherSectionIndex = paymentSource.indexOf('data-testid="desktop-voucher-section"');
+    const deliveryPersistenceIndex = paymentSource.indexOf('{/* Delivery address persistence */}');
+    const desktopVoucherSection = paymentSource.slice(voucherSectionIndex, deliveryPersistenceIndex);
+
+    expect(paymentSource).toContain('productVoucherSuggestions');
+    expect(paymentSource).toContain('shippingVoucherSuggestions');
+    expect(paymentSource).toContain('Product Vouchers');
+    expect(paymentSource).toContain('Shipping Vouchers');
+    expect(desktopVoucherSection).toContain('data-testid={`voucher-group-${group.key}`}');
+  });
+
   it('does not keep the voucher input inside the narrow order-summary sidebar', () => {
     const summaryIndex = paymentSource.indexOf('{/* Right: Order Summary (sticky on md) */}');
     const summarySource = paymentSource.slice(summaryIndex);

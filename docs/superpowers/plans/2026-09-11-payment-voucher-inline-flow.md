@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Keep the existing desktop voucher UI and behavior, but render the open voucher suggestions in normal document flow so the delivery-address, preference, and payment sections move down instead of being covered.
+**Goal:** Keep the existing desktop voucher UI and behavior, visibly separate product/shipping suggestions, and render the open voucher list in normal document flow so the delivery-address, preference, and payment sections move down instead of being covered.
 
-**Architecture:** Change only the suggestion panel positioning in the existing `Payment` component. Remove the absolute-positioning classes from the current listbox while preserving its width, scroll limit, card markup, handlers, and state. Update the existing source-contract tests to lock the inline-flow behavior.
+**Architecture:** Change only the suggestion panel positioning and presentation grouping in the existing `Payment` component. Remove the absolute-positioning classes from the current listbox and wrap the existing cards in non-empty Product Vouchers and Shipping Vouchers groups while preserving the list width, scroll limit, card markup, handlers, and state. Update the existing source-contract tests to lock the inline-flow and grouping behavior.
 
 **Tech Stack:** Laravel 12, Inertia 2, React 18, TypeScript 5.7, Tailwind CSS 4, Vitest, Vite 7.
 
@@ -13,6 +13,7 @@
 - Preserve existing voucher claim, use, clear, filtering, loading, eligibility, and keyboard behavior.
 - Preserve payment preview requests, checkout payloads, discount calculations, and backend files.
 - Do not resize the current voucher cards, text, buttons, or spacing; only change overlay positioning to normal flow.
+- Keep the existing voucher card dimensions while grouping items-targeted and shipping-targeted suggestions under separate visible headings.
 - Keep the open suggestion list bounded with the existing max-height and vertical scrolling.
 - Modify only the payment source, its focused layout/integration tests, this plan note, and the requested production build if regenerated.
 
