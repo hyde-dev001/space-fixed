@@ -2323,6 +2323,12 @@ const Payment: React.FC = () => {
 
     return code.includes(voucherSearchTerm) || name.includes(voucherSearchTerm);
   });
+  const productVoucherSuggestions = filteredVoucherCodeSuggestions.filter((voucher) => voucher.target === 'items');
+  const shippingVoucherSuggestions = filteredVoucherCodeSuggestions.filter((voucher) => voucher.target === 'shipping');
+  const voucherSuggestionGroups = [
+    { key: 'product', label: 'Product Vouchers', vouchers: productVoucherSuggestions },
+    { key: 'shipping', label: 'Shipping Vouchers', vouchers: shippingVoucherSuggestions },
+  ].filter((group) => group.vouchers.length > 0);
   const hasExactVoucherSuggestionMatch = voucherSuggestions.some((voucher) => {
     const candidateCode = normalizeVoucherCode(String(voucher.code || voucher.name || ''));
     return candidateCode !== '' && candidateCode === normalizeVoucherCode(voucherCodeInput);
@@ -3276,9 +3282,21 @@ const Payment: React.FC = () => {
                               }}
                               className="hide-scrollbar mt-1 max-h-[min(20rem,calc(100vh-12rem))] overflow-y-auto rounded-xl border border-[#cacacb] bg-white p-1 shadow-none"
                             >
-                              {filteredVoucherCodeSuggestions.length > 0 ? (
-                                <div className="space-y-1">
-                                  {filteredVoucherCodeSuggestions.map((voucher) => {
+                              {voucherSuggestionGroups.length > 0 ? (
+                                <div className="space-y-3">
+                                  {voucherSuggestionGroups.map((group) => (
+                                    <div
+                                      key={group.key}
+                                      data-testid={`voucher-group-${group.key}`}
+                                      role="group"
+                                      aria-label={group.label}
+                                    >
+                                      <div className="flex items-center justify-between border-b border-[#e5e5e5] px-1 pb-1">
+                                        <h3 className="text-xs font-semibold uppercase tracking-wide text-[#111111]">{group.label}</h3>
+                                        <span className="text-[11px] text-[#707072]">{group.vouchers.length} available</span>
+                                      </div>
+                                      <div className="mt-1 space-y-1">
+                                        {group.vouchers.map((voucher) => {
                                     const displayName = voucher.name || voucher.code || 'Voucher';
                                     const displayCode = normalizeVoucherCode(String(voucher.code || voucher.name || ''));
                                     const isEligible = voucher.eligibility === 'eligible';
@@ -3401,7 +3419,10 @@ const Payment: React.FC = () => {
                                         )}
                                       </div>
                                     );
-                                  })}
+                                        })}
+                                      </div>
+                                    </div>
+                                  ))}
                                 </div>
                               ) : (
                                 <div className="rounded-md border border-dashed border-[#e5e5e5] px-2 py-3 text-center text-xs text-[#707072]">
