@@ -53,8 +53,9 @@ describe('payment shipping voucher integration', () => {
     expect(desktopVoucherSection).toContain('overflow-y-auto');
     expect(desktopVoucherSection).not.toContain('absolute left-0 right-0 top-full');
     expect(paymentSource).toContain('overflow-y-auto');
-    expect(paymentSource).toContain('min-h-[7rem]');
-    expect(paymentSource).toContain('grid-cols-[3.25rem_minmax(0,1fr)_6.5rem]');
+    expect(paymentSource).toContain('min-h-[5.5rem]');
+    expect(paymentSource).toContain('grid-cols-[3rem_minmax(0,1fr)_5.75rem]');
+    expect(paymentSource).toContain('flex flex-col gap-5');
     expect(paymentSource).toContain('w-24');
     expect(paymentSource).toContain('h-11');
     expect(paymentSource).toContain('border-r border-dashed');
