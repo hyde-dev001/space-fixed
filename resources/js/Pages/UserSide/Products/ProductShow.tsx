@@ -33,17 +33,6 @@ type ColorVariant = {
   }>;
 };
 
-type ProductVoucherCampaign = {
-  id: string;
-  name: string;
-  code: string;
-  numericValue: number;
-  discountMode: 'percentage' | 'fixed';
-  value: string;
-  minSpend: string;
-  schedule: string;
-};
-
 type DesktopDisclosureId = 'details' | 'returns' | 'shipping';
 
 const ProductShow: React.FC = () => {
@@ -72,14 +61,6 @@ const ProductShow: React.FC = () => {
   const [isMobileSearchingSuggestions, setIsMobileSearchingSuggestions] = useState(false);
   const mobileSearchContainerRef = React.useRef<HTMLDivElement | null>(null);
   const mobileSearchAbortRef = React.useRef<AbortController | null>(null);
-  const voucherStripRef = React.useRef<HTMLDivElement | null>(null);
-  const voucherStripDragRef = React.useRef({
-    isDragging: false,
-    pointerId: -1,
-    startX: 0,
-    startScrollLeft: 0,
-    hasMoved: false,
-  });
   
   // Check if user is authenticated and is a regular customer (not ERP staff)
   // A user is a customer if they DON'T have a shop_owner_id (staff have shop_owner_id set)
@@ -98,47 +79,6 @@ const ProductShow: React.FC = () => {
       .join(', ');
   };
 
-  const formatVoucherSchedule = (startAt?: string | null, endAt?: string | null): string => {
-    const start = startAt ? new Date(startAt) : null;
-    const end = endAt ? new Date(endAt) : null;
-
-    if (!start || !end || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-      return 'Limited-time offer';
-    }
-
-    const formatDate = (date: Date) =>
-      date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-
-    return `Valid ${formatDate(start)} - ${formatDate(end)}`;
-  };
-
-  const promoContext = product?.promo_context ?? { campaigns: [], claimed_campaign_ids: [] };
-
-  const voucherCampaigns = React.useMemo<ProductVoucherCampaign[]>(() => {
-    const campaigns = Array.isArray(promoContext?.campaigns) ? promoContext.campaigns : [];
-
-    return campaigns
-      .filter((campaign: any) => String(campaign?.kind || '').toLowerCase() === 'voucher')
-      .map((campaign: any) => {
-        const numericValue = Number(campaign?.value || 0);
-        const discountMode = campaign?.discount_mode === 'fixed' ? 'fixed' : 'percentage';
-        const code = String(campaign?.code || '').trim().toUpperCase();
-
-        return {
-          id: String(campaign?.id),
-          name: String(campaign?.name || 'Voucher Campaign'),
-          code: code || 'NO-CODE',
-          value: discountMode === 'percentage'
-            ? `${numericValue}% off`
-            : `PHP ${Math.max(0, Math.round(numericValue)).toLocaleString()} off`,
-          minSpend: `PHP ${Math.max(0, Number(campaign?.min_spend || 0)).toLocaleString()} min spend`,
-          schedule: formatVoucherSchedule(campaign?.start_at, campaign?.end_at),
-          numericValue,
-          discountMode,
-        };
-      });
-  }, [promoContext]);
-  
   // Check if product has color variants (new Adidas-style system)
   const hasColorVariants = product.colorVariants && Array.isArray(product.colorVariants) && product.colorVariants.length > 0;
 
@@ -418,10 +358,6 @@ const ProductShow: React.FC = () => {
   const [selectedRatingFilter, setSelectedRatingFilter] = useState<number | 'all'>('all');
   const [currentReviewPage, setCurrentReviewPage] = useState(1);
   const reviewsPerPage = 10;
-  const [claimedPromoIds, setClaimedPromoIds] = useState<string[]>(() => {
-    const claimed = Array.isArray(promoContext?.claimed_campaign_ids) ? promoContext.claimed_campaign_ids : [];
-    return claimed.map((id: unknown) => String(id));
-  });
 
   const [show3DShowroom, setShow3DShowroom] = useState(false);
   const [recentlyViewed, setRecentlyViewed] = useState<ProductRailItem[]>([]);
@@ -474,13 +410,6 @@ const ProductShow: React.FC = () => {
 
     setRecentlyViewed(registerRecentlyViewed(window.localStorage, currentProduct, availableProductSlugs));
   }, [product.id, availableProductSlugs]);
-
-  useEffect(() => {
-    const claimed = Array.isArray(product?.promo_context?.claimed_campaign_ids)
-      ? product.promo_context.claimed_campaign_ids
-      : [];
-    setClaimedPromoIds(claimed.map((id: unknown) => String(id)));
-  }, [product?.id, product?.promo_context?.claimed_campaign_ids]);
 
   const modalSizeOptions = React.useMemo<SizeOption[]>(() => {
     const colorScopedSizes = getRawSizesForColor(modalSelectedColor);
@@ -727,74 +656,6 @@ const ProductShow: React.FC = () => {
     }
   };
 
-  const handleClaimPromo = async (campaign: ProductVoucherCampaign) => {
-    if (!isAuthenticated) {
-      await Swal.fire({
-        icon: 'info',
-        title: 'Login required',
-        text: 'Please log in to claim vouchers and coupons.',
-        confirmButtonText: 'OK',
-      });
-      return;
-    }
-
-    if (claimedPromoIds.includes(campaign.id)) {
-      await Swal.fire({
-        icon: 'info',
-        title: 'Already claimed',
-        text: `${campaign.code} is already in your wallet.`,
-        confirmButtonText: 'OK',
-      });
-      return;
-    }
-
-    try {
-      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
-      const response = await fetch(`/api/products/${product.id}/vouchers/${campaign.id}/claim`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          Accept: 'application/json',
-          'X-CSRF-TOKEN': csrfToken,
-        },
-      });
-
-      const payload = await response.json().catch(() => ({}));
-
-      if (response.status === 409) {
-        setClaimedPromoIds((prev) => (prev.includes(campaign.id) ? prev : [...prev, campaign.id]));
-        await Swal.fire({
-          icon: 'info',
-          title: 'Already claimed',
-          text: `${campaign.code} is already in your wallet.`,
-          confirmButtonText: 'OK',
-        });
-        return;
-      }
-
-      if (!response.ok || !payload?.success) {
-        throw new Error(payload?.message || 'Failed to claim voucher');
-      }
-
-      setClaimedPromoIds((prev) => [...prev, campaign.id]);
-      await Swal.fire({
-        icon: 'success',
-        title: 'Voucher claimed',
-        text: `${campaign.code} has been added to your wallet.`,
-        showConfirmButton: false,
-        timer: 1500,
-        timerProgressBar: true,
-      });
-    } catch (error: any) {
-      await Swal.fire({
-        icon: 'error',
-        title: 'Claim failed',
-        text: error?.message || 'Unable to claim voucher right now.',
-        confirmButtonText: 'OK',
-      });
-    }
-  };
-
   const removeImageBox = (id: string) => {
     setImageUploadGroups((prev) => {
       const filtered = prev.filter((group) => group.id !== id);
@@ -1001,98 +862,6 @@ const ProductShow: React.FC = () => {
       setSlideTransition(null);
       setIsSlideRunning(false);
     }, 320);
-  };
-
-  const isVoucherStripInteractiveTarget = (target: EventTarget | null): boolean => {
-    if (!(target instanceof Element)) {
-      return false;
-    }
-
-    return Boolean(
-      target.closest('button, a, input, select, textarea, summary, [role="button"], [role="link"], [data-voucher-strip-interactive="true"]')
-    );
-  };
-
-  const handleVoucherStripPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    // Let touch devices use native scrolling physics for smoother swipe behavior.
-    if (event.pointerType !== 'mouse' || event.button !== 0) return;
-
-    // Preserve normal click behavior for controls inside each voucher card.
-    if (isVoucherStripInteractiveTarget(event.target)) return;
-
-    const strip = voucherStripRef.current;
-    if (!strip) return;
-
-    event.preventDefault();
-    voucherStripDragRef.current.isDragging = true;
-    voucherStripDragRef.current.pointerId = event.pointerId;
-    voucherStripDragRef.current.startX = event.clientX;
-    voucherStripDragRef.current.startScrollLeft = strip.scrollLeft;
-    voucherStripDragRef.current.hasMoved = false;
-
-    strip.classList.add('select-none');
-    strip.setPointerCapture(event.pointerId);
-  };
-
-  const handleVoucherStripPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
-    const strip = voucherStripRef.current;
-    const dragState = voucherStripDragRef.current;
-
-    if (!strip || !dragState.isDragging || dragState.pointerId !== event.pointerId) return;
-
-    const deltaX = event.clientX - dragState.startX;
-    if (!dragState.hasMoved && Math.abs(deltaX) > 4) {
-      dragState.hasMoved = true;
-    }
-
-    event.preventDefault();
-    strip.scrollLeft = dragState.startScrollLeft - deltaX;
-  };
-
-  const endVoucherStripDrag = (event: React.PointerEvent<HTMLDivElement>) => {
-    const strip = voucherStripRef.current;
-    const dragState = voucherStripDragRef.current;
-
-    if (!dragState.isDragging || dragState.pointerId !== event.pointerId) return;
-
-    dragState.isDragging = false;
-    dragState.pointerId = -1;
-
-    strip?.classList.remove('select-none');
-
-    if (strip?.hasPointerCapture(event.pointerId)) {
-      strip.releasePointerCapture(event.pointerId);
-    }
-  };
-
-  const handleVoucherStripWheel = (event: React.WheelEvent<HTMLDivElement>) => {
-    const strip = voucherStripRef.current;
-    if (!strip) return;
-
-    const maxScrollLeft = Math.max(0, strip.scrollWidth - strip.clientWidth);
-    if (maxScrollLeft === 0) return;
-
-    // Map vertical mouse wheel movement to horizontal scrolling for desktop users.
-    if (Math.abs(event.deltaY) <= Math.abs(event.deltaX) || event.deltaY === 0) return;
-
-    const multiplier = event.deltaMode === 1 ? 18 : 1;
-    const nextDelta = event.deltaY * multiplier;
-    if (nextDelta === 0) return;
-
-    const isAtStart = strip.scrollLeft <= 0;
-    const isAtEnd = strip.scrollLeft >= maxScrollLeft;
-    if ((isAtStart && nextDelta < 0) || (isAtEnd && nextDelta > 0)) return;
-
-    event.preventDefault();
-    strip.scrollLeft += nextDelta;
-  };
-
-  const handleVoucherStripClickCapture = (event: React.MouseEvent<HTMLDivElement>) => {
-    if (!voucherStripDragRef.current.hasMoved) return;
-
-    event.preventDefault();
-    event.stopPropagation();
-    voucherStripDragRef.current.hasMoved = false;
   };
 
   return (
@@ -2233,103 +2002,6 @@ const ProductShow: React.FC = () => {
                     {product.category && (
                       <p className="mt-5 text-[15px] leading-7 text-black/75">Category: {formatCategoryText(product.category)}</p>
                     )}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Voucher claim strip (horizontal) */}
-          <div className="mt-12 xl:mt-16 px-4 sm:px-6 xl:px-0">
-            <div className="mx-auto max-w-260 overflow-hidden rounded-[26px] border border-gray-200 bg-white p-4 shadow-[0_16px_36px_-24px_rgba(15,23,42,0.35)] sm:p-5">
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/80 pb-3">
-                <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">Vouchers</p>
-                  <h2 className="mt-1 text-sm font-bold text-slate-900 sm:text-base">Claim Available Vouchers</h2>
-                  <p className="mt-1 text-[11px] text-slate-500 lg:hidden">Swipe left to view more offers.</p>
-                </div>
-              </div>
-
-              <div
-                ref={voucherStripRef}
-                onPointerDown={handleVoucherStripPointerDown}
-                onPointerMove={handleVoucherStripPointerMove}
-                onPointerUp={endVoucherStripDrag}
-                onPointerCancel={endVoucherStripDrag}
-                onWheel={handleVoucherStripWheel}
-                onClickCapture={handleVoucherStripClickCapture}
-                className="mt-4 flex items-stretch gap-3 overflow-x-auto overscroll-x-contain scroll-smooth pl-1 pr-4 pb-2 touch-pan-x cursor-grab active:cursor-grabbing sm:pr-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [-webkit-overflow-scrolling:touch]"
-              >
-                {voucherCampaigns.map((campaign) => {
-                  const isClaimed = claimedPromoIds.includes(campaign.id);
-
-                  return (
-                    <div
-                      key={campaign.id}
-                      className="flex h-[320px] w-[88vw] max-w-[360px] shrink-0 flex-col rounded-[24px] border border-slate-200 bg-slate-100 p-4 text-slate-900 shadow-[0_20px_50px_-30px_rgba(15,23,42,0.25)] sm:w-[360px] sm:max-w-[360px] sm:p-5"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-[10px] uppercase tracking-[0.24em] text-slate-500">Offer Summary</p>
-                          <h3 className="mt-2 line-clamp-1 text-xl font-semibold leading-tight text-slate-900">{campaign.name || 'Voucher offer'}</h3>
-                        </div>
-                        <span className="inline-flex rounded-full bg-white px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-600 ring-1 ring-inset ring-slate-200">
-                          Voucher
-                        </span>
-                      </div>
-
-                      <div className="mt-5 grid grid-cols-2 gap-3">
-                        <div className="rounded-2xl border border-slate-200 bg-white p-3.5">
-                          <p className="text-[10px] uppercase tracking-wide text-slate-500">Discount</p>
-                          <p className="mt-2 text-lg font-semibold leading-tight text-slate-900">{campaign.value}</p>
-                        </div>
-                        <div className="rounded-2xl border border-slate-200 bg-white p-3.5">
-                          <p className="text-[10px] uppercase tracking-wide text-slate-500">Code</p>
-                          <p
-                            className="mt-2 max-w-full truncate text-lg font-semibold tracking-[0.14em] text-slate-900"
-                            title={campaign.code}
-                          >
-                            {campaign.code}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="mt-5 space-y-2.5 text-sm text-slate-600">
-                        <div className="flex items-center justify-between gap-3">
-                          <span>Product</span>
-                          <span className="max-w-[62%] truncate text-right font-medium text-slate-900">{product?.name || 'Selected product'}</span>
-                        </div>
-                        <div className="flex items-center justify-between gap-3">
-                          <span>Schedule</span>
-                          <span className="max-w-[62%] truncate text-right font-medium text-slate-900">{campaign.schedule.replace('Valid ', '')}</span>
-                        </div>
-                        <div className="flex items-center justify-between gap-3">
-                          <span>Minimum spend</span>
-                          <span className="font-medium text-slate-900">{campaign.minSpend.replace(' min spend', '')}</span>
-                        </div>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => handleClaimPromo(campaign)}
-                        disabled={isClaimed}
-                        className={`mt-auto inline-flex w-full items-center justify-center rounded-xl px-3 py-2.5 text-[11px] font-semibold uppercase tracking-[0.14em] transition-all ${
-                          isClaimed
-                            ? 'cursor-not-allowed bg-slate-200 text-slate-500'
-                            : 'bg-slate-900 text-white shadow-sm hover:-translate-y-0.5 hover:bg-slate-800'
-                        }`}
-                      >
-                        {isClaimed ? 'Claimed' : 'Claim Voucher'}
-                      </button>
-                    </div>
-                  );
-                })}
-
-                {voucherCampaigns.length > 0 && <div aria-hidden="true" className="w-1 shrink-0 sm:w-2" />}
-
-                {voucherCampaigns.length === 0 && (
-                  <div className="w-full rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
-                    No active vouchers for this product yet.
                   </div>
                 )}
               </div>

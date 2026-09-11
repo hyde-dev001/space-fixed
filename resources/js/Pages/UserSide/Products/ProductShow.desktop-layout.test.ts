@@ -38,6 +38,12 @@ describe('ProductShow desktop layout contract', () => {
     expect(source).toContain('setShowSizeChart(true)');
   });
 
+  it('does not render a duplicate product-page voucher section', () => {
+    const source = readProductFile('ProductShow.tsx');
+
+    expect(source).not.toContain('Claim Available Vouchers');
+  });
+
   it('places desktop-only related and recent rails after customer reviews', () => {
     const source = readProductFile('ProductShow.tsx');
     const railSource = readProductFile('ProductRail.tsx');
