@@ -177,11 +177,11 @@ php artisan test tests/Feature/Procurement/PurchaseRequestWorkflowTest.php tests
 
 Expected: existing manual workflow assertions pass; new term, due-date, sorting, and settlement-boundary assertions fail without unrelated exceptions.
 
-- [ ] **Step 5: Commit the red tests.**
+- [ ] **Step 5: Keep the red tests uncommitted.**
 
-```bash
-git commit --only -m "test: define procurement supplier payment contract" -- tests/Feature/Procurement/PurchaseRequestWorkflowTest.php tests/Feature/Procurement/PurchaseOrderWorkflowTest.php tests/Feature/Procurement/PurchaseOrderReceivingTest.php tests/Feature/Procurement/ProcurementApiContractTest.php tests/Feature/Finance/ExpenseSettlementTest.php
-```
+Do not create a standalone failing-test commit. Keep these regression tests in
+the working tree and carry them into the task that implements each behavior.
+The first green task commit must include the relevant tests and implementation.
 
 ### Task 2: Add the three records and three approved link columns
 
@@ -650,7 +650,12 @@ git commit --only -m "feat: receive supplier replacements canonically" -- app/Ht
 
 - [ ] **Step 1: Write failing proof and refund-ledger tests.**
 
-Cover refund eligibility only after confirmed payment, supplier proof -> `awaiting_verification`, Finance-only confirmation, actual amount/reference/date/proof/notes, partial/full totals, duplicate key replay, changed-payload conflict, over-refund rejection, cross-shop denial, and expected-amount changes in the activity log. Assert initial unpaid receiving defects cannot use refund resolution.
+Cover refund eligibility only after confirmed payment, supplier proof ->
+`awaiting_verification`, a separate Finance-side confirmation proof required for
+Finance-only confirmation, actual amount/reference/date/notes, partial/full
+totals, duplicate key replay, changed-payload conflict, over-refund rejection,
+cross-shop denial, and expected-amount changes in the activity log. Assert
+initial unpaid receiving defects cannot use refund resolution.
 
 - [ ] **Step 2: Write settlement-state regression tests.**
 
@@ -673,14 +678,20 @@ Add `ExpenseSettlement::ENTRY_SUPPLIER_REFUND`. Update settled totals to add onl
 Expose role-scoped supplier-proof upload actions from both the Procurement
 adjustment route and the Finance procurement-expense route; both delegate to
 the same adjustment service. Either role may attach supplier proof and
-reported details without confirming cash. Finance confirmation requires its
-own private proof and calls only `recordSupplierRefund()`. Sum confirmed
-entries by adjustment; set `partially_refunded` below expected and `resolved`
-at the expected amount. Preserve all original settlement rows.
+reported details without confirming cash. Require at least one supplier-proof
+media item before moving to `awaiting_verification`. Finance confirmation
+requires a new, distinct Finance-side private proof media item; supplier proof
+cannot satisfy that field. Then call only `recordSupplierRefund()`. Sum
+confirmed entries by adjustment; set `partially_refunded` below expected and
+`resolved` at the expected amount. Preserve all original settlement rows.
 
 - [ ] **Step 6: Add existing-page UI actions.**
 
-Procurement records expected amount, communication, and supplier proof in the adjustment panel. Finance sees original payment, expected/remaining refund, supplier proof, and confirmation fields in the procurement expense panel. Supplier proof alone never displays confirmed.
+Procurement records expected amount, communication, and supplier proof in the
+adjustment panel. Finance sees original payment, expected/remaining refund,
+supplier proof, a separate Finance confirmation-proof upload, and confirmation
+fields in the procurement expense panel. Supplier proof alone never displays
+confirmed.
 
 - [ ] **Step 7: Run refund tests.**
 
@@ -760,10 +771,19 @@ Omit `resources/js/types/notifications.ts` if no explicit union change is requir
 - [ ] **Step 1: Run focused backend workflow suites.**
 
 ```bash
-php artisan test tests/Feature/Procurement tests/Feature/Finance/ProcurementExpenseReleaseTest.php tests/Feature/Finance/SupplierPaymentProfileTest.php tests/Feature/Finance/SupplierPaymentTest.php tests/Feature/Finance/SupplierRefundTest.php tests/Feature/Finance/ExpenseSettlementTest.php tests/Feature/PaymongoWebhookSignatureTest.php tests/Feature/Notifications/NotificationCriticalFlowsTest.php
+php artisan test tests/Feature/Procurement tests/Feature/Finance/ProcurementExpenseReleaseTest.php tests/Feature/Finance/SupplierPaymentProfileTest.php tests/Feature/Finance/SupplierRefundTest.php tests/Feature/Finance/ExpenseSettlementTest.php tests/Feature/Notifications/NotificationCriticalFlowsTest.php
 ```
 
-Expected: PASS. If Task 6 remains blocked, do not create placeholder provider files or tests; report the exact omitted paths and blocker instead of claiming completion.
+Expected: PASS for all non-provider workflow tests. Only if Task 6 passed the
+provider gate and the files exist, run:
+
+```bash
+php artisan test tests/Feature/Finance/SupplierPaymentTest.php tests/Feature/PaymongoWebhookSignatureTest.php
+```
+
+If Task 6 remains blocked, do not reference or create those provider test files;
+report the exact omitted paths and provider blocker instead of claiming
+completion.
 
 - [ ] **Step 2: Run focused frontend suites.**
 
@@ -783,7 +803,15 @@ git diff --check
 git status --short
 ```
 
-Expected: all tests/build pass, diff check is silent, and only intentional changes remain. Do not report TypeScript lint/type-check as passed because the repository has no committed scripts for them.
+Expected: all non-provider tests/build pass, diff check is silent, and only
+intentional changes remain. Do not report TypeScript lint/type-check as passed
+because the repository has no committed scripts for them.
+
+If Task 6 is blocked by the provider gate, omit
+`tests/Feature/Finance/SupplierPaymentTest.php` and
+`tests/Feature/PaymongoWebhookSignatureTest.php` from all commands until those
+files actually exist. Run the non-provider suites separately and report the
+provider blocker explicitly; never create placeholder provider tests.
 
 - [ ] **Step 4: Perform the required sequential reviews.**
 

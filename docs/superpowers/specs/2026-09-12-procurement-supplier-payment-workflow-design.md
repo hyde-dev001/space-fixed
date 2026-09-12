@@ -393,8 +393,10 @@ or Finance uploads the supplier's external proof, reference, reported amount,
 and transfer date. Supplier proof moves the case to awaiting verification but
 does not confirm money received.
 
-Finance confirmation captures actual amount received, bank/reference number,
-received date, proof, notes, actor, and timestamp. The existing
+Finance must upload a separate Finance-side confirmation proof for each refund
+confirmation; supplier proof alone is not sufficient. Finance confirmation
+captures actual amount received, bank/reference number, received date, the
+separate Finance proof, notes, actor, and timestamp. The existing
 `finance_expense_settlements` table gains:
 
 - nullable `supplier_adjustment_id` to link partial confirmations; and
