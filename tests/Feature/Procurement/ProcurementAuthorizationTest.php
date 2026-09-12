@@ -5,9 +5,15 @@ namespace Tests\Feature\Procurement;
 use App\Models\InventoryItem;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
+use App\Models\PurchaseOrderReceipt;
+use App\Models\PurchaseOrderReceiptItem;
 use App\Models\PurchaseRequest;
+use App\Models\Finance\Expense;
 use App\Models\ShopOwner;
 use App\Models\Supplier;
+use App\Models\SupplierAdjustment;
+use App\Models\SupplierPaymentAttempt;
+use App\Models\SupplierPaymentProfile;
 use App\Models\StockRequestApproval;
 use App\Models\User;
 use Database\Seeders\RolesAndPermissionsSeeder;
@@ -546,6 +552,129 @@ class ProcurementAuthorizationTest extends TestCase
             ->assertUnprocessable();
 
         $this->assertNull($supplier->fresh()->deleted_at);
+    }
+
+    public function test_supplier_archiving_blocks_unresolved_adjustments_unpaid_released_expenses_and_active_payments(): void
+    {
+        [$manager, $shop] = $this->userForShop();
+        $this->give($manager, 'procurement.manage_suppliers');
+
+        $adjustmentSupplier = Supplier::factory()->create(['shop_owner_id' => $shop->id]);
+        $adjustmentOrder = PurchaseOrder::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'supplier_id' => $adjustmentSupplier->id,
+            'status' => 'delivered',
+        ]);
+        $adjustmentItem = PurchaseOrderItem::factory()->create([
+            'purchase_order_id' => $adjustmentOrder->id,
+            'ordered_quantity' => 1,
+        ]);
+        $adjustmentReceipt = PurchaseOrderReceipt::factory()->create([
+            'purchase_order_id' => $adjustmentOrder->id,
+            'shop_owner_id' => $shop->id,
+            'status' => 'posted',
+        ]);
+        $adjustmentReceiptItem = PurchaseOrderReceiptItem::factory()->create([
+            'purchase_order_receipt_id' => $adjustmentReceipt->id,
+            'purchase_order_item_id' => $adjustmentItem->id,
+            'received_quantity' => 1,
+            'accepted_quantity' => 1,
+        ]);
+        SupplierAdjustment::create([
+            'shop_owner_id' => $shop->id,
+            'purchase_order_receipt_item_id' => $adjustmentReceiptItem->id,
+            'idempotency_key' => 'archive-unresolved-adjustment',
+            'issue_stage' => SupplierAdjustment::ISSUE_STAGE_RECEIVING_DEFECT,
+            'reported_quantity' => 1,
+            'unit_cost_snapshot' => '100.00',
+            'reason_category' => 'damaged',
+            'inventory_notes' => 'Still under review.',
+            'status' => SupplierAdjustment::STATUS_UNDER_REVIEW,
+            'reported_by' => $manager->id,
+            'reported_at' => now(),
+        ]);
+
+        $this->actingAs($manager)
+            ->deleteJson("/api/erp/procurement/suppliers/{$adjustmentSupplier->id}")
+            ->assertUnprocessable();
+
+        $unpaidSupplier = Supplier::factory()->create(['shop_owner_id' => $shop->id]);
+        $unpaidOrder = PurchaseOrder::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'supplier_id' => $unpaidSupplier->id,
+            'status' => 'delivered',
+        ]);
+        $unpaidReceipt = PurchaseOrderReceipt::factory()->create([
+            'purchase_order_id' => $unpaidOrder->id,
+            'shop_owner_id' => $shop->id,
+            'status' => 'posted',
+        ]);
+        $unpaidExpense = Expense::create([
+            'reference' => 'ARCHIVE-UNPAID',
+            'date' => now()->toDateString(),
+            'category' => 'Procurement',
+            'amount' => '100.00',
+            'tax_amount' => '0.00',
+            'status' => 'posted',
+            'shop_id' => $shop->id,
+            'procurement_receipt_id' => $unpaidReceipt->id,
+        ]);
+
+        $this->actingAs($manager)
+            ->deleteJson("/api/erp/procurement/suppliers/{$unpaidSupplier->id}")
+            ->assertUnprocessable();
+
+        $activeSupplier = Supplier::factory()->create(['shop_owner_id' => $shop->id]);
+        $activeOrder = PurchaseOrder::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'supplier_id' => $activeSupplier->id,
+            'status' => 'delivered',
+        ]);
+        $activeReceipt = PurchaseOrderReceipt::factory()->create([
+            'purchase_order_id' => $activeOrder->id,
+            'shop_owner_id' => $shop->id,
+            'status' => 'posted',
+        ]);
+        $activeExpense = Expense::create([
+            'reference' => 'ARCHIVE-ACTIVE-PAYMENT',
+            'date' => now()->toDateString(),
+            'category' => 'Procurement',
+            'amount' => '100.00',
+            'tax_amount' => '0.00',
+            'status' => 'posted',
+            'shop_id' => $shop->id,
+            'procurement_receipt_id' => $activeReceipt->id,
+        ]);
+        $profile = SupplierPaymentProfile::create([
+            'shop_owner_id' => $shop->id,
+            'supplier_id' => $activeSupplier->id,
+            'destination_type' => 'bank_account',
+            'bank_name' => 'Test Bank',
+            'bank_code' => 'TBK',
+            'account_name' => 'Supplier Trading',
+            'account_number' => '1234567890',
+            'status' => SupplierPaymentProfile::STATUS_VERIFIED,
+        ]);
+        SupplierPaymentAttempt::create([
+            'shop_owner_id' => $shop->id,
+            'expense_id' => $activeExpense->id,
+            'supplier_id' => $activeSupplier->id,
+            'supplier_payment_profile_id' => $profile->id,
+            'amount' => '100.00',
+            'currency' => 'PHP',
+            'provider' => 'manual',
+            'payment_method' => SupplierPaymentAttempt::PAYMENT_METHOD_BANK_TRANSFER,
+            'internal_reference' => 'ARCHIVE-ACTIVE-001',
+            'idempotency_key' => 'archive-active-payment',
+            'destination_snapshot' => ['account_number' => '1234567890'],
+            'status' => SupplierPaymentAttempt::STATUS_AWAITING_VERIFICATION,
+            'initiated_by_user_id' => $manager->id,
+            'initiated_at' => now(),
+        ]);
+
+        $this->actingAs($manager)
+            ->deleteJson("/api/erp/procurement/suppliers/{$activeSupplier->id}")
+            ->assertUnprocessable();
     }
 
     public function test_unsupported_supplier_analysis_routes_are_absent(): void

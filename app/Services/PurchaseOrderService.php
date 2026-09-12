@@ -10,6 +10,7 @@ use App\Models\PurchaseOrderReceipt;
 use App\Models\PurchaseRequest;
 use App\Models\ProcurementSettings;
 use App\Models\Supplier;
+use App\Models\SupplierAdjustment;
 use App\Models\SupplierPaymentAttempt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -233,6 +234,17 @@ class PurchaseOrderService
 
             DB::commit();
 
+            if ($status === 'in_transit') {
+                try {
+                    app(NotificationService::class)->notifyPurchaseOrderInTransit((int) $purchaseOrder->shop_owner_id, [
+                        'purchase_order_id' => $purchaseOrder->id,
+                        'po_number' => $purchaseOrder->po_number,
+                    ]);
+                } catch (\Throwable $exception) {
+                    report($exception);
+                }
+            }
+
             Log::info('Purchase order status updated', [
                 'po_id' => $poId,
                 'po_number' => $purchaseOrder->po_number,
@@ -287,6 +299,19 @@ class PurchaseOrderService
         if ($hasActivePayment) {
             throw ValidationException::withMessages([
                 'status' => 'Supplier payments awaiting completion must be resolved before purchase-order completion.',
+            ]);
+        }
+
+        $hasUnresolvedAdjustment = SupplierAdjustment::query()
+            ->where('shop_owner_id', (int) $purchaseOrder->shop_owner_id)
+            ->where('status', '<>', SupplierAdjustment::STATUS_RESOLVED)
+            ->whereHas('receiptItem.receipt', fn ($query) => $query->where('purchase_order_id', $purchaseOrder->id))
+            ->lockForUpdate()
+            ->exists();
+
+        if ($hasUnresolvedAdjustment) {
+            throw ValidationException::withMessages([
+                'status' => 'Supplier adjustments must be resolved before purchase-order completion.',
             ]);
         }
     }

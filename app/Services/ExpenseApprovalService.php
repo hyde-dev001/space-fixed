@@ -98,7 +98,7 @@ class ExpenseApprovalService
 
         $approvalNotes = $approvalNotes !== null ? trim($approvalNotes) : null;
 
-        return DB::transaction(function () use ($expense, $reviewer, $shopId, $approvalNotes): Expense {
+        $released = DB::transaction(function () use ($expense, $reviewer, $shopId, $approvalNotes): Expense {
             $lockedExpense = Expense::query()
                 ->whereKey($expense->getKey())
                 ->lockForUpdate()
@@ -186,6 +186,22 @@ class ExpenseApprovalService
 
             return $lockedExpense->fresh();
         }, 3);
+
+        try {
+            $purchaseOrder = PurchaseOrderReceipt::query()
+                ->with('purchaseOrder')
+                ->find($released->procurement_receipt_id)?->purchaseOrder;
+
+            $this->notificationService->notifyProcurementExpenseReleased($shopId, [
+                'expense_id' => $released->id,
+                'po_number' => $purchaseOrder?->po_number ?? 'unknown',
+                'amount' => (string) $released->amount,
+            ]);
+        } catch (\Throwable $exception) {
+            report($exception);
+        }
+
+        return $released;
     }
 
     private function toCents(mixed $amount): int

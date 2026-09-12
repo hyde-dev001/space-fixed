@@ -104,6 +104,17 @@ final class SupplierAdjustmentService
                 'notes' => $notes,
             ]);
 
+            DB::afterCommit(function () use ($shopId, $purchaseOrder, $adjustment): void {
+                try {
+                    app(NotificationService::class)->notifySupplierIssueReported($shopId, [
+                        'adjustment_id' => $adjustment->id,
+                        'po_number' => $purchaseOrder->po_number,
+                    ]);
+                } catch (Throwable $exception) {
+                    report($exception);
+                }
+            });
+
             return $adjustment->fresh();
         } catch (Throwable $exception) {
             $this->deleteMedia($media);
@@ -121,7 +132,7 @@ final class SupplierAdjustmentService
         $media = [];
 
         try {
-            return DB::transaction(function () use ($receiptItem, $actor, $data, &$media): array {
+            $result = DB::transaction(function () use ($receiptItem, $actor, $data, &$media): array {
                 $lockedItem = PurchaseOrderReceiptItem::query()
                     ->whereKey($receiptItem->getKey())
                     ->lockForUpdate()
@@ -208,6 +219,21 @@ final class SupplierAdjustmentService
 
                 return ['adjustment' => $adjustment->fresh(), 'replayed' => false];
             }, 3);
+
+            if (! $result['replayed']) {
+                $adjustment = $result['adjustment'];
+                $purchaseOrder = $adjustment->load('receiptItem.receipt.purchaseOrder')->receiptItem?->receipt?->purchaseOrder;
+                try {
+                    app(NotificationService::class)->notifySupplierIssueReported((int) $adjustment->shop_owner_id, [
+                        'adjustment_id' => $adjustment->id,
+                        'po_number' => $purchaseOrder?->po_number ?? 'unknown',
+                    ]);
+                } catch (Throwable $exception) {
+                    report($exception);
+                }
+            }
+
+            return $result;
         } catch (Throwable $exception) {
             $this->deleteMedia($media);
 
@@ -224,7 +250,7 @@ final class SupplierAdjustmentService
         $media = [];
 
         try {
-            return DB::transaction(function () use ($adjustment, $actor, $data, $proof, &$media): SupplierAdjustment {
+            $updated = DB::transaction(function () use ($adjustment, $actor, $data, $proof, &$media): SupplierAdjustment {
                 $lockedAdjustment = SupplierAdjustment::query()
                     ->whereKey($adjustment->getKey())
                     ->lockForUpdate()
@@ -280,6 +306,19 @@ final class SupplierAdjustmentService
 
                 return $lockedAdjustment->fresh();
             }, 3);
+
+            $purchaseOrder = $updated->load('receiptItem.receipt.purchaseOrder')->receiptItem?->receipt?->purchaseOrder;
+            try {
+                app(NotificationService::class)->notifySupplierRefundProofSubmitted((int) $updated->shop_owner_id, [
+                    'adjustment_id' => $updated->id,
+                    'expense_id' => $updated->receiptItem?->receipt?->expense?->id,
+                    'po_number' => $purchaseOrder?->po_number ?? 'unknown',
+                ]);
+            } catch (Throwable $exception) {
+                report($exception);
+            }
+
+            return $updated;
         } catch (Throwable $exception) {
             $this->deleteMedia($media);
 
@@ -322,6 +361,18 @@ final class SupplierAdjustmentService
         $updatedAdjustment = $result['replayed']
             ? $adjustment->fresh()
             : $this->finalizeSupplierRefund($adjustment, $actor, $result['settlement']);
+
+        if (! $result['replayed']) {
+            $purchaseOrder = $updatedAdjustment->load('receiptItem.receipt.purchaseOrder')->receiptItem?->receipt?->purchaseOrder;
+            try {
+                app(NotificationService::class)->notifySupplierRefundConfirmed((int) $updatedAdjustment->shop_owner_id, [
+                    'adjustment_id' => $updatedAdjustment->id,
+                    'po_number' => $purchaseOrder?->po_number ?? 'unknown',
+                ]);
+            } catch (Throwable $exception) {
+                report($exception);
+            }
+        }
 
         return [
             'adjustment' => $updatedAdjustment,
@@ -374,6 +425,17 @@ final class SupplierAdjustmentService
         if ($acceptedQuantity > max(0, (int) $adjustment->reported_quantity - $acceptedReplacement)) {
             throw ValidationException::withMessages(['items' => 'The replacement quantity exceeds the remaining supplier adjustment quantity.']);
         }
+
+        DB::afterCommit(function () use ($adjustment, $purchaseOrder): void {
+            try {
+                app(NotificationService::class)->notifySupplierReplacementRequested((int) $adjustment->shop_owner_id, [
+                    'adjustment_id' => $adjustment->id,
+                    'po_number' => $purchaseOrder->po_number,
+                ]);
+            } catch (Throwable $exception) {
+                report($exception);
+            }
+        });
 
         return $adjustment;
     }
@@ -451,6 +513,7 @@ final class SupplierAdjustmentService
                 'reported_quantity' => (int) $adjustment->reported_quantity,
                 'status' => $adjustment->status,
             ]);
+
         } catch (Throwable $exception) {
             $this->deleteMedia($media);
 
