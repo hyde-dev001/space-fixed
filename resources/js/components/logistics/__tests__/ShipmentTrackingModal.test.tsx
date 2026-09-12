@@ -50,7 +50,7 @@ describe('ShipmentTrackingModal', () => {
 
     expect(screen.getByText('Loading shipment tracking...')).toBeInTheDocument();
     expect(await screen.findByText('Retail Delivery Movement')).toBeInTheDocument();
-    expect(screen.getByText('In Transit').parentElement).toHaveClass('md:items-end', 'md:text-right');
+    expect(screen.getByText('In Transit').parentElement).toHaveClass('md:items-center', 'md:text-center');
     expect(screen.getByRole('dialog', { name: 'Shipment tracking' })).toHaveClass('userside-tracking-modal');
     expect(screen.getByText('Updates').closest('section')).toHaveClass('userside-tracking-section');
     expect(screen.getByText('SHP-12')).toBeInTheDocument();
