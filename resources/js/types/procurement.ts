@@ -135,6 +135,43 @@ export interface PurchaseOrderReceipt {
     items: PurchaseOrderReceiptItem[];
 }
 
+export interface ProcurementExpenseDetails {
+    purchase_order_id?: number;
+    po_number?: string;
+    receipt_number?: string;
+    receipt_id?: number;
+    received_at?: string | null;
+    receipt_date?: string | null;
+    supplier_name?: string | null;
+    product_name?: string | null;
+    quantity?: number | null;
+    ordered_quantity?: number | null;
+    received_quantity?: number | null;
+    accepted_quantity?: number | null;
+    defective_quantity?: number | null;
+    requested_size?: string | null;
+    requested_color?: string | null;
+    unit_cost?: number | string | null;
+    total_cost?: number | string | null;
+    payable_amount?: number | string | null;
+    payment_terms?: PaymentTerms | string | null;
+    expected_delivery_date?: string | null;
+    actual_delivery_date?: string | null;
+    due_date?: string | null;
+    expense_status?: string | null;
+    payment_status?: 'unpaid' | 'partially_paid' | 'paid' | string | null;
+    payment_timing?: 'Overdue' | 'Due Today' | 'Due Soon' | 'Not Due' | string | null;
+    items?: Array<{
+        purchase_order_item_id: number;
+        product_name?: string | null;
+        ordered_quantity?: number | null;
+        unit_cost?: number | string | null;
+        received_quantity: number;
+        defective_quantity: number;
+        accepted_quantity: number;
+    }>;
+}
+
 export interface StockRequestApproval {
     id: number;
     request_number: string;

@@ -7,6 +7,9 @@ use App\Models\Finance\ExpenseSettlement;
 use App\Models\ShopOwner;
 use App\Models\User;
 use App\Models\ProcurementSettings;
+use App\Models\PurchaseOrder;
+use App\Models\PurchaseOrderReceipt;
+use App\Models\Supplier;
 use App\Services\ExpenseApprovalService;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -191,6 +194,38 @@ class ExpenseSettlementTest extends TestCase
             'reason' => 'Second attempt',
         ]);
         $duplicate->assertStatus(409)->assertJsonPath('code', 'ALREADY_REVERSED');
+    }
+
+    public function test_public_manual_settlement_rejects_procurement_receipt_expenses(): void
+    {
+        [$shop, $expense, $user] = $this->makeExpenseContext();
+        $supplier = Supplier::factory()->create(['shop_owner_id' => $shop->id]);
+        $purchaseOrder = PurchaseOrder::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'supplier_id' => $supplier->id,
+            'status' => 'delivered',
+        ]);
+        $receipt = PurchaseOrderReceipt::factory()->create([
+            'purchase_order_id' => $purchaseOrder->id,
+            'shop_owner_id' => $shop->id,
+            'status' => 'posted',
+        ]);
+        $expense->update([
+            'status' => 'posted',
+            'procurement_receipt_id' => $receipt->id,
+        ]);
+        $user->givePermissionTo('access-finance-expenses');
+
+        $this->actingAs($user, 'user')
+            ->postJson("/api/finance/expenses/{$expense->id}/settlements", [
+                'amount' => '100.00',
+                'payment_method' => 'bank_transfer',
+                'idempotency_key' => 'manual-procurement-bypass',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath('code', 'INVALID_STATE');
+
+        $this->assertDatabaseCount('finance_expense_settlements', 0);
     }
 
     public function test_manual_expense_with_pending_owner_stage_cannot_be_settled(): void

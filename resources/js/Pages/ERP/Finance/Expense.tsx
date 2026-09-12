@@ -7,6 +7,8 @@ import { ApexOptions } from "apexcharts";
 import { useFinanceApi } from "../../../hooks/useFinanceApi";
 import { useApproveExpense, useExpenses, useRejectExpense, useTaxRates } from "../../../hooks/useFinanceQueries";
 import { getApprovalStatusBadge } from "./InlineApprovalUtils";
+import ProcurementExpensePanel from "./components/ProcurementExpensePanel";
+import type { ProcurementExpenseDetails } from "@/types/procurement";
 
 // Loading Spinner Component
 const LoadingSpinner: React.FC<{ message?: string }> = ({ message = "Loading expenses..." }) => (
@@ -36,20 +38,7 @@ type Expense = {
   receipt_mime_type?: string | null;
   receipt_size?: number | null;
   procurement_receipt_id?: number | null;
-  procurement_details?: {
-    receipt_id?: number;
-    purchase_order_id?: number;
-    po_number?: string;
-    supplier_name?: string | null;
-    product_name?: string | null;
-    quantity?: number | null;
-    requested_size?: string | null;
-    requested_color?: string | null;
-    unit_cost?: number | string | null;
-    total_cost?: number | string | null;
-    expected_delivery_date?: string | null;
-    actual_delivery_date?: string | null;
-  } | null;
+  procurement_details?: ProcurementExpenseDetails | null;
   settlement_state?: {
     approval_status: string;
     paid_amount: string;
@@ -222,6 +211,7 @@ const Expense: React.FC = () => {
   const approveExpense = useApproveExpense();
   const rejectExpense = useRejectExpense();
   const isApprovalActionPending = approveExpense.isPending || rejectExpense.isPending;
+  const [isProcurementReleasePending, setIsProcurementReleasePending] = useState(false);
   
   // Normalize expenses data
   const expenses = useMemo(() => 
@@ -448,6 +438,51 @@ const Expense: React.FC = () => {
         text: error instanceof Error ? error.message : "The expense could not be updated.",
         confirmButtonColor: "#2563eb",
       });
+    }
+  };
+
+  const handleReviewAndRelease = async (expense: Expense) => {
+    const result = await Swal.fire({
+      title: "Release procurement expense?",
+      text: `${expense.category} — ${formatCurrency(expense.amount)}`,
+      icon: "question",
+      input: "textarea",
+      inputLabel: "Review notes (optional)",
+      inputPlaceholder: "Add any review notes...",
+      showCancelButton: true,
+      confirmButtonText: "Review & Release",
+      cancelButtonText: "Cancel",
+      confirmButtonColor: "#16a34a",
+      cancelButtonColor: "#6b7280",
+    });
+
+    if (!result.isConfirmed) return;
+
+    setIsProcurementReleasePending(true);
+    try {
+      const response = await api.post(`/api/finance/expenses/${expense.id}/review-release`, {
+        approval_notes: String(result.value || "").trim() || undefined,
+      });
+      if (!response.ok) throw new Error(response.error || "The procurement expense could not be released.");
+
+      closeViewModal();
+      await refetchExpenses();
+      await Swal.fire({
+        icon: "success",
+        title: "Expense released",
+        text: "The procurement expense is ready for payment.",
+        timer: 1600,
+        showConfirmButton: false,
+      });
+    } catch (error) {
+      await Swal.fire({
+        icon: "error",
+        title: "Release failed",
+        text: error instanceof Error ? error.message : "The procurement expense could not be released.",
+        confirmButtonColor: "#2563eb",
+      });
+    } finally {
+      setIsProcurementReleasePending(false);
     }
   };
 
@@ -958,57 +993,13 @@ const Expense: React.FC = () => {
               </div>
 
               {activeExpense.procurement_details && (
-                <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3 space-y-2">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">Procured Stock Details</p>
-                  {activeExpense.procurement_details.po_number && (
-                    <div className="flex justify-between text-sm text-gray-700 dark:text-gray-300">
-                      <span className="text-gray-500 dark:text-gray-400">PO Number</span>
-                      <span className="font-semibold text-right">{activeExpense.procurement_details.po_number}</span>
-                    </div>
-                  )}
-                  {activeExpense.procurement_details.product_name && (
-                    <div className="flex justify-between text-sm text-gray-700 dark:text-gray-300">
-                      <span className="text-gray-500 dark:text-gray-400">Product</span>
-                      <span className="font-semibold text-right max-w-[60%]">{activeExpense.procurement_details.product_name}</span>
-                    </div>
-                  )}
-                  {activeExpense.procurement_details.supplier_name && (
-                    <div className="flex justify-between text-sm text-gray-700 dark:text-gray-300">
-                      <span className="text-gray-500 dark:text-gray-400">Supplier</span>
-                      <span className="text-right max-w-[60%]">{activeExpense.procurement_details.supplier_name}</span>
-                    </div>
-                  )}
-                  {activeExpense.procurement_details.quantity !== undefined && activeExpense.procurement_details.quantity !== null && (
-                    <div className="flex justify-between text-sm text-gray-700 dark:text-gray-300">
-                      <span className="text-gray-500 dark:text-gray-400">Quantity</span>
-                      <span className="font-semibold text-right">{activeExpense.procurement_details.quantity}</span>
-                    </div>
-                  )}
-                  {activeExpense.procurement_details.requested_size && (
-                    <div className="flex justify-between text-sm text-gray-700 dark:text-gray-300">
-                      <span className="text-gray-500 dark:text-gray-400">Requested Size</span>
-                      <span className="text-right">{activeExpense.procurement_details.requested_size}</span>
-                    </div>
-                  )}
-                  {activeExpense.procurement_details.requested_color && (
-                    <div className="flex justify-between text-sm text-gray-700 dark:text-gray-300">
-                      <span className="text-gray-500 dark:text-gray-400">Requested Color</span>
-                      <span className="text-right">{activeExpense.procurement_details.requested_color}</span>
-                    </div>
-                  )}
-                  {activeExpense.procurement_details.unit_cost !== undefined && activeExpense.procurement_details.unit_cost !== null && (
-                    <div className="flex justify-between text-sm text-gray-700 dark:text-gray-300">
-                      <span className="text-gray-500 dark:text-gray-400">Unit Cost</span>
-                      <span className="font-semibold text-right">{formatCurrency(activeExpense.procurement_details.unit_cost)}</span>
-                    </div>
-                  )}
-                  {activeExpense.procurement_details.total_cost !== undefined && activeExpense.procurement_details.total_cost !== null && (
-                    <div className="flex justify-between text-sm text-gray-700 dark:text-gray-300">
-                      <span className="text-gray-500 dark:text-gray-400">PO Total</span>
-                      <span className="font-semibold text-right">{formatCurrency(activeExpense.procurement_details.total_cost)}</span>
-                    </div>
-                  )}
-                </div>
+                <ProcurementExpensePanel
+                  details={activeExpense.procurement_details}
+                  expenseStatus={activeExpense.status}
+                  amount={activeExpense.amount}
+                  isReviewPending={isProcurementReleasePending}
+                  onReviewAndRelease={() => handleReviewAndRelease(activeExpense)}
+                />
               )}
 
               <div className="flex justify-between text-sm text-gray-700 dark:text-gray-300 items-center">
