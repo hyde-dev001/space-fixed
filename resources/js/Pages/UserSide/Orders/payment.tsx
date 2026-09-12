@@ -248,7 +248,6 @@ const Payment: React.FC = () => {
   const [claimingVoucherCampaignId, setClaimingVoucherCampaignId] = useState<number | null>(null);
   const [voucherClaimError, setVoucherClaimError] = useState<string | null>(null);
   const [voucherPreviewRefreshKey, setVoucherPreviewRefreshKey] = useState(0);
-  const [hasVoucherInputInteraction, setHasVoucherInputInteraction] = useState(false);
   const desktopCityDropdownRef = useRef<HTMLDivElement | null>(null);
   const sheetCityDropdownRef = useRef<HTMLDivElement | null>(null);
   const desktopProvinceDropdownRef = useRef<HTMLDivElement | null>(null);
@@ -343,8 +342,6 @@ const Payment: React.FC = () => {
 
     setIsVoucherSelectionEnabled(true);
     setAppliedVoucherCode(normalizedCode);
-    setHasVoucherInputInteraction(true);
-    setIsVoucherSuggestionOpen(false);
   };
 
   const handleUseVoucher = (voucher: AvailableVoucherOption) => {
@@ -362,8 +359,6 @@ const Payment: React.FC = () => {
       ...current,
       [voucher.target]: normalizedCode,
     }));
-    setHasVoucherInputInteraction(true);
-    setVoucherCodeInput(normalizedCode);
     setAppliedVoucherCode((current) => normalizeVoucherCode(current) === normalizedCode ? '' : current);
     setVoucherClaimError(null);
   };
@@ -412,7 +407,6 @@ const Payment: React.FC = () => {
     setSelectedVoucherCodes({ items: '', shipping: '' });
     setAppliedVoucherCode('');
     setVoucherCodeInput('');
-    setHasVoucherInputInteraction(true);
   };
 
   const handleProvinceChange = (province: string) => {
@@ -1866,47 +1860,6 @@ const Payment: React.FC = () => {
     };
   }, []);
 
-  useEffect(() => {
-    if (isPremiumPayment || isRepairPayment) {
-      return;
-    }
-
-    if (!isVoucherSelectionEnabled) {
-      return;
-    }
-
-    const hasManualVoucherSelection = Object.values(selectedVoucherCampaignIds).some((id) => id !== null)
-      || normalizeVoucherCode(appliedVoucherCode) !== '';
-    if (hasManualVoucherSelection || hasVoucherInputInteraction) {
-      return;
-    }
-
-    const suggestedVoucher = promoPreview?.applied_vouchers?.[0]
-      || promoPreview?.applied_voucher
-      || promoPreview?.available_vouchers?.[0]
-      || null;
-
-    const suggestedLabel = normalizeVoucherCode(String(suggestedVoucher?.code || suggestedVoucher?.name || ''));
-    if (!suggestedLabel) {
-      return;
-    }
-
-    if (normalizeVoucherCode(voucherCodeInput) === suggestedLabel) {
-      return;
-    }
-
-    setVoucherCodeInput(suggestedLabel);
-  }, [
-    promoPreview,
-    isPremiumPayment,
-    isRepairPayment,
-    isVoucherSelectionEnabled,
-    selectedVoucherCampaignIds,
-    appliedVoucherCode,
-    hasVoucherInputInteraction,
-    voucherCodeInput,
-  ]);
-
   // Validate postal code - only integers, no "e" or special characters
   const handlePostalCodeChange = (value: string, setter: (val: string) => void) => {
     const cleaned = value.replace(/[^\d]/g, '');
@@ -3260,7 +3213,6 @@ const Payment: React.FC = () => {
                                 const nextVoucherCode = e.target.value.toUpperCase();
                                 const normalizedNextVoucherCode = normalizeVoucherCode(nextVoucherCode);
 
-                                setHasVoucherInputInteraction(true);
                                 setVoucherCodeInput(nextVoucherCode);
 
                                 if (normalizedNextVoucherCode === '') {
@@ -3295,7 +3247,7 @@ const Payment: React.FC = () => {
                               data-testid="desktop-voucher-table"
                               role="listbox"
                               aria-label="Available vouchers"
-                              className="hide-scrollbar mt-1 max-h-[min(20rem,calc(100vh-12rem))] overflow-y-auto rounded-xl border border-[#cacacb] bg-white p-1 shadow-none"
+                              className="mt-2 w-full min-w-0 rounded-xl border border-[#cacacb] bg-white p-1 shadow-none"
                             >
                               {voucherSuggestionGroups.length > 0 ? (
                                 <div className="flex flex-col gap-7">
@@ -3340,9 +3292,9 @@ const Payment: React.FC = () => {
                                             handleUseVoucher(voucher);
                                           }
                                         }}
-                                        className={'group relative overflow-hidden rounded-xl border text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 ' + (isRedeemed ? 'border-[#d9d9dc] bg-[#fafafa]' : isVoucherSelected ? 'border-gray-900 bg-[#f5f5f5]' : 'border-[#cacacb] bg-white hover:border-gray-900')}
+                                        className={'group relative w-full min-w-0 overflow-hidden rounded-xl border text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 ' + (isRedeemed ? 'border-[#d9d9dc] bg-[#fafafa]' : isVoucherSelected ? 'border-gray-900 bg-[#f5f5f5]' : 'border-[#cacacb] bg-white hover:border-gray-900')}
                                       >
-                                        <div className="grid min-h-[5.5rem] grid-cols-[3rem_minmax(0,1fr)_5.75rem] items-stretch">
+                                        <div className="grid min-h-[5.5rem] min-w-0 grid-cols-[3rem_minmax(0,1fr)_5.75rem] items-stretch">
                                           <div className="flex flex-col items-center justify-center border-r border-dashed border-[#cacacb] bg-[#f5f5f5] px-1 py-1.5 text-center">
                                             <div className="flex h-8 w-8 items-center justify-center rounded-full border border-[#cacacb] bg-white text-sm font-semibold text-[#111111]" aria-hidden="true">
                                               %
