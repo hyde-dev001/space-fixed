@@ -1102,6 +1102,138 @@ class NotificationService
         );
     }
 
+    public function notifyProcurementExpenseReleased(int $shopId, array $data): void
+    {
+        $this->sendToErpRole(
+            roleName: 'Procurement Manager',
+            shopId: $shopId,
+            type: NotificationType::PROCUREMENT_EXPENSE_RELEASED,
+            title: 'Procurement Expense Released',
+            message: "Expense {$data['expense_id']} for PO {$data['po_number']} of ₱{$data['amount']} was released for payment.",
+            data: $data,
+            actionUrl: '/erp/procurement/purchase-orders',
+            priority: 'medium',
+        );
+    }
+
+    public function notifyPurchaseOrderInTransit(int $shopId, array $data): void
+    {
+        $this->sendToErpRole(
+            roleName: 'Inventory Manager',
+            shopId: $shopId,
+            type: NotificationType::PURCHASE_ORDER_IN_TRANSIT,
+            title: 'Purchase Order In Transit',
+            message: "Purchase order {$data['po_number']} is in transit and awaiting receipt.",
+            data: $data,
+            actionUrl: '/erp/inventory/supplier-order-monitoring',
+            priority: 'medium',
+        );
+    }
+
+    public function notifySupplierIssueReported(int $shopId, array $data): void
+    {
+        $this->sendToErpRole(
+            roleName: 'Procurement Manager',
+            shopId: $shopId,
+            type: NotificationType::SUPPLIER_ISSUE_REPORTED,
+            title: 'Supplier Issue Reported',
+            message: "A supplier issue was reported for PO {$data['po_number']}.",
+            data: $data,
+            actionUrl: '/erp/procurement/purchase-orders',
+            priority: 'high',
+            requiresAction: true,
+        );
+    }
+
+    public function notifySupplierReplacementRequested(int $shopId, array $data): void
+    {
+        foreach (['Inventory Manager', 'Procurement Manager'] as $roleName) {
+            $this->sendToErpRole(
+                roleName: $roleName,
+                shopId: $shopId,
+                type: NotificationType::SUPPLIER_REPLACEMENT_REQUESTED,
+                title: 'Supplier Replacement Requested',
+                message: "A replacement is requested for PO {$data['po_number']}.",
+                data: $data,
+                actionUrl: '/erp/procurement/purchase-orders',
+                priority: 'high',
+                requiresAction: true,
+            );
+        }
+    }
+
+    public function notifySupplierPaymentAwaitingVerification(int $shopId, array $data): void
+    {
+        $this->sendToShopOwner(
+            shopOwnerId: $shopId,
+            type: NotificationType::SUPPLIER_PAYMENT_AWAITING_VERIFICATION,
+            title: 'Supplier Payment Awaiting Verification',
+            message: "Supplier payment for PO {$data['po_number']} is awaiting your verification.",
+            data: $data,
+            actionUrl: '/shop-owner/erp/finance/expenses',
+            priority: 'high',
+            requiresAction: true,
+        );
+    }
+
+    public function notifySupplierPaymentVerified(int $shopId, array $data): void
+    {
+        $this->sendToErpRole(
+            roleName: 'Procurement Manager',
+            shopId: $shopId,
+            type: NotificationType::SUPPLIER_PAYMENT_VERIFIED,
+            title: 'Supplier Payment Verified',
+            message: "Supplier payment for PO {$data['po_number']} was verified.",
+            data: $data,
+            actionUrl: '/erp/procurement/purchase-orders',
+            priority: 'medium',
+        );
+    }
+
+    public function notifySupplierPaymentRejected(int $shopId, array $data): void
+    {
+        $this->sendToErpRole(
+            roleName: 'Finance',
+            shopId: $shopId,
+            type: NotificationType::SUPPLIER_PAYMENT_REJECTED,
+            title: 'Supplier Payment Rejected',
+            message: "Supplier payment for PO {$data['po_number']} was rejected and needs a new attempt.",
+            data: $data,
+            actionUrl: $this->financeExpenseActionUrl($data),
+            priority: 'high',
+            requiresAction: true,
+        );
+    }
+
+    public function notifySupplierRefundProofSubmitted(int $shopId, array $data): void
+    {
+        $this->sendToErpRole(
+            roleName: 'Finance',
+            shopId: $shopId,
+            type: NotificationType::SUPPLIER_REFUND_PROOF_SUBMITTED,
+            title: 'Supplier Refund Proof Submitted',
+            message: "Supplier refund proof for PO {$data['po_number']} is ready for verification.",
+            data: $data,
+            actionUrl: $this->financeExpenseActionUrl($data),
+            priority: 'high',
+            requiresAction: true,
+        );
+    }
+
+    public function notifySupplierRefundConfirmed(int $shopId, array $data): void
+    {
+        $this->sendToErpRole(
+            roleName: 'Procurement Manager',
+            shopId: $shopId,
+            type: NotificationType::SUPPLIER_REFUND_CONFIRMED,
+            title: 'Supplier Refund Confirmed',
+            message: "Supplier refund for PO {$data['po_number']} was confirmed.",
+            data: $data,
+            actionUrl: '/erp/procurement/purchase-orders',
+            priority: 'medium',
+        );
+    }
+
     /** Notify requester when their expense is rejected */
     public function notifyExpenseRejected(int $userId, int $shopId, array $expenseData): void
     {

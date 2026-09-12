@@ -5,6 +5,10 @@ namespace App\Http\Controllers\Erp;
 use App\Http\Controllers\Controller;
 use App\Models\Supplier;
 use App\Models\SupplierPaymentProfile;
+use App\Models\SupplierAdjustment;
+use App\Models\SupplierPaymentAttempt;
+use App\Models\Finance\Expense;
+use App\Models\Finance\ExpenseSettlement;
 use App\Http\Requests\StoreSupplierPaymentProfileRequest;
 use Illuminate\Http\Request;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
@@ -174,6 +178,44 @@ class SupplierController extends Controller
                 'active_orders' => $activeOrders
             ], 422);
         }
+
+        $hasUnresolvedAdjustment = SupplierAdjustment::query()
+            ->where('shop_owner_id', $shopOwnerId)
+            ->where('status', '<>', SupplierAdjustment::STATUS_RESOLVED)
+            ->whereHas('receiptItem.receipt.purchaseOrder', fn ($query) => $query->where('supplier_id', $supplier->id))
+            ->exists();
+        if ($hasUnresolvedAdjustment) {
+            return response()->json([
+                'message' => 'Cannot archive supplier with unresolved adjustments',
+            ], 422);
+        }
+
+        $hasUnpaidReleasedExpense = Expense::query()
+            ->where('shop_id', $shopOwnerId)
+            ->where('status', 'posted')
+            ->whereHas('procurementReceipt.purchaseOrder', fn ($query) => $query->where('supplier_id', $supplier->id))
+            ->get(['id', 'amount'])
+            ->contains(fn (Expense $expense): bool => $this->moneyCents($expense->amount)
+                > $this->moneyCents(ExpenseSettlement::validSettledAmountForExpense((int) $expense->id)));
+        if ($hasUnpaidReleasedExpense) {
+            return response()->json([
+                'message' => 'Cannot archive supplier with unpaid released expenses',
+            ], 422);
+        }
+
+        $hasActivePayment = SupplierPaymentAttempt::query()
+            ->where('shop_owner_id', $shopOwnerId)
+            ->where('supplier_id', $supplier->id)
+            ->whereIn('status', [
+                SupplierPaymentAttempt::STATUS_INITIATING,
+                SupplierPaymentAttempt::STATUS_AWAITING_VERIFICATION,
+            ])
+            ->exists();
+        if ($hasActivePayment) {
+            return response()->json([
+                'message' => 'Cannot archive supplier with an active payment attempt',
+            ], 422);
+        }
         
         $supplier->delete();
         
@@ -181,6 +223,18 @@ class SupplierController extends Controller
             'message' => 'Supplier archived successfully',
             'data' => $supplier
         ]);
+    }
+
+    private function moneyCents(mixed $amount): int
+    {
+        $text = trim((string) $amount);
+        if (! preg_match('/^\d+(?:\.\d{1,2})?$/', $text)) {
+            return 0;
+        }
+
+        [$whole, $fraction] = array_pad(explode('.', $text, 2), 2, '0');
+
+        return ((int) $whole * 100) + (int) str_pad($fraction, 2, '0');
     }
 
     /**

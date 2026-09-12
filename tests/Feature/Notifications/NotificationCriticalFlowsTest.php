@@ -3,6 +3,7 @@
 namespace Tests\Feature\Notifications;
 
 use App\Enums\SuspensionStatus;
+use App\Enums\NotificationType;
 use App\Models\Employee;
 use App\Models\Order;
 use App\Models\PosRefund;
@@ -554,6 +555,84 @@ class NotificationCriticalFlowsTest extends TestCase
             'user_id' => $recipientB->id,
             'title' => 'Supplier Order Overdue',
             'type' => 'purchase_request_submitted',
+        ]);
+    }
+
+    #[Test]
+    public function procurement_workflow_notifications_are_tenant_scoped(): void
+    {
+        $shopA = $this->createShopOwner();
+        $shopB = $this->createShopOwner();
+        $procurementA = User::factory()->create(['shop_owner_id' => $shopA->id]);
+        $financeA = User::factory()->create(['shop_owner_id' => $shopA->id]);
+        $inventoryA = User::factory()->create(['shop_owner_id' => $shopA->id]);
+        $procurementB = User::factory()->create(['shop_owner_id' => $shopB->id]);
+        $financeRole = Role::findOrCreate('Finance', 'user');
+        $procurementRole = Role::findOrCreate('Procurement Manager', 'user');
+        $inventoryRole = Role::findOrCreate('Inventory Manager', 'user');
+        $financeA->assignRole($financeRole);
+        $procurementA->assignRole($procurementRole);
+        $inventoryA->assignRole($inventoryRole);
+        $procurementB->assignRole($procurementRole);
+
+        $service = app(NotificationService::class);
+        $service->notifyProcurementExpenseReleased($shopA->id, [
+            'expense_id' => 10,
+            'po_number' => 'PO-2026-001',
+            'amount' => '100.00',
+        ]);
+        $service->notifyPurchaseOrderInTransit($shopA->id, [
+            'purchase_order_id' => 11,
+            'po_number' => 'PO-2026-002',
+        ]);
+        $service->notifySupplierIssueReported($shopA->id, [
+            'adjustment_id' => 12,
+            'po_number' => 'PO-2026-003',
+        ]);
+        $service->notifySupplierReplacementRequested($shopA->id, [
+            'adjustment_id' => 12,
+            'po_number' => 'PO-2026-003',
+        ]);
+        $service->notifySupplierPaymentAwaitingVerification($shopA->id, [
+            'attempt_id' => 13,
+            'po_number' => 'PO-2026-004',
+        ]);
+        $service->notifySupplierPaymentVerified($shopA->id, [
+            'attempt_id' => 13,
+            'po_number' => 'PO-2026-004',
+        ]);
+        $service->notifySupplierPaymentRejected($shopA->id, [
+            'attempt_id' => 14,
+            'po_number' => 'PO-2026-005',
+        ]);
+        $service->notifySupplierRefundProofSubmitted($shopA->id, [
+            'adjustment_id' => 15,
+            'po_number' => 'PO-2026-006',
+        ]);
+        $service->notifySupplierRefundConfirmed($shopA->id, [
+            'adjustment_id' => 15,
+            'po_number' => 'PO-2026-006',
+        ]);
+
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $procurementA->id,
+            'type' => NotificationType::SUPPLIER_PAYMENT_VERIFIED->value,
+        ]);
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $financeA->id,
+            'type' => NotificationType::SUPPLIER_PAYMENT_REJECTED->value,
+        ]);
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $inventoryA->id,
+            'type' => NotificationType::PURCHASE_ORDER_IN_TRANSIT->value,
+        ]);
+        $this->assertDatabaseHas('notifications', [
+            'shop_owner_id' => $shopA->id,
+            'type' => NotificationType::SUPPLIER_PAYMENT_AWAITING_VERIFICATION->value,
+        ]);
+        $this->assertDatabaseMissing('notifications', [
+            'user_id' => $procurementB->id,
+            'type' => NotificationType::SUPPLIER_PAYMENT_VERIFIED->value,
         ]);
     }
 }

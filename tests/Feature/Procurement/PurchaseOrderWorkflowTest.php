@@ -12,6 +12,8 @@ use App\Models\PurchaseOrderItem;
 use App\Models\PurchaseOrderReceipt;
 use App\Models\PurchaseOrderReceiptItem;
 use App\Models\Finance\Expense;
+use App\Models\Finance\ExpenseSettlement;
+use App\Models\SupplierAdjustment;
 use App\Models\SupplierPaymentAttempt;
 use App\Models\SupplierPaymentProfile;
 use App\Models\InventoryItem;
@@ -426,6 +428,76 @@ class PurchaseOrderWorkflowTest extends TestCase
             'status' => SupplierPaymentAttempt::STATUS_AWAITING_VERIFICATION,
             'initiated_by_user_id' => $this->user->id,
             'initiated_at' => now(),
+        ]);
+
+        $this->actingAs($this->user)
+            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/update-status", [
+                'status' => 'completed',
+            ])
+            ->assertUnprocessable();
+
+        $this->assertSame('delivered', $po->fresh()->status);
+    }
+
+    public function test_completion_is_blocked_by_an_unresolved_supplier_adjustment(): void
+    {
+        $po = PurchaseOrder::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'supplier_id' => $this->supplier->id,
+            'status' => 'delivered',
+        ]);
+        $item = PurchaseOrderItem::factory()->create([
+            'purchase_order_id' => $po->id,
+            'ordered_quantity' => 1,
+            'unit_cost' => '100.00',
+        ]);
+        $receipt = PurchaseOrderReceipt::factory()->create([
+            'purchase_order_id' => $po->id,
+            'shop_owner_id' => $this->shopOwner->id,
+            'received_by' => $this->user->id,
+            'status' => 'posted',
+        ]);
+        $receiptItem = PurchaseOrderReceiptItem::factory()->create([
+            'purchase_order_receipt_id' => $receipt->id,
+            'purchase_order_item_id' => $item->id,
+            'received_quantity' => 1,
+            'accepted_quantity' => 1,
+        ]);
+        $expense = Expense::create([
+            'reference' => 'EXP-UNRESOLVED-ADJUSTMENT',
+            'date' => now()->toDateString(),
+            'category' => 'Supplies',
+            'amount' => '100.00',
+            'tax_amount' => '0.00',
+            'status' => 'posted',
+            'shop_id' => $this->shopOwner->id,
+            'procurement_receipt_id' => $receipt->id,
+        ]);
+        ExpenseSettlement::create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'expense_id' => $expense->id,
+            'entry_type' => ExpenseSettlement::ENTRY_SETTLEMENT,
+            'amount' => '100.00',
+            'payment_method' => 'manual_bank_transfer',
+            'reference' => 'SUPPLIER-PAID-UNRESOLVED',
+            'paid_at' => now(),
+            'recorded_by_user_id' => $this->user->id,
+            'idempotency_key' => 'completion-unresolved-settlement',
+            'source' => ExpenseSettlement::SOURCE_SUPPLIER_MANUAL_PAYMENT,
+            'source_reference' => 'supplier-manual-payment:completion-unresolved',
+        ]);
+        SupplierAdjustment::create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'purchase_order_receipt_item_id' => $receiptItem->id,
+            'idempotency_key' => 'completion-unresolved-adjustment',
+            'issue_stage' => SupplierAdjustment::ISSUE_STAGE_POST_PAYMENT,
+            'reported_quantity' => 1,
+            'unit_cost_snapshot' => '100.00',
+            'reason_category' => 'damaged',
+            'inventory_notes' => 'Awaiting supplier resolution.',
+            'status' => SupplierAdjustment::STATUS_UNDER_REVIEW,
+            'reported_by' => $this->user->id,
+            'reported_at' => now(),
         ]);
 
         $this->actingAs($this->user)

@@ -785,27 +785,27 @@ git commit --only -m "feat: verify supplier refunds in finance ledger" -- app/Ht
 - Modify: `tests/Feature/Procurement/ProcurementAuthorizationTest.php`
 - Modify: `tests/Feature/Notifications/NotificationCriticalFlowsTest.php`
 
-- [ ] **Step 1: Write failing void and completion tests.**
+- [x] **Step 1: Write failing void and completion tests.**
 
-Assert an unpaid submitted or posted receipt may be voided and reversed only with no successful settlement and no initiating/processing payment attempt. Failed attempts remain. Processing/paid blocks void. Assert `delivered` remains receipt-owned, while manual `delivered -> completed` requires every receipt expense posted/fully settled, no active payment attempt, and no unresolved adjustment.
+Assert an unpaid submitted or posted receipt may be voided and reversed only with no successful settlement and no initiating/awaiting-verification payment attempt. Failed, rejected, and cancelled attempts remain. Initiating/awaiting-verification/succeeded blocks void. Assert `delivered` remains receipt-owned, while manual `delivered -> completed` requires every receipt expense posted/fully settled, no active payment attempt, and no unresolved adjustment.
 
-- [ ] **Step 2: Add supplier archival and tenant matrix tests.**
+- [x] **Step 2: Add supplier archival and tenant matrix tests.**
 
 Block archival for unresolved adjustments, unpaid posted expenses, or active attempts. Test Shop A cannot list, read, update, verify, pay, receive replacement, confirm refund, or download evidence for Shop B records. Verify existing permissions are reused: Inventory receiving permissions, Procurement PO/supplier permissions, and Finance expense permissions; add no redundant role system.
 
-- [ ] **Step 3: Add notification tests first.**
+- [x] **Step 3: Add notification tests first.**
 
 Cover payable creation -> Finance, release -> Procurement, in transit -> Inventory, issue -> Procurement, replacement request -> Inventory/Procurement, payment success -> Procurement, payment failure -> Finance, refund proof -> Finance, and refund confirmation -> Procurement. Assert recipients are same-shop and links resolve to existing pages.
 
-- [ ] **Step 4: Implement void and completion guards under locks.**
+- [x] **Step 4: Implement void and completion guards under locks.**
 
 Query settlement state and active attempts before inventory reversal. Add payable/attempt/adjustment guards to `markAsCompleted()` or the service immediately surrounding it without touching `markAsDeliveredFromReceipts()`. A late issue on an already completed PO remains auditable and resolvable; do not rewrite historical completion.
 
-- [ ] **Step 5: Add minimal notification types and methods.**
+- [x] **Step 5: Add minimal notification types and methods.**
 
 Reuse `EXPENSE_SUBMITTED` for receipt-created payable if its wording remains accurate. Add supplier-specific enum values only where existing customer/repair meanings would mislead. Route all sends through `NotificationService` and existing recipient/preference logic; notification failures must not roll back financial or inventory transactions.
 
-- [ ] **Step 6: Run guard, authorization, and notification tests.**
+- [x] **Step 6: Run guard, authorization, and notification tests.**
 
 ```bash
 php artisan test tests/Feature/Procurement/PurchaseOrderReceiptVoidTest.php tests/Feature/Procurement/PurchaseOrderWorkflowTest.php tests/Feature/Procurement/ProcurementAuthorizationTest.php tests/Feature/Notifications/NotificationCriticalFlowsTest.php

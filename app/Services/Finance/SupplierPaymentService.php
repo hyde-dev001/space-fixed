@@ -135,7 +135,7 @@ final class SupplierPaymentService
         $media = null;
 
         try {
-            return DB::transaction(function () use ($attempt, $actor, $shopId, $data, $proof, &$media): SupplierPaymentAttempt {
+            $updated = DB::transaction(function () use ($attempt, $actor, $shopId, $data, $proof, &$media): SupplierPaymentAttempt {
                 $candidate = SupplierPaymentAttempt::query()->whereKey($attempt->getKey())->firstOrFail();
                 $expense = Expense::query()->whereKey($candidate->expense_id)->lockForUpdate()->firstOrFail();
                 $receipt = $this->lockedReceiptForExpense($expense, $shopId);
@@ -194,6 +194,20 @@ final class SupplierPaymentService
 
                 return $lockedAttempt->fresh();
             }, 3);
+
+            $purchaseOrder = $updated->load('expense.procurementReceipt.purchaseOrder')
+                ->expense?->procurementReceipt?->purchaseOrder;
+            try {
+                app(\App\Services\NotificationService::class)->notifySupplierPaymentAwaitingVerification($shopId, [
+                    'attempt_id' => $updated->id,
+                    'expense_id' => $updated->expense_id,
+                    'po_number' => $purchaseOrder?->po_number ?? 'unknown',
+                ]);
+            } catch (Throwable $exception) {
+                report($exception);
+            }
+
+            return $updated;
         } catch (Throwable $exception) {
             if ($media) {
                 try {
@@ -246,8 +260,9 @@ final class SupplierPaymentService
     public function confirm(SupplierPaymentAttempt $attempt, ShopOwner $shopOwner): SupplierPaymentAttempt
     {
         $shopId = (int) $shopOwner->getKey();
+        $settledNow = false;
 
-        $confirmed = DB::transaction(function () use ($attempt, $shopOwner, $shopId): SupplierPaymentAttempt {
+        $confirmed = DB::transaction(function () use ($attempt, $shopOwner, $shopId, &$settledNow): SupplierPaymentAttempt {
             $candidate = SupplierPaymentAttempt::query()->whereKey($attempt->getKey())->firstOrFail();
             $expense = Expense::query()->whereKey($candidate->expense_id)->lockForUpdate()->firstOrFail();
             $receipt = $this->lockedReceiptForExpense($expense, $shopId);
@@ -304,9 +319,24 @@ final class SupplierPaymentService
                 'settled_at' => now(),
                 'supplier_email_status' => 'pending',
             ]);
+            $settledNow = true;
 
             return $lockedAttempt->fresh();
         }, 3);
+
+        if ($settledNow) {
+            $purchaseOrder = $confirmed->load('expense.procurementReceipt.purchaseOrder')
+                ->expense?->procurementReceipt?->purchaseOrder;
+            try {
+                app(\App\Services\NotificationService::class)->notifySupplierPaymentVerified($shopId, [
+                    'attempt_id' => $confirmed->id,
+                    'expense_id' => $confirmed->expense_id,
+                    'po_number' => $purchaseOrder?->po_number ?? 'unknown',
+                ]);
+            } catch (Throwable $exception) {
+                report($exception);
+            }
+        }
 
         return $this->deliverSupplierConfirmation($confirmed);
     }
@@ -320,7 +350,7 @@ final class SupplierPaymentService
             throw new FinanceDomainException('A rejection reason is required.', 'INVALID_STATE', 422);
         }
 
-        return DB::transaction(function () use ($attempt, $shopOwner, $shopId, $reason): SupplierPaymentAttempt {
+        $rejected = DB::transaction(function () use ($attempt, $shopOwner, $shopId, $reason): SupplierPaymentAttempt {
             $lockedAttempt = SupplierPaymentAttempt::query()->whereKey($attempt->getKey())->lockForUpdate()->firstOrFail();
             $this->assertAttemptBelongsToShop($lockedAttempt, $shopId);
 
@@ -337,6 +367,20 @@ final class SupplierPaymentService
 
             return $lockedAttempt->fresh();
         }, 3);
+
+        $purchaseOrder = $rejected->load('expense.procurementReceipt.purchaseOrder')
+            ->expense?->procurementReceipt?->purchaseOrder;
+        try {
+            app(\App\Services\NotificationService::class)->notifySupplierPaymentRejected($shopId, [
+                'attempt_id' => $rejected->id,
+                'expense_id' => $rejected->expense_id,
+                'po_number' => $purchaseOrder?->po_number ?? 'unknown',
+            ]);
+        } catch (Throwable $exception) {
+            report($exception);
+        }
+
+        return $rejected;
     }
 
     public function resendConfirmation(SupplierPaymentAttempt $attempt, User $actor): SupplierPaymentAttempt
@@ -436,6 +480,8 @@ final class SupplierPaymentService
         if ((string) $attempt->supplier_email_status !== 'pending') {
             return $attempt->fresh();
         }
+
+        $attempt->loadMissing(['supplier', 'expense.procurementReceipt.purchaseOrder']);
 
         try {
             Mail::to($attempt->supplier_email_to)->send(new SupplierPaymentConfirmationMail(
