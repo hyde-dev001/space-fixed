@@ -3293,7 +3293,7 @@ const Payment: React.FC = () => {
                                             handleUseVoucher(voucher);
                                           }
                                         }}
-                                        className={'group relative w-full min-w-0 overflow-hidden rounded-xl border text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 ' + (isRedeemed ? 'border-[#d9d9dc] bg-[#fafafa]' : isVoucherSelected ? 'border-gray-500 bg-gray-100 ring-1 ring-gray-300' : 'border-[#cacacb] bg-white hover:border-gray-900')}
+                                        className={'group relative w-full min-w-0 overflow-hidden rounded-xl border text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 ' + (isRedeemed ? 'border-[#d9d9dc] bg-[#fafafa]' : isVoucherSelected ? 'border-gray-600 bg-gray-200 ring-1 ring-gray-400' : 'border-[#cacacb] bg-white hover:border-gray-900')}
                                       >
                                         <div className="grid min-h-[5.5rem] min-w-0 grid-cols-[3rem_minmax(0,1fr)_5.75rem] items-stretch">
                                           <div className="flex flex-col items-center justify-center border-r border-dashed border-[#cacacb] bg-[#f5f5f5] px-1 py-1.5 text-center">

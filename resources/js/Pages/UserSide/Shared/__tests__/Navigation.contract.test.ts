@@ -110,10 +110,10 @@ describe('user-side navigation shell', () => {
     expect(navigationSource).toContain('max-h-[55vh] overflow-y-auto no-scrollbar px-5 py-5 sm:px-7');
   });
 
-  it('keeps glass drawers above the ticker stacking context', () => {
-    expect(navigationSource).toContain('fixed inset-0 z-[100]');
-    expect(navigationSource).toContain('fixed right-0 top-0 z-[110]');
-    expect(navigationSource).toContain('fixed left-0 top-0 z-[110]');
+  it('keeps customer drawers above Leaflet map stacking levels', () => {
+    expect(navigationSource).toContain('fixed inset-0 z-[1050]');
+    expect(navigationSource).toContain('fixed right-0 top-0 z-[1100]');
+    expect(navigationSource).toContain('fixed left-0 top-0 z-[1100]');
     expect(navigationSource).toContain('bg-white/60');
     expect(navigationSource).toContain('bg-black/35');
     expect(navigationSource).toContain('backdrop-blur-2xl');

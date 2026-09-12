@@ -1362,9 +1362,9 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                 type="button"
                 aria-label="Close search"
                 onClick={() => setIsSearchFocused(false)}
-                className="fixed inset-0 z-[120] bg-black/55 opacity-100 backdrop-blur-[2px] transition-opacity duration-300 motion-reduce:transition-none erp-modal-backdrop"
+                className="fixed inset-0 z-[1200] bg-black/55 opacity-100 backdrop-blur-[2px] transition-opacity duration-300 motion-reduce:transition-none erp-modal-backdrop"
               />
-              <div role="dialog" aria-modal="true" aria-label="Search products and shops" className="fixed left-1/2 top-1/2 z-[121] w-[min(92vw,42rem)] -translate-x-1/2 -translate-y-1/2 overflow-hidden bg-white text-[#111111] shadow-2xl transition-all duration-300 ease-out motion-reduce:transition-none">
+              <div role="dialog" aria-modal="true" aria-label="Search products and shops" className="fixed left-1/2 top-1/2 z-[1210] w-[min(92vw,42rem)] -translate-x-1/2 -translate-y-1/2 overflow-hidden bg-white text-[#111111] shadow-2xl transition-all duration-300 ease-out motion-reduce:transition-none">
                 <form onSubmit={handleSearch} className="flex items-center gap-3 border-b border-[#dedede] px-5 py-4 sm:px-7">
                   <svg className="h-5 w-5 shrink-0 text-[#555555]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M21 21l-4.35-4.35m1.6-5.4a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
                   <input
@@ -1460,12 +1460,12 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
               type="button"
               aria-label="Close cart"
               onClick={() => setCartDrawerOpen(false)}
-              className={`fixed inset-0 z-[100] bg-black/35 backdrop-blur-[2px] transition-opacity duration-300 motion-reduce:transition-none erp-modal-backdrop ${cartDrawerOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+              className={`fixed inset-0 z-[1050] bg-black/35 backdrop-blur-[2px] transition-opacity duration-300 motion-reduce:transition-none erp-modal-backdrop ${cartDrawerOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
             />
             <aside
               aria-label="Shopping cart"
               aria-hidden={!cartDrawerOpen}
-              className={`userside-customer-drawer fixed right-0 top-0 z-[110] flex h-dvh w-[min(92vw,30rem)] max-w-[30rem] flex-col border-l border-white/60 bg-white/60 text-[#111111] dark:border-slate-700 dark:bg-slate-900/95 dark:text-white shadow-2xl backdrop-blur-2xl transition-transform duration-300 ease-out motion-reduce:transition-none ${cartDrawerOpen ? 'translate-x-0' : 'translate-x-full pointer-events-none'}`}
+              className={`userside-customer-drawer fixed right-0 top-0 z-[1100] flex h-dvh w-[min(92vw,30rem)] max-w-[30rem] flex-col border-l border-white/60 bg-white/60 text-[#111111] dark:border-slate-700 dark:bg-slate-900/95 dark:text-white shadow-2xl backdrop-blur-2xl transition-transform duration-300 ease-out motion-reduce:transition-none ${cartDrawerOpen ? 'translate-x-0' : 'translate-x-full pointer-events-none'}`}
             >
                 <div className="flex items-center justify-between border-b border-[#dedede] px-5 py-5 sm:px-7 dark:border-slate-700">
                   <div><p className="text-lg font-semibold">Cart</p><p className="mt-1 text-xs uppercase tracking-[0.16em] text-[#777777] dark:text-slate-400">{effectiveCartCount} {effectiveCartCount === 1 ? 'item' : 'items'}</p></div>
@@ -1485,11 +1485,11 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
             type="button"
             aria-label="Close menu"
             onClick={() => setLandingSidebarOpen(false)}
-            className={`fixed inset-0 z-[100] bg-black/35 backdrop-blur-[2px] transition-opacity duration-300 motion-reduce:transition-none erp-modal-backdrop ${landingSidebarOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+            className={`fixed inset-0 z-[1050] bg-black/35 backdrop-blur-[2px] transition-opacity duration-300 motion-reduce:transition-none erp-modal-backdrop ${landingSidebarOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
           />
           <aside
             aria-label="Site menu"
-            className={`userside-customer-drawer fixed left-0 top-0 z-[110] flex h-dvh w-[min(88vw,31rem)] flex-col overflow-y-auto border-r border-white/60 bg-white/60 text-[#111111] dark:border-slate-700 dark:bg-slate-900/95 dark:text-white shadow-2xl backdrop-blur-2xl transition-transform duration-300 ease-out motion-reduce:transition-none ${landingSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
+            className={`userside-customer-drawer fixed left-0 top-0 z-[1100] flex h-dvh w-[min(88vw,31rem)] flex-col overflow-y-auto border-r border-white/60 bg-white/60 text-[#111111] dark:border-slate-700 dark:bg-slate-900/95 dark:text-white shadow-2xl backdrop-blur-2xl transition-transform duration-300 ease-out motion-reduce:transition-none ${landingSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
           >
             <div className="flex items-center justify-between border-b border-[#e5e5e5] px-6 py-6 sm:px-8 dark:border-slate-700">
               <Link href={route('landing')} onClick={() => setLandingSidebarOpen(false)} className="text-xl font-semibold tracking-[-0.06em] sm:text-2xl">
