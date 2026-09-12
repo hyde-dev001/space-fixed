@@ -203,9 +203,7 @@ describe('ShipmentTracking', () => {
     render(<ShipmentTracking />);
 
     expect(screen.getByText('Previous delivery attempt')).toBeInTheDocument();
-    const thumbnail = screen.getByRole('img', { name: 'Proof of delivery thumbnail for SHP-1' });
-    expect(thumbnail).toHaveClass('h-16', 'w-24', 'object-cover');
-    expect(thumbnail.parentElement).toHaveClass('flex', 'items-center', 'gap-2');
+    expect(screen.queryByRole('img', { name: 'Proof of delivery thumbnail for SHP-1' })).not.toBeInTheDocument();
     const opener = screen.getByRole('button', { name: 'View proof of delivery' });
     expect(opener).toHaveClass('h-11', 'w-11');
     opener.focus();
@@ -218,7 +216,12 @@ describe('ShipmentTracking', () => {
     expect(close).toHaveFocus();
     const image = screen.getByRole('img', { name: 'Proof of delivery for SHP-1' });
     expect(image).toHaveAttribute('src', '/tracking/shipments/1/proofs/17');
+    expect(image).toHaveClass('h-full', 'w-full', 'object-contain');
     expect(image).toHaveStyle({ transform: 'scale(1)' });
+    const imageViewer = screen.getByRole('button', { name: 'View proof image' });
+    expect(imageViewer).toHaveClass('h-12', 'w-12');
+    fireEvent.click(imageViewer);
+    expect(image).toHaveClass('max-h-[65vh]', 'max-w-full', 'object-contain');
     expect(screen.getByText(new Date('2026-07-15T11:13:54.000Z').toLocaleString())).toBeInTheDocument();
     expect(screen.getAllByText('Miguel Dela Rosa - Dasmariñas, Cavite').length).toBeGreaterThan(1);
     expect(screen.getAllByText('SHP-1').length).toBeGreaterThan(1);
