@@ -9,6 +9,7 @@ use App\Models\PurchaseOrderReceipt;
 use App\Models\PurchaseOrderReceiptItem;
 use App\Models\ShopOwner;
 use App\Models\Supplier;
+use App\Models\SupplierPaymentProfile;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -171,6 +172,29 @@ class ProcurementExpenseReleaseTest extends TestCase
             ->assertJsonPath('procurement_details.payment_timing', 'Due Soon');
 
         $this->travelBack();
+    }
+
+    public function test_finance_projection_exposes_only_the_masked_supplier_payment_profile(): void
+    {
+        [$shop, $finance, $expense] = $this->procurementExpense();
+        $supplier = Supplier::query()->where('shop_owner_id', $shop->id)->firstOrFail();
+        SupplierPaymentProfile::create([
+            'shop_owner_id' => $shop->id,
+            'supplier_id' => $supplier->id,
+            'destination_type' => 'bank_account',
+            'bank_name' => 'Test Bank',
+            'bank_code' => 'TBK',
+            'account_name' => 'Supplier Trading',
+            'account_number' => '1234567890',
+        ]);
+        $finance->givePermissionTo('access-finance-expenses');
+
+        $this->actingAs($finance, 'user')
+            ->getJson("/api/finance/expenses/{$expense->id}")
+            ->assertOk()
+            ->assertJsonPath('procurement_details.supplier_id', $supplier->id)
+            ->assertJsonPath('procurement_details.payment_profile.masked_account_number', '******7890')
+            ->assertJsonMissingPath('procurement_details.payment_profile.account_number');
     }
 
     /** @return array{0: ShopOwner, 1: User, 2: Expense} */

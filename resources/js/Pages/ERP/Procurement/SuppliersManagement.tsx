@@ -5,6 +5,7 @@ import axios from "axios";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import IconButton from "../../../components/ui/icon-button/IconButton";
 import { supplierApi, type Supplier } from "@/services/procurementApi";
+import type { SupplierPaymentProfile } from "@/types/procurement";
 import { erpUrl } from "@/utils/erpCapabilities";
 import { withSweetAlertSemantic } from "@/utils/semanticSweetAlert";
 
@@ -70,6 +71,22 @@ const initialFormState: FormState = {
 	notes: "",
 };
 
+interface PaymentProfileFormState {
+	destination_type: string;
+	bank_name: string;
+	bank_code: string;
+	account_name: string;
+	account_number: string;
+}
+
+const initialPaymentProfileFormState: PaymentProfileFormState = {
+	destination_type: "bank_account",
+	bank_name: "",
+	bank_code: "",
+	account_name: "",
+	account_number: "",
+};
+
 export default function SuppliersManagement() {
 	const { initialData, auth, erpCapabilities } = usePage().props as any;
 	const ownerMode = auth?.erpActor?.ownerMode === true;
@@ -82,6 +99,9 @@ export default function SuppliersManagement() {
 	const [formData, setFormData] = useState<FormState>(initialFormState);
 	const [viewingSupplier, setViewingSupplier] = useState<Supplier | null>(null);
 	const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
+	const [paymentProfile, setPaymentProfile] = useState<SupplierPaymentProfile | null>(null);
+	const [paymentProfileForm, setPaymentProfileForm] = useState<PaymentProfileFormState>(initialPaymentProfileFormState);
+	const [paymentProfileLoading, setPaymentProfileLoading] = useState(false);
 
 	const getApiErrorMessage = (error: unknown, fallback: string) => {
 		if (!axios.isAxiosError(error)) return fallback;
@@ -144,10 +164,41 @@ export default function SuppliersManagement() {
 		setViewingSupplier(supplier);
 	};
 
+	const loadPaymentProfile = async (supplierId: number) => {
+		setPaymentProfileLoading(true);
+		try {
+			const profile = await supplierApi.getPaymentProfile(supplierId);
+			setPaymentProfile(profile);
+			setPaymentProfileForm({
+				destination_type: profile?.destination_type || "bank_account",
+				bank_name: profile?.bank_name || "",
+				bank_code: profile?.bank_code || "",
+				account_name: profile?.account_name || "",
+				account_number: "",
+			});
+		} catch (error) {
+			console.error("Failed to load supplier payment profile:", error);
+			setPaymentProfile(null);
+			setPaymentProfileForm(initialPaymentProfileFormState);
+		} finally {
+			setPaymentProfileLoading(false);
+		}
+	};
+
+	const closeEditModal = () => {
+		setEditingSupplier(null);
+		setFormData(initialFormState);
+		setPaymentProfile(null);
+		setPaymentProfileForm(initialPaymentProfileFormState);
+	};
+
 	const handleEdit = (supplier: Supplier) => {
 		if (ownerMode) return;
 
 		setEditingSupplier(supplier);
+		setPaymentProfile(null);
+		setPaymentProfileForm(initialPaymentProfileFormState);
+		void loadPaymentProfile(supplier.id);
 		setFormData({
 			name: supplier.name,
 			contact_person: supplier.contact_person || "",
@@ -254,10 +305,18 @@ export default function SuppliersManagement() {
 				products_supplied: formData.products_supplied,
 				notes: formData.notes,
 			});
+			if (paymentProfileForm.bank_name.trim() || paymentProfileForm.bank_code.trim() || paymentProfileForm.account_name.trim() || paymentProfileForm.account_number.trim()) {
+				await supplierApi.upsertPaymentProfile(editingSupplier.id, {
+					destination_type: paymentProfileForm.destination_type,
+					bank_name: paymentProfileForm.bank_name,
+					bank_code: paymentProfileForm.bank_code,
+					account_name: paymentProfileForm.account_name,
+					account_number: paymentProfileForm.account_number || undefined,
+				});
+			}
 
 			await Swal.fire("Success", "Supplier updated successfully", "success");
-			setEditingSupplier(null);
-			setFormData(initialFormState);
+			closeEditModal();
 			await fetchSuppliers();
 		} catch (error) {
 			console.error("Failed to update supplier:", error);
@@ -283,6 +342,11 @@ export default function SuppliersManagement() {
 			...prev,
 			[name]: name === "phone" ? value.replace(/\D/g, "").slice(0, 11) : value,
 		}));
+	};
+
+	const handlePaymentProfileChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+		const { name, value } = e.target;
+		setPaymentProfileForm((prev) => ({ ...prev, [name]: value }));
 	};
 
 	const handleAddSupplier = async () => {
@@ -644,7 +708,6 @@ export default function SuppliersManagement() {
 								/>
 							</div>
 
-
 						</div>
 
 						<div className="flex gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50">
@@ -772,12 +835,12 @@ export default function SuppliersManagement() {
 			{/* Edit Supplier Modal */}
 			{editingSupplier && (
 				<div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-					<button type="button" aria-label="Close edit supplier modal" className="absolute inset-0 bg-black/50 erp-modal-backdrop" onClick={() => { setEditingSupplier(null); setFormData(initialFormState); }} />
+					<button type="button" aria-label="Close edit supplier modal" className="absolute inset-0 bg-black/50 erp-modal-backdrop" onClick={closeEditModal} />
 					<div className="relative w-full max-w-2xl rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-xl">
 						<div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-800">
 							<h2 className="text-xl font-semibold text-gray-900 dark:text-white">Edit Supplier</h2>
 							<button
-								onClick={() => { setEditingSupplier(null); setFormData(initialFormState); }}
+								onClick={closeEditModal}
 								className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl leading-none"
 							>
 								×
@@ -861,9 +924,54 @@ export default function SuppliersManagement() {
 
 						</div>
 
+						<div className="rounded-xl border border-blue-200 dark:border-blue-900/60 bg-blue-50/60 dark:bg-blue-950/20 p-4 space-y-4">
+							<div>
+								<h3 className="text-sm font-semibold text-gray-900 dark:text-white">Payment Profile</h3>
+								<p className="text-xs text-gray-500 dark:text-gray-400">
+									{paymentProfile ? `Status: ${paymentProfile.status}. Account: ${paymentProfile.masked_account_number || "—"}` : "No payment profile saved yet."}
+								</p>
+							</div>
+
+							{paymentProfileLoading ? (
+								<p className="text-sm text-gray-500 dark:text-gray-400">Loading payment profile…</p>
+							) : (
+								<>
+									<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+										<div>
+											<label htmlFor="payment-destination-type" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Destination Type</label>
+											<select id="payment-destination-type" name="destination_type" value={paymentProfileForm.destination_type} onChange={handlePaymentProfileChange} className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
+												<option value="bank_account">Bank Account</option>
+											</select>
+										</div>
+										<div>
+											<label htmlFor="payment-bank-name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Bank Name</label>
+											<input id="payment-bank-name" aria-label="Bank Name" type="text" name="bank_name" value={paymentProfileForm.bank_name} onChange={handlePaymentProfileChange} className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
+										</div>
+									</div>
+
+									<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+										<div>
+											<label htmlFor="payment-bank-code" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Bank Code</label>
+											<input id="payment-bank-code" aria-label="Bank Code" type="text" name="bank_code" value={paymentProfileForm.bank_code} onChange={handlePaymentProfileChange} className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
+										</div>
+										<div>
+											<label htmlFor="payment-account-name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Account Name</label>
+											<input id="payment-account-name" aria-label="Account Name" type="text" name="account_name" value={paymentProfileForm.account_name} onChange={handlePaymentProfileChange} className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
+										</div>
+									</div>
+
+									<div>
+										<label htmlFor="payment-account-number" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Account Number</label>
+										<input id="payment-account-number" aria-label="Account Number" autoComplete="off" type="password" name="account_number" value={paymentProfileForm.account_number} onChange={handlePaymentProfileChange} placeholder={paymentProfile ? "Leave blank to keep the saved account" : "Enter supplier account number"} className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
+									</div>
+									<p className="text-xs text-gray-500 dark:text-gray-400">Changing destination details returns the profile to unverified for Finance review.</p>
+								</>
+							)}
+						</div>
+
 						<div className="flex gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50">
 							<button
-								onClick={() => { setEditingSupplier(null); setFormData(initialFormState); }}
+								onClick={closeEditModal}
 								className="flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 font-medium hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
 							>
 								Cancel

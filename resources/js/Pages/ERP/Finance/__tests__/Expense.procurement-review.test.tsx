@@ -45,6 +45,16 @@ vi.mock("../../../../hooks/useFinanceQueries", () => ({
 				expense_status: mocks.status,
 				payment_status: "unpaid",
 				payment_timing: "Overdue",
+				supplier_id: 4,
+				payment_profile: {
+					id: 8,
+					destination_type: "bank_account",
+					bank_name: "Test Bank",
+					bank_code: "TBK",
+					account_name: "Supplier",
+					masked_account_number: "******7890",
+					status: "unverified",
+				},
 			},
 		}],
 		isLoading: false,
@@ -92,6 +102,15 @@ describe("Finance procurement expenses", () => {
 		expect(screen.getByText("RCV-303")).toBeInTheDocument();
 		expect(screen.getByText("Review & Release")).toBeInTheDocument();
 		expect(screen.queryByRole("button", { name: "Pay Supplier" })).not.toBeInTheDocument();
+	});
+
+	it("shows only masked supplier payment details and Finance verification controls", () => {
+		render(<Expense />);
+		fireEvent.click(screen.getByRole("button", { name: "View expense" }));
+
+		expect(screen.getByText("******7890")).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "Verify Payment Profile" })).toBeInTheDocument();
+		expect(screen.queryByDisplayValue("1234567890")).not.toBeInTheDocument();
 	});
 
 	it("shows payment readiness only after procurement release", () => {

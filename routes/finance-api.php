@@ -105,6 +105,21 @@ Route::prefix('api/finance')->middleware(['web', 'auth:user', 'shop.isolation'])
         Route::post('/{id}/reject', [ExpenseController::class, 'reject'])->name('finance.expenses.reject');
     });
 
+    Route::prefix('suppliers')->middleware('permission:access-finance-expenses')->group(function () {
+        Route::get('/{supplierId}/payment-profile', [ProcurementExpenseController::class, 'showPaymentProfile'])
+            ->whereNumber('supplierId')
+            ->name('finance.suppliers.payment-profile.show');
+    });
+
+    Route::prefix('suppliers')->middleware('permission:access-approval-workflow|approve-expenses')->group(function () {
+        Route::post('/{supplierId}/payment-profile/verify', [ProcurementExpenseController::class, 'verifyPaymentProfile'])
+            ->whereNumber('supplierId')
+            ->name('finance.suppliers.payment-profile.verify');
+        Route::post('/{supplierId}/payment-profile/disable', [ProcurementExpenseController::class, 'disablePaymentProfile'])
+            ->whereNumber('supplierId')
+            ->name('finance.suppliers.payment-profile.disable');
+    });
+
 
     // ============================================
     // INVOICES

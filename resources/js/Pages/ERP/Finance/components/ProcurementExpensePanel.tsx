@@ -6,6 +6,9 @@ interface ProcurementExpensePanelProps {
 	amount: number | string;
 	isReviewPending?: boolean;
 	onReviewAndRelease?: () => void;
+	isPaymentProfileActionPending?: boolean;
+	onVerifyPaymentProfile?: () => void;
+	onDisablePaymentProfile?: () => void;
 	canPaySupplier?: boolean;
 	onPaySupplier?: () => void;
 }
@@ -34,6 +37,9 @@ export default function ProcurementExpensePanel({
 	amount,
 	isReviewPending = false,
 	onReviewAndRelease,
+	isPaymentProfileActionPending = false,
+	onVerifyPaymentProfile,
+	onDisablePaymentProfile,
 	canPaySupplier = false,
 	onPaySupplier,
 }: ProcurementExpensePanelProps) {
@@ -58,6 +64,35 @@ export default function ProcurementExpensePanel({
 			<DetailRow label="Expense Status" value={details.expense_status || expenseStatus} />
 			<DetailRow label="Payment Status" value={details.payment_status || "unpaid"} />
 			<DetailRow label="Payment Timing" value={details.payment_timing || "Not Due"} />
+
+			{details.payment_profile && (
+				<div className="pt-2 space-y-2 border-t border-gray-200 dark:border-gray-700">
+					<p className="text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">Supplier Payment Profile</p>
+					<DetailRow label="Bank" value={details.payment_profile.bank_name || "—"} />
+					<DetailRow label="Account" value={details.payment_profile.masked_account_number || "—"} />
+					<DetailRow label="Profile Status" value={details.payment_profile.status} />
+					{details.payment_profile.status === "unverified" && onVerifyPaymentProfile && (
+						<button
+							type="button"
+							disabled={isPaymentProfileActionPending}
+							className="w-full px-3 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+							onClick={onVerifyPaymentProfile}
+						>
+							Verify Payment Profile
+						</button>
+					)}
+					{details.payment_profile.status === "verified" && onDisablePaymentProfile && (
+						<button
+							type="button"
+							disabled={isPaymentProfileActionPending}
+							className="w-full px-3 py-2 rounded-lg bg-amber-600 text-white text-sm font-semibold hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
+							onClick={onDisablePaymentProfile}
+						>
+							Disable Payment Profile
+						</button>
+					)}
+				</div>
+			)}
 
 			{isSubmitted && onReviewAndRelease && (
 				<button

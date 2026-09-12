@@ -212,6 +212,7 @@ const Expense: React.FC = () => {
   const rejectExpense = useRejectExpense();
   const isApprovalActionPending = approveExpense.isPending || rejectExpense.isPending;
   const [isProcurementReleasePending, setIsProcurementReleasePending] = useState(false);
+  const [isPaymentProfileActionPending, setIsPaymentProfileActionPending] = useState(false);
   
   // Normalize expenses data
   const expenses = useMemo(() => 
@@ -483,6 +484,35 @@ const Expense: React.FC = () => {
       });
     } finally {
       setIsProcurementReleasePending(false);
+    }
+  };
+
+  const handlePaymentProfileStatus = async (expense: Expense, action: "verify" | "disable") => {
+    const supplierId = expense.procurement_details?.supplier_id;
+    if (!supplierId) return;
+
+    setIsPaymentProfileActionPending(true);
+    try {
+      const response = await api.post(`/api/finance/suppliers/${supplierId}/payment-profile/${action}`, {});
+      if (!response?.ok) throw new Error(response?.error || "The supplier payment profile could not be updated.");
+
+      closeViewModal();
+      await refetchExpenses();
+      await Swal.fire({
+        icon: "success",
+        title: action === "verify" ? "Payment profile verified" : "Payment profile disabled",
+        timer: 1600,
+        showConfirmButton: false,
+      });
+    } catch (error) {
+      await Swal.fire({
+        icon: "error",
+        title: "Profile update failed",
+        text: error instanceof Error ? error.message : "The supplier payment profile could not be updated.",
+        confirmButtonColor: "#2563eb",
+      });
+    } finally {
+      setIsPaymentProfileActionPending(false);
     }
   };
 
@@ -999,6 +1029,9 @@ const Expense: React.FC = () => {
                   amount={activeExpense.amount}
                   isReviewPending={isProcurementReleasePending}
                   onReviewAndRelease={() => handleReviewAndRelease(activeExpense)}
+                  isPaymentProfileActionPending={isPaymentProfileActionPending}
+                  onVerifyPaymentProfile={() => handlePaymentProfileStatus(activeExpense, "verify")}
+                  onDisablePaymentProfile={() => handlePaymentProfileStatus(activeExpense, "disable")}
                 />
               )}
 

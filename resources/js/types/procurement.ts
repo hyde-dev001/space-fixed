@@ -12,6 +12,26 @@ export interface User {
 
 export type PaymentTerms = 'COD' | 'Net 7' | 'Net 15' | 'Net 30' | 'Net 45' | 'Net 60';
 
+export interface SupplierPaymentProfile {
+    id: number;
+    destination_type: string;
+    bank_name: string;
+    bank_code: string;
+    account_name: string;
+    masked_account_number: string | null;
+    status: 'unverified' | 'verified' | 'disabled' | string;
+    verified_by?: number | null;
+    verified_at?: string | null;
+}
+
+export interface UpsertSupplierPaymentProfilePayload {
+    destination_type: string;
+    bank_name: string;
+    bank_code: string;
+    account_name: string;
+    account_number?: string;
+}
+
 export interface InventoryItem {
     id: number;
     product_name: string;
@@ -140,6 +160,7 @@ export interface ProcurementExpenseDetails {
     po_number?: string;
     receipt_number?: string;
     receipt_id?: number;
+    supplier_id?: number;
     received_at?: string | null;
     receipt_date?: string | null;
     supplier_name?: string | null;
@@ -161,6 +182,7 @@ export interface ProcurementExpenseDetails {
     expense_status?: string | null;
     payment_status?: 'unpaid' | 'partially_paid' | 'paid' | string | null;
     payment_timing?: 'Overdue' | 'Due Today' | 'Due Soon' | 'Not Due' | string | null;
+    payment_profile?: SupplierPaymentProfile | null;
     items?: Array<{
         purchase_order_item_id: number;
         product_name?: string | null;
