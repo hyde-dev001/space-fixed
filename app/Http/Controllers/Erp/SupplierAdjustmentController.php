@@ -9,6 +9,7 @@ use App\Models\PurchaseOrderReceipt;
 use App\Models\PurchaseOrderReceiptItem;
 use App\Models\SupplierAdjustment;
 use App\Services\SupplierAdjustmentService;
+use App\Support\Finance\FinanceDomainException;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\Request;
 
@@ -80,6 +81,60 @@ final class SupplierAdjustmentController extends Controller
             ->where('shop_owner_id', (int) $request->user()->shop_owner_id)
             ->findOrFail($adjustmentId);
         $media = $adjustment->getMedia('defect_evidence')->firstWhere('id', $mediaId);
+        abort_unless($media, 404);
+
+        $response = response()->download($media->getPath(), $media->file_name, [
+            'Content-Type' => $media->mime_type,
+        ]);
+        $response->headers->set('Cache-Control', 'private, no-store');
+        $response->headers->set('X-Content-Type-Options', 'nosniff');
+
+        return $response;
+    }
+
+    public function supplierRefundProof(Request $request, int $adjustmentId)
+    {
+        abort_unless($request->user()->can('procurement.manage_suppliers'), 403);
+
+        $data = $request->validate([
+            'expected_refund_amount' => ['required', 'string', 'regex:/^\d+(?:\.\d{1,2})?$/'],
+            'supplier_reported_refund_amount' => ['nullable', 'string', 'regex:/^\d+(?:\.\d{1,2})?$/'],
+            'supplier_reported_refund_reference' => ['nullable', 'string', 'max:160'],
+            'supplier_reported_refund_date' => ['nullable', 'date'],
+            'procurement_notes' => ['nullable', 'string', 'max:2000'],
+            'supplier_refund_proof' => ['nullable', 'file', 'max:10240'],
+        ]);
+        $adjustment = SupplierAdjustment::query()
+            ->where('shop_owner_id', (int) $request->user()->shop_owner_id)
+            ->findOrFail($adjustmentId);
+
+        try {
+            $updated = $this->adjustmentService->recordSupplierRefundProof(
+                $adjustment,
+                $request->user(),
+                $data,
+                $request->file('supplier_refund_proof'),
+            );
+
+            return response()->json(['data' => $this->adjustmentService->present($updated)]);
+        } catch (FinanceDomainException $exception) {
+            return response()->json([
+                'message' => $exception->getMessage(),
+                'code' => $exception->errorCode,
+            ], $exception->httpStatus);
+        }
+    }
+
+    public function refundProof(Request $request, int $adjustmentId, int $mediaId)
+    {
+        $actor = $request->user('user');
+        abort_unless($actor, 401);
+
+        $adjustment = SupplierAdjustment::query()
+            ->where('shop_owner_id', (int) $actor->shop_owner_id)
+            ->findOrFail($adjustmentId);
+        $media = $adjustment->getMedia('supplier_refund_proof')->firstWhere('id', $mediaId)
+            ?? $adjustment->getMedia('finance_confirmation_proof')->firstWhere('id', $mediaId);
         abort_unless($media, 404);
 
         $response = response()->download($media->getPath(), $media->file_name, [

@@ -708,7 +708,7 @@ git commit --only -m "feat: receive supplier replacements canonically" -- app/Ht
 - Create: `tests/Feature/Finance/SupplierRefundTest.php`
 - Modify: `tests/Feature/Finance/ExpenseSettlementTest.php`
 
-- [ ] **Step 1: Write failing proof and refund-ledger tests.**
+- [x] **Step 1: Write failing proof and refund-ledger tests.**
 
 Cover refund eligibility only after confirmed payment, supplier proof ->
 `awaiting_verification`, a separate Finance-side confirmation proof required for
@@ -717,11 +717,11 @@ totals, duplicate key replay, changed-payload conflict, over-refund rejection,
 cross-shop denial, and expected-amount changes in the activity log. Assert
 initial unpaid receiving defects cannot use refund resolution.
 
-- [ ] **Step 2: Write settlement-state regression tests.**
+- [x] **Step 2: Write settlement-state regression tests.**
 
 Assert the original supplier payment remains fully paid after one or more `supplier_refund` entries, `refunded_amount` is reported separately, reversal arithmetic remains unchanged, and refund entries cannot be reversed through the normal settlement reversal endpoint.
 
-- [ ] **Step 3: Run refund tests and confirm failure.**
+- [x] **Step 3: Run refund tests and confirm failure.**
 
 ```bash
 php artisan test tests/Feature/Finance/SupplierRefundTest.php tests/Feature/Finance/ExpenseSettlementTest.php --filter='supplier_refund|refunded_amount|refund proof'
@@ -729,11 +729,11 @@ php artisan test tests/Feature/Finance/SupplierRefundTest.php tests/Feature/Fina
 
 Expected: FAIL because supplier-refund entry handling does not exist.
 
-- [ ] **Step 4: Add append-only supplier-refund recording.**
+- [x] **Step 4: Add append-only supplier-refund recording.**
 
 Add `ExpenseSettlement::ENTRY_SUPPLIER_REFUND`. Update settled totals to add only settlement entries and subtract only linked reversal entries; never treat every unknown entry as a reversal. Add `ExpenseSettlementService::recordSupplierRefund()` to lock adjustment/expense, enforce same shop and paid capacity, reuse the existing shop-scoped idempotency/source-reference uniqueness, and append the approved link/notes fields.
 
-- [ ] **Step 5: Implement proof and Finance confirmation.**
+- [x] **Step 5: Implement proof and Finance confirmation.**
 
 Expose role-scoped supplier-proof upload actions from both the Procurement
 adjustment route and the Finance procurement-expense route; both delegate to
@@ -745,7 +745,7 @@ cannot satisfy that field. Then call only `recordSupplierRefund()`. Sum
 confirmed entries by adjustment; set `partially_refunded` below expected and
 `resolved` at the expected amount. Preserve all original settlement rows.
 
-- [ ] **Step 6: Add existing-page UI actions.**
+- [x] **Step 6: Add existing-page UI actions.**
 
 Procurement records expected amount, communication, and supplier proof in the
 adjustment panel. Finance sees original payment, expected/remaining refund,
@@ -753,7 +753,7 @@ supplier proof, a separate Finance confirmation-proof upload, and confirmation
 fields in the procurement expense panel. Supplier proof alone never displays
 confirmed.
 
-- [ ] **Step 7: Run refund tests.**
+- [x] **Step 7: Run refund tests.**
 
 ```bash
 php artisan test tests/Feature/Finance/SupplierRefundTest.php tests/Feature/Finance/ExpenseSettlementTest.php tests/Feature/Procurement/SupplierAdjustmentTest.php
@@ -762,7 +762,7 @@ pnpm exec vitest run resources/js/Pages/ERP/Finance/__tests__/Expense.settlement
 
 Expected: proof, partial/full confirmation, immutable payment history, and tenant assertions pass.
 
-- [ ] **Step 8: Commit refund support.**
+- [x] **Step 8: Commit refund support.**
 
 ```bash
 git commit --only -m "feat: verify supplier refunds in finance ledger" -- app/Http/Requests/Finance/ConfirmSupplierRefundRequest.php app/Services/Finance/ExpenseSettlementService.php app/Services/SupplierAdjustmentService.php app/Models/Finance/ExpenseSettlement.php app/Http/Controllers/Erp/SupplierAdjustmentController.php app/Http/Controllers/Api/Finance/ProcurementExpenseController.php routes/procurement-api.php routes/finance-api.php resources/js/Pages/ERP/Procurement/components/SupplierAdjustmentsPanel.tsx resources/js/Pages/ERP/Finance/components/ProcurementExpensePanel.tsx resources/js/Pages/ERP/Finance/__tests__/Expense.settlements.test.tsx tests/Feature/Finance/SupplierRefundTest.php tests/Feature/Finance/ExpenseSettlementTest.php

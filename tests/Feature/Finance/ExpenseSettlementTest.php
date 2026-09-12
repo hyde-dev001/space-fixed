@@ -291,6 +291,47 @@ class ExpenseSettlementTest extends TestCase
         $this->assertDatabaseCount('finance_expense_settlements', 1);
     }
 
+    public function test_supplier_refund_is_append_only_and_does_not_reduce_supplier_payment_state(): void
+    {
+        [$shop, $expense, $user] = $this->makeExpenseContext();
+        $expense->update(['status' => 'posted']);
+
+        ExpenseSettlement::create([
+            'shop_owner_id' => $shop->id,
+            'expense_id' => $expense->id,
+            'entry_type' => ExpenseSettlement::ENTRY_SETTLEMENT,
+            'amount' => '100.00',
+            'payment_method' => 'manual_bank_transfer',
+            'reference' => 'SUPPLIER-PAYMENT-001',
+            'paid_at' => now(),
+            'recorded_by_user_id' => $user->id,
+            'idempotency_key' => 'supplier-payment-state-1',
+            'source' => ExpenseSettlement::SOURCE_SUPPLIER_MANUAL_PAYMENT,
+            'source_reference' => 'supplier-manual-payment:state-1',
+        ]);
+
+        ExpenseSettlement::create([
+            'shop_owner_id' => $shop->id,
+            'expense_id' => $expense->id,
+            'entry_type' => ExpenseSettlement::ENTRY_SUPPLIER_REFUND,
+            'amount' => '25.00',
+            'payment_method' => 'manual_bank_transfer',
+            'reference' => 'SUPPLIER-REFUND-001',
+            'paid_at' => now(),
+            'recorded_by_user_id' => $user->id,
+            'idempotency_key' => 'supplier-refund-state-1',
+            'source' => ExpenseSettlement::SOURCE_SUPPLIER_REFUND,
+            'source_reference' => 'supplier-refund:state-1',
+        ]);
+
+        $state = app(ExpenseSettlementService::class)->state($expense->fresh(), $shop->id);
+
+        $this->assertSame('100.00', $state['paid_amount']);
+        $this->assertSame('0.00', $state['outstanding_balance']);
+        $this->assertSame('25.00', $state['refunded_amount']);
+        $this->assertSame('paid', $state['status']);
+    }
+
     public function test_manual_expense_with_pending_owner_stage_cannot_be_settled(): void
     {
         [$shop, $expense, $user] = $this->makeExpenseContext();

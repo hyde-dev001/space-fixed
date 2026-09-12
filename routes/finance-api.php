@@ -24,6 +24,7 @@ use App\Http\Controllers\Api\Finance\PayslipApprovalController as FinancePayslip
 use App\Http\Controllers\ERP\HR\AuditLogController;
 use App\Http\Controllers\Erp\HR\PayrollController;
 use App\Http\Controllers\Erp\PurchaseRequestController as ErpPurchaseRequestController;
+use App\Http\Controllers\Erp\SupplierAdjustmentController;
 use App\Http\Controllers\Api\PriceChangeRequestController;
 use App\Http\Controllers\Api\RepairServiceController;
 use App\Http\Controllers\Api\RefundApprovalController;
@@ -93,6 +94,12 @@ Route::prefix('api/finance')->middleware(['web', 'auth:user', 'shop.isolation'])
         Route::post('/{id}/settlements', [ExpenseController::class, 'recordSettlement'])->whereNumber('id')->name('finance.expenses.settlements.store');
         Route::post('/{id}/settlements/{settlementId}/reverse', [ExpenseController::class, 'reverseSettlement'])->whereNumber(['id', 'settlementId'])->name('finance.expenses.settlements.reverse');
         Route::post('/{id}/supplier-payment-attempts', [ProcurementExpenseController::class, 'initiateSupplierPayment'])->whereNumber('id')->name('finance.expenses.supplier-payment-attempts.store');
+        Route::post('/{id}/supplier-adjustments/{adjustmentId}/supplier-refund-proof', [ProcurementExpenseController::class, 'submitSupplierRefundProof'])
+            ->whereNumber(['id', 'adjustmentId'])
+            ->name('finance.expenses.supplier-adjustments.supplier-refund-proof');
+        Route::post('/{id}/supplier-adjustments/{adjustmentId}/refund-confirmations', [ProcurementExpenseController::class, 'confirmSupplierRefund'])
+            ->whereNumber(['id', 'adjustmentId'])
+            ->name('finance.expenses.supplier-adjustments.refund-confirmations');
         Route::patch('/{id}', [ExpenseController::class, 'update'])->name('finance.expenses.update');
         Route::delete('/{id}', [ExpenseController::class, 'destroy'])->name('finance.expenses.destroy');
         Route::post('/{id}/restore', [ExpenseController::class, 'restore'])->name('finance.expenses.restore');
@@ -103,6 +110,12 @@ Route::prefix('api/finance')->middleware(['web', 'auth:user', 'shop.isolation'])
         Route::post('/{attemptId}/submit', [ProcurementExpenseController::class, 'submitSupplierPayment'])->whereNumber('attemptId')->name('finance.supplier-payment-attempts.submit');
         Route::post('/{attemptId}/cancel', [ProcurementExpenseController::class, 'cancelSupplierPayment'])->whereNumber('attemptId')->name('finance.supplier-payment-attempts.cancel');
         Route::post('/{attemptId}/resend-confirmation', [ProcurementExpenseController::class, 'resendSupplierPaymentConfirmation'])->whereNumber('attemptId')->name('finance.supplier-payment-attempts.resend-confirmation');
+    });
+
+    Route::prefix('supplier-adjustments')->middleware('permission:access-finance-expenses')->group(function () {
+        Route::get('/{adjustmentId}/refund-proof/{mediaId}', [SupplierAdjustmentController::class, 'refundProof'])
+            ->whereNumber(['adjustmentId', 'mediaId'])
+            ->name('finance.supplier-adjustments.refund-proof');
     });
 
     // Approval is a separate capability from viewing/recording expenses. A

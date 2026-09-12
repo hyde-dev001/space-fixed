@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\Api\Finance;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Finance\ConfirmSupplierRefundRequest;
 use App\Models\Finance\Expense;
 use App\Models\Supplier;
+use App\Models\SupplierAdjustment;
 use App\Models\SupplierPaymentProfile;
 use App\Models\SupplierPaymentAttempt;
 use App\Models\User;
@@ -13,6 +15,7 @@ use App\Http\Requests\Finance\InitiateSupplierPaymentRequest;
 use App\Http\Requests\Finance\SubmitSupplierPaymentProofRequest;
 use App\Services\ExpenseApprovalService;
 use App\Services\Finance\SupplierPaymentService;
+use App\Services\SupplierAdjustmentService;
 use App\Support\Finance\FinanceDomainException;
 use App\Support\Finance\FinanceErrorResponse;
 use App\Support\Finance\FinanceShopContext;
@@ -26,6 +29,7 @@ final class ProcurementExpenseController extends Controller
         private readonly ExpenseApprovalService $expenseApprovalService,
         private readonly FinanceShopContext $shopContext,
         private readonly SupplierPaymentService $supplierPaymentService,
+        private readonly SupplierAdjustmentService $adjustmentService,
     ) {}
 
     public function reviewAndRelease(Request $request, int $id)
@@ -196,6 +200,67 @@ final class ProcurementExpenseController extends Controller
         return $response;
     }
 
+    public function submitSupplierRefundProof(Request $request, int $id, int $adjustmentId)
+    {
+        $shopId = $this->shopContext->id($request);
+        [$expense, $adjustment] = $this->refundAdjustmentForExpense($shopId, $id, $adjustmentId);
+        $actor = $request->user('user');
+        abort_unless($actor instanceof User, 401);
+        $data = $request->validate([
+            'expected_refund_amount' => ['required', 'string', 'regex:/^\d+(?:\.\d{1,2})?$/'],
+            'supplier_reported_refund_amount' => ['nullable', 'string', 'regex:/^\d+(?:\.\d{1,2})?$/'],
+            'supplier_reported_refund_reference' => ['nullable', 'string', 'max:160'],
+            'supplier_reported_refund_date' => ['nullable', 'date'],
+            'procurement_notes' => ['nullable', 'string', 'max:2000'],
+            'supplier_refund_proof' => ['nullable', 'file', 'max:10240'],
+        ]);
+
+        try {
+            $updated = $this->adjustmentService->recordSupplierRefundProof(
+                $adjustment,
+                $actor,
+                $data,
+                $request->file('supplier_refund_proof'),
+            );
+
+            return response()->json(['data' => $this->adjustmentService->present($updated)]);
+        } catch (\Throwable $exception) {
+            return FinanceErrorResponse::json($exception, 'supplier_refund.proof', 500, [
+                'shop_id' => $shopId,
+                'record_id' => $adjustmentId,
+            ]);
+        }
+    }
+
+    public function confirmSupplierRefund(ConfirmSupplierRefundRequest $request, int $id, int $adjustmentId)
+    {
+        $shopId = $this->shopContext->id($request);
+        [$expense, $adjustment] = $this->refundAdjustmentForExpense($shopId, $id, $adjustmentId);
+        $actor = $request->user('user');
+        abort_unless($actor instanceof User, 401);
+
+        try {
+            $result = $this->adjustmentService->confirmSupplierRefund(
+                $adjustment,
+                $actor,
+                $request->validated(),
+                $request->file('finance_confirmation_proof'),
+            );
+
+            return response()->json([
+                'data' => $this->adjustmentService->present($result['adjustment']),
+                'settlement' => $result['settlement'],
+                'expense' => $result['expense'],
+                'replayed' => $result['replayed'],
+            ], $result['replayed'] ? 200 : 201);
+        } catch (\Throwable $exception) {
+            return FinanceErrorResponse::json($exception, 'supplier_refund.confirm', 500, [
+                'shop_id' => $shopId,
+                'record_id' => $adjustmentId,
+            ]);
+        }
+    }
+
     private function changePaymentProfileStatus(Request $request, int $supplierId, string $status)
     {
         $shopId = $this->shopContext->id($request);
@@ -249,5 +314,19 @@ final class ProcurementExpenseController extends Controller
                 'record_id' => $supplierId,
             ]);
         }
+    }
+
+    /** @return array{0: Expense, 1: SupplierAdjustment} */
+    private function refundAdjustmentForExpense(int $shopId, int $expenseId, int $adjustmentId): array
+    {
+        $expense = Expense::query()->where('shop_id', $shopId)->findOrFail($expenseId);
+        $adjustment = SupplierAdjustment::query()
+            ->where('shop_owner_id', $shopId)
+            ->with('receiptItem')
+            ->findOrFail($adjustmentId);
+
+        abort_unless((int) $adjustment->receiptItem?->purchase_order_receipt_id === (int) $expense->procurement_receipt_id, 404);
+
+        return [$expense, $adjustment];
     }
 }

@@ -44,9 +44,10 @@ type Expense = {
     approval_status: string;
     paid_amount: string;
     outstanding_balance: string;
+    refunded_amount?: string;
     status: "unpaid" | "partially_paid" | "paid";
     integrity_warnings: string[];
-    settlements: Array<{ id: number; entry_type: "settlement" | "reversal"; amount: string; payment_method: string; reference?: string | null; paid_at?: string | null }>;
+    settlements: Array<{ id: number; entry_type: "settlement" | "reversal" | "supplier_refund"; amount: string; payment_method: string; reference?: string | null; paid_at?: string | null }>;
   };
 };
 
@@ -1041,6 +1042,7 @@ const Expense: React.FC = () => {
               {activeExpense.procurement_details && (
                 <ProcurementExpensePanel
                   details={activeExpense.procurement_details}
+                  expenseId={activeExpense.id}
                   expenseStatus={activeExpense.status}
                   amount={activeExpense.amount}
                   isReviewPending={isProcurementReleasePending}
@@ -1052,6 +1054,7 @@ const Expense: React.FC = () => {
                   onPaySupplier={openSupplierPayment}
                   ownerMode={ownerMode}
                   onReviewSupplierPayment={ownerMode ? openSupplierPayment : undefined}
+                  onRefundChanged={async () => { await refetchExpenses(); }}
                 />
               )}
 

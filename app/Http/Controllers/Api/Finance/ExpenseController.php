@@ -8,6 +8,7 @@ use App\Models\Finance\Expense;
 use App\Models\Finance\ExpenseSettlement;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderReceipt;
+use App\Models\SupplierAdjustment;
 use App\Models\SupplierPaymentAttempt;
 use App\Models\AuditLog;
 use App\Models\User;
@@ -108,6 +109,14 @@ class ExpenseController extends Controller
             'purchaseOrder.items',
             'items.purchaseOrderItem',
         ])->where('shop_owner_id', $shopId)->whereIn('id', $receiptIds)->get()->keyBy('id');
+        $receiptItemIds = $receipts->flatMap(fn (PurchaseOrderReceipt $receipt) => $receipt->items->pluck('id'))->values();
+        $adjustments = SupplierAdjustment::query()
+            ->where('shop_owner_id', $shopId)
+            ->whereIn('purchase_order_receipt_item_id', $receiptItemIds)
+            ->with('media')
+            ->latest('id')
+            ->get()
+            ->groupBy('purchase_order_receipt_item_id');
         $paymentAttempts = SupplierPaymentAttempt::query()
             ->with(['media', 'initiatedBy:id,name'])
             ->where('shop_owner_id', $shopId)
@@ -135,6 +144,37 @@ class ExpenseController extends Controller
                 $unitCosts = $detailItems->pluck('unit_cost')->filter(fn ($cost) => $cost !== null)->unique()->values();
                 $settlementState = (array) $expense->getAttribute('settlement_state');
                 $paymentAttempt = $paymentAttempts->get($expense->id)?->first();
+                $receiptAdjustments = $receiptItems->flatMap(
+                    fn ($receiptItem) => $adjustments->get($receiptItem->id, collect()),
+                )->map(fn (SupplierAdjustment $adjustment): array => [
+                    'id' => (int) $adjustment->id,
+                    'issue_stage' => (string) $adjustment->issue_stage,
+                    'reported_quantity' => (int) $adjustment->reported_quantity,
+                    'unit_cost_snapshot' => (string) $adjustment->unit_cost_snapshot,
+                    'reason_category' => (string) $adjustment->reason_category,
+                    'inventory_notes' => (string) $adjustment->inventory_notes,
+                    'status' => (string) $adjustment->status,
+                    'resolution' => $adjustment->resolution,
+                    'expected_refund_amount' => $adjustment->expected_refund_amount,
+                    'refunded_amount' => ExpenseSettlement::validRefundedAmountForAdjustment((int) $adjustment->id),
+                    'supplier_reported_refund_amount' => $adjustment->supplier_reported_refund_amount,
+                    'supplier_reported_refund_reference' => $adjustment->supplier_reported_refund_reference,
+                    'supplier_reported_refund_date' => $adjustment->supplier_reported_refund_date?->toDateString(),
+                    'procurement_notes' => $adjustment->procurement_notes,
+                    'receipt_item_id' => (int) $adjustment->purchase_order_receipt_item_id,
+                    'supplier_refund_proof' => $adjustment->getMedia('supplier_refund_proof')->map(fn ($media): array => [
+                        'id' => (int) $media->id,
+                        'file_name' => $media->file_name,
+                        'mime_type' => $media->mime_type,
+                        'size' => (int) $media->size,
+                    ])->values()->all(),
+                    'finance_confirmation_proof' => $adjustment->getMedia('finance_confirmation_proof')->map(fn ($media): array => [
+                        'id' => (int) $media->id,
+                        'file_name' => $media->file_name,
+                        'mime_type' => $media->mime_type,
+                        'size' => (int) $media->size,
+                    ])->values()->all(),
+                ])->values()->all();
                 $expense->setAttribute('procurement_details', [
                     'purchase_order_id' => $purchaseOrder->id,
                     'po_number' => $purchaseOrder->po_number,
@@ -158,6 +198,7 @@ class ExpenseController extends Controller
                     'unit_cost' => $unitCosts->count() === 1 ? $unitCosts->first() : null,
                     'payable_amount' => $expense->amount,
                     'items' => $detailItems,
+                    'adjustments' => $receiptAdjustments,
                 ]);
                 continue;
             }

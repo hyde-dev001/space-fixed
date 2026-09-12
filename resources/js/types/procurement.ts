@@ -84,6 +84,11 @@ export interface SupplierAdjustment {
     status: string;
     resolution?: 'replacement' | 'refund' | string | null;
     procurement_notes?: string | null;
+    expected_refund_amount?: number | string | null;
+    refunded_amount?: number | string | null;
+    supplier_reported_refund_amount?: number | string | null;
+    supplier_reported_refund_reference?: string | null;
+    supplier_reported_refund_date?: string | null;
     reported_at?: string | null;
     resolved_at?: string | null;
     reported_by?: { id: number; name: string } | null;
@@ -92,6 +97,8 @@ export interface SupplierAdjustment {
     receipt_item_id?: number | null;
     purchase_order_item_id?: number | null;
     evidence?: SupplierAdjustmentEvidence[];
+    supplier_refund_proof?: SupplierAdjustmentEvidence[];
+    finance_confirmation_proof?: SupplierAdjustmentEvidence[];
 }
 
 export interface InventoryItem {
@@ -247,6 +254,7 @@ export interface ProcurementExpenseDetails {
     payment_timing?: 'Overdue' | 'Due Today' | 'Due Soon' | 'Not Due' | string | null;
     payment_profile?: SupplierPaymentProfile | null;
     payment_attempt?: SupplierPaymentAttemptSummary | null;
+    adjustments?: SupplierAdjustment[];
     items?: Array<{
         purchase_order_item_id: number;
         product_name?: string | null;
