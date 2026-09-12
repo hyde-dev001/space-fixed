@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { CARTO_ATTRIBUTION, getCartoRasterUrl } from '@/utils/carto';
 import CustomerAddressMapPicker from '../CustomerAddressMapPicker';
 
 const leaflet = vi.hoisted(() => {
@@ -677,12 +678,12 @@ describe('CustomerAddressMapPicker', () => {
     );
   });
 
-  it('uses the policy-compliant OpenStreetMap tile endpoint', async () => {
+  it('uses the authenticated CARTO tile endpoint', async () => {
     render(<CustomerAddressMapPicker value={null} onChange={vi.fn()} />);
 
     await waitFor(() => expect(leaflet.tileLayer).toHaveBeenCalledWith(
-      'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-      { attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' },
+      getCartoRasterUrl(),
+      { attribution: CARTO_ATTRIBUTION },
     ));
   });
 

@@ -11,6 +11,7 @@ import BusinessDocumentCompliance, { type ComplianceSlot } from './components/Bu
 import EmployeeTotpSecurity from '../../../components/UserProfile/EmployeeTotpSecurity';
 import { requiredPolicySectionKeys } from '../../../utils/policySectionResolver';
 import type { ShopPolicyEditorStateResponse, ShopPolicySections } from '../../../types/shopPolicy';
+import { CARTO_ATTRIBUTION, getCartoRasterUrl } from '../../../utils/carto';
 import { GPS_POSITION_OPTIONS, getCurrentPositionWithTimeout } from '../../../utils/geolocation';
 
 const GEOLOCATION_LOOKUP_TIMEOUT_MS = 10_000;
@@ -1004,8 +1005,8 @@ const ShopSetting: React.FC = () => {
 			const initLng = parseFloat(geoLng) || 120.9842;
 
 			const map = L.map(mapRef.current!).setView([initLat, initLng], 16);
-			L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-				attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+			L.tileLayer(getCartoRasterUrl(), {
+				attribution: CARTO_ATTRIBUTION,
 			}).addTo(map);
 			window.setTimeout(() => map.invalidateSize(), 0);
 

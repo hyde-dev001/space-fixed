@@ -1,5 +1,6 @@
 import 'leaflet/dist/leaflet.css';
 import { useEffect, useRef } from 'react';
+import { CARTO_ATTRIBUTION, getCartoRasterUrl } from '@/utils/carto';
 
 type Props = {
   latitude: number;
@@ -21,8 +22,8 @@ export default function DeliveryCoverageMap({ latitude, longitude, radiusKm }: P
 
       map = L.map(containerRef.current, { dragging: true, scrollWheelZoom: false })
         .setView([latitude, longitude], 13);
-      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap contributors',
+      L.tileLayer(getCartoRasterUrl(), {
+        attribution: CARTO_ATTRIBUTION,
       }).addTo(map);
       L.circleMarker([latitude, longitude], {
         radius: 7,

@@ -4,6 +4,7 @@ import {
   parsePhilippineAddress,
   type RegistrationAddress,
 } from '../../Pages/UserSide/Auth/registrationAddress';
+import { CARTO_ATTRIBUTION, getCartoRasterUrl } from '../../utils/carto';
 import { GPS_POSITION_OPTIONS, getCurrentPositionWithTimeout } from '../../utils/geolocation';
 
 export type CoordinateValue = { latitude: number; longitude: number } | null;
@@ -249,8 +250,8 @@ export default function CustomerAddressMapPicker({
           : PHILIPPINES_CENTER;
         const map = L.map(element, { zoomControl: true }).setView(initial, latest ? 16 : 5);
         zoomControlRef.current = map.zoomControl;
-        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        L.tileLayer(getCartoRasterUrl(), {
+          attribution: CARTO_ATTRIBUTION,
         }).addTo(map);
         map.on('click', (event: import('leaflet').LeafletMouseEvent) => {
           chooseMapPoint(event.latlng.lat, event.latlng.lng);
