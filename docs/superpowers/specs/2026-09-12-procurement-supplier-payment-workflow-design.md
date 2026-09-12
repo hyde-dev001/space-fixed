@@ -2,9 +2,9 @@
 
 ## Status
 
-Revised design awaiting written-spec approval. This document incorporates the
-revisions accepted on 2026-09-12 and is a design specification only.
-Production implementation is not part of this change.
+Approved source of truth as of 2026-09-12. This document incorporates the
+accepted revisions and is a design specification only. Production
+implementation is not part of this change.
 
 ## Objective
 
@@ -537,7 +537,7 @@ Tests must cover:
   idempotency, and resolution;
 - supplier proof, Finance proof, partial/full refund, duplicate confirmation,
   over-refund protection, and preserved original payment;
-- prepayment receipt void and processing/paid void protection;
+- unpaid receipt void and processing/paid receipt void protection;
 - completion payment and adjustment guards;
 - sort allowlists; and
 - cross-shop denial for every supplier, profile, PO, receipt, expense,
