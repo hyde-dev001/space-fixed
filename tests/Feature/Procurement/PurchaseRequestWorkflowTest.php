@@ -36,10 +36,18 @@ class PurchaseRequestWorkflowTest extends TestCase
         $this->supplier = Supplier::factory()->create(['shop_owner_id' => $this->shopOwner->id]);
         $this->requester = User::factory()->for($this->shopOwner)->create();
         $this->finance = User::factory()->for($this->shopOwner)->create();
+        $this->give($this->requester, 'procurement.view');
         $this->give($this->requester, 'procurement.create_purchase_requests');
         $this->give($this->requester, 'procurement.submit_purchase_requests');
         $this->give($this->finance, 'procurement.review_purchase_requests');
         $this->finance->assignRole(Role::firstOrCreate(['name' => 'Finance', 'guard_name' => 'user']));
+    }
+
+    public function test_purchase_request_sorting_rejects_unapproved_columns(): void
+    {
+        $this->actingAs($this->requester)
+            ->getJson('/api/erp/procurement/purchase-requests?sort_by=users.password&sort_order=asc')
+            ->assertUnprocessable();
     }
 
     public function test_pr_follows_finance_then_shop_owner_approval(): void

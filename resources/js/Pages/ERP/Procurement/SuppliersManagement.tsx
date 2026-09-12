@@ -8,6 +8,7 @@ import { supplierApi, type Supplier } from "@/services/procurementApi";
 import { erpUrl } from "@/utils/erpCapabilities";
 import { withSweetAlertSemantic } from "@/utils/semanticSweetAlert";
 
+const PAYMENT_TERMS = ["COD", "Net 7", "Net 15", "Net 30", "Net 45", "Net 60"] as const;
 
 
 const PencilIcon = ({ className }: { className?: string }) => (
@@ -47,6 +48,11 @@ interface FormState {
 	email: string;
 	phone: string;
 	address: string;
+	city: string;
+	country: string;
+	payment_terms: string;
+	lead_time_days: string;
+	products_supplied: string;
 	notes: string;
 }
 
@@ -56,6 +62,11 @@ const initialFormState: FormState = {
 	email: "",
 	phone: "",
 	address: "",
+	city: "",
+	country: "",
+	payment_terms: "",
+	lead_time_days: "",
+	products_supplied: "",
 	notes: "",
 };
 
@@ -143,6 +154,11 @@ export default function SuppliersManagement() {
 			email: supplier.email || "",
 			phone: supplier.phone || "",
 			address: supplier.address || "",
+			city: supplier.city || "",
+			country: supplier.country || "",
+			payment_terms: supplier.payment_terms || "",
+			lead_time_days: supplier.lead_time_days?.toString() || "",
+			products_supplied: supplier.products_supplied || "",
 			notes: supplier.notes || "",
 		});
 	};
@@ -231,6 +247,11 @@ export default function SuppliersManagement() {
 				email: formData.email,
 				phone: formData.phone,
 				address: formData.address,
+				city: formData.city,
+				country: formData.country,
+				payment_terms: formData.payment_terms as Supplier["payment_terms"],
+				lead_time_days: formData.lead_time_days ? Number(formData.lead_time_days) : undefined,
+				products_supplied: formData.products_supplied,
 				notes: formData.notes,
 			});
 
@@ -256,7 +277,7 @@ export default function SuppliersManagement() {
 		setFormData(initialFormState);
 	};
 
-	const handleFormChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+	const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
 		const { name, value } = e.target;
 		setFormData((prev) => ({
 			...prev,
@@ -284,6 +305,11 @@ export default function SuppliersManagement() {
 				email: formData.email,
 				phone: formData.phone,
 				address: formData.address,
+				city: formData.city,
+				country: formData.country,
+				payment_terms: formData.payment_terms as Supplier["payment_terms"],
+				lead_time_days: formData.lead_time_days ? Number(formData.lead_time_days) : undefined,
+				products_supplied: formData.products_supplied,
 				notes: formData.notes,
 			});
 
@@ -499,6 +525,66 @@ export default function SuppliersManagement() {
 								/>
 							</div>
 
+							<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+								<div>
+									<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">City</label>
+									<input type="text" name="city" value={formData.city} onChange={handleFormChange} className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
+								</div>
+								<div>
+									<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Country</label>
+									<input type="text" name="country" value={formData.country} onChange={handleFormChange} className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
+								</div>
+							</div>
+
+							<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+								<div>
+									<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Payment Terms</label>
+									<select name="payment_terms" value={formData.payment_terms} onChange={handleFormChange} className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
+										<option value="">Use procurement default</option>
+										{PAYMENT_TERMS.map((terms) => <option key={terms} value={terms}>{terms}</option>)}
+									</select>
+								</div>
+								<div>
+									<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Lead Time (days)</label>
+									<input type="number" min="0" name="lead_time_days" value={formData.lead_time_days} onChange={handleFormChange} className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
+								</div>
+							</div>
+
+							<div>
+								<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Products Supplied</label>
+								<input type="text" name="products_supplied" value={formData.products_supplied} onChange={handleFormChange} placeholder="e.g., running shoes, laces" className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
+							</div>
+
+							<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+								<div>
+									<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">City</label>
+									<input type="text" name="city" value={formData.city} onChange={handleFormChange} className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
+								</div>
+								<div>
+									<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Country</label>
+									<input type="text" name="country" value={formData.country} onChange={handleFormChange} className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
+								</div>
+							</div>
+
+							<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+								<div>
+									<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Payment Terms</label>
+									<select name="payment_terms" value={formData.payment_terms} onChange={handleFormChange} className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
+										<option value="">Use procurement default</option>
+										{PAYMENT_TERMS.map((terms) => <option key={terms} value={terms}>{terms}</option>)}
+									</select>
+								</div>
+								<div>
+									<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Lead Time (days)</label>
+									<input type="number" min="0" name="lead_time_days" value={formData.lead_time_days} onChange={handleFormChange} className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
+								</div>
+							</div>
+
+							<div>
+								<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Products Supplied</label>
+								<input type="text" name="products_supplied" value={formData.products_supplied} onChange={handleFormChange} placeholder="e.g., running shoes, laces" className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
+							</div>
+
 							<div>
 								<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
 									Contact Person
@@ -626,12 +712,31 @@ export default function SuppliersManagement() {
 								</div>
 							</div>
 
-							{viewingSupplier.address && (
-								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
-									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Address</p>
-									<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingSupplier.address}</p>
-								</div>
-							)}
+			{viewingSupplier.address && (
+				<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
+					<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Address</p>
+					<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingSupplier.address}</p>
+				</div>
+			)}
+
+			<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+				<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
+					<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">City / Country</p>
+					<p className="text-base font-semibold text-gray-900 dark:text-white">{[viewingSupplier.city, viewingSupplier.country].filter(Boolean).join(", ") || "—"}</p>
+				</div>
+				<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
+					<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Payment Terms</p>
+					<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingSupplier.payment_terms || "Use procurement default"}</p>
+				</div>
+				<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
+					<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Lead Time</p>
+					<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingSupplier.lead_time_days ?? "—"}{viewingSupplier.lead_time_days !== undefined ? " days" : ""}</p>
+				</div>
+				<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
+					<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Products Supplied</p>
+					<p className="text-sm text-gray-700 dark:text-gray-300">{viewingSupplier.products_supplied || "—"}</p>
+				</div>
+			</div>
 
 {viewingSupplier.notes && (
 							<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">

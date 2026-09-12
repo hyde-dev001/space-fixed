@@ -153,7 +153,7 @@ class PurchaseOrderReceivingTest extends TestCase
         $this->assertSame(ApprovalStatus::CANCELLED, $legacyApproval->fresh()->status);
     }
 
-    public function test_cod_or_unrecognized_supplier_terms_leave_due_date_empty(): void
+    public function test_cod_supplier_terms_are_due_on_the_receipt_date(): void
     {
         [$po, $item] = $this->poItem(2, 100);
         $po->update(['payment_terms' => 'COD']);
@@ -162,7 +162,40 @@ class PurchaseOrderReceivingTest extends TestCase
             ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/receipts", $this->payload('cod-terms', $item->id, 2, 0))
             ->assertCreated();
 
-        $this->assertNull(Expense::sole()->due_date);
+        $this->assertSame(Expense::sole()->date->toDateString(), Expense::sole()->due_date->toDateString());
+    }
+
+    public function test_all_supported_supplier_terms_set_the_receipt_expense_due_date(): void
+    {
+        foreach ([
+            'COD' => 0,
+            'Net 7' => 7,
+            'Net 15' => 15,
+            'Net 30' => 30,
+            'Net 45' => 45,
+            'Net 60' => 60,
+        ] as $terms => $days) {
+            [$po, $item] = $this->poItem(1, 100);
+            $po->update(['payment_terms' => $terms]);
+
+            $response = $this->actingAs($this->receiver, 'user')
+                ->postJson(
+                    "/api/erp/procurement/purchase-orders/{$po->id}/receipts",
+                    $this->payload('due-date-' . str_replace(' ', '-', strtolower($terms)), $item->id, 1, 0)
+                )
+                ->assertCreated();
+
+            $expense = Expense::query()
+                ->where('procurement_receipt_id', $response->json('data.id'))
+                ->firstOrFail();
+
+            $this->assertNotNull($expense->due_date, $terms);
+            $this->assertSame(
+                $expense->date->copy()->addDays($days)->toDateString(),
+                $expense->due_date->toDateString(),
+                $terms
+            );
+        }
     }
 
     public function test_existing_procurement_expense_workflow_is_blocked_for_finance_rejection(): void

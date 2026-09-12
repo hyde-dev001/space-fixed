@@ -6,7 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\Supplier;
 use Illuminate\Http\Request;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
+use Illuminate\Validation\Rule;
 use App\Support\Erp\ErpActorContext;
+use App\Models\PurchaseOrder;
 
 class SupplierController extends Controller
 {
@@ -77,7 +79,7 @@ class SupplierController extends Controller
             'address' => 'nullable|string',
             'city' => 'nullable|string|max:100',
             'country' => 'nullable|string|max:100',
-            'payment_terms' => 'nullable|string|max:255',
+            'payment_terms' => ['nullable', 'string', Rule::in(PurchaseOrder::supportedPaymentTerms())],
             'lead_time_days' => 'nullable|integer|min:0',
             'products_supplied' => 'nullable|string',
             'notes' => 'nullable|string'
@@ -131,7 +133,7 @@ class SupplierController extends Controller
             'address' => 'nullable|string',
             'city' => 'nullable|string|max:100',
             'country' => 'nullable|string|max:100',
-            'payment_terms' => 'nullable|string|max:255',
+            'payment_terms' => ['nullable', 'string', Rule::in(PurchaseOrder::supportedPaymentTerms())],
             'lead_time_days' => 'nullable|integer|min:0',
             'is_active' => 'nullable|boolean',
             'products_supplied' => 'nullable|string',

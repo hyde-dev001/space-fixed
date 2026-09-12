@@ -32,10 +32,10 @@ class PurchaseOrderWorkflowTest extends TestCase
         config(['auth.defaults.guard' => 'user']);
         $this->shopOwner = ShopOwner::factory()->create();
         $this->user = User::factory()->for($this->shopOwner)->create();
-        foreach (['procurement.view', 'procurement.create_purchase_orders', 'procurement.manage_purchase_orders', 'procurement.receive_purchase_orders', 'procurement.complete_purchase_orders', 'procurement.cancel_purchase_orders', 'view-inventory'] as $permission) {
+        foreach (['procurement.view', 'procurement.create_purchase_orders', 'procurement.manage_purchase_orders', 'procurement.manage_suppliers', 'procurement.receive_purchase_orders', 'procurement.complete_purchase_orders', 'procurement.cancel_purchase_orders', 'view-inventory'] as $permission) {
             Permission::findOrCreate($permission, 'user');
         }
-        $this->user->givePermissionTo(['procurement.view', 'procurement.create_purchase_orders', 'procurement.manage_purchase_orders', 'procurement.receive_purchase_orders', 'procurement.complete_purchase_orders', 'procurement.cancel_purchase_orders', 'view-inventory']);
+        $this->user->givePermissionTo(['procurement.view', 'procurement.create_purchase_orders', 'procurement.manage_purchase_orders', 'procurement.manage_suppliers', 'procurement.receive_purchase_orders', 'procurement.complete_purchase_orders', 'procurement.cancel_purchase_orders', 'view-inventory']);
         $this->supplier = Supplier::factory()->create(['shop_owner_id' => $this->shopOwner->id]);
         
         $this->pr = PurchaseRequest::factory()->create([
@@ -71,6 +71,45 @@ class PurchaseOrderWorkflowTest extends TestCase
             'pr_id' => $this->pr->id,
             'status' => 'draft',
         ]);
+    }
+
+    public function test_invalid_supplier_payment_terms_are_rejected(): void
+    {
+        $this->actingAs($this->user)
+            ->postJson('/api/erp/procurement/purchase-orders', [
+                'purchase_request_ids' => [$this->pr->id],
+                'expected_delivery_date' => now()->addDays(14)->format('Y-m-d'),
+                'payment_terms' => 'Net 90',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('payment_terms');
+
+        $this->assertDatabaseCount('purchase_orders', 0);
+    }
+
+    public function test_supplier_and_procurement_setting_payment_terms_are_rejected_when_unsupported(): void
+    {
+        $this->actingAs($this->user)
+            ->putJson("/api/erp/procurement/suppliers/{$this->supplier->id}", [
+                'name' => $this->supplier->name,
+                'payment_terms' => 'Net 90',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('payment_terms');
+
+        $this->actingAs($this->user)
+            ->putJson('/api/erp/procurement/settings', [
+                'default_payment_terms' => 'Net 90',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('default_payment_terms');
+    }
+
+    public function test_purchase_order_sorting_rejects_unapproved_columns(): void
+    {
+        $this->actingAs($this->user)
+            ->getJson('/api/erp/procurement/purchase-orders?sort_by=users.password&sort_order=drop')
+            ->assertUnprocessable();
     }
 
     /** @test */
