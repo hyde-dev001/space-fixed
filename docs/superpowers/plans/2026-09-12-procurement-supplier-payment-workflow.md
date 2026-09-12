@@ -559,10 +559,10 @@ supplier-payout webhook branch is created.
 - Create: `app/Services/SupplierAdjustmentService.php`
 - Create: `app/Http/Controllers/Erp/SupplierAdjustmentController.php`
 - Create: `app/Http/Requests/StorePostPaymentIssueRequest.php`
-- Create: `app/Http/Requests/UpdateSupplierAdjustmentRequest.php`
 - Modify: `app/Http/Requests/StorePurchaseOrderReceiptRequest.php`
+- Modify: `app/Policies/PurchaseOrderPolicy.php`
 - Modify: `app/Services/PurchaseOrderReceiptService.php`
-- Modify: `app/Http/Controllers/Erp/PurchaseOrderReceiptController.php`
+- Modify: `config/shop_modules.php`
 - Modify: `routes/procurement-api.php`
 - Modify: `resources/js/types/procurement.ts`
 - Modify: `resources/js/services/purchaseOrderApi.ts`
@@ -570,56 +570,60 @@ supplier-payout webhook branch is created.
 - Modify: `resources/js/Pages/ERP/Procurement/components/PurchaseOrderReceiptPanel.tsx`
 - Create: `resources/js/Pages/ERP/Procurement/components/SupplierAdjustmentsPanel.tsx`
 - Modify: `resources/js/Pages/ERP/Procurement/PurchaseOrders.tsx`
+- Modify: `resources/js/Pages/ERP/inventory/SupplierOrderMonitoring.tsx`
 - Create: `tests/Feature/Procurement/SupplierAdjustmentTest.php`
 - Modify: `tests/Feature/Procurement/PurchaseOrderReceivingTest.php`
+- Modify: `tests/Feature/Procurement/PurchaseOrderReceiptVoidTest.php`
 - Modify: `resources/js/Pages/ERP/Procurement/__tests__/PurchaseOrderReceiptPanel.test.tsx`
 - Modify: `resources/js/Pages/ERP/Procurement/__tests__/PurchaseOrders.test.tsx`
+- Create: `resources/js/Pages/ERP/Procurement/__tests__/SupplierAdjustmentsPanel.test.tsx`
+- Modify: `resources/js/services/__tests__/procurementApis.test.ts`
 
-- [ ] **Step 1: Write failing receiving-defect tests.**
+- [x] **Step 1: Write failing receiving-defect tests.**
 
 For `defective_quantity > 0`, require an allowlisted category, notes, and at least one valid image; explicitly test `other` without notes. Assert reported actor/server timestamp, unit-cost snapshot, immutable report fields, excluded payable amount, private media, tenant-protected download, idempotent replay, payload conflict, and rollback/file cleanup when evidence storage fails.
 
-- [ ] **Step 2: Write failing post-payment issue tests.**
+- [x] **Step 2: Write failing post-payment issue tests.**
 
 Require a posted nonvoid same-shop receipt, accepted units, posted expense, confirmed paid amount, quantity within remaining paid accepted units after open issues, category/notes/image, and Inventory authorization. Assert the original receipt, accepted quantity, stock movement, payment attempt, and settlement are unchanged. Include completed historical POs: the late adjustment is allowed but does not rewrite PO status.
 
-- [ ] **Step 3: Run issue tests and verify failure.**
+- [x] **Step 3: Run issue tests and verify failure.**
 
 ```bash
 php artisan test tests/Feature/Procurement/SupplierAdjustmentTest.php tests/Feature/Procurement/PurchaseOrderReceivingTest.php --filter='defect|issue|evidence'
 ```
 
-Expected: FAIL because adjustment creation and evidence validation are absent.
+The initial red run failed because adjustment creation, evidence validation, and the UI surface were absent. Red tests were kept uncommitted.
 
-- [ ] **Step 4: Implement constants and lifecycle centrally.**
+- [x] **Step 4: Implement constants and lifecycle centrally.**
 
 Put the five category constants, two issue stages, statuses, and two resolutions on `SupplierAdjustment`. `SupplierAdjustmentService` locks and rechecks shop ownership, validates transition pairs, records actor/timestamps, and writes Spatie Activitylog properties containing IDs, safe references, prior/new state, and notes but no full account details.
 
-- [ ] **Step 5: Extend canonical receipt posting atomically.**
+- [x] **Step 5: Extend canonical receipt posting atomically.**
 
 Include category, notes, replacement ID, and stable evidence hashes in the receipt payload hash. Create each receiving-defect adjustment from its newly created receipt item inside the existing receipt transaction. Attach evidence to private `local` collections; on any exception remove newly staged media and let the database transaction roll back. Do not change accepted-stock or expense arithmetic.
 
-- [ ] **Step 6: Implement the explicit late-issue endpoint.**
+- [x] **Step 6: Implement the explicit late-issue endpoint.**
 
 Nest the action under the posted receipt item and PO so the controller can authorize `receive` on the canonical PO before calling the service. Use a shop-scoped idempotency key. Resolve supplier, PO, and expense through the receipt item; never trust submitted supplier/expense IDs.
 
-- [ ] **Step 7: Implement evidence access and immutable UI.**
+- [x] **Step 7: Implement evidence access and immutable UI.**
 
 Allow only configured image MIME types and sizes. Download by adjustment + media ID, verify media model binding and shop ownership, and return private/no-store responses. The receipt UI submits multipart data; the PO adjustment panel shows immutable Inventory report/evidence and appends Procurement actions separately.
 
-- [ ] **Step 8: Run issue and UI tests.**
+- [x] **Step 8: Run issue and UI tests.**
 
 ```bash
 php artisan test tests/Feature/Procurement/SupplierAdjustmentTest.php tests/Feature/Procurement/PurchaseOrderReceivingTest.php tests/Feature/Procurement/ProcurementAuthorizationTest.php
-pnpm exec vitest run resources/js/Pages/ERP/Procurement/__tests__/PurchaseOrderReceiptPanel.test.tsx resources/js/Pages/ERP/Procurement/__tests__/PurchaseOrders.test.tsx resources/js/services/__tests__/procurementApis.test.ts
+node_modules/.bin/vitest.cmd run resources/js/Pages/ERP/Procurement/__tests__/PurchaseOrderReceiptPanel.test.tsx resources/js/Pages/ERP/Procurement/__tests__/PurchaseOrders.test.tsx resources/js/Pages/ERP/Procurement/__tests__/SupplierAdjustmentsPanel.test.tsx resources/js/services/__tests__/procurementApis.test.ts
 ```
 
-Expected: validation, private evidence, immutability, rollback, idempotency, and tenant checks pass.
+Result: corrected backend receiving/void suites pass 25 tests and 172 assertions; the broader focused backend set passed 72 tests and 29,997 assertions before the fixture correction, and the focused frontend set passed 4 files and 12 tests. The installed Vitest binary was used because pnpm is unavailable in this worktree.
 
-- [ ] **Step 9: Commit issue reporting.**
+- [x] **Step 9: Commit issue reporting.**
 
 ```bash
-git commit --only -m "feat: report supplier quality adjustments" -- app/Services/SupplierAdjustmentService.php app/Http/Controllers/Erp/SupplierAdjustmentController.php app/Http/Requests/StorePostPaymentIssueRequest.php app/Http/Requests/UpdateSupplierAdjustmentRequest.php app/Http/Requests/StorePurchaseOrderReceiptRequest.php app/Services/PurchaseOrderReceiptService.php app/Http/Controllers/Erp/PurchaseOrderReceiptController.php routes/procurement-api.php resources/js/types/procurement.ts resources/js/services/purchaseOrderApi.ts resources/js/services/supplierAdjustmentApi.ts resources/js/Pages/ERP/Procurement/components/PurchaseOrderReceiptPanel.tsx resources/js/Pages/ERP/Procurement/components/SupplierAdjustmentsPanel.tsx resources/js/Pages/ERP/Procurement/PurchaseOrders.tsx tests/Feature/Procurement/SupplierAdjustmentTest.php tests/Feature/Procurement/PurchaseOrderReceivingTest.php tests/Feature/Procurement/ProcurementAuthorizationTest.php resources/js/Pages/ERP/Procurement/__tests__/PurchaseOrderReceiptPanel.test.tsx resources/js/Pages/ERP/Procurement/__tests__/PurchaseOrders.test.tsx resources/js/services/__tests__/procurementApis.test.ts
+git commit --only -m "feat: report supplier quality adjustments" -- app/Services/SupplierAdjustmentService.php app/Http/Controllers/Erp/SupplierAdjustmentController.php app/Http/Requests/StorePostPaymentIssueRequest.php app/Http/Requests/StorePurchaseOrderReceiptRequest.php app/Policies/PurchaseOrderPolicy.php app/Services/PurchaseOrderReceiptService.php routes/procurement-api.php config/shop_modules.php resources/js/types/procurement.ts resources/js/services/purchaseOrderApi.ts resources/js/Pages/ERP/Procurement/components/PurchaseOrderReceiptPanel.tsx resources/js/Pages/ERP/Procurement/components/SupplierAdjustmentsPanel.tsx resources/js/Pages/ERP/Procurement/PurchaseOrders.tsx resources/js/Pages/ERP/inventory/SupplierOrderMonitoring.tsx tests/Feature/Procurement/SupplierAdjustmentTest.php tests/Feature/Procurement/PurchaseOrderReceivingTest.php tests/Feature/Procurement/PurchaseOrderReceiptVoidTest.php resources/js/Pages/ERP/Procurement/__tests__/PurchaseOrderReceiptPanel.test.tsx resources/js/Pages/ERP/Procurement/__tests__/PurchaseOrders.test.tsx resources/js/Pages/ERP/Procurement/__tests__/SupplierAdjustmentsPanel.test.tsx resources/js/services/__tests__/procurementApis.test.ts
 ```
 
 Omit `resources/js/services/supplierAdjustmentApi.ts` from the commit if the implementation keeps those methods in `purchaseOrderApi`.

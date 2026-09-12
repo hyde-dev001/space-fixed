@@ -15,6 +15,8 @@ use App\Models\StockMovement;
 use App\Models\Supplier;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
@@ -31,6 +33,7 @@ class PurchaseOrderReceivingTest extends TestCase
     {
         parent::setUp();
         config(['auth.defaults.guard' => 'user']);
+        Storage::fake('local');
         $this->owner = ShopOwner::factory()->create();
         $this->receiver = User::factory()->for($this->owner)->create();
         $this->supplier = Supplier::factory()->create(['shop_owner_id' => $this->owner->id]);
@@ -52,8 +55,7 @@ class PurchaseOrderReceivingTest extends TestCase
         $po->update(['payment_terms' => 'Net 30']);
         $payload = $this->payload('receive-1', $item->id, 3, 1);
 
-        $response = $this->actingAs($this->receiver, 'user')
-            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/receipts", $payload)
+        $response = $this->postReceiptPayload($po, $payload)
             ->assertCreated();
 		$this->assertSame(['message', 'data'], array_keys($response->json()));
 
@@ -106,8 +108,7 @@ class PurchaseOrderReceivingTest extends TestCase
             ->assertJsonPath('procurement_details.receipt_id', $response->json('data.id'))
             ->assertJsonPath('procurement_details.items.0.accepted_quantity', 2);
 
-        $this->actingAs($this->receiver, 'user')
-            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/receipts", $payload)
+        $this->postReceiptPayload($po, $payload)
             ->assertOk();
 
         $this->assertSame(1, PurchaseOrderReceipt::count());
@@ -242,8 +243,7 @@ class PurchaseOrderReceivingTest extends TestCase
     {
         [$po, $item, $inventory] = $this->poItem(5, 100);
 
-        $this->actingAs($this->receiver, 'user')
-            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/receipts", $this->payload('first', $item->id, 5, 2))
+        $this->postReceiptPayload($po, $this->payload('first', $item->id, 5, 2))
             ->assertCreated();
         $this->assertSame('partially_received', $po->fresh()->status);
 
@@ -277,8 +277,7 @@ class PurchaseOrderReceivingTest extends TestCase
             'line_total' => 500,
         ]);
 
-        $this->actingAs($this->receiver, 'user')
-            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/receipts", [
+        $this->postReceiptPayload($po, [
                 'idempotency_key' => 'all-sizes',
                 'items' => [[
                     'purchase_order_item_id' => $item->id,
@@ -452,8 +451,7 @@ class PurchaseOrderReceivingTest extends TestCase
     {
         [$po, $item, $inventory] = $this->poItem(2, 100);
 
-        $this->actingAs($this->receiver, 'user')
-            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/receipts", $this->payload('defective', $item->id, 2, 2))
+        $this->postReceiptPayload($po, $this->payload('defective', $item->id, 2, 2))
             ->assertCreated();
 
         $this->assertSame('partially_received', $po->fresh()->status);
@@ -501,8 +499,7 @@ class PurchaseOrderReceivingTest extends TestCase
     {
         [$po, $item, $inventory] = $this->poItem(5, 100);
 
-        $this->actingAs($this->receiver, 'user')
-            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/receipts", $this->payload('over-physical', $item->id, 6, 1))
+        $this->postReceiptPayload($po, $this->payload('over-physical', $item->id, 6, 1))
             ->assertUnprocessable();
 
         $this->assertSame('in_transit', $po->fresh()->status);
@@ -557,6 +554,27 @@ class PurchaseOrderReceivingTest extends TestCase
         ], $itemOverrides));
 
         return [$po, $item, $inventory];
+    }
+
+    private function postReceiptPayload(PurchaseOrder $purchaseOrder, array $payload)
+    {
+        foreach ($payload['items'] as $index => $item) {
+            if ((int) ($item['defective_quantity'] ?? 0) < 1) {
+                continue;
+            }
+
+            $payload['items'][$index]['reason_category'] ??= 'damaged';
+            $payload['items'][$index]['inventory_notes'] ??= 'Test receiving defect.';
+            $payload['items'][$index]['defect_evidence'] ??= [
+                UploadedFile::fake()->create('defect.jpg', 10, 'image/jpeg'),
+            ];
+        }
+
+        return $this->actingAs($this->receiver, 'user')->post(
+            "/api/erp/procurement/purchase-orders/{$purchaseOrder->id}/receipts",
+            $payload,
+            ['Accept' => 'application/json'],
+        );
     }
 
     private function payload(string $key, int $itemId, int $received, int $defective): array

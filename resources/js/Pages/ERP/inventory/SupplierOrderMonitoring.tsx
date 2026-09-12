@@ -5,8 +5,10 @@ import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import type { PurchaseOrder } from "@/types/procurement";
 import { purchaseOrderApi } from "@/services/purchaseOrderApi";
 import PurchaseOrderReceiptPanel from "../Procurement/components/PurchaseOrderReceiptPanel";
+import SupplierAdjustmentsPanel from "../Procurement/components/SupplierAdjustmentsPanel";
 import { DashboardMetricCard } from "../../../components/dashboard";
 import { Eye, PackageCheck, ShoppingCart, Truck, CheckCircle2 } from "lucide-react";
+import { hasPermission } from "@/utils/permissions";
 
 const label = (status: string) => status.split("_").map((part) => part[0].toUpperCase() + part.slice(1)).join(" ");
 const formatDate = (value?: string) => value ? new Date(value).toLocaleDateString() : "—";
@@ -43,6 +45,9 @@ export default function SupplierOrderMonitoring() {
 		setViewingOrder(refreshed);
 		setOrders((current) => current.map((order) => order.id === refreshed.id ? refreshed : order));
 	};
+	const canReportSupplierIssues = !ownerMode
+		&& hasPermission(auth, "procurement.receive_purchase_orders")
+		&& hasPermission(auth, "view-inventory");
 
 	return (
 		<AppLayoutERP hideHeader={Boolean(viewingOrder)}>
@@ -85,6 +90,7 @@ export default function SupplierOrderMonitoring() {
 				<div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-2xl bg-white p-5 shadow-xl dark:bg-gray-900">
 					<div className="mb-4 flex items-center justify-between"><div><h2 className="text-xl font-semibold">{viewingOrder.po_number}</h2><p className="text-sm text-gray-500">{viewingOrder.supplier?.name} · {label(viewingOrder.status)}</p></div><button type="button" onClick={() => setViewingOrder(null)} aria-label="Close" className="text-2xl text-gray-500">×</button></div>
 					<PurchaseOrderReceiptPanel order={viewingOrder} canReceive={!ownerMode} canVoid={false} onChanged={refreshViewingOrder} />
+					<SupplierAdjustmentsPanel order={viewingOrder} canReport={canReportSupplierIssues} onChanged={refreshViewingOrder} />
 				</div>
 			</div>}
 		</AppLayoutERP>

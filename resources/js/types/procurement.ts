@@ -60,6 +60,39 @@ export interface SupplierPaymentAttemptSummary {
     proof_media?: Array<{ id: number; file_name: string; mime_type: string; size: number }>;
 }
 
+export type SupplierAdjustmentReasonCategory =
+    | 'manufacturing_defect'
+    | 'damaged'
+    | 'wrong_item'
+    | 'incorrect_size_or_variant'
+    | 'other';
+
+export interface SupplierAdjustmentEvidence {
+    id: number;
+    file_name: string;
+    mime_type: string;
+    size: number;
+}
+
+export interface SupplierAdjustment {
+    id: number;
+    issue_stage: 'receiving_defect' | 'post_payment_issue' | string;
+    reported_quantity: number;
+    unit_cost_snapshot: number | string;
+    reason_category: SupplierAdjustmentReasonCategory | string;
+    inventory_notes: string;
+    status: string;
+    resolution?: 'replacement' | 'refund' | string | null;
+    procurement_notes?: string | null;
+    reported_at?: string | null;
+    resolved_at?: string | null;
+    reported_by?: { id: number; name: string } | null;
+    purchase_order?: { id: number | null; number: string | null; status: string | null };
+    receipt?: { id: number | null; status: string | null };
+    receipt_item_id?: number | null;
+    evidence?: SupplierAdjustmentEvidence[];
+}
+
 export interface InventoryItem {
     id: number;
     product_name: string;
@@ -499,8 +532,19 @@ export interface CreatePurchaseOrderReceiptPayload {
         purchase_order_item_id: number;
         received_quantity: number;
         defective_quantity: number;
+        reason_category?: SupplierAdjustmentReasonCategory;
+        inventory_notes?: string;
+        defect_evidence?: File[];
         size_quantities?: Array<{ inventory_size_id: number; received_quantity: number; defective_quantity: number }>;
     }>;
+}
+
+export interface CreatePostPaymentIssuePayload {
+    idempotency_key: string;
+    reported_quantity: number;
+    reason_category: SupplierAdjustmentReasonCategory;
+    inventory_notes: string;
+    defect_evidence: File[];
 }
 
 export interface CancelPurchaseOrderPayload {

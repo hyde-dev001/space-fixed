@@ -1,10 +1,23 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import Swal from "sweetalert2";
 import { purchaseOrderApi } from "@/services/purchaseOrderApi";
-import type { PurchaseOrder } from "@/types/procurement";
+import type { PurchaseOrder, SupplierAdjustmentReasonCategory } from "@/types/procurement";
 
 type Quantities = Record<number, { received: string; defective: string }>;
 type SizeQuantities = Record<string, { received: string; defective: string }>;
+type DefectDetails = {
+	reason_category: SupplierAdjustmentReasonCategory | "";
+	inventory_notes: string;
+	defect_evidence: File[];
+};
+
+const defectCategories: Array<{ value: SupplierAdjustmentReasonCategory; label: string }> = [
+	{ value: "manufacturing_defect", label: "Manufacturing defect" },
+	{ value: "damaged", label: "Damaged" },
+	{ value: "wrong_item", label: "Wrong item" },
+	{ value: "incorrect_size_or_variant", label: "Incorrect size or variant" },
+	{ value: "other", label: "Other" },
+];
 
 type Props = {
 	order: PurchaseOrder;
@@ -16,6 +29,7 @@ type Props = {
 export default function PurchaseOrderReceiptPanel({ order, onChanged, canReceive: mayReceive = true, canVoid = true }: Props) {
 	const [quantities, setQuantities] = useState<Quantities>({});
 	const [sizeQuantities, setSizeQuantities] = useState<SizeQuantities>({});
+	const [defectDetails, setDefectDetails] = useState<Record<number, DefectDetails>>({});
 	const [notes, setNotes] = useState("");
 	const [idempotencyKey, setIdempotencyKey] = useState<string | null>(null);
 	const [saving, setSaving] = useState(false);
@@ -25,8 +39,8 @@ export default function PurchaseOrderReceiptPanel({ order, onChanged, canReceive
 		setQuantities((current) => ({
 			...current,
 			[itemId]: { received: current[itemId]?.received ?? "", defective: current[itemId]?.defective ?? "", [field]: value },
-		}));
-		setIdempotencyKey(null);
+			}));
+			setIdempotencyKey(null);
 	};
 	const setSizeQuantity = (itemId: number, sizeId: number, field: "received" | "defective", value: string) => {
 		const key = `${itemId}:${sizeId}`;
@@ -35,11 +49,30 @@ export default function PurchaseOrderReceiptPanel({ order, onChanged, canReceive
 			[key]: { received: current[key]?.received ?? "", defective: current[key]?.defective ?? "", [field]: value },
 		}));
 		setIdempotencyKey(null);
+		};
+	const setDefectDetail = (itemId: number, field: keyof DefectDetails, value: string | File[]) => {
+		setDefectDetails((current) => ({
+			...current,
+			[itemId]: {
+				reason_category: current[itemId]?.reason_category ?? "",
+				inventory_notes: current[itemId]?.inventory_notes ?? "",
+				defect_evidence: current[itemId]?.defect_evidence ?? [],
+				[field]: value,
+			},
+		}));
+		setIdempotencyKey(null);
 	};
 
 	const receive = async () => {
 		const items = (order.items ?? []).map((item) => {
 			const eligible = (item.inventory_item?.sizes ?? []).filter((size) => item.eligible_size_ids?.includes(size.id));
+			const receivedQuantity = eligible.length > 1
+				? eligible.reduce((sum, size) => sum + Number(sizeQuantities[`${item.id}:${size.id}`]?.received || 0), 0)
+				: Number(quantities[item.id]?.received || 0);
+			const defectiveQuantity = eligible.length > 1
+				? eligible.reduce((sum, size) => sum + Number(sizeQuantities[`${item.id}:${size.id}`]?.defective || 0), 0)
+				: Number(quantities[item.id]?.defective || 0);
+			const details = defectDetails[item.id];
 			if (eligible.length > 1) {
 				const allocations = eligible.map((size) => ({
 					inventory_size_id: size.id,
@@ -48,21 +81,38 @@ export default function PurchaseOrderReceiptPanel({ order, onChanged, canReceive
 				}));
 				return {
 					purchase_order_item_id: item.id,
-					received_quantity: allocations.reduce((sum, row) => sum + row.received_quantity, 0),
-					defective_quantity: allocations.reduce((sum, row) => sum + row.defective_quantity, 0),
-					size_quantities: allocations,
-				};
+						received_quantity: receivedQuantity,
+						defective_quantity: defectiveQuantity,
+						size_quantities: allocations,
+						...(defectiveQuantity > 0 ? {
+							reason_category: details?.reason_category || undefined,
+							inventory_notes: details?.inventory_notes.trim() || undefined,
+							defect_evidence: details?.defect_evidence ?? [],
+						} : {}),
+					};
 			}
 
 			return {
 				purchase_order_item_id: item.id,
-				received_quantity: Number(quantities[item.id]?.received || 0),
-				defective_quantity: Number(quantities[item.id]?.defective || 0),
+				received_quantity: receivedQuantity,
+				defective_quantity: defectiveQuantity,
+				...(defectiveQuantity > 0 ? {
+					reason_category: details?.reason_category || undefined,
+					inventory_notes: details?.inventory_notes.trim() || undefined,
+					defect_evidence: details?.defect_evidence ?? [],
+				} : {}),
 			};
 		}).filter((item) => item.received_quantity > 0);
 
 		if (!items.length || items.some((item) => item.defective_quantity > item.received_quantity)) {
 			await Swal.fire("Invalid quantities", "Enter a received quantity and keep defects at or below it.", "warning");
+			return;
+		}
+		const incompleteDefect = items.find((item) => item.defective_quantity > 0 && (
+			!item.reason_category || !item.inventory_notes || item.defect_evidence.length === 0
+		));
+		if (incompleteDefect) {
+			await Swal.fire("Defect details required", "Choose a category, add notes, and attach at least one image for every defective line.", "warning");
 			return;
 		}
 		const accepted = items.reduce((sum, item) => sum + item.received_quantity - item.defective_quantity, 0);
@@ -84,6 +134,7 @@ export default function PurchaseOrderReceiptPanel({ order, onChanged, canReceive
 			await purchaseOrderApi.receive(order.id, { idempotency_key: key, notes: notes.trim() || undefined, items });
 			setQuantities({});
 			setSizeQuantities({});
+			setDefectDetails({});
 			setNotes("");
 			setIdempotencyKey(null);
 			await onChanged();
@@ -128,16 +179,40 @@ export default function PurchaseOrderReceiptPanel({ order, onChanged, canReceive
 							const eligible = (item.inventory_item?.sizes ?? []).filter((size) => item.eligible_size_ids?.includes(size.id));
 							const perSize = eligible.length > 1;
 							const perSizeLimit = perSize ? Math.ceil(item.ordered_quantity / eligible.length) : undefined;
-							return (
-							<tr key={item.id}>
+			return (
+			<Fragment key={item.id}>
+			<tr>
 								<td className="py-2 pr-3 text-gray-900 dark:text-white">{item.product_name}{perSize && <div className="text-xs text-gray-500">{eligible.map((size) => `${size.size_system ?? "US"} ${size.size}`).join(", ")} · {perSizeLimit} each</div>}</td>
 								<td className="px-2">{item.ordered_quantity}</td><td className="px-2">{item.accepted_quantity}</td><td className="px-2">{item.remaining_quantity}</td>
-								{canReceive && <>
-									<td className="px-2">{perSize ? <div className="space-y-1">{eligible.map((size) => { const key = `${item.id}:${size.id}`; const sizeLabel = `${size.size_system ?? "US"} ${size.size}`; const name = `${item.product_name} ${sizeLabel}`; return <label key={size.id} className="flex items-center gap-2"><span className="text-xs text-gray-500">{sizeLabel}</span><input aria-label={`Received ${name}`} type="number" min="0" max={perSizeLimit} value={sizeQuantities[key]?.received ?? ""} onChange={(event) => setSizeQuantity(item.id, size.id, "received", event.target.value)} className="block w-20 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1" /></label>; })}</div> : <input aria-label={`Received ${item.product_name}`} type="number" min="0" value={quantities[item.id]?.received ?? ""} onChange={(event) => setQuantity(item.id, "received", event.target.value)} className="w-20 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1" />}</td>
-									<td className="px-2">{perSize ? <div className="space-y-1">{eligible.map((size) => { const key = `${item.id}:${size.id}`; const sizeLabel = `${size.size_system ?? "US"} ${size.size}`; const name = `${item.product_name} ${sizeLabel}`; return <label key={size.id} className="flex items-center gap-2"><span className="text-xs text-gray-500">{sizeLabel}</span><input aria-label={`Defective ${name}`} type="number" min="0" max={perSizeLimit} value={sizeQuantities[key]?.defective ?? ""} onChange={(event) => setSizeQuantity(item.id, size.id, "defective", event.target.value)} className="block w-20 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1" /></label>; })}</div> : <input aria-label={`Defective ${item.product_name}`} type="number" min="0" value={quantities[item.id]?.defective ?? ""} onChange={(event) => setQuantity(item.id, "defective", event.target.value)} className="block w-20 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1" />}</td>
-								</>}
-							</tr>
-						);})}
+										{canReceive && <>
+											<td className="px-2">{perSize ? <div className="space-y-1">{eligible.map((size) => { const key = `${item.id}:${size.id}`; const sizeLabel = `${size.size_system ?? "US"} ${size.size}`; const name = `${item.product_name} ${sizeLabel}`; return <label key={size.id} className="flex items-center gap-2"><span className="text-xs text-gray-500">{sizeLabel}</span><input aria-label={`Received ${name}`} type="number" min="0" max={perSizeLimit} value={sizeQuantities[key]?.received ?? ""} onChange={(event) => setSizeQuantity(item.id, size.id, "received", event.target.value)} className="block w-20 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1" /></label>; })}</div> : <input aria-label={`Received ${item.product_name}`} type="number" min="0" value={quantities[item.id]?.received ?? ""} onChange={(event) => setQuantity(item.id, "received", event.target.value)} className="w-20 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1" />}</td>
+											<td className="px-2">{perSize ? <div className="space-y-1">{eligible.map((size) => { const key = `${item.id}:${size.id}`; const sizeLabel = `${size.size_system ?? "US"} ${size.size}`; const name = `${item.product_name} ${sizeLabel}`; return <label key={size.id} className="flex items-center gap-2"><span className="text-xs text-gray-500">{sizeLabel}</span><input aria-label={`Defective ${name}`} type="number" min="0" max={perSizeLimit} value={sizeQuantities[key]?.defective ?? ""} onChange={(event) => setSizeQuantity(item.id, size.id, "defective", event.target.value)} className="block w-20 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1" /></label>; })}</div> : <input aria-label={`Defective ${item.product_name}`} type="number" min="0" value={quantities[item.id]?.defective ?? ""} onChange={(event) => setQuantity(item.id, "defective", event.target.value)} className="block w-20 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1" />}</td>
+										</>}
+									</tr>
+									{canReceive && ((perSize
+										? eligible.reduce((sum, size) => sum + Number(sizeQuantities[`${item.id}:${size.id}`]?.defective || 0), 0)
+										: Number(quantities[item.id]?.defective || 0)) > 0) && <tr key={`${item.id}-defect-details`}>
+										<td colSpan={6} className="bg-amber-50/70 px-3 py-3 dark:bg-amber-950/20">
+											<fieldset className="grid grid-cols-1 gap-3 md:grid-cols-3">
+												<legend className="sr-only">Defect details for {item.product_name}</legend>
+												<label className="text-xs font-medium text-gray-700 dark:text-gray-300">Defect category {item.product_name}
+													<select aria-label={`Defect category ${item.product_name}`} value={defectDetails[item.id]?.reason_category ?? ""} onChange={(event) => setDefectDetail(item.id, "reason_category", event.target.value)} className="mt-1 block w-full rounded border border-gray-300 bg-white px-2 py-2 text-sm dark:border-gray-600 dark:bg-gray-800">
+														<option value="">Choose category</option>
+														{defectCategories.map((category) => <option key={category.value} value={category.value}>{category.label}</option>)}
+													</select>
+												</label>
+												<label className="text-xs font-medium text-gray-700 dark:text-gray-300">Defect notes {item.product_name}
+													<textarea aria-label={`Defect notes ${item.product_name}`} value={defectDetails[item.id]?.inventory_notes ?? ""} onChange={(event) => setDefectDetail(item.id, "inventory_notes", event.target.value)} rows={2} className="mt-1 block w-full rounded border border-gray-300 bg-white px-2 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
+												</label>
+												<label className="text-xs font-medium text-gray-700 dark:text-gray-300">Defect evidence {item.product_name}
+													<input aria-label={`Defect evidence ${item.product_name}`} type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(event) => setDefectDetail(item.id, "defect_evidence", Array.from(event.target.files ?? []))} className="mt-1 block w-full text-xs" />
+													<span className="mt-1 block text-[11px] text-gray-500">JPG, PNG, or WEBP; maximum 10 MB each.</span>
+												</label>
+											</fieldset>
+										</td>
+									</tr>}
+								</Fragment>
+								);})}
 					</tbody>
 				</table>
 			</div>
