@@ -120,6 +120,14 @@ describe('user-side navigation shell', () => {
     expect(navigationSource).not.toContain('fixed right-0 top-full z-50 mt-1 w-52');
   });
 
+  it('renders customer overlays outside the fixed navigation stacking context', () => {
+    const navigationEnd = navigationSource.indexOf('</nav>');
+
+    expect(navigationEnd).toBeGreaterThan(-1);
+    expect(navigationEnd).toBeLessThan(navigationSource.indexOf('aria-label="Close cart"'));
+    expect(navigationEnd).toBeLessThan(navigationSource.indexOf('aria-label="Site menu"'));
+  });
+
   it('keeps the sidebar navigation accessible and visually consistent', () => {
     expect(navigationSource).not.toContain('aria-label="Account submenu"');
     expect(navigationSource).not.toContain('fixed left-[min(88vw,31rem)] top-0 z-[110]');
