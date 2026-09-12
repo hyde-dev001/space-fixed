@@ -185,10 +185,6 @@ export default function JobOrders() {
       <main className="space-y-6 py-6 md:py-8" aria-labelledby="owner-job-orders-title">
         <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <h1 id="owner-job-orders-title" className="sr-only">Job Orders</h1>
-          <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
-            <p className="font-semibold text-gray-900 dark:text-white">{payload?.total ?? 0} orders in view</p>
-            <p className="mt-1 text-gray-500 dark:text-gray-400">Last updated: {formatDateTime(orders.data?.last_updated_at)}</p>
-          </div>
         </header>
 
         <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]" aria-labelledby="owner-order-filters-title">
@@ -234,9 +230,15 @@ export default function JobOrders() {
               <input type="checkbox" checked={form.overdue} onChange={(event) => setForm((current) => ({ ...current, overdue: event.target.checked }))} className="h-4 w-4 rounded border-gray-300 text-blue-700 focus:ring-blue-500" />
               Overdue only
             </label>
-            <div className="flex flex-wrap items-end gap-2 md:col-span-2 xl:col-span-5">
-              <button type="submit" className="min-h-11 rounded-lg bg-gray-950 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-200">Apply filters</button>
-              <button type="button" onClick={clearFilters} className="min-h-11 rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Clear</button>
+            <div className="flex flex-wrap items-end justify-between gap-4 md:col-span-2 xl:col-span-6">
+              <div className="flex flex-wrap items-end gap-2">
+                <button type="submit" className="min-h-11 rounded-lg bg-gray-950 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-200">Apply filters</button>
+                <button type="button" onClick={clearFilters} className="min-h-11 rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Clear</button>
+              </div>
+              <div className="ml-auto rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
+                <p className="font-semibold text-gray-900 dark:text-white">{payload?.total ?? 0} orders in view</p>
+                <p className="mt-1 text-gray-500 dark:text-gray-400">Last updated: {formatDateTime(orders.data?.last_updated_at)}</p>
+              </div>
             </div>
           </form>
         </section>

@@ -16,6 +16,20 @@ describe("Shop Owner operations monitoring surfaces", () => {
     expect(source).not.toContain("Reassign Order");
   });
 
+  it("keeps the order snapshot in the filter action row", () => {
+    const source = readPage("JobOrders");
+    const filterSection = source.indexOf('aria-labelledby="owner-order-filters-title"');
+    const tableSection = source.indexOf('aria-labelledby="owner-order-table-title"');
+    const applyFilters = source.indexOf(">Apply filters</button>");
+    const orderSnapshot = source.indexOf("orders in view");
+
+    expect(orderSnapshot).toBeGreaterThan(filterSection);
+    expect(orderSnapshot).toBeLessThan(tableSection);
+    expect(orderSnapshot).toBeGreaterThan(applyFilters);
+    expect(source).toContain("justify-between gap-4 md:col-span-2 xl:col-span-6");
+    expect(source).toContain("ml-auto rounded-xl");
+  });
+
   it("uses the Manager Repair Jobs visual contract without Manager review actions", () => {
     const source = readPage("RepairJobs");
 

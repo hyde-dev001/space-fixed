@@ -9,6 +9,7 @@ const customerPageSources = [
   'Pages/UserSide/Products/ProductShow.tsx',
   'Pages/UserSide/Repairs/Repair.tsx',
   'Pages/UserSide/Orders/MyOrders.tsx',
+  'Pages/UserSide/Orders/payment.tsx',
   'Pages/UserSide/Repairs/myRepairs.tsx',
   'Pages/UserSide/Profile/customerProfile.tsx',
   'Pages/UserSide/Profile/ShopProfile.tsx',

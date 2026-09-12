@@ -14,6 +14,7 @@ import {
 } from '@/data/philippineLocations';
 import CustomerAddressMapPicker from '@/components/address/CustomerAddressMapPicker';
 import { resolvePolicySectionsForFlow } from '../../../utils/policySectionResolver';
+import { CustomerFooterReveal } from '../../../components/common/CustomerFooter';
 
 interface CartItem {
   id: string;
@@ -2385,7 +2386,8 @@ const Payment: React.FC = () => {
   const showPolicyAcceptanceCard = !isPremiumPayment && hasVisiblePolicyTerms;
 
   return (
-    <div className="min-h-screen flex flex-col bg-white">
+    <CustomerFooterReveal>
+      <div className="min-h-screen flex flex-col bg-white">
       <style>{`
         .hide-scrollbar {
           -ms-overflow-style: none;
@@ -3549,14 +3551,6 @@ const Payment: React.FC = () => {
                 </div>
               )}
 
-              {/* Footer Links */}
-              <div className="flex gap-6 justify-center text-xs text-gray-600 border-t border-gray-200 pt-6">
-                <a href="#" className="underline">Refund policy</a>
-                <a href="#" className="underline">Privacy policy</a>
-                <a href="#" className="underline">Terms of service</a>
-                <a href="#" className="underline">Cancellations</a>
-                <a href="#" className="underline">Contact</a>
-              </div>
             </div>
 
             {/* Right: Order Summary (sticky on md) */}
@@ -3668,20 +3662,8 @@ const Payment: React.FC = () => {
         </div>
       </main>
 
-      {/* Footer */}
-      <footer className="hidden xl:block mt-12 bg-gray-100 text-slate-900">
-        <div className="max-w-7xl mx-auto px-6 py-8">
-          <div className="border-t border-gray-300 pt-6 text-xs text-slate-700 flex items-center justify-between">
-            <div>© 2026 SOLESPACE. All rights reserved.</div>
-            <div className="flex gap-6">
-              <a href="#" className="hover:underline">Privacy</a>
-              <a href="#" className="hover:underline">Terms</a>
-              <a href="#" className="hover:underline">Cookies</a>
-            </div>
-          </div>
-        </div>
-      </footer>
-    </div>
+      </div>
+    </CustomerFooterReveal>
   );
 };
 
