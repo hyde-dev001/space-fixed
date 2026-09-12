@@ -21,6 +21,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Support\Carbon;
 use Illuminate\Validation\Rule;
 use Spatie\QueryBuilder\QueryBuilder;
 use Spatie\QueryBuilder\AllowedFilter;
@@ -70,10 +71,10 @@ class ExpenseController extends Controller
             ->defaultSort('-date')
             ->paginate($request->get('per_page', 15));
 
-        $this->appendProcurementDetails($expenses->getCollection(), (int) $shopId);
         $expenses->getCollection()->each(function (Expense $expense) use ($shopId): void {
             $expense->setAttribute('settlement_state', $this->expenseSettlementService->state($expense, (int) $shopId));
         });
+        $this->appendProcurementDetails($expenses->getCollection(), (int) $shopId);
 
         return response()->json($expenses);
     }
@@ -88,8 +89,8 @@ class ExpenseController extends Controller
         $expense = Expense::where('shop_id', $shopId)
             ->findOrFail($id);
 
-        $this->appendProcurementDetails(collect([$expense]), (int) $shopId);
         $expense->setAttribute('settlement_state', $this->expenseSettlementService->state($expense, (int) $shopId));
+        $this->appendProcurementDetails(collect([$expense]), (int) $shopId);
 
         return response()->json($expense);
     }
@@ -112,19 +113,38 @@ class ExpenseController extends Controller
             $receipt = $receipts->get($expense->procurement_receipt_id);
             if ($receipt) {
                 $purchaseOrder = $receipt->purchaseOrder;
+                $receiptItems = $receipt->items;
+                $detailItems = $receiptItems->map(fn ($receiptItem) => [
+                    'purchase_order_item_id' => $receiptItem->purchase_order_item_id,
+                    'product_name' => $receiptItem->purchaseOrderItem?->product_name,
+                    'ordered_quantity' => $receiptItem->purchaseOrderItem?->ordered_quantity,
+                    'unit_cost' => $receiptItem->purchaseOrderItem?->unit_cost,
+                    'received_quantity' => $receiptItem->received_quantity,
+                    'defective_quantity' => $receiptItem->defective_quantity,
+                    'accepted_quantity' => $receiptItem->accepted_quantity,
+                ])->values();
+                $unitCosts = $detailItems->pluck('unit_cost')->filter(fn ($cost) => $cost !== null)->unique()->values();
+                $settlementState = (array) $expense->getAttribute('settlement_state');
                 $expense->setAttribute('procurement_details', [
                     'purchase_order_id' => $purchaseOrder->id,
                     'po_number' => $purchaseOrder->po_number,
+                    'receipt_number' => "RCV-{$receipt->id}",
                     'supplier_name' => $purchaseOrder->supplier?->name,
                     'receipt_id' => $receipt->id,
                     'received_at' => $receipt->received_at,
-                    'items' => $receipt->items->map(fn ($receiptItem) => [
-                        'purchase_order_item_id' => $receiptItem->purchase_order_item_id,
-                        'product_name' => $receiptItem->purchaseOrderItem?->product_name,
-                        'received_quantity' => $receiptItem->received_quantity,
-                        'defective_quantity' => $receiptItem->defective_quantity,
-                        'accepted_quantity' => $receiptItem->accepted_quantity,
-                    ])->values(),
+                    'receipt_date' => optional($receipt->received_at)->toDateString(),
+                    'payment_terms' => $purchaseOrder->payment_terms,
+                    'due_date' => optional($expense->due_date)->toDateString(),
+                    'expense_status' => $expense->status,
+                    'payment_status' => $settlementState['status'] ?? 'unpaid',
+                    'payment_timing' => $this->paymentTiming($expense->due_date),
+                    'ordered_quantity' => (int) $receiptItems->sum(fn ($item) => (int) ($item->purchaseOrderItem?->ordered_quantity ?? 0)),
+                    'received_quantity' => (int) $receiptItems->sum('received_quantity'),
+                    'accepted_quantity' => (int) $receiptItems->sum('accepted_quantity'),
+                    'defective_quantity' => (int) $receiptItems->sum('defective_quantity'),
+                    'unit_cost' => $unitCosts->count() === 1 ? $unitCosts->first() : null,
+                    'payable_amount' => $expense->amount,
+                    'items' => $detailItems,
                 ]);
                 continue;
             }
@@ -207,8 +227,35 @@ class ExpenseController extends Controller
                 'total_cost' => $purchaseOrder->total_cost,
                 'expected_delivery_date' => $purchaseOrder->expected_delivery_date,
                 'actual_delivery_date' => $purchaseOrder->actual_delivery_date,
+                'payment_terms' => $purchaseOrder->payment_terms,
+                'due_date' => optional($expense->due_date)->toDateString(),
+                'expense_status' => $expense->status,
+                'payment_status' => ((array) $expense->getAttribute('settlement_state'))['status'] ?? 'unpaid',
+                'payment_timing' => $this->paymentTiming($expense->due_date),
             ]);
         }
+    }
+
+    private function paymentTiming($dueDate): string
+    {
+        if (! $dueDate) {
+            return 'Not Due';
+        }
+
+        $today = now()->startOfDay();
+        $due = ($dueDate instanceof Carbon ? $dueDate->copy() : Carbon::parse($dueDate))->startOfDay();
+
+        if ($due->lt($today)) {
+            return 'Overdue';
+        }
+        if ($due->equalTo($today)) {
+            return 'Due Today';
+        }
+        if ($due->lte($today->copy()->addDays(3))) {
+            return 'Due Soon';
+        }
+
+        return 'Not Due';
     }
 
     public function store(Request $request)
@@ -383,6 +430,14 @@ class ExpenseController extends Controller
         ]);
 
         try {
+            if ($expense->procurement_receipt_id) {
+                throw new FinanceDomainException(
+                    'Procurement receipt expenses can only be settled through the supplier payment workflow.',
+                    'INVALID_STATE',
+                    422,
+                );
+            }
+
             $result = $this->expenseSettlementService->record($expense, Auth::user(), $data);
 
             return response()->json([

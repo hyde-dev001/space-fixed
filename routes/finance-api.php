@@ -17,6 +17,7 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\Api\Finance\InvoiceController;
 use App\Http\Controllers\Api\Finance\ExpenseController;
+use App\Http\Controllers\Api\Finance\ProcurementExpenseController;
 use App\Http\Controllers\Api\Finance\TaxRateController;
 use App\Http\Controllers\Api\Finance\FinanceSummaryController;
 use App\Http\Controllers\Api\Finance\PayslipApprovalController as FinancePayslipApprovalController;
@@ -99,6 +100,7 @@ Route::prefix('api/finance')->middleware(['web', 'auth:user', 'shop.isolation'])
     // Approval is a separate capability from viewing/recording expenses. A
     // reviewer may approve or reject without gaining general expense access.
     Route::prefix('expenses')->middleware('permission:access-approval-workflow|approve-expenses')->group(function () {
+        Route::post('/{id}/review-release', [ProcurementExpenseController::class, 'reviewAndRelease'])->whereNumber('id')->name('finance.expenses.review_release');
         Route::post('/{id}/approve', [ExpenseController::class, 'approve'])->name('finance.expenses.approve');
         Route::post('/{id}/reject', [ExpenseController::class, 'reject'])->name('finance.expenses.reject');
     });

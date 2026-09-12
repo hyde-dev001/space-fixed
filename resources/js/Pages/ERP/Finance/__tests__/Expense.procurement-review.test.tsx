@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Expense from "../Expense";
 
@@ -6,6 +6,8 @@ const mocks = vi.hoisted(() => ({
 	refetch: vi.fn(),
 	approve: vi.fn(),
 	reject: vi.fn(),
+	reviewRelease: vi.fn(),
+	status: "submitted" as "submitted" | "posted",
 	ownerMode: false,
 }));
 
@@ -15,7 +17,7 @@ vi.mock("@inertiajs/react", () => ({
 vi.mock("react-apexcharts", () => ({ default: () => null }));
 vi.mock("sweetalert2", () => ({ default: { fire: vi.fn() } }));
 vi.mock("../../../../hooks/useFinanceApi", () => ({
-	useFinanceApi: () => ({ delete: vi.fn(), post: vi.fn() }),
+	useFinanceApi: () => ({ delete: vi.fn(), post: mocks.reviewRelease }),
 }));
 vi.mock("../../../../hooks/useFinanceQueries", () => ({
 	useExpenses: () => ({
@@ -25,11 +27,24 @@ vi.mock("../../../../hooks/useFinanceQueries", () => ({
 			category: "Procurement",
 			description: "Receipt for purchase order PO-2026-003",
 			amount: 1020000,
-			status: "submitted",
+			status: mocks.status,
 			procurement_details: {
 				receipt_id: 303,
 				po_number: "PO-2026-003",
+				receipt_number: "RCV-303",
 				supplier_name: "Supplier",
+				ordered_quantity: 5,
+				received_quantity: 3,
+				accepted_quantity: 2,
+				defective_quantity: 1,
+				unit_cost: "100.00",
+				payable_amount: "200.00",
+				payment_terms: "Net 30",
+				receipt_date: "2026-08-09",
+				due_date: "2026-09-08",
+				expense_status: mocks.status,
+				payment_status: "unpaid",
+				payment_timing: "Overdue",
 			},
 		}],
 		isLoading: false,
@@ -43,6 +58,7 @@ vi.mock("../../../../hooks/useFinanceQueries", () => ({
 beforeEach(() => {
 	vi.clearAllMocks();
 	mocks.ownerMode = false;
+	mocks.status = "submitted";
 	mocks.refetch.mockResolvedValue(undefined);
 });
 
@@ -66,6 +82,26 @@ describe("Finance procurement expenses", () => {
 		render(<Expense />);
 
 		expect(screen.getByRole("button", { name: "All" })).toHaveClass("bg-[#111111]", "text-white");
+	});
+
+	it("shows procurement review details and Review & Release only while submitted", () => {
+		render(<Expense />);
+		fireEvent.click(screen.getByRole("button", { name: "View expense" }));
+
+		expect(screen.getAllByText("Supplier").length).toBeGreaterThan(0);
+		expect(screen.getByText("RCV-303")).toBeInTheDocument();
+		expect(screen.getByText("Review & Release")).toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "Pay Supplier" })).not.toBeInTheDocument();
+	});
+
+	it("shows payment readiness only after procurement release", () => {
+		mocks.status = "posted";
+		render(<Expense />);
+		fireEvent.click(screen.getByRole("button", { name: "View expense" }));
+
+		expect(screen.getByText("READY FOR PAYMENT")).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "Pay Supplier" })).toBeDisabled();
+		expect(screen.queryByRole("button", { name: "Review & Release" })).not.toBeInTheDocument();
 	});
 
 	it("hides expense creation from the shop owner while keeping the page readable", () => {
