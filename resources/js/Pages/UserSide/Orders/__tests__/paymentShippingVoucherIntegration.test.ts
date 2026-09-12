@@ -47,8 +47,10 @@ describe('payment shipping voucher integration', () => {
     expect(paymentSource).toContain('Claim & use');
     expect(paymentSource).toContain('Claim for later');
     expect(paymentSource).toContain('role="listbox"');
-    expect(paymentSource).toContain('aria-expanded={showVoucherSuggestionDropdown}');
-    expect(paymentSource).toContain('data-testid="desktop-voucher-suggestions"');
+    expect(paymentSource).not.toContain('aria-expanded={showVoucherSuggestionDropdown}');
+    expect(paymentSource).toContain('data-testid="desktop-voucher-table"');
+    expect(paymentSource).not.toContain('isVoucherSuggestionOpen');
+    expect(paymentSource).toContain("if (status === 'redeemed') return 'border-gray-200 bg-[#fafafa] text-gray-500'");
     expect(desktopVoucherSection).toContain('hide-scrollbar mt-1 max-h-[min(20rem,calc(100vh-12rem))]');
     expect(desktopVoucherSection).toContain('overflow-y-auto');
     expect(desktopVoucherSection).not.toContain('absolute left-0 right-0 top-full');
