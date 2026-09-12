@@ -164,7 +164,7 @@ const formatVoucherBenefit = (voucher: AvailableVoucherOption): string => {
 };
 
 const voucherClaimStatusLabel = (status: VoucherClaimStatus): string => {
-  if (status === 'claimed') return 'Claimed';
+  if (status === 'claimed') return 'Active';
   if (status === 'claimable') return 'Available to claim';
   if (status === 'redeemed') return 'Already used';
   return 'Unavailable';
@@ -3282,6 +3282,7 @@ const Payment: React.FC = () => {
                                       <div
                                         key={voucher.id}
                                         data-testid="voucher-suggestion-card"
+                                        data-voucher-option
                                         role="option"
                                         tabIndex={voucher.claim_status === 'redeemed' ? -1 : 0}
                                         aria-selected={isVoucherSelected}
@@ -3292,7 +3293,7 @@ const Payment: React.FC = () => {
                                             handleUseVoucher(voucher);
                                           }
                                         }}
-                                        className={'group relative w-full min-w-0 overflow-hidden rounded-xl border text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 ' + (isRedeemed ? 'border-[#d9d9dc] bg-[#fafafa]' : isVoucherSelected ? 'border-gray-900 bg-[#f5f5f5]' : 'border-[#cacacb] bg-white hover:border-gray-900')}
+                                        className={'group relative w-full min-w-0 overflow-hidden rounded-xl border text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 ' + (isRedeemed ? 'border-[#d9d9dc] bg-[#fafafa]' : isVoucherSelected ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-200' : 'border-[#cacacb] bg-white hover:border-gray-900')}
                                       >
                                         <div className="grid min-h-[5.5rem] min-w-0 grid-cols-[3rem_minmax(0,1fr)_5.75rem] items-stretch">
                                           <div className="flex flex-col items-center justify-center border-r border-dashed border-[#cacacb] bg-[#f5f5f5] px-1 py-1.5 text-center">
@@ -3376,7 +3377,7 @@ const Payment: React.FC = () => {
                                               </button>
                                             ) : (
                                               <span className="text-center text-xs font-semibold text-[#707072]">
-                                                {voucher.claim_status === 'redeemed' ? 'Already used' : voucher.claim_status === 'claimed' ? 'Claimed' : 'Not available'}
+                                                {voucher.claim_status === 'redeemed' ? 'Already used' : voucher.claim_status === 'claimed' ? 'Active · use when eligible' : 'Not available'}
                                               </span>
                                             )}
                                           </div>
