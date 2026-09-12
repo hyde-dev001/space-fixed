@@ -160,7 +160,7 @@ export default function SupplierAdjustmentsPanel({ order, canReport = false, onC
 						<p className="text-sm font-medium text-gray-900 dark:text-white">{formatStage(adjustment.issue_stage)} · {adjustment.reported_quantity} unit(s)</p>
 						<span className="rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300">{adjustment.status}</span>
 					</div>
-					<p className="mt-1 text-xs text-gray-500">{formatCategory(adjustment.reason_category)} · {adjustment.inventory_notes}</p>
+					<p className="mt-1 text-xs text-gray-500">{formatCategory(adjustment.reason_category)} · {adjustment.inventory_notes}{adjustment.resolution ? ` · Resolution: ${adjustment.resolution}` : ""}</p>
 					{adjustment.evidence?.length ? <div className="mt-2 flex flex-wrap gap-2">{adjustment.evidence.map((media) => <a key={media.id} href={`/api/erp/procurement/supplier-adjustments/${adjustment.id}/evidence/${media.id}`} target="_blank" rel="noreferrer" className="text-xs font-medium text-blue-600 hover:underline">View {media.file_name}</a>)}</div> : null}
 				</article>)}
 			</div>

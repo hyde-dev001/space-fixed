@@ -28,7 +28,9 @@ class PurchaseOrderReceiptController extends Controller
     public function store(StorePurchaseOrderReceiptRequest $request, $id)
     {
         $purchaseOrder = PurchaseOrder::where('shop_owner_id', $request->user()->shop_owner_id)->findOrFail($id);
-        $this->authorize('receive', $purchaseOrder);
+        $hasReplacement = collect($request->input('items', []))
+            ->contains(fn (array $item): bool => filled($item['replacement_for_adjustment_id'] ?? null));
+        $this->authorize($hasReplacement ? 'receiveReplacement' : 'receive', $purchaseOrder);
 
         $receipt = $this->receiptService->post($purchaseOrder, $request->user(), $request->validated());
 

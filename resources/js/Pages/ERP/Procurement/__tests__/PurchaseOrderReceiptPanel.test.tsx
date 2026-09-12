@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import PurchaseOrderReceiptPanel from "../components/PurchaseOrderReceiptPanel";
 import type { PurchaseOrder } from "@/types/procurement";
 
-vi.mock("@/services/purchaseOrderApi", () => ({ purchaseOrderApi: { receive: vi.fn(), voidReceipt: vi.fn() } }));
+vi.mock("@/services/purchaseOrderApi", () => ({ purchaseOrderApi: { receive: vi.fn(), voidReceipt: vi.fn(), getSupplierAdjustments: vi.fn().mockResolvedValue([]) } }));
 vi.mock("sweetalert2", () => ({ default: { fire: vi.fn() } }));
 
 describe("PurchaseOrderReceiptPanel size labels", () => {

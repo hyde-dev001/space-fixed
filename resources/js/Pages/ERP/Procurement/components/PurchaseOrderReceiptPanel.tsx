@@ -1,7 +1,7 @@
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import Swal from "sweetalert2";
 import { purchaseOrderApi } from "@/services/purchaseOrderApi";
-import type { PurchaseOrder, SupplierAdjustmentReasonCategory } from "@/types/procurement";
+import type { PurchaseOrder, SupplierAdjustment, SupplierAdjustmentReasonCategory } from "@/types/procurement";
 
 type Quantities = Record<number, { received: string; defective: string }>;
 type SizeQuantities = Record<string, { received: string; defective: string }>;
@@ -30,10 +30,27 @@ export default function PurchaseOrderReceiptPanel({ order, onChanged, canReceive
 	const [quantities, setQuantities] = useState<Quantities>({});
 	const [sizeQuantities, setSizeQuantities] = useState<SizeQuantities>({});
 	const [defectDetails, setDefectDetails] = useState<Record<number, DefectDetails>>({});
+	const [replacementAdjustments, setReplacementAdjustments] = useState<SupplierAdjustment[]>([]);
+	const [replacementByItem, setReplacementByItem] = useState<Record<number, number | "">>({});
 	const [notes, setNotes] = useState("");
 	const [idempotencyKey, setIdempotencyKey] = useState<string | null>(null);
 	const [saving, setSaving] = useState(false);
-	const canReceive = mayReceive && !order.is_historical && ["in_transit", "partially_received"].includes(order.status);
+	useEffect(() => {
+		if (!mayReceive || typeof purchaseOrderApi.getSupplierAdjustments !== "function") return;
+		void purchaseOrderApi.getSupplierAdjustments().then((all) => {
+			const relevant = all.filter((adjustment) =>
+				adjustment.purchase_order?.id === order.id
+				&& adjustment.status !== "resolved"
+				&& adjustment.resolution !== "refund"
+			);
+			setReplacementAdjustments((current) => relevant.length > 0 || current.length > 0 ? relevant : current);
+		}).catch(() => setReplacementAdjustments([]));
+	}, [mayReceive, order.id]);
+
+	const canReceiveNormally = !order.is_historical && ["in_transit", "partially_received"].includes(order.status);
+	const canReceiveReplacement = ["delivered", "completed"].includes(order.status) && replacementAdjustments.length > 0;
+	const canReceive = mayReceive && (canReceiveNormally || canReceiveReplacement);
+	const showReplacementColumn = canReceive && replacementAdjustments.length > 0;
 
 	const setQuantity = (itemId: number, field: "received" | "defective", value: string) => {
 		setQuantities((current) => ({
@@ -81,6 +98,7 @@ export default function PurchaseOrderReceiptPanel({ order, onChanged, canReceive
 				}));
 				return {
 					purchase_order_item_id: item.id,
+					...(replacementByItem[item.id] ? { replacement_for_adjustment_id: replacementByItem[item.id] as number } : {}),
 						received_quantity: receivedQuantity,
 						defective_quantity: defectiveQuantity,
 						size_quantities: allocations,
@@ -94,6 +112,7 @@ export default function PurchaseOrderReceiptPanel({ order, onChanged, canReceive
 
 			return {
 				purchase_order_item_id: item.id,
+				...(replacementByItem[item.id] ? { replacement_for_adjustment_id: replacementByItem[item.id] as number } : {}),
 				received_quantity: receivedQuantity,
 				defective_quantity: defectiveQuantity,
 				...(defectiveQuantity > 0 ? {
@@ -135,6 +154,7 @@ export default function PurchaseOrderReceiptPanel({ order, onChanged, canReceive
 			setQuantities({});
 			setSizeQuantities({});
 			setDefectDetails({});
+			setReplacementByItem({});
 			setNotes("");
 			setIdempotencyKey(null);
 			await onChanged();
@@ -173,7 +193,7 @@ export default function PurchaseOrderReceiptPanel({ order, onChanged, canReceive
 
 			<div className="overflow-x-auto">
 				<table className="min-w-full text-sm">
-					<thead><tr className="text-left text-xs text-gray-500"><th className="py-2 pr-3">Item</th><th className="px-2">Ordered</th><th className="px-2">Accepted</th><th className="px-2">Remaining</th>{canReceive && <><th className="px-2">Received now</th><th className="px-2">Defective</th></>}</tr></thead>
+					<thead><tr className="text-left text-xs text-gray-500"><th className="py-2 pr-3">Item</th><th className="px-2">Ordered</th><th className="px-2">Accepted</th><th className="px-2">Remaining</th>{canReceive && <><th className="px-2">Received now</th><th className="px-2">Defective</th>{showReplacementColumn && <th className="px-2">Receipt type</th>}</>}</tr></thead>
 					<tbody className="divide-y divide-gray-200 dark:divide-gray-700">
 						{(order.items ?? []).map((item) => {
 							const eligible = (item.inventory_item?.sizes ?? []).filter((size) => item.eligible_size_ids?.includes(size.id));
@@ -187,12 +207,13 @@ export default function PurchaseOrderReceiptPanel({ order, onChanged, canReceive
 										{canReceive && <>
 											<td className="px-2">{perSize ? <div className="space-y-1">{eligible.map((size) => { const key = `${item.id}:${size.id}`; const sizeLabel = `${size.size_system ?? "US"} ${size.size}`; const name = `${item.product_name} ${sizeLabel}`; return <label key={size.id} className="flex items-center gap-2"><span className="text-xs text-gray-500">{sizeLabel}</span><input aria-label={`Received ${name}`} type="number" min="0" max={perSizeLimit} value={sizeQuantities[key]?.received ?? ""} onChange={(event) => setSizeQuantity(item.id, size.id, "received", event.target.value)} className="block w-20 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1" /></label>; })}</div> : <input aria-label={`Received ${item.product_name}`} type="number" min="0" value={quantities[item.id]?.received ?? ""} onChange={(event) => setQuantity(item.id, "received", event.target.value)} className="w-20 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1" />}</td>
 											<td className="px-2">{perSize ? <div className="space-y-1">{eligible.map((size) => { const key = `${item.id}:${size.id}`; const sizeLabel = `${size.size_system ?? "US"} ${size.size}`; const name = `${item.product_name} ${sizeLabel}`; return <label key={size.id} className="flex items-center gap-2"><span className="text-xs text-gray-500">{sizeLabel}</span><input aria-label={`Defective ${name}`} type="number" min="0" max={perSizeLimit} value={sizeQuantities[key]?.defective ?? ""} onChange={(event) => setSizeQuantity(item.id, size.id, "defective", event.target.value)} className="block w-20 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1" /></label>; })}</div> : <input aria-label={`Defective ${item.product_name}`} type="number" min="0" value={quantities[item.id]?.defective ?? ""} onChange={(event) => setQuantity(item.id, "defective", event.target.value)} className="block w-20 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1" />}</td>
+											{showReplacementColumn && <td className="px-2"><select aria-label={`Receipt type ${item.product_name}`} value={replacementByItem[item.id] ?? ""} onChange={(event) => { const value = event.target.value; setReplacementByItem((current) => ({ ...current, [item.id]: value ? Number(value) : "" })); setIdempotencyKey(null); }} className="w-40 rounded border border-gray-300 bg-white px-2 py-1 text-xs dark:border-gray-600 dark:bg-gray-800"><option value="">Regular receipt</option>{replacementAdjustments.filter((adjustment) => adjustment.purchase_order_item_id === item.id).map((adjustment) => <option key={adjustment.id} value={adjustment.id}>Replacement #{adjustment.id}</option>)}</select></td>}
 										</>}
 									</tr>
 									{canReceive && ((perSize
 										? eligible.reduce((sum, size) => sum + Number(sizeQuantities[`${item.id}:${size.id}`]?.defective || 0), 0)
 										: Number(quantities[item.id]?.defective || 0)) > 0) && <tr key={`${item.id}-defect-details`}>
-										<td colSpan={6} className="bg-amber-50/70 px-3 py-3 dark:bg-amber-950/20">
+										<td colSpan={showReplacementColumn ? 7 : 6} className="bg-amber-50/70 px-3 py-3 dark:bg-amber-950/20">
 											<fieldset className="grid grid-cols-1 gap-3 md:grid-cols-3">
 												<legend className="sr-only">Defect details for {item.product_name}</legend>
 												<label className="text-xs font-medium text-gray-700 dark:text-gray-300">Defect category {item.product_name}

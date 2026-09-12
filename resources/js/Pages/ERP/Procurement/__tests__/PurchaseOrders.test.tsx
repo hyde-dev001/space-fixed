@@ -4,7 +4,7 @@ import PurchaseOrderReceiptPanel from "../components/PurchaseOrderReceiptPanel";
 import { purchaseOrderApi } from "@/services/purchaseOrderApi";
 import type { PurchaseOrder } from "@/types/procurement";
 
-vi.mock("@/services/purchaseOrderApi", () => ({ purchaseOrderApi: { receive: vi.fn(), voidReceipt: vi.fn() } }));
+vi.mock("@/services/purchaseOrderApi", () => ({ purchaseOrderApi: { receive: vi.fn(), voidReceipt: vi.fn(), getSupplierAdjustments: vi.fn() } }));
 vi.mock("sweetalert2", () => ({ default: { fire: vi.fn().mockResolvedValue({ isConfirmed: true }) } }));
 
 const order = (overrides: Partial<PurchaseOrder> = {}) => ({
@@ -18,7 +18,40 @@ const order = (overrides: Partial<PurchaseOrder> = {}) => ({
 describe("PurchaseOrderReceiptPanel", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		vi.mocked(purchaseOrderApi.getSupplierAdjustments).mockResolvedValue([]);
 		vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue("123e4567-e89b-12d3-a456-426614174000");
+	});
+
+	it("links a selected replacement adjustment through the canonical receipt", async () => {
+		vi.mocked(purchaseOrderApi.receive).mockResolvedValue({} as any);
+		vi.mocked(purchaseOrderApi.getSupplierAdjustments).mockResolvedValue([{
+			id: 90,
+			issue_stage: "post_payment_issue",
+			reported_quantity: 1,
+			unit_cost_snapshot: "100.00",
+			reason_category: "damaged",
+			inventory_notes: "Found after payment.",
+			status: "reported",
+			resolution: null,
+			purchase_order: { id: 10, number: "PO-10", status: "completed" },
+			purchase_order_item_id: 20,
+		}] as any);
+		render(<PurchaseOrderReceiptPanel order={order({
+			status: "completed",
+			is_historical: true,
+			items: [{
+				id: 20, purchase_order_id: 10, product_name: "Shoe cleaner", ordered_quantity: 1,
+				accepted_quantity: 1, remaining_quantity: 0, unit_cost: 100, line_total: 100, quantity_multiplier: 1,
+			} as any],
+		})} onChanged={vi.fn().mockResolvedValue(undefined)} />);
+
+		fireEvent.change(await screen.findByLabelText("Receipt type Shoe cleaner"), { target: { value: "90" } });
+		fireEvent.change(screen.getByLabelText("Received Shoe cleaner"), { target: { value: "1" } });
+		fireEvent.click(screen.getByRole("button", { name: "Post receipt" }));
+
+		await waitFor(() => expect(purchaseOrderApi.receive).toHaveBeenCalledWith(10, expect.objectContaining({
+			items: [expect.objectContaining({ replacement_for_adjustment_id: 90 })],
+		})));
 	});
 
 	it("posts the line receipt with one idempotency key", async () => {
