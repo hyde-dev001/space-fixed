@@ -20,12 +20,18 @@ class CheckoutPromoPricingTest extends TestCase
 {
     use RefreshDatabase;
 
-    private function createRetailShopOwner(): ShopOwner
+    private function createRetailShopOwner(?string $registrationType = null): ShopOwner
     {
-        return ShopOwner::factory()->approved()->create([
+        $attributes = [
             'business_type' => 'both',
             'paymongo_secret_key' => 'sk_test_checkout_promo_pricing',
-        ]);
+        ];
+
+        if ($registrationType !== null) {
+            $attributes['registration_type'] = $registrationType;
+        }
+
+        return ShopOwner::factory()->approved()->create($attributes);
     }
 
     private function createLogisticsShopOwner(): ShopOwner
@@ -430,6 +436,260 @@ class CheckoutPromoPricingTest extends TestCase
         $this->assertSame('claimed', data_get($shippingSuggestion, 'claim_status'));
         $this->assertSame('eligible', data_get($shippingSuggestion, 'eligibility'));
         $this->assertSame('Eligible for this delivery.', data_get($shippingSuggestion, 'eligibility_message'));
+    }
+
+    #[Test]
+    public function promo_preview_applies_one_product_and_one_shipping_voucher_together(): void
+    {
+        $shopOwner = $this->createLogisticsShopOwner();
+        /** @var User $customer */
+        $customer = User::factory()->createOne();
+        $address = $this->createCustomerAddress($customer);
+
+        $product = Product::create([
+            'shop_owner_id' => $shopOwner->id,
+            'name' => 'Combined Promo Sneaker',
+            'slug' => 'combined-promo-sneaker-' . random_int(1000, 9999),
+            'description' => 'Combined product and shipping voucher test product',
+            'price' => 1000,
+            'stock_quantity' => 10,
+            'is_active' => true,
+            'is_featured' => false,
+        ]);
+
+        $productVoucher = PromoCampaign::create([
+            'shop_owner_id' => $shopOwner->id,
+            'kind' => 'voucher',
+            'scope' => 'shop_wide',
+            'name' => 'Product Hundred',
+            'code' => 'ITEM100',
+            'discount_mode' => 'fixed',
+            'value' => 100,
+            'min_spend' => 0,
+            'usage_limit' => null,
+            'used_count' => 0,
+            'start_at' => now()->subHour(),
+            'end_at' => now()->addDay(),
+            'status' => 'active',
+            'stacking_mode' => 'combinable',
+        ]);
+
+        $shippingVoucher = PromoCampaign::create([
+            'shop_owner_id' => $shopOwner->id,
+            'kind' => 'voucher',
+            'discount_target' => 'shipping',
+            'scope' => 'shop_wide',
+            'name' => 'Shipping Half Off',
+            'code' => 'SHIP50',
+            'discount_mode' => 'percentage',
+            'value' => 50,
+            'min_spend' => 0,
+            'usage_limit' => null,
+            'used_count' => 0,
+            'start_at' => now()->subHour(),
+            'end_at' => now()->addDay(),
+            'status' => 'active',
+            'stacking_mode' => 'combinable',
+        ]);
+
+        foreach ([$productVoucher, $shippingVoucher] as $voucher) {
+            VoucherClaim::create([
+                'promo_campaign_id' => $voucher->id,
+                'user_id' => $customer->id,
+                'shop_owner_id' => $shopOwner->id,
+                'status' => 'claimed',
+                'claimed_at' => now()->subMinutes(10),
+            ]);
+        }
+
+        $response = $this->actingAs($customer, 'user')
+            ->postJson('/api/checkout/promo-preview', [
+                'items' => [['pid' => $product->id, 'qty' => 1, 'price' => 1000]],
+                'shipping_fee' => 100,
+                'address_id' => $address->id,
+                'shipping_latitude' => 14.6000,
+                'shipping_longitude' => 120.9845,
+                'voucher_campaign_ids' => [$productVoucher->id, $shippingVoucher->id],
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.voucher_discount', 100)
+            ->assertJsonPath('data.final_subtotal', 900)
+            ->assertJsonPath('data.shipping_voucher_discount', 50)
+            ->assertJsonPath('data.discounted_shipping_fee', 50)
+            ->assertJsonPath('data.applied_vouchers.0.target', 'items')
+            ->assertJsonPath('data.applied_vouchers.1.target', 'shipping')
+            ->assertJsonPath('data.applied_voucher.target', 'items');
+    }
+
+    #[Test]
+    public function create_order_redeems_one_product_and_one_shipping_voucher_together(): void
+    {
+        $shopOwner = $this->createLogisticsShopOwner();
+        /** @var User $customer */
+        $customer = User::factory()->createOne();
+        $customer->forceFill([
+            'identity_verification_status' => User::IDENTITY_APPROVED,
+        ])->save();
+        $address = $this->createCustomerAddress($customer);
+
+        $product = Product::create([
+            'shop_owner_id' => $shopOwner->id,
+            'name' => 'Combined Order Sneaker',
+            'slug' => 'combined-order-sneaker-' . random_int(1000, 9999),
+            'description' => 'Combined order voucher test product',
+            'price' => 1000,
+            'stock_quantity' => 5,
+            'is_active' => true,
+            'is_featured' => false,
+        ]);
+
+        $productVoucher = PromoCampaign::create([
+            'shop_owner_id' => $shopOwner->id,
+            'kind' => 'voucher',
+            'scope' => 'shop_wide',
+            'name' => 'Order Product Hundred',
+            'code' => 'ORDER100',
+            'discount_mode' => 'fixed',
+            'value' => 100,
+            'min_spend' => 0,
+            'usage_limit' => null,
+            'used_count' => 0,
+            'start_at' => now()->subHour(),
+            'end_at' => now()->addDay(),
+            'status' => 'active',
+            'stacking_mode' => 'combinable',
+        ]);
+
+        $shippingVoucher = PromoCampaign::create([
+            'shop_owner_id' => $shopOwner->id,
+            'kind' => 'voucher',
+            'discount_target' => 'shipping',
+            'scope' => 'shop_wide',
+            'name' => 'Order Shipping Half Off',
+            'code' => 'ORDERSHIP50',
+            'discount_mode' => 'percentage',
+            'value' => 50,
+            'min_spend' => 0,
+            'usage_limit' => null,
+            'used_count' => 0,
+            'start_at' => now()->subHour(),
+            'end_at' => now()->addDay(),
+            'status' => 'active',
+            'stacking_mode' => 'combinable',
+        ]);
+
+        foreach ([$productVoucher, $shippingVoucher] as $voucher) {
+            VoucherClaim::create([
+                'promo_campaign_id' => $voucher->id,
+                'user_id' => $customer->id,
+                'shop_owner_id' => $shopOwner->id,
+                'status' => 'claimed',
+                'claimed_at' => now()->subMinutes(5),
+            ]);
+        }
+
+        $response = $this->actingAs($customer, 'user')
+            ->postJson('/api/checkout/create-order', [
+                'items' => [[
+                    'id' => 'combined-order-item',
+                    'pid' => $product->id,
+                    'qty' => 1,
+                    'name' => $product->name,
+                    'price' => 1000,
+                    'size' => null,
+                    'color' => null,
+                    'image' => null,
+                ]],
+                'total_amount' => 1000,
+                'shipping_fee' => 100,
+                'customer_name' => 'Combined Voucher Customer',
+                'customer_email' => $customer->email,
+                'customer_phone' => '09170000000',
+                'shipping_address' => '123 Combined Voucher Street, Manila',
+                'address_id' => $address->id,
+                'shipping_region' => 'NCR',
+                'shipping_province' => 'Metro Manila',
+                'shipping_city' => 'Manila',
+                'shipping_barangay' => 'Barangay 1',
+                'shipping_postal_code' => '1000',
+                'shipping_address_line' => '123 Combined Voucher Street',
+                'payment_method' => 'cod',
+                'voucher_campaign_ids' => [$productVoucher->id, $shippingVoucher->id],
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('order.total', 950)
+            ->assertJsonPath('orders.0.applied_vouchers.0.target', 'items')
+            ->assertJsonPath('orders.0.applied_vouchers.1.target', 'shipping');
+
+        $order = Order::query()->findOrFail((int) $response->json('order.id'));
+        $this->assertSame('50.00', number_format((float) $order->shipping_fee, 2, '.', ''));
+        $this->assertDatabaseHas('voucher_claims', [
+            'promo_campaign_id' => $productVoucher->id,
+            'user_id' => $customer->id,
+            'status' => 'redeemed',
+        ]);
+        $this->assertDatabaseHas('voucher_claims', [
+            'promo_campaign_id' => $shippingVoucher->id,
+            'user_id' => $customer->id,
+            'status' => 'redeemed',
+        ]);
+        $this->assertSame(1, (int) $productVoucher->refresh()->used_count);
+        $this->assertSame(1, (int) $shippingVoucher->refresh()->used_count);
+    }
+
+    #[Test]
+    public function product_voucher_selection_works_for_individual_and_company_shop_accounts(): void
+    {
+        foreach (['individual', 'company'] as $registrationType) {
+            $shopOwner = $this->createRetailShopOwner($registrationType);
+            /** @var User $customer */
+            $customer = User::factory()->createOne();
+            $product = Product::create([
+                'shop_owner_id' => $shopOwner->id,
+                'name' => ucfirst($registrationType) . ' Account Sneaker',
+                'slug' => $registrationType . '-account-sneaker-' . random_int(1000, 9999),
+                'description' => 'Registration type voucher test product',
+                'price' => 1000,
+                'stock_quantity' => 5,
+                'is_active' => true,
+                'is_featured' => false,
+            ]);
+            $voucher = PromoCampaign::create([
+                'shop_owner_id' => $shopOwner->id,
+                'kind' => 'voucher',
+                'scope' => 'shop_wide',
+                'name' => ucfirst($registrationType) . ' Voucher',
+                'code' => strtoupper($registrationType) . '10',
+                'discount_mode' => 'percentage',
+                'value' => 10,
+                'min_spend' => 0,
+                'usage_limit' => null,
+                'used_count' => 0,
+                'start_at' => now()->subHour(),
+                'end_at' => now()->addDay(),
+                'status' => 'active',
+                'stacking_mode' => 'combinable',
+            ]);
+            VoucherClaim::create([
+                'promo_campaign_id' => $voucher->id,
+                'user_id' => $customer->id,
+                'shop_owner_id' => $shopOwner->id,
+                'status' => 'claimed',
+                'claimed_at' => now(),
+            ]);
+
+            $this->actingAs($customer, 'user')
+                ->postJson('/api/checkout/promo-preview', [
+                    'items' => [['pid' => $product->id, 'qty' => 1, 'price' => 1000]],
+                    'voucher_campaign_ids' => [$voucher->id],
+                ])
+                ->assertOk()
+                ->assertJsonPath('data.voucher_discount', 100)
+                ->assertJsonPath('data.applied_voucher.id', $voucher->id);
+        }
     }
 
     #[Test]

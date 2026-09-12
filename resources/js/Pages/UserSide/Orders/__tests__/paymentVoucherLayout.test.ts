@@ -34,7 +34,7 @@ describe('payment desktop voucher layout', () => {
     expect(desktopVoucherSection).toContain('grid-cols-[3rem_minmax(0,1fr)_5.75rem]');
     expect(desktopVoucherSection).toContain('text-base font-semibold');
     expect(desktopVoucherSection).toContain('min-h-11 w-full whitespace-nowrap rounded-xl bg-gray-900 px-1.5 text-xs font-medium text-white');
-    expect(desktopVoucherSection).toContain('flex flex-col gap-5');
+    expect(desktopVoucherSection).toContain('flex flex-col gap-7');
     expect(desktopVoucherSection).toContain('w-24');
     expect(desktopVoucherSection).toContain('text-xs font-medium text-white');
     expect(desktopVoucherSection).toContain('h-11');
@@ -73,6 +73,13 @@ describe('payment desktop voucher layout', () => {
     expect(paymentSource).toContain('Product Vouchers');
     expect(paymentSource).toContain('Shipping Vouchers');
     expect(desktopVoucherSection).toContain('data-testid={`voucher-group-${group.key}`}');
+  });
+
+  it('keeps one selection per voucher target and submits both target selections', () => {
+    expect(paymentSource).toContain("Record<'items' | 'shipping', number | null>");
+    expect(paymentSource).toContain('voucher_campaign_ids');
+    expect(paymentSource).toContain('voucher_codes');
+    expect(paymentSource).toContain('applied_vouchers');
   });
 
   it('does not keep the voucher input inside the narrow order-summary sidebar', () => {
