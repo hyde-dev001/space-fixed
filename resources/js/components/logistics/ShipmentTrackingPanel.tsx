@@ -102,6 +102,22 @@ const formatDistance = (meters: number) => meters >= 1000
   ? `${(meters / 1000).toFixed(1)} km`
   : `${Math.round(meters)} m`;
 
+const EyeIcon = ({ className = '' }: { className?: string }) => (
+  <svg
+    aria-hidden="true"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={className}
+  >
+    <path d="M2.5 12s3.5-5.5 9.5-5.5 9.5 5.5 9.5 5.5-3.5 5.5-9.5 5.5S2.5 12 2.5 12Z" />
+    <circle cx="12" cy="12" r="2.5" />
+  </svg>
+);
+
 function DeliveryProofDialog({
   proof,
   onClose,
@@ -490,16 +506,26 @@ export default function ShipmentTrackingPanel({
                 <div>
                   <p className="text-sm font-semibold text-gray-800">{customerStatus(leg.status)}</p>
                   {leg.delivery_proof?.available && leg.delivery_proof.url ? (
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        proofOpener.current = event.currentTarget;
-                        setSelectedProof(leg.delivery_proof!);
-                      }}
-                      className="mt-2 inline-flex min-h-11 items-center justify-center rounded-lg border border-gray-900 px-3 text-sm font-bold text-gray-950 transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 dark:focus-visible:ring-white"
-                    >
-                      View proof of delivery
-                    </button>
+                    <div className="mt-2 flex items-center gap-2">
+                      <img
+                        src={leg.delivery_proof.url}
+                        alt={`Proof of delivery thumbnail for ${leg.delivery_proof.tracking_number}`}
+                        loading="lazy"
+                        className="h-16 w-24 shrink-0 rounded-lg border border-gray-200 object-cover"
+                      />
+                      <button
+                        type="button"
+                        aria-label="View proof of delivery"
+                        title="View proof of delivery"
+                        onClick={(event) => {
+                          proofOpener.current = event.currentTarget;
+                          setSelectedProof(leg.delivery_proof!);
+                        }}
+                        className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-gray-900 text-gray-950 transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 dark:border-gray-300 dark:text-white dark:hover:bg-gray-800 dark:focus-visible:ring-white"
+                      >
+                        <EyeIcon className="h-5 w-5" />
+                      </button>
+                    </div>
                   ) : leg.delivery_proof ? (
                     <span role="status" className="mt-2 block text-sm font-semibold text-gray-500">
                       Proof unavailable
