@@ -813,7 +813,10 @@ php artisan test tests/Feature/Procurement/PurchaseOrderReceiptVoidTest.php test
 
 Expected: all state, archival, recipient, and cross-shop tests pass without changing receipt-owned delivery.
 
-- [ ] **Step 7: Commit guards and notifications.**
+- [x] **Step 7: Commit guards and notifications.**
+
+Committed as `74c5978cd` after the focused guard, authorization, and
+notification tests passed.
 
 ```bash
 git commit --only -m "feat: guard procurement closure and notify owners" -- app/Services/PurchaseOrderReceiptService.php app/Models/PurchaseOrder.php app/Services/PurchaseOrderService.php app/Http/Controllers/Erp/SupplierController.php app/Enums/NotificationType.php app/Services/NotificationService.php resources/js/utils/resolveNotificationActionUrl.ts resources/js/types/notifications.ts tests/Feature/Procurement/PurchaseOrderReceiptVoidTest.php tests/Feature/Procurement/PurchaseOrderWorkflowTest.php tests/Feature/Procurement/ProcurementAuthorizationTest.php tests/Feature/Notifications/NotificationCriticalFlowsTest.php
@@ -828,7 +831,7 @@ Omit `resources/js/types/notifications.ts` if no explicit union change is requir
 - Modify only if behavior changed: `docs/ai-learning-log.md`
 - Verify: all files changed by Tasks 1-10
 
-- [ ] **Step 1: Run focused backend workflow suites.**
+- [x] **Step 1: Run focused backend workflow suites.**
 
 ```bash
 php artisan test tests/Feature/Procurement tests/Feature/Finance/ProcurementExpenseReleaseTest.php tests/Feature/Finance/SupplierPaymentProfileTest.php tests/Feature/Finance/SupplierRefundTest.php tests/Feature/Finance/ExpenseSettlementTest.php tests/Feature/Notifications/NotificationCriticalFlowsTest.php
@@ -839,13 +842,20 @@ Expected: PASS for all implemented non-provider workflow tests, including
 externally blocked, so there is no provider payout test file or webhook branch
 to run.
 
-- [ ] **Step 2: Run focused frontend suites.**
+Result: PASS — 205 tests passed, 1066 assertions, with 2 intentional MySQL
+lock-test skips on SQLite. No provider payout tests or webhook branch were
+created.
+
+- [x] **Step 2: Run focused frontend suites.**
 
 ```bash
 pnpm exec vitest run resources/js/Pages/ERP/Finance/__tests__/Expense.procurement-review.test.tsx resources/js/Pages/ERP/Finance/__tests__/Expense.settlements.test.tsx resources/js/Pages/ERP/Procurement/__tests__/PurchaseOrderReceiptPanel.test.tsx resources/js/Pages/ERP/Procurement/__tests__/PurchaseOrders.test.tsx resources/js/Pages/ERP/Procurement/__tests__/SuppliersManagement.test.tsx resources/js/services/__tests__/procurementApis.test.ts
 ```
 
 Expected: PASS.
+
+Result: PASS — the equivalent local `node_modules/.bin/vitest.cmd` command
+passed 8 files and 27 tests. `pnpm` is unavailable in this environment.
 
 - [ ] **Step 3: Run repository quality gates.**
 
@@ -875,17 +885,38 @@ Implemented supplier payment: REAL MANUAL BANK/E-WALLET TRANSFER
 Do not create placeholder PayMongo supplier-payout tests or claim automated
 PayMongo supplier payout was tested.
 
-- [ ] **Step 4: Perform the required sequential reviews.**
+Result: partial. `node_modules/.bin/vite.cmd build` passed and `git diff
+--check` was clean. The full Vitest suite had 248 passing files and one known
+pre-existing `Finance.presentation-consistency.test.ts` failure caused by an
+older literal class-string expectation in `Expense.tsx`. `composer test`
+reached the 300-second Composer timeout; before timeout, the new supplier
+payment tests passed, while unrelated existing failures remained in refund
+stage workflow and business-scaling route-catalog coverage.
+
+- [x] **Step 4: Perform the required sequential reviews.**
 
 Record results for: simplification/YAGNI, repository standards, approved-spec compliance, TypeScript readability, React bundle impact, security of auth/uploads/payments/secrets, reuse, dead code, and evidence. Verify no global credential fallback, raw bank detail serialization, arbitrary sorting, duplicate settlement path, second receiving path, or excluded feature was introduced.
+
+Result: PASS. The diff reuses the existing receipt, settlement, notification,
+policy, media, mail, and tenant-boundary infrastructure. No global credential
+fallback, raw bank serialization, arbitrary sorting, duplicate settlement
+writer, second receiving path, supplier portal, or other excluded feature was
+introduced. No frontend code-splitting change was warranted; no bundle-size
+improvement claim is made.
 
 - [ ] **Step 5: Browser-check the existing pages when the local app is runnable.**
 
 Use `@webapp-testing` to verify Supplier profile masking, receiving defect validation, adjustment evidence access, Finance release visibility, immutable payment confirmation, processing/failure/success states, replacement receiving, and partial/full refund confirmation at desktop and narrow widths.
 
-- [ ] **Step 6: Record only durable project learning.**
+Result: not run. The local application was not started in this verification
+pass; backend feature tests and frontend component tests cover the implemented
+states.
+
+- [x] **Step 6: Record only durable project learning.**
 
 Update `docs/ai-learning-log.md` only if implementation revealed reusable architecture guidance. Never record credentials, bank data, provider payload secrets, or personal information.
+
+Result: no new durable learning entry was necessary.
 
 - [ ] **Step 7: Create the final verification commit if documentation changed.**
 
@@ -894,6 +925,8 @@ git commit --only -m "docs: record procurement workflow verification" -- docs/ai
 ```
 
 Skip this commit when no durable learning was added.
+
+Result: skipped; no durable learning documentation changed.
 
 ## Completion evidence required
 
